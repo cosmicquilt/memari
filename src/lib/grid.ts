@@ -183,6 +183,10 @@ export function resolveModulePlacement(
       (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
     );
     const rawStackTop = Math.min(candidate.rowStart, ...stackSiblings.map((s) => s.rowStart));
+    const rawStackBottom = Math.max(
+      candidate.rowStart + candidate.rowSpan,
+      ...stackSiblings.map((s) => s.rowStart + s.rowSpan)
+    );
     const totalHeight = stackSiblings.reduce((sum, s) => sum + s.rowSpan, candidate.rowSpan);
 
     // The reflowed stack can't run into a locked block above or below it
@@ -190,6 +194,14 @@ export function resolveModulePlacement(
     // — find the tightest such bounds in this column, using column-range
     // overlap rather than an exact span match so a locked block wider
     // than the stack (like a full-width hourly-grid-core) still counts.
+    // Split at the stack's current top/bottom (not a single point) so a
+    // locked block isn't misclassified as "below" just because its
+    // rowStart happens to be >= the stack's top — it needs to actually
+    // start at or after the stack's current bottom to count as bounding
+    // it from below. (A locked block genuinely interspersed within the
+    // stack's current span — not above or below it — won't be caught by
+    // either check; that'd need splitting the stack into sub-regions,
+    // which nothing in the current data model produces.)
     const columnsOverlap = (o: GridRect) =>
       o.columnStart < candidate.columnStart + candidate.columnSpan &&
       o.columnStart + o.columnSpan > candidate.columnStart;
@@ -202,7 +214,7 @@ export function resolveModulePlacement(
     );
     const bottomBound = Math.min(
       page.gridRows,
-      ...boundingLocked.filter((o) => o.rowStart >= rawStackTop).map((o) => o.rowStart)
+      ...boundingLocked.filter((o) => o.rowStart >= rawStackBottom).map((o) => o.rowStart)
     );
 
     if (totalHeight <= bottomBound - topBound) {
@@ -211,7 +223,11 @@ export function resolveModulePlacement(
       const ordered = [
         ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
         { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
-      ].sort((a, b) => a.rowStart - b.rowStart || (a.id === DRAGGED ? 1 : -1));
+      ].sort(
+        (a, b) =>
+          a.rowStart - b.rowStart ||
+          (a.id === DRAGGED ? 1 : b.id === DRAGGED ? -1 : 0)
+      );
 
       let cursor = stackTop;
       let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
