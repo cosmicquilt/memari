@@ -18,9 +18,12 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
+import { ptToPx } from "@/lib/print-spec";
+
 const FONT_FAMILY = "PT Serif";
 const HEADER_HEIGHT_RATIO = 0.12;
-const RULED_LINE_SPACING_PX = 40;
+// ~0.25in at 300 DPI — matches typical ruled-notebook line spacing.
+const RULED_LINE_SPACING_PX = 75;
 
 export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
@@ -31,7 +34,10 @@ export function renderLabeledBox(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const headerHeight = Math.min(40, geometry.height * HEADER_HEIGHT_RATIO);
+  const headerHeight = Math.max(
+    ptToPx(22),
+    geometry.height * HEADER_HEIGHT_RATIO
+  );
 
   // Outer border.
   elements.push({
@@ -69,7 +75,7 @@ export function renderLabeledBox(
     width: geometry.width,
     height: headerHeight,
     text: config.heading.toUpperCase(),
-    fontSize: headerHeight * 0.35,
+    fontSize: ptToPx(11),
     fontFamily: FONT_FAMILY,
     align: "center",
     verticalAlign: "middle",

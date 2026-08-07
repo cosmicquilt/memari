@@ -52,9 +52,14 @@ model Page {
   plannerId       String
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
-  gridColumns     Int              @default(6)
+  // 4 columns so a 1-column sidebar is exactly 25% width, matching the
+  // reference PDF's proportions. gridGapPx/marginPx are in print pixels
+  // (300 DPI) — 8px was visually imperceptible; 32px/75px read as real
+  // whitespace (~0.1in / 0.25in).
+  gridColumns     Int              @default(4)
   gridRows        Int              @default(10)
-  gridGapPx       Float            @default(8)
+  gridGapPx       Float            @default(32)
+  marginPx        Float            @default(75)
   moduleInstances ModuleInstance[]
 
   @@unique([plannerId, position])

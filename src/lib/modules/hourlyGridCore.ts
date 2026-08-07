@@ -10,6 +10,8 @@
 // 30-minute rows, time label repeated in every column, day name + date
 // in a bordered tab above each column.
 
+import { ptToPx } from "@/lib/print-spec";
+
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
   startTime: string; // "HH:MM", 24-hour
@@ -74,7 +76,10 @@ export function renderHourlyGridCore(
   const totalMinutes = endMinutes - startMinutes;
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
 
-  const headerHeight = geometry.height * HEADER_HEIGHT_RATIO;
+  const headerHeight = Math.max(
+    ptToPx(24),
+    geometry.height * HEADER_HEIGHT_RATIO
+  );
   const gridBodyHeight = geometry.height - headerHeight;
   const rowHeight = gridBodyHeight / rowCount;
 
@@ -111,7 +116,7 @@ export function renderHourlyGridCore(
         width: dayColumnWidth,
         height: headerHeight,
         text: label.name,
-        fontSize: headerHeight * 0.4,
+        fontSize: ptToPx(13),
         fontFamily: FONT_FAMILY,
         align: "center",
         verticalAlign: "middle",
@@ -124,7 +129,7 @@ export function renderHourlyGridCore(
         width: 26,
         height: headerHeight,
         text: String(label.date),
-        fontSize: headerHeight * 0.3,
+        fontSize: ptToPx(10),
         fontFamily: FONT_FAMILY,
         fill: "#555555",
         align: "right",
@@ -145,7 +150,7 @@ export function renderHourlyGridCore(
         width: dayColumnWidth - 8,
         height: rowHeight,
         text: formatHour12NoMeridiem(rowMinutes),
-        fontSize: Math.min(11, rowHeight * 0.35),
+        fontSize: Math.min(ptToPx(8), rowHeight * 0.4),
         fontFamily: FONT_FAMILY,
         fill: "#666666",
         align: "left",
@@ -215,7 +220,7 @@ export function renderHourlyGridCore(
         width: dayColumnWidth - 12,
         height: Math.max(evHeight, 4),
         text: event.label,
-        fontSize: Math.min(10, rowHeight * 0.3),
+        fontSize: Math.min(ptToPx(7), rowHeight * 0.35),
         fontFamily: FONT_FAMILY,
         fill: "#333333",
         align: "left",

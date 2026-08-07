@@ -66,6 +66,7 @@ export default async function PlannerPage() {
     gridColumns: page.gridColumns,
     gridRows: page.gridRows,
     gridGapPx: page.gridGapPx,
+    marginPx: page.marginPx,
   };
 
   const initialElements = page.moduleInstances

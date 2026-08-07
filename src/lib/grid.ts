@@ -9,6 +9,7 @@ export type PageGrid = {
   gridColumns: number;
   gridRows: number;
   gridGapPx: number;
+  marginPx: number; // inset of the whole grid from the page edge
 };
 
 export type GridPlacement = {
@@ -18,21 +19,33 @@ export type GridPlacement = {
   rowSpan: number;
 };
 
+function usableArea(page: PageGrid) {
+  const usableWidth = page.widthPx - page.marginPx * 2;
+  const usableHeight = page.heightPx - page.marginPx * 2;
+  return {
+    cellWidth:
+      (usableWidth - page.gridGapPx * (page.gridColumns - 1)) /
+      page.gridColumns,
+    cellHeight:
+      (usableHeight - page.gridGapPx * (page.gridRows - 1)) / page.gridRows,
+  };
+}
+
 export function gridCellToPixels(
   page: PageGrid,
   placement: GridPlacement
 ): { x: number; y: number; width: number; height: number } {
-  const cellWidth =
-    (page.widthPx - page.gridGapPx * (page.gridColumns - 1)) /
-    page.gridColumns;
-  const cellHeight =
-    (page.heightPx - page.gridGapPx * (page.gridRows - 1)) / page.gridRows;
+  const { cellWidth, cellHeight } = usableArea(page);
 
   return {
-    x: placement.columnStart * (cellWidth + page.gridGapPx),
-    y: placement.rowStart * (cellHeight + page.gridGapPx),
-    width: placement.columnSpan * cellWidth + (placement.columnSpan - 1) * page.gridGapPx,
-    height: placement.rowSpan * cellHeight + (placement.rowSpan - 1) * page.gridGapPx,
+    x: page.marginPx + placement.columnStart * (cellWidth + page.gridGapPx),
+    y: page.marginPx + placement.rowStart * (cellHeight + page.gridGapPx),
+    width:
+      placement.columnSpan * cellWidth +
+      (placement.columnSpan - 1) * page.gridGapPx,
+    height:
+      placement.rowSpan * cellHeight +
+      (placement.rowSpan - 1) * page.gridGapPx,
   };
 }
 
@@ -43,19 +56,21 @@ export function pixelsToGridCell(
   page: PageGrid,
   pixel: { x: number; y: number }
 ): { columnStart: number; rowStart: number } {
-  const cellWidth =
-    (page.widthPx - page.gridGapPx * (page.gridColumns - 1)) /
-    page.gridColumns;
-  const cellHeight =
-    (page.heightPx - page.gridGapPx * (page.gridRows - 1)) / page.gridRows;
+  const { cellWidth, cellHeight } = usableArea(page);
 
   const columnStart = Math.min(
     page.gridColumns - 1,
-    Math.max(0, Math.round(pixel.x / (cellWidth + page.gridGapPx)))
+    Math.max(
+      0,
+      Math.round((pixel.x - page.marginPx) / (cellWidth + page.gridGapPx))
+    )
   );
   const rowStart = Math.min(
     page.gridRows - 1,
-    Math.max(0, Math.round(pixel.y / (cellHeight + page.gridGapPx)))
+    Math.max(
+      0,
+      Math.round((pixel.y - page.marginPx) / (cellHeight + page.gridGapPx))
+    )
   );
 
   return { columnStart, rowStart };

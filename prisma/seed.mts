@@ -42,11 +42,12 @@ const moduleTypes = [
         events: { type: "array", items: { type: "object" }, default: [] },
       },
     },
-    // Sized to leave column 0 free for the sidebar zone and the bottom
-    // 2 rows free for the below zone, against the default 6x10 page grid.
+    // Sized to leave column 0 free for the sidebar zone (exactly 25%
+    // width on the default 4-column grid) and the bottom 2 rows free for
+    // the below zone.
     defaultWidth: 1560,
     defaultHeight: 2200,
-    defaultColumnSpan: 5,
+    defaultColumnSpan: 3,
     defaultRowSpan: 8,
   },
   {
