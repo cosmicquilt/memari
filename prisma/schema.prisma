@@ -53,12 +53,13 @@ model Page {
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
   // 4 columns so a 1-column sidebar is exactly 25% width, matching the
-  // reference PDF's proportions. gridGapPx/marginPx are in print pixels
-  // (300 DPI) — 8px was visually imperceptible; 32px/75px read as real
-  // whitespace (~0.1in / 0.25in).
+  // reference PDF's proportions. 30 rows (not the original 10) gives
+  // fine enough resolution that a small element like week-title doesn't
+  // have to eat a whole ~233px row it only needs ~110px of — that
+  // mismatch was exactly what caused the oversized gap before it.
   gridColumns     Int              @default(4)
-  gridRows        Int              @default(10)
-  gridGapPx       Float            @default(32)
+  gridRows        Int              @default(30)
+  gridGapPx       Float            @default(12)
   marginPx        Float            @default(75)
   moduleInstances ModuleInstance[]
 

@@ -150,9 +150,11 @@ export async function getOrCreatePlanner() {
       rowStart: number;
       rowSpan: number;
     }> = [
-      { heading: "Things I'm Grateful For", rowStart: 1, rowSpan: 2 },
-      { heading: "Reminders", rowStart: 3, rowSpan: 3 },
-      { heading: "Notes", rowStart: 6, rowSpan: 4 },
+      // Starts at row 2 — week-title now occupies rows 0-1 at the
+      // finer 30-row grid resolution. Same 2:3:4 visual ratio as before.
+      { heading: "Things I'm Grateful For", rowStart: 2, rowSpan: 6 },
+      { heading: "Reminders", rowStart: 8, rowSpan: 9 },
+      { heading: "Notes", rowStart: 17, rowSpan: 13 },
     ];
     await prisma.moduleInstance.createMany({
       data: defaultBoxes.map((box) => ({

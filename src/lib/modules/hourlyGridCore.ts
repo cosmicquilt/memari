@@ -76,6 +76,16 @@ const ROW_HEIGHT_PT = 11.3;
 const ROW_LINE_WIDTH_PT = 0.3;
 // Gap between adjacent day-tab boxes: 244.7 - 240.2 = 4.5pt.
 const COLUMN_GUTTER_PT = 4.5;
+// Day-tab text insets from the box border: "SUNDAY" bbox starts 4.4pt
+// inside the box's left edge; "31" bbox ends 6.9pt inside the right edge.
+const DAY_NAME_LEFT_INSET_PT = 4.4;
+const DATE_RIGHT_INSET_PT = 6.9;
+// Small thin box wrapping each time label, bottom edge flush with the
+// row's ruled line — measured from a sample vector rect: ~14pt wide,
+// ~8.9pt tall, 0.1pt near-black stroke.
+const TIME_LABEL_BOX_WIDTH_PT = 14;
+const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
+const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
 export function renderHourlyGridCore(
   geometry: { x: number; y: number; width: number; height: number },
@@ -122,12 +132,15 @@ export function renderHourlyGridCore(
       strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),
     });
     if (label) {
+      const dateWidth = ptToPx(26);
+      const nameLeftInset = ptToPx(DAY_NAME_LEFT_INSET_PT);
+      const dateRightInset = ptToPx(DATE_RIGHT_INSET_PT);
       elements.push({
         id: nextId(),
         type: "text",
-        x: dayX + 4,
+        x: dayX + nameLeftInset,
         y: geometry.y,
-        width: dayColumnWidth - 34,
+        width: dayColumnWidth - nameLeftInset - dateWidth,
         height: headerHeight,
         text: label.name,
         fontSize: ptToPx(8),
@@ -138,9 +151,9 @@ export function renderHourlyGridCore(
       elements.push({
         id: nextId(),
         type: "text",
-        x: dayX + dayColumnWidth - 30,
+        x: dayX + dayColumnWidth - dateWidth - dateRightInset,
         y: geometry.y,
-        width: 26,
+        width: dateWidth,
         height: headerHeight,
         text: String(label.date),
         fontSize: ptToPx(5),
@@ -151,25 +164,48 @@ export function renderHourlyGridCore(
       });
     }
 
-    // Ruled rows + time labels. Each row is a single line at its bottom
-    // edge, not a bordered box — a box-per-row would draw phantom
-    // vertical dividers the reference doesn't have.
+    // Ruled rows + time labels. The main row line is a single line at
+    // the row's bottom edge, not a bordered box — a box-per-row would
+    // draw phantom vertical dividers the reference doesn't have. The
+    // time label itself sits inside a small separate box whose bottom
+    // edge is flush with that line, per the reference's own structure.
+    const labelBoxWidth = ptToPx(TIME_LABEL_BOX_WIDTH_PT);
+    const labelBoxHeight = ptToPx(TIME_LABEL_BOX_HEIGHT_PT);
     for (let i = 0; i < rowCount; i++) {
       const rowY = gridTop + i * rowHeight;
       const rowMinutes = startMinutes + i * config.intervalMinutes;
+      const lineY = rowY + rowHeight;
+      const labelBoxTop = lineY - labelBoxHeight;
+
+      if (lineOpacity > 0) {
+        elements.push({
+          id: nextId(),
+          type: "figure",
+          subType: "rect",
+          x: dayX,
+          y: labelBoxTop,
+          width: labelBoxWidth,
+          height: labelBoxHeight,
+          fill: "transparent",
+          stroke: LINE_COLOR,
+          strokeWidth: ptToPx(TIME_LABEL_BOX_WIDTH_STROKE_PT),
+          opacity: lineOpacity,
+        });
+      }
 
       elements.push({
         id: nextId(),
         type: "text",
-        x: dayX + 4,
-        y: rowY + 1,
-        width: dayColumnWidth - 8,
-        height: rowHeight,
+        x: dayX + 2,
+        y: labelBoxTop,
+        width: labelBoxWidth - 4,
+        height: labelBoxHeight,
         text: formatHour12NoMeridiem(rowMinutes),
         fontSize: ptToPx(5),
         fontFamily: FONT_FAMILY,
         fill: "#666666",
         align: "left",
+        verticalAlign: "bottom",
       });
 
       if (lineOpacity > 0) {
@@ -178,7 +214,7 @@ export function renderHourlyGridCore(
           type: "figure",
           subType: "rect",
           x: dayX,
-          y: rowY + rowHeight,
+          y: lineY,
           width: dayColumnWidth,
           height: 0,
           stroke: LINE_COLOR,

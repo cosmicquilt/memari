@@ -7,8 +7,8 @@ const prisma = new PrismaClient({ adapter });
 // Canvas dimensions match the 6x9" US Trade + bleed print spec from the
 // Polotno test project (1875 x 2775 px at 300 DPI). defaultWidth/Height
 // are the free-placement fallback size; defaultColumnSpan/RowSpan are the
-// grid-placement fallback, sized against Page's default grid (6 cols x
-// 10 rows, see schema.prisma) — adjust both together if that changes.
+// grid-placement fallback, sized against Page's default grid (4 cols x
+// 30 rows, see schema.prisma) — adjust both together if that changes.
 const moduleTypes = [
   {
     // "WEEK X/52" + date range, top of the sidebar. Locked/core like
@@ -25,9 +25,11 @@ const moduleTypes = [
       },
     },
     defaultWidth: 300,
-    defaultHeight: 90,
+    defaultHeight: 160,
     defaultColumnSpan: 1,
-    defaultRowSpan: 1,
+    // 2 rows (~164px) — the actual content (two lines of text) needs
+    // ~110-160px; 1 row at this resolution (~76px) would clip it.
+    defaultRowSpan: 2,
   },
   {
     // "Core" block, locked by default (see ModuleInstance.locked) — a
@@ -62,12 +64,12 @@ const moduleTypes = [
       },
     },
     // Sized to leave column 0 free for the sidebar zone (exactly 25%
-    // width on the default 4-column grid) and the bottom 2 rows free for
-    // the below zone.
+    // width on the default 4-column grid) and the bottom rows free for
+    // the below zone. 24/30 rows preserves the original 80% height ratio.
     defaultWidth: 1560,
     defaultHeight: 2200,
     defaultColumnSpan: 3,
-    defaultRowSpan: 8,
+    defaultRowSpan: 24,
   },
   {
     // The reusable "heading + blank/ruled body" pattern — covers Monthly
