@@ -66,19 +66,23 @@ export default async function PlannerPage() {
   }
 
   const planner = await getOrCreatePlanner();
-  const page = planner.pages[0];
-  const pageGrid: PageGrid = {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
-    gridColumns: page.gridColumns,
-    gridRows: page.gridRows,
-    gridGapPx: page.gridGapPx,
-    marginPx: page.marginPx,
-  };
 
-  const initialElements = page.moduleInstances
-    .sort((a, b) => a.zIndex - b.zIndex)
-    .flatMap((instance) => renderModuleInstance(instance, pageGrid));
+  // Two-page spread — shown together, matching the reference planner
+  // viewed with the book open flat (left = Sun-Tue, right = Wed-Sat).
+  const pages = planner.pages.map((page) => {
+    const pageGrid: PageGrid = {
+      widthPx: PRINT_WIDTH_PX,
+      heightPx: PRINT_HEIGHT_PX,
+      gridColumns: page.gridColumns,
+      gridRows: page.gridRows,
+      gridGapPx: page.gridGapPx,
+      marginPx: page.marginPx,
+    };
+    const elements = page.moduleInstances
+      .sort((a, b) => a.zIndex - b.zIndex)
+      .flatMap((instance) => renderModuleInstance(instance, pageGrid));
+    return { pageId: page.id, elements };
+  });
 
-  return <PlannerEditor pageId={page.id} initialElements={initialElements} />;
+  return <PlannerEditor pages={pages} />;
 }

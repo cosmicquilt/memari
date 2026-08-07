@@ -16,16 +16,14 @@ const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 const PALETTE_MODULES = [{ slug: "labeled-box", label: "Labeled Box" }];
 
 export function PlannerEditorCanvas({
-  pageId,
-  initialElements,
+  pages,
 }: {
-  pageId: string;
-  initialElements: object[];
+  pages: Array<{ pageId: string; elements: object[] }>;
 }) {
   // One store per mounted editor instance, not module-level like the
   // standalone test — this page can be visited by many different users.
   const store = useMemo(
-    () => createStore({ key: apiKey, showCredit: !apiKey }),
+    () => createStore({ key: apiKey ?? "", showCredit: !apiKey }),
     []
   );
   const [saving, setSaving] = useState(false);
@@ -34,17 +32,17 @@ export function PlannerEditorCanvas({
   const [addingSlug, setAddingSlug] = useState<string | null>(null);
 
   useEffect(() => {
+    // Both pages loaded together — a week spread is two pages viewed as
+    // one unit when the book is open flat, so the editor shows both.
     store.loadJSON({
       width: PRINT_WIDTH_PX,
       height: PRINT_HEIGHT_PX,
-      pages: [
-        {
-          id: pageId,
-          width: PRINT_WIDTH_PX,
-          height: PRINT_HEIGHT_PX,
-          children: initialElements,
-        },
-      ],
+      pages: pages.map((p) => ({
+        id: p.pageId,
+        width: PRINT_WIDTH_PX,
+        height: PRINT_HEIGHT_PX,
+        children: p.elements,
+      })),
     });
     // Only ever load the initial snapshot once per mount — reloading on
     // every render would stomp in-progress edits.
@@ -55,15 +53,27 @@ export function PlannerEditorCanvas({
     setSaving(true);
     setSaveError(null);
     try {
-      const json = store.toJSON();
-      const elements = (json.pages[0]?.children ?? []) as Array<{
-        id: string;
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-      }>;
-      await savePageElements(pageId, elements);
+      const json = store.toJSON() as unknown as {
+        pages: Array<{
+          id: string;
+          children?: Array<{
+            id: string;
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          }>;
+        }>;
+      };
+      // Save each page separately — savePageElements only ever touches
+      // the freeform elements for the pageId it's given, so this can't
+      // cross-contaminate the two pages' locked core content.
+      await Promise.all(
+        json.pages.map((jsonPage) => {
+          const elements = jsonPage.children ?? [];
+          return savePageElements(jsonPage.id, elements);
+        })
+      );
       setLastSavedAt(new Date());
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -75,7 +85,10 @@ export function PlannerEditorCanvas({
   const handleAddModule = async (slug: string) => {
     setAddingSlug(slug);
     try {
-      await addPaletteModule(pageId, slug);
+      // The palette only targets the left page's sidebar for now — the
+      // right page has no sidebar content yet (To-Do/Habits renderers
+      // don't exist), so there's nowhere else for it to go.
+      await addPaletteModule(pages[0].pageId, slug);
       // Full reload rather than a soft refresh: the canvas only loads its
       // initial snapshot once on mount (see the effect above), so a
       // client-side re-render wouldn't pick up the new server data
@@ -135,8 +148,8 @@ export function PlannerEditorCanvas({
             </button>
           ))}
           <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
-            Adds to the next open sidebar slot. Drag-to-position isn&apos;t
-            built yet.
+            Adds to the next open sidebar slot on the left page. Drag-to-position
+            isn&apos;t built yet.
           </span>
         </aside>
         <div style={{ flex: 1, minHeight: 0 }}>

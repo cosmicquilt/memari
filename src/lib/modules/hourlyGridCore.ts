@@ -199,19 +199,24 @@ export function renderHourlyGridCore(
         });
       }
 
+      // Centered, not left-aligned — left alignment made shorter
+      // strings ("8:00") look off relative to longer ones ("10:30")
+      // sharing the same fixed-width box. Manually bottom-positioned
+      // for the same reason verticalAlign was dropped elsewhere.
+      const timeLabelFontSize = ptToPx(5);
+      const timeLabelTextHeight = timeLabelFontSize * 1.2;
       elements.push({
         id: nextId(),
         type: "text",
         x: dayX + 2,
-        y: labelBoxTop,
+        y: labelBoxTop + labelBoxHeight - timeLabelTextHeight,
         width: labelBoxWidth - 4,
-        height: labelBoxHeight,
+        height: timeLabelTextHeight,
         text: formatHour12NoMeridiem(rowMinutes),
-        fontSize: ptToPx(5),
+        fontSize: timeLabelFontSize,
         fontFamily: FONT_FAMILY,
         fill: "#666666",
-        align: "left",
-        verticalAlign: "bottom",
+        align: "center",
       });
 
       if (lineOpacity > 0) {

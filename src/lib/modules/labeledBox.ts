@@ -46,10 +46,17 @@ const RULED_LINE_SPACING_PX = 75;
 // collide with the divider below. A length threshold was too coarse —
 // it doesn't account for available width after padding — so this
 // estimates actual rendered width per candidate size and picks the
-// largest that fits, same idea PT Serif's own metrics would give.
-const AVG_CHAR_WIDTH_RATIO = 0.52;
+// largest that fits. This module runs server-side (page.tsx is a
+// Server Component), so there's no canvas to measure real glyph
+// widths with — Polotno's Google Font also loads asynchronously in the
+// browser, so even a client-side measurement would have to guess at
+// the fallback font's metrics before it's ready. The ratio here is
+// deliberately conservative (worst-case wide characters) rather than
+// tuned to PT Serif's actual average, since erring small is far less
+// broken than wrapping into the divider line.
+const AVG_CHAR_WIDTH_RATIO = 0.68;
 function fittingHeadingFontSizePt(heading: string, availableWidthPx: number): number {
-  const candidates = [8, 7, 6, 5];
+  const candidates = [8, 7, 6, 5, 4.5, 4];
   for (const pt of candidates) {
     const estimatedWidthPx = heading.length * ptToPx(pt) * AVG_CHAR_WIDTH_RATIO;
     if (estimatedWidthPx <= availableWidthPx) return pt;

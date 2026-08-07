@@ -11,8 +11,7 @@ const PlannerEditorCanvas = dynamic(
 );
 
 export function PlannerEditor(props: {
-  pageId: string;
-  initialElements: object[];
+  pages: Array<{ pageId: string; elements: object[] }>;
 }) {
   return <PlannerEditorCanvas {...props} />;
 }

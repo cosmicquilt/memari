@@ -34,12 +34,18 @@ export function renderWeekTitle(
   // Measured from the reference PDF's embedded text metadata: "WEEK
   // 1/52" is 8pt, "DEC 31 - JAN 6" is 13pt.
   const smallLineHeight = ptToPx(8) * 1.4;
+  // The day-of-week headers (hourly-grid-core) sit at the very top of
+  // the page; "WEEK 1/52" starts 16.4pt lower than that — measured as
+  // the gap between the header box's top (y=18.2pt) and this text's
+  // top (y=34.6pt) in the reference. Both blocks start at the same
+  // grid row, so that offset has to be applied here explicitly.
+  const topOffset = ptToPx(16.4);
 
   elements.push({
     id: nextId(),
     type: "text",
     x: geometry.x,
-    y: geometry.y,
+    y: geometry.y + topOffset,
     width: geometry.width,
     height: smallLineHeight,
     text: `WEEK ${config.weekNumber}/${config.weekTotal}`,
@@ -53,14 +59,13 @@ export function renderWeekTitle(
     id: nextId(),
     type: "text",
     x: geometry.x,
-    y: geometry.y + smallLineHeight,
+    y: geometry.y + topOffset + smallLineHeight,
     width: geometry.width,
-    height: geometry.height - smallLineHeight,
+    height: geometry.height - smallLineHeight - topOffset,
     text: config.dateRangeLabel,
     fontSize: ptToPx(13),
     fontFamily: FONT_FAMILY,
     align: "left",
-    verticalAlign: "top",
   });
 
   return elements;
