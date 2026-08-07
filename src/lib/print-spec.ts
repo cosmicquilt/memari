@@ -1,7 +1,8 @@
-// 6x9" US Trade + 0.125" bleed on each edge, at 300 DPI.
-// Matches the dimensions validated in the standalone Polotno print-pipeline test.
-export const PRINT_WIDTH_PX = 1875;
-export const PRINT_HEIGHT_PX = 2775;
+// 7x10" trim (matching hourlyjournal.pdf's actual page size exactly —
+// its MediaBox is a round 504x720pt) + 0.125" bleed on each edge, same
+// bleed convention as the original 6x9 print-pipeline test, at 300 DPI.
+export const PRINT_WIDTH_PX = 2175;
+export const PRINT_HEIGHT_PX = 3075;
 export const PRINT_DPI = 300;
 
 // Module renderers work in this same pixel space, so font sizes must be
