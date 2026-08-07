@@ -93,6 +93,11 @@ model ModuleInstance {
   moduleType    ModuleType          @relation(fields: [moduleTypeId], references: [id])
 
   placementMode ModulePlacementMode @default(GRID)
+  // "Core" blocks (hourly-grid-core, month-calendar-core) are locked by
+  // default: not draggable/resizable in the editor, even though they're
+  // architecturally just another ModuleInstance. Their internal settings
+  // (start/end time, line style, etc.) stay editable via propValues.
+  locked        Boolean             @default(false)
 
   // Used when placementMode = FREE.
   x             Float?

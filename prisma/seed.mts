@@ -11,33 +11,63 @@ const prisma = new PrismaClient({ adapter });
 // 10 rows, see schema.prisma) — adjust both together if that changes.
 const moduleTypes = [
   {
-    slug: "weekly-grid",
-    name: "Weekly Grid",
+    // "Core" block, locked by default (see ModuleInstance.locked) — a
+    // whole weekly spread's day-header tabs + half-hour ruled grid,
+    // matching the real hourlyjournal.pdf reference (3 day-columns on
+    // the left page of a spread, 4 on the right). See
+    // src/lib/modules/hourlyGridCore.ts for the renderer.
+    slug: "hourly-grid-core",
+    name: "Hourly Grid (Core)",
     configSchema: {
       type: "object",
       properties: {
-        startDay: { type: "string", enum: ["MON", "SUN"], default: "MON" },
-        showWeekends: { type: "boolean", default: true },
+        dayCount: { type: "integer", enum: [3, 4], default: 3 },
+        dayLabels: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" }, date: { type: "integer" } },
+          },
+          default: [],
+        },
+        startTime: { type: "string", default: "05:30" },
+        endTime: { type: "string", default: "23:30" },
+        intervalMinutes: { type: "integer", default: 30 },
+        hourLineStyle: {
+          type: "string",
+          enum: ["full", "low-transparency", "gone"],
+          default: "full",
+        },
+        dayBorder: { type: "boolean", default: false },
+        events: { type: "array", items: { type: "object" }, default: [] },
       },
     },
-    defaultWidth: 1650,
-    defaultHeight: 2400,
-    defaultColumnSpan: 6,
+    // Sized to leave column 0 free for the sidebar zone and the bottom
+    // 2 rows free for the below zone, against the default 6x10 page grid.
+    defaultWidth: 1560,
+    defaultHeight: 2200,
+    defaultColumnSpan: 5,
     defaultRowSpan: 8,
   },
   {
-    slug: "monthly-grid",
-    name: "Monthly Grid",
+    // The reusable "heading + blank/ruled body" pattern — covers Monthly
+    // Mantra, Priorities, Reminders, Notes, Tentative Dates, and Things
+    // I'm Grateful For from the reference PDF. One type, different
+    // heading/ruled config per instance. See src/lib/modules/labeledBox.ts.
+    slug: "labeled-box",
+    name: "Labeled Box",
     configSchema: {
       type: "object",
       properties: {
-        startDay: { type: "string", enum: ["MON", "SUN"], default: "MON" },
+        heading: { type: "string", default: "Notes" },
+        ruled: { type: "boolean", default: true },
       },
     },
-    defaultWidth: 1650,
-    defaultHeight: 2000,
-    defaultColumnSpan: 6,
-    defaultRowSpan: 7,
+    // Sized for the sidebar column (column 0 of the default 6x10 grid).
+    defaultWidth: 300,
+    defaultHeight: 700,
+    defaultColumnSpan: 1,
+    defaultRowSpan: 3,
   },
   {
     slug: "habit-tracker",
@@ -53,21 +83,6 @@ const moduleTypes = [
     defaultHeight: 1200,
     defaultColumnSpan: 4,
     defaultRowSpan: 5,
-  },
-  {
-    slug: "goal-page",
-    name: "Goal / Notes Page",
-    configSchema: {
-      type: "object",
-      properties: {
-        heading: { type: "string", default: "Goals" },
-        ruled: { type: "boolean", default: true },
-      },
-    },
-    defaultWidth: 1650,
-    defaultHeight: 2400,
-    defaultColumnSpan: 6,
-    defaultRowSpan: 8,
   },
   {
     slug: "quote-block",
@@ -112,6 +127,27 @@ async function main() {
       create: moduleType,
     });
   }
+
+  // Remove types that no longer exist in this file (e.g. superseded
+  // drafts) — safe as long as no ModuleInstance still references them.
+  const currentSlugs = moduleTypes.map((m) => m.slug);
+  const stale = await prisma.moduleType.findMany({
+    where: { slug: { notIn: currentSlugs } },
+  });
+  for (const s of stale) {
+    const inUse = await prisma.moduleInstance.count({
+      where: { moduleTypeId: s.id },
+    });
+    if (inUse === 0) {
+      await prisma.moduleType.delete({ where: { id: s.id } });
+      console.log(`Removed stale module type: ${s.slug}`);
+    } else {
+      console.warn(
+        `Skipped removing stale module type "${s.slug}" — ${inUse} instance(s) still reference it.`
+      );
+    }
+  }
+
   const count = await prisma.moduleType.count();
   console.log(`Seeded module types. ${count} total in database.`);
 }

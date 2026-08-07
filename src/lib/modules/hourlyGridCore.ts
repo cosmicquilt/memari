@@ -1,0 +1,227 @@
+// Renders the "core" weekly hourly-grid block: day-header tabs + a
+// half-hour ruled grid per day, with optional synced calendar events
+// drawn at their correct time. Pure function — no Polotno/React
+// dependency — so it can be reused both by the live editor (converting
+// its output into real Polotno elements) and later by the server-side
+// print export pipeline, which needs the exact same layout logic.
+//
+// Reference: the actual InDesign weekly spread (hourlyjournal.pdf) —
+// 3 day-columns on the left page, 4 on the right, 5:30am–11:30pm in
+// 30-minute rows, time label repeated in every column, day name + date
+// in a bordered tab above each column.
+
+export type HourlyGridEvent = {
+  day: number; // 0-indexed within this block's dayCount
+  startTime: string; // "HH:MM", 24-hour
+  endTime: string; // "HH:MM", 24-hour
+  label: string;
+  source: "manual" | "google-calendar";
+};
+
+export type HourlyGridCoreConfig = {
+  dayCount: number; // 3 or 4, matching which half of the spread
+  dayLabels: Array<{ name: string; date: number }>; // length === dayCount
+  startTime: string; // "05:30"
+  endTime: string; // "23:30"
+  intervalMinutes: number; // 30
+  hourLineStyle: "full" | "low-transparency" | "gone";
+  dayBorder: boolean;
+  events: HourlyGridEvent[];
+};
+
+export type RenderedElement = {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  [key: string]: unknown;
+};
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// 12-hour label with no AM/PM, matching the reference design — position
+// in the day (before/after the 12:00 row) carries that meaning instead.
+function formatHour12NoMeridiem(minutesSinceMidnight: number): string {
+  const totalMinutes = ((minutesSinceMidnight % 1440) + 1440) % 1440;
+  const h24 = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const h12 = ((h24 + 11) % 12) + 1;
+  return `${h12}:${String(m).padStart(2, "0")}`;
+}
+
+const HEADER_HEIGHT_RATIO = 0.035;
+const COLUMN_GUTTER_PX = 4;
+// Reference PDF uses a serif face throughout, not a sans-serif — matters
+// for matching the aesthetic, not just structure.
+const FONT_FAMILY = "PT Serif";
+
+export function renderHourlyGridCore(
+  geometry: { x: number; y: number; width: number; height: number },
+  config: HourlyGridCoreConfig,
+  idPrefix: string
+): RenderedElement[] {
+  const elements: RenderedElement[] = [];
+  let idCounter = 0;
+  const nextId = () => `${idPrefix}-${idCounter++}`;
+
+  const startMinutes = timeToMinutes(config.startTime);
+  const endMinutes = timeToMinutes(config.endTime);
+  const totalMinutes = endMinutes - startMinutes;
+  const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
+
+  const headerHeight = geometry.height * HEADER_HEIGHT_RATIO;
+  const gridBodyHeight = geometry.height - headerHeight;
+  const rowHeight = gridBodyHeight / rowCount;
+
+  const dayColumnWidth =
+    (geometry.width - COLUMN_GUTTER_PX * (config.dayCount - 1)) /
+    config.dayCount;
+
+  const lineOpacity =
+    config.hourLineStyle === "full" ? 1 : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
+
+  for (let d = 0; d < config.dayCount; d++) {
+    const dayX = geometry.x + d * (dayColumnWidth + COLUMN_GUTTER_PX);
+    const label = config.dayLabels[d];
+
+    // Header tab: bordered box with day name (centered) and date (top-right).
+    elements.push({
+      id: nextId(),
+      type: "figure",
+      subType: "rect",
+      x: dayX,
+      y: geometry.y,
+      width: dayColumnWidth,
+      height: headerHeight,
+      fill: "transparent",
+      stroke: "#333333",
+      strokeWidth: 1,
+    });
+    if (label) {
+      elements.push({
+        id: nextId(),
+        type: "text",
+        x: dayX,
+        y: geometry.y,
+        width: dayColumnWidth,
+        height: headerHeight,
+        text: label.name,
+        fontSize: headerHeight * 0.4,
+        fontFamily: FONT_FAMILY,
+        align: "center",
+        verticalAlign: "middle",
+      });
+      elements.push({
+        id: nextId(),
+        type: "text",
+        x: dayX + dayColumnWidth - 34,
+        y: geometry.y,
+        width: 26,
+        height: headerHeight,
+        text: String(label.date),
+        fontSize: headerHeight * 0.3,
+        fontFamily: FONT_FAMILY,
+        fill: "#555555",
+        align: "right",
+        verticalAlign: "middle",
+      });
+    }
+
+    // Ruled rows + time labels.
+    for (let i = 0; i < rowCount; i++) {
+      const rowY = geometry.y + headerHeight + i * rowHeight;
+      const rowMinutes = startMinutes + i * config.intervalMinutes;
+
+      elements.push({
+        id: nextId(),
+        type: "text",
+        x: dayX + 4,
+        y: rowY + 1,
+        width: dayColumnWidth - 8,
+        height: rowHeight,
+        text: formatHour12NoMeridiem(rowMinutes),
+        fontSize: Math.min(11, rowHeight * 0.35),
+        fontFamily: FONT_FAMILY,
+        fill: "#666666",
+        align: "left",
+      });
+
+      if (lineOpacity > 0) {
+        elements.push({
+          id: nextId(),
+          type: "figure",
+          subType: "rect",
+          x: dayX,
+          y: rowY,
+          width: dayColumnWidth,
+          height: rowHeight,
+          fill: "transparent",
+          stroke: "#999999",
+          strokeWidth: 0.5,
+          opacity: lineOpacity,
+        });
+      }
+    }
+
+    // Optional solid border around the whole day column (header + body),
+    // independent of the ruled-line style above.
+    if (config.dayBorder) {
+      elements.push({
+        id: nextId(),
+        type: "figure",
+        subType: "rect",
+        x: dayX,
+        y: geometry.y,
+        width: dayColumnWidth,
+        height: headerHeight + gridBodyHeight,
+        fill: "transparent",
+        stroke: "#222222",
+        strokeWidth: 1.5,
+      });
+    }
+
+    // Synced/manual events for this day, positioned by time.
+    for (const event of config.events.filter((e) => e.day === d)) {
+      const evStart = timeToMinutes(event.startTime);
+      const evEnd = timeToMinutes(event.endTime);
+      const evY =
+        geometry.y +
+        headerHeight +
+        ((evStart - startMinutes) / config.intervalMinutes) * rowHeight;
+      const evHeight = ((evEnd - evStart) / config.intervalMinutes) * rowHeight;
+
+      elements.push({
+        id: nextId(),
+        type: "figure",
+        subType: "rect",
+        x: dayX + 2,
+        y: evY,
+        width: dayColumnWidth - 4,
+        height: Math.max(evHeight, 4),
+        fill: event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3",
+        stroke: "none",
+        opacity: 0.8,
+      });
+      elements.push({
+        id: nextId(),
+        type: "text",
+        x: dayX + 6,
+        y: evY + 1,
+        width: dayColumnWidth - 12,
+        height: Math.max(evHeight, 4),
+        text: event.label,
+        fontSize: Math.min(10, rowHeight * 0.3),
+        fontFamily: FONT_FAMILY,
+        fill: "#333333",
+        align: "left",
+      });
+    }
+  }
+
+  return elements;
+}
