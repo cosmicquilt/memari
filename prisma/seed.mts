@@ -5,9 +5,10 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 // Canvas dimensions match the 6x9" US Trade + bleed print spec from the
-// Polotno test project (1875 x 2775 px at 300 DPI). Module default sizes
-// are expressed in that same pixel space so they drop onto a page at a
-// sane starting size.
+// Polotno test project (1875 x 2775 px at 300 DPI). defaultWidth/Height
+// are the freeform-page fallback; defaultColumnSpan/RowSpan are the
+// grid-page fallback, sized against the starter DEFAULT_GRID (6 cols x
+// 10 rows) set in actions.ts — adjust both together if that changes.
 const moduleTypes = [
   {
     slug: "weekly-grid",
@@ -21,6 +22,8 @@ const moduleTypes = [
     },
     defaultWidth: 1650,
     defaultHeight: 2400,
+    defaultColumnSpan: 6,
+    defaultRowSpan: 8,
   },
   {
     slug: "monthly-grid",
@@ -33,6 +36,8 @@ const moduleTypes = [
     },
     defaultWidth: 1650,
     defaultHeight: 2000,
+    defaultColumnSpan: 6,
+    defaultRowSpan: 7,
   },
   {
     slug: "habit-tracker",
@@ -46,6 +51,8 @@ const moduleTypes = [
     },
     defaultWidth: 1400,
     defaultHeight: 1200,
+    defaultColumnSpan: 4,
+    defaultRowSpan: 5,
   },
   {
     slug: "goal-page",
@@ -59,6 +66,8 @@ const moduleTypes = [
     },
     defaultWidth: 1650,
     defaultHeight: 2400,
+    defaultColumnSpan: 6,
+    defaultRowSpan: 8,
   },
   {
     slug: "quote-block",
@@ -72,6 +81,8 @@ const moduleTypes = [
     },
     defaultWidth: 1400,
     defaultHeight: 400,
+    defaultColumnSpan: 6,
+    defaultRowSpan: 1,
   },
   {
     // Placeholder type used while the editor shell only round-trips raw
@@ -88,6 +99,8 @@ const moduleTypes = [
     },
     defaultWidth: 200,
     defaultHeight: 200,
+    defaultColumnSpan: 1,
+    defaultRowSpan: 1,
   },
 ];
 
