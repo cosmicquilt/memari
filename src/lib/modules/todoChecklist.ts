@@ -34,6 +34,15 @@ const ROW_HEIGHT_PT = 13.45;
 const ROW_LINE_WIDTH_PT = 0.35;
 const CHECKBOX_WIDTH_PT = 14.1; // same as hourlyGridCore's time-label box
 const COLUMN_GUTTER_PT = 4.5; // same convention as hourlyGridCore
+// Gap between hourly-grid-core's last ruled row line and this block's own
+// top border — measured directly (get_drawings(), not text) from every
+// "single full-height module, no habit-tracker sharing the page" sample
+// in hourlyjournal.pdf (pages 3/4, 9/10, 13/14): row line at y=459.60,
+// block top border at y=478.11, a consistent 18.51pt gap across all of
+// them regardless of 3-day/4-day side. Applied as an internal offset
+// (like weekTitle's topOffset) rather than tuned via grid row count, so
+// it's exact regardless of row-quantization slack above this block.
+const TOP_GAP_PT = 18.5;
 
 export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
@@ -43,6 +52,10 @@ export function renderTodoChecklist(
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+
+  const topGap = ptToPx(TOP_GAP_PT);
+  const contentY = geometry.y + topGap;
+  const contentHeight = geometry.height - topGap;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const rowHeight = ptToPx(ROW_HEIGHT_PT);
@@ -54,7 +67,7 @@ export function renderTodoChecklist(
 
   const rowCount = Math.max(
     0,
-    Math.floor((geometry.height - headerHeight) / rowHeight)
+    Math.floor((contentHeight - headerHeight) / rowHeight)
   );
 
   // Outer border around the whole block.
@@ -63,7 +76,7 @@ export function renderTodoChecklist(
     type: "figure",
     subType: "rect",
     x: geometry.x,
-    y: geometry.y,
+    y: contentY,
     width: geometry.width,
     height: headerHeight + rowCount * rowHeight,
     fill: "transparent",
@@ -80,7 +93,7 @@ export function renderTodoChecklist(
     id: nextId(),
     type: "text",
     x: geometry.x,
-    y: geometry.y + (headerHeight - headerTextHeight) / 2,
+    y: contentY + (headerHeight - headerTextHeight) / 2,
     width: geometry.width,
     height: headerTextHeight,
     text: "TO - DO",
@@ -95,14 +108,14 @@ export function renderTodoChecklist(
     type: "figure",
     subType: "rect",
     x: geometry.x,
-    y: geometry.y + headerHeight - rowLineWidth / 2,
+    y: contentY + headerHeight - rowLineWidth / 2,
     width: geometry.width,
     height: rowLineWidth,
     fill: NEAR_BLACK,
     stroke: "none",
   });
 
-  const gridTop = geometry.y + headerHeight;
+  const gridTop = contentY + headerHeight;
 
   // Per-day-column checkbox+line segments, repeated for each row.
   for (let d = 0; d < config.dayCount; d++) {
