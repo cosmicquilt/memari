@@ -1,0 +1,11 @@
+/* Polotno computes horizontal padding on .polotno-workspace-inner trying
+   to center the pages, but the container is `display: flex; flex-direction:
+   row` with no justify-content set — so it defaults to flex-start and the
+   pages end up left-aligned within whatever space that padding leaves
+   instead of actually centered. justify-content isn't part of Polotno's
+   own inline style (only display/flex-direction/padding/etc. are), so this
+   override doesn't fight inline-style precedence — !important is just
+   insurance against ui.css's own load order relative to this file. */
+.polotno-workspace-inner {
+  justify-content: center !important;
+}

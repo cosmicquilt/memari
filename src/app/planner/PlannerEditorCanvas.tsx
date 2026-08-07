@@ -15,6 +15,7 @@ import { Workspace } from "polotno/canvas/workspace";
 import { ZoomButtons } from "polotno/toolbar/zoom-buttons";
 import { DownloadButton } from "polotno/toolbar/download-button";
 import "polotno/ui.css";
+import "./polotno-overrides.css";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { savePageElements, addPaletteModule } from "./actions";
 
