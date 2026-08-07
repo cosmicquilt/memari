@@ -8,6 +8,7 @@ import {
   type HourlyGridCoreConfig,
 } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
+import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
 
 type ModuleInstanceWithType = Awaited<
   ReturnType<typeof getOrCreatePlanner>
@@ -44,6 +45,12 @@ function renderModuleInstance(
       return renderLabeledBox(
         geometry,
         instance.propValues as unknown as LabeledBoxConfig,
+        instance.id
+      );
+    case "week-title":
+      return renderWeekTitle(
+        geometry,
+        instance.propValues as unknown as WeekTitleConfig,
         instance.id
       );
     default:

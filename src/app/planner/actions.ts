@@ -57,10 +57,12 @@ export async function getOrCreatePlanner() {
     });
   }
 
-  // Auto-heal: the first page should always have its locked
-  // hourly-grid-core block. Covers both brand-new planners and ones
-  // created before this module type existed.
+  // Auto-heal: the first page should always have its locked core blocks
+  // (hourly-grid-core, week-title) and its default sidebar content.
+  // Covers both brand-new planners and ones created before these existed.
   const firstPage = planner.pages[0];
+  let needsRefetch = false;
+
   const hasCore = firstPage.moduleInstances.some(
     (mi) => mi.moduleType.slug === "hourly-grid-core"
   );
@@ -102,7 +104,72 @@ export async function getOrCreatePlanner() {
         },
       },
     });
-    // Re-fetch so the caller gets the instance we just created.
+    needsRefetch = true;
+  }
+
+  const hasWeekTitle = firstPage.moduleInstances.some(
+    (mi) => mi.moduleType.slug === "week-title"
+  );
+  if (!hasWeekTitle) {
+    const titleType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "week-title" },
+    });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: firstPage.id,
+        moduleTypeId: titleType.id,
+        placementMode: "GRID",
+        locked: true,
+        columnStart: 0,
+        rowStart: 0,
+        columnSpan: titleType.defaultColumnSpan,
+        rowSpan: titleType.defaultRowSpan,
+        propValues: {
+          weekNumber: 1,
+          weekTotal: 52,
+          dateRangeLabel: "DEC 31 - JAN 6",
+        },
+      },
+    });
+    needsRefetch = true;
+  }
+
+  // Default sidebar content: the 3 labeled boxes from the reference PDF,
+  // sized in the same rough proportions (Notes gets the most room). Only
+  // seeded once — if the sidebar already has any labeled-box instances,
+  // leave it alone rather than fighting with content the user's added.
+  const hasSidebarContent = firstPage.moduleInstances.some(
+    (mi) => mi.moduleType.slug === "labeled-box" && mi.columnStart === 0
+  );
+  if (!hasSidebarContent) {
+    const boxType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "labeled-box" },
+    });
+    const defaultBoxes: Array<{
+      heading: string;
+      rowStart: number;
+      rowSpan: number;
+    }> = [
+      { heading: "Things I'm Grateful For", rowStart: 1, rowSpan: 2 },
+      { heading: "Reminders", rowStart: 3, rowSpan: 3 },
+      { heading: "Notes", rowStart: 6, rowSpan: 4 },
+    ];
+    await prisma.moduleInstance.createMany({
+      data: defaultBoxes.map((box) => ({
+        pageId: firstPage.id,
+        moduleTypeId: boxType.id,
+        placementMode: "GRID" as const,
+        columnStart: 0,
+        rowStart: box.rowStart,
+        columnSpan: boxType.defaultColumnSpan,
+        rowSpan: box.rowSpan,
+        propValues: { heading: box.heading, ruled: true },
+      })),
+    });
+    needsRefetch = true;
+  }
+
+  if (needsRefetch) {
     planner = await prisma.planner.findUniqueOrThrow({
       where: { id: planner.id },
       include: {

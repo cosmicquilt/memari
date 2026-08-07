@@ -11,6 +11,25 @@ const prisma = new PrismaClient({ adapter });
 // 10 rows, see schema.prisma) — adjust both together if that changes.
 const moduleTypes = [
   {
+    // "WEEK X/52" + date range, top of the sidebar. Locked/core like
+    // hourly-grid-core — content is structural (which week this is), not
+    // user-customizable placement. See src/lib/modules/weekTitle.ts.
+    slug: "week-title",
+    name: "Week Title (Core)",
+    configSchema: {
+      type: "object",
+      properties: {
+        weekNumber: { type: "integer", default: 1 },
+        weekTotal: { type: "integer", default: 52 },
+        dateRangeLabel: { type: "string", default: "" },
+      },
+    },
+    defaultWidth: 300,
+    defaultHeight: 90,
+    defaultColumnSpan: 1,
+    defaultRowSpan: 1,
+  },
+  {
     // "Core" block, locked by default (see ModuleInstance.locked) — a
     // whole weekly spread's day-header tabs + half-hour ruled grid,
     // matching the real hourlyjournal.pdf reference (3 day-columns on
