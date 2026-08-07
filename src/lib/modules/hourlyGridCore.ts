@@ -5,10 +5,10 @@
 // its output into real Polotno elements) and later by the server-side
 // print export pipeline, which needs the exact same layout logic.
 //
-// Reference: the actual InDesign weekly spread (hourlyjournal.pdf) —
-// 3 day-columns on the left page, 4 on the right, 5:30am–11:30pm in
-// 30-minute rows, time label repeated in every column, day name + date
-// in a bordered tab above each column.
+// Every constant below is a measured value pulled directly from
+// hourlyjournal.pdf's embedded text metadata and vector path data
+// (pymupdf get_text('dict') / get_drawings() on page 4 of the source
+// PDF), not an eyeballed guess — see the comments on each one.
 
 import { ptToPx } from "@/lib/print-spec";
 
@@ -56,16 +56,26 @@ function formatHour12NoMeridiem(minutesSinceMidnight: number): string {
   return `${h12}:${String(m).padStart(2, "0")}`;
 }
 
-// Measured directly from the reference PDF's embedded text metadata
-// (pymupdf get_text('dict') on hourlyjournal.pdf, page 4): header block
-// is ~4.8x a single row's height. Row height itself is derived below
-// from the available space, same as before — this just fixes the ratio
-// between the two to match the real document instead of a guess.
-const HEADER_TO_ROW_RATIO = 4.8;
-const COLUMN_GUTTER_PX = 4;
-// Reference PDF uses a serif face throughout, not a sans-serif — matters
-// for matching the aesthetic, not just structure.
 const FONT_FAMILY = "PT Serif";
+// Near-black, not pure black — matches the reference's actual stroke
+// color for box borders and ruled lines (RGB 0.137/0.122/0.125).
+const LINE_COLOR = "#231F20";
+
+// The day-header tab box, measured from its actual vector rect in the
+// PDF: (136.2, 18.2, 240.2, 31.9) → 13.7pt tall. This is its own
+// measurement, separate from the gap below it — conflating the two was
+// the bug in the previous pass.
+const HEADER_HEIGHT_PT = 13.7;
+const HEADER_BORDER_WIDTH_PT = 0.5;
+// Gap between the bottom of the header box and the first ruled row,
+// derived from row-position extrapolation: row 0 sits at y≈54.5pt,
+// header bottom is at y≈31.9pt.
+const HEADER_TO_GRID_GAP_PT = 22.6;
+// Consistent step measured across 24+ consecutive row labels.
+const ROW_HEIGHT_PT = 11.3;
+const ROW_LINE_WIDTH_PT = 0.3;
+// Gap between adjacent day-tab boxes: 244.7 - 240.2 = 4.5pt.
+const COLUMN_GUTTER_PT = 4.5;
 
 export function renderHourlyGridCore(
   geometry: { x: number; y: number; width: number; height: number },
@@ -81,22 +91,20 @@ export function renderHourlyGridCore(
   const totalMinutes = endMinutes - startMinutes;
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
 
-  // Solve headerHeight + rowCount*rowHeight = geometry.height, subject to
-  // headerHeight = HEADER_TO_ROW_RATIO * rowHeight.
-  const headerHeight =
-    (HEADER_TO_ROW_RATIO * geometry.height) / (rowCount + HEADER_TO_ROW_RATIO);
-  const gridBodyHeight = geometry.height - headerHeight;
-  const rowHeight = gridBodyHeight / rowCount;
+  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const headerToGridGap = ptToPx(HEADER_TO_GRID_GAP_PT);
+  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const gridTop = geometry.y + headerHeight + headerToGridGap;
+  const columnGutter = ptToPx(COLUMN_GUTTER_PT);
 
   const dayColumnWidth =
-    (geometry.width - COLUMN_GUTTER_PX * (config.dayCount - 1)) /
-    config.dayCount;
+    (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
 
   const lineOpacity =
     config.hourLineStyle === "full" ? 1 : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
 
   for (let d = 0; d < config.dayCount; d++) {
-    const dayX = geometry.x + d * (dayColumnWidth + COLUMN_GUTTER_PX);
+    const dayX = geometry.x + d * (dayColumnWidth + columnGutter);
     const label = config.dayLabels[d];
 
     // Header tab: bordered box, day name at the left edge, date at the
@@ -110,8 +118,8 @@ export function renderHourlyGridCore(
       width: dayColumnWidth,
       height: headerHeight,
       fill: "transparent",
-      stroke: "#333333",
-      strokeWidth: 1,
+      stroke: LINE_COLOR,
+      strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),
     });
     if (label) {
       elements.push({
@@ -143,9 +151,11 @@ export function renderHourlyGridCore(
       });
     }
 
-    // Ruled rows + time labels.
+    // Ruled rows + time labels. Each row is a single line at its bottom
+    // edge, not a bordered box — a box-per-row would draw phantom
+    // vertical dividers the reference doesn't have.
     for (let i = 0; i < rowCount; i++) {
-      const rowY = geometry.y + headerHeight + i * rowHeight;
+      const rowY = gridTop + i * rowHeight;
       const rowMinutes = startMinutes + i * config.intervalMinutes;
 
       elements.push({
@@ -168,12 +178,11 @@ export function renderHourlyGridCore(
           type: "figure",
           subType: "rect",
           x: dayX,
-          y: rowY,
+          y: rowY + rowHeight,
           width: dayColumnWidth,
-          height: rowHeight,
-          fill: "transparent",
-          stroke: "#999999",
-          strokeWidth: 0.5,
+          height: 0,
+          stroke: LINE_COLOR,
+          strokeWidth: ptToPx(ROW_LINE_WIDTH_PT),
           opacity: lineOpacity,
         });
       }
@@ -189,7 +198,7 @@ export function renderHourlyGridCore(
         x: dayX,
         y: geometry.y,
         width: dayColumnWidth,
-        height: headerHeight + gridBodyHeight,
+        height: headerHeight + headerToGridGap + rowCount * rowHeight,
         fill: "transparent",
         stroke: "#222222",
         strokeWidth: 1.5,
@@ -200,10 +209,7 @@ export function renderHourlyGridCore(
     for (const event of config.events.filter((e) => e.day === d)) {
       const evStart = timeToMinutes(event.startTime);
       const evEnd = timeToMinutes(event.endTime);
-      const evY =
-        geometry.y +
-        headerHeight +
-        ((evStart - startMinutes) / config.intervalMinutes) * rowHeight;
+      const evY = gridTop + ((evStart - startMinutes) / config.intervalMinutes) * rowHeight;
       const evHeight = ((evEnd - evStart) / config.intervalMinutes) * rowHeight;
 
       elements.push({

@@ -2,6 +2,12 @@
 // Monthly Mantra, Priorities, Reminders, Notes, Tentative Dates, and
 // Things I'm Grateful For in the reference PDF — same visual element,
 // different heading text and ruled/blank body.
+//
+// Measurements pulled from hourlyjournal.pdf's vector path data
+// (pymupdf get_drawings()): the outer box border is pure black, the
+// header divider is near-black (matching hourlyGridCore's LINE_COLOR),
+// and the header band is ~13.7pt tall — same convention as the
+// day-header tabs in the hourly grid.
 
 export type LabeledBoxConfig = {
   heading: string;
@@ -21,9 +27,22 @@ export type RenderedElement = {
 import { ptToPx } from "@/lib/print-spec";
 
 const FONT_FAMILY = "PT Serif";
-const HEADER_HEIGHT_RATIO = 0.12;
-// ~0.25in at 300 DPI — matches typical ruled-notebook line spacing.
+const NEAR_BLACK = "#231F20";
+const OUTER_BORDER_WIDTH_PT = 0.5;
+const DIVIDER_WIDTH_PT = 0.5;
+const HEADER_HEIGHT_PT = 13.7;
+// ~0.25in at 300 DPI — not directly isolated from the PDF's vector data
+// (its ruled-line paths are bundled in a way this extraction couldn't
+// cleanly separate), kept as a reasonable notebook-line spacing.
 const RULED_LINE_SPACING_PX = 75;
+
+// The reference sizes long headings down to keep them on one line
+// ("Things I'm Grateful For" measured at 7pt vs. 8pt for shorter
+// headings like "Reminders"/"Notes") rather than letting them wrap and
+// collide with the divider below — replicate that behavior by length.
+function headingFontSizePt(heading: string): number {
+  return heading.length > 15 ? 7 : 8;
+}
 
 export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
@@ -34,12 +53,10 @@ export function renderLabeledBox(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const headerHeight = Math.max(
-    ptToPx(16),
-    geometry.height * HEADER_HEIGHT_RATIO
-  );
+  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
 
-  // Outer border.
+  // Outer border — pure black, distinct from the near-black used for
+  // finer lines elsewhere.
   elements.push({
     id: nextId(),
     type: "figure",
@@ -49,8 +66,8 @@ export function renderLabeledBox(
     width: geometry.width,
     height: geometry.height,
     fill: "transparent",
-    stroke: "#333333",
-    strokeWidth: 1,
+    stroke: "#000000",
+    strokeWidth: ptToPx(OUTER_BORDER_WIDTH_PT),
   });
 
   // Header divider line.
@@ -62,8 +79,8 @@ export function renderLabeledBox(
     y: geometry.y + headerHeight,
     width: geometry.width,
     height: 0,
-    stroke: "#333333",
-    strokeWidth: 1,
+    stroke: NEAR_BLACK,
+    strokeWidth: ptToPx(DIVIDER_WIDTH_PT),
   });
 
   // Heading text, centered.
@@ -75,8 +92,7 @@ export function renderLabeledBox(
     width: geometry.width,
     height: headerHeight,
     text: config.heading.toUpperCase(),
-    // Measured from the reference PDF: sidebar box headings are 8pt.
-    fontSize: ptToPx(8),
+    fontSize: ptToPx(headingFontSizePt(config.heading)),
     fontFamily: FONT_FAMILY,
     align: "center",
     verticalAlign: "middle",
@@ -96,7 +112,7 @@ export function renderLabeledBox(
         y: bodyTop + i * RULED_LINE_SPACING_PX,
         width: geometry.width - 16,
         height: 0,
-        stroke: "#cccccc",
+        stroke: NEAR_BLACK,
         strokeWidth: 0.5,
       });
     }
