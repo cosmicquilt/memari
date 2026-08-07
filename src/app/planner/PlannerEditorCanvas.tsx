@@ -177,7 +177,18 @@ export function PlannerEditorCanvas({
                   ActionControls: () => <DownloadButton store={store} />,
                 }}
               />
-              <Workspace store={store} layout="horizontal" pageGap={0} />
+              {/* pageControlsEnabled=false: those per-page nav/duplicate/
+                  delete/add controls were rendering twice per page (top
+                  and bottom), each with its own embedded license banner —
+                  4 total. We don't want free-form page add/delete here
+                  anyway (pages are managed server-side), so disabling
+                  this removes the clutter and most of the banners at once. */}
+              <Workspace
+                store={store}
+                layout="horizontal"
+                pageGap={0}
+                pageControlsEnabled={false}
+              />
               <ZoomButtons store={store} />
             </WorkspaceWrap>
           </PolotnoContainer>
