@@ -17,3 +17,70 @@ model User {
   email String  @unique
   name  String?
 }
+
+enum BaseType {
+  WEEK
+  MONTH
+  QUARTER
+  YEAR
+}
+
+// A planner a user is building. `isTemplate` marks the small set of
+// prebuilt starter planners (weekly/monthly/quarterly/yearly "bases")
+// that get cloned into a new owned Planner when a user starts fresh.
+model Planner {
+  id         String   @id @default(cuid())
+  // Clerk user ID. Not an FK yet — syncing Clerk users into our own
+  // `User` table via webhook is a later task, not a blocker for this.
+  ownerId    String
+  title      String
+  baseType   BaseType
+  isTemplate Boolean  @default(false)
+  theme      Json?
+  pages      Page[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+// A single page within a planner, in display order.
+model Page {
+  id              String           @id @default(cuid())
+  plannerId       String
+  planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
+  position        Int
+  moduleInstances ModuleInstance[]
+
+  @@unique([plannerId, position])
+}
+
+// The "class" of a draggable block: weekly-grid, habit-tracker, etc.
+// Config shape varies per type, so it's stored as a JSON schema rather
+// than fixed columns.
+model ModuleType {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  configSchema  Json
+  defaultWidth  Float
+  defaultHeight Float
+  instances     ModuleInstance[]
+}
+
+// A placed instance of a ModuleType on a specific Page.
+model ModuleInstance {
+  id           String     @id @default(cuid())
+  pageId       String
+  page         Page       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  moduleTypeId String
+  moduleType   ModuleType @relation(fields: [moduleTypeId], references: [id])
+  x            Float
+  y            Float
+  width        Float
+  height       Float
+  zIndex       Int        @default(0)
+  propValues   Json       @default("{}")
+
+  @@index([pageId])
+}
