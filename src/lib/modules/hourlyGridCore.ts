@@ -56,7 +56,12 @@ function formatHour12NoMeridiem(minutesSinceMidnight: number): string {
   return `${h12}:${String(m).padStart(2, "0")}`;
 }
 
-const HEADER_HEIGHT_RATIO = 0.035;
+// Measured directly from the reference PDF's embedded text metadata
+// (pymupdf get_text('dict') on hourlyjournal.pdf, page 4): header block
+// is ~4.8x a single row's height. Row height itself is derived below
+// from the available space, same as before — this just fixes the ratio
+// between the two to match the real document instead of a guess.
+const HEADER_TO_ROW_RATIO = 4.8;
 const COLUMN_GUTTER_PX = 4;
 // Reference PDF uses a serif face throughout, not a sans-serif — matters
 // for matching the aesthetic, not just structure.
@@ -76,10 +81,10 @@ export function renderHourlyGridCore(
   const totalMinutes = endMinutes - startMinutes;
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
 
-  const headerHeight = Math.max(
-    ptToPx(24),
-    geometry.height * HEADER_HEIGHT_RATIO
-  );
+  // Solve headerHeight + rowCount*rowHeight = geometry.height, subject to
+  // headerHeight = HEADER_TO_ROW_RATIO * rowHeight.
+  const headerHeight =
+    (HEADER_TO_ROW_RATIO * geometry.height) / (rowCount + HEADER_TO_ROW_RATIO);
   const gridBodyHeight = geometry.height - headerHeight;
   const rowHeight = gridBodyHeight / rowCount;
 
@@ -94,7 +99,8 @@ export function renderHourlyGridCore(
     const dayX = geometry.x + d * (dayColumnWidth + COLUMN_GUTTER_PX);
     const label = config.dayLabels[d];
 
-    // Header tab: bordered box with day name (centered) and date (top-right).
+    // Header tab: bordered box, day name at the left edge, date at the
+    // right edge — measured directly from the reference, not centered.
     elements.push({
       id: nextId(),
       type: "figure",
@@ -111,25 +117,25 @@ export function renderHourlyGridCore(
       elements.push({
         id: nextId(),
         type: "text",
-        x: dayX,
+        x: dayX + 4,
         y: geometry.y,
-        width: dayColumnWidth,
+        width: dayColumnWidth - 34,
         height: headerHeight,
         text: label.name,
-        fontSize: ptToPx(13),
+        fontSize: ptToPx(8),
         fontFamily: FONT_FAMILY,
-        align: "center",
+        align: "left",
         verticalAlign: "middle",
       });
       elements.push({
         id: nextId(),
         type: "text",
-        x: dayX + dayColumnWidth - 34,
+        x: dayX + dayColumnWidth - 30,
         y: geometry.y,
         width: 26,
         height: headerHeight,
         text: String(label.date),
-        fontSize: ptToPx(10),
+        fontSize: ptToPx(5),
         fontFamily: FONT_FAMILY,
         fill: "#555555",
         align: "right",
@@ -150,7 +156,7 @@ export function renderHourlyGridCore(
         width: dayColumnWidth - 8,
         height: rowHeight,
         text: formatHour12NoMeridiem(rowMinutes),
-        fontSize: Math.min(ptToPx(8), rowHeight * 0.4),
+        fontSize: ptToPx(5),
         fontFamily: FONT_FAMILY,
         fill: "#666666",
         align: "left",
@@ -220,7 +226,7 @@ export function renderHourlyGridCore(
         width: dayColumnWidth - 12,
         height: Math.max(evHeight, 4),
         text: event.label,
-        fontSize: Math.min(ptToPx(7), rowHeight * 0.35),
+        fontSize: ptToPx(6),
         fontFamily: FONT_FAMILY,
         fill: "#333333",
         align: "left",

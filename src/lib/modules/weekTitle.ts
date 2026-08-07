@@ -31,7 +31,9 @@ export function renderWeekTitle(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const smallLineHeight = ptToPx(9) * 1.4;
+  // Measured from the reference PDF's embedded text metadata: "WEEK
+  // 1/52" is 8pt, "DEC 31 - JAN 6" is 13pt.
+  const smallLineHeight = ptToPx(8) * 1.4;
 
   elements.push({
     id: nextId(),
@@ -41,7 +43,7 @@ export function renderWeekTitle(
     width: geometry.width,
     height: smallLineHeight,
     text: `WEEK ${config.weekNumber}/${config.weekTotal}`,
-    fontSize: ptToPx(9),
+    fontSize: ptToPx(8),
     fontFamily: FONT_FAMILY,
     fill: "#555555",
     align: "left",
@@ -55,7 +57,7 @@ export function renderWeekTitle(
     width: geometry.width,
     height: geometry.height - smallLineHeight,
     text: config.dateRangeLabel,
-    fontSize: ptToPx(18),
+    fontSize: ptToPx(13),
     fontFamily: FONT_FAMILY,
     align: "left",
     verticalAlign: "top",

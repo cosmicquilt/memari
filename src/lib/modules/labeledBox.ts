@@ -35,7 +35,7 @@ export function renderLabeledBox(
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
   const headerHeight = Math.max(
-    ptToPx(22),
+    ptToPx(16),
     geometry.height * HEADER_HEIGHT_RATIO
   );
 
@@ -75,7 +75,8 @@ export function renderLabeledBox(
     width: geometry.width,
     height: headerHeight,
     text: config.heading.toUpperCase(),
-    fontSize: ptToPx(11),
+    // Measured from the reference PDF: sidebar box headings are 8pt.
+    fontSize: ptToPx(8),
     fontFamily: FONT_FAMILY,
     align: "center",
     verticalAlign: "middle",
