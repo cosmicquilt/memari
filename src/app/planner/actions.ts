@@ -167,59 +167,13 @@ export async function getOrCreatePlanner() {
     { columnStart: 0, columnSpan: 4 }
   );
 
-  // Below-zone: full-height todo-checklist on the left page, full-height
-  // habit-tracker on the right — one or the other per page, not both, so
-  // each page's below-zone is fully used by a single module rather than
-  // splitting it (that's what the reference's short-todo+habit pairing
-  // does; this deliberately doesn't replicate that, to leave the split
-  // layout open for other module types later). Both sit in rows 22-29 —
-  // right after hourly-grid-core's 22-row allocation ends — using the
-  // same column placement as that page's hourly-grid-core.
-  const hasTodo = leftPage.moduleInstances.some(
-    (mi) => mi.moduleType.slug === "todo-checklist"
-  );
-  if (!hasTodo) {
-    const todoType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "todo-checklist" },
-    });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: leftPage.id,
-        moduleTypeId: todoType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: 1,
-        rowStart: 19,
-        columnSpan: 3,
-        rowSpan: 11,
-        propValues: { dayCount: 3 },
-      },
-    });
-    needsRefetch = true;
-  }
-
-  const hasHabitTracker = rightPage.moduleInstances.some(
-    (mi) => mi.moduleType.slug === "habit-tracker"
-  );
-  if (!hasHabitTracker) {
-    const habitType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "habit-tracker" },
-    });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: rightPage.id,
-        moduleTypeId: habitType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: 0,
-        rowStart: 19,
-        columnSpan: 4,
-        rowSpan: 11,
-        propValues: { habits: [] },
-      },
-    });
-    needsRefetch = true;
-  }
+  // todo-checklist and habit-tracker used to be auto-placed here (locked
+  // singletons, one todo on the left page, one habit-tracker on the
+  // right). They're now regular user-placed modules instead — draggable,
+  // deletable, addable via the palette like labeled-box — so there's no
+  // auto-heal step for them any more; a fresh planner starts without
+  // either until the user drags one in. See PlannerEditorCanvas.tsx's
+  // PALETTE_MODULES and addPaletteModuleAt below.
 
   // week-title and the sidebar boxes only exist on the left page — the
   // reference's right page has no week-title (it only appears once per

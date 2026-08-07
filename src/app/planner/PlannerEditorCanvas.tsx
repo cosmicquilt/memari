@@ -35,12 +35,19 @@ import {
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 
-// Module types a user can drag onto the page from the palette. Only
-// labeled-box is user-placeable so far — the core blocks (hourly grid,
-// week title, todo-checklist, habit-tracker) are auto-placed/locked
-// singletons per page (see actions.ts), and quote-block is seeded but
-// has no renderer yet.
-const PALETTE_MODULES = [{ slug: "labeled-box", label: "Labeled Box" }];
+// Module types a user can drag onto the page from the palette.
+// hourly-grid-core and week-title stay auto-placed/locked singletons per
+// page (see actions.ts) — they're structural, one-per-page by design.
+// todo-checklist and habit-tracker used to be locked singletons too, but
+// are now regular user-placed modules like labeled-box: draggable,
+// deletable, and addable anywhere, as many as wanted. quote-block is
+// seeded but has no renderer yet, left out so it doesn't render as
+// nothing.
+const PALETTE_MODULES = [
+  { slug: "labeled-box", label: "Labeled Box" },
+  { slug: "todo-checklist", label: "To-Do Checklist" },
+  { slug: "habit-tracker", label: "Habit Tracker" },
+];
 
 // A pragmatic local view of a Polotno element — the SDK's own generated
 // types are almost entirely `any` (they're live mobx-state-tree
