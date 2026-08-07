@@ -71,19 +71,35 @@ export function renderTodoChecklist(
     strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),
   });
 
-  // "TO - DO" header, centered across the full width.
+  // "TO - DO" header, centered across the full width. Manually centered
+  // vertically rather than relying on verticalAlign, which hasn't
+  // reliably centered text elsewhere in this codebase.
+  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  const headerTextHeight = headerFontSize * 1.2;
   elements.push({
     id: nextId(),
     type: "text",
     x: geometry.x,
-    y: geometry.y,
+    y: geometry.y + (headerHeight - headerTextHeight) / 2,
     width: geometry.width,
-    height: headerHeight,
+    height: headerTextHeight,
     text: "TO - DO",
-    fontSize: ptToPx(HEADER_FONT_PT),
+    fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
-    verticalAlign: "middle",
+  });
+
+  // Divider between the header band and the checklist grid.
+  elements.push({
+    id: nextId(),
+    type: "figure",
+    subType: "rect",
+    x: geometry.x,
+    y: geometry.y + headerHeight - rowLineWidth / 2,
+    width: geometry.width,
+    height: rowLineWidth,
+    fill: NEAR_BLACK,
+    stroke: "none",
   });
 
   const gridTop = geometry.y + headerHeight;
@@ -91,6 +107,19 @@ export function renderTodoChecklist(
   // Per-day-column checkbox+line segments, repeated for each row.
   for (let d = 0; d < config.dayCount; d++) {
     const segX = geometry.x + d * (segmentWidth + columnGutter);
+
+    // Left edge of the checkbox column.
+    elements.push({
+      id: nextId(),
+      type: "figure",
+      subType: "rect",
+      x: segX - rowLineWidth / 2,
+      y: gridTop,
+      width: rowLineWidth,
+      height: rowCount * rowHeight,
+      fill: NEAR_BLACK,
+      stroke: "none",
+    });
 
     // Vertical divider between checkbox and task line.
     elements.push({

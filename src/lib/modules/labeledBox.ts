@@ -42,19 +42,15 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // cleanly separate), kept as a reasonable notebook-line spacing.
 const RULED_LINE_SPACING_PX = 75;
 
-// Three separate attempts to compute an exact single-line-fitting font
-// size all failed differently (0.52 too tight, 0.68 overcorrected into
-// illegibly small text, then the "measured" 0.525 still wrapped) —
-// because that ratio was measured from the reference PDF's actual font
-// (MinionPro), not the Google Font we render with (PT Serif), and the
-// two don't share character-width metrics. Rather than keep tuning a
-// number against a font we're not measuring, this only answers a
-// coarser, safer question — does the heading need a second line at
-// all — and if so, the box gets built tall enough to hold it instead
-// of trying to prevent wrapping outright. Wrong in the conservative
-// direction just costs an unused half-line of box height; wrong the
-// other way is the text overlapping the divider, which is worse.
-const SAFE_CHAR_WIDTH_RATIO = 0.62;
+// The "0.525 still wrapped" data point that motivated bumping this to
+// 0.68 turned out to be a red herring — that measurement was taken on
+// the old 6x9in page's narrower sidebar column. Now that the page is
+// 7x10in (wider sidebar), 0.525 correctly predicts a one-line fit and
+// 0.68 was overcorrecting, forcing the taller 2-line box on headings
+// that actually fit fine. Back to the measured value, with a small
+// margin (not the bare 0.525) since this is still an estimate for a
+// font (PT Serif) we don't measure directly against.
+const SAFE_CHAR_WIDTH_RATIO = 0.55;
 function headingNeedsTwoLines(heading: string, availableWidthPx: number): boolean {
   const estimatedWidthAt8pt = heading.length * ptToPx(8) * SAFE_CHAR_WIDTH_RATIO;
   return estimatedWidthAt8pt > availableWidthPx;

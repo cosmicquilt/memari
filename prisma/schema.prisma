@@ -53,13 +53,14 @@ model Page {
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
   // 4 columns so a 1-column sidebar is exactly 25% width, matching the
-  // reference PDF's proportions. 30 rows (not the original 10) gives
-  // fine enough resolution that a small element like week-title doesn't
-  // have to eat a whole ~233px row it only needs ~110px of — that
-  // mismatch was exactly what caused the oversized gap before it.
+  // reference PDF's proportions. 35 rows / 10px gap solves for
+  // near-zero rounding slack against hourly-grid-core's fixed-measurement
+  // content specifically (see prisma/seed.mts) — at 30 rows, whole-row
+  // allocation left a real ~43.6px gap before the next module; this
+  // combination leaves ~0.2px.
   gridColumns     Int              @default(4)
-  gridRows        Int              @default(30)
-  gridGapPx       Float            @default(12)
+  gridRows        Int              @default(35)
+  gridGapPx       Float            @default(10)
   marginPx        Float            @default(75)
   moduleInstances ModuleInstance[]
 

@@ -186,9 +186,9 @@ export async function getOrCreatePlanner() {
         placementMode: "GRID",
         locked: true,
         columnStart: 1,
-        rowStart: 22,
+        rowStart: 25,
         columnSpan: 3,
-        rowSpan: 8,
+        rowSpan: 10,
         propValues: { dayCount: 3 },
       },
     });
@@ -209,9 +209,9 @@ export async function getOrCreatePlanner() {
         placementMode: "GRID",
         locked: true,
         columnStart: 0,
-        rowStart: 22,
+        rowStart: 25,
         columnSpan: 4,
-        rowSpan: 8,
+        rowSpan: 10,
         propValues: { habits: [] },
       },
     });
@@ -265,11 +265,11 @@ export async function getOrCreatePlanner() {
       rowStart: number;
       rowSpan: number;
     }> = [
-      // Starts at row 2 — week-title occupies rows 0-1 at the 30-row
+      // Starts at row 3 — week-title occupies rows 0-2 at the 35-row
       // grid resolution. Same 2:3:4 visual ratio as before.
-      { heading: "Things I'm Grateful For", rowStart: 2, rowSpan: 6 },
-      { heading: "Reminders", rowStart: 8, rowSpan: 9 },
-      { heading: "Notes", rowStart: 17, rowSpan: 13 },
+      { heading: "Things I'm Grateful For", rowStart: 3, rowSpan: 7 },
+      { heading: "Reminders", rowStart: 10, rowSpan: 11 },
+      { heading: "Notes", rowStart: 21, rowSpan: 14 },
     ];
     await prisma.moduleInstance.createMany({
       data: defaultBoxes.map((box) => ({

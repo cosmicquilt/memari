@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Page" ALTER COLUMN "gridGapPx" SET DEFAULT 10,
+ALTER COLUMN "gridRows" SET DEFAULT 35;

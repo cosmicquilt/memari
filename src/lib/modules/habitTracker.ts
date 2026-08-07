@@ -74,19 +74,35 @@ export function renderHabitTracker(
     strokeWidth: ptToPx(BORDER_WIDTH_PT),
   });
 
-  // "HABITS" label, centered within the name column.
+  // "HABITS" label, centered within the name column. Manually centered
+  // vertically rather than relying on verticalAlign, which hasn't
+  // reliably centered text elsewhere in this codebase.
+  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  const headerTextHeight = headerFontSize * 1.2;
   elements.push({
     id: nextId(),
     type: "text",
     x: geometry.x,
-    y: geometry.y,
+    y: geometry.y + (headerHeight - headerTextHeight) / 2,
     width: nameColumnWidth,
-    height: headerHeight,
+    height: headerTextHeight,
     text: "HABITS",
-    fontSize: ptToPx(HEADER_FONT_PT),
+    fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
-    verticalAlign: "middle",
+  });
+
+  // Divider between the header row and the habit-name grid.
+  elements.push({
+    id: nextId(),
+    type: "figure",
+    subType: "rect",
+    x: geometry.x,
+    y: geometry.y + headerHeight - rowLineWidth / 2,
+    width: geometry.width,
+    height: rowLineWidth,
+    fill: NEAR_BLACK,
+    stroke: "none",
   });
 
   // Vertical divider between name column and day-letter columns.
@@ -103,20 +119,21 @@ export function renderHabitTracker(
   });
 
   // Day-letter headers + their column dividers.
+  const dayLetterFontSize = ptToPx(DAY_LETTER_FONT_PT);
+  const dayLetterTextHeight = dayLetterFontSize * 1.2;
   DAY_LETTERS.forEach((letter, i) => {
     const colX = geometry.x + nameColumnWidth + i * dayColumnWidth;
     elements.push({
       id: nextId(),
       type: "text",
       x: colX,
-      y: geometry.y,
+      y: geometry.y + (headerHeight - dayLetterTextHeight) / 2,
       width: dayColumnWidth,
-      height: headerHeight,
+      height: dayLetterTextHeight,
       text: letter,
-      fontSize: ptToPx(DAY_LETTER_FONT_PT),
+      fontSize: dayLetterFontSize,
       fontFamily: FONT_FAMILY,
       align: "center",
-      verticalAlign: "middle",
     });
     if (i > 0) {
       elements.push({
@@ -154,19 +171,20 @@ export function renderHabitTracker(
 
     const habitName = config.habits?.[i];
     if (habitName) {
+      const nameFontSize = ptToPx(7);
+      const nameTextHeight = nameFontSize * 1.2;
       elements.push({
         id: nextId(),
         type: "text",
         x: geometry.x + 6,
-        y: rowY,
+        y: rowY + (rowHeight - nameTextHeight) / 2,
         width: nameColumnWidth - 12,
-        height: rowHeight,
+        height: nameTextHeight,
         text: habitName,
-        fontSize: ptToPx(7),
+        fontSize: nameFontSize,
         fontFamily: FONT_FAMILY,
         fill: "#333333",
         align: "left",
-        verticalAlign: "middle",
       });
     }
   }
