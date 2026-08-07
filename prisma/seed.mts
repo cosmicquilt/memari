@@ -73,6 +73,22 @@ const moduleTypes = [
     defaultWidth: 1400,
     defaultHeight: 400,
   },
+  {
+    // Placeholder type used while the editor shell only round-trips raw
+    // Polotno elements generically. Once the 5 domain modules above have
+    // real on-canvas renderers (Phase 1, weeks 5-7), new instances should
+    // be created with one of those types instead of this one.
+    slug: "freeform-element",
+    name: "Freeform Canvas Element",
+    configSchema: {
+      type: "object",
+      properties: {
+        polotnoElement: { type: "object" },
+      },
+    },
+    defaultWidth: 200,
+    defaultHeight: 200,
+  },
 ];
 
 async function main() {
