@@ -82,7 +82,7 @@ const moduleTypes = [
       type: "object",
       properties: {
         heading: { type: "string", default: "Notes" },
-        ruled: { type: "boolean", default: true },
+        ruled: { type: "boolean", default: false },
       },
     },
     // Sized for the sidebar column (column 0 of the default 6x10 grid).

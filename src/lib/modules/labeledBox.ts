@@ -31,6 +31,8 @@ const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
 const DIVIDER_WIDTH_PT = 0.5;
 const HEADER_HEIGHT_PT = 13.7;
+// Horizontal inset for the heading text from the box's side borders.
+const HEADING_HORIZONTAL_PADDING_PT = 6;
 // ~0.25in at 300 DPI — not directly isolated from the PDF's vector data
 // (its ruled-line paths are bundled in a way this extraction couldn't
 // cleanly separate), kept as a reasonable notebook-line spacing.
@@ -83,13 +85,14 @@ export function renderLabeledBox(
     strokeWidth: ptToPx(DIVIDER_WIDTH_PT),
   });
 
-  // Heading text, centered.
+  // Heading text, centered, inset from the side borders.
+  const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   elements.push({
     id: nextId(),
     type: "text",
-    x: geometry.x,
+    x: geometry.x + headingPadding,
     y: geometry.y,
-    width: geometry.width,
+    width: geometry.width - headingPadding * 2,
     height: headerHeight,
     text: config.heading.toUpperCase(),
     fontSize: ptToPx(headingFontSizePt(config.heading)),
@@ -98,7 +101,9 @@ export function renderLabeledBox(
     verticalAlign: "middle",
   });
 
-  // Ruled body lines, if requested.
+  // Ruled body lines, if explicitly requested — default is blank, no
+  // horizontal lines inside the box (matches the reference: the sidebar
+  // boxes are blank writing space, not a ruled notebook).
   if (config.ruled) {
     const bodyTop = geometry.y + headerHeight;
     const bodyHeight = geometry.height - headerHeight;

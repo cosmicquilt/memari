@@ -165,7 +165,7 @@ export async function getOrCreatePlanner() {
         rowStart: box.rowStart,
         columnSpan: boxType.defaultColumnSpan,
         rowSpan: box.rowSpan,
-        propValues: { heading: box.heading, ruled: true },
+        propValues: { heading: box.heading, ruled: false },
       })),
     });
     needsRefetch = true;
