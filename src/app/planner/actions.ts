@@ -3,7 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { clampGridPlacement, findNearestFreeCell, type PageGrid } from "@/lib/grid";
+import { clampGridPlacement, findNearestFreeCell, rectsOverlap, type PageGrid } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
@@ -548,6 +548,103 @@ export async function updateModuleConfig(
   );
 
   return { element, propValues: updated.propValues };
+}
+
+// Grows/shrinks a non-locked module's row and/or column span, keeping its
+// columnStart/rowStart fixed (this resizes in place — the client-side
+// stepper controls only ever change one dimension by one cell at a time,
+// see PropertiesPanel.tsx). Deliberately not a drag-to-resize interaction
+// on the canvas: Polotno's own resize handles would visually stretch the
+// group's children (width/height/position scaled), which doesn't do
+// anything sensible for renderers that recompute fixed-pt content from
+// scratch for a given geometry rather than rendering something meant to
+// be stretched — so this goes through the same "server re-renders fresh
+// content for the new size, client swaps the group in place" path as
+// updateModuleConfig instead, which is already proven correct.
+//
+// Rejects (doesn't clamp-and-relocate) a resize that would overlap
+// another module — silently moving a module elsewhere because it grew
+// would be more surprising than just telling the user why it can't grow
+// that direction.
+export async function updateModuleSize(
+  instanceId: string,
+  size: { columnSpan: number; rowSpan: number }
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: {
+      page: { include: { moduleInstances: { include: { moduleType: true } } } },
+      moduleType: true,
+    },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot resize a locked module");
+  }
+  if (instance.columnStart === null || instance.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+
+  const pageGrid: PageGrid = {
+    widthPx: PRINT_WIDTH_PX,
+    heightPx: PRINT_HEIGHT_PX,
+    gridColumns: instance.page.gridColumns,
+    gridRows: instance.page.gridRows,
+    gridGapPx: instance.page.gridGapPx,
+    marginPx: instance.page.marginPx,
+  };
+
+  const clampedColumnSpan = Math.max(
+    1,
+    Math.min(size.columnSpan, pageGrid.gridColumns - instance.columnStart)
+  );
+  const clampedRowSpan = Math.max(1, Math.min(size.rowSpan, pageGrid.gridRows - instance.rowStart));
+
+  const candidate = {
+    columnStart: instance.columnStart,
+    rowStart: instance.rowStart,
+    columnSpan: clampedColumnSpan,
+    rowSpan: clampedRowSpan,
+  };
+  const others = instance.page.moduleInstances
+    .filter((mi) => mi.id !== instance.id && mi.columnStart !== null && mi.rowStart !== null)
+    .map((mi) => ({
+      columnStart: mi.columnStart as number,
+      rowStart: mi.rowStart as number,
+      columnSpan: mi.columnSpan,
+      rowSpan: mi.rowSpan,
+    }));
+  if (others.some((o) => rectsOverlap(candidate, o))) {
+    throw new Error("Can't resize — another module is in the way");
+  }
+
+  const updated = await prisma.moduleInstance.update({
+    where: { id: instanceId },
+    data: { columnSpan: clampedColumnSpan, rowSpan: clampedRowSpan },
+  });
+
+  const [element] = renderModuleInstance(
+    {
+      id: updated.id,
+      locked: updated.locked,
+      columnStart: updated.columnStart,
+      rowStart: updated.rowStart,
+      columnSpan: updated.columnSpan,
+      rowSpan: updated.rowSpan,
+      propValues: updated.propValues,
+      moduleType: { slug: instance.moduleType.slug },
+    },
+    pageGrid
+  );
+
+  return { element, columnSpan: updated.columnSpan, rowSpan: updated.rowSpan };
 }
 
 // Updates the week-title heading + both pages' hourly-grid-core day-of-

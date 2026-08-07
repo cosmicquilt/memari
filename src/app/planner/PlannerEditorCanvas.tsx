@@ -32,6 +32,7 @@ import {
   updateModulePlacement,
   deleteModuleInstance,
   updateModuleConfig,
+  updateModuleSize,
   updateWeekSettings,
 } from "./actions";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -449,6 +450,32 @@ export function PlannerEditorCanvas({
     [store]
   );
 
+  // Grows/shrinks a module in place (see the Properties panel's Size
+  // stepper controls) — same delete-and-recreate swap as
+  // handleSaveModuleConfig above, since the new size needs its content
+  // freshly rendered (fixed-pt measurements recomputed for the new
+  // geometry), not Polotno visually stretching the old content. Throws
+  // (caught by the panel itself) if the server rejected the resize for
+  // colliding with something.
+  const handleResizeModule = useCallback(
+    async (instanceId: string, size: { columnSpan: number; rowSpan: number }) => {
+      const result = await updateModuleSize(instanceId, size);
+      for (const page of store.pages) {
+        const existing = (page.children as unknown as PolotnoNode[]).find((c) => c.id === instanceId);
+        if (existing) {
+          store.deleteElements([instanceId]);
+          page.addElement(result.element as never);
+          break;
+        }
+      }
+      setModuleGridInfo((prev) => ({
+        ...prev,
+        [instanceId]: { columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+      }));
+    },
+    [store]
+  );
+
   // Week settings (week number, date range, day-of-month numbers) live on
   // locked/unselectable blocks (week-title, hourly-grid-core), so unlike
   // the Properties panel above there's no single element to swap in
@@ -561,15 +588,20 @@ export function PlannerEditorCanvas({
       Panel: () => (
         <PropertiesPanel
           selected={
-            selectedModuleId && moduleConfig[selectedModuleId]
-              ? { id: selectedModuleId, ...moduleConfig[selectedModuleId] }
+            selectedModuleId && moduleConfig[selectedModuleId] && moduleGridInfo[selectedModuleId]
+              ? {
+                  id: selectedModuleId,
+                  ...moduleConfig[selectedModuleId],
+                  ...moduleGridInfo[selectedModuleId],
+                }
               : null
           }
           onSave={handleSaveModuleConfig}
+          onResize={handleResizeModule}
         />
       ),
     }),
-    [selectedModuleId, moduleConfig, handleSaveModuleConfig]
+    [selectedModuleId, moduleConfig, moduleGridInfo, handleSaveModuleConfig, handleResizeModule]
   );
 
   // week-title/hourly-grid-core aren't selectable (they're locked), so

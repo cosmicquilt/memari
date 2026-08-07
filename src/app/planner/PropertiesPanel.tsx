@@ -3,23 +3,27 @@
 import { useState } from "react";
 
 // Content editing for whichever non-locked module is currently selected
-// on the canvas — heading text, ruled/blank, habit names, etc. Locked
-// structural blocks (week-title, hourly-grid-core) aren't selectable at
-// all (see renderModuleInstance.ts), so they go through WeekSettingsPanel
-// instead, not this one.
+// on the canvas — heading text, ruled/blank, habit names, resizing, etc.
+// Locked structural blocks (week-title, hourly-grid-core) aren't
+// selectable at all (see renderModuleInstance.ts), so they go through
+// WeekSettingsPanel instead, not this one.
 
 export type SelectedModule = {
   id: string;
   slug: string;
   propValues: Record<string, unknown>;
+  columnSpan: number;
+  rowSpan: number;
 };
 
 export function PropertiesPanel({
   selected,
   onSave,
+  onResize,
 }: {
   selected: SelectedModule | null;
   onSave: (instanceId: string, propValues: Record<string, unknown>) => Promise<void>;
+  onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
 }) {
   if (!selected) {
     return (
@@ -34,18 +38,22 @@ export function PropertiesPanel({
   // value re-reads from props) instead of needing an effect to reset an
   // in-progress draft — React's own recommended pattern for "state that
   // should reset when a prop identity changes."
-  return <PropertiesForm key={selected.id} selected={selected} onSave={onSave} />;
+  return <PropertiesForm key={selected.id} selected={selected} onSave={onSave} onResize={onResize} />;
 }
 
 function PropertiesForm({
   selected,
   onSave,
+  onResize,
 }: {
   selected: SelectedModule;
   onSave: (instanceId: string, propValues: Record<string, unknown>) => Promise<void>;
+  onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>(selected.propValues);
   const [saving, setSaving] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const [resizeError, setResizeError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
@@ -68,11 +76,36 @@ function PropertiesForm({
     }
   };
 
+  // Resize applies immediately on click rather than accumulating into a
+  // draft — it's a discrete, already-confirmed action (grow/shrink by one
+  // cell), not something you'd want to type-then-save. Column resize is
+  // offered for labeled-box only: todo-checklist/habit-tracker's column
+  // span is tied to matching the page's day count (see actions.ts's
+  // addPaletteModuleAt), and letting it drift out of sync independently
+  // would just recreate the "mismatched checklist" problem that sizing
+  // was built to avoid in the first place.
+  const handleResize = async (deltaColumns: number, deltaRows: number) => {
+    setResizing(true);
+    setResizeError(null);
+    try {
+      await onResize(selected.id, {
+        columnSpan: selected.columnSpan + deltaColumns,
+        rowSpan: selected.rowSpan + deltaRows,
+      });
+    } catch (err) {
+      setResizeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResizing(false);
+    }
+  };
+
   const label: Record<string, string> = {
     "labeled-box": "Labeled box",
     "habit-tracker": "Habit tracker",
     "todo-checklist": "To-do checklist",
   };
+
+  const allowColumnResize = selected.slug === "labeled-box";
 
   return (
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
@@ -125,6 +158,38 @@ function PropertiesForm({
       <button onClick={handleSave} disabled={saving}>
         {saving ? "Saving…" : "Save"}
       </button>
+
+      <hr style={{ width: "100%", border: "none", borderTop: "1px solid #333", opacity: 0.3 }} />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <strong style={{ fontSize: 12, color: "#555" }}>Size</strong>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 70, color: "#999" }}>Height</span>
+          <button disabled={resizing} onClick={() => handleResize(0, -1)}>
+            −
+          </button>
+          <span>{selected.rowSpan} rows</span>
+          <button disabled={resizing} onClick={() => handleResize(0, 1)}>
+            +
+          </button>
+        </div>
+
+        {allowColumnResize && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 70, color: "#999" }}>Width</span>
+            <button disabled={resizing} onClick={() => handleResize(-1, 0)}>
+              −
+            </button>
+            <span>{selected.columnSpan} cols</span>
+            <button disabled={resizing} onClick={() => handleResize(1, 0)}>
+              +
+            </button>
+          </div>
+        )}
+
+        {resizeError && <span style={{ color: "#ff5555" }}>{resizeError}</span>}
+      </div>
     </div>
   );
 }
