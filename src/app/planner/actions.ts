@@ -90,6 +90,7 @@ export async function getOrCreatePlanner() {
   const ensureHourlyGridCore = async (
     page: (typeof pages)[number],
     dayLabels: Array<{ name: string; date: number }>,
+    placement: { columnStart: number; columnSpan: number },
     events: Array<{
       day: number;
       startTime: string;
@@ -111,9 +112,9 @@ export async function getOrCreatePlanner() {
         moduleTypeId: coreType.id,
         placementMode: "GRID",
         locked: true,
-        columnStart: 1,
+        columnStart: placement.columnStart,
         rowStart: 0,
-        columnSpan: coreType.defaultColumnSpan,
+        columnSpan: placement.columnSpan,
         rowSpan: coreType.defaultRowSpan,
         propValues: {
           dayCount: dayLabels.length,
@@ -130,6 +131,10 @@ export async function getOrCreatePlanner() {
     needsRefetch = true;
   };
 
+  // Left page reserves column 0 for the sidebar (Gratitude/Reminders/
+  // Notes). Right page has no sidebar content yet (To-Do/Habits don't
+  // have renderers), so its 4 day-columns take the full width instead
+  // of leaving a matching gap for a sidebar that isn't there.
   await ensureHourlyGridCore(
     leftPage,
     [
@@ -137,6 +142,7 @@ export async function getOrCreatePlanner() {
       { name: "MONDAY", date: 2 },
       { name: "TUESDAY", date: 3 },
     ],
+    { columnStart: 1, columnSpan: 3 },
     [
       {
         day: 1,
@@ -147,12 +153,16 @@ export async function getOrCreatePlanner() {
       },
     ]
   );
-  await ensureHourlyGridCore(rightPage, [
-    { name: "WEDNESDAY", date: 4 },
-    { name: "THURSDAY", date: 5 },
-    { name: "FRIDAY", date: 6 },
-    { name: "SATURDAY", date: 7 },
-  ]);
+  await ensureHourlyGridCore(
+    rightPage,
+    [
+      { name: "WEDNESDAY", date: 4 },
+      { name: "THURSDAY", date: 5 },
+      { name: "FRIDAY", date: 6 },
+      { name: "SATURDAY", date: 7 },
+    ],
+    { columnStart: 0, columnSpan: 4 }
+  );
 
   // week-title and the sidebar boxes only exist on the left page — the
   // reference's right page has no week-title (it only appears once per

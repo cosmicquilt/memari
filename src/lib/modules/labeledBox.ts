@@ -46,15 +46,13 @@ const RULED_LINE_SPACING_PX = 75;
 // collide with the divider below. A length threshold was too coarse —
 // it doesn't account for available width after padding — so this
 // estimates actual rendered width per candidate size and picks the
-// largest that fits. This module runs server-side (page.tsx is a
-// Server Component), so there's no canvas to measure real glyph
-// widths with — Polotno's Google Font also loads asynchronously in the
-// browser, so even a client-side measurement would have to guess at
-// the fallback font's metrics before it's ready. The ratio here is
-// deliberately conservative (worst-case wide characters) rather than
-// tuned to PT Serif's actual average, since erring small is far less
-// broken than wrapping into the divider line.
-const AVG_CHAR_WIDTH_RATIO = 0.68;
+// largest that fits. Ratio is the *measured* value from the reference
+// itself: "THINGS I'M GRATEFUL FOR" (24 chars incl. spaces) has a
+// bbox width of 88.2pt at 7pt font → 88.2/(24*7) = 0.525. Note this is
+// a razor-thin fit even in the source PDF (88.2pt needed in an 88.3pt
+// available width) — a previous, more conservative guess (0.68)
+// overcorrected and made it wrap into an unnecessarily tiny size.
+const AVG_CHAR_WIDTH_RATIO = 0.525;
 function fittingHeadingFontSizePt(heading: string, availableWidthPx: number): number {
   const candidates = [8, 7, 6, 5, 4.5, 4];
   for (const pt of candidates) {

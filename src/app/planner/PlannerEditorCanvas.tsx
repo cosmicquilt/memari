@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createStore } from "polotno/model/store";
-import { PolotnoApp } from "polotno/polotno-app";
+import {
+  PolotnoContainer,
+  SidePanelWrap,
+  WorkspaceWrap,
+} from "polotno/polotno-app";
+import { SidePanel, DEFAULT_SECTIONS } from "polotno/side-panel/side-panel";
+import { Toolbar } from "polotno/toolbar/toolbar";
+import { Workspace } from "polotno/canvas/workspace";
+import { ZoomButtons } from "polotno/toolbar/zoom-buttons";
+import { DownloadButton } from "polotno/toolbar/download-button";
 import "polotno/ui.css";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { savePageElements, addPaletteModule } from "./actions";
@@ -153,7 +162,25 @@ export function PlannerEditorCanvas({
           </span>
         </aside>
         <div style={{ flex: 1, minHeight: 0 }}>
-          <PolotnoApp store={store} />
+          {/* Recomposed by hand instead of using the all-in-one
+              <PolotnoApp> — that component hardcodes a vertical page
+              stack and doesn't expose Workspace's layout prop, which is
+              the only way to get the side-by-side spread view. */}
+          <PolotnoContainer className="polotno-app-container">
+            <SidePanelWrap>
+              <SidePanel store={store} sections={DEFAULT_SECTIONS} />
+            </SidePanelWrap>
+            <WorkspaceWrap>
+              <Toolbar
+                store={store}
+                components={{
+                  ActionControls: () => <DownloadButton store={store} />,
+                }}
+              />
+              <Workspace store={store} layout="horizontal" />
+              <ZoomButtons store={store} />
+            </WorkspaceWrap>
+          </PolotnoContainer>
         </div>
       </div>
     </div>

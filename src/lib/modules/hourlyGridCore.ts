@@ -201,15 +201,18 @@ export function renderHourlyGridCore(
 
       // Centered, not left-aligned — left alignment made shorter
       // strings ("8:00") look off relative to longer ones ("10:30")
-      // sharing the same fixed-width box. Manually bottom-positioned
-      // for the same reason verticalAlign was dropped elsewhere.
+      // sharing the same fixed-width box. Manually positioned near the
+      // bottom (not flush) for the same reason verticalAlign was
+      // dropped elsewhere — a small gap off the line reads better than
+      // touching it exactly.
       const timeLabelFontSize = ptToPx(5);
       const timeLabelTextHeight = timeLabelFontSize * 1.2;
+      const timeLabelBottomGap = ptToPx(1);
       elements.push({
         id: nextId(),
         type: "text",
         x: dayX + 2,
-        y: labelBoxTop + labelBoxHeight - timeLabelTextHeight,
+        y: labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap,
         width: labelBoxWidth - 4,
         height: timeLabelTextHeight,
         text: formatHour12NoMeridiem(rowMinutes),
