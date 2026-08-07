@@ -164,10 +164,64 @@ export async function getOrCreatePlanner() {
     { columnStart: 0, columnSpan: 4 }
   );
 
+  // Below-zone: full-height todo-checklist on the left page, full-height
+  // habit-tracker on the right — one or the other per page, not both, so
+  // each page's below-zone is fully used by a single module rather than
+  // splitting it (that's what the reference's short-todo+habit pairing
+  // does; this deliberately doesn't replicate that, to leave the split
+  // layout open for other module types later). Both sit in rows 22-29 —
+  // right after hourly-grid-core's 22-row allocation ends — using the
+  // same column placement as that page's hourly-grid-core.
+  const hasTodo = leftPage.moduleInstances.some(
+    (mi) => mi.moduleType.slug === "todo-checklist"
+  );
+  if (!hasTodo) {
+    const todoType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "todo-checklist" },
+    });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: leftPage.id,
+        moduleTypeId: todoType.id,
+        placementMode: "GRID",
+        locked: true,
+        columnStart: 1,
+        rowStart: 22,
+        columnSpan: 3,
+        rowSpan: 8,
+        propValues: { dayCount: 3 },
+      },
+    });
+    needsRefetch = true;
+  }
+
+  const hasHabitTracker = rightPage.moduleInstances.some(
+    (mi) => mi.moduleType.slug === "habit-tracker"
+  );
+  if (!hasHabitTracker) {
+    const habitType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "habit-tracker" },
+    });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: rightPage.id,
+        moduleTypeId: habitType.id,
+        placementMode: "GRID",
+        locked: true,
+        columnStart: 0,
+        rowStart: 22,
+        columnSpan: 4,
+        rowSpan: 8,
+        propValues: { habits: [] },
+      },
+    });
+    needsRefetch = true;
+  }
+
   // week-title and the sidebar boxes only exist on the left page — the
   // reference's right page has no week-title (it only appears once per
-  // spread) and its sidebar column is reserved for To-Do/Habits, which
-  // don't have renderers yet, so it's intentionally left empty for now.
+  // spread), and its column 0 is part of the same full-width hourly-grid-
+  // core/habit-tracker columns rather than a separate sidebar.
   const hasWeekTitle = leftPage.moduleInstances.some(
     (mi) => mi.moduleType.slug === "week-title"
   );

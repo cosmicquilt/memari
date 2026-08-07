@@ -9,6 +9,14 @@ import {
 } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
 import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
+import {
+  renderTodoChecklist,
+  type TodoChecklistConfig,
+} from "@/lib/modules/todoChecklist";
+import {
+  renderHabitTracker,
+  type HabitTrackerConfig,
+} from "@/lib/modules/habitTracker";
 
 type ModuleInstanceWithType = Awaited<
   ReturnType<typeof getOrCreatePlanner>
@@ -51,6 +59,18 @@ function renderModuleInstance(
       return renderWeekTitle(
         geometry,
         instance.propValues as unknown as WeekTitleConfig,
+        instance.id
+      );
+    case "todo-checklist":
+      return renderTodoChecklist(
+        geometry,
+        instance.propValues as unknown as TodoChecklistConfig,
+        instance.id
+      );
+    case "habit-tracker":
+      return renderHabitTracker(
+        geometry,
+        instance.propValues as unknown as HabitTrackerConfig,
         instance.id
       );
     default:

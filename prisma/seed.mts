@@ -94,19 +94,40 @@ const moduleTypes = [
     defaultRowSpan: 3,
   },
   {
+    // Sits below hourly-grid-core, same columns. Full-height on whichever
+    // page doesn't have a todo-checklist (see actions.ts) — habits are
+    // tracked across the whole week regardless of which 3-4 days that
+    // page's hourly grid shows, so it isn't scoped to dayCount like
+    // todo-checklist is. See src/lib/modules/habitTracker.ts.
     slug: "habit-tracker",
     name: "Habit Tracker",
     configSchema: {
       type: "object",
       properties: {
         habits: { type: "array", items: { type: "string" }, default: [] },
-        days: { type: "integer", default: 30 },
       },
     },
-    defaultWidth: 1400,
-    defaultHeight: 1200,
+    defaultWidth: 1560,
+    defaultHeight: 620,
     defaultColumnSpan: 4,
-    defaultRowSpan: 5,
+    defaultRowSpan: 8,
+  },
+  {
+    // Sits below hourly-grid-core, same columns and dayCount. Full-height
+    // on the page without a habit-tracker. See
+    // src/lib/modules/todoChecklist.ts.
+    slug: "todo-checklist",
+    name: "To-Do Checklist",
+    configSchema: {
+      type: "object",
+      properties: {
+        dayCount: { type: "integer", enum: [3, 4], default: 3 },
+      },
+    },
+    defaultWidth: 1560,
+    defaultHeight: 620,
+    defaultColumnSpan: 3,
+    defaultRowSpan: 8,
   },
   {
     slug: "quote-block",

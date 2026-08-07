@@ -21,10 +21,11 @@ import { savePageElements, addPaletteModule } from "./actions";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 
-// Module types with a real renderer, available to add from the palette.
-// habit-tracker and quote-block are seeded but don't have renderers yet
-// (page.tsx's renderModuleInstance returns [] for them), so they're left
-// out here rather than offering something that would render as nothing.
+// Module types available to add from the palette. todo-checklist and
+// habit-tracker have real renderers now but are auto-placed/locked
+// below-zone blocks (see actions.ts), not user-addable yet — same
+// treatment as the core blocks. quote-block is seeded but has no
+// renderer yet, left out so it doesn't render as nothing.
 const PALETTE_MODULES = [{ slug: "labeled-box", label: "Labeled Box" }];
 
 // A simple box-outline icon for the tab — good enough to be recognizable
