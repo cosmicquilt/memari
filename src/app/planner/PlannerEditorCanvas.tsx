@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "polotno/model/store";
 import {
   PolotnoContainer,
@@ -12,21 +12,50 @@ import { SectionTab } from "polotno/side-panel/tab-button";
 import type { Section } from "polotno/ui-types";
 import { Toolbar } from "polotno/toolbar/toolbar";
 import { Workspace } from "polotno/canvas/workspace";
+import { registerNextDomDrop } from "polotno/canvas/page";
 import { ZoomButtons } from "polotno/toolbar/zoom-buttons";
 import { DownloadButton } from "polotno/toolbar/download-button";
 import "polotno/ui.css";
 import "./polotno-overrides.css";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
-import { savePageElements, addPaletteModule } from "./actions";
+import {
+  gridCellToPixels,
+  pixelsToGridCell,
+  clampGridPlacement,
+  type PageGrid,
+} from "@/lib/grid";
+import {
+  savePageElements,
+  addPaletteModuleAt,
+  updateModulePlacement,
+  deleteModuleInstance,
+} from "./actions";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 
-// Module types available to add from the palette. todo-checklist and
-// habit-tracker have real renderers now but are auto-placed/locked
-// below-zone blocks (see actions.ts), not user-addable yet — same
-// treatment as the core blocks. quote-block is seeded but has no
-// renderer yet, left out so it doesn't render as nothing.
+// Module types a user can drag onto the page from the palette. Only
+// labeled-box is user-placeable so far — the core blocks (hourly grid,
+// week title, todo-checklist, habit-tracker) are auto-placed/locked
+// singletons per page (see actions.ts), and quote-block is seeded but
+// has no renderer yet.
 const PALETTE_MODULES = [{ slug: "labeled-box", label: "Labeled Box" }];
+
+// A pragmatic local view of a Polotno element — the SDK's own generated
+// types are almost entirely `any` (they're live mobx-state-tree
+// instances, not plain data), so this just names the handful of members
+// this file actually reads/calls.
+type PolotnoNode = {
+  id: string;
+  type: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  children?: PolotnoNode[];
+  parent?: PolotnoNode | null;
+  page?: { id: string } | null;
+  set: (attrs: Record<string, unknown>) => void;
+};
 
 // A simple box-outline icon for the tab — good enough to be recognizable
 // without pulling in Polotno's own icon library.
@@ -39,11 +68,14 @@ function LabeledBoxIcon() {
   );
 }
 
-export function PlannerEditorCanvas({
-  pages,
-}: {
-  pages: Array<{ pageId: string; elements: object[] }>;
-}) {
+type PageProp = {
+  pageId: string;
+  elements: object[];
+  pageGrid: PageGrid;
+  moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+};
+
+export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
   // One store per mounted editor instance, not module-level like the
   // standalone test — this page can be visited by many different users.
   const store = useMemo(
@@ -54,6 +86,28 @@ export function PlannerEditorCanvas({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [addingSlug, setAddingSlug] = useState<string | null>(null);
+
+  // Span info for every draggable module currently known to the editor —
+  // seeded from the server-rendered snapshot, grown as modules are added
+  // via the palette during this session. Keyed by ModuleInstance id,
+  // which doubles as the Polotno group's own id (see
+  // renderModuleInstance.ts) — that's what lets a group dragged around on
+  // the canvas be traced back to "which DB row is this."
+  const [moduleGridInfo, setModuleGridInfo] = useState<
+    Record<string, { columnSpan: number; rowSpan: number }>
+  >(() => Object.assign({}, ...pages.map((p) => p.moduleGridInfo)));
+
+  // Ids present when the page loaded. At save time, any of these no
+  // longer found on the canvas were deleted by the user (Delete key) and
+  // should be removed from the DB too — otherwise they'd silently
+  // reappear on the next reload.
+  const initialTrackedIds = useRef(new Set(Object.keys(moduleGridInfo)));
+
+  const pageGrids = useMemo(() => {
+    const map: Record<string, PageGrid> = {};
+    for (const p of pages) map[p.pageId] = p.pageGrid;
+    return map;
+  }, [pages]);
 
   useEffect(() => {
     // Both pages loaded together — a week spread is two pages viewed as
@@ -73,6 +127,62 @@ export function PlannerEditorCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- drag-to-reposition snapping ---
+  // Polotno's own drag mechanics already move a dragged group's children
+  // together as a unit (a "group" element's own x/y/width/height are
+  // derived, not real transforms — confirmed empirically, not assumed —
+  // so the snap logic below works from the children's actual absolute
+  // positions rather than trusting the group's). All this needs to do is
+  // nudge the result to the nearest grid cell once the pointer is
+  // released, which is simpler and less fragile than trying to hook a
+  // live drag-bound callback mid-drag.
+  useEffect(() => {
+    const snapToGrid = () => {
+      const handled = new Set<string>();
+      const selected = store.selectedElements as unknown as PolotnoNode[];
+      for (const el of selected) {
+        // Walk up to the nearest tracked-group ancestor — normally the
+        // element itself (groupSelectionMode="group" below means
+        // clicking any part of a module selects the whole group), but
+        // walking up is cheap insurance either way.
+        let node: PolotnoNode | null | undefined = el;
+        while (node && !(node.type === "group" && moduleGridInfo[node.id])) {
+          node = node.parent ?? null;
+        }
+        if (!node || handled.has(node.id)) continue;
+        handled.add(node.id);
+
+        const span = moduleGridInfo[node.id];
+        const pageGrid = node.page?.id ? pageGrids[node.page.id] : undefined;
+        const children = node.children ?? [];
+        if (!span || !pageGrid || children.length === 0) continue;
+
+        const minX = Math.min(...children.map((c) => c.x ?? 0));
+        const minY = Math.min(...children.map((c) => c.y ?? 0));
+        const nearestCell = pixelsToGridCell(pageGrid, { x: minX, y: minY });
+        const clamped = clampGridPlacement(pageGrid, {
+          ...nearestCell,
+          columnSpan: span.columnSpan,
+          rowSpan: span.rowSpan,
+        });
+        const snapped = gridCellToPixels(pageGrid, {
+          columnStart: clamped.columnStart,
+          rowStart: clamped.rowStart,
+          columnSpan: span.columnSpan,
+          rowSpan: span.rowSpan,
+        });
+        const deltaX = snapped.x - minX;
+        const deltaY = snapped.y - minY;
+        if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) continue;
+        for (const child of children) {
+          child.set({ x: (child.x ?? 0) + deltaX, y: (child.y ?? 0) + deltaY });
+        }
+      }
+    };
+    window.addEventListener("pointerup", snapToGrid);
+    return () => window.removeEventListener("pointerup", snapToGrid);
+  }, [store, moduleGridInfo, pageGrids]);
+
   const handleSave = async () => {
     setSaving(true);
     setSaveError(null);
@@ -82,6 +192,7 @@ export function PlannerEditorCanvas({
           id: string;
           children?: Array<{
             id: string;
+            type: string;
             x: number;
             y: number;
             width: number;
@@ -89,15 +200,53 @@ export function PlannerEditorCanvas({
           }>;
         }>;
       };
-      // Save each page separately — savePageElements only ever touches
-      // the freeform elements for the pageId it's given, so this can't
-      // cross-contaminate the two pages' locked core content.
-      await Promise.all(
-        json.pages.map((jsonPage) => {
-          const elements = jsonPage.children ?? [];
-          return savePageElements(jsonPage.id, elements);
-        })
-      );
+
+      const seenTrackedIds = new Set<string>();
+      const placementUpdates: Array<Promise<unknown>> = [];
+
+      for (const jsonPage of json.pages) {
+        const children = jsonPage.children ?? [];
+        const pageGrid = pageGrids[jsonPage.id];
+        const freeform: typeof children = [];
+
+        for (const el of children) {
+          const span = moduleGridInfo[el.id];
+          if (!span || !pageGrid) {
+            // Not a tracked module group — genuine freeform content
+            // (Polotno's own Text/Photo/Draw tools).
+            freeform.push(el);
+            continue;
+          }
+          seenTrackedIds.add(el.id);
+          // Already snapped to a grid cell visually (see the effect
+          // above) — recompute which cell that is and persist it.
+          const nearestCell = pixelsToGridCell(pageGrid, { x: el.x, y: el.y });
+          const clamped = clampGridPlacement(pageGrid, {
+            ...nearestCell,
+            columnSpan: span.columnSpan,
+            rowSpan: span.rowSpan,
+          });
+          placementUpdates.push(updateModulePlacement(el.id, clamped));
+        }
+
+        placementUpdates.push(savePageElements(jsonPage.id, freeform));
+      }
+
+      // Anything tracked at load time (or added since) that's no longer
+      // on any page was deleted from the canvas — remove its DB row too.
+      for (const id of initialTrackedIds.current) {
+        if (!seenTrackedIds.has(id)) {
+          placementUpdates.push(deleteModuleInstance(id));
+        }
+      }
+
+      await Promise.all(placementUpdates);
+
+      // Deleted ids shouldn't be treated as "missing, needs re-deleting"
+      // on the next save — and newly-seen ones (added this session) join
+      // the baseline now that they're persisted.
+      initialTrackedIds.current = seenTrackedIds;
+
       setLastSavedAt(new Date());
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -106,24 +255,33 @@ export function PlannerEditorCanvas({
     }
   };
 
-  const handleAddModule = async (slug: string) => {
-    setAddingSlug(slug);
-    try {
-      // The palette only targets the left page's sidebar for now — the
-      // right page has no sidebar content yet (To-Do/Habits renderers
-      // don't exist), so there's nowhere else for it to go.
-      await addPaletteModule(pages[0].pageId, slug);
-      // Full reload rather than a soft refresh: the canvas only loads its
-      // initial snapshot once on mount (see the effect above), so a
-      // client-side re-render wouldn't pick up the new server data
-      // without extra plumbing. Fine for this first pass — proper live
-      // sync is part of the drag-and-drop work still to come.
-      window.location.reload();
-    } catch (err) {
-      setAddingSlug(null);
-      // eslint-disable-next-line no-alert
-      alert(err instanceof Error ? err.message : String(err));
-    }
+  // Registers a one-shot drop handler (Polotno's own convention — see
+  // its Text/Photo panels) before a native HTML5 drag starts, so
+  // whichever page the palette item gets dropped onto tells us its id
+  // and the drop position in that page's own pixel space.
+  const handlePaletteDragStart = (slug: string) => {
+    registerNextDomDrop(async (pos, _el, event) => {
+      const pageId = event?.page?.id;
+      const pageGrid = pageId ? pageGrids[pageId] : undefined;
+      if (!pageId || !pageGrid) return;
+
+      const cell = pixelsToGridCell(pageGrid, pos);
+      setAddingSlug(slug);
+      try {
+        const result = await addPaletteModuleAt(pageId, slug, cell.columnStart, cell.rowStart);
+        const page = store.pages.find((p) => p.id === pageId);
+        page?.addElement(result.element as never);
+        setModuleGridInfo((prev) => ({
+          ...prev,
+          [result.instanceId]: { columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+        }));
+        initialTrackedIds.current.add(result.instanceId);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      } finally {
+        setAddingSlug(null);
+      }
+    });
   };
 
   // Registered as a real Polotno side-panel section (its own tab
@@ -142,16 +300,18 @@ export function PlannerEditorCanvas({
         {PALETTE_MODULES.map((m) => (
           <button
             key={m.slug}
-            onClick={() => handleAddModule(m.slug)}
+            draggable
+            onDragStart={() => handlePaletteDragStart(m.slug)}
+            onDragEnd={() => registerNextDomDrop(null)}
             disabled={addingSlug === m.slug}
-            style={{ textAlign: "left", padding: "6px 8px" }}
+            style={{ textAlign: "left", padding: "6px 8px", cursor: "grab" }}
           >
             {addingSlug === m.slug ? "Adding…" : m.label}
           </button>
         ))}
         <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
-          Adds to the next open sidebar slot on the left page. Drag-to-position
-          isn&apos;t built yet.
+          Drag onto either page to place it, then drag it around to
+          reposition — it snaps to the nearest grid cell when you let go.
         </span>
       </div>
     ),
@@ -202,12 +362,18 @@ export function PlannerEditorCanvas({
                 and bottom), each with its own embedded license banner —
                 4 total. We don't want free-form page add/delete here
                 anyway (pages are managed server-side), so disabling
-                this removes the clutter and most of the banners at once. */}
+                this removes the clutter and most of the banners at once.
+                groupSelectionMode="group": clicking any part of a module
+                always selects the whole group rather than letting a
+                double-click "drill in" to an individual child — modules
+                are meant to move as a unit, not have their internal
+                pieces dragged out of sync with each other. */}
             <Workspace
               store={store}
               layout="horizontal"
               pageGap={0}
               pageControlsEnabled={false}
+              groupSelectionMode="group"
             />
             <ZoomButtons store={store} />
           </WorkspaceWrap>

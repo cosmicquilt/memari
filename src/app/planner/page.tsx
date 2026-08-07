@@ -1,83 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { getOrCreatePlanner } from "./actions";
 import { PlannerEditor } from "./PlannerEditor";
-import { gridCellToPixels, type PageGrid } from "@/lib/grid";
+import type { PageGrid } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
-import {
-  renderHourlyGridCore,
-  type HourlyGridCoreConfig,
-} from "@/lib/modules/hourlyGridCore";
-import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
-import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
-import {
-  renderTodoChecklist,
-  type TodoChecklistConfig,
-} from "@/lib/modules/todoChecklist";
-import {
-  renderHabitTracker,
-  type HabitTrackerConfig,
-} from "@/lib/modules/habitTracker";
-
-type ModuleInstanceWithType = Awaited<
-  ReturnType<typeof getOrCreatePlanner>
->["pages"][number]["moduleInstances"][number];
-
-function renderModuleInstance(
-  instance: ModuleInstanceWithType,
-  pageGrid: PageGrid
-): object[] {
-  // freeform-element is the one type that isn't grid-placed.
-  if (instance.moduleType.slug === "freeform-element") {
-    const props = instance.propValues as { polotnoElement?: object };
-    return props.polotnoElement ? [props.polotnoElement] : [];
-  }
-
-  if (instance.columnStart === null || instance.rowStart === null) {
-    return [];
-  }
-  const geometry = gridCellToPixels(pageGrid, {
-    columnStart: instance.columnStart,
-    rowStart: instance.rowStart,
-    columnSpan: instance.columnSpan,
-    rowSpan: instance.rowSpan,
-  });
-
-  switch (instance.moduleType.slug) {
-    case "hourly-grid-core":
-      return renderHourlyGridCore(
-        geometry,
-        instance.propValues as unknown as HourlyGridCoreConfig,
-        instance.id
-      );
-    case "labeled-box":
-      return renderLabeledBox(
-        geometry,
-        instance.propValues as unknown as LabeledBoxConfig,
-        instance.id
-      );
-    case "week-title":
-      return renderWeekTitle(
-        geometry,
-        instance.propValues as unknown as WeekTitleConfig,
-        instance.id
-      );
-    case "todo-checklist":
-      return renderTodoChecklist(
-        geometry,
-        instance.propValues as unknown as TodoChecklistConfig,
-        instance.id
-      );
-    case "habit-tracker":
-      return renderHabitTracker(
-        geometry,
-        instance.propValues as unknown as HabitTrackerConfig,
-        instance.id
-      );
-    default:
-      // Other module types don't have renderers yet.
-      return [];
-  }
-}
+import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
 export default async function PlannerPage() {
   const { userId, redirectToSignIn } = await auth();
@@ -101,7 +27,29 @@ export default async function PlannerPage() {
     const elements = page.moduleInstances
       .sort((a, b) => a.zIndex - b.zIndex)
       .flatMap((instance) => renderModuleInstance(instance, pageGrid));
-    return { pageId: page.id, elements };
+
+    // Every grid-placed, non-locked instance renders as a draggable group
+    // (see renderModuleInstance) — the editor needs each one's current
+    // column/row span client-side to compute where a drag should snap to
+    // and to recognize "this element on the canvas is module X" when
+    // saving or deleting. Locked core blocks and freeform elements are
+    // left out: they're either immovable or already freely positioned.
+    const moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }> = {};
+    for (const instance of page.moduleInstances) {
+      if (
+        !instance.locked &&
+        instance.moduleType.slug !== "freeform-element" &&
+        instance.columnStart !== null &&
+        instance.rowStart !== null
+      ) {
+        moduleGridInfo[instance.id] = {
+          columnSpan: instance.columnSpan,
+          rowSpan: instance.rowSpan,
+        };
+      }
+    }
+
+    return { pageId: page.id, elements, pageGrid, moduleGridInfo };
   });
 
   return <PlannerEditor pages={pages} />;

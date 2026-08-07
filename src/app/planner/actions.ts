@@ -3,6 +3,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
+import { clampGridPlacement, type PageGrid } from "@/lib/grid";
+import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
+import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -303,10 +306,18 @@ export async function getOrCreatePlanner() {
   return planner;
 }
 
-// Adds a module to the next open cell in the sidebar column (column 0).
-// First-pass placement mechanism — click-to-add rather than drag-to-cell,
-// which is a separate, bigger interaction to build later.
-export async function addPaletteModule(pageId: string, moduleTypeSlug: string) {
+// Adds a module at wherever the user actually dropped it on the canvas
+// (see PlannerEditorCanvas's palette drag handlers), snapped to the
+// nearest grid cell and clamped so it can't hang off the page edge.
+// Returns the freshly-rendered element (a Polotno group, per
+// renderModuleInstance) so the client can insert it into the live store
+// directly instead of reloading the page.
+export async function addPaletteModuleAt(
+  pageId: string,
+  moduleTypeSlug: string,
+  columnStart: number,
+  rowStart: number
+) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
@@ -314,7 +325,6 @@ export async function addPaletteModule(pageId: string, moduleTypeSlug: string) {
 
   const page = await prisma.page.findFirst({
     where: { id: pageId, planner: { ownerId: userId } },
-    include: { moduleInstances: true },
   });
   if (!page) {
     throw new Error("Page not found or not owned by this user");
@@ -324,13 +334,20 @@ export async function addPaletteModule(pageId: string, moduleTypeSlug: string) {
     where: { slug: moduleTypeSlug },
   });
 
-  const sidebarInstances = page.moduleInstances.filter(
-    (mi) => mi.placementMode === "GRID" && mi.columnStart === 0
-  );
-  const nextRowStart = sidebarInstances.reduce(
-    (max, mi) => Math.max(max, (mi.rowStart ?? 0) + mi.rowSpan),
-    0
-  );
+  const pageGrid: PageGrid = {
+    widthPx: PRINT_WIDTH_PX,
+    heightPx: PRINT_HEIGHT_PX,
+    gridColumns: page.gridColumns,
+    gridRows: page.gridRows,
+    gridGapPx: page.gridGapPx,
+    marginPx: page.marginPx,
+  };
+  const clamped = clampGridPlacement(pageGrid, {
+    columnStart,
+    rowStart,
+    columnSpan: moduleType.defaultColumnSpan,
+    rowSpan: moduleType.defaultRowSpan,
+  });
 
   // Pull each config field's declared default out of the JSON Schema,
   // so a freshly-added instance starts in a sensible state.
@@ -344,18 +361,106 @@ export async function addPaletteModule(pageId: string, moduleTypeSlug: string) {
     ])
   );
 
-  await prisma.moduleInstance.create({
+  const created = await prisma.moduleInstance.create({
     data: {
       pageId,
       moduleTypeId: moduleType.id,
       placementMode: "GRID",
-      columnStart: 0,
-      rowStart: nextRowStart,
+      columnStart: clamped.columnStart,
+      rowStart: clamped.rowStart,
       columnSpan: moduleType.defaultColumnSpan,
       rowSpan: moduleType.defaultRowSpan,
       propValues: defaultConfig as Prisma.InputJsonValue,
     },
   });
+
+  const [element] = renderModuleInstance(
+    {
+      id: created.id,
+      locked: created.locked,
+      columnStart: created.columnStart,
+      rowStart: created.rowStart,
+      columnSpan: created.columnSpan,
+      rowSpan: created.rowSpan,
+      propValues: created.propValues,
+      moduleType: { slug: moduleTypeSlug },
+    },
+    pageGrid
+  );
+
+  return {
+    instanceId: created.id,
+    columnSpan: created.columnSpan,
+    rowSpan: created.rowSpan,
+    element,
+  };
+}
+
+// Persists a drag-to-reposition move. The client already snapped the
+// module to its nearest grid cell visually before calling this (see
+// PlannerEditorCanvas) — this re-clamps server-side too, so a client bug
+// or stale data can't push a module off the page or move a locked one.
+export async function updateModulePlacement(
+  instanceId: string,
+  placement: { columnStart: number; rowStart: number }
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: { page: true },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot reposition a locked module");
+  }
+
+  const pageGrid: PageGrid = {
+    widthPx: PRINT_WIDTH_PX,
+    heightPx: PRINT_HEIGHT_PX,
+    gridColumns: instance.page.gridColumns,
+    gridRows: instance.page.gridRows,
+    gridGapPx: instance.page.gridGapPx,
+    marginPx: instance.page.marginPx,
+  };
+  const clamped = clampGridPlacement(pageGrid, {
+    columnStart: placement.columnStart,
+    rowStart: placement.rowStart,
+    columnSpan: instance.columnSpan,
+    rowSpan: instance.rowSpan,
+  });
+
+  await prisma.moduleInstance.update({
+    where: { id: instanceId },
+    data: { columnStart: clamped.columnStart, rowStart: clamped.rowStart },
+  });
+}
+
+// Removes a module the user deleted from the canvas (see
+// PlannerEditorCanvas's save flow, which diffs the tracked ids it started
+// with against what's still on the page).
+export async function deleteModuleInstance(instanceId: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot delete a locked module");
+  }
+
+  await prisma.moduleInstance.delete({ where: { id: instanceId } });
 }
 
 export async function savePageElements(

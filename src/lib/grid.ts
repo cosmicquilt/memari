@@ -75,3 +75,23 @@ export function pixelsToGridCell(
 
   return { columnStart, rowStart };
 }
+
+// Keeps a placement fully on the grid — used after both drag-to-reposition
+// snapping and palette drop-to-add, since either can land a module's
+// nearest cell close enough to an edge that columnStart/rowStart + its
+// span would run off the page.
+export function clampGridPlacement(
+  page: PageGrid,
+  placement: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }
+): { columnStart: number; rowStart: number } {
+  return {
+    columnStart: Math.max(
+      0,
+      Math.min(placement.columnStart, page.gridColumns - placement.columnSpan)
+    ),
+    rowStart: Math.max(
+      0,
+      Math.min(placement.rowStart, page.gridRows - placement.rowSpan)
+    ),
+  };
+}

@@ -10,8 +10,15 @@ const PlannerEditorCanvas = dynamic(
   { ssr: false, loading: () => <p style={{ padding: 16 }}>Loading editor…</p> }
 );
 
+import type { PageGrid } from "@/lib/grid";
+
 export function PlannerEditor(props: {
-  pages: Array<{ pageId: string; elements: object[] }>;
+  pages: Array<{
+    pageId: string;
+    elements: object[];
+    pageGrid: PageGrid;
+    moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+  }>;
 }) {
   return <PlannerEditorCanvas {...props} />;
 }
