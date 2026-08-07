@@ -209,16 +209,21 @@ export function renderHourlyGridCore(
       });
 
       if (lineOpacity > 0) {
+        // Filled thin rect, not a zero-height stroked one — Polotno
+        // doesn't reliably render sub-2px strokes on degenerate shapes
+        // at the exact requested color (this rendered blue instead of
+        // the specified near-black).
+        const lineWidth = ptToPx(ROW_LINE_WIDTH_PT);
         elements.push({
           id: nextId(),
           type: "figure",
           subType: "rect",
           x: dayX,
-          y: lineY,
+          y: lineY - lineWidth / 2,
           width: dayColumnWidth,
-          height: 0,
-          stroke: LINE_COLOR,
-          strokeWidth: ptToPx(ROW_LINE_WIDTH_PT),
+          height: lineWidth,
+          fill: LINE_COLOR,
+          stroke: "none",
           opacity: lineOpacity,
         });
       }

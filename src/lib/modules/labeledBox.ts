@@ -31,8 +31,10 @@ const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
 const DIVIDER_WIDTH_PT = 0.5;
 const HEADER_HEIGHT_PT = 13.7;
-// Horizontal inset for the heading text from the box's side borders.
-const HEADING_HORIZONTAL_PADDING_PT = 6;
+// Horizontal inset for the heading text from the box's side borders —
+// measured from the reference: "THINGS I'M GRATEFUL" bbox sits 8.0pt
+// inside the box's left edge, 8.1pt inside the right.
+const HEADING_HORIZONTAL_PADDING_PT = 8;
 // ~0.25in at 300 DPI — not directly isolated from the PDF's vector data
 // (its ruled-line paths are bundled in a way this extraction couldn't
 // cleanly separate), kept as a reasonable notebook-line spacing.
@@ -72,17 +74,20 @@ export function renderLabeledBox(
     strokeWidth: ptToPx(OUTER_BORDER_WIDTH_PT),
   });
 
-  // Header divider line.
+  // Header divider line. A filled thin rect, not a zero-height stroked
+  // one — Polotno doesn't reliably render sub-2px strokes on degenerate
+  // (zero-height) shapes at the exact requested color.
+  const dividerWidth = ptToPx(DIVIDER_WIDTH_PT);
   elements.push({
     id: nextId(),
     type: "figure",
     subType: "rect",
     x: geometry.x,
-    y: geometry.y + headerHeight,
+    y: geometry.y + headerHeight - dividerWidth / 2,
     width: geometry.width,
-    height: 0,
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(DIVIDER_WIDTH_PT),
+    height: dividerWidth,
+    fill: NEAR_BLACK,
+    stroke: "none",
   });
 
   // Heading text, centered, inset from the side borders.
@@ -108,17 +113,18 @@ export function renderLabeledBox(
     const bodyTop = geometry.y + headerHeight;
     const bodyHeight = geometry.height - headerHeight;
     const lineCount = Math.floor(bodyHeight / RULED_LINE_SPACING_PX);
+    const ruledLineWidth = ptToPx(0.5);
     for (let i = 1; i <= lineCount; i++) {
       elements.push({
         id: nextId(),
         type: "figure",
         subType: "rect",
         x: geometry.x + 8,
-        y: bodyTop + i * RULED_LINE_SPACING_PX,
+        y: bodyTop + i * RULED_LINE_SPACING_PX - ruledLineWidth / 2,
         width: geometry.width - 16,
-        height: 0,
-        stroke: NEAR_BLACK,
-        strokeWidth: 0.5,
+        height: ruledLineWidth,
+        fill: NEAR_BLACK,
+        stroke: "none",
       });
     }
   }
