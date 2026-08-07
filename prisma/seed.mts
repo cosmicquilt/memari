@@ -65,11 +65,14 @@ const moduleTypes = [
     },
     // Sized to leave column 0 free for the sidebar zone (exactly 25%
     // width on the default 4-column grid) and the bottom rows free for
-    // the below zone. 24/30 rows preserves the original 80% height ratio.
+    // the below zone. 25/30 rows — the renderer's actual fixed-measurement
+    // content (header + gap + 36 rows, all hardcoded pt values matching
+    // the reference) needs 24.32 rows' worth of height at this grid's
+    // cell size; 24 rows was a 24.6px overflow, so this rounds up.
     defaultWidth: 1560,
     defaultHeight: 2200,
     defaultColumnSpan: 3,
-    defaultRowSpan: 24,
+    defaultRowSpan: 25,
   },
   {
     // The reusable "heading + blank/ruled body" pattern — covers Monthly
