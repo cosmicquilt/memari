@@ -30,7 +30,9 @@ const FONT_FAMILY = "PT Serif";
 const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
 const DIVIDER_WIDTH_PT = 0.5;
-const HEADER_HEIGHT_PT = 13.7;
+const HEADER_HEIGHT_SINGLE_LINE_PT = 13.7;
+// Extra room for a wrapped second line at 7pt.
+const HEADER_HEIGHT_TWO_LINE_PT = 24.7;
 // Horizontal inset for the heading text from the box's side borders —
 // measured from the reference: "THINGS I'M GRATEFUL" bbox sits 8.0pt
 // inside the box's left edge, 8.1pt inside the right.
@@ -40,26 +42,22 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // cleanly separate), kept as a reasonable notebook-line spacing.
 const RULED_LINE_SPACING_PX = 75;
 
-// The reference sizes long headings down to keep them on one line
-// ("Things I'm Grateful For" measured at 7pt vs. 8pt for shorter
-// headings like "Reminders"/"Notes") rather than letting them wrap and
-// collide with the divider below. A length threshold was too coarse —
-// it doesn't account for available width after padding — so this
-// estimates actual rendered width per candidate size and picks the
-// largest that fits. Ratio is the *measured* value from the reference
-// itself: "THINGS I'M GRATEFUL FOR" (24 chars incl. spaces) has a
-// bbox width of 88.2pt at 7pt font → 88.2/(24*7) = 0.525. Note this is
-// a razor-thin fit even in the source PDF (88.2pt needed in an 88.3pt
-// available width) — a previous, more conservative guess (0.68)
-// overcorrected and made it wrap into an unnecessarily tiny size.
-const AVG_CHAR_WIDTH_RATIO = 0.525;
-function fittingHeadingFontSizePt(heading: string, availableWidthPx: number): number {
-  const candidates = [8, 7, 6, 5, 4.5, 4];
-  for (const pt of candidates) {
-    const estimatedWidthPx = heading.length * ptToPx(pt) * AVG_CHAR_WIDTH_RATIO;
-    if (estimatedWidthPx <= availableWidthPx) return pt;
-  }
-  return candidates[candidates.length - 1];
+// Three separate attempts to compute an exact single-line-fitting font
+// size all failed differently (0.52 too tight, 0.68 overcorrected into
+// illegibly small text, then the "measured" 0.525 still wrapped) —
+// because that ratio was measured from the reference PDF's actual font
+// (MinionPro), not the Google Font we render with (PT Serif), and the
+// two don't share character-width metrics. Rather than keep tuning a
+// number against a font we're not measuring, this only answers a
+// coarser, safer question — does the heading need a second line at
+// all — and if so, the box gets built tall enough to hold it instead
+// of trying to prevent wrapping outright. Wrong in the conservative
+// direction just costs an unused half-line of box height; wrong the
+// other way is the text overlapping the divider, which is worse.
+const SAFE_CHAR_WIDTH_RATIO = 0.62;
+function headingNeedsTwoLines(heading: string, availableWidthPx: number): boolean {
+  const estimatedWidthAt8pt = heading.length * ptToPx(8) * SAFE_CHAR_WIDTH_RATIO;
+  return estimatedWidthAt8pt > availableWidthPx;
 }
 
 export function renderLabeledBox(
@@ -71,7 +69,12 @@ export function renderLabeledBox(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
+  const headingAvailableWidth = geometry.width - headingPadding * 2;
+  const wraps = headingNeedsTwoLines(config.heading, headingAvailableWidth);
+  const headerHeight = ptToPx(
+    wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT
+  );
 
   // Outer border — pure black, distinct from the near-black used for
   // finer lines elsewhere.
@@ -104,28 +107,42 @@ export function renderLabeledBox(
     stroke: "none",
   });
 
-  // Heading text, centered, inset from the side borders. Positioned
-  // with a manually-computed vertical center rather than relying on
-  // verticalAlign — that wasn't reliably centering text in a box much
-  // taller than the text itself.
-  const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
-  const headingAvailableWidth = geometry.width - headingPadding * 2;
-  const headingFontSize = ptToPx(
-    fittingHeadingFontSizePt(config.heading, headingAvailableWidth)
-  );
-  const headingTextHeight = headingFontSize * 1.2;
-  elements.push({
-    id: nextId(),
-    type: "text",
-    x: geometry.x + headingPadding,
-    y: geometry.y + (headerHeight - headingTextHeight) / 2,
-    width: headingAvailableWidth,
-    height: headingTextHeight,
-    text: config.heading.toUpperCase(),
-    fontSize: headingFontSize,
-    fontFamily: FONT_FAMILY,
-    align: "center",
-  });
+  // Heading text, centered, inset from the side borders. Single-line
+  // headings are manually vertically centered — verticalAlign wasn't
+  // reliably centering text in a box much taller than the text itself.
+  // Two-line headings instead get the full (taller) header box and are
+  // left to wrap+center naturally within it, since their true wrapped
+  // height isn't something we can predict precisely up front.
+  const headingFontSize = ptToPx(wraps ? 7 : 8);
+  if (wraps) {
+    elements.push({
+      id: nextId(),
+      type: "text",
+      x: geometry.x + headingPadding,
+      y: geometry.y,
+      width: headingAvailableWidth,
+      height: headerHeight,
+      text: config.heading.toUpperCase(),
+      fontSize: headingFontSize,
+      fontFamily: FONT_FAMILY,
+      align: "center",
+      verticalAlign: "middle",
+    });
+  } else {
+    const headingTextHeight = headingFontSize * 1.2;
+    elements.push({
+      id: nextId(),
+      type: "text",
+      x: geometry.x + headingPadding,
+      y: geometry.y + (headerHeight - headingTextHeight) / 2,
+      width: headingAvailableWidth,
+      height: headingTextHeight,
+      text: config.heading.toUpperCase(),
+      fontSize: headingFontSize,
+      fontFamily: FONT_FAMILY,
+      align: "center",
+    });
+  }
 
   // Ruled body lines, if explicitly requested — default is blank, no
   // horizontal lines inside the box (matches the reference: the sidebar
