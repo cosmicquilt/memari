@@ -44,20 +44,17 @@ model Planner {
   @@index([ownerId])
 }
 
-// A single page within a planner, in display order.
-//
-// Grid fields are nullable: null means this page is freeform (its modules'
-// x/y/width/height are authoritative). Set means this page is grid-based
-// (its modules' column/row fields are authoritative, and pixel geometry is
-// computed from the grid at render/export time via gridCellToPixels()).
+// A single page within a planner, in display order. Every page has a grid
+// — it's the standing default placement system — but individual modules
+// can opt out to free placement via ModuleInstance.placementMode.
 model Page {
   id              String           @id @default(cuid())
   plannerId       String
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
-  gridColumns     Int?
-  gridRows        Int?
-  gridGapPx       Float?           @default(0)
+  gridColumns     Int              @default(6)
+  gridRows        Int              @default(10)
+  gridGapPx       Float            @default(8)
   moduleInstances ModuleInstance[]
 
   @@unique([plannerId, position])
@@ -79,29 +76,38 @@ model ModuleType {
   instances          ModuleInstance[]
 }
 
-// A placed instance of a ModuleType on a specific Page. Exactly one of
-// the two placement modes below is populated, matching the Page's mode.
+enum ModulePlacementMode {
+  GRID
+  FREE
+}
+
+// A placed instance of a ModuleType on a specific Page. placementMode
+// decides which set of fields below is authoritative for this specific
+// instance — independent of other instances on the same page, so a page
+// can mix grid-placed and free-placed modules.
 model ModuleInstance {
-  id           String     @id @default(cuid())
-  pageId       String
-  page         Page       @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  moduleTypeId String
-  moduleType   ModuleType @relation(fields: [moduleTypeId], references: [id])
+  id            String              @id @default(cuid())
+  pageId        String
+  page          Page                @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  moduleTypeId  String
+  moduleType    ModuleType          @relation(fields: [moduleTypeId], references: [id])
 
-  // Freeform placement (pages with no grid configured).
-  x            Float?
-  y            Float?
-  width        Float?
-  height       Float?
+  placementMode ModulePlacementMode @default(GRID)
 
-  // Grid placement (pages with gridColumns/gridRows set). 0-indexed.
-  columnStart  Int?
-  rowStart     Int?
-  columnSpan   Int        @default(1)
-  rowSpan      Int        @default(1)
+  // Used when placementMode = FREE.
+  x             Float?
+  y             Float?
+  width         Float?
+  height        Float?
 
-  zIndex       Int        @default(0)
-  propValues   Json       @default("{}")
+  // Used when placementMode = GRID (0-indexed).
+  columnStart   Int?
+  rowStart      Int?
+  columnSpan    Int                 @default(1)
+  rowSpan       Int                 @default(1)
+
+  zIndex        Int                 @default(0)
+  propValues    Json                @default("{}")
 
   @@index([pageId])
 }

@@ -6,9 +6,9 @@ const prisma = new PrismaClient({ adapter });
 
 // Canvas dimensions match the 6x9" US Trade + bleed print spec from the
 // Polotno test project (1875 x 2775 px at 300 DPI). defaultWidth/Height
-// are the freeform-page fallback; defaultColumnSpan/RowSpan are the
-// grid-page fallback, sized against the starter DEFAULT_GRID (6 cols x
-// 10 rows) set in actions.ts — adjust both together if that changes.
+// are the free-placement fallback size; defaultColumnSpan/RowSpan are the
+// grid-placement fallback, sized against Page's default grid (6 cols x
+// 10 rows, see schema.prisma) — adjust both together if that changes.
 const moduleTypes = [
   {
     slug: "weekly-grid",

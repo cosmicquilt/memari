@@ -15,14 +15,6 @@ type PolotnoElement = {
   [key: string]: unknown;
 };
 
-// Starting grid for new pages. 6x10 is a placement grid for arranging
-// whole modules (weekly-grid, habit-tracker, etc.) against each other,
-// not a fine bullet-journal-dot density — a module's own internal content
-// (e.g. 7 day-columns) is drawn within whatever cells it occupies, it
-// doesn't need to line up 1:1 with this grid. Adjust freely; ModuleType's
-// defaultColumnSpan/RowSpan values in prisma/seed.mts assume this size.
-const DEFAULT_GRID = { gridColumns: 6, gridRows: 10, gridGapPx: 8 };
-
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
   if (!userId) {
@@ -47,8 +39,11 @@ export async function getOrCreatePlanner() {
         ownerId: userId,
         title: "My First Planner",
         baseType: "WEEK",
+        // gridColumns/gridRows/gridGapPx are left unset here — Page's
+        // schema defaults (6x10 grid, matching ModuleType's
+        // defaultColumnSpan/RowSpan in prisma/seed.mts) apply.
         pages: {
-          create: [{ position: 0, ...DEFAULT_GRID }],
+          create: [{ position: 0 }],
         },
       },
       include: {
@@ -92,6 +87,7 @@ export async function savePageElements(
       data: elements.map((el, index) => ({
         pageId,
         moduleTypeId: freeform.id,
+        placementMode: "FREE" as const,
         x: el.x,
         y: el.y,
         width: el.width,
