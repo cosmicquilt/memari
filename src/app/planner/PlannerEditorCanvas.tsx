@@ -8,6 +8,8 @@ import {
   WorkspaceWrap,
 } from "polotno/polotno-app";
 import { SidePanel, DEFAULT_SECTIONS } from "polotno/side-panel/side-panel";
+import { SectionTab } from "polotno/side-panel/tab-button";
+import type { Section } from "polotno/ui-types";
 import { Toolbar } from "polotno/toolbar/toolbar";
 import { Workspace } from "polotno/canvas/workspace";
 import { ZoomButtons } from "polotno/toolbar/zoom-buttons";
@@ -23,6 +25,17 @@ const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 // (page.tsx's renderModuleInstance returns [] for them), so they're left
 // out here rather than offering something that would render as nothing.
 const PALETTE_MODULES = [{ slug: "labeled-box", label: "Labeled Box" }];
+
+// A simple box-outline icon for the tab — good enough to be recognizable
+// without pulling in Polotno's own icon library.
+function LabeledBoxIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="3" width="18" height="18" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="3" y1="8" x2="21" y2="8" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 export function PlannerEditorCanvas({
   pages,
@@ -111,6 +124,38 @@ export function PlannerEditorCanvas({
     }
   };
 
+  // Registered as a real Polotno side-panel section (its own tab
+  // alongside Text/Photos/Draw/etc.) rather than a separate custom
+  // sidebar — that's what was permanently eating screen width before.
+  const moduleSection: Section = {
+    name: "memari-modules",
+    Tab: (props) => (
+      <SectionTab name="Modules" {...props}>
+        <LabeledBoxIcon />
+      </SectionTab>
+    ),
+    Panel: () => (
+      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <strong style={{ fontSize: 13, color: "#555" }}>Add module</strong>
+        {PALETTE_MODULES.map((m) => (
+          <button
+            key={m.slug}
+            onClick={() => handleAddModule(m.slug)}
+            disabled={addingSlug === m.slug}
+            style={{ textAlign: "left", padding: "6px 8px" }}
+          >
+            {addingSlug === m.slug ? "Adding…" : m.label}
+          </button>
+        ))}
+        <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
+          Adds to the next open sidebar slot on the left page. Drag-to-position
+          isn&apos;t built yet.
+        </span>
+      </div>
+    ),
+  };
+  const sections = [...DEFAULT_SECTIONS, moduleSection];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <header
@@ -134,65 +179,37 @@ export function PlannerEditorCanvas({
         )}
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>
-      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <aside
-          style={{
-            width: 180,
-            borderRight: "1px solid #ddd",
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <strong style={{ fontSize: 13, color: "#555" }}>Add module</strong>
-          {PALETTE_MODULES.map((m) => (
-            <button
-              key={m.slug}
-              onClick={() => handleAddModule(m.slug)}
-              disabled={addingSlug === m.slug}
-              style={{ textAlign: "left", padding: "6px 8px" }}
-            >
-              {addingSlug === m.slug ? "Adding…" : m.label}
-            </button>
-          ))}
-          <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
-            Adds to the next open sidebar slot on the left page. Drag-to-position
-            isn&apos;t built yet.
-          </span>
-        </aside>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          {/* Recomposed by hand instead of using the all-in-one
-              <PolotnoApp> — that component hardcodes a vertical page
-              stack and doesn't expose Workspace's layout prop, which is
-              the only way to get the side-by-side spread view. */}
-          <PolotnoContainer className="polotno-app-container">
-            <SidePanelWrap>
-              <SidePanel store={store} sections={DEFAULT_SECTIONS} />
-            </SidePanelWrap>
-            <WorkspaceWrap>
-              <Toolbar
-                store={store}
-                components={{
-                  ActionControls: () => <DownloadButton store={store} />,
-                }}
-              />
-              {/* pageControlsEnabled=false: those per-page nav/duplicate/
-                  delete/add controls were rendering twice per page (top
-                  and bottom), each with its own embedded license banner —
-                  4 total. We don't want free-form page add/delete here
-                  anyway (pages are managed server-side), so disabling
-                  this removes the clutter and most of the banners at once. */}
-              <Workspace
-                store={store}
-                layout="horizontal"
-                pageGap={0}
-                pageControlsEnabled={false}
-              />
-              <ZoomButtons store={store} />
-            </WorkspaceWrap>
-          </PolotnoContainer>
-        </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {/* Recomposed by hand instead of using the all-in-one
+            <PolotnoApp> — that component hardcodes a vertical page
+            stack and doesn't expose Workspace's layout prop, which is
+            the only way to get the side-by-side spread view. */}
+        <PolotnoContainer className="polotno-app-container">
+          <SidePanelWrap>
+            <SidePanel store={store} sections={sections} defaultSection="memari-modules" />
+          </SidePanelWrap>
+          <WorkspaceWrap>
+            <Toolbar
+              store={store}
+              components={{
+                ActionControls: () => <DownloadButton store={store} />,
+              }}
+            />
+            {/* pageControlsEnabled=false: those per-page nav/duplicate/
+                delete/add controls were rendering twice per page (top
+                and bottom), each with its own embedded license banner —
+                4 total. We don't want free-form page add/delete here
+                anyway (pages are managed server-side), so disabling
+                this removes the clutter and most of the banners at once. */}
+            <Workspace
+              store={store}
+              layout="horizontal"
+              pageGap={0}
+              pageControlsEnabled={false}
+            />
+            <ZoomButtons store={store} />
+          </WorkspaceWrap>
+        </PolotnoContainer>
       </div>
     </div>
   );
