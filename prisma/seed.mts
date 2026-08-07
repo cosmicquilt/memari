@@ -91,10 +91,16 @@ const moduleTypes = [
       },
     },
     // Sized for the sidebar column (column 0 of the default 4x30 grid).
+    // defaultRowSpan only governs freshly palette-dropped instances — the
+    // pre-seeded Gratitude/Reminders/Notes sidebar boxes have their own
+    // explicit rowSpans in actions.ts, unaffected by this. Set to ~1/3 of
+    // the Gratitude box's 6-row height (2 rows) per request, so newly
+    // added boxes start compact and several can be stacked in the
+    // sidebar without immediately needing a resize.
     defaultWidth: 300,
-    defaultHeight: 600,
+    defaultHeight: 200,
     defaultColumnSpan: 1,
-    defaultRowSpan: 6,
+    defaultRowSpan: 2,
   },
   {
     // Sits below hourly-grid-core, same columns. Full-height on whichever

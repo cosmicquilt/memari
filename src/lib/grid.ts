@@ -95,3 +95,107 @@ export function clampGridPlacement(
     ),
   };
 }
+
+export type GridRect = GridPlacement;
+
+export function rectsOverlap(a: GridRect, b: GridRect): boolean {
+  return (
+    a.columnStart < b.columnStart + b.columnSpan &&
+    a.columnStart + a.columnSpan > b.columnStart &&
+    a.rowStart < b.rowStart + b.rowSpan &&
+    a.rowStart + a.rowSpan > b.rowStart
+  );
+}
+
+// Relocates a placement that collides with something to the nearest
+// non-overlapping cell — used when the collision isn't a simple
+// same-column stack reorder (see resolveModulePlacement below), e.g. a
+// palette drop landing on a locked block or a differently-sized module.
+// Searches the candidate's own column first (expanding up/down from the
+// candidate row), then falls back to scanning the whole grid.
+export function findNearestFreeCell(
+  page: PageGrid,
+  candidate: GridRect,
+  occupied: GridRect[]
+): { columnStart: number; rowStart: number } {
+  const fits = (columnStart: number, rowStart: number) => {
+    if (columnStart < 0 || rowStart < 0) return false;
+    if (columnStart + candidate.columnSpan > page.gridColumns) return false;
+    if (rowStart + candidate.rowSpan > page.gridRows) return false;
+    const rect: GridRect = { columnStart, rowStart, columnSpan: candidate.columnSpan, rowSpan: candidate.rowSpan };
+    return !occupied.some((o) => rectsOverlap(rect, o));
+  };
+
+  const clamped = clampGridPlacement(page, candidate);
+
+  for (let offset = 0; offset <= page.gridRows; offset++) {
+    const rows = offset === 0 ? [clamped.rowStart] : [clamped.rowStart + offset, clamped.rowStart - offset];
+    for (const rowStart of rows) {
+      if (fits(clamped.columnStart, rowStart)) return { columnStart: clamped.columnStart, rowStart };
+    }
+  }
+
+  for (let columnStart = 0; columnStart <= page.gridColumns - candidate.columnSpan; columnStart++) {
+    for (let rowStart = 0; rowStart <= page.gridRows - candidate.rowSpan; rowStart++) {
+      if (fits(columnStart, rowStart)) return { columnStart, rowStart };
+    }
+  }
+
+  // Grid is genuinely full for this span — nothing better to do than
+  // return the clamped (still possibly overlapping) candidate.
+  return clamped;
+}
+
+// Resolves where a dragged/dropped module should actually land given
+// what else is already on the page. Plain relocation (findNearestFreeCell)
+// is the right answer when the collision involves a locked core block or
+// a differently-shaped module — there's nothing sensible to displace. But
+// when every colliding module is an unlocked sibling stacked in the same
+// column with the same width, the collision is really a reorder: this
+// treats the column as a list, figures out where the dragged module was
+// dropped relative to its siblings, and returns a fresh gap-free stacking
+// for all of them — the siblings move to make room instead of the
+// dragged module bouncing off somewhere else.
+export function resolveModulePlacement(
+  page: PageGrid,
+  candidate: GridRect,
+  others: Array<GridRect & { id: string; locked: boolean }>
+): {
+  placement: { columnStart: number; rowStart: number };
+  reflow: Array<{ id: string; rowStart: number }>;
+} {
+  const overlapping = others.filter((o) => rectsOverlap(candidate, o));
+  if (overlapping.length === 0) {
+    return { placement: { columnStart: candidate.columnStart, rowStart: candidate.rowStart }, reflow: [] };
+  }
+
+  const isSameColumnStack = overlapping.every(
+    (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
+  );
+  if (isSameColumnStack) {
+    const stackSiblings = others.filter(
+      (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
+    );
+    const stackTop = Math.min(candidate.rowStart, ...stackSiblings.map((s) => s.rowStart));
+    const DRAGGED = "__dragged__";
+    const ordered = [
+      ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
+      { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
+    ].sort((a, b) => a.rowStart - b.rowStart || (a.id === DRAGGED ? 1 : -1));
+
+    let cursor = stackTop;
+    let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
+    const reflow: Array<{ id: string; rowStart: number }> = [];
+    for (const item of ordered) {
+      if (item.id === DRAGGED) {
+        placement = { columnStart: candidate.columnStart, rowStart: cursor };
+      } else if (item.rowStart !== cursor) {
+        reflow.push({ id: item.id, rowStart: cursor });
+      }
+      cursor += item.rowSpan;
+    }
+    return { placement, reflow };
+  }
+
+  return { placement: findNearestFreeCell(page, candidate, overlapping), reflow: [] };
+}

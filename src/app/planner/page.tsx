@@ -35,13 +35,27 @@ export default async function PlannerPage() {
     // saving or deleting. Locked core blocks and freeform elements are
     // left out: they're either immovable or already freely positioned.
     const moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }> = {};
+    // Locked core blocks' cell ranges — static for the whole session
+    // (they never move), so the editor's collision/reflow logic can
+    // check against them without needing a live lookup like it does for
+    // other draggable modules.
+    const lockedRects: Array<{
+      columnStart: number;
+      rowStart: number;
+      columnSpan: number;
+      rowSpan: number;
+    }> = [];
     for (const instance of page.moduleInstances) {
-      if (
-        !instance.locked &&
-        instance.moduleType.slug !== "freeform-element" &&
-        instance.columnStart !== null &&
-        instance.rowStart !== null
-      ) {
+      if (instance.moduleType.slug === "freeform-element") continue;
+      if (instance.columnStart === null || instance.rowStart === null) continue;
+      if (instance.locked) {
+        lockedRects.push({
+          columnStart: instance.columnStart,
+          rowStart: instance.rowStart,
+          columnSpan: instance.columnSpan,
+          rowSpan: instance.rowSpan,
+        });
+      } else {
         moduleGridInfo[instance.id] = {
           columnSpan: instance.columnSpan,
           rowSpan: instance.rowSpan,
@@ -49,7 +63,7 @@ export default async function PlannerPage() {
       }
     }
 
-    return { pageId: page.id, elements, pageGrid, moduleGridInfo };
+    return { pageId: page.id, elements, pageGrid, moduleGridInfo, lockedRects };
   });
 
   return <PlannerEditor pages={pages} />;

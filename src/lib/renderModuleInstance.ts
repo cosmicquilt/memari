@@ -80,9 +80,15 @@ function renderBySlug(
 // wrapped in a Polotno `type: "group"` element, `id` set to the
 // ModuleInstance's own id. That id is what lets the editor recognize
 // "this thing on the canvas is module X" when saving, snapping, or
-// deleting it — see PlannerEditorCanvas.tsx. Resizable is left off for
-// now: span-aware resize (snapping width/height to whole columns/rows)
-// isn't built yet, only position.
+// deleting it — see PlannerEditorCanvas.tsx.
+//
+// `resizable: false` has to be set on each CHILD, not the group wrapper
+// — a group's own `draggable`/`resizable`/etc. are computed views
+// derived from its children (true only if every child agrees), not real
+// stored props, so setting them on the group object itself when
+// constructing it is silently ignored. Span-aware resize (snapping
+// width/height to whole columns/rows) isn't built yet, only position, so
+// this keeps Polotno's own free-form resize handles from appearing.
 export function renderModuleInstance(
   instance: ModuleInstanceForRender,
   pageGrid: PageGrid
@@ -121,8 +127,7 @@ export function renderModuleInstance(
       id: instance.id,
       type: "group",
       draggable: true,
-      resizable: false,
-      children: elements,
+      children: elements.map((el) => ({ ...el, resizable: false })),
     },
   ];
 }

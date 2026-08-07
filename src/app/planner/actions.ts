@@ -3,7 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { clampGridPlacement, type PageGrid } from "@/lib/grid";
+import { clampGridPlacement, findNearestFreeCell, type PageGrid } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
@@ -325,6 +325,7 @@ export async function addPaletteModuleAt(
 
   const page = await prisma.page.findFirst({
     where: { id: pageId, planner: { ownerId: userId } },
+    include: { moduleInstances: true },
   });
   if (!page) {
     throw new Error("Page not found or not owned by this user");
@@ -342,12 +343,30 @@ export async function addPaletteModuleAt(
     gridGapPx: page.gridGapPx,
     marginPx: page.marginPx,
   };
-  const clamped = clampGridPlacement(pageGrid, {
+  const candidate = clampGridPlacement(pageGrid, {
     columnStart,
     rowStart,
     columnSpan: moduleType.defaultColumnSpan,
     rowSpan: moduleType.defaultRowSpan,
   });
+  // Don't drop a new module on top of something already there — find the
+  // nearest free cell instead of just clamping to the page edge. Plain
+  // relocation rather than the drag-reposition path's stack reflow
+  // (see PlannerEditorCanvas) — reasonable for a fresh drop, which
+  // doesn't have "siblings it was already part of" to reorder among.
+  const occupied = page.moduleInstances
+    .filter((mi) => mi.columnStart !== null && mi.rowStart !== null)
+    .map((mi) => ({
+      columnStart: mi.columnStart as number,
+      rowStart: mi.rowStart as number,
+      columnSpan: mi.columnSpan,
+      rowSpan: mi.rowSpan,
+    }));
+  const clamped = findNearestFreeCell(
+    pageGrid,
+    { ...candidate, columnSpan: moduleType.defaultColumnSpan, rowSpan: moduleType.defaultRowSpan },
+    occupied
+  );
 
   // Pull each config field's declared default out of the JSON Schema,
   // so a freshly-added instance starts in a sensible state.

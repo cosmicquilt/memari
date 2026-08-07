@@ -22,7 +22,9 @@ import {
   gridCellToPixels,
   pixelsToGridCell,
   clampGridPlacement,
+  resolveModulePlacement,
   type PageGrid,
+  type GridRect,
 } from "@/lib/grid";
 import {
   savePageElements,
@@ -73,6 +75,7 @@ type PageProp = {
   elements: object[];
   pageGrid: PageGrid;
   moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+  lockedRects: GridRect[];
 };
 
 export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
@@ -109,6 +112,14 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
     return map;
   }, [pages]);
 
+  // Locked core blocks' cell ranges, per page — static for the session
+  // (they never move), used by the collision/reflow resolution below.
+  const lockedRectsByPage = useMemo(() => {
+    const map: Record<string, GridRect[]> = {};
+    for (const p of pages) map[p.pageId] = p.lockedRects;
+    return map;
+  }, [pages]);
+
   useEffect(() => {
     // Both pages loaded together — a week spread is two pages viewed as
     // one unit when the book is open flat, so the editor shows both.
@@ -127,15 +138,24 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- drag-to-reposition snapping ---
+  // --- drag-to-reposition snapping, with collision avoidance ---
   // Polotno's own drag mechanics already move a dragged group's children
   // together as a unit (a "group" element's own x/y/width/height are
   // derived, not real transforms — confirmed empirically, not assumed —
   // so the snap logic below works from the children's actual absolute
   // positions rather than trusting the group's). All this needs to do is
-  // nudge the result to the nearest grid cell once the pointer is
+  // resolve the result to a non-overlapping grid cell once the pointer is
   // released, which is simpler and less fragile than trying to hook a
   // live drag-bound callback mid-drag.
+  //
+  // "Non-overlapping" matters: snapping to the literal nearest cell
+  // without checking what's already there let two sidebar boxes land on
+  // top of each other. resolveModulePlacement checks every other module
+  // on the page (locked core blocks from the static server data, plus
+  // any other tracked group's current live position) and, when the only
+  // thing in the way is same-column siblings, reflows that column's
+  // stack instead — the siblings shift to make room rather than the
+  // dragged module bouncing off somewhere else.
   useEffect(() => {
     const snapToGrid = () => {
       const handled = new Set<string>();
@@ -153,21 +173,71 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
         handled.add(node.id);
 
         const span = moduleGridInfo[node.id];
-        const pageGrid = node.page?.id ? pageGrids[node.page.id] : undefined;
+        const pageId = node.page?.id;
+        const pageGrid = pageId ? pageGrids[pageId] : undefined;
         const children = node.children ?? [];
-        if (!span || !pageGrid || children.length === 0) continue;
+        if (!span || !pageId || !pageGrid || children.length === 0) continue;
 
         const minX = Math.min(...children.map((c) => c.x ?? 0));
         const minY = Math.min(...children.map((c) => c.y ?? 0));
-        const nearestCell = pixelsToGridCell(pageGrid, { x: minX, y: minY });
-        const clamped = clampGridPlacement(pageGrid, {
-          ...nearestCell,
+        const nearestCell = clampGridPlacement(pageGrid, {
+          ...pixelsToGridCell(pageGrid, { x: minX, y: minY }),
           columnSpan: span.columnSpan,
           rowSpan: span.rowSpan,
         });
+        const candidate: GridRect = { ...nearestCell, columnSpan: span.columnSpan, rowSpan: span.rowSpan };
+
+        const page = store.pages.find((p) => p.id === pageId);
+        const others: Array<GridRect & { id: string; locked: boolean }> = (lockedRectsByPage[pageId] ?? []).map(
+          (rect, i) => ({ ...rect, id: `__locked-${i}__`, locked: true })
+        );
+        for (const sibling of (page?.children ?? []) as unknown as PolotnoNode[]) {
+          if (sibling.id === node.id) continue;
+          const siblingSpan = moduleGridInfo[sibling.id];
+          const siblingChildren = sibling.children ?? [];
+          if (!siblingSpan || siblingChildren.length === 0) continue;
+          const sx = Math.min(...siblingChildren.map((c) => c.x ?? 0));
+          const sy = Math.min(...siblingChildren.map((c) => c.y ?? 0));
+          const siblingCell = pixelsToGridCell(pageGrid, { x: sx, y: sy });
+          others.push({
+            id: sibling.id,
+            columnStart: siblingCell.columnStart,
+            rowStart: siblingCell.rowStart,
+            columnSpan: siblingSpan.columnSpan,
+            rowSpan: siblingSpan.rowSpan,
+            locked: false,
+          });
+        }
+
+        const { placement, reflow } = resolveModulePlacement(pageGrid, candidate, others);
+
+        // Displaced siblings move too — same "shift the children by
+        // however far they need to go" approach as the dragged module
+        // itself gets below, just applied to whoever the reorder bumped.
+        for (const move of reflow) {
+          const siblingNode = (page?.children ?? []).find(
+            (c) => (c as unknown as PolotnoNode).id === move.id
+          ) as unknown as PolotnoNode | undefined;
+          const siblingSpan = moduleGridInfo[move.id];
+          const siblingChildren = siblingNode?.children ?? [];
+          if (!siblingSpan || siblingChildren.length === 0) continue;
+          const sMinX = Math.min(...siblingChildren.map((c) => c.x ?? 0));
+          const sMinY = Math.min(...siblingChildren.map((c) => c.y ?? 0));
+          const target = gridCellToPixels(pageGrid, {
+            columnStart: candidate.columnStart,
+            rowStart: move.rowStart,
+            columnSpan: siblingSpan.columnSpan,
+            rowSpan: siblingSpan.rowSpan,
+          });
+          const sdx = target.x - sMinX;
+          const sdy = target.y - sMinY;
+          if (Math.abs(sdx) < 0.5 && Math.abs(sdy) < 0.5) continue;
+          for (const sc of siblingChildren) sc.set({ x: (sc.x ?? 0) + sdx, y: (sc.y ?? 0) + sdy });
+        }
+
         const snapped = gridCellToPixels(pageGrid, {
-          columnStart: clamped.columnStart,
-          rowStart: clamped.rowStart,
+          columnStart: placement.columnStart,
+          rowStart: placement.rowStart,
           columnSpan: span.columnSpan,
           rowSpan: span.rowSpan,
         });
@@ -181,7 +251,7 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
     };
     window.addEventListener("pointerup", snapToGrid);
     return () => window.removeEventListener("pointerup", snapToGrid);
-  }, [store, moduleGridInfo, pageGrids]);
+  }, [store, moduleGridInfo, pageGrids, lockedRectsByPage]);
 
   const handleSave = async () => {
     setSaving(true);

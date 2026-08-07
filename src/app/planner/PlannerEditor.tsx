@@ -18,6 +18,7 @@ export function PlannerEditor(props: {
     elements: object[];
     pageGrid: PageGrid;
     moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+    lockedRects: Array<{ columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }>;
   }>;
 }) {
   return <PlannerEditorCanvas {...props} />;
