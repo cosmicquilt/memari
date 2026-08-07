@@ -18,8 +18,16 @@ export function PlannerEditor(props: {
     elements: object[];
     pageGrid: PageGrid;
     moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+    moduleConfig: Record<string, { slug: string; propValues: unknown }>;
     lockedRects: Array<{ columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }>;
   }>;
+  weekSettings: {
+    weekNumber: number;
+    weekTotal: number;
+    dateRangeLabel: string;
+    leftDates: number[];
+    rightDates: number[];
+  };
 }) {
   return <PlannerEditorCanvas {...props} />;
 }

@@ -35,6 +35,13 @@ export default async function PlannerPage() {
     // saving or deleting. Locked core blocks and freeform elements are
     // left out: they're either immovable or already freely positioned.
     const moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }> = {};
+    // Slug + current config per non-locked instance, separate from
+    // moduleGridInfo above — this is for the Properties panel (editing
+    // heading text, habit names, etc. after placement), not placement
+    // math, so it's kept as its own map rather than widening
+    // moduleGridInfo's shape and risking the placement/collision code
+    // that already depends on it.
+    const moduleConfig: Record<string, { slug: string; propValues: unknown }> = {};
     // Locked core blocks' cell ranges — static for the whole session
     // (they never move), so the editor's collision/reflow logic can
     // check against them without needing a live lookup like it does for
@@ -60,11 +67,39 @@ export default async function PlannerPage() {
           columnSpan: instance.columnSpan,
           rowSpan: instance.rowSpan,
         };
+        moduleConfig[instance.id] = {
+          slug: instance.moduleType.slug,
+          propValues: instance.propValues,
+        };
       }
     }
 
-    return { pageId: page.id, elements, pageGrid, moduleGridInfo, lockedRects };
+    return { pageId: page.id, elements, pageGrid, moduleGridInfo, moduleConfig, lockedRects };
   });
 
-  return <PlannerEditor pages={pages} />;
+  // week-title and both pages' hourly-grid-core are locked/structural —
+  // not individually selectable on the canvas (see renderModuleInstance),
+  // so they don't go through the per-module Properties panel above.
+  // Surfaced here instead for the Week Settings panel, which edits them
+  // as one batch (see actions.ts's updateWeekSettings).
+  const [leftPage, rightPage] = planner.pages;
+  const weekTitleInstance = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
+  const leftHourly = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const rightHourly = rightPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const weekTitleProps = weekTitleInstance?.propValues as
+    | { weekNumber?: number; weekTotal?: number; dateRangeLabel?: string }
+    | undefined;
+  const dayDates = (instance: typeof leftHourly) => {
+    const props = instance?.propValues as { dayLabels?: Array<{ date: number }> } | undefined;
+    return (props?.dayLabels ?? []).map((d) => d.date);
+  };
+  const weekSettings = {
+    weekNumber: weekTitleProps?.weekNumber ?? 1,
+    weekTotal: weekTitleProps?.weekTotal ?? 52,
+    dateRangeLabel: weekTitleProps?.dateRangeLabel ?? "",
+    leftDates: dayDates(leftHourly),
+    rightDates: dayDates(rightHourly),
+  };
+
+  return <PlannerEditor pages={pages} weekSettings={weekSettings} />;
 }

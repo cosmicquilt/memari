@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStore } from "polotno/model/store";
 import {
   PolotnoContainer,
@@ -31,7 +31,11 @@ import {
   addPaletteModuleAt,
   updateModulePlacement,
   deleteModuleInstance,
+  updateModuleConfig,
+  updateWeekSettings,
 } from "./actions";
+import { PropertiesPanel } from "./PropertiesPanel";
+import { WeekSettingsPanel, type WeekSettings } from "./WeekSettingsPanel";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 
@@ -66,8 +70,8 @@ type PolotnoNode = {
   set: (attrs: Record<string, unknown>) => void;
 };
 
-// A simple box-outline icon for the tab — good enough to be recognizable
-// without pulling in Polotno's own icon library.
+// Simple icons for the tabs — good enough to be recognizable without
+// pulling in Polotno's own icon library.
 function LabeledBoxIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -77,15 +81,46 @@ function LabeledBoxIcon() {
   );
 }
 
+function SlidersIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <line x1="4" y1="6" x2="20" y2="6" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="9" cy="6" r="2" fill="currentColor" />
+      <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="15" cy="12" r="2" fill="currentColor" />
+      <line x1="4" y1="18" x2="20" y2="18" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="11" cy="18" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="4" width="18" height="17" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="3" y1="9" x2="21" y2="9" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="7" y1="2" x2="7" y2="6" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="17" y1="2" x2="17" y2="6" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 type PageProp = {
   pageId: string;
   elements: object[];
   pageGrid: PageGrid;
   moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
+  moduleConfig: Record<string, { slug: string; propValues: unknown }>;
   lockedRects: GridRect[];
 };
 
-export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
+export function PlannerEditorCanvas({
+  pages,
+  weekSettings,
+}: {
+  pages: PageProp[];
+  weekSettings: WeekSettings;
+}) {
   // One store per mounted editor instance, not module-level like the
   // standalone test — this page can be visited by many different users.
   const store = useMemo(
@@ -106,6 +141,33 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
   const [moduleGridInfo, setModuleGridInfo] = useState<
     Record<string, { columnSpan: number; rowSpan: number }>
   >(() => Object.assign({}, ...pages.map((p) => p.moduleGridInfo)));
+
+  // Slug + current propValues per non-locked module, for the Properties
+  // panel — separate from moduleGridInfo (placement math) above, see the
+  // matching comment in page.tsx.
+  const [moduleConfig, setModuleConfig] = useState<
+    Record<string, { slug: string; propValues: Record<string, unknown> }>
+  >(() =>
+    Object.assign(
+      {},
+      ...pages.map((p) =>
+        Object.fromEntries(
+          Object.entries(p.moduleConfig).map(([id, v]) => [
+            id,
+            { slug: v.slug, propValues: (v.propValues as Record<string, unknown>) ?? {} },
+          ])
+        )
+      )
+    )
+  );
+
+  // Which tracked module (if any) is currently selected on the canvas —
+  // drives the Properties panel. Updated alongside the snap-to-grid
+  // resolution below, since both need the same "walk up from whatever's
+  // selected to its tracked-group ancestor" logic and both only make
+  // sense to check at the same moment (right as a pointer interaction —
+  // click or drag — finishes).
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
 
   // Ids present when the page loaded. At save time, any of these no
   // longer found on the canvas were deleted by the user (Delete key) and
@@ -265,6 +327,15 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
           child.set({ x: (child.x ?? 0) + deltaX, y: (child.y ?? 0) + deltaY });
         }
       }
+
+      // Drives the Properties panel — exactly one tracked module
+      // resolved from the current selection means "editing that one";
+      // anything else (nothing selected, multiple selected, a freeform
+      // element) shows the panel's empty state instead. Same "walk up
+      // to the tracked-group ancestor" resolution as the snapping above,
+      // so this only needs to check what `handled` already collected
+      // rather than re-walking the selection a second time.
+      setSelectedModuleId(handled.size === 1 ? [...handled][0] : null);
     };
     window.addEventListener("pointerup", snapToGrid);
     return () => window.removeEventListener("pointerup", snapToGrid);
@@ -342,75 +413,185 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
     }
   };
 
+  // Saves a module's own content (heading, habits, ...) from the
+  // Properties panel and swaps the freshly-rendered result into the live
+  // canvas in place — delete the old group by id, add the new one back,
+  // same pattern as adding a brand new module from the palette.
+  //
+  // useCallback (and the useMemo'd Section objects below that depend on
+  // it) matters here for more than just avoiding extra work: Polotno's
+  // SidePanel renders each section's Panel component directly as a React
+  // element type (`<Panel store={...} />`), so a fresh function reference
+  // every render makes React treat it as a *different* component and
+  // remount it — which would silently wipe out whatever the user had
+  // typed into the Properties form but not yet saved, the moment
+  // anything else in this component re-rendered (clicking the main Save
+  // button, another drag's snap resolving, ...).
+  const handleSaveModuleConfig = useCallback(
+    async (instanceId: string, propValues: Record<string, unknown>) => {
+      const result = await updateModuleConfig(instanceId, propValues);
+      for (const page of store.pages) {
+        const existing = (page.children as unknown as PolotnoNode[]).find((c) => c.id === instanceId);
+        if (existing) {
+          store.deleteElements([instanceId]);
+          page.addElement(result.element as never);
+          break;
+        }
+      }
+      setModuleConfig((prev) => ({
+        ...prev,
+        [instanceId]: {
+          slug: prev[instanceId]?.slug ?? "",
+          propValues: result.propValues as Record<string, unknown>,
+        },
+      }));
+    },
+    [store]
+  );
+
+  // Week settings (week number, date range, day-of-month numbers) live on
+  // locked/unselectable blocks (week-title, hourly-grid-core), so unlike
+  // the Properties panel above there's no single element to swap in
+  // place — a full reload is simpler than enumerating and replacing every
+  // flat element those blocks render as, and this is an infrequent,
+  // deliberate save (once per week of planning), not an interactive drag.
+  const handleSaveWeekSettings = useCallback(async (settings: WeekSettings) => {
+    await updateWeekSettings(settings);
+    window.location.reload();
+  }, []);
+
   // Registers a one-shot drop handler (Polotno's own convention — see
   // its Text/Photo panels) before a native HTML5 drag starts, so
   // whichever page the palette item gets dropped onto tells us its id
   // and the drop position in that page's own pixel space.
-  const handlePaletteDragStart = (slug: string) => {
-    registerNextDomDrop(async (pos, _el, event) => {
-      if (addInFlight.current) return;
-      addInFlight.current = true;
+  const handlePaletteDragStart = useCallback(
+    (slug: string) => {
+      registerNextDomDrop(async (pos, _el, event) => {
+        if (addInFlight.current) return;
+        addInFlight.current = true;
 
-      const pageId = event?.page?.id;
-      const pageGrid = pageId ? pageGrids[pageId] : undefined;
-      if (!pageId || !pageGrid) {
-        addInFlight.current = false;
-        return;
-      }
+        const pageId = event?.page?.id;
+        const pageGrid = pageId ? pageGrids[pageId] : undefined;
+        if (!pageId || !pageGrid) {
+          addInFlight.current = false;
+          return;
+        }
 
-      const cell = pixelsToGridCell(pageGrid, pos);
-      setAddingSlug(slug);
-      try {
-        const result = await addPaletteModuleAt(pageId, slug, cell.columnStart, cell.rowStart);
-        const page = store.pages.find((p) => p.id === pageId);
-        page?.addElement(result.element as never);
-        setModuleGridInfo((prev) => ({
-          ...prev,
-          [result.instanceId]: { columnSpan: result.columnSpan, rowSpan: result.rowSpan },
-        }));
-        initialTrackedIds.current.add(result.instanceId);
-      } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
-      } finally {
-        setAddingSlug(null);
-        addInFlight.current = false;
-      }
-    });
-  };
+        const cell = pixelsToGridCell(pageGrid, pos);
+        setAddingSlug(slug);
+        try {
+          const result = await addPaletteModuleAt(pageId, slug, cell.columnStart, cell.rowStart);
+          const page = store.pages.find((p) => p.id === pageId);
+          page?.addElement(result.element as never);
+          setModuleGridInfo((prev) => ({
+            ...prev,
+            [result.instanceId]: { columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+          }));
+          setModuleConfig((prev) => ({
+            ...prev,
+            [result.instanceId]: {
+              slug,
+              propValues: (result.propValues as Record<string, unknown>) ?? {},
+            },
+          }));
+          initialTrackedIds.current.add(result.instanceId);
+        } catch (err) {
+          alert(err instanceof Error ? err.message : String(err));
+        } finally {
+          setAddingSlug(null);
+          addInFlight.current = false;
+        }
+      });
+    },
+    [store, pageGrids]
+  );
 
-  // Registered as a real Polotno side-panel section (its own tab
+  // Registered as real Polotno side-panel sections (their own tabs
   // alongside Text/Photos/Draw/etc.) rather than a separate custom
   // sidebar — that's what was permanently eating screen width before.
-  const moduleSection: Section = {
-    name: "memari-modules",
-    Tab: (props) => (
-      <SectionTab name="Modules" {...props}>
-        <LabeledBoxIcon />
-      </SectionTab>
-    ),
-    Panel: () => (
-      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-        <strong style={{ fontSize: 13, color: "#555" }}>Add module</strong>
-        {PALETTE_MODULES.map((m) => (
-          <button
-            key={m.slug}
-            draggable
-            onDragStart={() => handlePaletteDragStart(m.slug)}
-            onDragEnd={() => registerNextDomDrop(null)}
-            disabled={addingSlug === m.slug}
-            style={{ textAlign: "left", padding: "6px 8px", cursor: "grab" }}
-          >
-            {addingSlug === m.slug ? "Adding…" : m.label}
-          </button>
-        ))}
-        <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
-          Drag onto either page to place it, then drag it around to
-          reposition — it snaps to the nearest grid cell when you let go.
-        </span>
-      </div>
-    ),
-  };
-  const sections = [...DEFAULT_SECTIONS, moduleSection];
+  //
+  // Each is useMemo'd (and their Panel components built from
+  // useCallback'd handlers above) so the Panel function reference stays
+  // stable across renders that don't actually affect that section — see
+  // the comment on handleSaveModuleConfig for why that's not just an
+  // optimization here.
+  const moduleSection: Section = useMemo(
+    () => ({
+      name: "memari-modules",
+      Tab: (props) => (
+        <SectionTab name="Modules" {...props}>
+          <LabeledBoxIcon />
+        </SectionTab>
+      ),
+      Panel: () => (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <strong style={{ fontSize: 13, color: "#555" }}>Add module</strong>
+          {PALETTE_MODULES.map((m) => (
+            <button
+              key={m.slug}
+              draggable
+              onDragStart={() => handlePaletteDragStart(m.slug)}
+              onDragEnd={() => registerNextDomDrop(null)}
+              disabled={addingSlug === m.slug}
+              style={{ textAlign: "left", padding: "6px 8px", cursor: "grab" }}
+            >
+              {addingSlug === m.slug ? "Adding…" : m.label}
+            </button>
+          ))}
+          <span style={{ fontSize: 11, color: "#999", marginTop: 8 }}>
+            Drag onto either page to place it, then drag it around to
+            reposition — it snaps to the nearest grid cell when you let go.
+          </span>
+        </div>
+      ),
+    }),
+    [addingSlug, handlePaletteDragStart]
+  );
+
+  // Content editing for whichever module is currently selected (see the
+  // selectedModuleId tracking in the pointerup effect above).
+  const propertiesSection: Section = useMemo(
+    () => ({
+      name: "memari-properties",
+      Tab: (props) => (
+        <SectionTab name="Properties" {...props}>
+          <SlidersIcon />
+        </SectionTab>
+      ),
+      Panel: () => (
+        <PropertiesPanel
+          selected={
+            selectedModuleId && moduleConfig[selectedModuleId]
+              ? { id: selectedModuleId, ...moduleConfig[selectedModuleId] }
+              : null
+          }
+          onSave={handleSaveModuleConfig}
+        />
+      ),
+    }),
+    [selectedModuleId, moduleConfig, handleSaveModuleConfig]
+  );
+
+  // week-title/hourly-grid-core aren't selectable (they're locked), so
+  // they get their own always-available panel instead of going through
+  // Properties above.
+  const weekSettingsSection: Section = useMemo(
+    () => ({
+      name: "memari-week-settings",
+      Tab: (props) => (
+        <SectionTab name="Week" {...props}>
+          <CalendarIcon />
+        </SectionTab>
+      ),
+      Panel: () => <WeekSettingsPanel initial={weekSettings} onSave={handleSaveWeekSettings} />,
+    }),
+    [weekSettings, handleSaveWeekSettings]
+  );
+
+  const sections = useMemo(
+    () => [...DEFAULT_SECTIONS, moduleSection, propertiesSection, weekSettingsSection],
+    [moduleSection, propertiesSection, weekSettingsSection]
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>

@@ -414,6 +414,7 @@ export async function addPaletteModuleAt(
     instanceId: created.id,
     columnSpan: created.columnSpan,
     rowSpan: created.rowSpan,
+    propValues: created.propValues,
     element,
   };
 }
@@ -483,6 +484,151 @@ export async function deleteModuleInstance(instanceId: string) {
   }
 
   await prisma.moduleInstance.delete({ where: { id: instanceId } });
+}
+
+// Updates a non-locked module's own content (heading text, ruled/blank,
+// habit names, ...) — not its position (updateModulePlacement) or type.
+// Locked structural blocks (week-title, hourly-grid-core) go through
+// updateWeekSettings instead — they're not selectable on the canvas at
+// all (see renderModuleInstance.ts), so there's no "select it, then edit
+// its properties" flow for them to begin with.
+//
+// Returns the freshly-rendered element (a Polotno group, same shape
+// addPaletteModuleAt returns) so the client can swap it into the live
+// canvas — delete the old group by id, add this one in its place — same
+// pattern as adding a brand new module, just replacing an existing one.
+export async function updateModuleConfig(
+  instanceId: string,
+  propValues: Record<string, unknown>
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: { page: true, moduleType: true },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot edit a locked module's config here — use Week Settings instead");
+  }
+  if (instance.columnStart === null || instance.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+
+  const updated = await prisma.moduleInstance.update({
+    where: { id: instanceId },
+    data: { propValues: propValues as Prisma.InputJsonValue },
+  });
+
+  const pageGrid: PageGrid = {
+    widthPx: PRINT_WIDTH_PX,
+    heightPx: PRINT_HEIGHT_PX,
+    gridColumns: instance.page.gridColumns,
+    gridRows: instance.page.gridRows,
+    gridGapPx: instance.page.gridGapPx,
+    marginPx: instance.page.marginPx,
+  };
+  const [element] = renderModuleInstance(
+    {
+      id: updated.id,
+      locked: updated.locked,
+      columnStart: updated.columnStart,
+      rowStart: updated.rowStart,
+      columnSpan: updated.columnSpan,
+      rowSpan: updated.rowSpan,
+      propValues: updated.propValues,
+      moduleType: { slug: instance.moduleType.slug },
+    },
+    pageGrid
+  );
+
+  return { element, propValues: updated.propValues };
+}
+
+// Updates the week-title heading + both pages' hourly-grid-core day-of-
+// month numbers for the current user's planner. These are locked/
+// structural (not individually selectable on the canvas — see
+// renderModuleInstance.ts), so they're edited as one batch here rather
+// than through updateModuleConfig's select-one-module flow. Unlike that
+// action, this doesn't return a live-patchable element: hourly-grid-core
+// renders as many flat elements, not one group, so an in-place swap would
+// need to enumerate and replace all of them individually. Editing week
+// settings is an infrequent, deliberate action (once per week of
+// planning, not an interactive drag), so the caller just reloads the
+// page afterward instead.
+export async function updateWeekSettings(settings: {
+  weekNumber: number;
+  weekTotal: number;
+  dateRangeLabel: string;
+  leftDates: number[]; // [Sun, Mon, Tue]
+  rightDates: number[]; // [Wed, Thu, Fri, Sat]
+}) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+    include: {
+      pages: {
+        orderBy: { position: "asc" },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      },
+    },
+  });
+  if (!planner || planner.pages.length < 2) {
+    throw new Error("Planner not found");
+  }
+  const [leftPage, rightPage] = planner.pages;
+
+  const updates: Array<Promise<unknown>> = [];
+
+  const weekTitle = leftPage.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
+  if (weekTitle) {
+    updates.push(
+      prisma.moduleInstance.update({
+        where: { id: weekTitle.id },
+        data: {
+          propValues: {
+            weekNumber: settings.weekNumber,
+            weekTotal: settings.weekTotal,
+            dateRangeLabel: settings.dateRangeLabel,
+          } as Prisma.InputJsonValue,
+        },
+      })
+    );
+  }
+
+  const applyDates = (
+    page: (typeof planner.pages)[number],
+    dates: number[]
+  ) => {
+    const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    if (!hourly) return;
+    const props = hourly.propValues as { dayLabels?: Array<{ name: string; date: number }> };
+    const dayLabels = (props.dayLabels ?? []).map((d, i) => ({
+      ...d,
+      date: dates[i] ?? d.date,
+    }));
+    updates.push(
+      prisma.moduleInstance.update({
+        where: { id: hourly.id },
+        data: {
+          propValues: { ...(hourly.propValues as object), dayLabels } as Prisma.InputJsonValue,
+        },
+      })
+    );
+  };
+  applyDates(leftPage, settings.leftDates);
+  applyDates(rightPage, settings.rightDates);
+
+  await Promise.all(updates);
 }
 
 export async function savePageElements(
