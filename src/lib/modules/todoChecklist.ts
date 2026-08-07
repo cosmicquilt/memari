@@ -58,7 +58,7 @@ export function renderTodoChecklist(
   const contentHeight = geometry.height - topGap;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
-  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   const checkboxWidth = ptToPx(CHECKBOX_WIDTH_PT);
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
@@ -67,10 +67,21 @@ export function renderTodoChecklist(
 
   const rowCount = Math.max(
     0,
-    Math.floor((contentHeight - headerHeight) / rowHeight)
+    Math.floor((contentHeight - headerHeight) / nominalRowHeight)
   );
+  // Stretch the actual row height a hair beyond the nominal measured
+  // value so rowCount whole rows exactly fill the allocated box, rather
+  // than floor-rounding leaving unused space below the last row. This is
+  // what makes this block's bottom edge land exactly on
+  // geometry.y + geometry.height — matching labeledBox.ts's Notes box,
+  // which always renders its border at the full allocated height with no
+  // equivalent rounding gap. The stretch is sub-pixel in practice (a
+  // rounding remainder spread across ~10 rows).
+  const rowHeight =
+    rowCount > 0 ? (contentHeight - headerHeight) / rowCount : nominalRowHeight;
 
-  // Outer border around the whole block.
+  // Outer border around the whole block — reaches the full allocated
+  // height exactly (see rowHeight comment above).
   elements.push({
     id: nextId(),
     type: "figure",
@@ -78,7 +89,7 @@ export function renderTodoChecklist(
     x: geometry.x,
     y: contentY,
     width: geometry.width,
-    height: headerHeight + rowCount * rowHeight,
+    height: contentHeight,
     fill: "transparent",
     stroke: NEAR_BLACK,
     strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),

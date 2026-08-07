@@ -70,7 +70,7 @@ export function renderHabitTracker(
   const contentHeight = geometry.height - topGap;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
-  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   // Day-letter columns are fixed-width (square against the header
   // height); the name column takes whatever's left, growing to fill a
@@ -81,10 +81,16 @@ export function renderHabitTracker(
 
   const rowCount = Math.max(
     0,
-    Math.floor((contentHeight - headerHeight) / rowHeight)
+    Math.floor((contentHeight - headerHeight) / nominalRowHeight)
   );
+  // Stretched a hair beyond the nominal measured row height so rowCount
+  // whole rows exactly fill the allocated box, matching labeledBox.ts's
+  // Notes box (which always renders at its full allocated height with no
+  // rounding gap) instead of leaving unused space below the last row.
+  const rowHeight =
+    rowCount > 0 ? (contentHeight - headerHeight) / rowCount : nominalRowHeight;
 
-  // Outer border.
+  // Outer border — reaches the full allocated height exactly.
   elements.push({
     id: nextId(),
     type: "figure",
@@ -92,7 +98,7 @@ export function renderHabitTracker(
     x: geometry.x,
     y: contentY,
     width: geometry.width,
-    height: headerHeight + rowCount * rowHeight,
+    height: contentHeight,
     fill: "transparent",
     stroke: NEAR_BLACK,
     strokeWidth: ptToPx(BORDER_WIDTH_PT),
