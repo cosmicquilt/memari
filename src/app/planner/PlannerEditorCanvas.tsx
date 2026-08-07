@@ -418,7 +418,12 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
             the only way to get the side-by-side spread view. */}
         <PolotnoContainer className="polotno-app-container">
           <SidePanelWrap>
-            <SidePanel store={store} sections={sections} defaultSection="memari-modules" />
+            {/* defaultSection="" starts the panel collapsed (just the
+                tab strip showing) rather than auto-expanding the Modules
+                panel on load — openSidePanel("") is Polotno's own
+                convention for closing it, used the same way by its
+                mobile close button. */}
+            <SidePanel store={store} sections={sections} defaultSection="" />
           </SidePanelWrap>
           <WorkspaceWrap>
             <Toolbar
