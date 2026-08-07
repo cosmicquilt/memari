@@ -7,7 +7,7 @@ const prisma = new PrismaClient({ adapter });
 // Canvas dimensions match the 7x10" trim + bleed print spec (2175 x 3075
 // px at 300 DPI). defaultWidth/Height are the free-placement fallback
 // size; defaultColumnSpan/RowSpan are the grid-placement fallback, sized
-// against Page's default grid (4 cols x 35 rows, see schema.prisma) —
+// against Page's default grid (4 cols x 30 rows, see schema.prisma) —
 // adjust both together if that changes.
 const moduleTypes = [
   {
@@ -25,11 +25,11 @@ const moduleTypes = [
       },
     },
     defaultWidth: 300,
-    defaultHeight: 220,
+    defaultHeight: 170,
     defaultColumnSpan: 1,
-    // 3 rows at the 35-row grid (~74px/row ≈ 221px) — comfortable room
+    // 2 rows at the 30-row grid (~86px/row ≈ 172px) — comfortable room
     // for the two lines of text (~110-160px needed).
-    defaultRowSpan: 3,
+    defaultRowSpan: 2,
   },
   {
     // "Core" block, locked by default (see ModuleInstance.locked) — a
@@ -65,13 +65,16 @@ const moduleTypes = [
     },
     // Sized to leave column 0 free for the sidebar zone (exactly 25%
     // width on the default 4-column grid) and the bottom rows free for
-    // the below zone. 25/35 rows — solved for near-zero rounding slack:
-    // the renderer's fixed-measurement content (6.15in) needs exactly
-    // 24.99 rows' worth of height at this grid's ~73.9px cell size.
+    // the below zone. 19/30 rows — a component spanning N rows also
+    // absorbs (N-1) internal gaps into its own height (matching
+    // gridCellToPixels' formula), which an earlier slack calculation
+    // missed and wrongly concluded 22-25 rows were needed. Correctly
+    // computed, 19 rows already nearly exactly fits the renderer's
+    // fixed-measurement content (6.15in) — 1.9px of slack.
     defaultWidth: 1560,
-    defaultHeight: 2200,
+    defaultHeight: 1850,
     defaultColumnSpan: 3,
-    defaultRowSpan: 25,
+    defaultRowSpan: 19,
   },
   {
     // The reusable "heading + blank/ruled body" pattern — covers Monthly
@@ -87,11 +90,11 @@ const moduleTypes = [
         ruled: { type: "boolean", default: false },
       },
     },
-    // Sized for the sidebar column (column 0 of the default 4x35 grid).
+    // Sized for the sidebar column (column 0 of the default 4x30 grid).
     defaultWidth: 300,
-    defaultHeight: 520,
+    defaultHeight: 600,
     defaultColumnSpan: 1,
-    defaultRowSpan: 7,
+    defaultRowSpan: 6,
   },
   {
     // Sits below hourly-grid-core, same columns. Full-height on whichever
@@ -108,9 +111,9 @@ const moduleTypes = [
       },
     },
     defaultWidth: 1560,
-    defaultHeight: 740,
+    defaultHeight: 1060,
     defaultColumnSpan: 4,
-    defaultRowSpan: 10,
+    defaultRowSpan: 11,
   },
   {
     // Sits below hourly-grid-core, same columns and dayCount. Full-height
@@ -125,9 +128,9 @@ const moduleTypes = [
       },
     },
     defaultWidth: 1560,
-    defaultHeight: 740,
+    defaultHeight: 1060,
     defaultColumnSpan: 3,
-    defaultRowSpan: 10,
+    defaultRowSpan: 11,
   },
   {
     slug: "quote-block",

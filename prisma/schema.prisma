@@ -53,14 +53,14 @@ model Page {
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
   // 4 columns so a 1-column sidebar is exactly 25% width, matching the
-  // reference PDF's proportions. 35 rows / 10px gap solves for
-  // near-zero rounding slack against hourly-grid-core's fixed-measurement
-  // content specifically (see prisma/seed.mts) — at 30 rows, whole-row
-  // allocation left a real ~43.6px gap before the next module; this
-  // combination leaves ~0.2px.
+  // reference PDF's proportions. 30 rows / 12px gap — reverted from a
+  // brief detour to 35/10 that was based on a slack calculation missing
+  // the (rowSpan-1)*gap term a multi-row component's own height also
+  // includes; once computed correctly, 30/12 already gives near-zero
+  // slack (see hourly-grid-core's defaultRowSpan in prisma/seed.mts).
   gridColumns     Int              @default(4)
-  gridRows        Int              @default(35)
-  gridGapPx       Float            @default(10)
+  gridRows        Int              @default(30)
+  gridGapPx       Float            @default(12)
   marginPx        Float            @default(75)
   moduleInstances ModuleInstance[]
 
