@@ -158,12 +158,18 @@ export function findNearestFreeCell(
 // dragged module bouncing off somewhere else.
 export function resolveModulePlacement(
   page: PageGrid,
-  candidate: GridRect,
+  rawCandidate: GridRect,
   others: Array<GridRect & { id: string; locked: boolean }>
 ): {
   placement: { columnStart: number; rowStart: number };
   reflow: Array<{ id: string; rowStart: number }>;
 } {
+  // Clamp to the page here rather than trusting every caller to have
+  // done it already — a candidate that runs off the page on its own
+  // (nothing to collide with, so the overlap check below never even
+  // triggers) still needs to land somewhere valid.
+  const candidate: GridRect = { ...rawCandidate, ...clampGridPlacement(page, rawCandidate) };
+
   const overlapping = others.filter((o) => rectsOverlap(candidate, o));
   if (overlapping.length === 0) {
     return { placement: { columnStart: candidate.columnStart, rowStart: candidate.rowStart }, reflow: [] };
@@ -176,26 +182,59 @@ export function resolveModulePlacement(
     const stackSiblings = others.filter(
       (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
     );
-    const stackTop = Math.min(candidate.rowStart, ...stackSiblings.map((s) => s.rowStart));
-    const DRAGGED = "__dragged__";
-    const ordered = [
-      ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
-      { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
-    ].sort((a, b) => a.rowStart - b.rowStart || (a.id === DRAGGED ? 1 : -1));
+    const rawStackTop = Math.min(candidate.rowStart, ...stackSiblings.map((s) => s.rowStart));
+    const totalHeight = stackSiblings.reduce((sum, s) => sum + s.rowSpan, candidate.rowSpan);
 
-    let cursor = stackTop;
-    let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
-    const reflow: Array<{ id: string; rowStart: number }> = [];
-    for (const item of ordered) {
-      if (item.id === DRAGGED) {
-        placement = { columnStart: candidate.columnStart, rowStart: cursor };
-      } else if (item.rowStart !== cursor) {
-        reflow.push({ id: item.id, rowStart: cursor });
+    // The reflowed stack can't run into a locked block above or below it
+    // (e.g. week-title sitting above the sidebar boxes), or off the page
+    // — find the tightest such bounds in this column, using column-range
+    // overlap rather than an exact span match so a locked block wider
+    // than the stack (like a full-width hourly-grid-core) still counts.
+    const columnsOverlap = (o: GridRect) =>
+      o.columnStart < candidate.columnStart + candidate.columnSpan &&
+      o.columnStart + o.columnSpan > candidate.columnStart;
+    const boundingLocked = others.filter((o) => o.locked && columnsOverlap(o));
+    const topBound = Math.max(
+      0,
+      ...boundingLocked
+        .filter((o) => o.rowStart + o.rowSpan <= rawStackTop)
+        .map((o) => o.rowStart + o.rowSpan)
+    );
+    const bottomBound = Math.min(
+      page.gridRows,
+      ...boundingLocked.filter((o) => o.rowStart >= rawStackTop).map((o) => o.rowStart)
+    );
+
+    if (totalHeight <= bottomBound - topBound) {
+      const stackTop = Math.max(topBound, Math.min(rawStackTop, bottomBound - totalHeight));
+      const DRAGGED = "__dragged__";
+      const ordered = [
+        ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
+        { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
+      ].sort((a, b) => a.rowStart - b.rowStart || (a.id === DRAGGED ? 1 : -1));
+
+      let cursor = stackTop;
+      let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
+      const reflow: Array<{ id: string; rowStart: number }> = [];
+      for (const item of ordered) {
+        if (item.id === DRAGGED) {
+          placement = { columnStart: candidate.columnStart, rowStart: cursor };
+        } else if (item.rowStart !== cursor) {
+          reflow.push({ id: item.id, rowStart: cursor });
+        }
+        cursor += item.rowSpan;
       }
-      cursor += item.rowSpan;
+      return { placement, reflow };
     }
-    return { placement, reflow };
+    // Doesn't fit even with a full reorder — e.g. enough boxes have piled
+    // into this column that reordering them can't avoid running past a
+    // bound. Leave the siblings alone and just relocate the dragged
+    // module instead of producing a stack that overflows anyway.
   }
 
-  return { placement: findNearestFreeCell(page, candidate, overlapping), reflow: [] };
+  // Pass the full `others` list, not just what overlapped the original
+  // candidate — the search below tries other cells too, and needs to
+  // check each of those against everything, not just what happened to
+  // conflict with where the drag first landed.
+  return { placement: findNearestFreeCell(page, candidate, others), reflow: [] };
 }
