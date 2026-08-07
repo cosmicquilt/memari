@@ -44,6 +44,77 @@ function pageGridFor(page: {
   };
 }
 
+// updateModuleConfig accepts propValues straight from the client and
+// used to write it verbatim — a wrong type or an unexpected key would
+// sail through, get stored, and then hit the unchecked
+// `propValues as unknown as XConfig` casts in each module renderer
+// (renderLabeledBox etc.) the next time the page renders server-side.
+// Since page.tsx is a Server Component, a renderer throwing there breaks
+// the *entire* /planner page for that user, not just the one module —
+// worth guarding against even though this is self-scoped (a user can
+// only do this to their own planner, never someone else's).
+//
+// Whitelists to the module type's own configSchema (a real JSON Schema,
+// already stored per ModuleType — see prisma/seed.mts): unknown keys are
+// dropped, wrong-typed values fall back to the schema's own default (the
+// same default addPaletteModuleAt seeds a fresh instance with), enum
+// values outside the allowed set are rejected the same way, and
+// strings/arrays are capped to a sane length as a light bound on how
+// much JSON one instance can accumulate.
+const MAX_STRING_LENGTH = 500;
+const MAX_ARRAY_LENGTH = 100;
+
+function sanitizePropValues(
+  configSchema: unknown,
+  propValues: Record<string, unknown>
+): Record<string, unknown> {
+  const schema = configSchema as {
+    properties?: Record<
+      string,
+      { type?: string; enum?: unknown[]; items?: { type?: string }; default?: unknown }
+    >;
+  };
+  const properties = schema.properties ?? {};
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, def] of Object.entries(properties)) {
+    const value = propValues[key];
+    switch (def.type) {
+      case "string": {
+        const str = typeof value === "string" ? value.slice(0, MAX_STRING_LENGTH) : undefined;
+        sanitized[key] = str ?? def.default ?? "";
+        break;
+      }
+      case "boolean":
+        sanitized[key] = typeof value === "boolean" ? value : Boolean(def.default);
+        break;
+      case "integer": {
+        const n = typeof value === "number" && Number.isInteger(value) ? value : undefined;
+        sanitized[key] = n !== undefined && (!def.enum || def.enum.includes(n)) ? n : def.default;
+        break;
+      }
+      case "array": {
+        const arr = Array.isArray(value)
+          ? value
+              .slice(0, MAX_ARRAY_LENGTH)
+              .filter((item) => def.items?.type !== "string" || typeof item === "string")
+              .map((item) => (typeof item === "string" ? item.slice(0, MAX_STRING_LENGTH) : item))
+          : undefined;
+        sanitized[key] = arr ?? def.default ?? [];
+        break;
+      }
+      default:
+        // A schema type this validator doesn't know how to check yet —
+        // pass the value through as-is rather than silently discarding
+        // a field. Every property type actually in use today (see
+        // prisma/seed.mts) is one of the four cases above.
+        sanitized[key] = value !== undefined ? value : def.default;
+    }
+  }
+
+  return sanitized;
+}
+
 // Shared by every action that persists a change to a grid-placed instance
 // and needs to hand the client back fresh JSON to swap into the live
 // canvas (see PlannerEditorCanvas's swapCanvasElement) — the same
@@ -526,9 +597,11 @@ export async function updateModuleConfig(
     throw new Error("Module isn't grid-placed");
   }
 
+  const sanitized = sanitizePropValues(instance.moduleType.configSchema, propValues);
+
   const updated = await prisma.moduleInstance.update({
     where: { id: instanceId },
-    data: { propValues: propValues as Prisma.InputJsonValue },
+    data: { propValues: sanitized as Prisma.InputJsonValue },
   });
 
   const pageGrid = pageGridFor(instance.page);
