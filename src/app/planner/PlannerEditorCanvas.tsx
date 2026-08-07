@@ -177,7 +177,7 @@ export function PlannerEditorCanvas({
                   ActionControls: () => <DownloadButton store={store} />,
                 }}
               />
-              <Workspace store={store} layout="horizontal" />
+              <Workspace store={store} layout="horizontal" pageGap={0} />
               <ZoomButtons store={store} />
             </WorkspaceWrap>
           </PolotnoContainer>
