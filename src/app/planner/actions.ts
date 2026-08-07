@@ -2,7 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { clampGridPlacement, findNearestFreeCell, type PageGrid } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
@@ -277,37 +277,115 @@ export async function addPaletteModuleAt(
     throw new Error("Not signed in");
   }
 
-  const page = await prisma.page.findFirst({
-    where: { id: pageId, planner: { ownerId: userId } },
-    include: { moduleInstances: { include: { moduleType: true } } },
-  });
-  if (!page) {
-    throw new Error("Page not found or not owned by this user");
-  }
-
-  const moduleType = await prisma.moduleType.findUniqueOrThrow({
-    where: { slug: moduleTypeSlug },
-  });
-
-  // todo-checklist and habit-tracker size themselves to match whichever
-  // page they land on — 3 day-columns wide on the left (3-day) page, 4
-  // wide on the right (4-day) page — by reading that page's own
-  // hourly-grid-core instance, rather than always using the module
-  // type's fixed default. Without this, a checklist dropped on the
-  // 4-day page would still only draw 3 day segments (the schema
-  // default), out of step with the hourly grid it's sitting under.
-  let effectiveColumnSpan = moduleType.defaultColumnSpan;
-  const configOverrides: Record<string, unknown> = {};
-  if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
-    const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-    if (hourlyGrid) {
-      effectiveColumnSpan = hourlyGrid.columnSpan;
-      if (moduleTypeSlug === "todo-checklist") {
-        const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
-        configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+  // Serializable, not the default Read Committed: reading which cells are
+  // occupied and then creating the new instance has to be atomic against
+  // another concurrent call doing the same thing, or two near-simultaneous
+  // drops (e.g. a duplicated drop event) can both read the page as "not
+  // yet occupied" before either commits, both compute the same free cell,
+  // and both land there — which is exactly how duplicate/overlapping
+  // modules ended up in the DB. Serializable makes Postgres reject the
+  // loser instead of silently allowing both writes; the client already
+  // guards against the same-tab case (see PlannerEditorCanvas's
+  // addInFlight ref), this is the backstop for anything that gets past it.
+  const { page, created } = await prisma.$transaction(
+    async (tx) => {
+      const page = await tx.page.findFirst({
+        where: { id: pageId, planner: { ownerId: userId } },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      });
+      if (!page) {
+        throw new Error("Page not found or not owned by this user");
       }
-    }
-  }
+
+      const moduleType = await tx.moduleType.findUniqueOrThrow({
+        where: { slug: moduleTypeSlug },
+      });
+
+      // todo-checklist and habit-tracker size themselves to match
+      // whichever page they land on — 3 day-columns wide on the left
+      // (3-day) page, 4 wide on the right (4-day) page — by reading that
+      // page's own hourly-grid-core instance, rather than always using
+      // the module type's fixed default. Without this, a checklist
+      // dropped on the 4-day page would still only draw 3 day segments
+      // (the schema default), out of step with the hourly grid it's
+      // sitting under.
+      let effectiveColumnSpan = moduleType.defaultColumnSpan;
+      const configOverrides: Record<string, unknown> = {};
+      if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
+        const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+        if (hourlyGrid) {
+          effectiveColumnSpan = hourlyGrid.columnSpan;
+          if (moduleTypeSlug === "todo-checklist") {
+            const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
+            configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+          }
+        }
+      }
+
+      const pageGrid: PageGrid = {
+        widthPx: PRINT_WIDTH_PX,
+        heightPx: PRINT_HEIGHT_PX,
+        gridColumns: page.gridColumns,
+        gridRows: page.gridRows,
+        gridGapPx: page.gridGapPx,
+        marginPx: page.marginPx,
+      };
+      const candidate = clampGridPlacement(pageGrid, {
+        columnStart,
+        rowStart,
+        columnSpan: effectiveColumnSpan,
+        rowSpan: moduleType.defaultRowSpan,
+      });
+      // Don't drop a new module on top of something already there — find
+      // the nearest free cell instead of just clamping to the page edge.
+      // Plain relocation rather than the drag-reposition path's stack
+      // reflow (see PlannerEditorCanvas) — reasonable for a fresh drop,
+      // which doesn't have "siblings it was already part of" to reorder
+      // among.
+      const occupied = page.moduleInstances
+        .filter((mi) => mi.columnStart !== null && mi.rowStart !== null)
+        .map((mi) => ({
+          columnStart: mi.columnStart as number,
+          rowStart: mi.rowStart as number,
+          columnSpan: mi.columnSpan,
+          rowSpan: mi.rowSpan,
+        }));
+      const clamped = findNearestFreeCell(
+        pageGrid,
+        { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
+        occupied
+      );
+
+      // Pull each config field's declared default out of the JSON
+      // Schema, so a freshly-added instance starts in a sensible state,
+      // then layer the page-specific overrides (dayCount, above) on top.
+      const schema = moduleType.configSchema as {
+        properties?: Record<string, { default?: unknown }>;
+      };
+      const defaultConfig = {
+        ...Object.fromEntries(
+          Object.entries(schema.properties ?? {}).map(([key, def]) => [key, def.default])
+        ),
+        ...configOverrides,
+      };
+
+      const created = await tx.moduleInstance.create({
+        data: {
+          pageId,
+          moduleTypeId: moduleType.id,
+          placementMode: "GRID",
+          columnStart: clamped.columnStart,
+          rowStart: clamped.rowStart,
+          columnSpan: effectiveColumnSpan,
+          rowSpan: moduleType.defaultRowSpan,
+          propValues: defaultConfig as Prisma.InputJsonValue,
+        },
+      });
+
+      return { page, moduleType, effectiveColumnSpan, created };
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
 
   const pageGrid: PageGrid = {
     widthPx: PRINT_WIDTH_PX,
@@ -317,56 +395,6 @@ export async function addPaletteModuleAt(
     gridGapPx: page.gridGapPx,
     marginPx: page.marginPx,
   };
-  const candidate = clampGridPlacement(pageGrid, {
-    columnStart,
-    rowStart,
-    columnSpan: effectiveColumnSpan,
-    rowSpan: moduleType.defaultRowSpan,
-  });
-  // Don't drop a new module on top of something already there — find the
-  // nearest free cell instead of just clamping to the page edge. Plain
-  // relocation rather than the drag-reposition path's stack reflow
-  // (see PlannerEditorCanvas) — reasonable for a fresh drop, which
-  // doesn't have "siblings it was already part of" to reorder among.
-  const occupied = page.moduleInstances
-    .filter((mi) => mi.columnStart !== null && mi.rowStart !== null)
-    .map((mi) => ({
-      columnStart: mi.columnStart as number,
-      rowStart: mi.rowStart as number,
-      columnSpan: mi.columnSpan,
-      rowSpan: mi.rowSpan,
-    }));
-  const clamped = findNearestFreeCell(
-    pageGrid,
-    { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
-    occupied
-  );
-
-  // Pull each config field's declared default out of the JSON Schema,
-  // so a freshly-added instance starts in a sensible state, then layer
-  // the page-specific overrides (dayCount, above) on top.
-  const schema = moduleType.configSchema as {
-    properties?: Record<string, { default?: unknown }>;
-  };
-  const defaultConfig = {
-    ...Object.fromEntries(
-      Object.entries(schema.properties ?? {}).map(([key, def]) => [key, def.default])
-    ),
-    ...configOverrides,
-  };
-
-  const created = await prisma.moduleInstance.create({
-    data: {
-      pageId,
-      moduleTypeId: moduleType.id,
-      placementMode: "GRID",
-      columnStart: clamped.columnStart,
-      rowStart: clamped.rowStart,
-      columnSpan: effectiveColumnSpan,
-      rowSpan: moduleType.defaultRowSpan,
-      propValues: defaultConfig as Prisma.InputJsonValue,
-    },
-  });
 
   const [element] = renderModuleInstance(
     {

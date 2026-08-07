@@ -113,6 +113,16 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
   // reappear on the next reload.
   const initialTrackedIds = useRef(new Set(Object.keys(moduleGridInfo)));
 
+  // Guards against a palette drop being processed twice concurrently — a
+  // duplicate/double-fired drop event otherwise let two addPaletteModuleAt
+  // calls both read the page as "not yet occupied" before either had
+  // committed, so both computed the same free cell and both landed there
+  // (this is exactly how duplicate/overlapping modules ended up in the
+  // DB). setAddingSlug (React state) isn't enough on its own — the guard
+  // needs to block re-entrancy synchronously, before React has even
+  // re-rendered with the disabled button.
+  const addInFlight = useRef(false);
+
   const pageGrids = useMemo(() => {
     const map: Record<string, PageGrid> = {};
     for (const p of pages) map[p.pageId] = p.pageGrid;
@@ -338,9 +348,15 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
   // and the drop position in that page's own pixel space.
   const handlePaletteDragStart = (slug: string) => {
     registerNextDomDrop(async (pos, _el, event) => {
+      if (addInFlight.current) return;
+      addInFlight.current = true;
+
       const pageId = event?.page?.id;
       const pageGrid = pageId ? pageGrids[pageId] : undefined;
-      if (!pageId || !pageGrid) return;
+      if (!pageId || !pageGrid) {
+        addInFlight.current = false;
+        return;
+      }
 
       const cell = pixelsToGridCell(pageGrid, pos);
       setAddingSlug(slug);
@@ -357,6 +373,7 @@ export function PlannerEditorCanvas({ pages }: { pages: PageProp[] }) {
         alert(err instanceof Error ? err.message : String(err));
       } finally {
         setAddingSlug(null);
+        addInFlight.current = false;
       }
     });
   };
