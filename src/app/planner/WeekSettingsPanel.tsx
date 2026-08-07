@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAsyncAction } from "./useAsyncAction";
 
 export type WeekSettings = {
   weekNumber: number;
@@ -12,6 +13,43 @@ export type WeekSettings = {
 
 const LEFT_LABELS = ["Sun", "Mon", "Tue"];
 const RIGHT_LABELS = ["Wed", "Thu", "Fri", "Sat"];
+
+function updateDateAt(list: number[], index: number, value: string): number[] {
+  const n = parseInt(value, 10);
+  const next = [...list];
+  next[index] = Number.isFinite(n) ? n : 0;
+  return next;
+}
+
+function DateNumbersRow({
+  title,
+  dayLabels,
+  dates,
+  setDates,
+}: {
+  title: string;
+  dayLabels: string[];
+  dates: number[];
+  setDates: (v: number[]) => void;
+}) {
+  return (
+    <div>
+      <div style={{ marginBottom: 4, color: "#777" }}>{title}</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {dayLabels.map((dayLabel, i) => (
+          <label key={dayLabel} style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+            <span style={{ fontSize: 11, color: "#999" }}>{dayLabel}</span>
+            <input
+              type="number"
+              value={dates[i] ?? ""}
+              onChange={(e) => setDates(updateDateAt(dates, i, e.target.value))}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Editing for week-title + both pages' hourly-grid-core day numbers —
 // locked/structural blocks that aren't individually selectable on the
@@ -29,35 +67,15 @@ export function WeekSettingsPanel({
   const [dateRangeLabel, setDateRangeLabel] = useState(initial.dateRangeLabel);
   const [leftDates, setLeftDates] = useState(initial.leftDates);
   const [rightDates, setRightDates] = useState(initial.rightDates);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, saveError, runSave] = useAsyncAction();
 
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveError(null);
-    try {
+  const handleSave = () =>
+    runSave(async () => {
       await onSave({ weekNumber, weekTotal, dateRangeLabel, leftDates, rightDates });
       // onSave reloads the page on success (see PlannerEditorCanvas), so
       // there's no "saved" state to show here — if we get past the
       // await, the reload is already in flight.
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateDate = (
-    list: number[],
-    setList: (v: number[]) => void,
-    index: number,
-    value: string
-  ) => {
-    const n = parseInt(value, 10);
-    const next = [...list];
-    next[index] = Number.isFinite(n) ? n : 0;
-    setList(next);
-  };
+    });
 
   return (
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
@@ -94,37 +112,13 @@ export function WeekSettingsPanel({
         />
       </label>
 
-      <div>
-        <div style={{ marginBottom: 4, color: "#777" }}>Left page day numbers</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {LEFT_LABELS.map((dayLabel, i) => (
-            <label key={dayLabel} style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-              <span style={{ fontSize: 11, color: "#999" }}>{dayLabel}</span>
-              <input
-                type="number"
-                value={leftDates[i] ?? ""}
-                onChange={(e) => updateDate(leftDates, setLeftDates, i, e.target.value)}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div style={{ marginBottom: 4, color: "#777" }}>Right page day numbers</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {RIGHT_LABELS.map((dayLabel, i) => (
-            <label key={dayLabel} style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-              <span style={{ fontSize: 11, color: "#999" }}>{dayLabel}</span>
-              <input
-                type="number"
-                value={rightDates[i] ?? ""}
-                onChange={(e) => updateDate(rightDates, setRightDates, i, e.target.value)}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
+      <DateNumbersRow title="Left page day numbers" dayLabels={LEFT_LABELS} dates={leftDates} setDates={setLeftDates} />
+      <DateNumbersRow
+        title="Right page day numbers"
+        dayLabels={RIGHT_LABELS}
+        dates={rightDates}
+        setDates={setRightDates}
+      />
 
       <button onClick={handleSave} disabled={saving}>
         {saving ? "Saving…" : "Save week settings"}

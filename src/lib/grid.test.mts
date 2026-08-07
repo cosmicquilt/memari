@@ -18,6 +18,7 @@ import {
   rectsOverlap,
   findNearestFreeCell,
   resolveModulePlacement,
+  moduleInstancesToRects,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -102,6 +103,24 @@ const page: PageGrid = {
   assert(!rectsOverlap(a, { columnStart: 2, rowStart: 0, columnSpan: 2, rowSpan: 2 }), "touching edges (not overlapping) not flagged");
   assert(!rectsOverlap(a, { columnStart: 0, rowStart: 2, columnSpan: 2, rowSpan: 2 }), "touching edges vertically not flagged");
   assert(rectsOverlap(a, a), "a rect overlaps itself");
+}
+
+// --- moduleInstancesToRects ---
+{
+  const instances = [
+    { id: "a", columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 },
+    { id: "b", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 3 },
+    { id: "freeform", columnStart: null, rowStart: null, columnSpan: 1, rowSpan: 1 },
+  ];
+  const all = moduleInstancesToRects(instances);
+  assert(all.length === 2, "moduleInstancesToRects drops rows with no grid position (freeform elements)");
+  assert(
+    all.every((r) => r.columnStart !== undefined && typeof r.columnStart === "number"),
+    "moduleInstancesToRects narrows nullable columnStart/rowStart to number"
+  );
+
+  const excluded = moduleInstancesToRects(instances, "a");
+  assert(excluded.length === 1, "moduleInstancesToRects excludes the given id (e.g. the instance being resized)");
 }
 
 // --- findNearestFreeCell ---

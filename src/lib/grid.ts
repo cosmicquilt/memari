@@ -107,6 +107,26 @@ export function rectsOverlap(a: GridRect, b: GridRect): boolean {
   );
 }
 
+// Maps DB rows shaped like a grid-placed ModuleInstance (id + nullable
+// columnStart/rowStart + span) down to plain GridRects for collision
+// checks — the same shape addPaletteModuleAt and updateModuleSize in
+// actions.ts both need when building their "what's already occupied"
+// list. Rows without a grid position (freeform elements, or an id to
+// exclude — e.g. the instance being resized, which shouldn't collide
+// with itself) are dropped.
+export function moduleInstancesToRects<
+  T extends { id: string; columnStart: number | null; rowStart: number | null; columnSpan: number; rowSpan: number }
+>(instances: T[], excludeId?: string): GridRect[] {
+  return instances
+    .filter((mi) => mi.id !== excludeId && mi.columnStart !== null && mi.rowStart !== null)
+    .map((mi) => ({
+      columnStart: mi.columnStart as number,
+      rowStart: mi.rowStart as number,
+      columnSpan: mi.columnSpan,
+      rowSpan: mi.rowSpan,
+    }));
+}
+
 // Relocates a placement that collides with something to the nearest
 // non-overlapping cell — used when the collision isn't a simple
 // same-column stack reorder (see resolveModulePlacement below), e.g. a

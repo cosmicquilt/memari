@@ -3,7 +3,13 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { clampGridPlacement, findNearestFreeCell, rectsOverlap, type PageGrid } from "@/lib/grid";
+import {
+  clampGridPlacement,
+  findNearestFreeCell,
+  rectsOverlap,
+  moduleInstancesToRects,
+  type PageGrid,
+} from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
@@ -18,6 +24,47 @@ type PolotnoElement = {
   height: number;
   [key: string]: unknown;
 };
+
+// Shared by every action below that needs a PageGrid from a fetched Page
+// row — the same 6-field mapping was being rebuilt inline in four
+// separate places.
+function pageGridFor(page: {
+  gridColumns: number;
+  gridRows: number;
+  gridGapPx: number;
+  marginPx: number;
+}): PageGrid {
+  return {
+    widthPx: PRINT_WIDTH_PX,
+    heightPx: PRINT_HEIGHT_PX,
+    gridColumns: page.gridColumns,
+    gridRows: page.gridRows,
+    gridGapPx: page.gridGapPx,
+    marginPx: page.marginPx,
+  };
+}
+
+// Shared by every action that persists a change to a grid-placed instance
+// and needs to hand the client back fresh JSON to swap into the live
+// canvas (see PlannerEditorCanvas's swapCanvasElement) — the same
+// "build the renderModuleInstance input from a DB row + a slug" shape
+// was being repeated at each call site.
+function renderInstance(
+  row: {
+    id: string;
+    locked: boolean;
+    columnStart: number | null;
+    rowStart: number | null;
+    columnSpan: number;
+    rowSpan: number;
+    propValues: unknown;
+  },
+  slug: string,
+  pageGrid: PageGrid
+) {
+  const [element] = renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid);
+  return element;
+}
 
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
@@ -322,14 +369,7 @@ export async function addPaletteModuleAt(
         }
       }
 
-      const pageGrid: PageGrid = {
-        widthPx: PRINT_WIDTH_PX,
-        heightPx: PRINT_HEIGHT_PX,
-        gridColumns: page.gridColumns,
-        gridRows: page.gridRows,
-        gridGapPx: page.gridGapPx,
-        marginPx: page.marginPx,
-      };
+      const pageGrid = pageGridFor(page);
       const candidate = clampGridPlacement(pageGrid, {
         columnStart,
         rowStart,
@@ -342,14 +382,7 @@ export async function addPaletteModuleAt(
       // reflow (see PlannerEditorCanvas) — reasonable for a fresh drop,
       // which doesn't have "siblings it was already part of" to reorder
       // among.
-      const occupied = page.moduleInstances
-        .filter((mi) => mi.columnStart !== null && mi.rowStart !== null)
-        .map((mi) => ({
-          columnStart: mi.columnStart as number,
-          rowStart: mi.rowStart as number,
-          columnSpan: mi.columnSpan,
-          rowSpan: mi.rowSpan,
-        }));
+      const occupied = moduleInstancesToRects(page.moduleInstances);
       const clamped = findNearestFreeCell(
         pageGrid,
         { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
@@ -387,28 +420,8 @@ export async function addPaletteModuleAt(
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
 
-  const pageGrid: PageGrid = {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
-    gridColumns: page.gridColumns,
-    gridRows: page.gridRows,
-    gridGapPx: page.gridGapPx,
-    marginPx: page.marginPx,
-  };
-
-  const [element] = renderModuleInstance(
-    {
-      id: created.id,
-      locked: created.locked,
-      columnStart: created.columnStart,
-      rowStart: created.rowStart,
-      columnSpan: created.columnSpan,
-      rowSpan: created.rowSpan,
-      propValues: created.propValues,
-      moduleType: { slug: moduleTypeSlug },
-    },
-    pageGrid
-  );
+  const pageGrid = pageGridFor(page);
+  const element = renderInstance(created, moduleTypeSlug, pageGrid);
 
   return {
     instanceId: created.id,
@@ -443,14 +456,7 @@ export async function updateModulePlacement(
     throw new Error("Cannot reposition a locked module");
   }
 
-  const pageGrid: PageGrid = {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
-    gridColumns: instance.page.gridColumns,
-    gridRows: instance.page.gridRows,
-    gridGapPx: instance.page.gridGapPx,
-    marginPx: instance.page.marginPx,
-  };
+  const pageGrid = pageGridFor(instance.page);
   const clamped = clampGridPlacement(pageGrid, {
     columnStart: placement.columnStart,
     rowStart: placement.rowStart,
@@ -525,27 +531,8 @@ export async function updateModuleConfig(
     data: { propValues: propValues as Prisma.InputJsonValue },
   });
 
-  const pageGrid: PageGrid = {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
-    gridColumns: instance.page.gridColumns,
-    gridRows: instance.page.gridRows,
-    gridGapPx: instance.page.gridGapPx,
-    marginPx: instance.page.marginPx,
-  };
-  const [element] = renderModuleInstance(
-    {
-      id: updated.id,
-      locked: updated.locked,
-      columnStart: updated.columnStart,
-      rowStart: updated.rowStart,
-      columnSpan: updated.columnSpan,
-      rowSpan: updated.rowSpan,
-      propValues: updated.propValues,
-      moduleType: { slug: instance.moduleType.slug },
-    },
-    pageGrid
-  );
+  const pageGrid = pageGridFor(instance.page);
+  const element = renderInstance(updated, instance.moduleType.slug, pageGrid);
 
   return { element, propValues: updated.propValues };
 }
@@ -592,18 +579,26 @@ export async function updateModuleSize(
     throw new Error("Module isn't grid-placed");
   }
 
-  const pageGrid: PageGrid = {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
-    gridColumns: instance.page.gridColumns,
-    gridRows: instance.page.gridRows,
-    gridGapPx: instance.page.gridGapPx,
-    marginPx: instance.page.marginPx,
-  };
+  const pageGrid = pageGridFor(instance.page);
+
+  // todo-checklist/habit-tracker's column span is tied to matching the
+  // page's day count — see addPaletteModuleAt's identical derivation,
+  // which is what actually keeps a freshly-dropped one in sync. That
+  // invariant needs to hold here too, not just be implied by the client
+  // hiding the width stepper for those types (see PropertiesPanel.tsx) —
+  // otherwise this action alone would happily desync a checklist's
+  // columns from the hourly grid it sits under.
+  let requestedColumnSpan = size.columnSpan;
+  if (instance.moduleType.slug === "todo-checklist" || instance.moduleType.slug === "habit-tracker") {
+    const hourlyGrid = instance.page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    if (hourlyGrid) {
+      requestedColumnSpan = hourlyGrid.columnSpan;
+    }
+  }
 
   const clampedColumnSpan = Math.max(
     1,
-    Math.min(size.columnSpan, pageGrid.gridColumns - instance.columnStart)
+    Math.min(requestedColumnSpan, pageGrid.gridColumns - instance.columnStart)
   );
   const clampedRowSpan = Math.max(1, Math.min(size.rowSpan, pageGrid.gridRows - instance.rowStart));
 
@@ -613,14 +608,7 @@ export async function updateModuleSize(
     columnSpan: clampedColumnSpan,
     rowSpan: clampedRowSpan,
   };
-  const others = instance.page.moduleInstances
-    .filter((mi) => mi.id !== instance.id && mi.columnStart !== null && mi.rowStart !== null)
-    .map((mi) => ({
-      columnStart: mi.columnStart as number,
-      rowStart: mi.rowStart as number,
-      columnSpan: mi.columnSpan,
-      rowSpan: mi.rowSpan,
-    }));
+  const others = moduleInstancesToRects(instance.page.moduleInstances, instance.id);
   if (others.some((o) => rectsOverlap(candidate, o))) {
     throw new Error("Can't resize — another module is in the way");
   }
@@ -630,19 +618,7 @@ export async function updateModuleSize(
     data: { columnSpan: clampedColumnSpan, rowSpan: clampedRowSpan },
   });
 
-  const [element] = renderModuleInstance(
-    {
-      id: updated.id,
-      locked: updated.locked,
-      columnStart: updated.columnStart,
-      rowStart: updated.rowStart,
-      columnSpan: updated.columnSpan,
-      rowSpan: updated.rowSpan,
-      propValues: updated.propValues,
-      moduleType: { slug: instance.moduleType.slug },
-    },
-    pageGrid
-  );
+  const element = renderInstance(updated, instance.moduleType.slug, pageGrid);
 
   return { element, columnSpan: updated.columnSpan, rowSpan: updated.rowSpan };
 }

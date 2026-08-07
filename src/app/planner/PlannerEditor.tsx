@@ -10,24 +10,13 @@ const PlannerEditorCanvas = dynamic(
   { ssr: false, loading: () => <p style={{ padding: 16 }}>Loading editor…</p> }
 );
 
-import type { PageGrid } from "@/lib/grid";
+// `import type` is fully erased at compile time, so this doesn't pull in
+// Polotno/Konva the way the dynamic() runtime import above deliberately
+// avoids — safe to import the real shapes here instead of hand-copying
+// them.
+import type { PageProp } from "./PlannerEditorCanvas";
+import type { WeekSettings } from "./WeekSettingsPanel";
 
-export function PlannerEditor(props: {
-  pages: Array<{
-    pageId: string;
-    elements: object[];
-    pageGrid: PageGrid;
-    moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
-    moduleConfig: Record<string, { slug: string; propValues: unknown }>;
-    lockedRects: Array<{ columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }>;
-  }>;
-  weekSettings: {
-    weekNumber: number;
-    weekTotal: number;
-    dateRangeLabel: string;
-    leftDates: number[];
-    rightDates: number[];
-  };
-}) {
+export function PlannerEditor(props: { pages: PageProp[]; weekSettings: WeekSettings }) {
   return <PlannerEditorCanvas {...props} />;
 }

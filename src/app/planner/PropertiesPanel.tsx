@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAsyncAction } from "./useAsyncAction";
 
 // Content editing for whichever non-locked module is currently selected
 // on the canvas — heading text, ruled/blank, habit names, resizing, etc.
@@ -41,6 +42,37 @@ export function PropertiesPanel({
   return <PropertiesForm key={selected.id} selected={selected} onSave={onSave} onResize={onResize} />;
 }
 
+function SizeStepper({
+  label,
+  value,
+  unit,
+  disabled,
+  onDecrement,
+  onIncrement,
+}: {
+  label: string;
+  value: number;
+  unit: string;
+  disabled: boolean;
+  onDecrement: () => void;
+  onIncrement: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ width: 70, color: "#999" }}>{label}</span>
+      <button disabled={disabled} onClick={onDecrement}>
+        −
+      </button>
+      <span>
+        {value} {unit}
+      </span>
+      <button disabled={disabled} onClick={onIncrement}>
+        +
+      </button>
+    </div>
+  );
+}
+
 function PropertiesForm({
   selected,
   onSave,
@@ -51,15 +83,11 @@ function PropertiesForm({
   onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>(selected.propValues);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [resizing, setResizing] = useState(false);
-  const [resizeError, setResizeError] = useState<string | null>(null);
+  const [saving, saveError, runSave] = useAsyncAction();
+  const [resizing, resizeError, runResize] = useAsyncAction();
 
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveError(null);
-    try {
+  const handleSave = () =>
+    runSave(async () => {
       // Trim/drop blank lines only at save time, not on every keystroke —
       // letting the textarea hold blank lines while the user is still
       // typing is friendlier than fighting their cursor position.
@@ -73,35 +101,23 @@ function PropertiesForm({
             }
           : draft;
       await onSave(selected.id, cleaned);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+    });
 
   // Resize applies immediately on click rather than accumulating into a
   // draft — it's a discrete, already-confirmed action (grow/shrink by one
   // cell), not something you'd want to type-then-save. Column resize is
   // offered for labeled-box only: todo-checklist/habit-tracker's column
   // span is tied to matching the page's day count (see actions.ts's
-  // addPaletteModuleAt), and letting it drift out of sync independently
-  // would just recreate the "mismatched checklist" problem that sizing
-  // was built to avoid in the first place.
-  const handleResize = async (deltaColumns: number, deltaRows: number) => {
-    setResizing(true);
-    setResizeError(null);
-    try {
-      await onResize(selected.id, {
+  // addPaletteModuleAt/updateModuleSize), and letting it drift out of
+  // sync independently would just recreate the "mismatched checklist"
+  // problem that sizing was built to avoid in the first place.
+  const handleResize = (deltaColumns: number, deltaRows: number) =>
+    runResize(() =>
+      onResize(selected.id, {
         columnSpan: selected.columnSpan + deltaColumns,
         rowSpan: selected.rowSpan + deltaRows,
-      });
-    } catch (err) {
-      setResizeError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setResizing(false);
-    }
-  };
+      })
+    );
 
   const label: Record<string, string> = {
     "labeled-box": "Labeled box",
@@ -169,28 +185,24 @@ function PropertiesForm({
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <strong style={{ fontSize: 12, color: "#555" }}>Size</strong>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 70, color: "#999" }}>Height</span>
-          <button disabled={resizing} onClick={() => handleResize(0, -1)}>
-            −
-          </button>
-          <span>{selected.rowSpan} rows</span>
-          <button disabled={resizing} onClick={() => handleResize(0, 1)}>
-            +
-          </button>
-        </div>
+        <SizeStepper
+          label="Height"
+          value={selected.rowSpan}
+          unit="rows"
+          disabled={resizing}
+          onDecrement={() => handleResize(0, -1)}
+          onIncrement={() => handleResize(0, 1)}
+        />
 
         {allowColumnResize && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 70, color: "#999" }}>Width</span>
-            <button disabled={resizing} onClick={() => handleResize(-1, 0)}>
-              −
-            </button>
-            <span>{selected.columnSpan} cols</span>
-            <button disabled={resizing} onClick={() => handleResize(1, 0)}>
-              +
-            </button>
-          </div>
+          <SizeStepper
+            label="Width"
+            value={selected.columnSpan}
+            unit="cols"
+            disabled={resizing}
+            onDecrement={() => handleResize(-1, 0)}
+            onIncrement={() => handleResize(1, 0)}
+          />
         )}
 
         {resizeError && <span style={{ color: "#ff5555" }}>{resizeError}</span>}

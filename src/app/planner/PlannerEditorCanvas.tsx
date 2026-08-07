@@ -71,6 +71,24 @@ type PolotnoNode = {
   set: (attrs: Record<string, unknown>) => void;
 };
 
+// Finds whichever page currently has an element with this id and swaps
+// it for a freshly-rendered replacement in place (delete the old one,
+// add the new one) — the shared "server re-rendered this module's
+// content, now show it" step used after both a content edit
+// (updateModuleConfig) and a resize (updateModuleSize). Not a
+// useCallback/hook — it has no reactive dependencies of its own, just
+// the store reference each caller already has.
+function swapCanvasElement(store: ReturnType<typeof createStore>, instanceId: string, element: object) {
+  for (const page of store.pages) {
+    const existing = (page.children as unknown as PolotnoNode[]).find((c) => c.id === instanceId);
+    if (existing) {
+      store.deleteElements([instanceId]);
+      page.addElement(element as never);
+      return;
+    }
+  }
+}
+
 // Simple icons for the tabs — good enough to be recognizable without
 // pulling in Polotno's own icon library.
 function LabeledBoxIcon() {
@@ -106,7 +124,7 @@ function CalendarIcon() {
   );
 }
 
-type PageProp = {
+export type PageProp = {
   pageId: string;
   elements: object[];
   pageGrid: PageGrid;
@@ -431,14 +449,7 @@ export function PlannerEditorCanvas({
   const handleSaveModuleConfig = useCallback(
     async (instanceId: string, propValues: Record<string, unknown>) => {
       const result = await updateModuleConfig(instanceId, propValues);
-      for (const page of store.pages) {
-        const existing = (page.children as unknown as PolotnoNode[]).find((c) => c.id === instanceId);
-        if (existing) {
-          store.deleteElements([instanceId]);
-          page.addElement(result.element as never);
-          break;
-        }
-      }
+      swapCanvasElement(store, instanceId, result.element);
       setModuleConfig((prev) => ({
         ...prev,
         [instanceId]: {
@@ -460,14 +471,7 @@ export function PlannerEditorCanvas({
   const handleResizeModule = useCallback(
     async (instanceId: string, size: { columnSpan: number; rowSpan: number }) => {
       const result = await updateModuleSize(instanceId, size);
-      for (const page of store.pages) {
-        const existing = (page.children as unknown as PolotnoNode[]).find((c) => c.id === instanceId);
-        if (existing) {
-          store.deleteElements([instanceId]);
-          page.addElement(result.element as never);
-          break;
-        }
-      }
+      swapCanvasElement(store, instanceId, result.element);
       setModuleGridInfo((prev) => ({
         ...prev,
         [instanceId]: { columnSpan: result.columnSpan, rowSpan: result.rowSpan },
