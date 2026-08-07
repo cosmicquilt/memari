@@ -30,11 +30,18 @@ export function WeekSettingsPanel({
   const [leftDates, setLeftDates] = useState(initial.leftDates);
   const [rightDates, setRightDates] = useState(initial.rightDates);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       await onSave({ weekNumber, weekTotal, dateRangeLabel, leftDates, rightDates });
+      // onSave reloads the page on success (see PlannerEditorCanvas), so
+      // there's no "saved" state to show here — if we get past the
+      // await, the reload is already in flight.
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -122,6 +129,7 @@ export function WeekSettingsPanel({
       <button onClick={handleSave} disabled={saving}>
         {saving ? "Saving…" : "Save week settings"}
       </button>
+      {saveError && <span style={{ color: "#ff5555" }}>{saveError}</span>}
       <span style={{ fontSize: 11, color: "#999" }}>Reloads the page after saving.</span>
     </div>
   );

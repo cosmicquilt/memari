@@ -52,11 +52,13 @@ function PropertiesForm({
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>(selected.propValues);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [resizing, setResizing] = useState(false);
   const [resizeError, setResizeError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       // Trim/drop blank lines only at save time, not on every keystroke —
       // letting the textarea hold blank lines while the user is still
@@ -71,6 +73,8 @@ function PropertiesForm({
             }
           : draft;
       await onSave(selected.id, cleaned);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -158,6 +162,7 @@ function PropertiesForm({
       <button onClick={handleSave} disabled={saving}>
         {saving ? "Saving…" : "Save"}
       </button>
+      {saveError && <span style={{ color: "#ff5555" }}>{saveError}</span>}
 
       <hr style={{ width: "100%", border: "none", borderTop: "1px solid #333", opacity: 0.3 }} />
 
