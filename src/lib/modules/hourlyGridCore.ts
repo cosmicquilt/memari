@@ -132,35 +132,41 @@ export function renderHourlyGridCore(
       strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),
     });
     if (label) {
+      // Manually centered rather than relying on verticalAlign, which
+      // wasn't reliably centering text in a box taller than the text.
       const dateWidth = ptToPx(26);
       const nameLeftInset = ptToPx(DAY_NAME_LEFT_INSET_PT);
       const dateRightInset = ptToPx(DATE_RIGHT_INSET_PT);
+
+      const nameFontSize = ptToPx(8);
+      const nameTextHeight = nameFontSize * 1.2;
       elements.push({
         id: nextId(),
         type: "text",
         x: dayX + nameLeftInset,
-        y: geometry.y,
+        y: geometry.y + (headerHeight - nameTextHeight) / 2,
         width: dayColumnWidth - nameLeftInset - dateWidth,
-        height: headerHeight,
+        height: nameTextHeight,
         text: label.name,
-        fontSize: ptToPx(8),
+        fontSize: nameFontSize,
         fontFamily: FONT_FAMILY,
         align: "left",
-        verticalAlign: "middle",
       });
+
+      const dateFontSize = ptToPx(5);
+      const dateTextHeight = dateFontSize * 1.2;
       elements.push({
         id: nextId(),
         type: "text",
         x: dayX + dayColumnWidth - dateWidth - dateRightInset,
-        y: geometry.y,
+        y: geometry.y + (headerHeight - dateTextHeight) / 2,
         width: dateWidth,
-        height: headerHeight,
+        height: dateTextHeight,
         text: String(label.date),
-        fontSize: ptToPx(5),
+        fontSize: dateFontSize,
         fontFamily: FONT_FAMILY,
         fill: "#555555",
         align: "right",
-        verticalAlign: "middle",
       });
     }
 

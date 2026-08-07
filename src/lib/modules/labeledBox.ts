@@ -43,9 +43,18 @@ const RULED_LINE_SPACING_PX = 75;
 // The reference sizes long headings down to keep them on one line
 // ("Things I'm Grateful For" measured at 7pt vs. 8pt for shorter
 // headings like "Reminders"/"Notes") rather than letting them wrap and
-// collide with the divider below — replicate that behavior by length.
-function headingFontSizePt(heading: string): number {
-  return heading.length > 15 ? 7 : 8;
+// collide with the divider below. A length threshold was too coarse —
+// it doesn't account for available width after padding — so this
+// estimates actual rendered width per candidate size and picks the
+// largest that fits, same idea PT Serif's own metrics would give.
+const AVG_CHAR_WIDTH_RATIO = 0.52;
+function fittingHeadingFontSizePt(heading: string, availableWidthPx: number): number {
+  const candidates = [8, 7, 6, 5];
+  for (const pt of candidates) {
+    const estimatedWidthPx = heading.length * ptToPx(pt) * AVG_CHAR_WIDTH_RATIO;
+    if (estimatedWidthPx <= availableWidthPx) return pt;
+  }
+  return candidates[candidates.length - 1];
 }
 
 export function renderLabeledBox(
@@ -90,20 +99,27 @@ export function renderLabeledBox(
     stroke: "none",
   });
 
-  // Heading text, centered, inset from the side borders.
+  // Heading text, centered, inset from the side borders. Positioned
+  // with a manually-computed vertical center rather than relying on
+  // verticalAlign — that wasn't reliably centering text in a box much
+  // taller than the text itself.
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
+  const headingAvailableWidth = geometry.width - headingPadding * 2;
+  const headingFontSize = ptToPx(
+    fittingHeadingFontSizePt(config.heading, headingAvailableWidth)
+  );
+  const headingTextHeight = headingFontSize * 1.2;
   elements.push({
     id: nextId(),
     type: "text",
     x: geometry.x + headingPadding,
-    y: geometry.y,
-    width: geometry.width - headingPadding * 2,
-    height: headerHeight,
+    y: geometry.y + (headerHeight - headingTextHeight) / 2,
+    width: headingAvailableWidth,
+    height: headingTextHeight,
     text: config.heading.toUpperCase(),
-    fontSize: ptToPx(headingFontSizePt(config.heading)),
+    fontSize: headingFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
-    verticalAlign: "middle",
   });
 
   // Ruled body lines, if explicitly requested — default is blank, no
