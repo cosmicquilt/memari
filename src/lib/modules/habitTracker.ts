@@ -50,11 +50,6 @@ const ROW_LINE_WIDTH_PT = 0.35;
 // left over instead (see below).
 const DAY_COLUMN_WIDTH_PT = 17.3;
 const DAY_LETTERS = ["S", "M", "T", "W", "F", "S"];
-// Gap between hourly-grid-core's last ruled row line and this block's
-// own top border — see the identical constant/comment in
-// todoChecklist.ts; same 18.51pt measurement, applies uniformly to
-// whichever below-zone module sits directly under the hourly grid.
-const TOP_GAP_PT = 18.5;
 
 export function renderHabitTracker(
   geometry: { x: number; y: number; width: number; height: number },
@@ -65,9 +60,14 @@ export function renderHabitTracker(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const topGap = ptToPx(TOP_GAP_PT);
-  const contentY = geometry.y + topGap;
-  const contentHeight = geometry.height - topGap;
+  // Renders flush with its own allocated cell (contentY === geometry.y)
+  // — see the identical comment in todoChecklist.ts. This used to push
+  // content down by a fixed 18.5pt to match the reference PDF's gap
+  // below the hourly grid, back when this block was always auto-placed
+  // directly beneath one; now that it's freely user-placed, that
+  // assumption doesn't hold everywhere else it might land.
+  const contentY = geometry.y;
+  const contentHeight = geometry.height;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);

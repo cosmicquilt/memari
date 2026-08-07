@@ -34,15 +34,6 @@ const ROW_HEIGHT_PT = 13.45;
 const ROW_LINE_WIDTH_PT = 0.35;
 const CHECKBOX_WIDTH_PT = 14.1; // same as hourlyGridCore's time-label box
 const COLUMN_GUTTER_PT = 4.5; // same convention as hourlyGridCore
-// Gap between hourly-grid-core's last ruled row line and this block's own
-// top border — measured directly (get_drawings(), not text) from every
-// "single full-height module, no habit-tracker sharing the page" sample
-// in hourlyjournal.pdf (pages 3/4, 9/10, 13/14): row line at y=459.60,
-// block top border at y=478.11, a consistent 18.51pt gap across all of
-// them regardless of 3-day/4-day side. Applied as an internal offset
-// (like weekTitle's topOffset) rather than tuned via grid row count, so
-// it's exact regardless of row-quantization slack above this block.
-const TOP_GAP_PT = 18.5;
 
 export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
@@ -53,9 +44,17 @@ export function renderTodoChecklist(
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
 
-  const topGap = ptToPx(TOP_GAP_PT);
-  const contentY = geometry.y + topGap;
-  const contentHeight = geometry.height - topGap;
+  // Renders flush with its own allocated cell (contentY === geometry.y)
+  // — this used to push its content down by a fixed 18.5pt to match the
+  // reference PDF's gap below the hourly grid, back when this block was
+  // always auto-placed directly beneath one. Now that it's a freely
+  // user-placed module (drag/drop, any position), that assumption no
+  // longer holds — baking in a gap meant for one specific relative
+  // position would leave dead space at the top everywhere else instead.
+  // Any desired gap now comes from the grid position itself (rowStart),
+  // same as every other freely-placed module.
+  const contentY = geometry.y;
+  const contentHeight = geometry.height;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);

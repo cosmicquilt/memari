@@ -279,7 +279,7 @@ export async function addPaletteModuleAt(
 
   const page = await prisma.page.findFirst({
     where: { id: pageId, planner: { ownerId: userId } },
-    include: { moduleInstances: true },
+    include: { moduleInstances: { include: { moduleType: true } } },
   });
   if (!page) {
     throw new Error("Page not found or not owned by this user");
@@ -288,6 +288,26 @@ export async function addPaletteModuleAt(
   const moduleType = await prisma.moduleType.findUniqueOrThrow({
     where: { slug: moduleTypeSlug },
   });
+
+  // todo-checklist and habit-tracker size themselves to match whichever
+  // page they land on — 3 day-columns wide on the left (3-day) page, 4
+  // wide on the right (4-day) page — by reading that page's own
+  // hourly-grid-core instance, rather than always using the module
+  // type's fixed default. Without this, a checklist dropped on the
+  // 4-day page would still only draw 3 day segments (the schema
+  // default), out of step with the hourly grid it's sitting under.
+  let effectiveColumnSpan = moduleType.defaultColumnSpan;
+  const configOverrides: Record<string, unknown> = {};
+  if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
+    const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    if (hourlyGrid) {
+      effectiveColumnSpan = hourlyGrid.columnSpan;
+      if (moduleTypeSlug === "todo-checklist") {
+        const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
+        configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+      }
+    }
+  }
 
   const pageGrid: PageGrid = {
     widthPx: PRINT_WIDTH_PX,
@@ -300,7 +320,7 @@ export async function addPaletteModuleAt(
   const candidate = clampGridPlacement(pageGrid, {
     columnStart,
     rowStart,
-    columnSpan: moduleType.defaultColumnSpan,
+    columnSpan: effectiveColumnSpan,
     rowSpan: moduleType.defaultRowSpan,
   });
   // Don't drop a new module on top of something already there — find the
@@ -318,21 +338,22 @@ export async function addPaletteModuleAt(
     }));
   const clamped = findNearestFreeCell(
     pageGrid,
-    { ...candidate, columnSpan: moduleType.defaultColumnSpan, rowSpan: moduleType.defaultRowSpan },
+    { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
     occupied
   );
 
   // Pull each config field's declared default out of the JSON Schema,
-  // so a freshly-added instance starts in a sensible state.
+  // so a freshly-added instance starts in a sensible state, then layer
+  // the page-specific overrides (dayCount, above) on top.
   const schema = moduleType.configSchema as {
     properties?: Record<string, { default?: unknown }>;
   };
-  const defaultConfig = Object.fromEntries(
-    Object.entries(schema.properties ?? {}).map(([key, def]) => [
-      key,
-      def.default,
-    ])
-  );
+  const defaultConfig = {
+    ...Object.fromEntries(
+      Object.entries(schema.properties ?? {}).map(([key, def]) => [key, def.default])
+    ),
+    ...configOverrides,
+  };
 
   const created = await prisma.moduleInstance.create({
     data: {
@@ -341,7 +362,7 @@ export async function addPaletteModuleAt(
       placementMode: "GRID",
       columnStart: clamped.columnStart,
       rowStart: clamped.rowStart,
-      columnSpan: moduleType.defaultColumnSpan,
+      columnSpan: effectiveColumnSpan,
       rowSpan: moduleType.defaultRowSpan,
       propValues: defaultConfig as Prisma.InputJsonValue,
     },
