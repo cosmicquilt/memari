@@ -36,7 +36,7 @@ export function EmptyZoneOverlay({
   onOpenPalette: () => void;
 }) {
   const pageIds = Object.keys(interactiveZonesByPage);
-  const pageRects = usePageScreenRects(pageIds);
+  const pageRects = usePageScreenRects(store, pageIds);
 
   const [emptyZones, setEmptyZones] = useState<Array<{ key: string; pageId: string; zone: GridRect }>>([]);
 

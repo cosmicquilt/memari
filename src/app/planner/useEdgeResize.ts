@@ -46,7 +46,7 @@ export function useEdgeResize({
   pageGrids: Record<string, PageGrid>;
   onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
 }) {
-  const pageRects = usePageScreenRects(pageIds);
+  const pageRects = usePageScreenRects(store, pageIds);
   // Refs, not state - none of this needs to trigger a re-render; it just
   // needs to survive across pointer event callbacks for one gesture.
   const hoverEdgeRef = useRef<"bottom" | "right" | null>(null);
