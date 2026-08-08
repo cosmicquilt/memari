@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { createStore } from "polotno/model/store";
 import { gridCellToPixels, packStackFromTop, type GridRect, type PageGrid } from "@/lib/grid";
-import { usePageScreenRects, pageSpaceToScreen } from "./canvasOverlay";
+import { pageSpaceToScreen } from "./canvasOverlay";
 import { gatherLiveTrackedRects, type PolotnoNode } from "./polotnoTree";
 
 type Zones = { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
@@ -74,19 +74,23 @@ function packZoneAndFindGap(
 // has nothing else watching for it.
 export function EmptyZoneOverlay({
   store,
+  pageRectsRef,
   pageGrids,
   interactiveZonesByPage,
   moduleGridInfo,
   onOpenPalette,
 }: {
   store: ReturnType<typeof createStore>;
+  // Shared with useEdgeResize via PlannerEditorCanvas — see the comment
+  // there on why this is passed in rather than each caller running its
+  // own usePageScreenRects independently.
+  pageRectsRef: RefObject<Record<string, DOMRect | null>>;
   pageGrids: Record<string, PageGrid>;
   interactiveZonesByPage: Record<string, Zones>;
   moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
   onOpenPalette: () => void;
 }) {
   const pageIds = Object.keys(interactiveZonesByPage);
-  const pageRectsRef = usePageScreenRects(store, pageIds);
 
   const [emptyZones, setEmptyZones] = useState<Array<{ key: string; pageId: string; zone: GridRect }>>([]);
   // DOM nodes for the currently-rendered buttons, keyed the same as

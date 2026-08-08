@@ -40,6 +40,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { WeekSettingsPanel, type WeekSettings } from "./WeekSettingsPanel";
 import { EmptyZoneOverlay } from "./EmptyZoneOverlay";
 import { useEdgeResize } from "./useEdgeResize";
+import { usePageScreenRects } from "./canvasOverlay";
 import { type PolotnoNode, resolveTrackedGroup, gatherLiveTrackedRects } from "./polotnoTree";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
@@ -273,6 +274,23 @@ export function PlannerEditorCanvas({
   }, [pages]);
 
   const pageIds = useMemo(() => pages.map((p) => p.pageId), [pages]);
+
+  // Shared by EmptyZoneOverlay and useEdgeResize below — both used to
+  // call usePageScreenRects independently, which meant two separate
+  // requestAnimationFrame loops each doing their own
+  // document.querySelectorAll + getBoundingClientRect pass every frame
+  // for the exact same measurement. Hoisting it here and passing the one
+  // ref down halves that per-frame cost, which matters specifically
+  // during a live zoom/pan/scroll — the busier the main thread is on
+  // every frame, the more likely a frame gets dropped (Konva's own
+  // canvas redraw is already competing for that same budget), which
+  // reads as the overlay lagging even though the tracking math itself
+  // has no drift (verified empirically: a same-callback comparison
+  // against a fresh measurement showed zero discrepancy across a wide,
+  // rapid range of both scale changes and scroll offsets in an isolated
+  // sandbox test — the cost is in doing that work twice, not in the
+  // logic being wrong).
+  const pageRectsRef = usePageScreenRects(store, pageIds);
 
   useEffect(() => {
     // Both pages loaded together — a week spread is two pages viewed as
@@ -615,7 +633,7 @@ export function PlannerEditorCanvas({
   // module's edge instead of clicking +/-.
   useEdgeResize({
     store,
-    pageIds,
+    pageRectsRef,
     selectedModuleId,
     moduleGridInfo,
     moduleConfig,
@@ -882,6 +900,7 @@ export function PlannerEditorCanvas({
       </div>
       <EmptyZoneOverlay
         store={store}
+        pageRectsRef={pageRectsRef}
         pageGrids={pageGrids}
         interactiveZonesByPage={interactiveZonesByPage}
         moduleGridInfo={moduleGridInfo}

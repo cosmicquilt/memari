@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { createStore } from "polotno/model/store";
 import { gridCellToPixels, type PageGrid } from "@/lib/grid";
-import { usePageScreenRects } from "./canvasOverlay";
 import { gatherLiveTrackedRects, type PolotnoNode } from "./polotnoTree";
 
 const EDGE_THRESHOLD_PX = 20; // screen px - deliberately zoom-independent (bumped from 8: too easy to miss)
@@ -31,7 +30,7 @@ const EDGE_THRESHOLD_PX = 20; // screen px - deliberately zoom-independent (bump
 // follow-up.
 export function useEdgeResize({
   store,
-  pageIds,
+  pageRectsRef,
   selectedModuleId,
   moduleGridInfo,
   moduleConfig,
@@ -40,7 +39,10 @@ export function useEdgeResize({
   onResizeAdjacent,
 }: {
   store: ReturnType<typeof createStore>;
-  pageIds: string[];
+  // Shared with EmptyZoneOverlay via PlannerEditorCanvas, rather than
+  // each caller running its own usePageScreenRects independently — see
+  // the comment where PlannerEditorCanvas calls that hook.
+  pageRectsRef: RefObject<Record<string, DOMRect | null>>;
   selectedModuleId: string | null;
   moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
   moduleConfig: Record<string, { slug: string; propValues: Record<string, unknown> }>;
@@ -48,7 +50,6 @@ export function useEdgeResize({
   onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
   onResizeAdjacent: (topInstanceId: string, bottomInstanceId: string, deltaRows: number) => Promise<void>;
 }) {
-  const pageRectsRef = usePageScreenRects(store, pageIds);
   // Refs, not state - none of this needs to trigger a re-render; it just
   // needs to survive across pointer event callbacks for one gesture.
   const hoverEdgeRef = useRef<"bottom" | "right" | null>(null);
