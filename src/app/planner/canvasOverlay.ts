@@ -33,17 +33,11 @@
 // is threaded through here instead of deriving a scale factor from the
 // container's own (possibly letterboxed) dimensions.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import type { createStore } from "polotno/model/store";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 
 const PAGE_CONTAINER_SELECTOR = ".polotno-page-container";
-
-function rectsEqual(a: DOMRect | null, b: DOMRect | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height;
-}
 
 // Polls every animation frame rather than trying to enumerate every
 // event that could move/resize/rescale a page (zoom buttons, window
@@ -52,15 +46,32 @@ function rectsEqual(a: DOMRect | null, b: DOMRect | null): boolean {
 // and correct regardless of *what* caused the change instead of only
 // the specific triggers this code happens to know to listen for.
 //
-// Returns the page's *actual* rendered rect (already corrected for the
-// container/page aspect-ratio mismatch above), not the raw container
-// rect — callers can treat it as truly 1:1 with
+// Returns a REF, not React state, holding every page's *actual* rendered
+// rect (already corrected for the container/page aspect-ratio mismatch
+// above) — callers can treat it as truly 1:1 with
 // 0..PRINT_WIDTH_PX/0..PRINT_HEIGHT_PX page space.
+//
+// A ref rather than state is deliberate: Polotno redraws its own canvas
+// synchronously with the browser's paint (Konva runs its own animation
+// loop straight against the DOM), but a React state update made from
+// inside a requestAnimationFrame callback doesn't take visible effect
+// until React gets around to processing that state change and
+// re-rendering — at least one extra tick behind the actual canvas, more
+// once anything else is competing for render time. That's exactly why
+// EmptyZoneOverlay's "+" buttons visibly lagged the canvas during a live
+// transform (zoom, pan, drag): every position update was routed through
+// React's scheduler instead of landing immediately. A ref has no
+// scheduler in the way — callers that render a persistent on-screen
+// overlay (EmptyZoneOverlay) read `.current` inside their own
+// requestAnimationFrame loop and write straight to their DOM nodes'
+// style, matching Konva's own per-frame cadence instead of trailing it;
+// callers that only need a point-in-time read inside an event handler
+// (useEdgeResize's pointer handlers) just read `.current` there directly.
 export function usePageScreenRects(
   store: ReturnType<typeof createStore>,
   pageIds: string[]
-): Record<string, DOMRect | null> {
-  const [rects, setRects] = useState<Record<string, DOMRect | null>>({});
+): MutableRefObject<Record<string, DOMRect | null>> {
+  const rectsRef = useRef<Record<string, DOMRect | null>>({});
   const pageIdsKey = pageIds.join(",");
 
   useEffect(() => {
@@ -91,10 +102,7 @@ export function usePageScreenRects(
         next[id] = new DOMRect(containerRect.left + offsetX, containerRect.top + offsetY, scaledWidth, scaledHeight);
       });
 
-      setRects((prev) => {
-        const changed = ids.some((id) => !rectsEqual(prev[id] ?? null, next[id] ?? null));
-        return changed ? next : prev;
-      });
+      rectsRef.current = next;
       frameId = requestAnimationFrame(measure);
     };
 
@@ -102,7 +110,7 @@ export function usePageScreenRects(
     return () => cancelAnimationFrame(frameId);
   }, [store, pageIdsKey]);
 
-  return rects;
+  return rectsRef;
 }
 
 // Converts a page-space pixel rect (already in 0..PRINT_WIDTH_PX /

@@ -48,7 +48,7 @@ export function useEdgeResize({
   onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
   onResizeAdjacent: (topInstanceId: string, bottomInstanceId: string, deltaRows: number) => Promise<void>;
 }) {
-  const pageRects = usePageScreenRects(store, pageIds);
+  const pageRectsRef = usePageScreenRects(store, pageIds);
   // Refs, not state - none of this needs to trigger a re-render; it just
   // needs to survive across pointer event callbacks for one gesture.
   const hoverEdgeRef = useRef<"bottom" | "right" | null>(null);
@@ -79,7 +79,7 @@ export function useEdgeResize({
     const getModuleScreenRect = (moduleId: string) => {
       const pageId = findModulePageId(moduleId);
       const pageGrid = pageId ? pageGrids[pageId] : undefined;
-      const pageRect = pageId ? pageRects[pageId] : undefined;
+      const pageRect = pageId ? pageRectsRef.current[pageId] : undefined;
       const page = pageId ? store.pages.find((p) => p.id === pageId) : undefined;
       if (!pageId || !pageGrid || !pageRect || !page) return null;
       const [cell] = gatherLiveTrackedRects(page, pageGrid, moduleGridInfo).filter((r) => r.id === moduleId);
@@ -184,7 +184,7 @@ export function useEdgeResize({
       if (!drag) return;
 
       const pageGrid = pageGrids[drag.pageId];
-      const pageRect = pageRects[drag.pageId];
+      const pageRect = pageRectsRef.current[drag.pageId];
       if (!pageGrid || !pageRect) return;
       const { columnPagePx, rowPagePx } = cellPitch(pageGrid);
       const scaleX = pageRect.width / pageGrid.widthPx;
@@ -248,5 +248,11 @@ export function useEdgeResize({
       window.removeEventListener("pointerup", handlePointerUp);
       document.body.style.cursor = "";
     };
-  }, [store, selectedModuleId, moduleGridInfo, moduleConfig, pageGrids, pageRects, onResize, onResizeAdjacent]);
+    // pageRectsRef's identity is stable across renders (usePageScreenRects
+    // returns the same ref object every time, via its own internal
+    // useRef) — included below to satisfy exhaustive-deps, but its value
+    // is always read fresh via .current inside the handlers, never
+    // captured, so this effect doesn't actually need to re-run when it
+    // "changes."
+  }, [store, selectedModuleId, moduleGridInfo, moduleConfig, pageGrids, pageRectsRef, onResize, onResizeAdjacent]);
 }

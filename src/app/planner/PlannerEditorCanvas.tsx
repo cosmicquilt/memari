@@ -796,6 +796,16 @@ export function PlannerEditorCanvas({
           display: "flex",
           alignItems: "center",
           gap: 12,
+          // EmptyZoneOverlay's dashed "+" buttons are position:fixed with
+          // their own z-index — this header has none by default, and a
+          // plain (non-positioned) element with no stacking context of
+          // its own loses to *any* explicitly z-indexed fixed element
+          // wherever they happen to geometrically coincide, regardless of
+          // DOM order. Position + z-index here is just insurance so that
+          // can never happen, on top of EmptyZoneOverlay's own bounds
+          // already keeping it out of this area under normal conditions.
+          position: "relative",
+          zIndex: 10,
         }}
       >
         <strong>Memari planner editor</strong>

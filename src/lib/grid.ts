@@ -274,3 +274,26 @@ export function resolveModulePlacement(
   // conflict with where the drag first landed.
   return { placement: findNearestFreeCell(page, candidate, others), reflow: [] };
 }
+
+// Repacks a column-stack of sibling modules contiguously from `top`,
+// preserving their current relative order (by rowStart), closing any gap
+// between them — "gravity" toward the top of whatever zone they're in.
+// Unlike resolveModulePlacement above (which only reflows a stack when a
+// drag provokes a fresh overlap with the dragged candidate), this
+// unconditionally removes every existing gap regardless of what caused
+// it — needed because a delete (or anything else that isn't itself a
+// drag) can leave a hole in the middle of a stack with nothing to
+// trigger the drag-reflow path above.
+export function packStackFromTop(
+  top: number,
+  members: Array<{ id: string; rowStart: number; rowSpan: number }>
+): Array<{ id: string; rowStart: number }> {
+  const sorted = [...members].sort((a, b) => a.rowStart - b.rowStart);
+  const moves: Array<{ id: string; rowStart: number }> = [];
+  let cursor = top;
+  for (const m of sorted) {
+    if (m.rowStart !== cursor) moves.push({ id: m.id, rowStart: cursor });
+    cursor += m.rowSpan;
+  }
+  return moves;
+}

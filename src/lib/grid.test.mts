@@ -19,6 +19,7 @@ import {
   findNearestFreeCell,
   resolveModulePlacement,
   moduleInstancesToRects,
+  packStackFromTop,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -261,6 +262,39 @@ const page: PageGrid = {
     const r = resolveModulePlacement(page, { columnStart: 1, rowStart: 3, columnSpan: 1, rowSpan: 5 }, [wideLockedAbove]);
     assert(!rectsOverlap({ ...r.placement, columnSpan: 1, rowSpan: 5 }, wideLockedAbove), "a wider locked block still bounds a narrower stack via column overlap");
   }
+}
+
+// --- packStackFromTop ---
+{
+  // A gap in the middle (deleted "reminders") closes, moving "notes" up
+  // — the thing that opens after a delete, since nothing about a delete
+  // triggers the drag-reflow path in resolveModulePlacement.
+  const moves = packStackFromTop(2, [
+    { id: "gratitude", rowStart: 2, rowSpan: 6 },
+    { id: "notes", rowStart: 17, rowSpan: 13 },
+  ]);
+  assert(moves.length === 1 && moves[0].id === "notes" && moves[0].rowStart === 8, "packStackFromTop closes a mid-stack gap by moving only what needs to move");
+
+  // Already packed (no gaps) — nothing to move.
+  const noMoves = packStackFromTop(2, [
+    { id: "gratitude", rowStart: 2, rowSpan: 6 },
+    { id: "reminders", rowStart: 8, rowSpan: 9 },
+  ]);
+  assert(noMoves.length === 0, "packStackFromTop is a no-op on an already-contiguous stack");
+
+  // Order in the input array doesn't matter — packing follows rowStart,
+  // not array position.
+  const outOfOrder = packStackFromTop(0, [
+    { id: "b", rowStart: 10, rowSpan: 2 },
+    { id: "a", rowStart: 0, rowSpan: 3 },
+  ]);
+  assert(
+    outOfOrder.find((m) => m.id === "b")?.rowStart === 3 && outOfOrder.every((m) => m.id !== "a"),
+    "packStackFromTop sorts by current rowStart regardless of input order"
+  );
+
+  // Empty stack: no members, nothing to move, no crash.
+  assert(packStackFromTop(5, []).length === 0, "packStackFromTop on an empty stack returns no moves");
 }
 
 if (failures > 0) {
