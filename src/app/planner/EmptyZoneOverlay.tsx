@@ -8,16 +8,6 @@ import { gatherLiveTrackedRects, type PolotnoNode } from "./polotnoTree";
 
 type Zones = { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
 
-// Reserves a strip at the very bottom of the viewport that this overlay
-// will never draw into, no matter what a button's own math computes —
-// Polotno's own zoom controls float over that same strip (bottom-center
-// of the workspace, ~5px + 35px tall — see node_modules/polotno/toolbar/
-// zoom-buttons.js), with no z-index of their own to lose a stacking fight
-// against, so a "+" button whose zone happens to run to the bottom of the
-// page could otherwise render right on top of them. Sized generously
-// above that ~40px footprint.
-const BOTTOM_RESERVED_PX = 56;
-
 // Runs the same "pack this zone's stack contiguously from the top, then
 // see what's left over at the bottom" pass for one zone — used for both
 // the sidebar and the below-hourly-grid zone, on every page. Actually
@@ -189,24 +179,18 @@ export function EmptyZoneOverlay({
   }, [emptyZones, pageRectsRef, pageGrids]);
 
   return (
-    // overflow: hidden + the buttons below being position:absolute (not
-    // fixed) rather than the more obvious "just use position:fixed on
-    // each button" makes this actually clip anything that would
-    // otherwise render into the reserved bottom strip — a fixed-position
-    // descendant would ignore this wrapper's box entirely and paint over
-    // the zoom controls regardless of the bottom inset below it, since
-    // "fixed" is relative to the viewport, not this element. Absolute
-    // descendants use their nearest positioned ancestor (this div) as
-    // their containing block instead, so shrinking *this* box is enough
-    // to guarantee nothing inside it ever reaches into that strip.
+    // Full-viewport, no clipping — Polotno's zoom controls have their
+    // own explicit stacking context now (see the wrapper div around
+    // <ZoomButtons> in PlannerEditorCanvas.tsx) that wins on z-index
+    // regardless of where a button here happens to sit, so this doesn't
+    // need to defensively carve out a region for them the way an earlier
+    // version did. That approach clipped legitimate "+" button content
+    // too, any time zoom or scroll pushed a belowHourlyGrid button's true
+    // position past the reserved line.
     <div
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: BOTTOM_RESERVED_PX,
-        overflow: "hidden",
+        inset: 0,
         pointerEvents: "none",
         zIndex: 5,
       }}
@@ -220,7 +204,7 @@ export function EmptyZoneOverlay({
           }}
           onClick={onOpenPalette}
           style={{
-            position: "absolute",
+            position: "fixed",
             left: 0,
             top: 0,
             width: 0,

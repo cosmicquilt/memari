@@ -858,7 +858,25 @@ export function PlannerEditorCanvas({
               pageControlsEnabled={false}
               groupSelectionMode="group"
             />
-            <ZoomButtons store={store} />
+            {/* position:relative + an explicit z-index here (not on
+                ZoomButtons itself, which is Polotno's own component)
+                gives this whole subtree its own stacking context that
+                beats EmptyZoneOverlay's on z-index alone — the zoom
+                controls render with none of their own (checked
+                node_modules/polotno/toolbar/zoom-buttons.js: plain
+                position:absolute, no z-index), so without this they'd
+                lose to any explicitly z-indexed element wherever a "+"
+                button's rect happened to reach the bottom of a page,
+                right where these float. Targeted at just this control
+                rather than reserving a fixed strip of the viewport for
+                it (the previous approach) — that clipped legitimate "+"
+                button content too, any time zoom or scroll pushed a
+                belowHourlyGrid button's real position past that fixed
+                line, which read as a flat white cutoff eating the bottom
+                of the button. */}
+            <div style={{ position: "relative", zIndex: 20 }}>
+              <ZoomButtons store={store} />
+            </div>
           </WorkspaceWrap>
         </PolotnoContainer>
       </div>
