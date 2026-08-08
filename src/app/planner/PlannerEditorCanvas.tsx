@@ -37,6 +37,8 @@ import {
 } from "./actions";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { WeekSettingsPanel, type WeekSettings } from "./WeekSettingsPanel";
+import { EmptyZoneOverlay } from "./EmptyZoneOverlay";
+import { type PolotnoNode, resolveTrackedGroup, gatherLiveTrackedRects } from "./polotnoTree";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
 
@@ -53,23 +55,6 @@ const PALETTE_MODULES = [
   { slug: "todo-checklist", label: "To-Do Checklist" },
   { slug: "habit-tracker", label: "Habit Tracker" },
 ];
-
-// A pragmatic local view of a Polotno element — the SDK's own generated
-// types are almost entirely `any` (they're live mobx-state-tree
-// instances, not plain data), so this just names the handful of members
-// this file actually reads/calls.
-type PolotnoNode = {
-  id: string;
-  type: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  children?: PolotnoNode[];
-  parent?: PolotnoNode | null;
-  page?: { id: string } | null;
-  set: (attrs: Record<string, unknown>) => void;
-};
 
 // Builds a small styled element to use as the native drag image for a
 // palette item — the browser's default drag ghost is just a translucent
@@ -99,50 +84,6 @@ function buildDragPreviewElement(label: string): HTMLElement {
   ].join(";");
   document.body.appendChild(el);
   return el;
-}
-
-// Walks up from whatever's selected/under-the-pointer to the nearest
-// tracked-group ancestor (normally the element itself —
-// groupSelectionMode="group" on the Workspace below means clicking any
-// part of a module selects the whole group, but walking up is cheap
-// insurance either way). Shared by the drag-snap/selection effect and
-// the opacity-ghosting effect — both need the same "what module is this
-// pointer interaction actually about" resolution.
-function resolveTrackedGroup(
-  el: PolotnoNode | null | undefined,
-  moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>
-): PolotnoNode | null {
-  let node = el;
-  while (node && !(node.type === "group" && moduleGridInfo[node.id])) {
-    node = node.parent ?? null;
-  }
-  return node ?? null;
-}
-
-// Reads every tracked module's *current* grid cell directly off the live
-// Polotno tree (position isn't cached in React state anywhere — only
-// span is, in moduleGridInfo — so this is the only source of truth for
-// "where is everything right now"). Shared by the drag-snap collision
-// check and the empty-zone occupancy check, both of which need the same
-// "what's actually on this page at this moment" list.
-function gatherLiveTrackedRects(
-  page: { children?: unknown },
-  pageGrid: PageGrid,
-  moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>,
-  excludeId?: string
-): Array<GridRect & { id: string }> {
-  const rects: Array<GridRect & { id: string }> = [];
-  for (const el of (page.children ?? []) as PolotnoNode[]) {
-    if (el.id === excludeId) continue;
-    const span = moduleGridInfo[el.id];
-    const children = el.children ?? [];
-    if (!span || children.length === 0) continue;
-    const x = Math.min(...children.map((c) => c.x ?? 0));
-    const y = Math.min(...children.map((c) => c.y ?? 0));
-    const cell = pixelsToGridCell(pageGrid, { x, y });
-    rects.push({ id: el.id, ...cell, columnSpan: span.columnSpan, rowSpan: span.rowSpan });
-  }
-  return rects;
 }
 
 // Finds whichever page currently has an element with this id and swaps
@@ -206,6 +147,7 @@ export type PageProp = {
   moduleConfig: Record<string, { slug: string; propValues: unknown }>;
   lockedRects: GridRect[];
   lockedInstanceIds: string[];
+  interactiveZones: { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
 };
 
 export function PlannerEditorCanvas({
@@ -298,6 +240,15 @@ export function PlannerEditorCanvas({
   const lockedInstanceIdsByPage = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const p of pages) map[p.pageId] = p.lockedInstanceIds;
+    return map;
+  }, [pages]);
+
+  // Sidebar/below-hourly-grid zones, per page — used only by
+  // EmptyZoneOverlay to know where to show an "add a module here"
+  // placeholder when one of these is completely empty.
+  const interactiveZonesByPage = useMemo(() => {
+    const map: Record<string, { sidebar: GridRect | null; belowHourlyGrid: GridRect | null }> = {};
+    for (const p of pages) map[p.pageId] = p.interactiveZones;
     return map;
   }, [pages]);
 
@@ -626,6 +577,14 @@ export function PlannerEditorCanvas({
     window.location.reload();
   }, []);
 
+  // Clicking an empty-zone placeholder (EmptyZoneOverlay) opens the
+  // Modules palette — openSidePanel is Polotno's own documented-by-use
+  // convention for switching tabs (SidePanel itself calls it the same
+  // way to open its default section on mount).
+  const handleOpenPalette = useCallback(() => {
+    store.openSidePanel("memari-modules");
+  }, [store]);
+
   // Registers a one-shot drop handler (Polotno's own convention — see
   // its Text/Photo panels) before a native HTML5 drag starts, so
   // whichever page the palette item gets dropped onto tells us its id
@@ -835,6 +794,13 @@ export function PlannerEditorCanvas({
           </WorkspaceWrap>
         </PolotnoContainer>
       </div>
+      <EmptyZoneOverlay
+        store={store}
+        pageGrids={pageGrids}
+        interactiveZonesByPage={interactiveZonesByPage}
+        moduleGridInfo={moduleGridInfo}
+        onOpenPalette={handleOpenPalette}
+      />
     </div>
   );
 }

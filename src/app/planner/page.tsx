@@ -83,7 +83,47 @@ export default async function PlannerPage() {
       }
     }
 
-    return { pageId: page.id, elements, pageGrid, moduleGridInfo, moduleConfig, lockedRects, lockedInstanceIds };
+    // Empty-state dropzones (PlannerEditorCanvas's EmptyZoneOverlay) need
+    // to know two semantic regions per page, not just "everything
+    // locked": the sidebar column below week-title (left page only —
+    // there's no week-title, and so no sidebar, on the right page), and
+    // the below-zone under the hourly grid (both pages). Computed here
+    // directly from the instances' own slugs rather than reverse-
+    // engineered client-side from the generic lockedRects list above,
+    // which doesn't carry slugs and would make "which locked rect is the
+    // hourly grid" a fragile guess.
+    const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    const weekTitle = page.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
+    const belowHourlyGrid =
+      hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
+        ? {
+            columnStart: hourlyGrid.columnStart,
+            rowStart: hourlyGrid.rowStart + hourlyGrid.rowSpan,
+            columnSpan: hourlyGrid.columnSpan,
+            rowSpan: Math.max(0, page.gridRows - (hourlyGrid.rowStart + hourlyGrid.rowSpan)),
+          }
+        : null;
+    const sidebar =
+      weekTitle && weekTitle.columnStart !== null && weekTitle.rowStart !== null
+        ? {
+            columnStart: weekTitle.columnStart,
+            rowStart: weekTitle.rowStart + weekTitle.rowSpan,
+            columnSpan: weekTitle.columnSpan,
+            rowSpan: Math.max(0, page.gridRows - (weekTitle.rowStart + weekTitle.rowSpan)),
+          }
+        : null;
+    const interactiveZones = { sidebar, belowHourlyGrid };
+
+    return {
+      pageId: page.id,
+      elements,
+      pageGrid,
+      moduleGridInfo,
+      moduleConfig,
+      lockedRects,
+      lockedInstanceIds,
+      interactiveZones,
+    };
   });
 
   // week-title and both pages' hourly-grid-core are locked/structural —
