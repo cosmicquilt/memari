@@ -38,6 +38,7 @@ import {
 import { PropertiesPanel } from "./PropertiesPanel";
 import { WeekSettingsPanel, type WeekSettings } from "./WeekSettingsPanel";
 import { EmptyZoneOverlay } from "./EmptyZoneOverlay";
+import { useEdgeResize } from "./useEdgeResize";
 import { type PolotnoNode, resolveTrackedGroup, gatherLiveTrackedRects } from "./polotnoTree";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
@@ -251,6 +252,8 @@ export function PlannerEditorCanvas({
     for (const p of pages) map[p.pageId] = p.interactiveZones;
     return map;
   }, [pages]);
+
+  const pageIds = useMemo(() => pages.map((p) => p.pageId), [pages]);
 
   useEffect(() => {
     // Both pages loaded together — a week spread is two pages viewed as
@@ -565,6 +568,20 @@ export function PlannerEditorCanvas({
     },
     [store]
   );
+
+  // Custom edge-hover resize (see useEdgeResize.ts for why this bypasses
+  // Polotno's native resize handles) — calls the exact same action the
+  // Properties panel's Size steppers use, just triggered by dragging a
+  // module's edge instead of clicking +/-.
+  useEdgeResize({
+    store,
+    pageIds,
+    selectedModuleId,
+    moduleGridInfo,
+    moduleConfig,
+    pageGrids,
+    onResize: handleResizeModule,
+  });
 
   // Week settings (week number, date range, day-of-month numbers) live on
   // locked/unselectable blocks (week-title, hourly-grid-core), so unlike
