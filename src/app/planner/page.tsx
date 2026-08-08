@@ -52,6 +52,14 @@ export default async function PlannerPage() {
       columnSpan: number;
       rowSpan: number;
     }> = [];
+    // Ids of locked instances (not their rects — those are lockedRects
+    // above) — used to dim their rendered elements during a drag (see
+    // PlannerEditorCanvas's opacity-ghosting effect). Locked instances
+    // render as many flat elements per instance, each id-prefixed with
+    // the instance id (see renderModuleInstance.ts), so the client
+    // matches by prefix against this list rather than needing every
+    // individual element's id.
+    const lockedInstanceIds: string[] = [];
     for (const instance of page.moduleInstances) {
       if (instance.moduleType.slug === "freeform-element") continue;
       if (instance.columnStart === null || instance.rowStart === null) continue;
@@ -62,6 +70,7 @@ export default async function PlannerPage() {
           columnSpan: instance.columnSpan,
           rowSpan: instance.rowSpan,
         });
+        lockedInstanceIds.push(instance.id);
       } else {
         moduleGridInfo[instance.id] = {
           columnSpan: instance.columnSpan,
@@ -74,7 +83,7 @@ export default async function PlannerPage() {
       }
     }
 
-    return { pageId: page.id, elements, pageGrid, moduleGridInfo, moduleConfig, lockedRects };
+    return { pageId: page.id, elements, pageGrid, moduleGridInfo, moduleConfig, lockedRects, lockedInstanceIds };
   });
 
   // week-title and both pages' hourly-grid-core are locked/structural —

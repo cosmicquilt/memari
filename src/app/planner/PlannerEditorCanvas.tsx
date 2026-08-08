@@ -71,6 +71,80 @@ type PolotnoNode = {
   set: (attrs: Record<string, unknown>) => void;
 };
 
+// Builds a small styled element to use as the native drag image for a
+// palette item — the browser's default drag ghost is just a translucent
+// screenshot of the dragged element with no styling control, so this
+// swaps in something intentional (soft shadow, rounded pill) instead.
+// Standard DOM API (dataTransfer.setDragImage), not a Polotno/Konva
+// concern, so unlike most of this file's canvas-facing code this is
+// ordinary, well-specified browser behavior — element must be attached
+// to the DOM for the browser to snapshot it, removed on the next tick
+// once that snapshot has happened.
+function buildDragPreviewElement(label: string): HTMLElement {
+  const el = document.createElement("div");
+  el.textContent = label;
+  el.style.cssText = [
+    "position:fixed",
+    "top:-1000px",
+    "left:-1000px",
+    "padding:8px 14px",
+    "background:rgba(255,255,255,0.92)",
+    "color:#1a1a1a",
+    "border-radius:8px",
+    "box-shadow:0 8px 24px rgba(0,0,0,0.28)",
+    "font-size:13px",
+    "font-family:system-ui,sans-serif",
+    "white-space:nowrap",
+    "pointer-events:none",
+  ].join(";");
+  document.body.appendChild(el);
+  return el;
+}
+
+// Walks up from whatever's selected/under-the-pointer to the nearest
+// tracked-group ancestor (normally the element itself —
+// groupSelectionMode="group" on the Workspace below means clicking any
+// part of a module selects the whole group, but walking up is cheap
+// insurance either way). Shared by the drag-snap/selection effect and
+// the opacity-ghosting effect — both need the same "what module is this
+// pointer interaction actually about" resolution.
+function resolveTrackedGroup(
+  el: PolotnoNode | null | undefined,
+  moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>
+): PolotnoNode | null {
+  let node = el;
+  while (node && !(node.type === "group" && moduleGridInfo[node.id])) {
+    node = node.parent ?? null;
+  }
+  return node ?? null;
+}
+
+// Reads every tracked module's *current* grid cell directly off the live
+// Polotno tree (position isn't cached in React state anywhere — only
+// span is, in moduleGridInfo — so this is the only source of truth for
+// "where is everything right now"). Shared by the drag-snap collision
+// check and the empty-zone occupancy check, both of which need the same
+// "what's actually on this page at this moment" list.
+function gatherLiveTrackedRects(
+  page: { children?: unknown },
+  pageGrid: PageGrid,
+  moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>,
+  excludeId?: string
+): Array<GridRect & { id: string }> {
+  const rects: Array<GridRect & { id: string }> = [];
+  for (const el of (page.children ?? []) as PolotnoNode[]) {
+    if (el.id === excludeId) continue;
+    const span = moduleGridInfo[el.id];
+    const children = el.children ?? [];
+    if (!span || children.length === 0) continue;
+    const x = Math.min(...children.map((c) => c.x ?? 0));
+    const y = Math.min(...children.map((c) => c.y ?? 0));
+    const cell = pixelsToGridCell(pageGrid, { x, y });
+    rects.push({ id: el.id, ...cell, columnSpan: span.columnSpan, rowSpan: span.rowSpan });
+  }
+  return rects;
+}
+
 // Finds whichever page currently has an element with this id and swaps
 // it for a freshly-rendered replacement in place (delete the old one,
 // add the new one) — the shared "server re-rendered this module's
@@ -131,6 +205,7 @@ export type PageProp = {
   moduleGridInfo: Record<string, { columnSpan: number; rowSpan: number }>;
   moduleConfig: Record<string, { slug: string; propValues: unknown }>;
   lockedRects: GridRect[];
+  lockedInstanceIds: string[];
 };
 
 export function PlannerEditorCanvas({
@@ -218,6 +293,14 @@ export function PlannerEditorCanvas({
     return map;
   }, [pages]);
 
+  // Locked instances' own ids, per page — used only by the
+  // opacity-ghosting effect below to find which live elements to dim.
+  const lockedInstanceIdsByPage = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const p of pages) map[p.pageId] = p.lockedInstanceIds;
+    return map;
+  }, [pages]);
+
   useEffect(() => {
     // Both pages loaded together — a week spread is two pages viewed as
     // one unit when the book is open flat, so the editor shows both.
@@ -259,14 +342,7 @@ export function PlannerEditorCanvas({
       const handled = new Set<string>();
       const selected = store.selectedElements as unknown as PolotnoNode[];
       for (const el of selected) {
-        // Walk up to the nearest tracked-group ancestor — normally the
-        // element itself (groupSelectionMode="group" below means
-        // clicking any part of a module selects the whole group), but
-        // walking up is cheap insurance either way.
-        let node: PolotnoNode | null | undefined = el;
-        while (node && !(node.type === "group" && moduleGridInfo[node.id])) {
-          node = node.parent ?? null;
-        }
+        const node = resolveTrackedGroup(el, moduleGridInfo);
         if (!node || handled.has(node.id)) continue;
         handled.add(node.id);
 
@@ -286,26 +362,10 @@ export function PlannerEditorCanvas({
         const candidate: GridRect = { ...nearestCell, columnSpan: span.columnSpan, rowSpan: span.rowSpan };
 
         const page = store.pages.find((p) => p.id === pageId);
-        const others: Array<GridRect & { id: string; locked: boolean }> = (lockedRectsByPage[pageId] ?? []).map(
-          (rect, i) => ({ ...rect, id: `__locked-${i}__`, locked: true })
-        );
-        for (const sibling of (page?.children ?? []) as unknown as PolotnoNode[]) {
-          if (sibling.id === node.id) continue;
-          const siblingSpan = moduleGridInfo[sibling.id];
-          const siblingChildren = sibling.children ?? [];
-          if (!siblingSpan || siblingChildren.length === 0) continue;
-          const sx = Math.min(...siblingChildren.map((c) => c.x ?? 0));
-          const sy = Math.min(...siblingChildren.map((c) => c.y ?? 0));
-          const siblingCell = pixelsToGridCell(pageGrid, { x: sx, y: sy });
-          others.push({
-            id: sibling.id,
-            columnStart: siblingCell.columnStart,
-            rowStart: siblingCell.rowStart,
-            columnSpan: siblingSpan.columnSpan,
-            rowSpan: siblingSpan.rowSpan,
-            locked: false,
-          });
-        }
+        const others: Array<GridRect & { id: string; locked: boolean }> = [
+          ...(lockedRectsByPage[pageId] ?? []).map((rect, i) => ({ ...rect, id: `__locked-${i}__`, locked: true })),
+          ...(page ? gatherLiveTrackedRects(page, pageGrid, moduleGridInfo, node.id).map((r) => ({ ...r, locked: false })) : []),
+        ];
 
         const { placement, reflow } = resolveModulePlacement(pageGrid, candidate, others);
 
@@ -359,6 +419,81 @@ export function PlannerEditorCanvas({
     window.addEventListener("pointerup", snapToGrid);
     return () => window.removeEventListener("pointerup", snapToGrid);
   }, [store, moduleGridInfo, pageGrids, lockedRectsByPage]);
+
+  // --- opacity ghosting during an active drag ---
+  // Slightly dims locked structural blocks (week-title, the hourly grid)
+  // while a module is being dragged, so the module in motion — and
+  // anything shifting to make room for it — reads clearly against a
+  // quieted backdrop instead of competing with everything else at full
+  // opacity.
+  //
+  // "Currently dragging" isn't something there's a reliable lower-level
+  // signal for: Konva draws every shape onto one shared <canvas> element,
+  // so a native pointer event's own target can never distinguish which
+  // shape was grabbed — store.selectedElements is the only avenue. Rather
+  // than snapshot it once at pointerdown (which would depend on knowing
+  // exactly which event Polotno updates selection on, unverified), this
+  // re-checks on every pointermove while a button is held: a held button
+  // (PointerEvent.buttons !== 0) plus exactly one tracked module
+  // currently selected is treated as "probably an active drag." Worst
+  // case if Polotno's selection takes a beat to settle, dimming starts a
+  // few pixels into the gesture instead of at the exact first pixel —
+  // unnoticeable — rather than the alternative failure mode (dimming the
+  // wrong module, or never triggering) a one-shot pointerdown snapshot
+  // would risk.
+  useEffect(() => {
+    const DIMMED_OPACITY = 0.35;
+    let dimmedIds: string[] = [];
+    let dimmedPageId: string | null = null;
+
+    const setOpacity = (pageId: string, ids: string[], opacity: number) => {
+      const page = store.pages.find((p) => p.id === pageId);
+      for (const el of (page?.children ?? []) as unknown as PolotnoNode[]) {
+        if (ids.includes(el.id)) el.set({ opacity });
+      }
+    };
+
+    const restore = () => {
+      if (dimmedPageId && dimmedIds.length > 0) setOpacity(dimmedPageId, dimmedIds, 1);
+      dimmedIds = [];
+      dimmedPageId = null;
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.buttons === 0) {
+        if (dimmedIds.length > 0) restore();
+        return;
+      }
+      const selected = store.selectedElements as unknown as PolotnoNode[];
+      const node = selected.length === 1 ? resolveTrackedGroup(selected[0], moduleGridInfo) : null;
+      const pageId = node?.page?.id;
+
+      if (!node || !pageId) {
+        if (dimmedIds.length > 0) restore();
+        return;
+      }
+      if (dimmedPageId === pageId && dimmedIds.length > 0) return; // already dimmed for this page/drag
+
+      if (dimmedIds.length > 0) restore();
+      const prefixes = (lockedInstanceIdsByPage[pageId] ?? []).map((id) => `${id}-`);
+      const page = store.pages.find((p) => p.id === pageId);
+      const ids = ((page?.children ?? []) as unknown as PolotnoNode[])
+        .filter((el) => prefixes.some((prefix) => el.id.startsWith(prefix)))
+        .map((el) => el.id);
+      if (ids.length === 0) return;
+      setOpacity(pageId, ids, DIMMED_OPACITY);
+      dimmedIds = ids;
+      dimmedPageId = pageId;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", restore);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", restore);
+      restore();
+    };
+  }, [store, moduleGridInfo, lockedInstanceIdsByPage]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -561,7 +696,12 @@ export function PlannerEditorCanvas({
             <button
               key={m.slug}
               draggable
-              onDragStart={() => handlePaletteDragStart(m.slug)}
+              onDragStart={(e) => {
+                const preview = buildDragPreviewElement(m.label);
+                e.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+                setTimeout(() => preview.remove(), 0);
+                handlePaletteDragStart(m.slug);
+              }}
               onDragEnd={() => registerNextDomDrop(null)}
               disabled={addingSlug === m.slug}
               style={{ textAlign: "left", padding: "6px 8px", cursor: "grab" }}
