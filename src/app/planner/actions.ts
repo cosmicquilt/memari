@@ -696,6 +696,105 @@ export async function updateModuleSize(
   return { element, columnSpan: updated.columnSpan, rowSpan: updated.rowSpan };
 }
 
+// Resizes two vertically-stacked, directly-adjacent modules together by
+// sliding the shared boundary between them — growing the top one shrinks
+// the bottom one by the same number of rows (and vice versa), so there's
+// never a gap or an overlap between the pair. This is what
+// useEdgeResize.ts's bottom-edge drag calls when it finds a module
+// directly below the one being resized; updateModuleSize above (the
+// single-module path) still handles the case where there's nothing below
+// to couple with.
+//
+// Deliberately skips updateModuleSize's "does this collide with anything
+// else" check: the pair's combined footprint (topRowStart through
+// bottomRowStart+bottomRowSpan) is exactly invariant here — only the
+// internal boundary between the two moves — so nothing outside the pair
+// can newly overlap that wasn't overlapping before. All that needs
+// clamping is that neither module's rowSpan drops below 1.
+export async function resizeAdjacentModules(
+  topInstanceId: string,
+  bottomInstanceId: string,
+  deltaRows: number
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const [top, bottom] = await Promise.all([
+    prisma.moduleInstance.findFirst({
+      where: { id: topInstanceId, page: { planner: { ownerId: userId } } },
+      include: { page: true, moduleType: true },
+    }),
+    prisma.moduleInstance.findFirst({
+      where: { id: bottomInstanceId, page: { planner: { ownerId: userId } } },
+      include: { page: true, moduleType: true },
+    }),
+  ]);
+  if (!top || !bottom) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (top.locked || bottom.locked) {
+    throw new Error("Cannot resize a locked module");
+  }
+  if (
+    top.columnStart === null ||
+    top.rowStart === null ||
+    bottom.columnStart === null ||
+    bottom.rowStart === null
+  ) {
+    throw new Error("Module isn't grid-placed");
+  }
+  if (top.pageId !== bottom.pageId) {
+    throw new Error("Modules aren't on the same page");
+  }
+  // Re-verified server-side, not trusted from the client: confirms the
+  // two really are stacked in the same column with the bottom one's top
+  // edge sitting exactly on the top one's bottom edge, before treating a
+  // delta on one as implying the opposite delta on the other.
+  if (
+    bottom.columnStart !== top.columnStart ||
+    bottom.columnSpan !== top.columnSpan ||
+    bottom.rowStart !== top.rowStart + top.rowSpan
+  ) {
+    throw new Error("Modules aren't vertically adjacent");
+  }
+
+  const clampedDelta = Math.max(-(top.rowSpan - 1), Math.min(bottom.rowSpan - 1, deltaRows));
+  if (clampedDelta === 0) {
+    throw new Error("Nothing to resize");
+  }
+
+  const newTopRowSpan = top.rowSpan + clampedDelta;
+  const newBottomRowStart = bottom.rowStart + clampedDelta;
+  const newBottomRowSpan = bottom.rowSpan - clampedDelta;
+
+  const [updatedTop, updatedBottom] = await prisma.$transaction([
+    prisma.moduleInstance.update({
+      where: { id: top.id },
+      data: { rowSpan: newTopRowSpan },
+    }),
+    prisma.moduleInstance.update({
+      where: { id: bottom.id },
+      data: { rowStart: newBottomRowStart, rowSpan: newBottomRowSpan },
+    }),
+  ]);
+
+  const pageGrid = pageGridFor(top.page);
+
+  return {
+    top: {
+      element: renderInstance(updatedTop, top.moduleType.slug, pageGrid),
+      rowSpan: updatedTop.rowSpan,
+    },
+    bottom: {
+      element: renderInstance(updatedBottom, bottom.moduleType.slug, pageGrid),
+      rowStart: updatedBottom.rowStart,
+      rowSpan: updatedBottom.rowSpan,
+    },
+  };
+}
+
 // Updates the week-title heading + both pages' hourly-grid-core day-of-
 // month numbers for the current user's planner. These are locked/
 // structural (not individually selectable on the canvas — see

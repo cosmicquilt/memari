@@ -12,7 +12,7 @@ import { SectionTab } from "polotno/side-panel/tab-button";
 import type { Section } from "polotno/ui-types";
 import { Toolbar } from "polotno/toolbar/toolbar";
 import { Workspace } from "polotno/canvas/workspace";
-import { registerNextDomDrop } from "polotno/canvas/page";
+import { registerNextDomDrop, registerTransformerAttrs } from "polotno/canvas/page";
 import { ZoomButtons } from "polotno/toolbar/zoom-buttons";
 import { DownloadButton } from "polotno/toolbar/download-button";
 import "polotno/ui.css";
@@ -33,6 +33,7 @@ import {
   deleteModuleInstance,
   updateModuleConfig,
   updateModuleSize,
+  resizeAdjacentModules,
   updateWeekSettings,
 } from "./actions";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -42,6 +43,24 @@ import { useEdgeResize } from "./useEdgeResize";
 import { type PolotnoNode, resolveTrackedGroup, gatherLiveTrackedRects } from "./polotnoTree";
 
 const apiKey = process.env.NEXT_PUBLIC_POLOTNO_API_KEY;
+
+// Every draggable module (labeled-box, todo-checklist, habit-tracker)
+// renders as a Polotno `type: "group"` element (see
+// renderModuleInstance.ts) — `resizable: false` on each child already
+// hides Polotno's own free-form resize handles for them (span-aware
+// resize goes through useEdgeResize.ts instead), but the rotate handle
+// isn't governed by that same per-child flag, so it kept showing up on
+// click regardless. registerTransformerAttrs is Polotno's own supported
+// (if `unstable_`-prefixed when imported from "polotno/config") escape
+// hatch for overriding the Transformer's default config per element
+// type — merged into its internal per-type table once, here, at module
+// load, the same way Polotno's own built-in override for "line" elements
+// (rotateEnabled: false there too) works. This does mean a user-created
+// multi-select group (Polotno's own grouping feature, if ever exposed)
+// would also lose rotation — there's no per-element-id granularity in
+// this API, only per-type — an acceptable trade since nothing in this
+// editor's UI currently exposes manual grouping.
+registerTransformerAttrs("group", { rotateEnabled: false });
 
 // Module types a user can drag onto the page from the palette.
 // hourly-grid-core and week-title stay auto-placed/locked singletons per
@@ -569,6 +588,27 @@ export function PlannerEditorCanvas({
     [store]
   );
 
+  // Companion to handleResizeModule above, for useEdgeResize's coupled
+  // bottom-edge drag: when there's a tracked module directly below the
+  // one being resized, both get resized together server-side (see
+  // actions.ts's resizeAdjacentModules for why that's safe to do without
+  // a collision check) so the shared boundary moves instead of opening a
+  // gap. Same delete-and-recreate swap as every other resize/edit path
+  // here, just applied to both instances.
+  const handleResizeAdjacent = useCallback(
+    async (topInstanceId: string, bottomInstanceId: string, deltaRows: number) => {
+      const result = await resizeAdjacentModules(topInstanceId, bottomInstanceId, deltaRows);
+      swapCanvasElement(store, topInstanceId, result.top.element);
+      swapCanvasElement(store, bottomInstanceId, result.bottom.element);
+      setModuleGridInfo((prev) => ({
+        ...prev,
+        [topInstanceId]: { columnSpan: prev[topInstanceId].columnSpan, rowSpan: result.top.rowSpan },
+        [bottomInstanceId]: { columnSpan: prev[bottomInstanceId].columnSpan, rowSpan: result.bottom.rowSpan },
+      }));
+    },
+    [store]
+  );
+
   // Custom edge-hover resize (see useEdgeResize.ts for why this bypasses
   // Polotno's native resize handles) — calls the exact same action the
   // Properties panel's Size steppers use, just triggered by dragging a
@@ -581,6 +621,7 @@ export function PlannerEditorCanvas({
     moduleConfig,
     pageGrids,
     onResize: handleResizeModule,
+    onResizeAdjacent: handleResizeAdjacent,
   });
 
   // Week settings (week number, date range, day-of-month numbers) live on

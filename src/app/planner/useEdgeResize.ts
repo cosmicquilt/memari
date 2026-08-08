@@ -6,7 +6,7 @@ import { gridCellToPixels, type PageGrid } from "@/lib/grid";
 import { usePageScreenRects } from "./canvasOverlay";
 import { gatherLiveTrackedRects, type PolotnoNode } from "./polotnoTree";
 
-const EDGE_THRESHOLD_PX = 8; // screen px - deliberately zoom-independent
+const EDGE_THRESHOLD_PX = 20; // screen px - deliberately zoom-independent (bumped from 8: too easy to miss)
 
 // Bypasses Polotno's own resize transformer entirely (resizable:false is
 // forced on every module's children — see renderModuleInstance.ts) in
@@ -37,6 +37,7 @@ export function useEdgeResize({
   moduleConfig,
   pageGrids,
   onResize,
+  onResizeAdjacent,
 }: {
   store: ReturnType<typeof createStore>;
   pageIds: string[];
@@ -45,6 +46,7 @@ export function useEdgeResize({
   moduleConfig: Record<string, { slug: string; propValues: Record<string, unknown> }>;
   pageGrids: Record<string, PageGrid>;
   onResize: (instanceId: string, size: { columnSpan: number; rowSpan: number }) => Promise<void>;
+  onResizeAdjacent: (topInstanceId: string, bottomInstanceId: string, deltaRows: number) => Promise<void>;
 }) {
   const pageRects = usePageScreenRects(store, pageIds);
   // Refs, not state - none of this needs to trigger a re-render; it just
@@ -188,19 +190,51 @@ export function useEdgeResize({
       const scaleX = pageRect.width / pageGrid.widthPx;
       const scaleY = pageRect.height / pageGrid.heightPx;
 
-      const nextSize =
-        drag.edge === "right"
-          ? {
-              columnSpan: drag.startColumnSpan + Math.round((e.clientX - drag.startClientX) / (columnPagePx * scaleX)),
-              rowSpan: drag.startRowSpan,
-            }
-          : {
-              columnSpan: drag.startColumnSpan,
-              rowSpan: drag.startRowSpan + Math.round((e.clientY - drag.startClientY) / (rowPagePx * scaleY)),
-            };
+      if (drag.edge === "right") {
+        const nextColumnSpan =
+          drag.startColumnSpan + Math.round((e.clientX - drag.startClientX) / (columnPagePx * scaleX));
+        if (nextColumnSpan === drag.startColumnSpan) return;
+        onResize(drag.moduleId, { columnSpan: nextColumnSpan, rowSpan: drag.startRowSpan }).catch((err) => {
+          alert(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
 
-      if (nextSize.columnSpan === drag.startColumnSpan && nextSize.rowSpan === drag.startRowSpan) return;
-      onResize(drag.moduleId, nextSize).catch((err) => {
+      // edge === "bottom" — if another tracked module sits directly below
+      // this one in the same column (its rowStart picking up exactly
+      // where this one's rowSpan ends), couple the resize: the shared
+      // boundary slides, growing one and shrinking the other by the same
+      // amount, so there's never a gap (or an overlap) left between them.
+      // Falls back to the plain single-module resize when there's nothing
+      // below to couple with.
+      const rawDeltaRows = Math.round((e.clientY - drag.startClientY) / (rowPagePx * scaleY));
+      if (rawDeltaRows === 0) return;
+
+      const page = store.pages.find((p) => p.id === drag.pageId);
+      const liveRects = page ? gatherLiveTrackedRects(page, pageGrid, moduleGridInfo) : [];
+      const dragRect = liveRects.find((r) => r.id === drag.moduleId);
+      const below = dragRect
+        ? liveRects.find(
+            (r) =>
+              r.id !== drag.moduleId &&
+              r.columnStart === dragRect.columnStart &&
+              r.columnSpan === dragRect.columnSpan &&
+              r.rowStart === dragRect.rowStart + dragRect.rowSpan
+          )
+        : undefined;
+
+      if (below) {
+        const deltaRows = Math.max(-(drag.startRowSpan - 1), Math.min(below.rowSpan - 1, rawDeltaRows));
+        if (deltaRows === 0) return;
+        onResizeAdjacent(drag.moduleId, below.id, deltaRows).catch((err) => {
+          alert(err instanceof Error ? err.message : String(err));
+        });
+        return;
+      }
+
+      const nextRowSpan = drag.startRowSpan + rawDeltaRows;
+      if (nextRowSpan === drag.startRowSpan) return;
+      onResize(drag.moduleId, { columnSpan: drag.startColumnSpan, rowSpan: nextRowSpan }).catch((err) => {
         alert(err instanceof Error ? err.message : String(err));
       });
     };
@@ -214,5 +248,5 @@ export function useEdgeResize({
       window.removeEventListener("pointerup", handlePointerUp);
       document.body.style.cursor = "";
     };
-  }, [store, selectedModuleId, moduleGridInfo, moduleConfig, pageGrids, pageRects, onResize]);
+  }, [store, selectedModuleId, moduleGridInfo, moduleConfig, pageGrids, pageRects, onResize, onResizeAdjacent]);
 }
