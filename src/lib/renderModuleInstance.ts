@@ -41,12 +41,47 @@ export type ModuleInstanceForRender = {
   moduleType: { slug: string };
 };
 
+// The plain Polotno element JSON every module renderer emits — a proper
+// name and shape for what used to just be typed `object[]` here, so
+// PolotnoJsonRenderer.tsx (the native editor's generic JSON->DOM
+// interpreter) has something to interpret against instead of `unknown`.
+// Deliberately loose/optional on every field beyond id/type, matching
+// each individual module renderer's own local `RenderedElement` type
+// (which this is structurally compatible with, not a replacement for —
+// none of the 5 renderer files change) — only two real element shapes
+// exist today (`type:"text"` and `type:"figure",subType:"rect"`), plus
+// the synthetic `type:"group"` wrapper this file itself adds around a
+// non-locked instance's children.
+export type RenderedPolotnoElement = {
+  id: string;
+  type: string;
+  subType?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  text?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  align?: string;
+  opacity?: number;
+  letterSpacing?: number;
+  draggable?: boolean;
+  selectable?: boolean;
+  resizable?: boolean;
+  children?: RenderedPolotnoElement[];
+  [key: string]: unknown;
+};
+
 function renderBySlug(
   slug: string,
   geometry: { x: number; y: number; width: number; height: number },
   propValues: unknown,
   idPrefix: string
-): object[] {
+): RenderedPolotnoElement[] {
   switch (slug) {
     case "hourly-grid-core":
       return renderHourlyGridCore(
@@ -106,9 +141,9 @@ function renderBySlug(
 export function renderModuleInstance(
   instance: ModuleInstanceForRender,
   pageGrid: PageGrid
-): object[] {
+): RenderedPolotnoElement[] {
   if (instance.moduleType.slug === "freeform-element") {
-    const props = instance.propValues as { polotnoElement?: object };
+    const props = instance.propValues as { polotnoElement?: RenderedPolotnoElement };
     return props.polotnoElement ? [props.polotnoElement] : [];
   }
 
