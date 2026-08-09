@@ -41,16 +41,27 @@ export function renderMonthTitle(
 
   // Measured from the reference: 19pt, letter-spaced ("J A N U A R Y"
   // spans a full 107.7pt for a 7-letter word — a deliberately wide
-  // tracking, not just the font's natural width). The reference's font
-  // (MinionPro-Regular) isn't the one this app renders with (PT Serif,
-  // same substitution every other renderer here already makes), so the
-  // exact spacing that produced 107.7pt in the original doesn't carry
-  // over precisely — this uses a reasonable approximation of the same
-  // wide-tracked look rather than chasing an exact-but-meaningless
-  // number against a different font's metrics.
+  // tracking, not just the font's natural width). Tried reproducing that
+  // via Polotno's own `letterSpacing` text property (which does exist —
+  // checked node_modules/polotno/model/text-model.js), but verified
+  // empirically in the polotno-test sandbox that it badly breaks this
+  // renderer's own width-constrained text box: with letterSpacing set,
+  // Polotno's height/wrap calculation dramatically under-measures the
+  // available width regardless of how wide the box actually is (an
+  // 80px-wide box and a 506px-wide box produced almost the same
+  // wildly-oversized wrapped height, ~1800-1900px for one short line),
+  // wrapping the text to roughly one character per line — exactly the
+  // "displays vertically" bug this produced in the real app. Removing
+  // letterSpacing entirely (confirmed in the same sandbox test: a real
+  // multi-word string at the real box width renders as a clean single
+  // line, height exactly fontSize*1.2) fixes it outright. The reference's
+  // exact tracking wasn't going to carry over precisely anyway — its
+  // font (MinionPro-Regular) isn't the one this app renders with (PT
+  // Serif, same substitution every other renderer here already makes) —
+  // so this trades a cosmetic flourish for a renderer that actually
+  // displays the month name horizontally, which matters more.
   const fontSize = ptToPx(19);
   const textHeight = fontSize * 1.2;
-  const letterSpacing = ptToPx(4);
 
   elements.push({
     id: nextId(),
@@ -62,7 +73,6 @@ export function renderMonthTitle(
     text: config.monthName,
     fontSize,
     fontFamily: FONT_FAMILY,
-    letterSpacing,
     align: "left",
   });
 

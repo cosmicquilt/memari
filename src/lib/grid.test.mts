@@ -230,6 +230,26 @@ const page: PageGrid = {
     assertValidStack("drag-reminders-to-middle", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
   }
 
+  // Swapping two ADJACENT items by dragging the second one up onto the
+  // first one's *exact* rowStart — a real bug caught live on the
+  // monthly-layout sidebar (4 boxes, not 3, but the mechanism is
+  // general): dropping reminders exactly at gratitude's own rowStart (2)
+  // used to compute a no-op (reminders ends up right back at its own
+  // original row 8, gratitude unchanged) because the tie-break used to
+  // favor the existing sibling over the dragged item on an exact
+  // rowStart tie — which, for two items that were already adjacent,
+  // reconstructs the pre-drag order exactly. The drag silently did
+  // nothing.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes]);
+    assert(r.placement.rowStart === 2, "dragging reminders onto gratitude's exact rowStart actually moves it there, not back to its own start");
+    assert(
+      r.reflow.some((m) => m.id === "gratitude" && m.rowStart === 11),
+      "gratitude yields to the dragged item instead of the drag being a no-op"
+    );
+    assertValidStack("swap-adjacent-exact-tie", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
+  }
+
   // Dropping directly on a locked block (not a same-span sibling stack)
   // relocates instead of reflowing.
   {

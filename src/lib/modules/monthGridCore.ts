@@ -129,6 +129,26 @@ export function renderMonthGridCore(
     });
   }
 
+  // Column dividers within the header band — missed in the first pass
+  // (only the week-rows below got them), but the reference has these
+  // too: confirmed via a vertical line segment measured at
+  // (137.92, 41.77)-(137.92, 54.64), squarely inside the header's own
+  // y-range (41.52-54.89).
+  for (let d = 1; d < config.dayCount; d++) {
+    const dividerX = geometry.x + d * dayColumnWidth;
+    elements.push({
+      id: nextId(),
+      type: "figure",
+      subType: "rect",
+      x: dividerX - lineWidth / 2,
+      y: geometry.y,
+      width: lineWidth,
+      height: headerHeight,
+      fill: LINE_COLOR,
+      stroke: "none",
+    });
+  }
+
   // Header/body divider.
   elements.push({
     id: nextId(),
@@ -168,20 +188,24 @@ export function renderMonthGridCore(
           strokeWidth: lineWidth,
         });
 
+        // Centered, not left-aligned — left alignment measured close
+        // enough against the reference's own 2-digit sample ("31") but
+        // left single-digit dates (1-9, much narrower glyphs) sitting
+        // visibly off to one side of the box instead of centered in it.
         const dateFontSize = ptToPx(5);
         const dateTextHeight = dateFontSize * 1.2;
         elements.push({
           id: nextId(),
           type: "text",
-          x: cellX + ptToPx(2),
+          x: cellX,
           y: rowY + (dateStripHeight - dateTextHeight) / 2,
-          width: dateBoxWidth - ptToPx(4),
+          width: dateBoxWidth,
           height: dateTextHeight,
           text: String(cell.date),
           fontSize: dateFontSize,
           fontFamily: FONT_FAMILY,
           fill: "#555555",
-          align: "left",
+          align: "center",
         });
       }
 

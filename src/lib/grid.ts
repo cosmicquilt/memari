@@ -240,13 +240,27 @@ export function resolveModulePlacement(
     if (totalHeight <= bottomBound - topBound) {
       const stackTop = Math.max(topBound, Math.min(rawStackTop, bottomBound - totalHeight));
       const DRAGGED = "__dragged__";
+      // On an exact rowStart tie, the dragged item sorts *before* the
+      // sibling it tied with, not after. This matters most for the most
+      // ordinary drag there is: swapping two adjacent items by dragging
+      // the second one up onto the first one's position. The dropped
+      // candidate's rowStart ties exactly with the sibling above it, and
+      // if ties broke the other way (existing sibling first), packing
+      // the dragged item right after that sibling reconstructs the
+      // stack's *original* order whenever the sibling's own rowSpan
+      // happens to equal the gap back to the dragged item's own starting
+      // row — which is exactly true for two items that were already
+      // adjacent before the drag. The drag would silently do nothing.
+      // Breaking ties toward the dragged item instead matches what every
+      // drag-reorder UI actually does: whatever's under the drop point
+      // becomes the new position, and existing content yields to it.
       const ordered = [
         ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
         { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
       ].sort(
         (a, b) =>
           a.rowStart - b.rowStart ||
-          (a.id === DRAGGED ? 1 : b.id === DRAGGED ? -1 : 0)
+          (a.id === DRAGGED ? -1 : b.id === DRAGGED ? 1 : 0)
       );
 
       let cursor = stackTop;
