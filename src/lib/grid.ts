@@ -306,9 +306,38 @@ export function resolveModulePlacement(
       // since a new item was never "originally" anywhere in the stack.
       const draggedFirstOnTie =
         draggedOriginalRowStart !== undefined && candidate.rowStart <= draggedOriginalRowStart;
+
+      // Sorted by where the dragged item's own CENTER lands, not its
+      // raw candidate.rowStart — using the raw edge means a swap only
+      // ever triggers once candidate.rowStart reaches all the way to
+      // the target sibling's own rowStart, i.e. the drag has to cover
+      // the dragged item's *entire own span* before anything happens.
+      // For two adjacent items of comparable size that's most of the
+      // drag distance doing nothing: dropping anywhere short of the
+      // target's exact start silently snapped back to the dragged
+      // item's own pre-drag row (same underlying shape as the exact-tie
+      // bug above, just for every row short of the tie instead of only
+      // the tie itself) — caught live dragging the second-to-last box
+      // in a 4-item stack onto the last one, where "most of the drag"
+      // turned out to still be short of that exact row.
+      //
+      // Using the center instead is the same 50%-crossing threshold
+      // every mainstream drag-reorder library (Sortable.js, dnd-kit,
+      // ...) uses: once the dragged item's midpoint has crossed into a
+      // sibling's own row range, that's treated as an intentional swap
+      // with that sibling — verified this doesn't fire on a trivial
+      // one-row nudge that doesn't reach a neighbor's midpoint either.
+      // Only affects sort order, not placement math or the topBound/
+      // bottomBound clamping above, which still use the real candidate.
+      const candidateCenter = candidate.rowStart + candidate.rowSpan / 2;
+      const straddled = stackSiblings.find(
+        (s) => candidateCenter >= s.rowStart && candidateCenter < s.rowStart + s.rowSpan
+      );
+      const sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
+
       const ordered = [
         ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
-        { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
+        { id: DRAGGED, rowStart: sortRowStart, rowSpan: candidate.rowSpan },
       ].sort(
         (a, b) =>
           a.rowStart - b.rowStart ||

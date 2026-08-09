@@ -284,6 +284,42 @@ const page: PageGrid = {
     assertValidStack("drag-past-locked-upper-bound", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
   }
 
+  // Dragging a module only PART of the way onto the sibling below it —
+  // not all the way to that sibling's own exact rowStart — still
+  // triggers the swap once the dragged item's own CENTER has crossed
+  // into the sibling's row range. This used to require reaching the
+  // sibling's exact rowStart (an edge-to-edge match) before anything
+  // happened, which for two items of comparable size meant most of a
+  // realistic drag distance computed to a no-op — caught live dragging
+  // the second-to-last box of a 4-item stack onto the last one, where
+  // the natural drag distance landed short of that exact row. Ported to
+  // this file's 3-box fixtures: reminders (rowSpan 9) dragged down only
+  // to row 13, not all the way to notes' own rowStart (17) — its center
+  // (13+4.5=17.5) already lands inside notes' range [17,30), so the
+  // swap should trigger anyway.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(r.placement.rowStart !== 8, "dragging reminders only partway onto notes still swaps, not snapping back to its own start");
+    assert(
+      r.reflow.some((m) => m.id === "notes" && m.rowStart === 8),
+      "notes yields to the dragged item even though the drop point fell short of notes' own exact rowStart"
+    );
+    assertValidStack("swap-partial-drag-crosses-center", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
+  }
+
+  // The other side of the same fix: dragging reminders down only
+  // slightly (to row 10) — short of even the CENTER-crossing threshold
+  // into notes' range — should NOT trigger a swap. Confirms the fix
+  // isn't simply "any overlap at all triggers a swap," which would make
+  // trivial nudges surprising.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 10, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(
+      !r.reflow.some((m) => m.id === "notes"),
+      "dragging reminders only barely into notes' territory (short of the center threshold) doesn't swap them"
+    );
+  }
+
   // Dropping directly on a locked block (not a same-span sibling stack)
   // relocates instead of reflowing.
   {
