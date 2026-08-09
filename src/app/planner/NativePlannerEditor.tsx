@@ -1,34 +1,120 @@
 "use client";
 
 // Native CSS Grid replacement for PlannerEditorCanvas.tsx (Polotno-
-// hosted), per the migration plan. This first version is deliberately
-// STATIC — correct visual layout only, no drag/resize/palette-add yet —
-// a checkpoint meant to be visually compared against the still-live
-// Polotno-hosted /planner before any interactivity gets layered on top,
-// so a layout bug doesn't get compounded with an interaction bug.
+// hosted), per the migration plan. This version adds drag-to-reposition
+// via @dnd-kit/core, on top of the static-rendering checkpoint that
+// shipped first — layout and interaction verified separately, on
+// purpose, so a bug in one couldn't get compounded with a bug in the
+// other.
 //
-// Grid configuration below (gridTemplateColumns/Rows: repeat(N, 1fr),
-// gap: gridGapPx, padding: marginPx, boxSizing: border-box) is a
-// deliberate, exact translation of grid.ts's own usableArea() math, not
-// an approximation — CSS Grid's own 1fr-track-plus-gap sizing algorithm
-// computes the identical cellWidth/cellHeight formula
-// gridCellToPixels/usableArea already use server-side. That's what lets
-// each module's own container just be placed via gridColumn/gridRow (the
-// browser's own grid engine does the placement) while still landing at
-// pixel-identical positions to what the server already computed via
-// gridCellToPixels for each element's own x/y (see loadPlannerPages.ts's
-// originX/originY) — no separate translation layer needed, unlike
-// canvasOverlay.ts's whole reason for existing on the Polotno side.
+// Grid configuration (gridTemplateColumns/Rows: repeat(N, 1fr), gap,
+// padding, border-box) is a deliberate, exact translation of grid.ts's
+// own usableArea() math — CSS Grid's 1fr-track sizing computes the
+// identical cellWidth/cellHeight formula gridCellToPixels already uses
+// server-side, so each module's container just needs gridColumn/gridRow
+// (the browser's own grid engine places it) while landing pixel-
+// identical to what the server computed for each element's own x/y.
+//
+// One thing worth being deliberate about: a module's placement
+// (columnStart/rowStart/columnSpan/rowSpan, tracked in `placements`
+// state, mutable via drag) is kept entirely separate from its rendered
+// content (elements/originX/originY, read straight from the loaded
+// props, never touched by a reposition). Repositioning doesn't change
+// what's *inside* a module, only which grid cell its container sits in
+// — recomputing originX/originY from the module's *current* placement
+// instead of the origin its elements were actually generated against
+// would silently misalign every element inside it by exactly the drag
+// distance. A future resize implementation is different: resizing
+// genuinely changes a module's internal layout, so it'll need to refetch
+// fresh elements/origin from the server, the same way the Polotno-hosted
+// editor's swapCanvasElement already does for resize today.
+//
+// Cross-page dragging isn't specially prevented — it doesn't need to be.
+// The delta-based target cell is always resolved against the dragged
+// module's own page's grid, and clampGridPlacement keeps it within that
+// page's own bounds regardless of how far the pointer actually moved, so
+// a drag toward the other page just clamps at the edge instead of
+// crossing over. Matches this project's existing "skip cross-spine
+// dragging" scope decision from earlier this session, for free.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import type { LoadedPage } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
+import {
+  gridCellToPixels,
+  pixelsToGridCell,
+  clampGridPlacement,
+  resolveModulePlacement,
+  type GridRect,
+  type PageGrid,
+} from "@/lib/grid";
+import { updateModulePlacement } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
-function NativePage({ page }: { page: LoadedPage }) {
+type Placement = { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number };
+
+function NativeModule({
+  instanceId,
+  locked,
+  placement,
+  elements,
+  originX,
+  originY,
+  isDragging,
+}: {
+  instanceId: string;
+  locked: boolean;
+  placement: Placement;
+  elements: LoadedPage["moduleInstances"][number]["elements"];
+  originX: number;
+  originY: number;
+  isDragging: boolean;
+}) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
+  return (
+    <div
+      ref={locked ? undefined : setNodeRef}
+      {...(locked ? {} : listeners)}
+      {...(locked ? {} : attributes)}
+      style={{
+        position: "relative",
+        gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
+        gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
+        cursor: locked ? "default" : "grab",
+        opacity: isDragging ? 0.35 : 1,
+        // Recommended by @dnd-kit for PointerSensor-driven drags — lets
+        // the browser's own touch-scroll gesture get preempted cleanly
+        // once a drag actually starts, instead of fighting it.
+        touchAction: locked ? undefined : "none",
+      }}
+    >
+      <PolotnoJsonRenderer elements={elements} originX={originX} originY={originY} />
+    </div>
+  );
+}
+
+function NativePage({
+  page,
+  placements,
+  activeId,
+}: {
+  page: LoadedPage;
+  placements: Record<string, Placement>;
+  activeId: string | null;
+}) {
   return (
     <div
       style={{
@@ -45,20 +131,22 @@ function NativePage({ page }: { page: LoadedPage }) {
         flexShrink: 0,
       }}
     >
-      {page.moduleInstances.map((mi) => (
-        <div
-          key={mi.id}
-          data-instance-id={mi.id}
-          data-locked={mi.locked}
-          style={{
-            position: "relative",
-            gridColumn: `${mi.columnStart + 1} / span ${mi.columnSpan}`,
-            gridRow: `${mi.rowStart + 1} / span ${mi.rowSpan}`,
-          }}
-        >
-          <PolotnoJsonRenderer elements={mi.elements} originX={mi.originX} originY={mi.originY} />
-        </div>
-      ))}
+      {page.moduleInstances.map((mi) => {
+        const placement = placements[mi.id];
+        if (!placement) return null;
+        return (
+          <NativeModule
+            key={mi.id}
+            instanceId={mi.id}
+            locked={mi.locked}
+            placement={placement}
+            elements={mi.elements}
+            originX={mi.originX}
+            originY={mi.originY}
+            isDragging={activeId === mi.id}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -69,15 +157,46 @@ export function NativePlannerEditor({
   pages: LoadedPage[];
   weekSettings: WeekSettings;
 }) {
-  // Simple fit-to-viewport scale, recomputed on mount and resize — the
-  // same role Polotno's own store.scale played, just app-owned instead
-  // of read indirectly off a third-party store (see canvasOverlay.ts's
-  // now-retired reasoning for why that indirection existed at all).
-  // 1200 is a plain fallback for the server-rendered pass (no `window`
-  // there) — corrected immediately on mount, before paint, by the effect
-  // below; a brief default-then-corrected scale on first load is normal
-  // for a viewport-fit calculation, not a hydration-mismatch risk, since
-  // effects run after hydration completes, not during it.
+  // Current grid placement per module instance — seeded from the loaded
+  // snapshot, mutated by drag-to-reposition below. Deliberately separate
+  // from each instance's static elements/origin (see file-level
+  // comment) — this is the *only* thing a reposition changes.
+  const [placements, setPlacements] = useState<Record<string, Placement>>(() => {
+    const map: Record<string, Placement> = {};
+    for (const page of pages) {
+      for (const mi of page.moduleInstances) {
+        map[mi.id] = {
+          columnStart: mi.columnStart,
+          rowStart: mi.rowStart,
+          columnSpan: mi.columnSpan,
+          rowSpan: mi.rowSpan,
+        };
+      }
+    }
+    return map;
+  });
+
+  // Static per-instance info that a reposition never touches — which
+  // page it's on, whether it's locked, and its rendered content.
+  const moduleLookup = useMemo(() => {
+    const map = new Map<
+      string,
+      { pageId: string; locked: boolean; elements: LoadedPage["moduleInstances"][number]["elements"]; originX: number; originY: number }
+    >();
+    for (const page of pages) {
+      for (const mi of page.moduleInstances) {
+        map.set(mi.id, { pageId: page.pageId, locked: mi.locked, elements: mi.elements, originX: mi.originX, originY: mi.originY });
+      }
+    }
+    return map;
+  }, [pages]);
+
+  const pageGridByPageId = useMemo(() => {
+    const map: Record<string, PageGrid> = {};
+    for (const page of pages) map[page.pageId] = page.pageGrid;
+    return map;
+  }, [pages]);
+
   const [viewportWidth, setViewportWidth] = useState<number>(1200);
   useEffect(() => {
     const update = () => setViewportWidth(window.innerWidth);
@@ -88,9 +207,99 @@ export function NativePlannerEditor({
 
   const spreadWidthPx = pages.length * PRINT_WIDTH_PX + Math.max(0, pages.length - 1) * PAGE_GAP_PX;
   const scale = useMemo(() => {
-    const available = viewportWidth - 80; // small margin
+    const available = viewportWidth - 80;
     return Math.min(1, Math.max(0.1, available / spreadWidthPx));
   }, [viewportWidth, spreadWidthPx]);
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // A small activation distance, not an instant-trigger sensor — without
+  // it, a plain click (no intended drag at all) can register as a
+  // zero-distance "drag" and briefly flicker the dragging/opacity state.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActiveId(null);
+      const instanceId = String(event.active.id);
+      const info = moduleLookup.get(instanceId);
+      const current = placements[instanceId];
+      if (!info || !current) return;
+      const pageGrid = pageGridByPageId[info.pageId];
+      if (!pageGrid) return;
+
+      // dnd-kit's delta is raw screen pixels, unaware of our own scale
+      // transform — divide by the current scale to recover page-space
+      // pixels (verified exactly correct in Phase 0's dnd-kit spike).
+      const dxPagePx = event.delta.x / scale;
+      const dyPagePx = event.delta.y / scale;
+      if (dxPagePx === 0 && dyPagePx === 0) return;
+
+      const currentPixel = gridCellToPixels(pageGrid, current);
+      const draggedPixel = { x: currentPixel.x + dxPagePx, y: currentPixel.y + dyPagePx };
+      const nearestCell = clampGridPlacement(pageGrid, {
+        ...pixelsToGridCell(pageGrid, draggedPixel),
+        columnSpan: current.columnSpan,
+        rowSpan: current.rowSpan,
+      });
+      const candidate: GridRect = { ...nearestCell, columnSpan: current.columnSpan, rowSpan: current.rowSpan };
+
+      const others: Array<GridRect & { id: string; locked: boolean }> = [];
+      for (const [id, placement] of Object.entries(placements)) {
+        if (id === instanceId) continue;
+        const otherInfo = moduleLookup.get(id);
+        if (!otherInfo || otherInfo.pageId !== info.pageId) continue;
+        others.push({ ...placement, id, locked: otherInfo.locked });
+      }
+
+      // The dragged module's own placement *before this drag* is exactly
+      // `current` — no separate ref to track it needed here (unlike
+      // PlannerEditorCanvas's lastRowStartRef), since position already
+      // lives in this component's own React state instead of being read
+      // live off a Polotno canvas that's already moved by the time a
+      // resolve runs.
+      const { placement: resolved, reflow } = resolveModulePlacement(pageGrid, candidate, others, current.rowStart);
+
+      if (resolved.columnStart === current.columnStart && resolved.rowStart === current.rowStart && reflow.length === 0) {
+        return;
+      }
+
+      setPlacements((prev) => {
+        const next = { ...prev };
+        next[instanceId] = { ...current, columnStart: resolved.columnStart, rowStart: resolved.rowStart };
+        for (const move of reflow) {
+          const prevPlacement = prev[move.id];
+          if (prevPlacement) next[move.id] = { ...prevPlacement, rowStart: move.rowStart };
+        }
+        return next;
+      });
+
+      const updates = [updateModulePlacement(instanceId, { columnStart: resolved.columnStart, rowStart: resolved.rowStart })];
+      for (const move of reflow) {
+        const prevPlacement = placements[move.id];
+        if (prevPlacement) {
+          updates.push(updateModulePlacement(move.id, { columnStart: prevPlacement.columnStart, rowStart: move.rowStart }));
+        }
+      }
+      Promise.all(updates).catch((err) => {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      });
+    },
+    [placements, moduleLookup, pageGridByPageId, scale]
+  );
+
+  const activeInfo = activeId ? moduleLookup.get(activeId) : null;
+  const activePlacement = activeId ? placements[activeId] : null;
+  const activePageGrid = activeInfo ? pageGridByPageId[activeInfo.pageId] : null;
+  const activePixelSize =
+    activePlacement && activePageGrid
+      ? gridCellToPixels(activePageGrid, { ...activePlacement })
+      : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#e8e8e8" }}>
@@ -104,23 +313,26 @@ export function NativePlannerEditor({
           gap: 12,
         }}
       >
-        <strong>Memari planner editor (native, static preview)</strong>
-        <span style={{ color: "#999", fontSize: 12 }}>
-          Layout-only checkpoint — no drag/resize/save yet, compare against /planner
-        </span>
+        <strong>Memari planner editor (native)</strong>
+        <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition wired up — resize/palette/save-button still to come</span>
+        {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", justifyContent: "center", padding: 24 }}>
-        <div
-          style={{
-            transform: `scale(${scale})`,
-            transformOrigin: "top center",
-            display: "flex",
-            gap: PAGE_GAP_PX,
-          }}
-        >
-          {pages.map((page) => (
-            <NativePage key={page.pageId} page={page} />
-          ))}
+        <div style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
+              {pages.map((page) => (
+                <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} />
+              ))}
+            </div>
+            <DragOverlay>
+              {activeId && activeInfo && activePixelSize ? (
+                <div style={{ position: "relative", width: activePixelSize.width, height: activePixelSize.height }}>
+                  <PolotnoJsonRenderer elements={activeInfo.elements} originX={activeInfo.originX} originY={activeInfo.originY} />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       </div>
     </div>
