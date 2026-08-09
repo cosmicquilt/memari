@@ -56,6 +56,13 @@ export default async function MonthPlannerPage() {
       columnSpan: number;
       rowSpan: number;
     }> = [];
+    // Deliberately left empty (not populated below the way page.tsx's own
+    // does) — PlannerEditorCanvas's opacity-ghosting effect dims whatever
+    // ids show up here during a drag, and month-title/month-grid-core
+    // dimming while repositioning a sidebar box read as unwanted here,
+    // unlike week-title/hourly-grid-core's identical dimming on the
+    // weekly page, which stays as-is. lockedRects (below) is unaffected
+    // — that's real collision/placement math, not a visual effect.
     const lockedInstanceIds: string[] = [];
     for (const instance of page.moduleInstances) {
       if (instance.moduleType.slug === "freeform-element") continue;
@@ -67,7 +74,6 @@ export default async function MonthPlannerPage() {
           columnSpan: instance.columnSpan,
           rowSpan: instance.rowSpan,
         });
-        lockedInstanceIds.push(instance.id);
       } else {
         moduleGridInfo[instance.id] = {
           columnSpan: instance.columnSpan,
