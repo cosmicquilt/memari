@@ -139,6 +139,68 @@ const moduleTypes = [
     defaultRowSpan: 11,
   },
   {
+    // "JANUARY" — top of the sidebar column on a monthly page's left
+    // side. Locked/core like week-title, which this exactly mirrors —
+    // see src/lib/modules/monthTitle.ts for why it's a separate type
+    // from month-grid-core rather than folded into that module's own
+    // header (they occupy disjoint column ranges, measured directly
+    // against the reference).
+    slug: "month-title",
+    name: "Month Title (Core)",
+    configSchema: {
+      type: "object",
+      properties: {
+        monthName: { type: "string", default: "JANUARY" },
+      },
+    },
+    defaultWidth: 300,
+    defaultHeight: 170,
+    defaultColumnSpan: 1,
+    // Same rowSpan as week-title despite one line of (bigger) text
+    // instead of two — rowSpan 1 (85.9px cell) is shorter than the
+    // title's own ~95px rendered text height and would clip it; rowSpan
+    // 2 (183.8px) comfortably contains it. See src/lib/modules/monthTitle.ts.
+    defaultRowSpan: 2,
+  },
+  {
+    // "Core" block, locked by default — a whole monthly spread's
+    // day-of-week header + calendar grid, matching the reference
+    // hourlyjournal.pdf's monthly layout (3 day-columns on the left page
+    // of a spread, 4 on the right, same dayCount convention as
+    // hourly-grid-core). See src/lib/modules/monthGridCore.ts.
+    slug: "month-grid-core",
+    name: "Month Grid (Core)",
+    configSchema: {
+      type: "object",
+      properties: {
+        dayCount: { type: "integer", enum: [3, 4], default: 3 },
+        dayLabels: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" } },
+          },
+          default: [],
+        },
+        weekCount: { type: "integer", enum: [4, 5, 6], default: 5 },
+        cells: { type: "array", items: { type: "array" }, default: [] },
+      },
+    },
+    // 17/30 rows: the renderer's own header + N-row calendar grid has a
+    // near-constant measured content height (~386.9pt = 1612.1px, header
+    // and each row's date-strip are fixed regardless of week count, only
+    // the row body stretches — see monthGridCore.ts's own header
+    // comment) regardless of whether the month needs 4, 5, or 6 rows.
+    // Same slack-minimizing approach hourly-grid-core's own comment
+    // documents: 16 rows (1554.4px) is too short and would clip the
+    // content; 17 rows (1652.3px) is the smallest span that fully
+    // contains it, ~40px/0.13in of slack.
+    defaultWidth: 1560,
+    defaultHeight: 1652,
+    defaultColumnSpan: 3,
+    defaultRowSpan: 17,
+  },
+  {
     slug: "quote-block",
     name: "Quote / Inspiration Block",
     configSchema: {

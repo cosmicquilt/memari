@@ -12,6 +12,7 @@ import {
 } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import { computeMonthCalendar } from "@/lib/monthCalendar";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -370,6 +371,218 @@ export async function getOrCreatePlanner() {
           include: {
             moduleInstances: { include: { moduleType: true } },
           },
+        },
+      },
+    });
+  }
+
+  return planner;
+}
+
+// Parallel to getOrCreatePlanner above, not a generalization of it into a
+// multi-baseType dispatcher — that generalization is better deferred
+// until the native editor's own requirements for "how does a user pick/
+// switch a planner's baseType" are known; guessing that shape now risks
+// redoing it (see the migration plan). Same "one Planner = one 2-page
+// spread of a given baseType" model as the WEEK planner: this seeds one
+// specific month (January 2024, matching the reference PDF exactly, for
+// easy visual comparison — see the migration plan's verification step),
+// not a full 12-month year. A later pass can generalize to an arbitrary
+// year/month once there's a real UI for picking one.
+export async function getOrCreateMonthPlanner() {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  // baseType filter matters here in a way it doesn't for
+  // getOrCreatePlanner's WEEK lookup above — a user can have both a WEEK
+  // and a MONTH planner, and findFirst without this filter would happily
+  // return whichever one it found first.
+  let planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false, baseType: "MONTH" },
+    include: {
+      pages: {
+        orderBy: { position: "asc" },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      },
+    },
+  });
+
+  if (!planner) {
+    planner = await prisma.planner.create({
+      data: {
+        ownerId: userId,
+        title: "My First Month",
+        baseType: "MONTH",
+        // Two pages, same "book open flat" convention as the WEEK
+        // planner: position 0 = left (Sun/Mon/Tue columns), position 1 =
+        // right (Wed/Thu/Fri/Sat columns).
+        pages: { create: [{ position: 0 }, { position: 1 }] },
+      },
+      include: {
+        pages: {
+          orderBy: { position: "asc" },
+          include: { moduleInstances: { include: { moduleType: true } } },
+        },
+      },
+    });
+  }
+
+  let needsRefetch = false;
+
+  if (planner.pages.length < 2) {
+    await prisma.page.create({ data: { plannerId: planner.id, position: 1 } });
+    needsRefetch = true;
+    planner = await prisma.planner.findUniqueOrThrow({
+      where: { id: planner.id },
+      include: {
+        pages: {
+          orderBy: { position: "asc" },
+          include: { moduleInstances: { include: { moduleType: true } } },
+        },
+      },
+    });
+  }
+
+  const pages = planner.pages;
+  const [leftPage, rightPage] = pages;
+
+  // January 2024 — see this function's own header comment for why a
+  // fixed month rather than "the current month."
+  const calendar = computeMonthCalendar(2024, 1);
+  const dayNames = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+
+  const ensureMonthGridCore = async (
+    page: (typeof pages)[number],
+    startColumn: number,
+    dayCount: number,
+    placement: { columnStart: number; columnSpan: number }
+  ) => {
+    const hasCore = page.moduleInstances.some((mi) => mi.moduleType.slug === "month-grid-core");
+    if (hasCore) return;
+    const coreType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "month-grid-core" },
+    });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: page.id,
+        moduleTypeId: coreType.id,
+        placementMode: "GRID",
+        locked: true,
+        columnStart: placement.columnStart,
+        rowStart: 0,
+        columnSpan: placement.columnSpan,
+        rowSpan: coreType.defaultRowSpan,
+        propValues: {
+          dayCount,
+          dayLabels: dayNames.slice(startColumn, startColumn + dayCount).map((name) => ({ name })),
+          weekCount: calendar.weekCount,
+          cells: calendar.weeks.map((week) => week.slice(startColumn, startColumn + dayCount)),
+        },
+      },
+    });
+    needsRefetch = true;
+  };
+
+  // Same column convention as hourly-grid-core: left page reserves
+  // column 0 for the sidebar, right page's day columns take the full
+  // width since it has no sidebar.
+  await ensureMonthGridCore(leftPage, 0, 3, { columnStart: 1, columnSpan: 3 });
+  await ensureMonthGridCore(rightPage, 3, 4, { columnStart: 0, columnSpan: 4 });
+
+  // NOTES sits below month-grid-core on *both* pages (unlike the weekly
+  // layout's todo-checklist/habit-tracker, which only occupy whichever
+  // page needs them) — confirmed directly against the reference: both
+  // page 2 and page 3 have their own NOTES box under the calendar grid,
+  // sized to that page's own day-column width. Same rows-below-the-core
+  // convention as the weekly layout's below-hourly-grid zone.
+  const ensureNotesBox = async (
+    page: (typeof pages)[number],
+    placement: { columnStart: number; columnSpan: number }
+  ) => {
+    const hasNotes = page.moduleInstances.some(
+      (mi) => mi.moduleType.slug === "labeled-box" && mi.rowStart === 17 && mi.columnStart === placement.columnStart
+    );
+    if (hasNotes) return;
+    const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: page.id,
+        moduleTypeId: boxType.id,
+        placementMode: "GRID",
+        columnStart: placement.columnStart,
+        rowStart: 17,
+        columnSpan: placement.columnSpan,
+        rowSpan: 13,
+        propValues: { heading: "Notes", ruled: false },
+      },
+    });
+    needsRefetch = true;
+  };
+  await ensureNotesBox(leftPage, { columnStart: 1, columnSpan: 3 });
+  await ensureNotesBox(rightPage, { columnStart: 0, columnSpan: 4 });
+
+  const hasMonthTitle = leftPage.moduleInstances.some((mi) => mi.moduleType.slug === "month-title");
+  if (!hasMonthTitle) {
+    const titleType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "month-title" } });
+    await prisma.moduleInstance.create({
+      data: {
+        pageId: leftPage.id,
+        moduleTypeId: titleType.id,
+        placementMode: "GRID",
+        locked: true,
+        columnStart: 0,
+        rowStart: 0,
+        columnSpan: titleType.defaultColumnSpan,
+        rowSpan: titleType.defaultRowSpan,
+        propValues: { monthName: "JANUARY" },
+      },
+    });
+    needsRefetch = true;
+  }
+
+  // Default sidebar content: the 4 labeled boxes from the reference
+  // PDF's monthly layout, proportioned the same way as their measured
+  // heights in the reference (Tentative Dates gets the most room, same
+  // "measure, don't guess" discipline as the weekly sidebar's own
+  // rowSpans). Only seeded once, same "don't fight user content" rule as
+  // the weekly sidebar.
+  const hasSidebarContent = leftPage.moduleInstances.some(
+    (mi) => mi.moduleType.slug === "labeled-box" && mi.columnStart === 0
+  );
+  if (!hasSidebarContent) {
+    const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
+    const defaultBoxes: Array<{ heading: string; rowStart: number; rowSpan: number }> = [
+      // Starts at row 2 — month-title occupies rows 0-1, same convention
+      // as week-title.
+      { heading: "Monthly Mantra", rowStart: 2, rowSpan: 4 },
+      { heading: "Priorities", rowStart: 6, rowSpan: 6 },
+      { heading: "Reminders", rowStart: 12, rowSpan: 7 },
+      { heading: "Tentative Dates", rowStart: 19, rowSpan: 11 },
+    ];
+    await prisma.moduleInstance.createMany({
+      data: defaultBoxes.map((box) => ({
+        pageId: leftPage.id,
+        moduleTypeId: boxType.id,
+        placementMode: "GRID" as const,
+        columnStart: 0,
+        rowStart: box.rowStart,
+        columnSpan: boxType.defaultColumnSpan,
+        rowSpan: box.rowSpan,
+        propValues: { heading: box.heading, ruled: false },
+      })),
+    });
+    needsRefetch = true;
+  }
+
+  if (needsRefetch) {
+    planner = await prisma.planner.findUniqueOrThrow({
+      where: { id: planner.id },
+      include: {
+        pages: {
+          orderBy: { position: "asc" },
+          include: { moduleInstances: { include: { moduleType: true } } },
         },
       },
     });

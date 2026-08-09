@@ -20,6 +20,11 @@ import {
   renderHabitTracker,
   type HabitTrackerConfig,
 } from "@/lib/modules/habitTracker";
+import {
+  renderMonthGridCore,
+  type MonthGridCoreConfig,
+} from "@/lib/modules/monthGridCore";
+import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
 
 // A structural subset of the Prisma ModuleInstance (+ its ModuleType), not
 // tied to any specific query's generated type — anything shaped like this
@@ -65,6 +70,14 @@ function renderBySlug(
         propValues as unknown as HabitTrackerConfig,
         idPrefix
       );
+    case "month-grid-core":
+      return renderMonthGridCore(
+        geometry,
+        propValues as unknown as MonthGridCoreConfig,
+        idPrefix
+      );
+    case "month-title":
+      return renderMonthTitle(geometry, propValues as unknown as MonthTitleConfig, idPrefix);
     default:
       // Other module types (e.g. quote-block) don't have renderers yet.
       return [];
@@ -72,9 +85,10 @@ function renderBySlug(
 }
 
 // Locked "core" blocks (hourly-grid-core, week-title, todo-checklist,
-// habit-tracker) render as plain, non-interactive elements — nothing
-// marks them draggable/selectable otherwise, which would let a user drag
-// pieces of the hourly grid around by accident.
+// habit-tracker, month-grid-core, month-title) render as plain,
+// non-interactive elements — nothing marks them draggable/selectable
+// otherwise, which would let a user drag pieces of the hourly grid
+// around by accident.
 //
 // Everything else grid-placed (currently just labeled-box) renders
 // wrapped in a Polotno `type: "group"` element, `id` set to the
