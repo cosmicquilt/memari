@@ -496,13 +496,19 @@ export async function getOrCreateMonthPlanner() {
   // page needs them) — confirmed directly against the reference: both
   // page 2 and page 3 have their own NOTES box under the calendar grid,
   // sized to that page's own day-column width. Same rows-below-the-core
-  // convention as the weekly layout's below-hourly-grid zone.
+  // convention as the weekly layout's below-hourly-grid zone, including
+  // the explicit 1-row gap (month-grid-core's own rowSpan is 17, Notes
+  // starts at 18, not flush against it) — the weekly layout's
+  // hourly-grid-core/todo-checklist gap was requested and fixed the same
+  // way (see the corresponding data fix for the already-seeded weekly
+  // planner; this seed just gets a fresh monthly planner right from the
+  // start instead of needing the same fix after the fact).
   const ensureNotesBox = async (
     page: (typeof pages)[number],
     placement: { columnStart: number; columnSpan: number }
   ) => {
     const hasNotes = page.moduleInstances.some(
-      (mi) => mi.moduleType.slug === "labeled-box" && mi.rowStart === 17 && mi.columnStart === placement.columnStart
+      (mi) => mi.moduleType.slug === "labeled-box" && mi.rowStart === 18 && mi.columnStart === placement.columnStart
     );
     if (hasNotes) return;
     const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
@@ -512,9 +518,9 @@ export async function getOrCreateMonthPlanner() {
         moduleTypeId: boxType.id,
         placementMode: "GRID",
         columnStart: placement.columnStart,
-        rowStart: 17,
+        rowStart: 18,
         columnSpan: placement.columnSpan,
-        rowSpan: 13,
+        rowSpan: 12,
         propValues: { heading: "Notes", ruled: false },
       },
     });
