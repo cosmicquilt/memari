@@ -242,6 +242,24 @@ export function PlannerEditorCanvas({
   // re-rendered with the disabled button.
   const addInFlight = useRef(false);
 
+  // Each tracked module's own rowStart as of the last time snapToGrid
+  // settled it (below) — the only source of truth for "where was this
+  // module before the drag that's currently in progress," since position
+  // itself isn't cached in React state anywhere else (only span is, in
+  // moduleGridInfo) and by the time snapToGrid runs on pointerup, the
+  // module's live position already IS the drop point, not its pre-drag
+  // one. Feeds resolveModulePlacement's draggedOriginalRowStart param,
+  // which needs it to pick the correct tie-break direction when a drag
+  // lands exactly on a sibling's own rowStart — see grid.ts's own
+  // comment on that parameter for why a fixed direction can't get both
+  // "drag up onto the sibling above" and "drag down onto the sibling
+  // below" right at once. Not seeded from the server snapshot on mount
+  // (no per-instance position ships in moduleGridInfo to seed it with) —
+  // a module's very first drag of the session falls back to
+  // resolveModulePlacement's own neutral default until this fills in
+  // after that first drag settles.
+  const lastRowStartRef = useRef<Record<string, number>>({});
+
   const pageGrids = useMemo(() => {
     const map: Record<string, PageGrid> = {};
     for (const p of pages) map[p.pageId] = p.pageGrid;
@@ -358,12 +376,19 @@ export function PlannerEditorCanvas({
           ...(page ? gatherLiveTrackedRects(page, pageGrid, moduleGridInfo, node.id).map((r) => ({ ...r, locked: false })) : []),
         ];
 
-        const { placement, reflow } = resolveModulePlacement(pageGrid, candidate, others);
+        const { placement, reflow } = resolveModulePlacement(
+          pageGrid,
+          candidate,
+          others,
+          lastRowStartRef.current[node.id]
+        );
+        lastRowStartRef.current[node.id] = placement.rowStart;
 
         // Displaced siblings move too — same "shift the children by
         // however far they need to go" approach as the dragged module
         // itself gets below, just applied to whoever the reorder bumped.
         for (const move of reflow) {
+          lastRowStartRef.current[move.id] = move.rowStart;
           const siblingNode = (page?.children ?? []).find(
             (c) => (c as unknown as PolotnoNode).id === move.id
           ) as unknown as PolotnoNode | undefined;
@@ -618,6 +643,18 @@ export function PlannerEditorCanvas({
       const result = await resizeAdjacentModules(topInstanceId, bottomInstanceId, deltaRows);
       swapCanvasElement(store, topInstanceId, result.top.element);
       swapCanvasElement(store, bottomInstanceId, result.bottom.element);
+      // The bottom module's rowStart actually moves here (the shared
+      // boundary sliding), unlike every other resize path — keep
+      // lastRowStartRef in sync so a later drag of that module still
+      // gets the right tie-break direction (see that ref's own comment).
+      // rowStart is nullable in Prisma's schema type (FREE-placement
+      // instances can have one), but this instance is definitely
+      // GRID-placed — it was just resized as one — so the null branch
+      // is unreachable here, not a real possibility to silently paper
+      // over with a fallback value.
+      if (result.bottom.rowStart !== null) {
+        lastRowStartRef.current[bottomInstanceId] = result.bottom.rowStart;
+      }
       setModuleGridInfo((prev) => ({
         ...prev,
         [topInstanceId]: { columnSpan: prev[topInstanceId].columnSpan, rowSpan: result.top.rowSpan },

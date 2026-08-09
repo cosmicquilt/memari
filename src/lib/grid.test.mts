@@ -230,24 +230,58 @@ const page: PageGrid = {
     assertValidStack("drag-reminders-to-middle", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
   }
 
-  // Swapping two ADJACENT items by dragging the second one up onto the
-  // first one's *exact* rowStart — a real bug caught live on the
-  // monthly-layout sidebar (4 boxes, not 3, but the mechanism is
-  // general): dropping reminders exactly at gratitude's own rowStart (2)
-  // used to compute a no-op (reminders ends up right back at its own
-  // original row 8, gratitude unchanged) because the tie-break used to
-  // favor the existing sibling over the dragged item on an exact
-  // rowStart tie — which, for two items that were already adjacent,
-  // reconstructs the pre-drag order exactly. The drag silently did
-  // nothing.
+  // Swapping two ADJACENT items by dragging one onto the exact rowStart
+  // of its neighbor — a real bug caught live on the monthly-layout
+  // sidebar (4 boxes, not 3, but the mechanism is general), in BOTH
+  // directions, which needed two separate fixes since a single fixed
+  // tie-break rule can only ever get one direction right:
+  //
+  // Dragging reminders UP onto gratitude's exact rowStart (2) used to
+  // compute a no-op (reminders ends up right back at its own original
+  // row 8, gratitude unchanged) because the tie-break favored the
+  // existing sibling over the dragged item — which, for two items that
+  // were already adjacent, reconstructs the pre-drag order exactly.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes]);
-    assert(r.placement.rowStart === 2, "dragging reminders onto gratitude's exact rowStart actually moves it there, not back to its own start");
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(r.placement.rowStart === 2, "dragging reminders UP onto gratitude's exact rowStart actually moves it there, not back to its own start");
     assert(
       r.reflow.some((m) => m.id === "gratitude" && m.rowStart === 11),
       "gratitude yields to the dragged item instead of the drag being a no-op"
     );
-    assertValidStack("swap-adjacent-exact-tie", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
+    assertValidStack("swap-adjacent-exact-tie-up", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
+  }
+
+  // The mirror image: dragging gratitude DOWN onto reminders' exact
+  // rowStart (8) needs the *opposite* tie-break (dragged sorts after
+  // the tied sibling this time) for the same underlying reason — fixing
+  // only the "drag up" direction would have made this one a no-op
+  // instead (this was caught exactly that way: the first fix broke this
+  // direction while fixing the other one).
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 6 }, [weekTitle, reminders, notes], 2);
+    assert(r.placement.rowStart === 11, "dragging gratitude DOWN onto reminders' exact rowStart lands it right after reminders' new position, not back at its own start (2)");
+    assert(
+      r.reflow.some((m) => m.id === "reminders" && m.rowStart === 2),
+      "reminders yields to the dragged item instead of the drag being a no-op"
+    );
+    assertValidStack("swap-adjacent-exact-tie-down", r.placement, 6, r.reflow, { reminders: 9, notes: 13 }, siblingDefaults);
+  }
+
+  // Dragging the CURRENT bottom-most item further up so it overlaps the
+  // stack's own locked upper bound (week-title) — this used to reject
+  // the reorder branch entirely (any locked overlap disqualified it) and
+  // fall back to plain relocation, which doesn't reflow siblings, so a
+  // "drag to the very top" gesture looked like it silently did nothing.
+  // Real scenario from the monthly-layout sidebar's 4-box stack, ported
+  // to this file's 3-box fixtures.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(r.placement.rowStart === 2, "dragging reminders past week-title still clamps to right after it, not overlapping it");
+    assert(
+      r.reflow.some((m) => m.id === "gratitude" && m.rowStart === 11),
+      "gratitude still yields even though the drag overshot into the locked block above"
+    );
+    assertValidStack("drag-past-locked-upper-bound", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
   }
 
   // Dropping directly on a locked block (not a same-span sibling stack)

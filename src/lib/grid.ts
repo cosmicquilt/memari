@@ -179,7 +179,14 @@ export function findNearestFreeCell(
 export function resolveModulePlacement(
   page: PageGrid,
   rawCandidate: GridRect,
-  others: Array<GridRect & { id: string; locked: boolean }>
+  others: Array<GridRect & { id: string; locked: boolean }>,
+  // The dragged module's OWN rowStart before this drag started (not its
+  // current dropped position — that's rawCandidate). Only used to break
+  // an exact rowStart tie against a stack sibling by drag direction —
+  // see the comment at that tie-break below for why a fixed rule can't
+  // get both directions right. Omit it (a brand-new palette drop has no
+  // "before" to compare against) to fall back to the neutral default.
+  draggedOriginalRowStart?: number
 ): {
   placement: { columnStart: number; rowStart: number };
   reflow: Array<{ id: string; rowStart: number }>;
@@ -195,18 +202,48 @@ export function resolveModulePlacement(
     return { placement: { columnStart: candidate.columnStart, rowStart: candidate.rowStart }, reflow: [] };
   }
 
-  const isSameColumnStack = overlapping.every(
+  // stackSiblings/siblingsTop/siblingsBottom are computed up front (not
+  // just inside the reorder branch below) because the isSameColumnStack
+  // gate itself now needs siblingsTop/siblingsBottom to correctly
+  // classify a locked item in the overlap set — see that gate's own
+  // comment.
+  const stackSiblings = others.filter(
     (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
   );
+  const siblingsTop = stackSiblings.length > 0 ? Math.min(...stackSiblings.map((s) => s.rowStart)) : candidate.rowStart;
+  const siblingsBottom =
+    stackSiblings.length > 0 ? Math.max(...stackSiblings.map((s) => s.rowStart + s.rowSpan)) : candidate.rowStart + candidate.rowSpan;
+  const columnsOverlap = (o: GridRect) =>
+    o.columnStart < candidate.columnStart + candidate.columnSpan &&
+    o.columnStart + o.columnSpan > candidate.columnStart;
+
+  // A locked item overlapping the drop point doesn't automatically
+  // disqualify a reorder — dragging a module to the very top or bottom
+  // of its stack naturally overlaps whatever locked block bounds that
+  // end (week-title, a month's own title block, ...), and that's the
+  // ordinary case this needs to handle, not an exception to it.
+  // Requiring zero locked overlap here used to reject the reorder branch
+  // entirely for any drag that reached far enough to touch its own
+  // boundary, falling back to findNearestFreeCell — which doesn't
+  // reflow siblings at all, so the drag looked like it silently did
+  // nothing.
+  //
+  // But tolerating *any* locked overlap is too permissive — dropping a
+  // sidebar box onto an unrelated, differently-shaped locked block (the
+  // full-width hourly grid, say) is a real "relocate, don't reorder"
+  // case, not a stack boundary. The distinction: a locked item only
+  // counts as a stack *boundary* (tolerated) if it sits entirely above
+  // or entirely below where this stack's siblings actually are right
+  // now — the same "entirely above/below, not interspersed" test
+  // topBound/bottomBound below already apply, just checked here too so
+  // it gates entry into the reorder branch in the first place.
+  const isBoundingLocked = (o: GridRect & { locked: boolean }) =>
+    o.locked && columnsOverlap(o) && (o.rowStart + o.rowSpan <= siblingsTop || o.rowStart >= siblingsBottom);
+  const isSameColumnStack = overlapping.every(
+    (o) => (!o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan) || isBoundingLocked(o)
+  );
   if (isSameColumnStack) {
-    const stackSiblings = others.filter(
-      (o) => !o.locked && o.columnStart === candidate.columnStart && o.columnSpan === candidate.columnSpan
-    );
     const rawStackTop = Math.min(candidate.rowStart, ...stackSiblings.map((s) => s.rowStart));
-    const rawStackBottom = Math.max(
-      candidate.rowStart + candidate.rowSpan,
-      ...stackSiblings.map((s) => s.rowStart + s.rowSpan)
-    );
     const totalHeight = stackSiblings.reduce((sum, s) => sum + s.rowSpan, candidate.rowSpan);
 
     // The reflowed stack can't run into a locked block above or below it
@@ -214,53 +251,68 @@ export function resolveModulePlacement(
     // — find the tightest such bounds in this column, using column-range
     // overlap rather than an exact span match so a locked block wider
     // than the stack (like a full-width hourly-grid-core) still counts.
-    // Split at the stack's current top/bottom (not a single point) so a
-    // locked block isn't misclassified as "below" just because its
-    // rowStart happens to be >= the stack's top — it needs to actually
-    // start at or after the stack's current bottom to count as bounding
-    // it from below. (A locked block genuinely interspersed within the
-    // stack's current span — not above or below it — won't be caught by
-    // either check; that'd need splitting the stack into sub-regions,
-    // which nothing in the current data model produces.)
-    const columnsOverlap = (o: GridRect) =>
-      o.columnStart < candidate.columnStart + candidate.columnSpan &&
-      o.columnStart + o.columnSpan > candidate.columnStart;
+    //
+    // Classified against the *siblings'* own top/bottom
+    // (siblingsTop/siblingsBottom, computed above), not a candidate-
+    // inclusive top/bottom — folding in the dragged candidate's own
+    // (possibly overshooting) drop position would be wrong here, since a
+    // drag aimed at "the very top" routinely drops past the bounding
+    // locked block's own edge on purpose (that's how a user says "put it
+    // above everything else"). Using that raw, candidate-inclusive top
+    // to decide whether the same locked block still counts as bounding
+    // the stack from above made it stop counting exactly when a drag
+    // reached far enough to need it counted — the stack would then
+    // compute a start row that overlapped the locked block instead of
+    // clamping against it. The siblings' own positions don't have that
+    // problem; they're stable regardless of where the drag landed.
     const boundingLocked = others.filter((o) => o.locked && columnsOverlap(o));
     const topBound = Math.max(
       0,
       ...boundingLocked
-        .filter((o) => o.rowStart + o.rowSpan <= rawStackTop)
+        .filter((o) => o.rowStart + o.rowSpan <= siblingsTop)
         .map((o) => o.rowStart + o.rowSpan)
     );
     const bottomBound = Math.min(
       page.gridRows,
-      ...boundingLocked.filter((o) => o.rowStart >= rawStackBottom).map((o) => o.rowStart)
+      ...boundingLocked.filter((o) => o.rowStart >= siblingsBottom).map((o) => o.rowStart)
     );
 
     if (totalHeight <= bottomBound - topBound) {
       const stackTop = Math.max(topBound, Math.min(rawStackTop, bottomBound - totalHeight));
       const DRAGGED = "__dragged__";
-      // On an exact rowStart tie, the dragged item sorts *before* the
-      // sibling it tied with, not after. This matters most for the most
-      // ordinary drag there is: swapping two adjacent items by dragging
-      // the second one up onto the first one's position. The dropped
-      // candidate's rowStart ties exactly with the sibling above it, and
-      // if ties broke the other way (existing sibling first), packing
-      // the dragged item right after that sibling reconstructs the
-      // stack's *original* order whenever the sibling's own rowSpan
-      // happens to equal the gap back to the dragged item's own starting
-      // row — which is exactly true for two items that were already
-      // adjacent before the drag. The drag would silently do nothing.
-      // Breaking ties toward the dragged item instead matches what every
-      // drag-reorder UI actually does: whatever's under the drop point
-      // becomes the new position, and existing content yields to it.
+      // On an exact rowStart tie between the dragged item and a
+      // sibling, which one sorts first has to depend on which direction
+      // the drag actually moved, not a fixed rule either way — verified
+      // by hand for both directions before writing this:
+      //
+      // Dragging item B UP onto item A's exact rowStart (A was already
+      // directly above B): B needs to sort *before* A, or packing B
+      // right after A lands B back at exactly its own pre-drag row (A's
+      // span exactly bridges the gap, since they were adjacent) and the
+      // whole reflow computes to a no-op.
+      //
+      // Dragging item B DOWN onto item C's exact rowStart (C was already
+      // directly below B): B needs to sort *after* C this time, for the
+      // exact same reason in the other direction — sorting B first would
+      // pack it right after whatever was before B's own old slot,
+      // landing it back at its own pre-drag row again.
+      //
+      // So: dragged-first when candidate.rowStart is at or below where
+      // this item started (moved up or unchanged), dragged-last when it
+      // moved down. draggedOriginalRowStart is undefined for a
+      // brand-new palette drop (nothing to compare against) — falls
+      // back to dragged-last, the long-standing default for "insert new
+      // content," which doesn't have this adjacent-pair failure mode
+      // since a new item was never "originally" anywhere in the stack.
+      const draggedFirstOnTie =
+        draggedOriginalRowStart !== undefined && candidate.rowStart <= draggedOriginalRowStart;
       const ordered = [
         ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
         { id: DRAGGED, rowStart: candidate.rowStart, rowSpan: candidate.rowSpan },
       ].sort(
         (a, b) =>
           a.rowStart - b.rowStart ||
-          (a.id === DRAGGED ? -1 : b.id === DRAGGED ? 1 : 0)
+          (a.id === DRAGGED ? (draggedFirstOnTie ? -1 : 1) : b.id === DRAGGED ? (draggedFirstOnTie ? 1 : -1) : 0)
       );
 
       let cursor = stackTop;
