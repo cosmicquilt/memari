@@ -102,6 +102,20 @@ import { updateModulePlacement } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
+// Zoom bounds/step match Polotno's own ZoomGroup (node_modules/polotno/
+// toolbar/zoom-buttons.js: presets [.1, .25, .5, .75, 1, 1.5, 2, 3, 5],
+// step factor 1.2 per click) closely enough to feel like the same tool,
+// without needing to replicate its exact preset list.
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 5;
+const ZOOM_STEP = 1.2;
+const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
+const HEADER_HEIGHT_PX = 41; // header's own rendered height (8px padding * 2 + ~25px line box) — an estimate, not measured; only used to size the "fit whole page" preset, not anything print-critical
+
+function clampScale(scale: number): number {
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+}
+
 type Placement = { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number };
 type ModuleInfo = {
   pageId: string;
@@ -262,19 +276,72 @@ export function NativePlannerEditor({
     return map;
   }, [pages]);
 
-  const [viewportWidth, setViewportWidth] = useState<number>(1200);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
-    const update = () => setViewportWidth(window.innerWidth);
+    const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
 
   const spreadWidthPx = pages.length * PRINT_WIDTH_PX + Math.max(0, pages.length - 1) * PAGE_GAP_PX;
-  const scale = useMemo(() => {
-    const available = viewportWidth - 80;
-    return Math.min(1, Math.max(0.1, available / spreadWidthPx));
-  }, [viewportWidth, spreadWidthPx]);
+
+  // "fit-width"/"fit-page" are pure functions of the viewport size,
+  // recomputed on every render — no effect needed to "sync" scale to
+  // them, since they're not independent state, they're derived from
+  // viewportSize + zoomMode directly (an effect that turns around and
+  // calls setState from what it read off other state is the exact
+  // pattern React's docs recommend deriving during render instead of).
+  // "manual" (the zoom buttons, or ctrl/pinch-scroll) is the one case
+  // that's genuinely stateful — an incremental step from wherever it was
+  // last, not a function of anything else — so that's the only piece
+  // that actually lives in useState.
+  const [zoomMode, setZoomMode] = useState<"fit-width" | "fit-page" | "manual">("fit-width");
+  const [manualScale, setManualScale] = useState(1);
+
+  const fitWidthScale = clampScale((viewportSize.width - VIEWPORT_PADDING_PX * 2) / spreadWidthPx);
+  const fitPageScale = clampScale(
+    Math.min(
+      (viewportSize.width - VIEWPORT_PADDING_PX * 2) / spreadWidthPx,
+      (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2) / PRINT_HEIGHT_PX
+    )
+  );
+  const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
+
+  // Both step from the currently-*displayed* scale, not from whatever
+  // manualScale happens to hold — if the last mode was fit-width/
+  // fit-page, manualScale is stale leftover state from some earlier
+  // manual session (or still its initial 1), not what's actually on
+  // screen right now.
+  const zoomIn = useCallback(() => {
+    setZoomMode("manual");
+    setManualScale(clampScale(scale * ZOOM_STEP));
+  }, [scale]);
+  const zoomOut = useCallback(() => {
+    setZoomMode("manual");
+    setManualScale(clampScale(scale / ZOOM_STEP));
+  }, [scale]);
+
+  // Ctrl/Cmd+wheel zooms (the standard canvas-tool convention — Figma,
+  // Google Maps, Photoshop); plain wheel/trackpad scroll is left
+  // untouched so it keeps doing ordinary panning via the container's own
+  // native `overflow: auto` scrolling — no custom pan code needed for
+  // that half of "zoom and pan", the browser already does it once
+  // there's something bigger than the viewport to scroll around in.
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+      setZoomMode("manual");
+      // Steps from whatever's currently on screen, not from the last
+      // *manual* value specifically — scroll-zooming right after a
+      // Fit-page click should start from the fit-page scale, not
+      // whatever manualScale happened to be left over from before.
+      setManualScale(clampScale(scale * factor));
+    },
+    [scale]
+  );
 
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
@@ -416,20 +483,115 @@ export function NativePlannerEditor({
         }}
       >
         <strong>Memari planner editor (native)</strong>
-        <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition wired up — resize/palette/save-button still to come</span>
+        <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
         {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", justifyContent: "center", padding: 24 }}>
-        <div style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
-            <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
-              {pages.map((page) => (
-                <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} />
-              ))}
-            </div>
-          </DndContext>
+      <div
+        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative", padding: VIEWPORT_PADDING_PX }}
+        onWheel={handleWheel}
+      >
+        {/* Block-level + margin:auto, not flex+justifyContent:center —
+            the latter has a well-known bug where content wider than its
+            container becomes unreachable by scroll on one side (the
+            "phantom centering space" issue). margin:auto degrades
+            gracefully to 0 once the content genuinely overflows, so it
+            stays scrollable in every direction at any zoom level instead
+            of only some of them. Only matters once zoom-in makes
+            overflow a real possibility, which is exactly what's being
+            added here. */}
+        <div style={{ width: "fit-content", margin: "0 auto" }}>
+          <div style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
+              <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
+                {pages.map((page) => (
+                  <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} />
+                ))}
+              </div>
+            </DndContext>
+          </div>
         </div>
+        <ZoomControls
+          scale={scale}
+          zoomMode={zoomMode}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          onFitWidth={() => setZoomMode("fit-width")}
+          onFitPage={() => setZoomMode("fit-page")}
+        />
       </div>
+    </div>
+  );
+}
+
+// Floating pill toolbar, bottom-center of the viewport — same placement
+// Polotno's own ZoomGroup uses (node_modules/polotno/toolbar/zoom-
+// buttons.js: position:absolute, bottom, centered horizontally) so this
+// reads as the same kind of control. `position: fixed`, not sticky or
+// absolute: it needs to stay put on screen regardless of zoom level or
+// scroll position within a container that can get much taller than the
+// viewport once zoomed in, and fixed is unambiguous for that (relative
+// to the real viewport specifically *because* none of this component's
+// own ancestors carry a CSS transform — only the scaled page content,
+// a sibling subtree, does; see the file's own note on why a transformed
+// ancestor is exactly the thing that broke position:fixed for
+// DragOverlay earlier).
+function ZoomControls({
+  scale,
+  zoomMode,
+  onZoomIn,
+  onZoomOut,
+  onFitWidth,
+  onFitPage,
+}: {
+  scale: number;
+  zoomMode: "fit-width" | "fit-page" | "manual";
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFitWidth: () => void;
+  onFitPage: () => void;
+}) {
+  const buttonStyle = (active: boolean): React.CSSProperties => ({
+    border: "none",
+    background: active ? "#4a5cff" : "transparent",
+    color: active ? "white" : "#333",
+    borderRadius: 6,
+    padding: "6px 10px",
+    fontSize: 13,
+    cursor: "pointer",
+    lineHeight: 1,
+  });
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 16,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "fit-content",
+        display: "flex",
+        alignItems: "center",
+        gap: 2,
+        background: "white",
+        borderRadius: 10,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+        padding: 4,
+        zIndex: 20,
+      }}
+    >
+      <button onClick={onZoomOut} title="Zoom out" style={buttonStyle(false)}>
+        −
+      </button>
+      <span style={{ fontSize: 13, color: "#333", minWidth: 44, textAlign: "center" }}>{Math.round(scale * 100)}%</span>
+      <button onClick={onZoomIn} title="Zoom in" style={buttonStyle(false)}>
+        +
+      </button>
+      <div style={{ width: 1, alignSelf: "stretch", background: "#ddd", margin: "0 4px" }} />
+      <button onClick={onFitWidth} title="Fill screen with page width (default)" style={buttonStyle(zoomMode === "fit-width")}>
+        Fit width
+      </button>
+      <button onClick={onFitPage} title="Zoom out to see the whole page" style={buttonStyle(zoomMode === "fit-page")}>
+        Fit page
+      </button>
     </div>
   );
 }
