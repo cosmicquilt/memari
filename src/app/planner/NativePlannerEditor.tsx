@@ -75,7 +75,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -108,8 +108,14 @@ const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 // without needing to replicate its exact preset list.
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
-const ZOOM_STEP = 1.2;
+const ZOOM_STEP = 1.2; // per zoom in/out button click
+// Wheel/trackpad-pinch zoom is proportional to gesture magnitude
+// instead — see handleWheel's own comment for why a fixed step per
+// event (like the buttons use) doesn't work for a wheel/pinch gesture.
+const WHEEL_ZOOM_SENSITIVITY = 0.002;
+const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
+const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the content wrapper's own constant marginTop — see zoomAnchored's comment on why this has to be threaded through its math too, not just centeringOffsetX
 const HEADER_HEIGHT_PX = 41; // header's own rendered height (8px padding * 2 + ~25px line box) — an estimate, not measured; only used to size the "fit whole page" preset, not anything print-critical
 
 function clampScale(scale: number): number {
@@ -308,19 +314,117 @@ export function NativePlannerEditor({
   );
   const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
 
+  // How far the scaled content is horizontally offset from the
+  // scrollable container's own left edge at a given scale — content
+  // narrower than the viewport gets centered (half the leftover space);
+  // content at least as wide gets 0, never negative — the same
+  // "degrades to 0 once it genuinely overflows" fix as the flex-
+  // centering bug mentioned below, just computed explicitly here
+  // instead of left to a CSS property, because the zoom-anchoring math
+  // right below needs to know this value precisely, not just rely on it
+  // looking right on screen. No *scale-dependent* vertical equivalent —
+  // pages start at the top and scroll down, they're not vertically
+  // centered (matches how document/page editors typically behave) —
+  // but there is a fixed, scale-independent CONTENT_TOP_OFFSET_PX
+  // (the wrapper's own constant marginTop) that the same zoom-anchoring
+  // math still has to account for, simpler than this one only because
+  // it never varies with scale or viewport size.
+  const centeringOffsetX = useCallback(
+    (atScale: number) => Math.max(0, (viewportSize.width - VIEWPORT_PADDING_PX * 2 - spreadWidthPx * atScale) / 2),
+    [viewportSize.width, spreadWidthPx]
+  );
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Set right before a zoom change takes effect, consumed by the
+  // layout effect below once React has re-rendered at the new scale —
+  // can't set scrollLeft/scrollTop synchronously in the same event
+  // handler that changes scale, the DOM hasn't reflowed to the new
+  // content size yet at that point.
+  const pendingZoomAnchorRef = useRef<{
+    contentX: number;
+    contentY: number;
+    anchorScreenX: number;
+    anchorScreenY: number;
+    atScale: number;
+  } | null>(null);
+
+  // Keeps whatever page-space point was under the anchor (the cursor,
+  // for wheel-zoom; the viewport's own center, for the +/- buttons)
+  // visually stationary through a scale change — without this, zooming
+  // "grows" from the content's top-left corner, and the thing you were
+  // actually looking at ends up who-knows-where, needing the scrollbar
+  // to go hunt for it. clientX/clientY are real screen coordinates
+  // (e.g. straight from a mouse/wheel event); omit them for the
+  // viewport-center default a button click uses, since a button press
+  // has no cursor position on the canvas to anchor to.
+  const zoomAnchored = useCallback(
+    (newScale: number, clientX?: number, clientY?: number) => {
+      const clamped = clampScale(newScale);
+      const container = scrollContainerRef.current;
+      if (!container) {
+        setZoomMode("manual");
+        setManualScale(clamped);
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      const anchorScreenX = clientX !== undefined ? clientX - rect.left : container.clientWidth / 2;
+      const anchorScreenY = clientY !== undefined ? clientY - rect.top : container.clientHeight / 2;
+
+      const oldOffsetX = centeringOffsetX(scale);
+      const contentX = (container.scrollLeft + anchorScreenX - oldOffsetX) / scale;
+      // CONTENT_TOP_OFFSET_PX: the wrapper's own constant marginTop —
+      // fixed regardless of scale (unlike centeringOffsetX), but still
+      // has to be subtracted here for the same reason: scrollTop/
+      // anchorScreenY are measured from the *container's* top edge, not
+      // from where page-space y=0 actually renders once that margin
+      // pushes it down.
+      const contentY = (container.scrollTop + anchorScreenY - CONTENT_TOP_OFFSET_PX) / scale;
+
+      setZoomMode("manual");
+      setManualScale(clamped);
+      pendingZoomAnchorRef.current = { contentX, contentY, anchorScreenX, anchorScreenY, atScale: clamped };
+    },
+    [scale, centeringOffsetX]
+  );
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    const pending = pendingZoomAnchorRef.current;
+    if (!container || !pending) return;
+    pendingZoomAnchorRef.current = null;
+    const newOffsetX = centeringOffsetX(pending.atScale);
+    container.scrollLeft = pending.contentX * pending.atScale + newOffsetX - pending.anchorScreenX;
+    container.scrollTop = pending.contentY * pending.atScale + CONTENT_TOP_OFFSET_PX - pending.anchorScreenY;
+  }, [scale, centeringOffsetX]);
+
+  // Fit-width/Fit-page reset the view from scratch (matching Polotno's
+  // own "reset to scale-to-fit" behavior — it shows the page from the
+  // top, not wherever you happened to be looking before) rather than
+  // trying to anchor a prior focal point through the mode switch. Only
+  // fires on an actual mode *change* (tracked via the ref), not on every
+  // resize-triggered rescale within an already-active fit mode — a
+  // window resize while already fit-to-width shouldn't yank the
+  // scroll position back to the top.
+  const prevZoomModeRef = useRef(zoomMode);
+  useLayoutEffect(() => {
+    if (prevZoomModeRef.current === zoomMode) return;
+    prevZoomModeRef.current = zoomMode;
+    if (zoomMode === "manual") return;
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollLeft = 0;
+      container.scrollTop = 0;
+    }
+  }, [zoomMode]);
+
   // Both step from the currently-*displayed* scale, not from whatever
   // manualScale happens to hold — if the last mode was fit-width/
   // fit-page, manualScale is stale leftover state from some earlier
   // manual session (or still its initial 1), not what's actually on
-  // screen right now.
-  const zoomIn = useCallback(() => {
-    setZoomMode("manual");
-    setManualScale(clampScale(scale * ZOOM_STEP));
-  }, [scale]);
-  const zoomOut = useCallback(() => {
-    setZoomMode("manual");
-    setManualScale(clampScale(scale / ZOOM_STEP));
-  }, [scale]);
+  // screen right now. Anchored to the viewport's own center — a button
+  // click has no cursor position on the canvas to anchor to instead.
+  const zoomIn = useCallback(() => zoomAnchored(scale * ZOOM_STEP), [scale, zoomAnchored]);
+  const zoomOut = useCallback(() => zoomAnchored(scale / ZOOM_STEP), [scale, zoomAnchored]);
 
   // Ctrl/Cmd+wheel zooms (the standard canvas-tool convention — Figma,
   // Google Maps, Photoshop); plain wheel/trackpad scroll is left
@@ -332,15 +436,25 @@ export function NativePlannerEditor({
     (e: React.WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-      setZoomMode("manual");
-      // Steps from whatever's currently on screen, not from the last
-      // *manual* value specifically — scroll-zooming right after a
-      // Fit-page click should start from the fit-page scale, not
-      // whatever manualScale happened to be left over from before.
-      setManualScale(clampScale(scale * factor));
+      // Proportional to the actual gesture magnitude (e.deltaY), not a
+      // fixed step per event the way the +/- buttons use — a fixed
+      // multiplicative step compounds explosively fast under a
+      // trackpad pinch gesture, which fires many small wheel events
+      // per second (unlike a mouse wheel's larger, discrete "clicks").
+      // Applying e.g. 1.2x on every one of dozens of rapid-fire events
+      // compounds to an enormous factor almost instantly — reported as
+      // zoom "moving too fast" on a touchpad, and this is exactly the
+      // mechanism that would cause it. Clamping deltaY caps how much
+      // even a single unusually large event (a fast mouse-wheel flick,
+      // or a delta spike) can move the scale by in one step. Anchored
+      // to the actual cursor position, not the viewport center — this
+      // is the one zoom trigger that has a real cursor position to
+      // anchor to, matching Figma/Maps/Photoshop's own wheel-zoom feel.
+      const clampedDeltaY = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, e.deltaY));
+      const factor = Math.pow(2, -clampedDeltaY * WHEEL_ZOOM_SENSITIVITY);
+      zoomAnchored(scale * factor, e.clientX, e.clientY);
     },
-    [scale]
+    [scale, zoomAnchored]
   );
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -487,21 +601,31 @@ export function NativePlannerEditor({
         {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
       <div
-        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative", padding: VIEWPORT_PADDING_PX }}
+        ref={scrollContainerRef}
+        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
         onWheel={handleWheel}
       >
-        {/* Block-level + margin:auto, not flex+justifyContent:center —
-            the latter has a well-known bug where content wider than its
-            container becomes unreachable by scroll on one side (the
-            "phantom centering space" issue). margin:auto degrades
-            gracefully to 0 once the content genuinely overflows, so it
-            stays scrollable in every direction at any zoom level instead
-            of only some of them. Only matters once zoom-in makes
-            overflow a real possibility, which is exactly what's being
-            added here. */}
-        <div style={{ width: "fit-content", margin: "0 auto" }}>
-          <div style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
-            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd}>
+        {/* marginLeft: centeringOffsetX(scale), not CSS margin:auto or
+            flex+justifyContent:center — both of those have a well-known
+            bug where content wider than its container becomes
+            unreachable by scroll on one side (the "phantom centering
+            space" issue), and neither gives zoomAnchored a precise,
+            known value to fold into its focal-point math the way this
+            explicit, JS-computed offset does. Degrades to 0 once the
+            content genuinely overflows, so it stays scrollable in every
+            direction at any zoom level instead of only some of them —
+            only matters once zoom-in makes overflow a real possibility,
+            which is exactly what's being added here. No vertical
+            equivalent — see centeringOffsetX's own comment on why. */}
+        <div style={{ width: "fit-content", marginLeft: centeringOffsetX(scale), marginTop: CONTENT_TOP_OFFSET_PX, marginBottom: VIEWPORT_PADDING_PX }}>
+          <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+            <DndContext
+              id="memari-planner-dnd"
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragEnd={handleDragEnd}
+            >
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
                 {pages.map((page) => (
                   <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} />
