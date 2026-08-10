@@ -20,7 +20,39 @@
 
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
-function ElementNode({ element, originX, originY }: { element: RenderedPolotnoElement; originX: number; originY: number }) {
+// Firefox pixel-snaps a CSS `border`'s thickness to whole device pixels at
+// composite time, and rounds anything under ~1 device px down to 0 instead
+// of antialiasing it the way Chrome/WebKit do (confirmed via Bugzilla
+// 1258112/1490361 — a long-standing, still-unfixed engine bug, not
+// something specific to this code). Every hairline this app draws (grid
+// dividers, header underlines, module outer borders) is defined in
+// print-space pixels sized for a 300 DPI page (see print-spec.ts) and then
+// visually shrunk again by this editor's own zoom `scale` on top of that,
+// so at ordinary on-screen zoom levels a "1px" line can easily compute to
+// well under 1 real device pixel — invisible in Firefox, present in Chrome.
+// Reported symptom matched exactly: thin dividers vanish first, then whole
+// unfilled module outlines (a labeled-box with no fill, just a border,
+// reads as "the module disappeared" once its only border is gone) — and it
+// clears the moment the zoom level changes, since which side(s) round to 0
+// is scale-dependent, not a permanent DOM state.
+//
+// Fix: never let a stroke's on-screen (post-transform) width drop below
+// MIN_ONSCREEN_BORDER_PX, by growing the pre-transform CSS border-width as
+// `scale` shrinks so the two cancel out. This is a floor, not a rescale —
+// strokes already thick enough on screen are left exactly as designed.
+const MIN_ONSCREEN_BORDER_PX = 1.5;
+
+function ElementNode({
+  element,
+  originX,
+  originY,
+  scale,
+}: {
+  element: RenderedPolotnoElement;
+  originX: number;
+  originY: number;
+  scale: number;
+}) {
   if (element.type === "group") {
     // Synthetic wrapper renderModuleInstance adds around a non-locked
     // instance's children (see that file's own comment on why —
@@ -29,7 +61,7 @@ function ElementNode({ element, originX, originY }: { element: RenderedPolotnoEl
     return (
       <>
         {(element.children ?? []).map((child) => (
-          <ElementNode key={child.id} element={child} originX={originX} originY={originY} />
+          <ElementNode key={child.id} element={child} originX={originX} originY={originY} scale={scale} />
         ))}
       </>
     );
@@ -69,6 +101,9 @@ function ElementNode({ element, originX, originY }: { element: RenderedPolotnoEl
   if (element.type === "figure" && element.subType === "rect") {
     const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
     const hasFill = !!element.fill && element.fill !== "transparent";
+    // See MIN_ONSCREEN_BORDER_PX's comment above — floor the CSS
+    // border-width so it never renders thinner than that on screen.
+    const borderWidth = hasStroke ? Math.max(element.strokeWidth ?? 0, MIN_ONSCREEN_BORDER_PX / scale) : 0;
     return (
       <div
         style={{
@@ -79,7 +114,7 @@ function ElementNode({ element, originX, originY }: { element: RenderedPolotnoEl
           height,
           boxSizing: "border-box",
           background: hasFill ? element.fill : "transparent",
-          border: hasStroke ? `${element.strokeWidth}px solid ${element.stroke}` : undefined,
+          border: hasStroke ? `${borderWidth}px solid ${element.stroke}` : undefined,
           opacity,
           pointerEvents: "none",
         }}
@@ -99,15 +134,20 @@ export function PolotnoJsonRenderer({
   elements,
   originX,
   originY,
+  scale,
 }: {
   elements: RenderedPolotnoElement[];
   originX: number;
   originY: number;
+  // Current on-screen zoom factor of the ancestor transform this renders
+  // under — see MIN_ONSCREEN_BORDER_PX's comment for why a stroke's CSS
+  // width needs to know it.
+  scale: number;
 }) {
   return (
     <>
       {elements.map((element) => (
-        <ElementNode key={element.id} element={element} originX={originX} originY={originY} />
+        <ElementNode key={element.id} element={element} originX={originX} originY={originY} scale={scale} />
       ))}
     </>
   );

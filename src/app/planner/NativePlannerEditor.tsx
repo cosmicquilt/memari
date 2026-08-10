@@ -144,6 +144,7 @@ function NativeModule({
   originY,
   visualOffset,
   isDragged,
+  scale,
 }: {
   instanceId: string;
   locked: boolean;
@@ -157,6 +158,11 @@ function NativeModule({
   // pixel distance to its would-be new row. {0,0} the rest of the time.
   visualOffset: { x: number; y: number };
   isDragged: boolean;
+  // Current on-screen zoom factor — passed all the way down to
+  // PolotnoJsonRenderer so it can keep hairline borders from vanishing
+  // under Firefox's transform-scale border bug. See that component's
+  // own comment for why.
+  scale: number;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   return (
@@ -188,7 +194,7 @@ function NativeModule({
         touchAction: locked ? undefined : "none",
       }}
     >
-      <PolotnoJsonRenderer elements={elements} originX={originX} originY={originY} />
+      <PolotnoJsonRenderer elements={elements} originX={originX} originY={originY} scale={scale} />
     </div>
   );
 }
@@ -198,11 +204,13 @@ function NativePage({
   placements,
   activeId,
   visualOffsets,
+  scale,
 }: {
   page: LoadedPage;
   placements: Record<string, Placement>;
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
+  scale: number;
 }) {
   return (
     <div
@@ -234,6 +242,7 @@ function NativePage({
             originY={mi.originY}
             visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
             isDragged={activeId === mi.id}
+            scale={scale}
           />
         );
       })}
@@ -714,7 +723,7 @@ export function NativePlannerEditor({
             >
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
                 {pages.map((page) => (
-                  <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} />
+                  <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} scale={scale} />
                 ))}
               </div>
             </DndContext>
