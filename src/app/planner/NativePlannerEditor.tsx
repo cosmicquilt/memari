@@ -432,8 +432,20 @@ export function NativePlannerEditor({
   // native `overflow: auto` scrolling — no custom pan code needed for
   // that half of "zoom and pan", the browser already does it once
   // there's something bigger than the viewport to scroll around in.
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // A *native* listener attached imperatively with { passive: false },
+  // not React's onWheel prop — React attaches wheel listeners as
+  // passive, which makes preventDefault() below a silent no-op (Chrome
+  // logs a warning; nothing else happens). With a passive listener, the
+  // browser's own Ctrl/Cmd+scroll page-zoom still fires *in addition to*
+  // this handler's own zoom, and since that's a real browser-chrome-level
+  // zoom, it's the one you actually see — the in-app zoom happens too,
+  // just invisibly, hidden under the browser zooming the whole tab (UI,
+  // scrollbars, everything) on top of it. Exactly the "sometimes it
+  // zooms the whole page instead of the canvas" symptom. Only a
+  // non-passive listener can actually suppress the browser's own
+  // handling of the same gesture.
+  const handleWheelNative = useCallback(
+    (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       // Proportional to the actual gesture magnitude (e.deltaY), not a
@@ -456,6 +468,18 @@ export function NativePlannerEditor({
     },
     [scale, zoomAnchored]
   );
+
+  // Attach/detach whenever handleWheelNative itself changes (i.e.
+  // whenever scale/zoomAnchored do) — simpler than a stable listener
+  // calling through a ref, and correctness-equivalent, since this
+  // effect body doesn't do anything React would need to avoid re-running
+  // (addEventListener/removeEventListener are cheap and idempotent).
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.addEventListener("wheel", handleWheelNative, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheelNative);
+  }, [handleWheelNative]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
@@ -600,11 +624,7 @@ export function NativePlannerEditor({
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
         {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
-      <div
-        ref={scrollContainerRef}
-        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
-        onWheel={handleWheel}
-      >
+      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
         {/* marginLeft: centeringOffsetX(scale), not CSS margin:auto or
             flex+justifyContent:center — both of those have a well-known
             bug where content wider than its container becomes
