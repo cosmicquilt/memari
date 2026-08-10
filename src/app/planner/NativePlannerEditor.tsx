@@ -110,9 +110,12 @@ const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 const ZOOM_STEP = 1.2; // per zoom in/out button click
 // Wheel/trackpad-pinch zoom is proportional to gesture magnitude
-// instead — see handleWheel's own comment for why a fixed step per
-// event (like the buttons use) doesn't work for a wheel/pinch gesture.
-const WHEEL_ZOOM_SENSITIVITY = 0.002;
+// instead — see the wheel listener's own comment for why a fixed step
+// per event (like the buttons use) doesn't work for a wheel/pinch
+// gesture. 0.002 (the first value tried) read as too slow in practice —
+// bumped to 0.006, a tune-to-feel constant more than a principled one;
+// adjust again if it still doesn't feel right.
+const WHEEL_ZOOM_SENSITIVITY = 0.006;
 const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
 const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the content wrapper's own constant marginTop — see zoomAnchored's comment on why this has to be threaded through its math too, not just centeringOffsetX
@@ -432,6 +435,7 @@ export function NativePlannerEditor({
   // native `overflow: auto` scrolling — no custom pan code needed for
   // that half of "zoom and pan", the browser already does it once
   // there's something bigger than the viewport to scroll around in.
+  //
   // A *native* listener attached imperatively with { passive: false },
   // not React's onWheel prop — React attaches wheel listeners as
   // passive, which makes preventDefault() below a silent no-op (Chrome
@@ -440,46 +444,82 @@ export function NativePlannerEditor({
   // this handler's own zoom, and since that's a real browser-chrome-level
   // zoom, it's the one you actually see — the in-app zoom happens too,
   // just invisibly, hidden under the browser zooming the whole tab (UI,
-  // scrollbars, everything) on top of it. Exactly the "sometimes it
-  // zooms the whole page instead of the canvas" symptom. Only a
-  // non-passive listener can actually suppress the browser's own
-  // handling of the same gesture.
-  const handleWheelNative = useCallback(
-    (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      // Proportional to the actual gesture magnitude (e.deltaY), not a
-      // fixed step per event the way the +/- buttons use — a fixed
-      // multiplicative step compounds explosively fast under a
-      // trackpad pinch gesture, which fires many small wheel events
-      // per second (unlike a mouse wheel's larger, discrete "clicks").
-      // Applying e.g. 1.2x on every one of dozens of rapid-fire events
-      // compounds to an enormous factor almost instantly — reported as
-      // zoom "moving too fast" on a touchpad, and this is exactly the
-      // mechanism that would cause it. Clamping deltaY caps how much
-      // even a single unusually large event (a fast mouse-wheel flick,
-      // or a delta spike) can move the scale by in one step. Anchored
-      // to the actual cursor position, not the viewport center — this
-      // is the one zoom trigger that has a real cursor position to
-      // anchor to, matching Figma/Maps/Photoshop's own wheel-zoom feel.
-      const clampedDeltaY = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, e.deltaY));
-      const factor = Math.pow(2, -clampedDeltaY * WHEEL_ZOOM_SENSITIVITY);
-      zoomAnchored(scale * factor, e.clientX, e.clientY);
-    },
-    [scale, zoomAnchored]
-  );
+  // scrollbars, everything) on top of it. Only a non-passive listener
+  // can actually suppress the browser's own handling of the same
+  // gesture.
+  //
+  // Rapid wheel events (a trackpad pinch can fire dozens per second,
+  // faster than the display even refreshes) are coalesced into one
+  // update per animation frame rather than applied one-for-one — an
+  // earlier version ran the full zoomAnchored → setState → layout-effect
+  // → scroll-write pipeline on every single raw event, which is real,
+  // synchronous work; doing that more often than the screen can actually
+  // repaint doesn't make the zoom track any better, it just falls behind
+  // and shows as jitter/stutter. Capping it at one flush per frame
+  // (rAF) means every update this component does is one the browser can
+  // actually show before the next one lands.
+  //
+  // The listener itself is attached exactly once (empty effect deps)
+  // and never torn down/recreated mid-gesture — it reads scale and calls
+  // zoomAnchored through refs kept fresh by their own small effects,
+  // rather than closing over them directly the way a plain useCallback
+  // would (which meant the listener effect's own deps included scale,
+  // so it re-subscribed the DOM listener on every single wheel tick —
+  // avoidable churn that was very likely also contributing to the
+  // reported jitter, on top of the once-per-event pipeline cost above).
+  const scaleRef = useRef(scale);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+  const zoomAnchoredRef = useRef(zoomAnchored);
+  useEffect(() => {
+    zoomAnchoredRef.current = zoomAnchored;
+  }, [zoomAnchored]);
 
-  // Attach/detach whenever handleWheelNative itself changes (i.e.
-  // whenever scale/zoomAnchored do) — simpler than a stable listener
-  // calling through a ref, and correctness-equivalent, since this
-  // effect body doesn't do anything React would need to avoid re-running
-  // (addEventListener/removeEventListener are cheap and idempotent).
+  const pendingWheelRef = useRef<{ deltaY: number; clientX: number; clientY: number } | null>(null);
+  const wheelRafIdRef = useRef<number | null>(null);
+
+  const flushWheelZoom = useCallback(() => {
+    wheelRafIdRef.current = null;
+    const pending = pendingWheelRef.current;
+    pendingWheelRef.current = null;
+    if (!pending) return;
+    // Proportional to the actual (accumulated) gesture magnitude, not a
+    // fixed step per event the way the +/- buttons use — a fixed
+    // multiplicative step compounds explosively fast under a trackpad
+    // pinch gesture's many rapid-fire events. Clamping deltaY caps how
+    // much even one unusually large accumulated flush can move the
+    // scale by. Anchored to the actual cursor position, not the
+    // viewport center — this is the one zoom trigger that has a real
+    // cursor position to anchor to, matching Figma/Maps/Photoshop's own
+    // wheel-zoom feel.
+    const clampedDeltaY = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, pending.deltaY));
+    const factor = Math.pow(2, -clampedDeltaY * WHEEL_ZOOM_SENSITIVITY);
+    zoomAnchoredRef.current(scaleRef.current * factor, pending.clientX, pending.clientY);
+  }, []);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    container.addEventListener("wheel", handleWheelNative, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheelNative);
-  }, [handleWheelNative]);
+    const listener = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const prev = pendingWheelRef.current;
+      // Sum deltaY across every event since the last flush — several
+      // can (and, on a fast pinch, will) arrive before the next frame.
+      // clientX/clientY just take the latest; the cursor barely moves
+      // within one frame's worth of events.
+      pendingWheelRef.current = { deltaY: (prev?.deltaY ?? 0) + e.deltaY, clientX: e.clientX, clientY: e.clientY };
+      if (wheelRafIdRef.current === null) {
+        wheelRafIdRef.current = requestAnimationFrame(flushWheelZoom);
+      }
+    };
+    container.addEventListener("wheel", listener, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", listener);
+      if (wheelRafIdRef.current !== null) cancelAnimationFrame(wheelRafIdRef.current);
+    };
+  }, [flushWheelZoom]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
