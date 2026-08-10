@@ -112,10 +112,11 @@ const ZOOM_STEP = 1.2; // per zoom in/out button click
 // Wheel/trackpad-pinch zoom is proportional to gesture magnitude
 // instead — see the wheel listener's own comment for why a fixed step
 // per event (like the buttons use) doesn't work for a wheel/pinch
-// gesture. 0.002 (the first value tried) read as too slow in practice —
-// bumped to 0.006, a tune-to-feel constant more than a principled one;
-// adjust again if it still doesn't feel right.
-const WHEEL_ZOOM_SENSITIVITY = 0.006;
+// gesture. 0.002 (the first value tried) read as too slow; 0.006 (the
+// second) was very close, just still very slightly slow — a
+// tune-to-feel constant more than a principled one, adjust again if it
+// still doesn't feel right.
+const WHEEL_ZOOM_SENSITIVITY = 0.0075;
 const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
 const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the content wrapper's own constant marginTop — see zoomAnchored's comment on why this has to be threaded through its math too, not just centeringOffsetX
