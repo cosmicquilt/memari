@@ -338,6 +338,15 @@ export function NativePlannerEditor({
   );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Always the currently-committed scale, readable synchronously from
+  // inside zoomAnchored below without making that function depend on
+  // `scale` as a React value — see that function's own comment on why
+  // the distinction matters.
+  const scaleRef = useRef(scale);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
   // Set right before a zoom change takes effect, consumed by the
   // layout effect below once React has re-rendered at the new scale —
   // can't set scrollLeft/scrollTop synchronously in the same event
@@ -360,8 +369,27 @@ export function NativePlannerEditor({
   // (e.g. straight from a mouse/wheel event); omit them for the
   // viewport-center default a button click uses, since a button press
   // has no cursor position on the canvas to anchor to.
+  //
+  // Reads the *current* scale via scaleRef.current, not a closed-over
+  // `scale` value — this isn't just style. The wheel path below can call
+  // this multiple times across consecutive animation frames before
+  // React has fully committed and run effects for the frame in between,
+  // and a version of this function that closed over `scale` directly
+  // would, when called through a ref (needed to keep the wheel listener
+  // itself from being torn down and reattached every tick — see that
+  // listener's own comment), sometimes still be the version from a
+  // render or two ago. That means computing "what page-space point is
+  // under the cursor right now" from a *stale* scale while scrollLeft
+  // has already moved on to reflect the newer one — the two go out of
+  // sync, producing a wrong jump that then "corrects" once the ref
+  // catches up, repeating every frame or two as a visible back-and-forth
+  // hop. Reading scaleRef.current directly here removes the staleness
+  // window entirely rather than shrinking it — this function no longer
+  // depends on `scale` as a value at all, so there's no stale-closure
+  // version of it to accidentally call in the first place.
   const zoomAnchored = useCallback(
     (newScale: number, clientX?: number, clientY?: number) => {
+      const oldScale = scaleRef.current;
       const clamped = clampScale(newScale);
       const container = scrollContainerRef.current;
       if (!container) {
@@ -373,21 +401,21 @@ export function NativePlannerEditor({
       const anchorScreenX = clientX !== undefined ? clientX - rect.left : container.clientWidth / 2;
       const anchorScreenY = clientY !== undefined ? clientY - rect.top : container.clientHeight / 2;
 
-      const oldOffsetX = centeringOffsetX(scale);
-      const contentX = (container.scrollLeft + anchorScreenX - oldOffsetX) / scale;
+      const oldOffsetX = centeringOffsetX(oldScale);
+      const contentX = (container.scrollLeft + anchorScreenX - oldOffsetX) / oldScale;
       // CONTENT_TOP_OFFSET_PX: the wrapper's own constant marginTop —
       // fixed regardless of scale (unlike centeringOffsetX), but still
       // has to be subtracted here for the same reason: scrollTop/
       // anchorScreenY are measured from the *container's* top edge, not
       // from where page-space y=0 actually renders once that margin
       // pushes it down.
-      const contentY = (container.scrollTop + anchorScreenY - CONTENT_TOP_OFFSET_PX) / scale;
+      const contentY = (container.scrollTop + anchorScreenY - CONTENT_TOP_OFFSET_PX) / oldScale;
 
       setZoomMode("manual");
       setManualScale(clamped);
       pendingZoomAnchorRef.current = { contentX, contentY, anchorScreenX, anchorScreenY, atScale: clamped };
     },
-    [scale, centeringOffsetX]
+    [centeringOffsetX]
   );
 
   useLayoutEffect(() => {
@@ -420,14 +448,17 @@ export function NativePlannerEditor({
     }
   }, [zoomMode]);
 
-  // Both step from the currently-*displayed* scale, not from whatever
-  // manualScale happens to hold — if the last mode was fit-width/
-  // fit-page, manualScale is stale leftover state from some earlier
-  // manual session (or still its initial 1), not what's actually on
-  // screen right now. Anchored to the viewport's own center — a button
-  // click has no cursor position on the canvas to anchor to instead.
-  const zoomIn = useCallback(() => zoomAnchored(scale * ZOOM_STEP), [scale, zoomAnchored]);
-  const zoomOut = useCallback(() => zoomAnchored(scale / ZOOM_STEP), [scale, zoomAnchored]);
+  // Both step from the currently-committed scale (scaleRef.current), not
+  // from whatever manualScale happens to hold, and not from a closed-
+  // over `scale` value either — same reasoning as zoomAnchored reading
+  // scaleRef.current internally rather than taking scale as a
+  // dependency, just applied here too for consistency (a real staleness
+  // window needs several rapid calls in a row to actually bite, which a
+  // single button click won't hit, but there's no reason to leave a
+  // smaller version of the same risk in place now that the pattern for
+  // avoiding it exists).
+  const zoomIn = useCallback(() => zoomAnchored(scaleRef.current * ZOOM_STEP), [zoomAnchored]);
+  const zoomOut = useCallback(() => zoomAnchored(scaleRef.current / ZOOM_STEP), [zoomAnchored]);
 
   // Ctrl/Cmd+wheel zooms (the standard canvas-tool convention — Figma,
   // Google Maps, Photoshop); plain wheel/trackpad scroll is left
@@ -459,23 +490,17 @@ export function NativePlannerEditor({
   // (rAF) means every update this component does is one the browser can
   // actually show before the next one lands.
   //
-  // The listener itself is attached exactly once (empty effect deps)
-  // and never torn down/recreated mid-gesture — it reads scale and calls
-  // zoomAnchored through refs kept fresh by their own small effects,
-  // rather than closing over them directly the way a plain useCallback
-  // would (which meant the listener effect's own deps included scale,
-  // so it re-subscribed the DOM listener on every single wheel tick —
-  // avoidable churn that was very likely also contributing to the
-  // reported jitter, on top of the once-per-event pipeline cost above).
-  const scaleRef = useRef(scale);
-  useEffect(() => {
-    scaleRef.current = scale;
-  }, [scale]);
-  const zoomAnchoredRef = useRef(zoomAnchored);
-  useEffect(() => {
-    zoomAnchoredRef.current = zoomAnchored;
-  }, [zoomAnchored]);
-
+  // The listener itself is attached exactly once and never torn down/
+  // recreated mid-gesture: flushWheelZoom below only depends on
+  // zoomAnchored, which (as of the fix described on that function
+  // itself) no longer depends on `scale` — so neither of them, nor this
+  // listener, gets recreated on every wheel tick the way an earlier
+  // version did (which meant the DOM listener was being detached and
+  // reattached on literally every event — avoidable churn that was very
+  // likely also contributing to the reported jitter, on top of the
+  // once-per-event pipeline cost the coalescing below addresses, and on
+  // top of the stale-scale bug described on zoomAnchored that caused the
+  // back-and-forth hopping specifically).
   const pendingWheelRef = useRef<{ deltaY: number; clientX: number; clientY: number } | null>(null);
   const wheelRafIdRef = useRef<number | null>(null);
 
@@ -495,8 +520,8 @@ export function NativePlannerEditor({
     // wheel-zoom feel.
     const clampedDeltaY = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, pending.deltaY));
     const factor = Math.pow(2, -clampedDeltaY * WHEEL_ZOOM_SENSITIVITY);
-    zoomAnchoredRef.current(scaleRef.current * factor, pending.clientX, pending.clientY);
-  }, []);
+    zoomAnchored(scaleRef.current * factor, pending.clientX, pending.clientY);
+  }, [zoomAnchored]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
