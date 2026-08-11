@@ -394,10 +394,10 @@ function NativeModule({
           }}
           style={{
             position: "absolute",
-            top: -70,
-            right: -70,
-            width: 140,
-            height: 140,
+            top: -35,
+            right: -35,
+            width: 70,
+            height: 70,
             borderRadius: "50%",
             border: "none",
             background: "#c7c7c7",
@@ -405,7 +405,7 @@ function NativeModule({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 90,
+            fontSize: 45,
             lineHeight: 1,
             padding: 0,
             cursor: "pointer",
