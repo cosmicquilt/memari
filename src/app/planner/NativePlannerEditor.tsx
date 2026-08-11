@@ -98,7 +98,7 @@ import {
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
-import { updateModulePlacement } from "./actions";
+import { updateModulePlacement, resizeAdjacentModules } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
@@ -133,6 +133,21 @@ type ModuleInfo = {
   elements: LoadedPage["moduleInstances"][number]["elements"];
   originX: number;
   originY: number;
+};
+
+// Two vertically-stacked, directly-adjacent unlocked modules in the same
+// column — a candidate for a resize handle at their shared boundary. See
+// resizePairsByPageId's own comment for how this is (re)computed.
+type ResizePair = {
+  key: string;
+  pageId: string;
+  topId: string;
+  bottomId: string;
+  columnStart: number;
+  columnSpan: number;
+  topRowStart: number;
+  topRowSpan: number;
+  bottomRowSpan: number;
 };
 
 function NativeModule({
@@ -237,17 +252,23 @@ function NativeModule({
 function NativePage({
   page,
   placements,
+  moduleLookup,
   activeId,
   visualOffsets,
   suppressTransitionIds,
+  resizePairs,
+  onResizeAdjacent,
   scale,
   isFirefox,
 }: {
   page: LoadedPage;
   placements: Record<string, Placement>;
+  moduleLookup: Map<string, ModuleInfo>;
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
   suppressTransitionIds: ReadonlySet<string> | null;
+  resizePairs: ResizePair[];
+  onResizeAdjacent: (pageId: string, topId: string, bottomId: string, deltaRows: number) => void;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -269,16 +290,21 @@ function NativePage({
     >
       {page.moduleInstances.map((mi) => {
         const placement = placements[mi.id];
-        if (!placement) return null;
+        // Content (elements/origin) comes from moduleLookup, not `mi`
+        // directly — moduleLookup is the one this file actually patches
+        // after a resize (see handleResizeAdjacent), so reading `mi.*`
+        // here would keep showing stale pre-resize content forever.
+        const info = moduleLookup.get(mi.id);
+        if (!placement || !info) return null;
         return (
           <NativeModule
             key={mi.id}
             instanceId={mi.id}
-            locked={mi.locked}
+            locked={info.locked}
             placement={placement}
-            elements={mi.elements}
-            originX={mi.originX}
-            originY={mi.originY}
+            elements={info.elements}
+            originX={info.originX}
+            originY={info.originY}
             visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
             isDragged={activeId === mi.id}
             suppressTransition={suppressTransitionIds?.has(mi.id) ?? false}
@@ -287,11 +313,129 @@ function NativePage({
           />
         );
       })}
+      {/* Hidden while any module is actively being dragged — a
+          reposition can change which modules are adjacent, and the
+          handles' own positions would be fighting the live reflow
+          preview for the same screen space otherwise. */}
+      {activeId === null &&
+        resizePairs.map((pair) => (
+          <ResizeHandle key={pair.key} pair={pair} pageGrid={page.pageGrid} scale={scale} onResize={onResizeAdjacent} />
+        ))}
     </div>
   );
 }
 
+const RESIZE_HANDLE_HALF_HEIGHT_PX = 8; // page-space px, each side of the boundary line — see ResizeHandle's own comment
+
+// A thin hover strip straddling the shared boundary between two
+// vertically-adjacent, same-column unlocked modules — shows an ns-resize
+// cursor and, on drag, slides that boundary (see handleResizeAdjacent).
+// Positioned as an absolutely-placed sibling of the grid-item module divs
+// within the same `position:relative` page container, not a CSS Grid
+// item itself (grid-column/grid-row only support whole-cell placement,
+// not "centered on a line") — gridCellToPixels' own x/y (already
+// page-margin-inclusive) lines up directly with this container's own
+// coordinate space with no origin subtraction needed, unlike
+// PolotnoJsonRenderer's elements: those subtract their *module's* own
+// origin because they're nested one level deeper, inside that module's
+// own grid-placed div; a handle here has no such enclosing div of its
+// own to subtract.
+//
+// No live visual preview while dragging (matches the old Polotno-hosted
+// editor's useEdgeResize.ts, deliberately — an accurate preview would
+// mean re-rendering the module's real content continuously mid-drag,
+// which needs a server round trip this avoids until release): only the
+// cursor and a subtle highlight change during the drag, then one commit
+// on release.
+function ResizeHandle({
+  pair,
+  pageGrid,
+  scale,
+  onResize,
+}: {
+  pair: ResizePair;
+  pageGrid: PageGrid;
+  scale: number;
+  onResize: (pageId: string, topId: string, bottomId: string, deltaRows: number) => void;
+}) {
+  const boundaryRow = pair.topRowStart + pair.topRowSpan;
+  const rect = useMemo(
+    () => gridCellToPixels(pageGrid, { columnStart: pair.columnStart, rowStart: boundaryRow, columnSpan: pair.columnSpan, rowSpan: 1 }),
+    [pageGrid, pair.columnStart, pair.columnSpan, boundaryRow]
+  );
+  // Page-space px per +1 rowSpan — same technique useEdgeResize.ts's own
+  // cellPitch used (the difference between two spans' rendered heights,
+  // not a hand-derived formula), so a drag distance can be converted to
+  // a row count the same way that hook already did.
+  const rowPitchPx = useMemo(() => {
+    const oneRow = gridCellToPixels(pageGrid, { columnStart: pair.columnStart, rowStart: 0, columnSpan: pair.columnSpan, rowSpan: 1 });
+    const twoRows = gridCellToPixels(pageGrid, { columnStart: pair.columnStart, rowStart: 0, columnSpan: pair.columnSpan, rowSpan: 2 });
+    return twoRows.height - oneRow.height;
+  }, [pageGrid, pair.columnStart, pair.columnSpan]);
+
+  const [isHover, setIsHover] = useState(false);
+  const [isActive, setIsActive] = useState(false);
+  const dragStartClientYRef = useRef(0);
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragStartClientYRef.current = event.clientY;
+      setIsActive(true);
+    },
+    []
+  );
+
+  const handlePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      setIsActive(false);
+      if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+      const rawDeltaPagePx = (event.clientY - dragStartClientYRef.current) / scale;
+      const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
+      if (rawDeltaRows === 0) return;
+      // Same clamp as resizeAdjacentModules applies server-side — done
+      // here too so a drag that overshoots doesn't send a delta the
+      // server would've silently clamped anyway, keeping the client's
+      // own idea of "did anything change" (the `=== 0` no-op check)
+      // consistent with what actually lands.
+      const clampedDeltaRows = Math.max(-(pair.topRowSpan - 1), Math.min(pair.bottomRowSpan - 1, rawDeltaRows));
+      if (clampedDeltaRows === 0) return;
+      onResize(pair.pageId, pair.topId, pair.bottomId, clampedDeltaRows);
+    },
+    [scale, rowPitchPx, pair.topRowSpan, pair.bottomRowSpan, pair.pageId, pair.topId, pair.bottomId, onResize]
+  );
+
+  const handlePointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    setIsActive(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: rect.x,
+        top: rect.y - RESIZE_HANDLE_HALF_HEIGHT_PX,
+        width: rect.width,
+        height: RESIZE_HANDLE_HALF_HEIGHT_PX * 2,
+        cursor: "ns-resize",
+        background: isActive ? "rgba(37,99,235,0.45)" : isHover ? "rgba(37,99,235,0.22)" : "transparent",
+        touchAction: "none",
+      }}
+      onPointerEnter={() => setIsHover(true)}
+      onPointerLeave={() => setIsHover(false)}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+    />
+  );
+}
+
 const ZERO_OFFSET = { x: 0, y: 0 };
+const EMPTY_RESIZE_PAIRS: ResizePair[] = [];
 
 export function NativePlannerEditor({
   pages,
@@ -318,9 +462,18 @@ export function NativePlannerEditor({
     return map;
   });
 
-  // Static per-instance info that a reposition never touches — which
-  // page it's on, whether it's locked, and its rendered content.
-  const moduleLookup = useMemo(() => {
+  // Per-instance info a reposition never touches (which page it's on,
+  // whether it's locked) alongside its rendered content (elements,
+  // origin) — which a RESIZE does touch: unlike a reposition, a resize
+  // changes a module's actual geometry, so its content needs fresh
+  // server-rendered elements for the new size (e.g. a checklist's row
+  // count, a labeled-box's ruled lines), not just a moved CSS Grid cell.
+  // State, not a memo off `pages`, specifically so handleResizeAdjacent
+  // below can patch in that fresh content in place — this is the single
+  // source NativePage renders elements/origin from, not `page.
+  // moduleInstances` directly, so a patch here is what actually reaches
+  // the screen.
+  const [moduleLookup, setModuleLookup] = useState<Map<string, ModuleInfo>>(() => {
     const map = new Map<string, ModuleInfo>();
     for (const page of pages) {
       for (const mi of page.moduleInstances) {
@@ -328,13 +481,63 @@ export function NativePlannerEditor({
       }
     }
     return map;
-  }, [pages]);
+  });
 
   const pageGridByPageId = useMemo(() => {
     const map: Record<string, PageGrid> = {};
     for (const page of pages) map[page.pageId] = page.pageGrid;
     return map;
   }, [pages]);
+
+  // Recomputed from the LIVE placements (not the static `pages` prop) on
+  // every render — a reposition drag can change which modules are
+  // adjacent, so this has to track that instead of only ever reflecting
+  // the page's original load-time layout. Grouped by same
+  // columnStart+columnSpan (matching resolveModulePlacement's own
+  // stackSiblings notion of a "column stack" in grid.ts) and paired up
+  // only where one's bottom edge sits exactly on the next one's top edge
+  // — the reorder/gravity-pack logic elsewhere in this file already
+  // guarantees stack members never have a gap between them, so "adjacent"
+  // here just means "next to each other in sort order," not a proximity
+  // threshold.
+  const resizePairsByPageId = useMemo(() => {
+    const byPage: Record<string, ResizePair[]> = {};
+    for (const page of pages) {
+      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
+      for (const mi of page.moduleInstances) {
+        const info = moduleLookup.get(mi.id);
+        const placement = placements[mi.id];
+        if (!info || info.locked || !placement) continue;
+        const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
+        const group = byColumn.get(columnKey) ?? [];
+        group.push({ id: mi.id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
+        byColumn.set(columnKey, group);
+      }
+      const pairs: ResizePair[] = [];
+      for (const [columnKey, group] of byColumn) {
+        const [columnStart, columnSpan] = columnKey.split(":").map(Number);
+        const sorted = [...group].sort((a, b) => a.rowStart - b.rowStart);
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const top = sorted[i];
+          const bottom = sorted[i + 1];
+          if (top.rowStart + top.rowSpan !== bottom.rowStart) continue;
+          pairs.push({
+            key: `${top.id}:${bottom.id}`,
+            pageId: page.pageId,
+            topId: top.id,
+            bottomId: bottom.id,
+            columnStart,
+            columnSpan,
+            topRowStart: top.rowStart,
+            topRowSpan: top.rowSpan,
+            bottomRowSpan: bottom.rowSpan,
+          });
+        }
+      }
+      byPage[page.pageId] = pairs;
+    }
+    return byPage;
+  }, [pages, placements, moduleLookup]);
 
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
@@ -810,6 +1013,64 @@ export function NativePlannerEditor({
     return () => clearTimeout(timeout);
   }, [settling]);
 
+  // Slides the shared boundary between two vertically-adjacent, same-
+  // column unlocked modules — growing the one above shrinks the one
+  // below (or vice versa) by the same amount, so there's never a gap or
+  // an overlap, matching the old Polotno-hosted editor's
+  // resizeAdjacentModules-backed edge-drag (useEdgeResize.ts). Reuses
+  // that exact same server action unchanged — it already re-renders
+  // fresh content for both modules' new geometry server-side (a
+  // checklist's row count, a labeled-box's ruled lines — content that's
+  // recomputed from fixed-pt measurements for a given size, not
+  // something CSS can just visually stretch) and clamps so neither
+  // module's rowSpan can drop below 1.
+  //
+  // pageId/columnStart/columnSpan/bottomColumnSpan aren't returned by
+  // the server action (they never change in a coupled resize, only
+  // rowStart/rowSpan do) — read from the live `placements` closure
+  // instead of threading them through the call site, the same pattern
+  // resolveDrag/handleDragEnd already use for their own "what's the
+  // current state of things" lookups.
+  const handleResizeAdjacent = useCallback(
+    async (pageId: string, topId: string, bottomId: string, deltaRows: number) => {
+      const pageGrid = pageGridByPageId[pageId];
+      const bottomPlacement = placements[bottomId];
+      if (!pageGrid || !bottomPlacement) return;
+      try {
+        const result = await resizeAdjacentModules(topId, bottomId, deltaRows);
+        if (result.bottom.rowStart === null) return; // unreachable — see resizeAdjacentModules's own comment on why
+        const bottomRowStart = result.bottom.rowStart;
+        const bottomOrigin = gridCellToPixels(pageGrid, {
+          columnStart: bottomPlacement.columnStart,
+          rowStart: bottomRowStart,
+          columnSpan: bottomPlacement.columnSpan,
+          rowSpan: result.bottom.rowSpan,
+        });
+        setPlacements((prev) => {
+          const next = { ...prev };
+          const top = prev[topId];
+          const bottom = prev[bottomId];
+          if (top) next[topId] = { ...top, rowSpan: result.top.rowSpan };
+          if (bottom) next[bottomId] = { ...bottom, rowStart: bottomRowStart, rowSpan: result.bottom.rowSpan };
+          return next;
+        });
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          const topInfo = prev.get(topId);
+          const bottomInfo = prev.get(bottomId);
+          if (topInfo) next.set(topId, { ...topInfo, elements: [result.top.element] });
+          if (bottomInfo) {
+            next.set(bottomId, { ...bottomInfo, elements: [result.bottom.element], originX: bottomOrigin.x, originY: bottomOrigin.y });
+          }
+          return next;
+        });
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [placements, pageGridByPageId]
+  );
+
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
   // pixel offsets for rendering (see NativeModule's visualOffset). Merges
@@ -904,9 +1165,12 @@ export function NativePlannerEditor({
                     key={page.pageId}
                     page={page}
                     placements={placements}
+                    moduleLookup={moduleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
+                    resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
+                    onResizeAdjacent={handleResizeAdjacent}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
