@@ -51,6 +51,21 @@ const ROW_LINE_WIDTH_PT = 0.35;
 const DAY_COLUMN_WIDTH_PT = 17.3;
 const DAY_LETTERS = ["S", "M", "T", "W", "F", "S"];
 
+// See todoChecklist.ts's identical getTodoChecklistRowMetricsPx for the
+// full reasoning — same live-resize-preview need, same "nominal only,
+// not the render function's own stretch-to-fit adjustment" tradeoff.
+export function getHabitTrackerRowMetricsPx(): {
+  headerHeightPx: number;
+  nominalRowHeightPx: number;
+  rowLineWidthPx: number;
+} {
+  return {
+    headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
+    nominalRowHeightPx: ptToPx(ROW_HEIGHT_PT),
+    rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
+  };
+}
+
 export function renderHabitTracker(
   geometry: { x: number; y: number; width: number; height: number },
   config: HabitTrackerConfig,
