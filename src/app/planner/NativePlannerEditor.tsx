@@ -177,16 +177,37 @@ function NativeModule({
   isFirefox: boolean;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
+  // Held down but not necessarily dragging yet — dnd-kit's own
+  // activationConstraint (5px, see sensors below) means isDragged/
+  // onDragStart don't fire until the pointer has actually moved that
+  // far, leaving a brief "grab" cursor right after mousedown that reads
+  // as unresponsive. Tracked locally (not from onDragStart/onDragEnd)
+  // specifically to cover that pre-activation gap; wraps dnd-kit's own
+  // onPointerDown (the only handler `listeners` actually provides —
+  // PointerSensor's sole activator) rather than replacing it, so its own
+  // activation-tracking still runs unchanged.
+  const [isPressed, setIsPressed] = useState(false);
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      setIsPressed(true);
+      listeners?.onPointerDown?.(event);
+    },
+    [listeners]
+  );
+  const clearPressed = useCallback(() => setIsPressed(false), []);
   return (
     <div
       ref={locked ? undefined : setNodeRef}
       {...(locked ? {} : listeners)}
       {...(locked ? {} : attributes)}
+      onPointerDown={locked ? undefined : handlePointerDown}
+      onPointerUp={locked ? undefined : clearPressed}
+      onPointerCancel={locked ? undefined : clearPressed}
       style={{
         position: "relative",
         gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
         gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
-        cursor: locked ? "default" : isDragged ? "grabbing" : "grab",
+        cursor: locked ? "default" : isDragged || isPressed ? "grabbing" : "grab",
         transform:
           visualOffset.x !== 0 || visualOffset.y !== 0 ? `translate(${visualOffset.x}px, ${visualOffset.y}px)` : undefined,
         // No transition on the dragged item itself — it needs to track
