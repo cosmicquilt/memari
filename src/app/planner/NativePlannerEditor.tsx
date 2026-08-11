@@ -75,7 +75,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -144,7 +144,9 @@ function NativeModule({
   originY,
   visualOffset,
   isDragged,
+  suppressTransition,
   scale,
+  isFirefox,
 }: {
   instanceId: string;
   locked: boolean;
@@ -158,11 +160,21 @@ function NativeModule({
   // pixel distance to its would-be new row. {0,0} the rest of the time.
   visualOffset: { x: number; y: number };
   isDragged: boolean;
+  // True for exactly one frame right after a drop, for whichever
+  // instances just had their placement committed (the dropped item and
+  // any reflowed siblings) — see the settle-FLIP comment on `settling`
+  // state below for why a transition has to be suppressed for that one
+  // frame specifically, not just while actively dragging.
+  suppressTransition: boolean;
   // Current on-screen zoom factor — passed all the way down to
   // PolotnoJsonRenderer so it can keep hairline borders from vanishing
   // under Firefox's transform-scale border bug. See that component's
   // own comment for why.
   scale: number;
+  // Also passed down to PolotnoJsonRenderer, alongside scale — see
+  // PolotnoJsonRenderer's own isFirefox comment for why this has to be
+  // computed client-side-only, further up, rather than read here.
+  isFirefox: boolean;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   return (
@@ -180,8 +192,10 @@ function NativeModule({
         // No transition on the dragged item itself — it needs to track
         // the pointer with zero added lag. Everything reacting to it
         // (a reflow preview) gets a short one, so the shift reads as a
-        // deliberate slide instead of a jump.
-        transition: isDragged ? undefined : "transform 0.15s ease",
+        // deliberate slide instead of a jump. Also suppressed for one
+        // frame right after a drop (suppressTransition) — see `settling`
+        // state's own comment for why.
+        transition: isDragged || suppressTransition ? undefined : "transform 0.15s ease",
         // Lifted, not dimmed, while actively being dragged — a shadow +
         // being drawn above its neighbors is what makes it read as "this
         // is the thing currently moving," matching the classic
@@ -194,7 +208,7 @@ function NativeModule({
         touchAction: locked ? undefined : "none",
       }}
     >
-      <PolotnoJsonRenderer elements={elements} originX={originX} originY={originY} scale={scale} />
+      <PolotnoJsonRenderer elements={elements} originX={originX} originY={originY} scale={scale} isFirefox={isFirefox} />
     </div>
   );
 }
@@ -204,13 +218,17 @@ function NativePage({
   placements,
   activeId,
   visualOffsets,
+  suppressTransitionIds,
   scale,
+  isFirefox,
 }: {
   page: LoadedPage;
   placements: Record<string, Placement>;
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
+  suppressTransitionIds: ReadonlySet<string> | null;
   scale: number;
+  isFirefox: boolean;
 }) {
   return (
     <div
@@ -242,7 +260,9 @@ function NativePage({
             originY={mi.originY}
             visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
             isDragged={activeId === mi.id}
+            suppressTransition={suppressTransitionIds?.has(mi.id) ?? false}
             scale={scale}
+            isFirefox={isFirefox}
           />
         );
       })}
@@ -326,6 +346,27 @@ export function NativePlannerEditor({
     )
   );
   const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
+
+  // Threaded down to PolotnoJsonRenderer (see its own isFirefox comment)
+  // for the Firefox-only hairline/border floor. useSyncExternalStore, not
+  // a plain useState+useEffect — this is exactly the case it exists for
+  // (React's own docs use `window`-derived values as the example): a
+  // value that depends on a browser API unavailable during SSR needs a
+  // getServerSnapshot to render *something* consistent server-side, and
+  // this component's first render does run server-side, where `navigator`
+  // doesn't exist at all. Rendering `false` server- and client-side on
+  // the first pass, then re-checking after mount, is what keeps that
+  // first client render's output identical to what the server already
+  // sent — a real hydration mismatch from skipping this shipped and was
+  // caught live in the dev log: server always rendered the unadjusted
+  // width, Firefox's client render wanted the floored one, on every
+  // single page load. No real subscription exists (the answer can't
+  // change after mount), so `subscribe` is a no-op.
+  const isFirefox = useSyncExternalStore(
+    () => () => {},
+    () => /firefox/i.test(navigator.userAgent),
+    () => false
+  );
 
   // How far the scaled content is horizontally offset from the
   // scrollable container's own left edge at a given scale — content
@@ -576,6 +617,34 @@ export function NativePlannerEditor({
   const [activeDelta, setActiveDelta] = useState<{ x: number; y: number }>(ZERO_OFFSET);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // FLIP-style settle animation for the instant right after a drop —
+  // reported after drag-to-reposition first shipped: "when dropped they
+  // jump up and down before settling into place." Root cause: the moment
+  // handleDragEnd commits the new grid cell, that's an instant, non-
+  // animatable jump (grid-column/grid-row aren't transitionable), but in
+  // that exact same render `visualOffsets` also drops back to {0,0} for
+  // that instance — and *that* change WAS transitioned (isDragged just
+  // went false, turning the transition back on). CSS doesn't know the
+  // grid cell jumped; it just eases the transform's own pixel value from
+  // wherever it last was down to 0, on top of a box whose base position
+  // already jumped by roughly the same distance a frame earlier — the two
+  // add up, so the item overshoots past the drop point and eases back,
+  // reading as a bounce. Standard fix: a two-phase FLIP. `phase: "start"`
+  // renders each just-committed instance at the exact residual offset
+  // that keeps its total on-screen position unchanged despite the grid
+  // jump (zero net visual movement, no transition — see handleDragEnd),
+  // then a rAF later `phase: "settle"` drops that residual to {0,0} *with*
+  // the transition back on, so only the genuine last-mile "snap into the
+  // grid cell" distance actually animates. For a reflowed sibling that
+  // residual is always exactly {0,0} (its live reflow preview already
+  // matches its post-commit position pixel-for-pixel — see
+  // handleDragEnd's own comment) — it only needs the transition
+  // suppressed for the commit frame, nothing to visibly settle.
+  const [settling, setSettling] = useState<{
+    offsets: Record<string, { x: number; y: number }>;
+    phase: "start" | "settle";
+  } | null>(null);
+
   // A small activation distance, not an instant-trigger sensor — without
   // it, a plain click (no intended drag at all) can register as a
   // zero-distance "drag" and briefly flicker the dragging state.
@@ -584,6 +653,10 @@ export function NativePlannerEditor({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setActiveDelta(ZERO_OFFSET);
+    // Starting a new drag mid-settle (rare — would need to happen within
+    // the ~150ms settle window) just cancels the old settle in place
+    // rather than trying to run two independently-timed settles at once.
+    setSettling(null);
   }, []);
 
   const handleDragMove = useCallback((event: DragMoveEvent) => {
@@ -638,11 +711,31 @@ export function NativePlannerEditor({
 
       const result = resolveDrag(instanceId, event.delta.x, event.delta.y);
       if (!result) return;
-      const { current, resolved, reflow } = result;
+      const { pageGrid, current, resolved, reflow } = result;
 
       if (resolved.columnStart === current.columnStart && resolved.rowStart === current.rowStart && reflow.length === 0) {
         return;
       }
+
+      // See `settling` state's own comment above. The dragged item's
+      // residual is the gap between where the pointer actually left it
+      // (lastOffset, the same raw follow-the-cursor value the live
+      // preview used) and where the snapped cell's own native position
+      // is — everything else is already accounted for by the grid jump.
+      // A reflowed sibling's residual is always exactly {0,0}: its live
+      // reflow preview (fromPixel -> toPixel, computed the same way
+      // below in visualOffsets) already lands exactly on the pixel
+      // position `{...prevPlacement, rowStart: move.rowStart}` commits
+      // to, so there's no genuine last-mile left for it to visibly
+      // settle — it only needs one transition-free frame.
+      const oldPixel = gridCellToPixels(pageGrid, current);
+      const newPixel = gridCellToPixels(pageGrid, { ...current, columnStart: resolved.columnStart, rowStart: resolved.rowStart });
+      const lastOffset = { x: event.delta.x / scale, y: event.delta.y / scale };
+      const settleOffsets: Record<string, { x: number; y: number }> = {
+        [instanceId]: { x: lastOffset.x - (newPixel.x - oldPixel.x), y: lastOffset.y - (newPixel.y - oldPixel.y) },
+      };
+      for (const move of reflow) settleOffsets[move.id] = ZERO_OFFSET;
+      setSettling({ offsets: settleOffsets, phase: "start" });
 
       setPlacements((prev) => {
         const next = { ...prev };
@@ -665,35 +758,86 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       });
     },
-    [placements, resolveDrag]
+    [placements, resolveDrag, scale]
   );
+
+  // Advances the settle FLIP from "start" (drawn at the residual offset,
+  // no transition — see `settling` state's own comment) to "settle" (eased
+  // to {0,0}) one animation frame later, so the browser actually paints
+  // the transition-free starting frame before the transition-bearing one
+  // takes over. Collapsing both into the same render wouldn't give the
+  // browser anything to transition *from* — it needs to have already
+  // painted the residual-offset, no-transition frame first.
+  useEffect(() => {
+    if (!settling || settling.phase !== "start") return;
+    const raf = requestAnimationFrame(() => {
+      setSettling((prev) => (prev && prev.phase === "start" ? { ...prev, phase: "settle" } : prev));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [settling]);
+
+  // Cleans up once the settle transition (0.15s, matching NativeModule's
+  // own transition duration) has actually finished — not load-bearing for
+  // correctness (once at {0,0} it's visually identical to no override at
+  // all), just avoids leaving a growing, never-cleared map of finished
+  // settles sitting in state indefinitely.
+  useEffect(() => {
+    if (!settling || settling.phase !== "settle") return;
+    const timeout = setTimeout(() => {
+      setSettling((prev) => (prev && prev.phase === "settle" ? null : prev));
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [settling]);
 
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
-  // pixel offsets for rendering (see NativeModule's visualOffset).
+  // pixel offsets for rendering (see NativeModule's visualOffset). Merges
+  // in the post-drop settle FLIP from `settling` state (see its own
+  // comment) — the two are mutually exclusive in practice (activeId is
+  // always null by the time settling gets set, since it's only computed
+  // inside handleDragEnd after clearing it) but merging rather than
+  // early-returning keeps that an incidental fact rather than something
+  // this has to assume.
   const visualOffsets = useMemo(() => {
-    if (!activeId) return EMPTY_OFFSETS;
-    const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
-    if (!preview) return EMPTY_OFFSETS;
-    const { pageGrid, reflow } = preview;
-
     const offsets: Record<string, { x: number; y: number }> = {};
-    // The dragged item follows the pointer directly and continuously —
-    // not snapped to the resolved cell, which would make it feel like
-    // it's teleporting between grid lines instead of being carried by
-    // the pointer. dxPagePx/dyPagePx (already scale-divided) is exactly
-    // that raw follow distance.
-    offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
 
-    for (const move of reflow) {
-      const prevPlacement = placements[move.id];
-      if (!prevPlacement) continue;
-      const fromPixel = gridCellToPixels(pageGrid, prevPlacement);
-      const toPixel = gridCellToPixels(pageGrid, { ...prevPlacement, rowStart: move.rowStart });
-      offsets[move.id] = { x: 0, y: toPixel.y - fromPixel.y };
+    if (activeId) {
+      const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+      if (preview) {
+        const { pageGrid, reflow } = preview;
+        // The dragged item follows the pointer directly and continuously
+        // — not snapped to the resolved cell, which would make it feel
+        // like it's teleporting between grid lines instead of being
+        // carried by the pointer. dxPagePx/dyPagePx (already
+        // scale-divided) is exactly that raw follow distance.
+        offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+        for (const move of reflow) {
+          const prevPlacement = placements[move.id];
+          if (!prevPlacement) continue;
+          const fromPixel = gridCellToPixels(pageGrid, prevPlacement);
+          const toPixel = gridCellToPixels(pageGrid, { ...prevPlacement, rowStart: move.rowStart });
+          offsets[move.id] = { x: 0, y: toPixel.y - fromPixel.y };
+        }
+      }
     }
+
+    if (settling) {
+      for (const [id, value] of Object.entries(settling.offsets)) {
+        offsets[id] = settling.phase === "start" ? value : ZERO_OFFSET;
+      }
+    }
+
     return offsets;
-  }, [activeId, activeDelta, placements, resolveDrag, scale]);
+  }, [activeId, activeDelta, placements, resolveDrag, scale, settling]);
+
+  // Which instances need their transition suppressed for the current
+  // render — just the settle FLIP's "start" frame (see `settling` state's
+  // own comment); the dragged item's own transition-suppression is
+  // handled separately via isDragged, unaffected by this.
+  const suppressTransitionIds = useMemo(() => {
+    if (!settling || settling.phase !== "start") return null;
+    return new Set(Object.keys(settling.offsets));
+  }, [settling]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#e8e8e8" }}>
@@ -735,7 +879,16 @@ export function NativePlannerEditor({
             >
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
                 {pages.map((page) => (
-                  <NativePage key={page.pageId} page={page} placements={placements} activeId={activeId} visualOffsets={visualOffsets} scale={scale} />
+                  <NativePage
+                    key={page.pageId}
+                    page={page}
+                    placements={placements}
+                    activeId={activeId}
+                    visualOffsets={visualOffsets}
+                    suppressTransitionIds={suppressTransitionIds}
+                    scale={scale}
+                    isFirefox={isFirefox}
+                  />
                 ))}
               </div>
             </DndContext>
@@ -827,4 +980,3 @@ function ZoomControls({
   );
 }
 
-const EMPTY_OFFSETS: Record<string, { x: number; y: number }> = {};

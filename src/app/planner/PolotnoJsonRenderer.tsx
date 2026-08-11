@@ -78,20 +78,30 @@ const HAIRLINE_ASPECT_RATIO = 0.15;
 // look thick and weird" — in Chrome specifically, which never had the
 // disappearing-line bug this exists to fix). Gate on Firefox specifically
 // rather than trying to detect the bug's actual trigger condition (no
-// feature-detectable API for it exists) — computed once at module load,
-// not per-render.
-const isFirefox = typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent);
+// feature-detectable API for it exists). Passed in as a prop (computed
+// once, client-side only, by NativePlannerEditor — see its own comment on
+// why) rather than read from `navigator` here directly: this component's
+// first render also happens server-side during SSR, where `navigator`
+// doesn't exist at all, so a module-level `typeof navigator !==
+// "undefined"` check is unconditionally `false` on the server no matter
+// which browser will hydrate it — guaranteeing a hydration mismatch on
+// every single Firefox visit (confirmed live in the dev log: server
+// shipped the unadjusted hairline height, Firefox's client render wanted
+// the floored one, React flagged the mismatch and — per its own
+// "this won't be patched up" wording — doesn't reliably self-correct it).
 
 function ElementNode({
   element,
   originX,
   originY,
   scale,
+  isFirefox,
 }: {
   element: RenderedPolotnoElement;
   originX: number;
   originY: number;
   scale: number;
+  isFirefox: boolean;
 }) {
   if (element.type === "group") {
     // Synthetic wrapper renderModuleInstance adds around a non-locked
@@ -101,7 +111,7 @@ function ElementNode({
     return (
       <>
         {(element.children ?? []).map((child) => (
-          <ElementNode key={child.id} element={child} originX={originX} originY={originY} scale={scale} />
+          <ElementNode key={child.id} element={child} originX={originX} originY={originY} scale={scale} isFirefox={isFirefox} />
         ))}
       </>
     );
@@ -204,6 +214,7 @@ export function PolotnoJsonRenderer({
   originX,
   originY,
   scale,
+  isFirefox,
 }: {
   elements: RenderedPolotnoElement[];
   originX: number;
@@ -212,11 +223,14 @@ export function PolotnoJsonRenderer({
   // under — see MIN_ONSCREEN_STROKE_PX's comment for why a stroke's CSS
   // width needs to know it.
   scale: number;
+  // See isFirefox's own comment above — computed once, client-side only,
+  // by NativePlannerEditor and threaded down alongside `scale`.
+  isFirefox: boolean;
 }) {
   return (
     <>
       {elements.map((element) => (
-        <ElementNode key={element.id} element={element} originX={originX} originY={originY} scale={scale} />
+        <ElementNode key={element.id} element={element} originX={originX} originY={originY} scale={scale} isFirefox={isFirefox} />
       ))}
     </>
   );
