@@ -782,6 +782,93 @@ export async function deleteModuleInstance(instanceId: string) {
   await prisma.moduleInstance.delete({ where: { id: instanceId } });
 }
 
+// Deletes a module from the live native editor's hover-to-delete button
+// and "gravitates" the rest of its same-column stack to fill the gap —
+// distinct from deleteModuleInstance above, which is a plain delete with
+// no repacking, used by the old editor's diff-on-save flow where leaving
+// a hole behind is fine (the whole page reloads fresh afterward anyway).
+//
+// Walks both directions from the deleted module to collect the full
+// contiguous same-column unlocked stack it was part of (same adjacency
+// test resizeStackFromBottom's own stack-collection uses, just followed
+// upward *and* downward here since any member, not only the bottom, can
+// be the one deleted), then repacks everything BUT the deleted module
+// contiguously from the stack's own top anchor. Members that were above
+// the deleted one land back exactly where they already were (nothing
+// before them changed); members that were below shift up to close the
+// gap it leaves — "gravity," matching what was asked for. Only rowStart
+// changes for any of them; rowSpan (and therefore rendered content) is
+// completely untouched, so — unlike a resize — nothing here needs to be
+// server-re-rendered, only repositioned. The freed rows end up as one
+// contiguous block at the stack's own new bottom, which is exactly the
+// space stackBottomsByPageId/AddModuleButton (NativePlannerEditor.tsx)
+// already knows how to offer back up as an add-module "+" zone — no
+// separate handling needed for "deleted the bottom module" vs "deleted
+// one in the middle," they fall out of the same repack.
+export async function deleteModuleWithGravity(instanceId: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const target = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: { page: { include: { moduleInstances: true } } },
+  });
+  if (!target) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (target.locked) {
+    throw new Error("Cannot delete a locked module");
+  }
+  if (target.columnStart === null || target.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+  const columnStart = target.columnStart;
+  const rowStart = target.rowStart;
+
+  const siblings = target.page.moduleInstances.filter(
+    (mi): mi is typeof mi & { rowStart: number } =>
+      mi.id !== target.id &&
+      !mi.locked &&
+      mi.columnStart === columnStart &&
+      mi.columnSpan === target.columnSpan &&
+      mi.rowStart !== null
+  );
+
+  type StackMember = { id: string; rowStart: number; rowSpan: number };
+  const stack: StackMember[] = [{ id: target.id, rowStart, rowSpan: target.rowSpan }];
+  let topCursor = rowStart;
+  for (;;) {
+    const above = siblings.find((mi) => mi.rowStart + mi.rowSpan === topCursor);
+    if (!above) break;
+    stack.unshift({ id: above.id, rowStart: above.rowStart, rowSpan: above.rowSpan });
+    topCursor = above.rowStart;
+  }
+  let bottomCursor = rowStart + target.rowSpan;
+  for (;;) {
+    const below = siblings.find((mi) => mi.rowStart === bottomCursor);
+    if (!below) break;
+    stack.push({ id: below.id, rowStart: below.rowStart, rowSpan: below.rowSpan });
+    bottomCursor = below.rowStart + below.rowSpan;
+  }
+
+  const remaining = stack.filter((m) => m.id !== target.id);
+  let cursor = stack[0].rowStart;
+  const plan = remaining.map((m) => {
+    const newRowStart = cursor;
+    cursor += m.rowSpan;
+    return { id: m.id, rowStart: newRowStart };
+  });
+
+  await prisma.$transaction([
+    prisma.moduleInstance.delete({ where: { id: target.id } }),
+    ...plan.map((p) => prisma.moduleInstance.update({ where: { id: p.id }, data: { rowStart: p.rowStart } })),
+  ]);
+
+  return { deletedId: target.id, shifted: plan };
+}
+
 // Updates a non-locked module's own content (heading text, ruled/blank,
 // habit names, ...) — not its position (updateModulePlacement) or type.
 // Locked structural blocks (week-title, hourly-grid-core) go through

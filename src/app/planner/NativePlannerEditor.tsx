@@ -98,7 +98,13 @@ import {
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
-import { updateModulePlacement, resizeAdjacentModules, resizeStackFromBottom, addPaletteModuleAt } from "./actions";
+import {
+  updateModulePlacement,
+  resizeAdjacentModules,
+  resizeStackFromBottom,
+  addPaletteModuleAt,
+  deleteModuleWithGravity,
+} from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
@@ -219,6 +225,7 @@ function NativeModule({
   suppressTransition,
   scale,
   isFirefox,
+  onDelete,
 }: {
   instanceId: string;
   locked: boolean;
@@ -259,6 +266,10 @@ function NativeModule({
   // PolotnoJsonRenderer's own isFirefox comment for why this has to be
   // computed client-side-only, further up, rather than read here.
   isFirefox: boolean;
+  // Hover-to-delete button below calls this with `instanceId` on click —
+  // see handleDeleteModule's own comment (main component) for what
+  // happens next (gravity-repack the rest of its stack).
+  onDelete: (instanceId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -279,6 +290,13 @@ function NativeModule({
     [listeners]
   );
   const clearPressed = useCallback(() => setIsPressed(false), []);
+  // Drives the delete button's visibility below — plain mouse hover, not
+  // wired to isPressed/isDragged, so it works independently of whether
+  // dnd-kit's own pointer machinery has activated a drag yet. Harmless to
+  // track even for a locked module (cheap local state, no re-render
+  // beyond this one component); only the button's own rendering is
+  // actually gated on `!locked`.
+  const [isHovered, setIsHovered] = useState(false);
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -287,6 +305,8 @@ function NativeModule({
       onPointerDown={locked ? undefined : handlePointerDown}
       onPointerUp={locked ? undefined : clearPressed}
       onPointerCancel={locked ? undefined : clearPressed}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         position: "relative",
         gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
@@ -339,6 +359,50 @@ function NativeModule({
         isFirefox={isFirefox}
         suppressOuterBorderSize={isResizing ? frozenSize : null}
       />
+      {/* Gray circle, darker gray ×, fades in on hover — not rendered at
+          all for a locked module (week-title/hourly-grid-core aren't
+          individually deletable). stopPropagation on pointerdown keeps
+          this click from also being read as the start of a drag — both
+          `listeners` (dnd-kit's own activator) and this button live on
+          the same element tree, and pointerdown bubbles from this button
+          up to the wrapper div's handler otherwise. pointerEvents: none
+          while hidden so a hidden button sitting in the corner can't
+          swallow a click meant for the module underneath it. */}
+      {!locked && (
+        <button
+          type="button"
+          title="Delete module"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(instanceId);
+          }}
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 6,
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            border: "none",
+            background: "rgba(120, 120, 120, 0.7)",
+            color: "#3a3a3a",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 14,
+            lineHeight: 1,
+            padding: 0,
+            cursor: "pointer",
+            opacity: isHovered ? 1 : 0,
+            pointerEvents: isHovered ? "auto" : "none",
+            transition: "opacity 0.12s ease",
+            zIndex: 6,
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
@@ -362,6 +426,7 @@ function NativePage({
   onStackResizeMove,
   onStackResizeEnd,
   onAddModule,
+  onDeleteModule,
   scale,
   isFirefox,
 }: {
@@ -394,6 +459,7 @@ function NativePage({
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
   onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
+  onDeleteModule: (instanceId: string) => void;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -437,6 +503,7 @@ function NativePage({
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
             scale={scale}
             isFirefox={isFirefox}
+            onDelete={onDeleteModule}
           />
         );
       })}
@@ -2073,6 +2140,51 @@ export function NativePlannerEditor({
     [pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
+  // Hover-delete (NativeModule's own × button). Removes the module and
+  // "gravitates" the rest of its same-column stack up to close the gap —
+  // see deleteModuleWithGravity's own comment (actions.ts) for the full
+  // repack reasoning. Only rowStart changes for whatever shifts, never
+  // rowSpan/elements/origin, so — unlike handleResizeAdjacent — there's no
+  // moduleLookup update to make here at all for the shifted siblings, only
+  // for placements; moduleLookup pairs elements with the origin they were
+  // rendered against, and neither one changes for a pure reposition (see
+  // moduleLookup's own comment on why leaving it alone is what's
+  // correct). The freed rows become one contiguous gap at the stack's new
+  // bottom, which stackBottomsByPageId/AddModuleButton already turn back
+  // into a "+" zone the next render, sized to exactly what was freed — no
+  // separate handling needed here for "deleted the bottom module" (the
+  // gap simply starts right where that module already was) vs "deleted
+  // one further up" (siblings below it shift into the gap first).
+  const handleDeleteModule = useCallback(
+    async (instanceId: string) => {
+      // See gestureBlockedByPendingCommit's own comment — a still-pending
+      // commit could still be mid-flight against this exact module (e.g.
+      // a resize that hasn't landed yet), which this delete would then be
+      // racing.
+      if (gestureBlockedByPendingCommit()) return;
+      try {
+        const result = await serializeCommit(() => deleteModuleWithGravity(instanceId));
+        setPlacements((prev) => {
+          const next = { ...prev };
+          delete next[result.deletedId];
+          for (const s of result.shifted) {
+            const existing = next[s.id];
+            if (existing) next[s.id] = { ...existing, rowStart: s.rowStart };
+          }
+          return next;
+        });
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          next.delete(result.deletedId);
+          return next;
+        });
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [serializeCommit, gestureBlockedByPendingCommit]
+  );
+
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
   // pixel offsets for rendering (see NativeModule's visualOffset). Merges
@@ -2194,6 +2306,7 @@ export function NativePlannerEditor({
                     onStackResizeMove={handleStackResizeMove}
                     onStackResizeEnd={handleStackResizeEnd}
                     onAddModule={handleAddModule}
+                    onDeleteModule={handleDeleteModule}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
