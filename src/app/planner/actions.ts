@@ -1381,7 +1381,27 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   const maxBottomBound = boundingBelow.length > 0 ? Math.min(...boundingBelow.map((mi) => mi.rowStart)) : pageGrid.gridRows;
   const maxGrow = Math.max(0, maxBottomBound - stackBottom);
 
-  const clampedDelta = Math.max(-totalShrinkable, Math.min(maxGrow, totalDeltaRows));
+  // Clamped in terms of the resulting *gap* below the stack (maxGrow -
+  // delta), not delta directly, and a gap of exactly 1 row is treated
+  // as unreachable — see StackResizeHandle's own comment
+  // (NativePlannerEditor.tsx) for the full reasoning: AddModuleButton/
+  // addPaletteModuleAt always place a full MIN_ROW_SPAN-tall module
+  // there, so a 1-row gap can never actually fit what it's advertising
+  // room for, and a module added into it will overlap. Reported
+  // directly: "resize bottom side module and leave a small gap then
+  // add a new side module, the new overlaps." The client already snaps
+  // its own live preview away from a 1-row landing before ever calling
+  // here; this is the authoritative guard in case a stale or buggy
+  // request still asks for one, so it just resolves to 0 (no gap)
+  // rather than reproducing the bug server-side. If there isn't even
+  // enough combined room to reach a genuinely usable gap (< MIN_ROW_SPAN
+  // total between growing and shrinking), the only valid landing is 0.
+  const maxPossibleGap = maxGrow + totalShrinkable;
+  const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
+  const rawGap = maxGrow - totalDeltaRows;
+  const boundedGap = Math.max(0, Math.min(effectiveMaxGap, rawGap));
+  const targetGap = boundedGap === 1 ? 0 : boundedGap;
+  const clampedDelta = maxGrow - targetGap;
   if (clampedDelta === 0) {
     throw new Error("Nothing to resize");
   }

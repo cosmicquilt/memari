@@ -967,9 +967,35 @@ function StackResizeHandle({
       const drag = dragRef.current;
       if (!drag) return 0;
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
-      const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
       const totalShrinkable = drag.memberSpans.reduce((sum, span) => sum + (span - MIN_ROW_SPAN), 0);
-      return Math.max(-totalShrinkable, Math.min(drag.maxGrow, rawDeltaRows));
+      // Snapped in terms of the resulting *gap* below the stack (maxGrow
+      // - delta), not delta directly — a gap of exactly 1 row is never a
+      // valid landing point, only 0 or >= MIN_ROW_SPAN. Reported
+      // directly: "resize bottom side module and leave a small gap then
+      // add a new side module, the new overlaps" — AddModuleButton/
+      // addPaletteModuleAt always place a full MIN_ROW_SPAN-tall module
+      // in whatever gap is offered, so a 1-row gap can never actually
+      // fit what it's advertising room for; the module dropped into it
+      // spills into whatever's next to it instead. Worked out from the
+      // *continuous*, pre-row-rounding drag position (rawDeltaRows/
+      // rowPitchPx as a real number, not yet Math.round'ed) rather than
+      // rounding to the nearest row first and patching a landing of
+      // exactly 1 after the fact — rounding first would only relocate
+      // the single dead row, not widen it, leaving some exact mouse
+      // position where which side it resolves to is genuinely
+      // arbitrary. Working in continuous space instead lets the
+      // boundary between the 0 and MIN_ROW_SPAN landings sit at their
+      // true midpoint, giving each one a real, full-width catchment the
+      // same as every other snap step already has — resizeStackFromBottom
+      // (actions.ts) mirrors this same reasoning server-side, in integer
+      // form, as the authoritative re-check.
+      const maxPossibleGap = drag.maxGrow + totalShrinkable;
+      const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
+      const rawGapRows = drag.maxGrow - rawDeltaPagePx / rowPitchPx;
+      const boundedGapRows = Math.max(0, Math.min(effectiveMaxGap, rawGapRows));
+      const snappedGapRows =
+        boundedGapRows <= MIN_ROW_SPAN / 2 ? 0 : Math.max(MIN_ROW_SPAN, Math.round(boundedGapRows));
+      return drag.maxGrow - snappedGapRows;
     },
     [scale, rowPitchPx]
   );
