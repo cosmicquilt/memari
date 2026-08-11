@@ -91,8 +91,6 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx } from "@/lib/modules/labeledBox";
-import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
-import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -249,7 +247,6 @@ function NativeModule({
   habits,
   onUpdateHabits,
   widthPx,
-  rowGridMetrics,
 }: {
   instanceId: string;
   locked: boolean;
@@ -325,14 +322,6 @@ function NativeModule({
   // fixed height. Only meaningful (and only passed a real value) for
   // labeled-box.
   widthPx: number;
-  // Non-null (todo-checklist/habit-tracker only) while isResizing —
-  // drives a live, CSS-only approximate row grid drawn in place of this
-  // module's real content during the drag (see its own comment at the
-  // call site below for why the real content can't just keep showing:
-  // it's frozen at the last-committed size, so its row lines visibly
-  // stop lining up with the live-resizing box edge otherwise — reported
-  // directly).
-  rowGridMetrics: { headerHeightPx: number; nominalRowHeightPx: number; rowLineWidthPx: number } | null;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -472,51 +461,14 @@ function NativeModule({
         touchAction: locked ? undefined : "none",
       }}
     >
-      {isResizing && rowGridMetrics ? (
-        // Real content (elements) stays frozen at its last-committed
-        // size during a resize — see isResizing's own comment on why
-        // (no server round trip per row crossing: a checklist/tracker's
-        // row count is recomputed from fixed-pt measurements for a
-        // given size, not something CSS can just stretch). That's easy
-        // to miss for a labeled-box (just header text, unaffected by
-        // height) but obvious here — reported directly: the frozen rows
-        // visibly stop lining up with the live-resizing box edge. This
-        // repeating-linear-gradient stands in for the row lines instead
-        // of leaving them stale: it needs no live pixel-height tracking
-        // at all (the browser just clips/repeats the pattern to however
-        // tall the box currently is via the same ancestor scale
-        // transform PolotnoJsonRenderer's own elements already ride on
-        // — page-space px in, visually scaled for free), so it's exactly
-        // as cheap as the CSS transform driving the box's own live
-        // resize. Deliberately not also reproducing the header text/
-        // day-letter columns/checkbox dividers live — a bigger lift for
-        // a state that only exists for the duration of one drag; the
-        // real, full-fidelity content reappears the instant the drag
-        // commits and the server responds with a freshly-rendered
-        // element for the new size.
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: rowGridMetrics.headerHeightPx,
-            bottom: 0,
-            borderTop: `${rowGridMetrics.rowLineWidthPx}px solid rgba(35, 31, 32, 0.6)`,
-            backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${
-              rowGridMetrics.nominalRowHeightPx - rowGridMetrics.rowLineWidthPx
-            }px, rgba(35, 31, 32, 0.6) ${rowGridMetrics.nominalRowHeightPx - rowGridMetrics.rowLineWidthPx}px, rgba(35, 31, 32, 0.6) ${rowGridMetrics.nominalRowHeightPx}px)`,
-          }}
-        />
-      ) : (
-        <PolotnoJsonRenderer
-          elements={elements}
-          originX={originX}
-          originY={originY}
-          scale={scale}
-          isFirefox={isFirefox}
-          suppressOuterBorderSize={isResizing ? frozenSize : null}
-        />
-      )}
+      <PolotnoJsonRenderer
+        elements={elements}
+        originX={originX}
+        originY={originY}
+        scale={scale}
+        isFirefox={isFirefox}
+        suppressOuterBorderSize={isResizing ? frozenSize : null}
+      />
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
           individually deletable). stopPropagation on pointerdown keeps
@@ -885,13 +837,6 @@ function NativePage({
             habits={info.slug === "habit-tracker" ? ((info.propValues.habits as string[] | undefined) ?? []) : null}
             onUpdateHabits={onUpdateHabits}
             widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
-            rowGridMetrics={
-              info.slug === "todo-checklist"
-                ? getTodoChecklistRowMetricsPx()
-                : info.slug === "habit-tracker"
-                  ? getHabitTrackerRowMetricsPx()
-                  : null
-            }
           />
         );
       })}

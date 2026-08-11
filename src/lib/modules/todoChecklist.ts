@@ -35,32 +35,6 @@ const ROW_LINE_WIDTH_PT = 0.35;
 const CHECKBOX_WIDTH_PT = 14.1; // same as hourlyGridCore's time-label box
 const COLUMN_GUTTER_PT = 4.5; // same convention as hourlyGridCore
 
-// Exposes just the height constants a live-resize preview needs to draw
-// an approximate row grid client-side (NativePlannerEditor.tsx) without
-// a server round trip on every row crossing — see that file's own
-// comment on why a resize's real content stays frozen mid-drag
-// otherwise (reported directly: the frozen rows visibly stop lining up
-// with the live-resizing box edge). Deliberately only the nominal row
-// height, not the render function's own stretch-to-fit adjustment
-// (rowHeight in renderTodoChecklist, which nudges rowCount whole rows
-// to exactly fill the final committed height) — that adjustment is a
-// sub-pixel correction against one specific, known final height; a
-// live preview has no single height to correct against while the drag
-// is still moving, so it isn't worth reproducing here. Close enough for
-// a transient drag-time approximation; the real renderer takes over
-// with pixel-exact spacing the moment the drag actually commits.
-export function getTodoChecklistRowMetricsPx(): {
-  headerHeightPx: number;
-  nominalRowHeightPx: number;
-  rowLineWidthPx: number;
-} {
-  return {
-    headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
-    nominalRowHeightPx: ptToPx(ROW_HEIGHT_PT),
-    rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
-  };
-}
-
 export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
   config: TodoChecklistConfig,
