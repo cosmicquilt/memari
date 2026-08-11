@@ -162,22 +162,24 @@ const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
 // hourlyjournal.pdf's own extracted text (pymupdf), which has this
 // exact label as the last text block on both page 3 (left) and page 4
 // (right) of week 1, right after the hourly grid's own time labels.
-// getOrCreatePlanner never seeds this (see its own comment on why
-// todo-checklist was deliberately made a regular, drag-it-in-yourself
-// module rather than an auto-placed one) — only resetPlannerToTemplate
-// recreates it, since that's specifically what was asked to match the
-// PDF-original layout. columnStart/columnSpan mirror each page's own
-// hourly-grid-core exactly (see ensureHourlyGridCore's own call sites);
-// rowStart 19/rowSpan 11 is the space directly below it (hourly-grid-
-// core's own rowSpan is 19, out of the page's 30-row grid).
+// columnStart/columnSpan mirror each page's own hourly-grid-core exactly
+// (see ensureHourlyGridCore's own call sites). rowStart 20 leaves row 19
+// — the row directly below hourly-grid-core's own rowSpan of 19 — empty
+// as a 1-row gap, requested directly; rowSpan 10 fills the rest of the
+// 30-row grid from there. Shared between getOrCreatePlanner (the
+// initial seed) and resetPlannerToTemplate (the debug reset), same
+// reasoning as WEEK_SIDEBAR_TEMPLATE_BOXES above — the two can't
+// independently drift on what "the original layout" is.
 const WEEK_TODO_TEMPLATE: Array<{
   page: "left" | "right";
   columnStart: number;
   columnSpan: number;
+  rowStart: number;
+  rowSpan: number;
   dayCount: number;
 }> = [
-  { page: "left", columnStart: 1, columnSpan: 3, dayCount: 3 },
-  { page: "right", columnStart: 0, columnSpan: 4, dayCount: 4 },
+  { page: "left", columnStart: 1, columnSpan: 3, rowStart: 20, rowSpan: 10, dayCount: 3 },
+  { page: "right", columnStart: 0, columnSpan: 4, rowStart: 20, rowSpan: 10, dayCount: 4 },
 ];
 
 export async function getOrCreatePlanner() {
@@ -328,13 +330,17 @@ export async function getOrCreatePlanner() {
     { columnStart: 0, columnSpan: 4 }
   );
 
-  // todo-checklist and habit-tracker used to be auto-placed here (locked
-  // singletons, one todo on the left page, one habit-tracker on the
-  // right). They're now regular user-placed modules instead — draggable,
-  // deletable, addable via the palette like labeled-box — so there's no
-  // auto-heal step for them any more; a fresh planner starts without
-  // either until the user drags one in. See PlannerEditorCanvas.tsx's
-  // PALETTE_MODULES and addPaletteModuleAt below.
+  // todo-checklist and habit-tracker used to be auto-placed here as
+  // locked singletons; both were changed to regular, draggable/deletable
+  // user-placed modules instead (addable via the palette like
+  // labeled-box — see PlannerEditorCanvas.tsx's PALETTE_MODULES and
+  // addPaletteModuleAt below), with no auto-heal step for either. That's
+  // still true for habit-tracker. todo-checklist gets its own auto-heal
+  // again below, further down (WEEK_TODO_TEMPLATE) — non-locked, still
+  // fully editable/deletable same as before, just seeded by default now
+  // to match what hourlyjournal.pdf's own weekly spread actually shows
+  // on both pages (a "TO - DO" checklist below the hourly grid), the
+  // same content resetPlannerToTemplate puts back on a reset.
 
   // week-title and the sidebar boxes only exist on the left page — the
   // reference's right page has no week-title (it only appears once per
@@ -395,6 +401,36 @@ export async function getOrCreatePlanner() {
         // always carry it through unchanged in the propValues they
         // send — see handleUpdateHeading's own comment).
         propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
+      })),
+    });
+    needsRefetch = true;
+  }
+
+  // TO-DO checklist below the hourly grid, on both pages — matches
+  // hourlyjournal.pdf's own weekly spread (see WEEK_TODO_TEMPLATE's own
+  // comment for the exact PDF evidence). Same "seed once, don't fight
+  // user content" rule as the sidebar above: each page is checked (and
+  // seeded) independently, so moving/deleting/resizing one page's
+  // checklist doesn't cause the other page's to be touched, and neither
+  // gets recreated once either already has one.
+  const missingChecklistPages = WEEK_TODO_TEMPLATE.filter((todo) => {
+    const page = todo.page === "left" ? leftPage : rightPage;
+    return !page.moduleInstances.some((mi) => mi.moduleType.slug === "todo-checklist");
+  });
+  if (missingChecklistPages.length > 0) {
+    const checklistType = await prisma.moduleType.findUniqueOrThrow({
+      where: { slug: "todo-checklist" },
+    });
+    await prisma.moduleInstance.createMany({
+      data: missingChecklistPages.map((todo) => ({
+        pageId: (todo.page === "left" ? leftPage : rightPage).id,
+        moduleTypeId: checklistType.id,
+        placementMode: "GRID" as const,
+        columnStart: todo.columnStart,
+        rowStart: todo.rowStart,
+        columnSpan: todo.columnSpan,
+        rowSpan: todo.rowSpan,
+        propValues: { dayCount: todo.dayCount },
       })),
     });
     needsRefetch = true;
@@ -499,11 +535,9 @@ export async function resetPlannerToTemplate() {
         moduleTypeId: checklistType.id,
         placementMode: "GRID" as const,
         columnStart: todo.columnStart,
-        // Directly below hourly-grid-core (rowStart 0, rowSpan 19) —
-        // see WEEK_TODO_TEMPLATE's own comment.
-        rowStart: 19,
+        rowStart: todo.rowStart,
         columnSpan: todo.columnSpan,
-        rowSpan: 11,
+        rowSpan: todo.rowSpan,
         propValues: { dayCount: todo.dayCount },
       })),
     }),
