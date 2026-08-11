@@ -1022,6 +1022,144 @@ export async function resizeAdjacentModules(
   };
 }
 
+// Resizes an entire same-column stack from its own OUTER bottom edge —
+// the module passed in must be the bottom-most of its stack (nothing
+// else sits directly below it in the same column), unlike
+// resizeAdjacentModules above, which pairs two modules that already have
+// each other to couple against. There's no sibling below to couple with
+// here, so growing and shrinking are genuinely different operations, not
+// mirror images of the same one:
+//
+// - Growing (deltaRows > 0) only ever grows the bottom-most module —
+//   it's reaching into free page space below the stack, which has no
+//   shared "budget" the way shrinking does, so there's nothing to
+//   cascade through.
+// - Shrinking (deltaRows < 0) cascades upward once the bottom-most
+//   module hits MIN_ROW_SPAN (mirrors resizeAdjacentModules' own floor):
+//   the bottom module absorbs the shrink first, and once it can't give
+//   any more, the module above it starts shrinking too, and so on up the
+//   stack — the same "drag reaches the next module once the current one
+//   is floored" idea a column-resize cascade in a spreadsheet uses.
+//   Every affected module (and only those) gets repacked contiguously
+//   afterward from the stack's own unmoved top anchor, so shrinking
+//   never leaves a gap in the middle of the stack — all the freed space
+//   ends up as one contiguous block at the bottom, not scattered
+//   between individual members.
+export async function resizeStackFromBottom(bottomInstanceId: string, totalDeltaRows: number) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const bottom = await prisma.moduleInstance.findFirst({
+    where: { id: bottomInstanceId, page: { planner: { ownerId: userId } } },
+    include: { page: { include: { moduleInstances: { include: { moduleType: true } } } }, moduleType: true },
+  });
+  if (!bottom) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (bottom.locked) {
+    throw new Error("Cannot resize a locked module");
+  }
+  if (bottom.columnStart === null || bottom.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+  const bottomColumnStart = bottom.columnStart;
+  const bottomRowStart = bottom.rowStart;
+
+  const siblings = bottom.page.moduleInstances.filter(
+    (mi): mi is typeof mi & { rowStart: number } =>
+      mi.id !== bottom.id &&
+      !mi.locked &&
+      mi.columnStart === bottomColumnStart &&
+      mi.columnSpan === bottom.columnSpan &&
+      mi.rowStart !== null
+  );
+  // Re-verified server-side, not trusted from the client: confirms
+  // nothing else in the same column sits directly below this one — if
+  // something does, this isn't really the stack's own outer bottom, and
+  // resizeAdjacentModules (a coupled pair) is the right action instead.
+  if (siblings.some((mi) => mi.rowStart === bottomRowStart + bottom.rowSpan)) {
+    throw new Error("Not the bottom of its stack");
+  }
+
+  // Walk upward from `bottom`, collecting the full contiguous run of
+  // same-column unlocked siblings this instance is the bottom of — same
+  // adjacency test resolveModulePlacement's own stack-sibling logic uses
+  // (grid.ts), just followed as a chain instead of checked pairwise.
+  // Reduced to a plain {id, rowStart, rowSpan, slug} shape rather than
+  // keeping Prisma's full include shape — `bottom` and a `siblings` entry
+  // are structurally different types (only `bottom`'s own query included
+  // its `page`), which a shared array can't hold as-is.
+  type StackMember = { id: string; rowStart: number; rowSpan: number; slug: string };
+  const stack: StackMember[] = [{ id: bottom.id, rowStart: bottomRowStart, rowSpan: bottom.rowSpan, slug: bottom.moduleType.slug }];
+  let topCursor = bottomRowStart;
+  for (;;) {
+    const above = siblings.find((mi) => mi.rowStart + mi.rowSpan === topCursor);
+    if (!above) break;
+    stack.unshift({ id: above.id, rowStart: above.rowStart, rowSpan: above.rowSpan, slug: above.moduleType.slug });
+    topCursor = above.rowStart;
+  }
+
+  const MIN_ROW_SPAN = 2; // mirrors resizeAdjacentModules' own floor, see its own comment on why
+  const originalSpans = stack.map((mi) => mi.rowSpan);
+  const totalShrinkable = originalSpans.reduce((sum, span) => sum + (span - MIN_ROW_SPAN), 0);
+
+  const pageGrid = pageGridFor(bottom.page);
+  const stackBottom = bottomRowStart + bottom.rowSpan;
+  // How far the stack may grow — up to whatever bounds it from below (a
+  // locked block sharing its column range, if any) or the page's own
+  // bottom edge otherwise. Same "column-range overlap, not exact span
+  // match" test resolveModulePlacement's own topBound/bottomBound use.
+  const columnsOverlap = (o: { columnStart: number | null; columnSpan: number }) =>
+    o.columnStart !== null && o.columnStart < bottomColumnStart + bottom.columnSpan && o.columnStart + o.columnSpan > bottomColumnStart;
+  const boundingBelow = bottom.page.moduleInstances.filter(
+    (mi): mi is typeof mi & { rowStart: number } =>
+      mi.locked && mi.rowStart !== null && mi.rowStart >= stackBottom && columnsOverlap(mi)
+  );
+  const maxBottomBound = boundingBelow.length > 0 ? Math.min(...boundingBelow.map((mi) => mi.rowStart)) : pageGrid.gridRows;
+  const maxGrow = Math.max(0, maxBottomBound - stackBottom);
+
+  const clampedDelta = Math.max(-totalShrinkable, Math.min(maxGrow, totalDeltaRows));
+  if (clampedDelta === 0) {
+    throw new Error("Nothing to resize");
+  }
+
+  const newSpans = [...originalSpans];
+  if (clampedDelta > 0) {
+    newSpans[newSpans.length - 1] += clampedDelta;
+  } else {
+    let remaining = -clampedDelta;
+    for (let i = newSpans.length - 1; i >= 0 && remaining > 0; i--) {
+      const shrinkable = newSpans[i] - MIN_ROW_SPAN;
+      const take = Math.min(shrinkable, remaining);
+      newSpans[i] -= take;
+      remaining -= take;
+    }
+  }
+
+  // Repack contiguously from the stack's own top anchor (stack[0]'s
+  // current rowStart) — that member's own position never moves, since
+  // every row this operation frees or claims comes from the bottom.
+  let cursor = stack[0].rowStart;
+  const plan = stack.map((mi, i) => {
+    const rowStart = cursor;
+    cursor += newSpans[i];
+    return { id: mi.id, slug: mi.slug, rowStart, rowSpan: newSpans[i] };
+  });
+
+  const updated = await prisma.$transaction(
+    plan.map((p) => prisma.moduleInstance.update({ where: { id: p.id }, data: { rowStart: p.rowStart, rowSpan: p.rowSpan } }))
+  );
+
+  return updated.map((row, i) => ({
+    id: row.id,
+    rowStart: plan[i].rowStart,
+    rowSpan: row.rowSpan,
+    element: renderInstance(row, plan[i].slug, pageGrid),
+  }));
+}
+
 // Updates the week-title heading + both pages' hourly-grid-core day-of-
 // month numbers for the current user's planner. These are locked/
 // structural (not individually selectable on the canvas — see

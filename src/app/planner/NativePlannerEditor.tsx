@@ -98,7 +98,7 @@ import {
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
-import { updateModulePlacement, resizeAdjacentModules } from "./actions";
+import { updateModulePlacement, resizeAdjacentModules, resizeStackFromBottom, addPaletteModuleAt } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
@@ -126,6 +126,35 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
+// Mirrors resizeAdjacentModules'/resizeStackFromBottom's own floor
+// server-side (actions.ts) — kept in sync by hand, this file can't
+// import a constant from a "use server" file.
+const MIN_ROW_SPAN = 2;
+
+// The stack-bottom cascade's own math (see StackBottom's type comment
+// and resizeStackFromBottom's own comment for the full reasoning) —
+// shared between the live preview (displayPlacements below) and the
+// handle's own drag-clamp, so the two can never disagree about where a
+// given deltaRows actually lands. Growing (deltaRows > 0) only ever grows
+// the last (bottom-most) member; shrinking cascades upward once each
+// member in turn hits MIN_ROW_SPAN. Pure — doesn't touch rowStart at
+// all, callers repack contiguously from their own top anchor afterward.
+function cascadeStackSpans(originalSpans: number[], deltaRows: number): number[] {
+  const spans = [...originalSpans];
+  if (deltaRows > 0) {
+    spans[spans.length - 1] += deltaRows;
+  } else if (deltaRows < 0) {
+    let remaining = -deltaRows;
+    for (let i = spans.length - 1; i >= 0 && remaining > 0; i--) {
+      const shrinkable = spans[i] - MIN_ROW_SPAN;
+      const take = Math.min(shrinkable, remaining);
+      spans[i] -= take;
+      remaining -= take;
+    }
+  }
+  return spans;
+}
+
 type Placement = { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number };
 type ModuleInfo = {
   pageId: string;
@@ -148,6 +177,32 @@ type ResizePair = {
   topRowStart: number;
   topRowSpan: number;
   bottomRowSpan: number;
+};
+
+// The bottom-most unlocked module of a same-column stack, with nothing
+// directly below it in that column — a candidate for a resize handle at
+// the *stack's own* outer bottom edge (see StackBottom's own handle,
+// StackResizeHandle, for why this is a materially different operation
+// from ResizePair's coupled boundary above, not just a variant of it).
+// `members` is the whole stack, top to bottom, each with its own current
+// rowSpan — the cascading-shrink math needs every member's size, not
+// just the bottom one's.
+type StackBottom = {
+  key: string;
+  pageId: string;
+  bottomId: string;
+  columnStart: number;
+  columnSpan: number;
+  members: Array<{ id: string; rowSpan: number }>;
+  stackTopRowStart: number;
+  stackBottomRowEnd: number;
+  // The furthest row the stack may grow into — a locked block's own
+  // rowStart if one bounds it from below in this column range, or the
+  // page's own gridRows otherwise. Computed once per render alongside
+  // the rest of this shape (see stackBottomsByPageId) rather than inside
+  // the handle itself, since it needs the *same* others-on-the-page list
+  // that shape is already built from.
+  maxBottomBound: number;
 };
 
 function NativeModule({
@@ -290,21 +345,33 @@ function NativeModule({
 
 function NativePage({
   page,
+  instanceIds,
   placements,
   moduleLookup,
   activeId,
   visualOffsets,
   suppressTransitionIds,
   resizePairs,
+  stackBottoms,
   resizingIds,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
+  onStackResizeStart,
+  onStackResizeMove,
+  onStackResizeEnd,
+  onAddModule,
   scale,
   isFirefox,
 }: {
   page: LoadedPage;
+  // Which instance ids actually live on this page right now — see
+  // instanceIdsByPageId's own comment in the main component for why this
+  // drives the render loop instead of `page.moduleInstances` (a module
+  // added after initial load, see handleAddModule, wouldn't be in that
+  // static list).
+  instanceIds: string[];
   // Live display placements — reflects an in-progress resize's snapped
   // preview (see resizeDrag/displayPlacements in the main component),
   // not necessarily the last-committed values.
@@ -314,6 +381,7 @@ function NativePage({
   visualOffsets: Record<string, { x: number; y: number }>;
   suppressTransitionIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
+  stackBottoms: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
@@ -322,6 +390,10 @@ function NativePage({
   onResizeStart: (pair: ResizePair) => void;
   onResizeMove: (pair: ResizePair, deltaRows: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
+  onStackResizeStart: (stackBottom: StackBottom) => void;
+  onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
+  onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
+  onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -341,28 +413,28 @@ function NativePage({
         flexShrink: 0,
       }}
     >
-      {page.moduleInstances.map((mi) => {
-        const placement = placements[mi.id];
+      {instanceIds.map((id) => {
+        const placement = placements[id];
         // Content (elements/origin) comes from moduleLookup, not `mi`
         // directly — moduleLookup is the one this file actually patches
         // after a resize (see handleResizeAdjacent), so reading `mi.*`
         // here would keep showing stale pre-resize content forever.
-        const info = moduleLookup.get(mi.id);
+        const info = moduleLookup.get(id);
         if (!placement || !info) return null;
         return (
           <NativeModule
-            key={mi.id}
-            instanceId={mi.id}
+            key={id}
+            instanceId={id}
             locked={info.locked}
             placement={placement}
             elements={info.elements}
             originX={info.originX}
             originY={info.originY}
-            frozenSize={resizeFrozenSize?.[mi.id] ?? null}
-            visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
-            isDragged={activeId === mi.id}
-            isResizing={resizingIds?.has(mi.id) ?? false}
-            suppressTransition={suppressTransitionIds?.has(mi.id) ?? false}
+            frozenSize={resizeFrozenSize?.[id] ?? null}
+            visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
+            isDragged={activeId === id}
+            isResizing={resizingIds?.has(id) ?? false}
+            suppressTransition={suppressTransitionIds?.has(id) ?? false}
             scale={scale}
             isFirefox={isFirefox}
           />
@@ -384,6 +456,42 @@ function NativePage({
             onResizeEnd={onResizeEnd}
           />
         ))}
+      {activeId === null &&
+        stackBottoms.map((stackBottom) => (
+          <StackResizeHandle
+            key={stackBottom.key}
+            stackBottom={stackBottom}
+            pageGrid={page.pageGrid}
+            scale={scale}
+            onResizeStart={onStackResizeStart}
+            onResizeMove={onStackResizeMove}
+            onResizeEnd={onStackResizeEnd}
+          />
+        ))}
+      {/* Whatever a stack has freed up by shrinking (see StackBottom's
+          maxBottomBound vs its own current stackBottomRowEnd) is exactly
+          where a new module can go — one button per stack that has any
+          such room. Hidden during any drag/resize for the same reason
+          the handles above are, plus the gap itself is live during an
+          active resize (stackBottoms is built off displayPlacements),
+          so showing this mid-drag would mean it's also resizing under
+          the cursor at the same time as whatever's actually being
+          dragged. */}
+      {activeId === null &&
+        !resizingIds &&
+        stackBottoms
+          .filter((sb) => sb.maxBottomBound - sb.stackBottomRowEnd > 0)
+          .map((sb) => (
+            <AddModuleButton
+              key={`add:${sb.bottomId}`}
+              pageGrid={page.pageGrid}
+              columnStart={sb.columnStart}
+              columnSpan={sb.columnSpan}
+              rowStart={sb.stackBottomRowEnd}
+              rowSpan={sb.maxBottomBound - sb.stackBottomRowEnd}
+              onClick={() => onAddModule(page.pageId, sb.columnStart, sb.stackBottomRowEnd)}
+            />
+          ))}
     </div>
   );
 }
@@ -465,13 +573,12 @@ function ResizeHandle({
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
       const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
       // Same clamp resizeAdjacentModules applies server-side (mirrors its
-      // own MIN_ROW_SPAN — kept in sync by hand, this file can't import a
-      // constant from a "use server" file), mirrored here so the live
-      // preview can never show a boundary position the eventual commit
-      // wouldn't actually land on. A single-row sidebar box is barely
-      // more than a sliver, all header/border chrome with no real
-      // writing space left.
-      const MIN_ROW_SPAN = 2;
+      // own MIN_ROW_SPAN, module-level above — kept in sync by hand, this
+      // file can't import a constant from a "use server" file), mirrored
+      // here so the live preview can never show a boundary position the
+      // eventual commit wouldn't actually land on. A single-row sidebar
+      // box is barely more than a sliver, all header/border chrome with
+      // no real writing space left.
       return Math.max(-(drag.topRowSpan - MIN_ROW_SPAN), Math.min(drag.bottomRowSpan - MIN_ROW_SPAN, rawDeltaRows));
     },
     [scale, rowPitchPx]
@@ -542,8 +649,199 @@ function ResizeHandle({
   );
 }
 
+// A handle at the OUTER bottom edge of a whole column stack (see
+// StackBottom's own type comment for why this is a materially different
+// operation from ResizeHandle's coupled pair above, not a variant of it —
+// no sibling below to couple with, so growing and shrinking aren't
+// mirror images of each other here). Growing (drag down) grows only the
+// bottom-most member, reaching into free page space. Shrinking (drag up)
+// cascades upward via cascadeStackSpans once the bottom-most member hits
+// MIN_ROW_SPAN — the drag "reaches" the next member up instead of just
+// clamping, matching the request this exists to satisfy ("resize the
+// bottom [module] to minimum, then the second to last, until all side
+// modules are their respective minimum size"). Otherwise structurally
+// identical to ResizeHandle: same live-preview-then-commit shape, same
+// frozen-at-pointerdown drag anchor, same no-highlight cursor-only
+// affordance.
+function StackResizeHandle({
+  stackBottom,
+  pageGrid,
+  scale,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
+}: {
+  stackBottom: StackBottom;
+  pageGrid: PageGrid;
+  scale: number;
+  onResizeStart: (stackBottom: StackBottom) => void;
+  onResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
+  onResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
+}) {
+  const rect = useMemo(
+    () =>
+      gridCellToPixels(pageGrid, {
+        columnStart: stackBottom.columnStart,
+        rowStart: stackBottom.stackBottomRowEnd,
+        columnSpan: stackBottom.columnSpan,
+        rowSpan: 1,
+      }),
+    [pageGrid, stackBottom.columnStart, stackBottom.columnSpan, stackBottom.stackBottomRowEnd]
+  );
+  const rowPitchPx = useMemo(() => {
+    const oneRow = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 1 });
+    const twoRows = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 2 });
+    return twoRows.height - oneRow.height;
+  }, [pageGrid, stackBottom.columnStart, stackBottom.columnSpan]);
+
+  // Frozen at pointerdown, same reasoning as ResizeHandle's own dragRef —
+  // the live `stackBottom` prop's own member spans shift mid-drag (so
+  // this handle's own position tracks the live preview), so the ongoing
+  // delta/clamp math has to stay anchored to what they were when the
+  // drag actually began, not double-count against an already-shifted
+  // baseline.
+  const dragRef = useRef<{ clientY: number; memberSpans: number[]; maxGrow: number } | null>(null);
+
+  const computeClampedDeltaRows = useCallback(
+    (clientY: number) => {
+      const drag = dragRef.current;
+      if (!drag) return 0;
+      const rawDeltaPagePx = (clientY - drag.clientY) / scale;
+      const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
+      const totalShrinkable = drag.memberSpans.reduce((sum, span) => sum + (span - MIN_ROW_SPAN), 0);
+      return Math.max(-totalShrinkable, Math.min(drag.maxGrow, rawDeltaRows));
+    },
+    [scale, rowPitchPx]
+  );
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        clientY: event.clientY,
+        memberSpans: stackBottom.members.map((m) => m.rowSpan),
+        maxGrow: stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd,
+      };
+      onResizeStart(stackBottom);
+    },
+    [stackBottom, onResizeStart]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragRef.current) return;
+      onResizeMove(stackBottom, computeClampedDeltaRows(event.clientY));
+    },
+    [computeClampedDeltaRows, stackBottom, onResizeMove]
+  );
+
+  const handlePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragRef.current) return;
+      const deltaRows = computeClampedDeltaRows(event.clientY);
+      dragRef.current = null;
+      onResizeEnd(stackBottom, deltaRows);
+    },
+    [computeClampedDeltaRows, stackBottom, onResizeEnd]
+  );
+
+  const handlePointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const wasDragging = dragRef.current !== null;
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (wasDragging) onResizeEnd(stackBottom, 0);
+    },
+    [stackBottom, onResizeEnd]
+  );
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: rect.x,
+        top: rect.y - RESIZE_HANDLE_HALF_HEIGHT_PX,
+        width: rect.width,
+        height: RESIZE_HANDLE_HALF_HEIGHT_PX * 2,
+        cursor: "ns-resize",
+        touchAction: "none",
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+    />
+  );
+}
+
+// A dashed rounded-rect "add a module here" button over whatever room a
+// StackResizeHandle drag (or the initial page load, if a stack simply
+// never filled its whole allotted zone) has left below a stack — the
+// native-editor port of the old Polotno-hosted editor's own
+// EmptyZoneOverlay.tsx, same visual language (dashed border, "+"), a
+// plain DOM overlay there for the same reason it's a plain absolutely-
+// positioned div here: it isn't real page content, it shouldn't be part
+// of anything that gets persisted or exported.
+//
+// Scoped to sidebar-shaped stacks specifically (see handleAddModule's own
+// comment on why it always adds a labeled-box, not a chosen module type)
+// — this app's sidebar content is always labeled-box regardless of
+// heading, so there's a single unambiguous answer to "what gets added
+// here" and no module-type picker UI to build for it.
+function AddModuleButton({
+  pageGrid,
+  columnStart,
+  columnSpan,
+  rowStart,
+  rowSpan,
+  onClick,
+}: {
+  pageGrid: PageGrid;
+  columnStart: number;
+  columnSpan: number;
+  rowStart: number;
+  rowSpan: number;
+  onClick: () => void;
+}) {
+  const rect = useMemo(
+    () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
+    [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
+  );
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Add a module here"
+      style={{
+        position: "absolute",
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(120, 130, 255, 0.06)",
+        border: "2px dashed rgba(120, 130, 255, 0.5)",
+        borderRadius: 8,
+        color: "rgba(90, 100, 220, 0.8)",
+        cursor: "pointer",
+        fontSize: Math.max(18, Math.min(32, rect.width * 0.12)),
+        lineHeight: 1,
+      }}
+    >
+      +
+    </button>
+  );
+}
+
 const ZERO_OFFSET = { x: 0, y: 0 };
 const EMPTY_RESIZE_PAIRS: ResizePair[] = [];
+const EMPTY_STACK_BOTTOMS: StackBottom[] = [];
+const EMPTY_INSTANCE_IDS: string[] = [];
 
 export function NativePlannerEditor({
   pages,
@@ -597,6 +895,25 @@ export function NativePlannerEditor({
     return map;
   }, [pages]);
 
+  // Which instance ids belong to each page — derived from moduleLookup,
+  // not `page.moduleInstances` directly, specifically so a module added
+  // after initial load (see handleAddModule) shows up: moduleLookup is
+  // the one this file patches when a new instance is created, the same
+  // reason it's already the source NativePage reads elements/origin
+  // from rather than `page.moduleInstances` (see that prop's own
+  // comment). Every other per-page iteration in this file (resize
+  // pairing, stack-bottom detection, the render loop itself) reads this
+  // instead of `page.moduleInstances` for the same reason — a newly
+  // added module needs to participate in all of those, not just render.
+  const instanceIdsByPageId = useMemo(() => {
+    const byPage: Record<string, string[]> = {};
+    for (const [id, info] of moduleLookup) {
+      const arr = byPage[info.pageId] ?? (byPage[info.pageId] = []);
+      arr.push(id);
+    }
+    return byPage;
+  }, [moduleLookup]);
+
   // Live boundary-resize state — set for the duration of a ResizeHandle
   // drag (see handleResizeStart/Move/End below), null the rest of the
   // time. deltaRows is already clamped and snapped to whole rows by the
@@ -610,30 +927,68 @@ export function NativePlannerEditor({
     deltaRows: number;
   } | null>(null);
 
-  // What to actually render placements as — the live resize preview
+  // Same shape of state as resizeDrag above, for a StackResizeHandle drag
+  // instead of a ResizePair one — kept separate rather than unified into
+  // one type, since the two are genuinely different operations (a pair
+  // resize is zero-sum, always preserving the pair's combined height; a
+  // stack resize actually changes the stack's total footprint) that only
+  // happen to share some plumbing (grid math, minimum clamps). Mutually
+  // exclusive in practice — starting either kind of drag clears the
+  // other, same as module-reposition already clears settling.
+  const [stackResizeDrag, setStackResizeDrag] = useState<{
+    stackKey: string;
+    pageId: string;
+    memberIds: string[]; // top to bottom
+    deltaRows: number;
+  } | null>(null);
+
+  // What to actually render placements as — the live resize preview(s)
   // layered on top of the last-committed `placements`, not a second copy
-  // of state. `placements` itself only changes once handleResizeAdjacent's
-  // server call actually resolves (see handleResizeEnd below); everything
-  // in between is this derived view, the same "commit stays real,
-  // rendering gets a derived overlay" split drag-to-reposition's own
-  // visualOffsets/settling already use, just applied to span/rowStart
-  // instead of a translate offset.
+  // of state. `placements` itself only changes once a resize's server
+  // call actually resolves (see handleResizeEnd/handleStackResizeEnd
+  // below); everything in between is this derived view, the same "commit
+  // stays real, rendering gets a derived overlay" split drag-to-
+  // reposition's own visualOffsets/settling already use, just applied to
+  // span/rowStart instead of a translate offset.
   const displayPlacements = useMemo(() => {
-    if (!resizeDrag || resizeDrag.deltaRows === 0) return placements;
-    const top = placements[resizeDrag.topId];
-    const bottom = placements[resizeDrag.bottomId];
-    if (!top || !bottom) return placements;
-    return {
-      ...placements,
-      [resizeDrag.topId]: { ...top, rowSpan: top.rowSpan + resizeDrag.deltaRows },
-      [resizeDrag.bottomId]: { ...bottom, rowStart: bottom.rowStart + resizeDrag.deltaRows, rowSpan: bottom.rowSpan - resizeDrag.deltaRows },
-    };
-  }, [placements, resizeDrag]);
+    let next = placements;
+    if (resizeDrag && resizeDrag.deltaRows !== 0) {
+      const top = next[resizeDrag.topId];
+      const bottom = next[resizeDrag.bottomId];
+      if (top && bottom) {
+        next = {
+          ...next,
+          [resizeDrag.topId]: { ...top, rowSpan: top.rowSpan + resizeDrag.deltaRows },
+          [resizeDrag.bottomId]: { ...bottom, rowStart: bottom.rowStart + resizeDrag.deltaRows, rowSpan: bottom.rowSpan - resizeDrag.deltaRows },
+        };
+      }
+    }
+    if (stackResizeDrag && stackResizeDrag.deltaRows !== 0) {
+      const members = stackResizeDrag.memberIds.map((id) => next[id]);
+      if (members.every((m): m is Placement => !!m)) {
+        const newSpans = cascadeStackSpans(
+          members.map((m) => m.rowSpan),
+          stackResizeDrag.deltaRows
+        );
+        const patched = { ...next };
+        let cursor = members[0].rowStart;
+        stackResizeDrag.memberIds.forEach((id, i) => {
+          patched[id] = { ...members[i], rowStart: cursor, rowSpan: newSpans[i] };
+          cursor += newSpans[i];
+        });
+        next = patched;
+      }
+    }
+    return next;
+  }, [placements, resizeDrag, stackResizeDrag]);
 
   const resizingIds = useMemo(() => {
-    if (!resizeDrag) return null;
-    return new Set([resizeDrag.topId, resizeDrag.bottomId]);
-  }, [resizeDrag]);
+    if (!resizeDrag && !stackResizeDrag) return null;
+    return new Set([
+      ...(resizeDrag ? [resizeDrag.topId, resizeDrag.bottomId] : []),
+      ...(stackResizeDrag ? stackResizeDrag.memberIds : []),
+    ]);
+  }, [resizeDrag, stackResizeDrag]);
 
   // Frozen (last-committed, pre-drag) pixel size for whichever pair is
   // currently resizing — lets PolotnoJsonRenderer recognize and hide one
@@ -667,18 +1022,28 @@ export function NativePlannerEditor({
   // NativeModule's own CSS outline (always computed from the live
   // `placement`, never stale) is a live-accurate stand-in for it.
   const resizeFrozenSize = useMemo(() => {
-    if (!resizeDrag) return null;
-    const pageGrid = pageGridByPageId[resizeDrag.pageId];
-    const top = placements[resizeDrag.topId];
-    const bottom = placements[resizeDrag.bottomId];
-    if (!pageGrid || !top || !bottom) return null;
-    const topPixel = gridCellToPixels(pageGrid, top);
-    const bottomPixel = gridCellToPixels(pageGrid, bottom);
-    return {
-      [resizeDrag.topId]: { width: topPixel.width, height: topPixel.height },
-      [resizeDrag.bottomId]: { width: bottomPixel.width, height: bottomPixel.height },
-    };
-  }, [resizeDrag, placements, pageGridByPageId]);
+    if (!resizeDrag && !stackResizeDrag) return null;
+    const result: Record<string, { width: number; height: number }> = {};
+    if (resizeDrag) {
+      const pageGrid = pageGridByPageId[resizeDrag.pageId];
+      const top = placements[resizeDrag.topId];
+      const bottom = placements[resizeDrag.bottomId];
+      if (pageGrid && top && bottom) {
+        result[resizeDrag.topId] = gridCellToPixels(pageGrid, top);
+        result[resizeDrag.bottomId] = gridCellToPixels(pageGrid, bottom);
+      }
+    }
+    if (stackResizeDrag) {
+      const pageGrid = pageGridByPageId[stackResizeDrag.pageId];
+      if (pageGrid) {
+        for (const id of stackResizeDrag.memberIds) {
+          const placement = placements[id];
+          if (placement) result[id] = gridCellToPixels(pageGrid, placement);
+        }
+      }
+    }
+    return result;
+  }, [resizeDrag, stackResizeDrag, placements, pageGridByPageId]);
 
   // Recomputed from the LIVE displayPlacements (not the static `pages`
   // prop, and not the last-committed `placements` either) on every
@@ -697,13 +1062,13 @@ export function NativePlannerEditor({
     const byPage: Record<string, ResizePair[]> = {};
     for (const page of pages) {
       const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
-      for (const mi of page.moduleInstances) {
-        const info = moduleLookup.get(mi.id);
-        const placement = displayPlacements[mi.id];
+      for (const id of instanceIdsByPageId[page.pageId] ?? []) {
+        const info = moduleLookup.get(id);
+        const placement = displayPlacements[id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
-        group.push({ id: mi.id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
+        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
         byColumn.set(columnKey, group);
       }
       const pairs: ResizePair[] = [];
@@ -730,7 +1095,61 @@ export function NativePlannerEditor({
       byPage[page.pageId] = pairs;
     }
     return byPage;
-  }, [pages, displayPlacements, moduleLookup]);
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
+
+  // One StackBottom per unlocked same-column group (whichever member
+  // sorts last) — see that type's own comment. Same recompute-from-live-
+  // displayPlacements reasoning as resizePairsByPageId above.
+  const stackBottomsByPageId = useMemo(() => {
+    const byPage: Record<string, StackBottom[]> = {};
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
+      for (const id of pageIds) {
+        const info = moduleLookup.get(id);
+        const placement = displayPlacements[id];
+        if (!info || info.locked || !placement) continue;
+        const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
+        const group = byColumn.get(columnKey) ?? [];
+        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
+        byColumn.set(columnKey, group);
+      }
+      const stackBottoms: StackBottom[] = [];
+      for (const [columnKey, group] of byColumn) {
+        const [columnStart, columnSpan] = columnKey.split(":").map(Number);
+        const sorted = [...group].sort((a, b) => a.rowStart - b.rowStart);
+        const bottomMember = sorted[sorted.length - 1];
+        const stackBottomRowEnd = bottomMember.rowStart + bottomMember.rowSpan;
+        // How far the stack may grow — mirrors resizeStackFromBottom's own
+        // server-side bound (actions.ts): whatever locked block shares
+        // this column range and sits at or below the stack's own current
+        // bottom, or the page's own gridRows if nothing does.
+        const columnsOverlap = (o: { columnStart: number; columnSpan: number }) =>
+          o.columnStart < columnStart + columnSpan && o.columnStart + o.columnSpan > columnStart;
+        let maxBottomBound = page.pageGrid.gridRows;
+        for (const otherId of pageIds) {
+          const otherInfo = moduleLookup.get(otherId);
+          const otherPlacement = displayPlacements[otherId];
+          if (!otherInfo?.locked || !otherPlacement) continue;
+          if (otherPlacement.rowStart < stackBottomRowEnd || !columnsOverlap(otherPlacement)) continue;
+          maxBottomBound = Math.min(maxBottomBound, otherPlacement.rowStart);
+        }
+        stackBottoms.push({
+          key: `stack:${bottomMember.id}`,
+          pageId: page.pageId,
+          bottomId: bottomMember.id,
+          columnStart,
+          columnSpan,
+          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan })),
+          stackTopRowStart: sorted[0].rowStart,
+          stackBottomRowEnd,
+          maxBottomBound,
+        });
+      }
+      byPage[page.pageId] = stackBottoms;
+    }
+    return byPage;
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
 
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
@@ -1277,6 +1696,10 @@ export function NativePlannerEditor({
 
   const handleResizeStart = useCallback((pair: ResizePair) => {
     activeResizePairKeyRef.current = pair.key;
+    // Mutually exclusive with a stack resize (see stackResizeDrag's own
+    // comment) — clears any in-progress one the same way starting a new
+    // module drag already clears settling.
+    setStackResizeDrag(null);
     setResizeDrag({ pairKey: pair.key, pageId: pair.pageId, topId: pair.topId, bottomId: pair.bottomId, deltaRows: 0 });
   }, []);
 
@@ -1310,6 +1733,134 @@ export function NativePlannerEditor({
       });
     },
     [handleResizeAdjacent]
+  );
+
+  // Cascading resize from a stack's own outer bottom edge — see
+  // StackBottom's own type comment and resizeStackFromBottom's own
+  // comment (actions.ts) for the full reasoning on why this is a
+  // different operation from handleResizeAdjacent above, not a variant
+  // of it. Reuses resizeStackFromBottom unchanged; patches every member
+  // the server touched (which can be more than two) into both
+  // `placements` and `moduleLookup`, recomputing each one's origin fresh
+  // — the whole affected range gets repacked server-side, so more than
+  // just the immediate pair can have moved.
+  const handleStackResizeAdjacent = useCallback(
+    async (pageId: string, bottomInstanceId: string, deltaRows: number) => {
+      const pageGrid = pageGridByPageId[pageId];
+      const bottomPlacement = placements[bottomInstanceId];
+      if (!pageGrid || !bottomPlacement) return;
+      try {
+        const results = await resizeStackFromBottom(bottomInstanceId, deltaRows);
+        setPlacements((prev) => {
+          const next = { ...prev };
+          for (const r of results) {
+            const current = prev[r.id];
+            if (current) next[r.id] = { ...current, rowStart: r.rowStart, rowSpan: r.rowSpan };
+          }
+          return next;
+        });
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          for (const r of results) {
+            const info = prev.get(r.id);
+            if (!info) continue;
+            const origin = gridCellToPixels(pageGrid, {
+              columnStart: bottomPlacement.columnStart,
+              rowStart: r.rowStart,
+              columnSpan: bottomPlacement.columnSpan,
+              rowSpan: r.rowSpan,
+            });
+            next.set(r.id, { ...info, elements: [r.element], originX: origin.x, originY: origin.y });
+          }
+          return next;
+        });
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [placements, pageGridByPageId]
+  );
+
+  // Same synchronous-ref pattern as activeResizePairKeyRef above.
+  const activeStackResizeKeyRef = useRef<string | null>(null);
+
+  const handleStackResizeStart = useCallback((stackBottom: StackBottom) => {
+    activeStackResizeKeyRef.current = stackBottom.key;
+    // Mutually exclusive with a pair resize — see handleResizeStart's own
+    // comment.
+    setResizeDrag(null);
+    setStackResizeDrag({
+      stackKey: stackBottom.key,
+      pageId: stackBottom.pageId,
+      memberIds: stackBottom.members.map((m) => m.id),
+      deltaRows: 0,
+    });
+  }, []);
+
+  const handleStackResizeMove = useCallback((stackBottom: StackBottom, deltaRows: number) => {
+    if (activeStackResizeKeyRef.current !== stackBottom.key) return;
+    setStackResizeDrag((prev) => (prev && prev.deltaRows !== deltaRows ? { ...prev, deltaRows } : prev));
+  }, []);
+
+  const handleStackResizeEnd = useCallback(
+    (stackBottom: StackBottom, deltaRows: number) => {
+      if (activeStackResizeKeyRef.current !== stackBottom.key) return;
+      activeStackResizeKeyRef.current = null;
+      if (deltaRows === 0) {
+        setStackResizeDrag(null);
+        return;
+      }
+      // Same "keep the live preview showing through the request" reasoning
+      // as handleResizeEnd above.
+      handleStackResizeAdjacent(stackBottom.pageId, stackBottom.bottomId, deltaRows).finally(() => {
+        setStackResizeDrag((prev) => (prev && prev.stackKey === stackBottom.key ? null : prev));
+      });
+    },
+    [handleStackResizeAdjacent]
+  );
+
+  // Adds a fresh, blank labeled-box into whatever room a stack has freed
+  // up (see AddModuleButton's own comment on why labeled-box specifically
+  // — this app's sidebar content is always that one type, so there's a
+  // single unambiguous answer with no module-type picker UI to build).
+  // Reuses addPaletteModuleAt unchanged. columnStart/rowStart are trusted
+  // as-given rather than re-read from the server's own response — unlike
+  // a general palette drop, this always targets a gap this file itself
+  // just computed as genuinely empty (stackBottomsByPageId), so
+  // addPaletteModuleAt's own findNearestFreeCell search can only ever
+  // resolve to exactly that same cell, never relocate.
+  const handleAddModule = useCallback(
+    async (pageId: string, columnStart: number, rowStart: number) => {
+      const pageGrid = pageGridByPageId[pageId];
+      if (!pageGrid) return;
+      try {
+        const result = await addPaletteModuleAt(pageId, "labeled-box", columnStart, rowStart);
+        const origin = gridCellToPixels(pageGrid, {
+          columnStart,
+          rowStart,
+          columnSpan: result.columnSpan,
+          rowSpan: result.rowSpan,
+        });
+        setPlacements((prev) => ({
+          ...prev,
+          [result.instanceId]: { columnStart, rowStart, columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+        }));
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          next.set(result.instanceId, {
+            pageId,
+            locked: false,
+            elements: [result.element],
+            originX: origin.x,
+            originY: origin.y,
+          });
+          return next;
+        });
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [pageGridByPageId]
   );
 
   // Live preview: while a drag is in progress, recompute where things
@@ -1405,17 +1956,23 @@ export function NativePlannerEditor({
                   <NativePage
                     key={page.pageId}
                     page={page}
+                    instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
                     placements={displayPlacements}
                     moduleLookup={moduleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
+                    stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={resizingIds}
                     resizeFrozenSize={resizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
                     onResizeEnd={handleResizeEnd}
+                    onStackResizeStart={handleStackResizeStart}
+                    onStackResizeMove={handleStackResizeMove}
+                    onStackResizeEnd={handleStackResizeEnd}
+                    onAddModule={handleAddModule}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
