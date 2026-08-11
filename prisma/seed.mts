@@ -88,6 +88,14 @@ const moduleTypes = [
       properties: {
         heading: { type: "string", default: "Notes" },
         ruled: { type: "boolean", default: false },
+        // The heading this instance is "supposed to" have — its seeded
+        // default (Priorities/Reminders/etc.) or, for one added via the
+        // palette, "Notes" — set once at creation (see actions.ts's
+        // getOrCreatePlanner/addPaletteModuleAt) and never touched again
+        // by an ordinary heading edit. Backs the native editor's "full
+        // reset" button (NativeModule), a debugging aid distinct from
+        // just clearing the heading field back to blank.
+        templateHeading: { type: "string", default: "" },
       },
     },
     // Sized for the sidebar column (column 0 of the default 4x30 grid).

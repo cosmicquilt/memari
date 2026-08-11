@@ -90,6 +90,7 @@ import type { LoadedPage } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
+import { computeLabeledBoxHeaderHeightPx } from "@/lib/modules/labeledBox";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -175,18 +176,13 @@ type ModuleInfo = {
   // current config, not just heading, since updateModuleConfig replaces
   // the whole object server-side rather than merging — sending just
   // {heading} would silently reset every other field (ruled, etc.) back
-  // to its schema default. Kept in sync by every moduleLookup writer
-  // that touches an instance's own content, same as elements/origin.
+  // to its schema default. Also carries templateHeading (the "full
+  // reset" target — see its own comment in prisma/seed.mts), so there's
+  // no separate field for it here: it's just read out of propValues
+  // like heading/ruled are, the same way every writer that touches an
+  // instance's content already keeps propValues in sync.
   slug: string;
   propValues: Record<string, unknown>;
-  // The heading this instance had at page load (or at creation, for one
-  // added this session) — what the reset button restores. Deliberately
-  // captured once and never updated again by an edit, even though
-  // propValues.heading changes right alongside it; this is a session-
-  // scoped "undo my edits" baseline; not a value round-tripped through
-  // the database, so it doesn't survive a reload. null for any module
-  // type that doesn't have a heading at all.
-  originalHeading: string | null;
 };
 
 // Two vertically-stacked, directly-adjacent unlocked modules in the same
@@ -250,8 +246,9 @@ function NativeModule({
   onHoverEnd,
   slug,
   heading,
-  originalHeading,
+  templateHeading,
   onUpdateHeading,
+  widthPx,
 }: {
   instanceId: string;
   locked: boolean;
@@ -311,11 +308,21 @@ function NativeModule({
   // Current heading, already read out of propValues by the caller
   // (NativePage) — null for any non-labeled-box module.
   heading: string | null;
-  // What the reset button restores — see ModuleInfo's own comment
-  // (main component) on why this is a session-scoped baseline, not a
-  // persisted "original" round-tripped through the database.
-  originalHeading: string | null;
+  // What the reset button restores — this instance's own persisted
+  // templateHeading (propValues, see prisma/seed.mts's own comment on
+  // it), also read out by the caller; empty/missing means "nothing
+  // meaningful to reset to" (a pre-existing instance the one-time
+  // backfill couldn't recover a true original for), in which case the
+  // reset button just doesn't render at all rather than resetting to a
+  // blank heading.
+  templateHeading: string | null;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
+  // This box's own current rendered width, in page-space px — lets the
+  // edit-mode overlay below size its height to match the box's *actual*
+  // header band (computeLabeledBoxHeaderHeightPx) instead of a guessed
+  // fixed height. Only meaningful (and only passed a real value) for
+  // labeled-box.
+  widthPx: number;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -353,6 +360,12 @@ function NativeModule({
     },
     [heading, instanceId, onUpdateHeading]
   );
+  // Matches the box's own real header band (see this constant's own
+  // comment on the edit-mode overlay below for why that matters) —
+  // cheap enough to just recompute on every render rather than memoing,
+  // same as ResizeHandle/AddModuleButton's own gridCellToPixels calls
+  // elsewhere in this file.
+  const editOverlayHeight = slug === "labeled-box" ? computeLabeledBoxHeaderHeightPx(heading ?? "", widthPx) : 0;
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -476,11 +489,13 @@ function NativeModule({
           top-left corner so the two don't collide. Swaps for an input +
           reset button once clicked, rather than living alongside it —
           simpler than getting an overlay to line up with wherever the
-          rendered SVG heading text happens to sit (its own height varies
-          between a 1-line and a wrapped 2-line heading — see
-          labeledBox.ts's headingNeedsTwoLines), so this covers a fixed
-          band from the module's own top edge instead of trying to match
-          that exactly. */}
+          rendered SVG heading text happens to sit exactly, but its
+          height is still computed to match that real header band
+          (computeLabeledBoxHeaderHeightPx, editOverlayHeight below) —
+          reported live the first time this shipped with a guessed fixed
+          height instead: "the header gets taller" (that guess ran
+          taller than a real single-line header's true, shorter
+          height). */}
       {!locked && slug === "labeled-box" && !isEditingHeading && (
         <button
           type="button"
@@ -525,7 +540,7 @@ function NativeModule({
             top: 0,
             left: 0,
             right: 0,
-            height: 70,
+            height: editOverlayHeight,
             background: "#ffffff",
             display: "flex",
             alignItems: "center",
@@ -576,21 +591,21 @@ function NativeModule({
               right after — both correctly ordered through serializeCommit
               so the *final* state is still right either way, just an
               extra avoidable round trip without this. */}
-          {originalHeading !== null && (
+          {templateHeading !== null && templateHeading !== "" && (
             <button
               type="button"
-              title="Reset to original"
+              title="Full reset to template default"
               onPointerDown={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => {
                 event.stopPropagation();
-                setDraftHeading(originalHeading);
-                commitHeading(originalHeading);
+                setDraftHeading(templateHeading);
+                commitHeading(templateHeading);
               }}
               style={{
                 flexShrink: 0,
-                width: 28,
-                height: 28,
+                width: 44,
+                height: 44,
                 borderRadius: "50%",
                 border: "none",
                 background: "#c7c7c7",
@@ -598,7 +613,7 @@ function NativeModule({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 16,
+                fontSize: 24,
                 lineHeight: 1,
                 cursor: "pointer",
                 padding: 0,
@@ -725,8 +740,11 @@ function NativePage({
             onHoverEnd={onHoverEnd}
             slug={info.slug}
             heading={info.slug === "labeled-box" ? ((info.propValues.heading as string | undefined) ?? "") : null}
-            originalHeading={info.originalHeading}
+            templateHeading={
+              info.slug === "labeled-box" ? ((info.propValues.templateHeading as string | undefined) ?? "") : null
+            }
             onUpdateHeading={onUpdateHeading}
+            widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
           />
         );
       })}
@@ -1188,7 +1206,6 @@ export function NativePlannerEditor({
           originY: mi.originY,
           slug: mi.slug,
           propValues,
-          originalHeading: mi.slug === "labeled-box" ? ((propValues.heading as string | undefined) ?? "") : null,
         });
       }
     }
@@ -2405,7 +2422,6 @@ export function NativePlannerEditor({
             originY: origin.y,
             slug: "labeled-box",
             propValues,
-            originalHeading: (propValues.heading as string | undefined) ?? "",
           });
           return next;
         });

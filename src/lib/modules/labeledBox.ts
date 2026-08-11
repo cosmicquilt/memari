@@ -56,6 +56,25 @@ function headingNeedsTwoLines(heading: string, availableWidthPx: number): boolea
   return estimatedWidthAt8pt > availableWidthPx;
 }
 
+// Exposed separately from renderLabeledBox so the native editor's inline
+// heading-edit overlay (NativePlannerEditor.tsx) can size itself to
+// match the box's *actual* rendered header band instead of guessing a
+// fixed height — a mismatch was reported live ("the header gets taller")
+// once a fixed-height overlay didn't line up with a real single-line
+// header's true, shorter height. Deliberately re-derives wraps here
+// rather than having renderLabeledBox call this internally and return it
+// alongside its elements — that would mean threading an extra return
+// value through a function whose return shape (a flat RenderedElement[])
+// every other caller (renderModuleInstance.ts) already depends on being
+// exactly that; a few duplicated lines here is cheaper than restructuring
+// that.
+export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: number): number {
+  const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
+  const headingAvailableWidth = boxWidthPx - headingPadding * 2;
+  const wraps = headingNeedsTwoLines(heading, headingAvailableWidth);
+  return ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT);
+}
+
 export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
   config: LabeledBoxConfig,

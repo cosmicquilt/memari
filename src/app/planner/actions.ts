@@ -356,7 +356,14 @@ export async function getOrCreatePlanner() {
         rowStart: box.rowStart,
         columnSpan: boxType.defaultColumnSpan,
         rowSpan: box.rowSpan,
-        propValues: { heading: box.heading, ruled: false },
+        // templateHeading: the "full reset" target (see NativeModule's
+        // own reset-button comment) — captured here, at the one point
+        // this instance's heading is ever set to something meaningful
+        // by the app itself rather than by a user typing into it, and
+        // never touched again afterward (updateModuleConfig's callers
+        // always carry it through unchanged in the propValues they
+        // send — see handleUpdateHeading's own comment).
+        propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
       })),
     });
     needsRefetch = true;
@@ -576,7 +583,8 @@ export async function getOrCreateMonthPlanner() {
         rowStart: box.rowStart,
         columnSpan: boxType.defaultColumnSpan,
         rowSpan: box.rowSpan,
-        propValues: { heading: box.heading, ruled: false },
+        // See getOrCreatePlanner's identical field for why.
+        propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
       })),
     });
     needsRefetch = true;
@@ -685,12 +693,20 @@ export async function addPaletteModuleAt(
       const schema = moduleType.configSchema as {
         properties?: Record<string, { default?: unknown }>;
       };
-      const defaultConfig = {
+      const defaultConfig: Record<string, unknown> = {
         ...Object.fromEntries(
           Object.entries(schema.properties ?? {}).map(([key, def]) => [key, def.default])
         ),
         ...configOverrides,
       };
+      // See getOrCreatePlanner's identical field on its own seeded boxes
+      // for what this is for — a freshly palette-dropped box's "full
+      // reset" target is just its own starting heading (the schema
+      // default, "Notes"), same as any other instance's is whatever it
+      // started as.
+      if (moduleTypeSlug === "labeled-box") {
+        defaultConfig.templateHeading = defaultConfig.heading;
+      }
 
       const created = await tx.moduleInstance.create({
         data: {
