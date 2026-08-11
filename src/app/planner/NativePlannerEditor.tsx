@@ -186,7 +186,7 @@ function NativeModule({
         position: "relative",
         gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
         gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
-        cursor: locked ? "default" : "grab",
+        cursor: locked ? "default" : isDragged ? "grabbing" : "grab",
         transform:
           visualOffset.x !== 0 || visualOffset.y !== 0 ? `translate(${visualOffset.x}px, ${visualOffset.y}px)` : undefined,
         // No transition on the dragged item itself — it needs to track
