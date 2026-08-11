@@ -1708,6 +1708,7 @@ export function NativePlannerEditor({
       const pageGrid = pageGridByPageId[pageId];
       const bottomPlacement = placements[bottomId];
       if (!pageGrid || !bottomPlacement) return;
+      const pairKey = `${topId}:${bottomId}`;
       try {
         // See serializeCommit's own comment — queued so a resize started
         // right after a reposition (or another resize) can't read the
@@ -1739,8 +1740,31 @@ export function NativePlannerEditor({
           }
           return next;
         });
+        // Clears resizeDrag in the SAME synchronous batch as the two
+        // setState calls above (React 18 auto-batches setState calls
+        // made back-to-back with no `await` between them), not in a
+        // later microtask via a separate .finally() the way this used
+        // to. That distinction is exactly what the reported bug traced
+        // back to: displayPlacements always applies resizeDrag's own
+        // deltaRows on top of whatever `placements` currently holds —
+        // correct while `placements` still reflects the pre-drag value,
+        // but if `placements` had *already* been updated to the final,
+        // server-confirmed value (as it just was, two lines up) and
+        // resizeDrag hadn't been cleared *yet* (previously true for one
+        // extra render, since the old code cleared it from a separate
+        // .finally() callback — a real microtask hop later than the
+        // setPlacements call it was chained after), that same delta got
+        // applied a second time on top of an already-correct value —
+        // visibly jumping the module past where it should land, right at
+        // the moment of release, sometimes far enough to overlap a
+        // neighbor. Guarded by pairKey so a resolving request from an
+        // abandoned drag can't clear a *newer* one's still-in-progress
+        // preview (same guard handleResizeEnd's own .finally() used to
+        // carry).
+        setResizeDrag((prev) => (prev && prev.pairKey === pairKey ? null : prev));
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
+        setResizeDrag((prev) => (prev && prev.pairKey === pairKey ? null : prev));
       }
     },
     [placements, pageGridByPageId, serializeCommit]
@@ -1785,15 +1809,11 @@ export function NativePlannerEditor({
       }
       // Keeps the live (already-correct-looking, snapped) preview showing
       // for the whole request instead of dropping back to the old
-      // pre-drag placements for one render while it's in flight and then
-      // jumping forward again once it resolves — only clears once the
-      // real, server-committed placements have actually caught up to
-      // match. Guarded by pairKey (not unconditional) so a resolving
-      // request from an abandoned drag can't clear a *newer* one's
-      // still-in-progress preview.
-      handleResizeAdjacent(pair.pageId, pair.topId, pair.bottomId, deltaRows).finally(() => {
-        setResizeDrag((prev) => (prev && prev.pairKey === pair.key ? null : prev));
-      });
+      // pre-drag placements while it's in flight — handleResizeAdjacent
+      // itself clears resizeDrag, in the same batch as the placements
+      // update that makes it safe to (see its own comment on why that
+      // has to be synchronous with the commit, not a later microtask).
+      handleResizeAdjacent(pair.pageId, pair.topId, pair.bottomId, deltaRows);
     },
     [handleResizeAdjacent]
   );
@@ -1812,6 +1832,7 @@ export function NativePlannerEditor({
       const pageGrid = pageGridByPageId[pageId];
       const bottomPlacement = placements[bottomInstanceId];
       if (!pageGrid || !bottomPlacement) return;
+      const stackKey = `stack:${bottomInstanceId}`;
       try {
         // See serializeCommit's own comment.
         const results = await serializeCommit(() => resizeStackFromBottom(bottomInstanceId, deltaRows));
@@ -1838,8 +1859,14 @@ export function NativePlannerEditor({
           }
           return next;
         });
+        // See handleResizeAdjacent's own comment on why this has to be
+        // synchronous with the placements/moduleLookup updates above, not
+        // a later microtask via a separate .finally() — same double-
+        // applied-delta bug, same fix, for the stack-cascade case.
+        setStackResizeDrag((prev) => (prev && prev.stackKey === stackKey ? null : prev));
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
+        setStackResizeDrag((prev) => (prev && prev.stackKey === stackKey ? null : prev));
       }
     },
     [placements, pageGridByPageId, serializeCommit]
@@ -1874,11 +1901,9 @@ export function NativePlannerEditor({
         setStackResizeDrag(null);
         return;
       }
-      // Same "keep the live preview showing through the request" reasoning
-      // as handleResizeEnd above.
-      handleStackResizeAdjacent(stackBottom.pageId, stackBottom.bottomId, deltaRows).finally(() => {
-        setStackResizeDrag((prev) => (prev && prev.stackKey === stackBottom.key ? null : prev));
-      });
+      // handleStackResizeAdjacent itself clears stackResizeDrag now — see
+      // its own comment.
+      handleStackResizeAdjacent(stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
     [handleStackResizeAdjacent]
   );
