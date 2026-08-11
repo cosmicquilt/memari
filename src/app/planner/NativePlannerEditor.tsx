@@ -1531,12 +1531,66 @@ export function NativePlannerEditor({
         if (!otherInfo || otherInfo.pageId !== info.pageId) continue;
         others.push({ ...placement, id, locked: otherInfo.locked });
       }
+      // Treats each stack's own reserved "+" add-zone (see
+      // AddModuleButton) as a virtual locked block for collision/reflow
+      // purposes — reuses resolveModulePlacement's own already-tested
+      // "bounded by a locked block" logic (grid.ts) instead of writing
+      // new ad-hoc clamping: a same-column drag can't cross it, the same
+      // way it already can't cross a real locked block like week-title.
+      // Reported live: dropping a module into that space left it
+      // floating, disconnected from the packed stack above it, with its
+      // own stray gap above it — not a bug in resolveModulePlacement,
+      // just a boundary it never knew existed.
+      for (const stackBottom of stackBottomsByPageId[info.pageId] ?? []) {
+        const gapRowSpan = stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd;
+        if (gapRowSpan <= 0) continue;
+        others.push({
+          id: `__addzone__${stackBottom.bottomId}`,
+          locked: true,
+          columnStart: stackBottom.columnStart,
+          rowStart: stackBottom.stackBottomRowEnd,
+          columnSpan: stackBottom.columnSpan,
+          rowSpan: gapRowSpan,
+        });
+      }
 
       const { placement: resolved, reflow } = resolveModulePlacement(pageGrid, candidate, others, current.rowStart);
       return { pageGrid, current, resolved, reflow };
     },
-    [placements, moduleLookup, pageGridByPageId, scale]
+    [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId]
   );
+
+  // Serializes every server call that writes a module's own position/
+  // size (reposition, either resize kind, add) against each other —
+  // reported live: performing a reposition, then immediately a resize,
+  // could leave the resized module in the wrong final spot, overlapping
+  // a sibling, even though the resize's own live preview (entirely
+  // client-side) had looked correct the whole time. Root cause: these
+  // are independently user-triggered async server calls with no
+  // ordering guarantee between them — if a resize's own read-and-repack
+  // query ran before a moments-earlier reposition's write had actually
+  // landed, it computed its result from stale DB rows, and *that*
+  // (wrong) result is what overwrote the client's already-correct state
+  // once the response came back. `placements` client-side was never
+  // wrong; the server's own view of "what's currently there" was
+  // momentarily behind. Chaining every commit through this ref means a
+  // later one always waits for an earlier one to fully resolve first,
+  // closing the race without anything more invasive (a lock, a version
+  // counter) — one write genuinely has to be visible to the next read
+  // this way, not just eventually.
+  const pendingCommitRef = useRef<Promise<unknown>>(Promise.resolve());
+  const serializeCommit = useCallback(<T,>(run: () => Promise<T>): Promise<T> => {
+    const started = pendingCommitRef.current.then(run, run);
+    // Swallows a failure for the *chain's* purposes only — a rejected
+    // commit still shouldn't block whatever's queued after it. The
+    // caller that actually awaited `started` still sees and handles the
+    // real error via its own .catch, unaffected by this.
+    pendingCommitRef.current = started.then(
+      () => undefined,
+      () => undefined
+    );
+    return started;
+  }, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -1583,18 +1637,24 @@ export function NativePlannerEditor({
         return next;
       });
 
-      const updates = [updateModulePlacement(instanceId, { columnStart: resolved.columnStart, rowStart: resolved.rowStart })];
-      for (const move of reflow) {
-        const prevPlacement = placements[move.id];
-        if (prevPlacement) {
-          updates.push(updateModulePlacement(move.id, { columnStart: prevPlacement.columnStart, rowStart: move.rowStart }));
+      // See serializeCommit's own comment — the actual updateModulePlacement
+      // calls don't fire until this task's turn in the queue, not
+      // immediately here, so a resize (or another reposition) started
+      // right after this one can't race it server-side.
+      serializeCommit(() => {
+        const updates = [updateModulePlacement(instanceId, { columnStart: resolved.columnStart, rowStart: resolved.rowStart })];
+        for (const move of reflow) {
+          const prevPlacement = placements[move.id];
+          if (prevPlacement) {
+            updates.push(updateModulePlacement(move.id, { columnStart: prevPlacement.columnStart, rowStart: move.rowStart }));
+          }
         }
-      }
-      Promise.all(updates).catch((err) => {
+        return Promise.all(updates);
+      }).catch((err) => {
         setSaveError(err instanceof Error ? err.message : String(err));
       });
     },
-    [placements, resolveDrag, scale]
+    [placements, resolveDrag, scale, serializeCommit]
   );
 
   // Advances the settle FLIP from "start" (drawn at the residual offset,
@@ -1649,7 +1709,10 @@ export function NativePlannerEditor({
       const bottomPlacement = placements[bottomId];
       if (!pageGrid || !bottomPlacement) return;
       try {
-        const result = await resizeAdjacentModules(topId, bottomId, deltaRows);
+        // See serializeCommit's own comment — queued so a resize started
+        // right after a reposition (or another resize) can't read the
+        // DB before that earlier write has actually landed.
+        const result = await serializeCommit(() => resizeAdjacentModules(topId, bottomId, deltaRows));
         if (result.bottom.rowStart === null) return; // unreachable — see resizeAdjacentModules's own comment on why
         const bottomRowStart = result.bottom.rowStart;
         const bottomOrigin = gridCellToPixels(pageGrid, {
@@ -1680,7 +1743,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [placements, pageGridByPageId]
+    [placements, pageGridByPageId, serializeCommit]
   );
 
   // Synchronous "what's the currently-live resize" check for
@@ -1750,7 +1813,8 @@ export function NativePlannerEditor({
       const bottomPlacement = placements[bottomInstanceId];
       if (!pageGrid || !bottomPlacement) return;
       try {
-        const results = await resizeStackFromBottom(bottomInstanceId, deltaRows);
+        // See serializeCommit's own comment.
+        const results = await serializeCommit(() => resizeStackFromBottom(bottomInstanceId, deltaRows));
         setPlacements((prev) => {
           const next = { ...prev };
           for (const r of results) {
@@ -1778,7 +1842,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [placements, pageGridByPageId]
+    [placements, pageGridByPageId, serializeCommit]
   );
 
   // Same synchronous-ref pattern as activeResizePairKeyRef above.
@@ -1834,7 +1898,13 @@ export function NativePlannerEditor({
       const pageGrid = pageGridByPageId[pageId];
       if (!pageGrid) return;
       try {
-        const result = await addPaletteModuleAt(pageId, "labeled-box", columnStart, rowStart);
+        // See serializeCommit's own comment — guards this against the
+        // same race too: adding right after a reposition/resize
+        // shouldn't read a stale "what's occupied" view server-side
+        // either, even though this specific call's own target is always
+        // a gap this file already knows is empty (see this function's
+        // own comment).
+        const result = await serializeCommit(() => addPaletteModuleAt(pageId, "labeled-box", columnStart, rowStart));
         const origin = gridCellToPixels(pageGrid, {
           columnStart,
           rowStart,
@@ -1860,7 +1930,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [pageGridByPageId]
+    [pageGridByPageId, serializeCommit]
   );
 
   // Live preview: while a drag is in progress, recompute where things
