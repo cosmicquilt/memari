@@ -119,7 +119,7 @@ const ZOOM_STEP = 1.2; // per zoom in/out button click
 const WHEEL_ZOOM_SENSITIVITY = 0.0075;
 const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
-const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the content wrapper's own constant marginTop — see zoomAnchored's comment on why this has to be threaded through its math too, not just centeringOffsetX
+const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the minimum top gutter centeringOffsetY reserves before adding any extra centering room — see that function's own comment
 const HEADER_HEIGHT_PX = 41; // header's own rendered height (8px padding * 2 + ~25px line box) — an estimate, not measured; only used to size the "fit whole page" preset, not anything print-critical
 
 function clampScale(scale: number): number {
@@ -1210,24 +1210,49 @@ export function NativePlannerEditor({
     () => false
   );
 
-  // How far the scaled content is horizontally offset from the
-  // scrollable container's own left edge at a given scale — content
-  // narrower than the viewport gets centered (half the leftover space);
-  // content at least as wide gets 0, never negative — the same
-  // "degrades to 0 once it genuinely overflows" fix as the flex-
-  // centering bug mentioned below, just computed explicitly here
-  // instead of left to a CSS property, because the zoom-anchoring math
-  // right below needs to know this value precisely, not just rely on it
-  // looking right on screen. No *scale-dependent* vertical equivalent —
-  // pages start at the top and scroll down, they're not vertically
-  // centered (matches how document/page editors typically behave) —
-  // but there is a fixed, scale-independent CONTENT_TOP_OFFSET_PX
-  // (the wrapper's own constant marginTop) that the same zoom-anchoring
-  // math still has to account for, simpler than this one only because
-  // it never varies with scale or viewport size.
+  // The scaled content's actual marginLeft/marginTop at a given scale —
+  // VIEWPORT_PADDING_PX's own minimum gutter on that side, plus half of
+  // whatever room is left beyond it once the content's own scaled size
+  // is subtracted (never negative — the same "degrades to 0 once it
+  // genuinely overflows" fix as the flex-centering bug mentioned below,
+  // just computed explicitly here instead of left to a CSS property,
+  // because the zoom-anchoring math right below needs to know this
+  // value precisely, not just rely on it looking right on screen).
+  //
+  // Reported directly: at fit-width, this leftover-beyond-padding term
+  // is ~0 by construction (fitWidthScale itself is chosen so the scaled
+  // content exactly fills viewportWidth - PADDING*2) — a version of
+  // this that returned *only* that leftover term (as it used to) would
+  // therefore return ~0 too, leaving the content flush against the
+  // container's actual left/top edge with zero gutter on that side and
+  // the entire reserved PADDING*2 budget stranded on the other
+  // side/bottom instead of split evenly — exactly the "hugs the top
+  // left instead of sitting centered" bug that was reported. Adding the
+  // baseline back in is what makes the reserved padding symmetric
+  // again, matching what VIEWPORT_PADDING_PX's own comment ("each
+  // side") already promised.
+  //
+  // centeringOffsetY mirrors this on the vertical axis using
+  // HEADER_HEIGHT_PX and PRINT_HEIGHT_PX (pages sit in a single row —
+  // see the pages.map wrapper below — so content height at a given
+  // scale is always exactly PRINT_HEIGHT_PX * scale, never a function
+  // of page count the way spreadWidthPx is). Previously there was no
+  // vertical centering at all — CONTENT_TOP_OFFSET_PX was used as a
+  // bare constant marginTop, always pinning content to the top once it
+  // no longer needed all the viewport's height. Both functions return
+  // the *actual* margin value (not just the extra-centering term) so
+  // every call site — the JSX margin below and both places in
+  // zoomAnchored's focal-point math — can use the result directly.
   const centeringOffsetX = useCallback(
-    (atScale: number) => Math.max(0, (viewportSize.width - VIEWPORT_PADDING_PX * 2 - spreadWidthPx * atScale) / 2),
+    (atScale: number) =>
+      VIEWPORT_PADDING_PX + Math.max(0, (viewportSize.width - VIEWPORT_PADDING_PX * 2 - spreadWidthPx * atScale) / 2),
     [viewportSize.width, spreadWidthPx]
+  );
+  const centeringOffsetY = useCallback(
+    (atScale: number) =>
+      CONTENT_TOP_OFFSET_PX +
+      Math.max(0, (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2 - PRINT_HEIGHT_PX * atScale) / 2),
+    [viewportSize.height]
   );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1308,19 +1333,20 @@ export function NativePlannerEditor({
 
       const oldOffsetX = centeringOffsetX(oldScale);
       const contentX = (container.scrollLeft + anchorScreenX - oldOffsetX) / oldScale;
-      // CONTENT_TOP_OFFSET_PX: the wrapper's own constant marginTop —
-      // fixed regardless of scale (unlike centeringOffsetX), but still
-      // has to be subtracted here for the same reason: scrollTop/
-      // anchorScreenY are measured from the *container's* top edge, not
-      // from where page-space y=0 actually renders once that margin
-      // pushes it down.
-      const contentY = (container.scrollTop + anchorScreenY - CONTENT_TOP_OFFSET_PX) / oldScale;
+      // scrollTop/anchorScreenY are measured from the *container's* top
+      // edge, not from where page-space y=0 actually renders once
+      // centeringOffsetY's margin pushes it down — same reasoning as
+      // oldOffsetX above, now that centeringOffsetY is scale-dependent
+      // too (see its own comment on why it no longer can be a bare
+      // constant now that it centers, not just pads).
+      const oldOffsetY = centeringOffsetY(oldScale);
+      const contentY = (container.scrollTop + anchorScreenY - oldOffsetY) / oldScale;
 
       setZoomMode("manual");
       setManualScale(clamped);
       pendingZoomAnchorRef.current = { contentX, contentY, anchorScreenX, anchorScreenY, atScale: clamped };
     },
-    [centeringOffsetX]
+    [centeringOffsetX, centeringOffsetY]
   );
 
   useLayoutEffect(() => {
@@ -1329,9 +1355,10 @@ export function NativePlannerEditor({
     if (!container || !pending) return;
     pendingZoomAnchorRef.current = null;
     const newOffsetX = centeringOffsetX(pending.atScale);
+    const newOffsetY = centeringOffsetY(pending.atScale);
     container.scrollLeft = pending.contentX * pending.atScale + newOffsetX - pending.anchorScreenX;
-    container.scrollTop = pending.contentY * pending.atScale + CONTENT_TOP_OFFSET_PX - pending.anchorScreenY;
-  }, [scale, centeringOffsetX]);
+    container.scrollTop = pending.contentY * pending.atScale + newOffsetY - pending.anchorScreenY;
+  }, [scale, centeringOffsetX, centeringOffsetY]);
 
   // Fit-width/Fit-page reset the view from scratch (matching Polotno's
   // own "reset to scale-to-fit" behavior — it shows the page from the
@@ -2113,19 +2140,30 @@ export function NativePlannerEditor({
         {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
       <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
-        {/* marginLeft: centeringOffsetX(scale), not CSS margin:auto or
-            flex+justifyContent:center — both of those have a well-known
-            bug where content wider than its container becomes
-            unreachable by scroll on one side (the "phantom centering
-            space" issue), and neither gives zoomAnchored a precise,
-            known value to fold into its focal-point math the way this
-            explicit, JS-computed offset does. Degrades to 0 once the
-            content genuinely overflows, so it stays scrollable in every
-            direction at any zoom level instead of only some of them —
-            only matters once zoom-in makes overflow a real possibility,
-            which is exactly what's being added here. No vertical
-            equivalent — see centeringOffsetX's own comment on why. */}
-        <div style={{ width: "fit-content", marginLeft: centeringOffsetX(scale), marginTop: CONTENT_TOP_OFFSET_PX, marginBottom: VIEWPORT_PADDING_PX }}>
+        {/* marginLeft/marginTop: centeringOffsetX/Y(scale), not CSS
+            margin:auto or flex+justifyContent:center — both of those
+            have a well-known bug where content wider/taller than its
+            container becomes unreachable by scroll on one side (the
+            "phantom centering space" issue), and neither gives
+            zoomAnchored a precise, known value to fold into its focal-
+            point math the way these explicit, JS-computed offsets do.
+            Each degrades to its own axis's minimum padding once the
+            content genuinely overflows that axis, so it stays
+            scrollable in every direction at any zoom level instead of
+            only some of them — only matters once zoom-in makes overflow
+            a real possibility, which is exactly what's being added
+            here. See centeringOffsetX's own comment for the full
+            reasoning, including the padding-baseline bug that was
+            making content hug the top-left instead of sitting
+            centered. */}
+        <div
+          style={{
+            width: "fit-content",
+            marginLeft: centeringOffsetX(scale),
+            marginTop: centeringOffsetY(scale),
+            marginBottom: VIEWPORT_PADDING_PX,
+          }}
+        >
           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
             <DndContext
               id="memari-planner-dnd"
