@@ -486,11 +486,13 @@ function NativeModule({
       {/* Heading edit — labeled-box only (the one module type with a
           single free-text heading in this app today). Same hover-corner-
           badge language as the delete button above, mirrored to the
-          top-left corner so the two don't collide. Swaps for an input +
-          reset button once clicked, rather than living alongside it —
-          simpler than getting an overlay to line up with wherever the
-          rendered SVG heading text happens to sit exactly, but its
-          height is still computed to match that real header band
+          top-left corner so the two don't collide. Swaps for just an
+          input once clicked (the reset button lives separately, right
+          next to this one — see its own comment below on why) rather
+          than the input living alongside this button — simpler than
+          getting an overlay to line up with wherever the rendered SVG
+          heading text happens to sit exactly, but its height is still
+          computed to match that real header band
           (computeLabeledBoxHeaderHeightPx, editOverlayHeight below) —
           reported live the first time this shipped with a guessed fixed
           height instead: "the header gets taller" (that guess ran
@@ -530,6 +532,52 @@ function NativeModule({
           }}
         >
           ✎
+        </button>
+      )}
+      {/* Full-reset — its own always-hover-visible corner badge now,
+          same size/language as the pencil/delete buttons right next to
+          it, not something that only showed up after first clicking
+          into edit mode (the earlier version lived inside the edit
+          overlay below — reported twice as "still don't see it," most
+          likely because nothing ever prompted a click into edit mode in
+          the first place to reveal it). Fires immediately on click, no
+          need to open the input first. Hidden while isEditingHeading is
+          true, same as the pencil — the edit overlay covers this exact
+          corner from y:0 down once open, so showing both at once would
+          just be a partial-occlusion mess. */}
+      {!locked && slug === "labeled-box" && !isEditingHeading && templateHeading !== null && templateHeading !== "" && (
+        <button
+          type="button"
+          title="Full reset to template default"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onUpdateHeading(instanceId, templateHeading);
+          }}
+          style={{
+            position: "absolute",
+            top: -35,
+            left: 45,
+            width: 70,
+            height: 70,
+            borderRadius: "50%",
+            border: "none",
+            background: "#c7c7c7",
+            color: "#666666",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 30,
+            lineHeight: 1,
+            padding: 0,
+            cursor: "pointer",
+            opacity: isHovered ? 1 : 0,
+            pointerEvents: isHovered ? "auto" : "none",
+            transition: "opacity 0.12s ease",
+            zIndex: 6,
+          }}
+        >
+          ↺
         </button>
       )}
       {!locked && slug === "labeled-box" && isEditingHeading && (
@@ -580,48 +628,6 @@ function NativeModule({
               padding: 0,
             }}
           />
-          {/* preventDefault on mousedown (not the pointerdown/stopPropagation
-              above, which only stops this from also being read as a drag)
-              is what keeps this click from blurring the input first — the
-              standard technique for a toolbar control next to a focused
-              field. Without it, the input's own onBlur fires first (since
-              focus visibly moves the moment mousedown is processed,
-              before this button's click ever fires) and commits whatever
-              was mid-typed a beat before the reset's own commit lands
-              right after — both correctly ordered through serializeCommit
-              so the *final* state is still right either way, just an
-              extra avoidable round trip without this. */}
-          {templateHeading !== null && templateHeading !== "" && (
-            <button
-              type="button"
-              title="Full reset to template default"
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation();
-                setDraftHeading(templateHeading);
-                commitHeading(templateHeading);
-              }}
-              style={{
-                flexShrink: 0,
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                border: "none",
-                background: "#c7c7c7",
-                color: "#666666",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 24,
-                lineHeight: 1,
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              ↺
-            </button>
-          )}
         </div>
       )}
     </div>
