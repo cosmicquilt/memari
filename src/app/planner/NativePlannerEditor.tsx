@@ -96,6 +96,8 @@ import {
   pixelsToGridCell,
   clampGridPlacement,
   resolveModulePlacement,
+  findNearestFreeCell,
+  rectsOverlap,
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
@@ -139,6 +141,30 @@ function clampScale(scale: number): number {
 // server-side (actions.ts) — kept in sync by hand, this file can't
 // import a constant from a "use server" file.
 const MIN_ROW_SPAN = 2;
+
+// Module types offered in the drag-to-add palette (ModulePalette below)
+// — kept in sync by hand with prisma/seed.mts's own moduleTypes entries
+// (defaultColumnSpan/defaultRowSpan specifically), the same "use server"-
+// boundary constraint MIN_ROW_SPAN's own comment explains. Only the
+// three types with a real native-editor renderer; week-title/hourly-
+// grid-core stay auto-placed/locked singletons per page, not something
+// a user adds freely. The live drag preview below sizes itself from
+// these raw defaults, not the day-count-adjusted columnSpan
+// addPaletteModuleAt computes server-side for todo-checklist/habit-
+// tracker (matching whichever page's hourly grid it lands on) — a
+// reasonable approximation for a still-moving preview; the module
+// snaps to its true, server-computed size the instant the drop commits.
+const PALETTE_MODULE_TYPES: Array<{
+  slug: string;
+  label: string;
+  defaultColumnSpan: number;
+  defaultRowSpan: number;
+}> = [
+  { slug: "labeled-box", label: "Text Box", defaultColumnSpan: 1, defaultRowSpan: 2 },
+  { slug: "todo-checklist", label: "To-Do Checklist", defaultColumnSpan: 3, defaultRowSpan: 11 },
+  { slug: "habit-tracker", label: "Habit Tracker", defaultColumnSpan: 4, defaultRowSpan: 11 },
+];
+const PALETTE_ID_PREFIX = "palette:";
 
 // The stack-bottom cascade's own math (see StackBottom's type comment
 // and resizeStackFromBottom's own comment for the full reasoning) —
@@ -223,6 +249,23 @@ type StackBottom = {
   maxBottomBound: number;
 };
 
+// Live state for a palette-item drag-to-add (see PALETTE_MODULE_TYPES'
+// own comment and the handleDragMove branch that computes this) — the
+// grid cell it would land in *right now* if dropped, recomputed on
+// every pointer move the same way a reposition's own live reflow
+// preview is. `overlapping` true means findNearestFreeCell couldn't
+// find genuinely free room for it (the page is full for this span) —
+// the preview box still renders, just styled to read as "won't work
+// here," and handleDragEnd refuses to commit it.
+type PaletteDragPreview = {
+  pageId: string;
+  columnStart: number;
+  rowStart: number;
+  columnSpan: number;
+  rowSpan: number;
+  overlapping: boolean;
+};
+
 function NativeModule({
   instanceId,
   locked,
@@ -235,6 +278,7 @@ function NativeModule({
   isResizing,
   frozenSize,
   suppressTransition,
+  justAdded,
   scale,
   isFirefox,
   onDelete,
@@ -278,6 +322,16 @@ function NativeModule({
   // state below for why a transition has to be suppressed for that one
   // frame specifically, not just while actively dragging.
   suppressTransition: boolean;
+  // True for the couple of frames right after this instance was created
+  // (either the "+" button or a palette drag-drop — see the shared
+  // handleAddModule's own comment) — drives a simple opacity fade-in on
+  // mount (see the local `mounted` state below). Deliberately just
+  // opacity, nothing fancier (no scale/translate) — a plain fade-in
+  // doesn't have the "grid jump plus a transform both changing at once"
+  // compounding problem the settle-FLIP mechanism exists to solve, so
+  // it doesn't need that machinery at all, just a value that starts at
+  // 0 and is committed to 1 in a *later* render than the mount itself.
+  justAdded: boolean;
   // Current on-screen zoom factor — passed all the way down to
   // PolotnoJsonRenderer so it can keep hairline borders from vanishing
   // under Firefox's transform-scale border bug. See that component's
@@ -334,6 +388,20 @@ function NativeModule({
   // PointerSensor's sole activator) rather than replacing it, so its own
   // activation-tracking still runs unchanged.
   const [isPressed, setIsPressed] = useState(false);
+  // Simple two-frame mount fade-in (see justAdded's own comment) —
+  // starts at opacity 0 with no transition (nothing to visibly animate
+  // from yet), then one rAF later flips to 1 with the transition on,
+  // giving the browser an actual painted "before" frame to ease away
+  // from. Once fadedIn flips true it stays true regardless of what
+  // justAdded does afterward (the parent clears that prop a couple of
+  // frames after creation) — this only ever needs to fire once, right
+  // after mount.
+  const [fadedIn, setFadedIn] = useState(!justAdded);
+  useEffect(() => {
+    if (!justAdded) return;
+    const raf = requestAnimationFrame(() => setFadedIn(true));
+    return () => cancelAnimationFrame(raf);
+  }, [justAdded]);
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       setIsPressed(true);
@@ -430,7 +498,15 @@ function NativeModule({
         // (80-150ms, what this was previously): shorter reads as
         // twitchy for a distance-covering slide, longer starts feeling
         // sluggish.
-        transition: isDragged || suppressTransition ? undefined : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+        transition:
+          isDragged || suppressTransition
+            ? undefined
+            : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
+        // Mount fade-in for a freshly-added module (see fadedIn's own
+        // comment) — 1 for every pre-existing module (this condition is
+        // just a no-op true/true comparison for them), only ever
+        // genuinely 0 -> 1 for one just after creation.
+        opacity: fadedIn ? 1 : 0,
         // Lifted, not dimmed, while actively being dragged — a shadow +
         // being drawn above its neighbors is what makes it read as "this
         // is the thing currently moving," matching the classic
@@ -727,6 +803,7 @@ function NativePage({
   activeId,
   visualOffsets,
   suppressTransitionIds,
+  justAddedIds,
   resizePairs,
   stackBottoms,
   resizingIds,
@@ -744,6 +821,7 @@ function NativePage({
   hoveredInstanceId,
   onHoverStart,
   onHoverEnd,
+  paletteDragPreview,
   scale,
   isFirefox,
 }: {
@@ -762,6 +840,11 @@ function NativePage({
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
   suppressTransitionIds: ReadonlySet<string> | null;
+  // See NativeModule's own justAdded comment — a module in this set
+  // gets its mount fade-in; the main component clears each id out a
+  // couple of frames after adding it, so this only ever briefly
+  // contains whatever's newest.
+  justAddedIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
   stackBottoms: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
@@ -775,7 +858,7 @@ function NativePage({
   onStackResizeStart: (stackBottom: StackBottom) => void;
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
-  onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
+  onAddModule: (pageId: string, moduleTypeSlug: string, columnStart: number, rowStart: number) => void;
   onDeleteModule: (instanceId: string) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
   onUpdateHabits: (instanceId: string, habits: string[]) => void;
@@ -784,6 +867,10 @@ function NativePage({
   hoveredInstanceId: string | null;
   onHoverStart: (instanceId: string) => void;
   onHoverEnd: (instanceId: string) => void;
+  // Non-null while a palette item is being dragged over *this* page
+  // specifically (see PaletteDragPreview's own type comment above) —
+  // drives the live, grid-snapped preview box below, PaletteDropPreview.
+  paletteDragPreview: PaletteDragPreview | null;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -825,6 +912,7 @@ function NativePage({
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
+            justAdded={justAddedIds?.has(id) ?? false}
             scale={scale}
             isFirefox={isFirefox}
             onDelete={onDeleteModule}
@@ -895,9 +983,17 @@ function NativePage({
               columnSpan={sb.columnSpan}
               rowStart={sb.stackBottomRowEnd}
               rowSpan={sb.maxBottomBound - sb.stackBottomRowEnd}
-              onClick={() => onAddModule(page.pageId, sb.columnStart, sb.stackBottomRowEnd)}
+              onClick={() => onAddModule(page.pageId, "labeled-box", sb.columnStart, sb.stackBottomRowEnd)}
             />
           ))}
+      {/* Live palette-drag preview — only rendered on whichever page the
+          drag is currently over (see handleDragMove's own comment on how
+          that's determined). Grid-snapped, recomputed on every pointer
+          move, same "show it before you commit to it" idea as
+          resizePairs/stackBottoms' own live previews above. */}
+      {paletteDragPreview && paletteDragPreview.pageId === page.pageId && (
+        <PaletteDropPreview pageGrid={page.pageGrid} preview={paletteDragPreview} />
+      )}
     </div>
   );
 }
@@ -1267,6 +1363,128 @@ function AddModuleButton({
     >
       +
     </button>
+  );
+}
+
+// The live, grid-snapped landing box for a palette drag (see
+// PaletteDragPreview's own comment) — same dashed-box visual language
+// as AddModuleButton, in blue when it's a genuinely free landing spot,
+// tinted red and non-interactive when overlapping is true (the page has
+// no free room for this span; dropping here won't commit anything —
+// see handleDragEnd's own check).
+function PaletteDropPreview({ pageGrid, preview }: { pageGrid: PageGrid; preview: PaletteDragPreview }) {
+  const rect = useMemo(
+    () =>
+      gridCellToPixels(pageGrid, {
+        columnStart: preview.columnStart,
+        rowStart: preview.rowStart,
+        columnSpan: preview.columnSpan,
+        rowSpan: preview.rowSpan,
+      }),
+    [pageGrid, preview.columnStart, preview.rowStart, preview.columnSpan, preview.rowSpan]
+  );
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        border: preview.overlapping ? "2px dashed rgba(220, 90, 90, 0.7)" : "2px dashed rgba(120, 130, 255, 0.7)",
+        background: preview.overlapping ? "rgba(220, 90, 90, 0.08)" : "rgba(120, 130, 255, 0.1)",
+        borderRadius: 8,
+        pointerEvents: "none",
+        zIndex: 8,
+      }}
+    />
+  );
+}
+
+// One draggable card in ModulePalette below. Its own transform tracks
+// the raw pointer delta directly, *not* divided by scale — unlike a
+// module dragged inside the scaled page subtree (see the file's own
+// header comment on "Why this doesn't use <DragOverlay>" for why that
+// one needs the division), this card lives in ordinary, un-scaled UI
+// territory outside that transform, so the raw screen-pixel delta
+// already is the right offset for it. Reuses the file's established
+// "just translate the dragged element itself in place" technique
+// rather than dnd-kit's own DragOverlay, for the same documented reason
+// that technique exists at all.
+function PaletteCard({
+  slug,
+  label,
+  isDragging,
+  dragOffset,
+}: {
+  slug: string;
+  label: string;
+  isDragging: boolean;
+  dragOffset: { x: number; y: number };
+}) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: `${PALETTE_ID_PREFIX}${slug}` });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        position: "relative",
+        padding: "10px 12px",
+        borderRadius: 6,
+        border: "1px solid #444",
+        background: isDragging ? "#2a2a2a" : "#1f1f1f",
+        color: "#ddd",
+        fontSize: 12,
+        cursor: isDragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+        transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
+        boxShadow: isDragging ? "0 12px 28px rgba(0,0,0,0.35)" : undefined,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+// Drag-to-add sidebar — requested directly: "create a pallette on the
+// side to drag and add new module." A sibling of the scaled page
+// content (see the main render's own comment on why), not a descendant
+// of it, specifically so its position:fixed behaves the way
+// ZoomControls' own identical positioning already does — relative to
+// the real viewport, not hijacked by the scale transform's own
+// containing-block behavior.
+function ModulePalette({ activeId, activeDelta }: { activeId: string | null; activeDelta: { x: number; y: number } }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 60,
+        right: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: 10,
+        background: "#141414",
+        border: "1px solid #333",
+        borderRadius: 8,
+        zIndex: 20,
+        width: 160,
+      }}
+    >
+      <strong style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>Add module</strong>
+      {PALETTE_MODULE_TYPES.map((m) => (
+        <PaletteCard
+          key={m.slug}
+          slug={m.slug}
+          label={m.label}
+          isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+          dragOffset={activeDelta}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -1988,23 +2206,111 @@ export function NativePlannerEditor({
     phase: "start" | "settle";
   } | null>(null);
 
+  // Live preview state for a palette-item drag (see PaletteDragPreview's
+  // own type comment) — null whenever nothing's being dragged from the
+  // palette, or the drag isn't currently over any page.
+  const [paletteDrag, setPaletteDrag] = useState<PaletteDragPreview | null>(null);
+  // Ids of whatever module(s) were created most recently — drives each
+  // one's own mount fade-in (see NativeModule's justAdded comment).
+  // Cleared a couple of frames after being set; never meant to hold more
+  // than what was *just* added.
+  const [justAddedIds, setJustAddedIds] = useState<Set<string>>(new Set());
+
   // A small activation distance, not an instant-trigger sensor — without
   // it, a plain click (no intended drag at all) can register as a
   // zero-distance "drag" and briefly flicker the dragging state.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  // Converts an absolute screen point (a palette card's own live center,
+  // via event.active.rect.current.translated — see handleDragMove below)
+  // into "which page, and which of its grid cells" — the same screen-px
+  // -> page-space conversion zoomAnchored's own contentX/contentY already
+  // does (container.scrollLeft/Top, centeringOffsetX/Y, divide by scale),
+  // just reused here for a drag position instead of a wheel-zoom anchor.
+  // Pages sit in one horizontal row (see the pages.map wrapper below), so
+  // "which page" is just contentX divided into PRINT_WIDTH_PX-wide
+  // (plus gap) slots — returns null once that lands outside every page's
+  // own bounds (the gap between pages, or off the spread entirely), not
+  // just clamped into the nearest one — a palette drag that isn't over
+  // any page shouldn't show a preview anywhere.
+  const screenPointToPageCell = useCallback(
+    (clientX: number, clientY: number): { pageId: string; columnStart: number; rowStart: number } | null => {
+      const container = scrollContainerRef.current;
+      if (!container) return null;
+      const containerRect = container.getBoundingClientRect();
+      const contentX = (container.scrollLeft + (clientX - containerRect.left) - centeringOffsetX(scale)) / scale;
+      const contentY = (container.scrollTop + (clientY - containerRect.top) - centeringOffsetY(scale)) / scale;
+      if (contentX < 0 || contentY < 0 || contentY > PRINT_HEIGHT_PX) return null;
+      const spreadUnit = PRINT_WIDTH_PX + PAGE_GAP_PX;
+      const pageIndex = Math.floor(contentX / spreadUnit);
+      if (pageIndex < 0 || pageIndex >= pages.length) return null;
+      const localX = contentX - pageIndex * spreadUnit;
+      if (localX > PRINT_WIDTH_PX) return null; // in the gap between pages
+      const page = pages[pageIndex];
+      const pageGrid = pageGridByPageId[page.pageId];
+      if (!pageGrid) return null;
+      const cell = pixelsToGridCell(pageGrid, { x: localX, y: contentY });
+      return { pageId: page.pageId, columnStart: cell.columnStart, rowStart: cell.rowStart };
+    },
+    [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
+  );
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setActiveDelta(ZERO_OFFSET);
+    // Unconditional, not just for a palette drag specifically — cheap
+    // either way, and keeps this in the same "always reset per-drag
+    // state on drag-start" shape as settling right below rather than
+    // leaving a stale preview around on the off chance a previous drag
+    // ended in some way that skipped clearing it.
+    setPaletteDrag(null);
     // Starting a new drag mid-settle (rare — would need to happen within
     // the ~150ms settle window) just cancels the old settle in place
     // rather than trying to run two independently-timed settles at once.
     setSettling(null);
   }, []);
 
-  const handleDragMove = useCallback((event: DragMoveEvent) => {
-    setActiveDelta({ x: event.delta.x, y: event.delta.y });
-  }, []);
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      setActiveDelta({ x: event.delta.x, y: event.delta.y });
+      const id = String(event.active.id);
+      if (!id.startsWith(PALETTE_ID_PREFIX)) return;
+      const slug = id.slice(PALETTE_ID_PREFIX.length);
+      const meta = PALETTE_MODULE_TYPES.find((m) => m.slug === slug);
+      const rect = event.active.rect.current.translated;
+      if (!meta || !rect) {
+        setPaletteDrag(null);
+        return;
+      }
+      const target = screenPointToPageCell(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      if (!target) {
+        setPaletteDrag(null);
+        return;
+      }
+      const pageGrid = pageGridByPageId[target.pageId];
+      if (!pageGrid) return;
+      const candidate: GridRect = {
+        columnStart: target.columnStart,
+        rowStart: target.rowStart,
+        columnSpan: meta.defaultColumnSpan,
+        rowSpan: meta.defaultRowSpan,
+      };
+      const occupied: GridRect[] = (instanceIdsByPageId[target.pageId] ?? [])
+        .map((instId) => placements[instId])
+        .filter((p): p is Placement => !!p);
+      const resolved = findNearestFreeCell(pageGrid, candidate, occupied);
+      const finalRect: GridRect = { ...resolved, columnSpan: meta.defaultColumnSpan, rowSpan: meta.defaultRowSpan };
+      setPaletteDrag({
+        pageId: target.pageId,
+        columnStart: resolved.columnStart,
+        rowStart: resolved.rowStart,
+        columnSpan: meta.defaultColumnSpan,
+        rowSpan: meta.defaultRowSpan,
+        overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
+      });
+    },
+    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements]
+  );
 
   // Shared by the live preview (below, every pointer move) and the real
   // commit (handleDragEnd) — both need to turn "the dragged item moved
@@ -2135,11 +2441,97 @@ export function NativePlannerEditor({
   // running.
   const gestureBlockedByPendingCommit = useCallback(() => pendingCommitCountRef.current > 0, []);
 
+  // Adds a fresh module of the given type at a specific cell — shared by
+  // the "+" button (always labeled-box, see AddModuleButton's own
+  // comment on why that one never needs a type choice) and a palette
+  // drag-drop (handleDragEnd below, any of PALETTE_MODULE_TYPES). Reuses
+  // addPaletteModuleAt unchanged either way. columnStart/rowStart are
+  // trusted as-given rather than re-read from the server's own response
+  // — for the "+" button this always targets a gap the file itself just
+  // computed as genuinely empty (stackBottomsByPageId), and for a
+  // palette drop it's whatever paletteDrag's own live preview (mirroring
+  // addPaletteModuleAt's own findNearestFreeCell) already resolved to —
+  // either way addPaletteModuleAt's own search can only land on exactly
+  // that same cell, never relocate.
+  const handleAddModule = useCallback(
+    async (pageId: string, moduleTypeSlug: string, columnStart: number, rowStart: number) => {
+      // See gestureBlockedByPendingCommit's own comment — the target
+      // (columnStart/rowStart, captured at click/drop time) could go
+      // stale if a still-pending commit is about to move whatever made
+      // this cell look free out from under it.
+      if (gestureBlockedByPendingCommit()) return;
+      const pageGrid = pageGridByPageId[pageId];
+      if (!pageGrid) return;
+      try {
+        // See serializeCommit's own comment — guards this against the
+        // same race too: adding right after a reposition/resize
+        // shouldn't read a stale "what's occupied" view server-side
+        // either, even though this specific call's own target is always
+        // a gap this file already knows is empty (see this function's
+        // own comment).
+        const result = await serializeCommit(() => addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart));
+        const origin = gridCellToPixels(pageGrid, {
+          columnStart,
+          rowStart,
+          columnSpan: result.columnSpan,
+          rowSpan: result.rowSpan,
+        });
+        setPlacements((prev) => ({
+          ...prev,
+          [result.instanceId]: { columnStart, rowStart, columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+        }));
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          const propValues = (result.propValues as Record<string, unknown>) ?? {};
+          next.set(result.instanceId, {
+            pageId,
+            locked: false,
+            elements: [result.element],
+            originX: origin.x,
+            originY: origin.y,
+            slug: moduleTypeSlug,
+            propValues,
+          });
+          return next;
+        });
+        // Mount fade-in (see NativeModule's own justAdded comment) —
+        // cleared a couple of frames later, the same "needs an actual
+        // paint of the *before* state first" reasoning as every other
+        // two-phase animation in this file, just via setTimeout instead
+        // of the settle-FLIP's own rAF chain since there's no specific
+        // frame boundary this one needs to land on, only "soon, but not
+        // this exact same tick."
+        setJustAddedIds((prev) => new Set(prev).add(result.instanceId));
+        setTimeout(() => {
+          setJustAddedIds((prev) => {
+            if (!prev.has(result.instanceId)) return prev;
+            const next = new Set(prev);
+            next.delete(result.instanceId);
+            return next;
+          });
+        }, 300);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
+  );
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      const id = String(event.active.id);
+      if (id.startsWith(PALETTE_ID_PREFIX)) {
+        setActiveId(null);
+        setActiveDelta(ZERO_OFFSET);
+        const drag = paletteDrag;
+        setPaletteDrag(null);
+        if (!drag || drag.overlapping) return;
+        handleAddModule(drag.pageId, id.slice(PALETTE_ID_PREFIX.length), drag.columnStart, drag.rowStart);
+        return;
+      }
       setActiveId(null);
       setActiveDelta(ZERO_OFFSET);
-      const instanceId = String(event.active.id);
+      const instanceId = id;
       if (event.delta.x === 0 && event.delta.y === 0) return;
 
       const result = resolveDrag(instanceId, event.delta.x, event.delta.y);
@@ -2197,7 +2589,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       });
     },
-    [placements, resolveDrag, scale, serializeCommit]
+    [placements, resolveDrag, scale, serializeCommit, paletteDrag, handleAddModule]
   );
 
   // Advances the settle FLIP from "start" (drawn at the residual offset,
@@ -2490,64 +2882,6 @@ export function NativePlannerEditor({
       handleStackResizeAdjacent(stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
     [handleStackResizeAdjacent]
-  );
-
-  // Adds a fresh, blank labeled-box into whatever room a stack has freed
-  // up (see AddModuleButton's own comment on why labeled-box specifically
-  // — this app's sidebar content is always that one type, so there's a
-  // single unambiguous answer with no module-type picker UI to build).
-  // Reuses addPaletteModuleAt unchanged. columnStart/rowStart are trusted
-  // as-given rather than re-read from the server's own response — unlike
-  // a general palette drop, this always targets a gap this file itself
-  // just computed as genuinely empty (stackBottomsByPageId), so
-  // addPaletteModuleAt's own findNearestFreeCell search can only ever
-  // resolve to exactly that same cell, never relocate.
-  const handleAddModule = useCallback(
-    async (pageId: string, columnStart: number, rowStart: number) => {
-      // See gestureBlockedByPendingCommit's own comment — the clicked
-      // target (columnStart/rowStart, captured from the button's own
-      // props at click time) could go stale if a still-pending commit is
-      // about to move the stack's own bottom out from under it.
-      if (gestureBlockedByPendingCommit()) return;
-      const pageGrid = pageGridByPageId[pageId];
-      if (!pageGrid) return;
-      try {
-        // See serializeCommit's own comment — guards this against the
-        // same race too: adding right after a reposition/resize
-        // shouldn't read a stale "what's occupied" view server-side
-        // either, even though this specific call's own target is always
-        // a gap this file already knows is empty (see this function's
-        // own comment).
-        const result = await serializeCommit(() => addPaletteModuleAt(pageId, "labeled-box", columnStart, rowStart));
-        const origin = gridCellToPixels(pageGrid, {
-          columnStart,
-          rowStart,
-          columnSpan: result.columnSpan,
-          rowSpan: result.rowSpan,
-        });
-        setPlacements((prev) => ({
-          ...prev,
-          [result.instanceId]: { columnStart, rowStart, columnSpan: result.columnSpan, rowSpan: result.rowSpan },
-        }));
-        setModuleLookup((prev) => {
-          const next = new Map(prev);
-          const propValues = (result.propValues as Record<string, unknown>) ?? {};
-          next.set(result.instanceId, {
-            pageId,
-            locked: false,
-            elements: [result.element],
-            originX: origin.x,
-            originY: origin.y,
-            slug: "labeled-box",
-            propValues,
-          });
-          return next;
-        });
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
   // Hover-delete (NativeModule's own × button). Removes the module and
@@ -2855,14 +3189,25 @@ export function NativePlannerEditor({
             marginBottom: VIEWPORT_PADDING_PX,
           }}
         >
-          <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-            <DndContext
-              id="memari-planner-dnd"
-              sensors={sensors}
-              onDragStart={handleDragStart}
-              onDragMove={handleDragMove}
-              onDragEnd={handleDragEnd}
-            >
+          {/* DndContext wraps this whole marginLeft/marginTop div *and*
+              ModulePalette below, as siblings — not nested one inside
+              the other. ModulePalette deliberately sits *outside* the
+              scale(...) transform right below (see its own comment on
+              why: position:fixed needs to stay relative to the real
+              viewport, the same reasoning ZoomControls' own identical
+              positioning already established), but useDraggable still
+              needs it inside the same DndContext's React tree to
+              register at all — those are two independent concerns (DOM/
+              CSS layout vs. React context), so it's fine for one to
+              nest one way and the other a different way. */}
+          <DndContext
+            id="memari-planner-dnd"
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+          >
+            <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
                 {pages.map((page) => (
                   <NativePage
@@ -2874,6 +3219,7 @@ export function NativePlannerEditor({
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
+                    justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={resizingIds}
@@ -2891,13 +3237,15 @@ export function NativePlannerEditor({
                     hoveredInstanceId={hoveredInstanceId}
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
+                    paletteDragPreview={paletteDrag}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
                 ))}
               </div>
-            </DndContext>
-          </div>
+            </div>
+            <ModulePalette activeId={activeId} activeDelta={activeDelta} />
+          </DndContext>
         </div>
         <ZoomControls
           scale={scale}
