@@ -244,6 +244,8 @@ function NativeModule({
   slug,
   heading,
   onUpdateHeading,
+  habits,
+  onUpdateHabits,
   widthPx,
 }: {
   instanceId: string;
@@ -305,6 +307,15 @@ function NativeModule({
   // (NativePage) — null for any non-labeled-box module.
   heading: string | null;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
+  // Current habit-name list, already read out of propValues by the
+  // caller (NativePage) — null for any non-habit-tracker module. The
+  // only other editable content in this app today besides a labeled-
+  // box's heading (see habitTracker.ts's own comment: day-letter
+  // columns are fixed, habit names are the one free-text piece —
+  // todo-checklist has nothing analogous at all, it's a blank
+  // physical-pen checklist by design, not tracked as data).
+  habits: string[] | null;
+  onUpdateHabits: (instanceId: string, habits: string[]) => void;
   // This box's own current rendered width, in page-space px — lets the
   // edit-mode overlay below size its height to match the box's *actual*
   // header band (computeLabeledBoxHeaderHeightPx) instead of a guessed
@@ -347,6 +358,32 @@ function NativeModule({
       if (value !== heading) onUpdateHeading(instanceId, value);
     },
     [heading, instanceId, onUpdateHeading]
+  );
+  // Inline habit-name-list editing (habit-tracker only). Separate local
+  // state from the heading editor above, not a generalization of it —
+  // the interaction shapes genuinely differ (a multi-line list vs a
+  // single centered line, no "reset to template" concept for a list
+  // that starts empty by default) enough that forcing them through one
+  // shared branch would just be a pile of slug-conditionals inside
+  // otherwise-identical code.
+  const [isEditingHabits, setIsEditingHabits] = useState(false);
+  const [draftHabitsText, setDraftHabitsText] = useState((habits ?? []).join("\n"));
+  const commitHabits = useCallback(
+    (value: string) => {
+      setIsEditingHabits(false);
+      // Cleaned only at commit time, not on every keystroke — matches
+      // the old Polotno-editor PropertiesPanel's own save-time cleanup
+      // (see PropertiesPanel.tsx), so a blank line mid-list doesn't get
+      // yanked out from under the cursor while still typing.
+      const cleaned = value
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const current = habits ?? [];
+      const changed = cleaned.length !== current.length || cleaned.some((h, i) => h !== current[i]);
+      if (changed) onUpdateHabits(instanceId, cleaned);
+    },
+    [habits, instanceId, onUpdateHabits]
   );
   // Matches the box's own real header band (see this constant's own
   // comment on the edit-mode overlay below for why that matters) —
@@ -588,6 +625,96 @@ function NativeModule({
           />
         </div>
       )}
+      {/* Habit-name-list edit — habit-tracker only. Same hover-corner-
+          badge language and top-left position as the heading-edit pencil
+          above (never a conflict — a module is one slug or the other,
+          never both). Unlike the heading editor, this replaces the
+          *whole* module while open, not just a header band: habit names
+          are one per row, spread down the full height of the grid, so
+          there's no single small region that corresponds to "the
+          editable content" the way a labeled-box's header is. */}
+      {!locked && slug === "habit-tracker" && !isEditingHabits && (
+        <button
+          type="button"
+          title="Edit habit names"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setDraftHabitsText((habits ?? []).join("\n"));
+            setIsEditingHabits(true);
+          }}
+          style={{
+            position: "absolute",
+            top: -35,
+            left: -35,
+            width: 70,
+            height: 70,
+            borderRadius: "50%",
+            border: "none",
+            background: "#c7c7c7",
+            color: "#666666",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 30,
+            lineHeight: 1,
+            padding: 0,
+            cursor: "pointer",
+            opacity: isHovered ? 1 : 0,
+            pointerEvents: isHovered ? "auto" : "none",
+            transition: "opacity 0.12s ease",
+            zIndex: 6,
+          }}
+        >
+          ✎
+        </button>
+      )}
+      {!locked && slug === "habit-tracker" && isEditingHabits && (
+        <div
+          onPointerDown={(event) => event.stopPropagation()}
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "#ffffff",
+            boxSizing: "border-box",
+            outline: "2px solid #4a90d9",
+            outlineOffset: -2,
+            zIndex: 7,
+          }}
+        >
+          <textarea
+            autoFocus
+            value={draftHabitsText}
+            placeholder="One habit per line"
+            onChange={(event) => setDraftHabitsText(event.target.value)}
+            onFocus={(event) => event.target.select()}
+            onKeyDown={(event) => {
+              // Plain Enter inserts a newline (a real list item), same
+              // as any multi-line textarea — only Escape short-circuits
+              // out of editing here, unlike the single-line heading
+              // input where Enter itself commits.
+              if (event.key === "Escape") {
+                setDraftHabitsText((habits ?? []).join("\n"));
+                setIsEditingHabits(false);
+              }
+            }}
+            onBlur={() => commitHabits(draftHabitsText)}
+            style={{
+              width: "100%",
+              height: "100%",
+              boxSizing: "border-box",
+              resize: "none",
+              padding: 10,
+              fontSize: 16,
+              lineHeight: 1.5,
+              fontFamily: "Georgia, 'PT Serif', serif",
+              border: "none",
+              outline: "none",
+              background: "transparent",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -613,6 +740,7 @@ function NativePage({
   onAddModule,
   onDeleteModule,
   onUpdateHeading,
+  onUpdateHabits,
   hoveredInstanceId,
   onHoverStart,
   onHoverEnd,
@@ -650,6 +778,7 @@ function NativePage({
   onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
   onDeleteModule: (instanceId: string) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
+  onUpdateHabits: (instanceId: string, habits: string[]) => void;
   // See NativeModule's own isHovered comment — lifted to the main
   // component, threaded down through here.
   hoveredInstanceId: string | null;
@@ -705,6 +834,8 @@ function NativePage({
             slug={info.slug}
             heading={info.slug === "labeled-box" ? ((info.propValues.heading as string | undefined) ?? "") : null}
             onUpdateHeading={onUpdateHeading}
+            habits={info.slug === "habit-tracker" ? ((info.propValues.habits as string[] | undefined) ?? []) : null}
+            onUpdateHabits={onUpdateHabits}
             widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
           />
         );
@@ -2510,15 +2641,16 @@ export function NativePlannerEditor({
     ]
   );
 
-  // Commits a labeled-box's heading — both the pencil-edit path and the
-  // reset-to-original button (NativeModule) call this, just with a
-  // different target string. Sends the module's FULL current propValues
-  // with only `heading` swapped, not `{heading}` alone —
+  // Shared by both editable-content types (a labeled-box's heading, a
+  // habit-tracker's habit-name list) — same underlying operation either
+  // way: patch one or more propValues keys, swap in the freshly-rendered
+  // element, resync origin. Sends the module's FULL current propValues
+  // with just `patch`'s keys overridden, not `patch` alone —
   // updateModuleConfig replaces the whole config server-side rather than
   // merging (see its own comment), so leaving anything out would reset
-  // it to that field's schema default; ruled being silently flipped back
-  // to false the first time someone edited a heading would be exactly
-  // that bug.
+  // every other field to its schema default; `ruled` silently flipping
+  // back to false the first time someone edited a heading was exactly
+  // that bug, before this sent the full object.
   //
   // Recomputes origin fresh from the module's own CURRENT placement, the
   // same way handleAddModule and the (fixed) top-module branch of
@@ -2530,15 +2662,15 @@ export function NativePlannerEditor({
   // resize-after-reposition issue — see that fix's own commit for the
   // full diagnosis. This path regenerates content the same way a resize
   // does, so it needs the same guard.
-  const handleUpdateHeading = useCallback(
-    async (instanceId: string, newHeading: string) => {
+  const commitModulePropValues = useCallback(
+    async (instanceId: string, patch: Record<string, unknown>) => {
       if (gestureBlockedByPendingCommit()) return;
       const info = moduleLookup.get(instanceId);
       const placement = placements[instanceId];
       const pageGrid = info ? pageGridByPageId[info.pageId] : undefined;
       if (!info || !placement || !pageGrid) return;
       try {
-        const nextPropValues = { ...info.propValues, heading: newHeading };
+        const nextPropValues = { ...info.propValues, ...patch };
         const result = await serializeCommit(() => updateModuleConfig(instanceId, nextPropValues));
         const origin = gridCellToPixels(pageGrid, placement);
         setModuleLookup((prev) => {
@@ -2560,6 +2692,14 @@ export function NativePlannerEditor({
       }
     },
     [moduleLookup, placements, pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
+  );
+  const handleUpdateHeading = useCallback(
+    (instanceId: string, newHeading: string) => commitModulePropValues(instanceId, { heading: newHeading }),
+    [commitModulePropValues]
+  );
+  const handleUpdateHabits = useCallback(
+    (instanceId: string, habits: string[]) => commitModulePropValues(instanceId, { habits }),
+    [commitModulePropValues]
   );
 
   // Debug-only "put the sidebar back exactly like it started" — see
@@ -2747,6 +2887,7 @@ export function NativePlannerEditor({
                     onAddModule={handleAddModule}
                     onDeleteModule={handleDeleteModule}
                     onUpdateHeading={handleUpdateHeading}
+                    onUpdateHabits={handleUpdateHabits}
                     hoveredInstanceId={hoveredInstanceId}
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
