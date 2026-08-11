@@ -320,6 +320,44 @@ const page: PageGrid = {
     );
   }
 
+  // An oversized dragged item can be clamped by its own span before its
+  // center ever reaches a sibling positioned at the far end of the
+  // stack — the center-crossing rule above can't fire, and falling back
+  // to candidate.rowStart doesn't help either, since a large enough
+  // item's own on-grid rowStart range is capped well short of the far
+  // sibling's rowStart too. Caught live: a real 17-row "Notes" box
+  // sitting between a 4-row "Gratitude" and a 7-row "Reminders", dragged
+  // toward Reminders as far down as the grid allows — every drop
+  // computed back to Notes' original slot, reading as "dragging it to
+  // the bottom doesn't work," no matter how far down it was actually
+  // dragged. Reproduced with this file's fixtures: a 17-row "bigNotes"
+  // between gratitude(rowSpan 4, rows 2-6) and a 7-row "reminders" at
+  // the very bottom (rows 23-30) — dragged to its own maximum clamp
+  // (row 13, since 30-17=13) should still swap it past reminders.
+  {
+    const smallGratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 4, locked: false };
+    const smallReminders = { id: "reminders", columnStart: 0, rowStart: 23, columnSpan: 1, rowSpan: 7, locked: false };
+    const r = resolveModulePlacement(
+      page,
+      { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 17 },
+      [weekTitle, smallGratitude, smallReminders],
+      6
+    );
+    assert(r.placement.rowStart === 13, "an oversized item dragged to its own maximum clamp lands there, all the way past its smaller sibling");
+    assert(
+      r.reflow.some((m) => m.id === "reminders" && m.rowStart === 6),
+      "reminders yields and moves up to right after gratitude instead of the drag being a no-op"
+    );
+    assertValidStack(
+      "swap-oversized-item-clamped-before-crossing-center",
+      r.placement,
+      17,
+      r.reflow,
+      { gratitude: 4, reminders: 7 },
+      { gratitude: 2, reminders: 23 }
+    );
+  }
+
   // Dropping directly on a locked block (not a same-span sibling stack)
   // relocates instead of reflowing.
   {

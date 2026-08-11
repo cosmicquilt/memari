@@ -333,7 +333,30 @@ export function resolveModulePlacement(
       const straddled = stackSiblings.find(
         (s) => candidateCenter >= s.rowStart && candidateCenter < s.rowStart + s.rowSpan
       );
-      const sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
+      let sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
+
+      // The center-crossing rule above breaks down for a dragged item
+      // large enough that clampGridPlacement caps its candidate before
+      // its center can ever reach a sibling positioned at the far end of
+      // the stack — confirmed live dragging a 17-row "Notes" box toward
+      // a 7-row "Reminders" box past it: even fully bottomed-out,
+      // Notes' own size puts its center at row 21.5, short of
+      // Reminders' own midpoint at 26.5, so `straddled` never matches
+      // and sortRowStart (falling back to candidate.rowStart, itself
+      // capped well short of Reminders for the same size reason) always
+      // sorts before Reminders — the reorder below repacks everything
+      // right back to Notes' original slot no matter how far down it's
+      // dragged, reading as "the drag doesn't work." No position derived
+      // from the dragged item's own clamped geometry (center, top edge,
+      // or raw rowStart) can fix this in general — a large enough item's
+      // own span mathematically prevents it from ever numerically
+      // sorting past a sibling nearer the boundary. But being clamped
+      // at the stack's own top/bottom bound is itself an unambiguous
+      // "put it all the way at that end" signal, independent of size —
+      // sort it past (or before) every sibling outright instead of
+      // relying on where it itself is able to reach.
+      if (candidate.rowStart + candidate.rowSpan >= bottomBound) sortRowStart = Infinity;
+      else if (candidate.rowStart <= topBound) sortRowStart = -Infinity;
 
       const ordered = [
         ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
