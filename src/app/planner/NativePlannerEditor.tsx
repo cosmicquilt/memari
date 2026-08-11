@@ -471,14 +471,20 @@ function NativePage({
       {/* Whatever a stack has freed up by shrinking (see StackBottom's
           maxBottomBound vs its own current stackBottomRowEnd) is exactly
           where a new module can go — one button per stack that has any
-          such room. Hidden during any drag/resize for the same reason
-          the handles above are, plus the gap itself is live during an
-          active resize (stackBottoms is built off displayPlacements),
-          so showing this mid-drag would mean it's also resizing under
-          the cursor at the same time as whatever's actually being
+          such room. Deliberately still shown while a module is being
+          reposition-dragged (unlike the handles above) — its own
+          position doesn't move during that (stackBottomsByPageId isn't
+          affected by a reposition's visualOffsets, which is a pure CSS
+          transform, not a placements change), so there's nothing stale
+          about keeping it visible, and it doubles as a visual "here's
+          where the reserved zone starts" reference while dragging
+          toward it (see resolveDrag's own virtual-lock comment). Still
+          hidden during an active resize specifically, since the gap
+          itself *is* live then (stackBottoms is built off
+          displayPlacements) and would be visibly resizing right under
+          the cursor at the same time as the handle actually being
           dragged. */}
-      {activeId === null &&
-        !resizingIds &&
+      {!resizingIds &&
         stackBottoms
           .filter((sb) => sb.maxBottomBound - sb.stackBottomRowEnd > 0)
           .map((sb) => (
@@ -1579,7 +1585,32 @@ export function NativePlannerEditor({
   // counter) — one write genuinely has to be visible to the next read
   // this way, not just eventually.
   const pendingCommitRef = useRef<Promise<unknown>>(Promise.resolve());
+  // How many commits are currently in flight — not just for logging, this
+  // is what gestureBlockedByPendingCommit below reads to refuse starting a
+  // *new* gesture while one's still out. That guard exists because
+  // serializing the commits themselves (closing the server-side stale-
+  // read race, above) turned out not to be enough on its own: reported
+  // again after that fix shipped, still jumping. Traced it further —
+  // resize boundary A-B, then *immediately* resize the adjacent boundary
+  // B-C (sharing module B) before A-B's commit has landed: B-C's own live
+  // preview is computed as its deltaRows applied on top of whatever
+  // `placements[B]` currently is, which is still B's *pre-A-B-commit*
+  // value the whole time B-C is being dragged — correct in the moment,
+  // since that's genuinely what's on screen. But when A-B's commit
+  // finally resolves mid-drag, placements[B] jumps to its new value out
+  // from under B-C's still-active overlay, which keeps applying its own
+  // delta on top of that new value too — B (and C, packed right after it)
+  // visibly jumps by the difference, sometimes far enough to overlap.
+  // Serializing the commits *causes* this to be reachable in the first
+  // place instead of just narrowing it — a queued commit can now sit
+  // pending for as long as whatever's ahead of it takes, widening the
+  // window a second gesture can start inside. Blocking a new gesture
+  // outright while anything is still pending closes it at the source
+  // instead of chasing the overlay math through every case that could
+  // shift the same module a second way mid-drag.
+  const pendingCommitCountRef = useRef(0);
   const serializeCommit = useCallback(<T,>(run: () => Promise<T>): Promise<T> => {
+    pendingCommitCountRef.current++;
     const started = pendingCommitRef.current.then(run, run);
     // Swallows a failure for the *chain's* purposes only — a rejected
     // commit still shouldn't block whatever's queued after it. The
@@ -1589,8 +1620,19 @@ export function NativePlannerEditor({
       () => undefined,
       () => undefined
     );
+    started.finally(() => {
+      pendingCommitCountRef.current--;
+    });
     return started;
   }, []);
+
+  // See pendingCommitCountRef's own comment. Checked at the start of
+  // every gesture that's about to read/derive from `placements` — not
+  // mid-gesture, since once a drag has already captured its own frozen
+  // baseline (each handle's dragRef), it's the *starting* of a second,
+  // overlapping one that creates the hazard, not continuing one already
+  // running.
+  const gestureBlockedByPendingCommit = useCallback(() => pendingCommitCountRef.current > 0, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -1781,14 +1823,26 @@ export function NativePlannerEditor({
   // faster than an effect could keep up with.
   const activeResizePairKeyRef = useRef<string | null>(null);
 
-  const handleResizeStart = useCallback((pair: ResizePair) => {
-    activeResizePairKeyRef.current = pair.key;
-    // Mutually exclusive with a stack resize (see stackResizeDrag's own
-    // comment) — clears any in-progress one the same way starting a new
-    // module drag already clears settling.
-    setStackResizeDrag(null);
-    setResizeDrag({ pairKey: pair.key, pageId: pair.pageId, topId: pair.topId, bottomId: pair.bottomId, deltaRows: 0 });
-  }, []);
+  const handleResizeStart = useCallback(
+    (pair: ResizePair) => {
+      // See gestureBlockedByPendingCommit's own comment — a still-pending
+      // commit's eventual result could shift a module this new gesture's
+      // own live preview is about to start basing its math on. The handle
+      // itself still captures the pointer (harmless — see
+      // gestureBlockedByPendingCommit's own comment on why guarding here
+      // is enough), it just never becomes the active drag, so
+      // handleResizeMove/End's own pairKey checks ignore everything that
+      // follows for it.
+      if (gestureBlockedByPendingCommit()) return;
+      activeResizePairKeyRef.current = pair.key;
+      // Mutually exclusive with a stack resize (see stackResizeDrag's own
+      // comment) — clears any in-progress one the same way starting a new
+      // module drag already clears settling.
+      setStackResizeDrag(null);
+      setResizeDrag({ pairKey: pair.key, pageId: pair.pageId, topId: pair.topId, bottomId: pair.bottomId, deltaRows: 0 });
+    },
+    [gestureBlockedByPendingCommit]
+  );
 
   const handleResizeMove = useCallback((pair: ResizePair, deltaRows: number) => {
     // Guards against a second resize drag having started (and overwritten
@@ -1875,18 +1929,24 @@ export function NativePlannerEditor({
   // Same synchronous-ref pattern as activeResizePairKeyRef above.
   const activeStackResizeKeyRef = useRef<string | null>(null);
 
-  const handleStackResizeStart = useCallback((stackBottom: StackBottom) => {
-    activeStackResizeKeyRef.current = stackBottom.key;
-    // Mutually exclusive with a pair resize — see handleResizeStart's own
-    // comment.
-    setResizeDrag(null);
-    setStackResizeDrag({
-      stackKey: stackBottom.key,
-      pageId: stackBottom.pageId,
-      memberIds: stackBottom.members.map((m) => m.id),
-      deltaRows: 0,
-    });
-  }, []);
+  const handleStackResizeStart = useCallback(
+    (stackBottom: StackBottom) => {
+      // See gestureBlockedByPendingCommit's own comment (and
+      // handleResizeStart's identical guard).
+      if (gestureBlockedByPendingCommit()) return;
+      activeStackResizeKeyRef.current = stackBottom.key;
+      // Mutually exclusive with a pair resize — see handleResizeStart's own
+      // comment.
+      setResizeDrag(null);
+      setStackResizeDrag({
+        stackKey: stackBottom.key,
+        pageId: stackBottom.pageId,
+        memberIds: stackBottom.members.map((m) => m.id),
+        deltaRows: 0,
+      });
+    },
+    [gestureBlockedByPendingCommit]
+  );
 
   const handleStackResizeMove = useCallback((stackBottom: StackBottom, deltaRows: number) => {
     if (activeStackResizeKeyRef.current !== stackBottom.key) return;
@@ -1920,6 +1980,11 @@ export function NativePlannerEditor({
   // resolve to exactly that same cell, never relocate.
   const handleAddModule = useCallback(
     async (pageId: string, columnStart: number, rowStart: number) => {
+      // See gestureBlockedByPendingCommit's own comment — the clicked
+      // target (columnStart/rowStart, captured from the button's own
+      // props at click time) could go stale if a still-pending commit is
+      // about to move the stack's own bottom out from under it.
+      if (gestureBlockedByPendingCommit()) return;
       const pageGrid = pageGridByPageId[pageId];
       if (!pageGrid) return;
       try {
@@ -1955,7 +2020,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [pageGridByPageId, serializeCommit]
+    [pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
   // Live preview: while a drag is in progress, recompute where things
