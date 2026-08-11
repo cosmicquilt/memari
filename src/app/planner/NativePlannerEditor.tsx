@@ -106,6 +106,7 @@ import {
   addPaletteModuleAt,
   deleteModuleWithGravity,
   updateModuleConfig,
+  resetPlannerToTemplate,
 } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -2544,6 +2545,33 @@ export function NativePlannerEditor({
     [moduleLookup, placements, pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
+  // Debug-only "put the whole planner back exactly like it started" —
+  // see resetPlannerToTemplate's own comment (actions.ts) for what it
+  // wipes/recreates and why this is a whole-page reload rather than a
+  // live state patch the way every other action here is: reconstructing
+  // placements/moduleLookup/every derived map for a full wipe-and-reseed
+  // would just be re-deriving what a fresh page load already does
+  // correctly. window.location.reload(), not router.refresh() — a
+  // Server Component refresh alone wouldn't reset NativePlannerEditor's
+  // own client state (placements, moduleLookup, zoom, ...), and this
+  // needs all of it rebuilt from scratch, not just the server data
+  // underneath it re-fetched.
+  const [isResettingPlanner, setIsResettingPlanner] = useState(false);
+  const handleResetPlannerToTemplate = useCallback(async () => {
+    const confirmed = window.confirm(
+      "Reset the whole planner back to its original template?\n\nThis deletes anything you've added, moved, resized, or edited in the sidebar and re-creates the original Gratitude/Reminders/Notes boxes."
+    );
+    if (!confirmed) return;
+    setIsResettingPlanner(true);
+    try {
+      await resetPlannerToTemplate();
+      window.location.reload();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+      setIsResettingPlanner(false);
+    }
+  }, []);
+
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
   // pixel offsets for rendering (see NativeModule's visualOffset). Merges
@@ -2608,7 +2636,31 @@ export function NativePlannerEditor({
       >
         <strong>Memari planner editor (native)</strong>
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
-        {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
+        {/* Debug-only whole-planner reset — requested directly: "reset
+            the entire page to the original layout we first made... from
+            the pdf." marginLeft:auto pushes this (and saveError after
+            it) to the header's right edge, same trick saveError used on
+            its own before this existed. */}
+        <button
+          type="button"
+          onClick={handleResetPlannerToTemplate}
+          disabled={isResettingPlanner}
+          title="Debug: wipe the sidebar and put back the original template (Things I'm Grateful For / Reminders / Notes)"
+          style={{
+            marginLeft: "auto",
+            padding: "4px 10px",
+            fontSize: 12,
+            background: "#3a3a3a",
+            color: "#ddd",
+            border: "1px solid #555",
+            borderRadius: 4,
+            cursor: isResettingPlanner ? "default" : "pointer",
+            opacity: isResettingPlanner ? 0.6 : 1,
+          }}
+        >
+          {isResettingPlanner ? "Resetting…" : "Reset to Template"}
+        </button>
+        {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>
       <div
         ref={scrollContainerRef}

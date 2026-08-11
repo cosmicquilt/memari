@@ -138,6 +138,25 @@ function renderInstance(
   return element;
 }
 
+// The WEEK planner's default sidebar content — the 3 labeled boxes from
+// the reference PDF (Gratitude/Reminders/Notes), sized in the same rough
+// proportions (Notes gets the most room). Shared between getOrCreatePlanner
+// (the initial seed, only ever applied once per planner — see its own
+// hasSidebarContent check) and resetPlannerToTemplate below (the debug
+// "put it back exactly like this" reset) so the two can't independently
+// drift on what "the original layout" actually was.
+const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
+  heading: string;
+  rowStart: number;
+  rowSpan: number;
+}> = [
+  // Starts at row 2 — week-title occupies rows 0-1 at the 30-row grid
+  // resolution. Same 2:3:4 visual ratio as before.
+  { heading: "Things I'm Grateful For", rowStart: 2, rowSpan: 6 },
+  { heading: "Reminders", rowStart: 8, rowSpan: 9 },
+  { heading: "Notes", rowStart: 17, rowSpan: 13 },
+];
+
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
   if (!userId) {
@@ -336,19 +355,8 @@ export async function getOrCreatePlanner() {
     const boxType = await prisma.moduleType.findUniqueOrThrow({
       where: { slug: "labeled-box" },
     });
-    const defaultBoxes: Array<{
-      heading: string;
-      rowStart: number;
-      rowSpan: number;
-    }> = [
-      // Starts at row 2 — week-title occupies rows 0-1 at the 30-row
-      // grid resolution. Same 2:3:4 visual ratio as before.
-      { heading: "Things I'm Grateful For", rowStart: 2, rowSpan: 6 },
-      { heading: "Reminders", rowStart: 8, rowSpan: 9 },
-      { heading: "Notes", rowStart: 17, rowSpan: 13 },
-    ];
     await prisma.moduleInstance.createMany({
-      data: defaultBoxes.map((box) => ({
+      data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
         pageId: leftPage.id,
         moduleTypeId: boxType.id,
         placementMode: "GRID" as const,
@@ -384,6 +392,70 @@ export async function getOrCreatePlanner() {
   }
 
   return planner;
+}
+
+// Debug-only "put the whole planner back exactly like it started" reset —
+// see NativePlannerEditor's header button for where this is triggered.
+// Wipes every non-locked instance on both pages of the caller's WEEK
+// planner (whatever the user added, moved, resized, or edited away from
+// the template — no attempt to distinguish "the original 3 boxes,
+// edited" from "boxes added later," it's simpler and more predictable to
+// just clear everything non-locked and reseed than to try to reconcile
+// the two) and recreates WEEK_SIDEBAR_TEMPLATE_BOXES fresh on the left
+// page, the exact same data getOrCreatePlanner's own one-time seed uses.
+// Locked instances (week-title, hourly-grid-core) are left untouched —
+// there's no editor UI that can change them in the first place (no
+// drag/resize/delete, no properties panel wired up to them), so there's
+// nothing on them that could have drifted from the template to begin
+// with.
+//
+// No live-patchable return value the way updateModuleConfig/
+// resizeAdjacentModules etc. have — reconstructing every piece of
+// client state a whole-page wipe-and-reseed touches (placements,
+// moduleLookup, instanceIdsByPageId, every derived stack/resize-pair
+// map) would mean re-deriving everything loadPlannerPages already does
+// correctly for a fresh page load. Simpler and more robust to do the
+// database work here and let the caller just reload the page afterward
+// — same choice updateWeekSettings already made, for the same reason.
+export async function resetPlannerToTemplate() {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    include: { pages: { orderBy: { position: "asc" } } },
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+  const [leftPage, rightPage] = planner.pages;
+  if (!leftPage || !rightPage) {
+    throw new Error("Planner is missing a page");
+  }
+
+  const boxType = await prisma.moduleType.findUniqueOrThrow({
+    where: { slug: "labeled-box" },
+  });
+
+  await prisma.$transaction([
+    prisma.moduleInstance.deleteMany({
+      where: { pageId: { in: [leftPage.id, rightPage.id] }, locked: false },
+    }),
+    prisma.moduleInstance.createMany({
+      data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
+        pageId: leftPage.id,
+        moduleTypeId: boxType.id,
+        placementMode: "GRID" as const,
+        columnStart: 0,
+        rowStart: box.rowStart,
+        columnSpan: boxType.defaultColumnSpan,
+        rowSpan: box.rowSpan,
+        propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
+      })),
+    }),
+  ]);
 }
 
 // Parallel to getOrCreatePlanner above, not a generalization of it into a
