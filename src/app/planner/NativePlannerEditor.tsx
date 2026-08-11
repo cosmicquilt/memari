@@ -1748,8 +1748,9 @@ export function NativePlannerEditor({
   const handleResizeAdjacent = useCallback(
     async (pageId: string, topId: string, bottomId: string, deltaRows: number) => {
       const pageGrid = pageGridByPageId[pageId];
+      const topPlacement = placements[topId];
       const bottomPlacement = placements[bottomId];
-      if (!pageGrid || !bottomPlacement) return;
+      if (!pageGrid || !topPlacement || !bottomPlacement) return;
       const pairKey = `${topId}:${bottomId}`;
       try {
         // See serializeCommit's own comment — queued so a resize started
@@ -1758,6 +1759,28 @@ export function NativePlannerEditor({
         const result = await serializeCommit(() => resizeAdjacentModules(topId, bottomId, deltaRows));
         if (result.bottom.rowStart === null) return; // unreachable — see resizeAdjacentModules's own comment on why
         const bottomRowStart = result.bottom.rowStart;
+        // The top module's own rowStart/columnStart never change *during
+        // this resize* (only its rowSpan grows/shrinks) — but that isn't
+        // the same as "moduleLookup's existing origin for it is already
+        // correct." A reposition earlier could have moved it without
+        // ever touching moduleLookup (correctly — see moduleLookup's own
+        // comment on why: it's paired with `elements`, which a
+        // reposition also leaves untouched, so the two stay internally
+        // consistent with each other even though both go stale relative
+        // to the module's live CSS grid position). This resize *does*
+        // replace `elements` with a fresh server render, generated
+        // against the module's current (post-reposition) row/column —
+        // pairing that fresh content with a stale, pre-reposition origin
+        // silently reintroduces the exact mismatch reposition's own
+        // "leave it alone" design was built to avoid. Recomputing here
+        // from `topPlacement` (already known correct — same value this
+        // function already trusted for other purposes) closes that gap.
+        // Confirmed via a full data trace before writing this fix: every
+        // value in placements/the server response checked out perfectly
+        // at every step for two live-reproduced instances of the bug —
+        // the only thing that could still be wrong downstream of
+        // provably-correct data was moduleLookup's own content pairing.
+        const topOrigin = gridCellToPixels(pageGrid, topPlacement);
         const bottomOrigin = gridCellToPixels(pageGrid, {
           columnStart: bottomPlacement.columnStart,
           rowStart: bottomRowStart,
@@ -1776,7 +1799,7 @@ export function NativePlannerEditor({
           const next = new Map(prev);
           const topInfo = prev.get(topId);
           const bottomInfo = prev.get(bottomId);
-          if (topInfo) next.set(topId, { ...topInfo, elements: [result.top.element] });
+          if (topInfo) next.set(topId, { ...topInfo, elements: [result.top.element], originX: topOrigin.x, originY: topOrigin.y });
           if (bottomInfo) {
             next.set(bottomId, { ...bottomInfo, elements: [result.bottom.element], originX: bottomOrigin.x, originY: bottomOrigin.y });
           }
