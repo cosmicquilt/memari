@@ -20,27 +20,54 @@
 
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
-// Firefox pixel-snaps a CSS `border`'s thickness to whole device pixels at
-// composite time, and rounds anything under ~1 device px down to 0 instead
-// of antialiasing it the way Chrome/WebKit do (confirmed via Bugzilla
-// 1258112/1490361 — a long-standing, still-unfixed engine bug, not
-// something specific to this code). Every hairline this app draws (grid
-// dividers, header underlines, module outer borders) is defined in
-// print-space pixels sized for a 300 DPI page (see print-spec.ts) and then
-// visually shrunk again by this editor's own zoom `scale` on top of that,
-// so at ordinary on-screen zoom levels a "1px" line can easily compute to
-// well under 1 real device pixel — invisible in Firefox, present in Chrome.
-// Reported symptom matched exactly: thin dividers vanish first, then whole
-// unfilled module outlines (a labeled-box with no fill, just a border,
-// reads as "the module disappeared" once its only border is gone) — and it
+// Firefox pixel-snaps a CSS `border`'s (and, per the same engine code path,
+// `outline`'s) thickness to whole device pixels at composite time, and
+// rounds anything under ~1 device px down to 0 instead of antialiasing it
+// the way Chrome/WebKit do (confirmed via Bugzilla 1258112/1490361 — a
+// long-standing, still-unfixed engine bug, not something specific to this
+// code). Plain fills (background-color) aren't hit by that same snapping
+// path (Bugzilla 477157 draws exactly this distinction), but a fill only a
+// fraction of a device pixel thick still visually fades to near-nothing
+// under Firefox's antialiasing. Every hairline/divider/outline this app
+// draws is defined in print-space pixels sized for a 300 DPI page (see
+// print-spec.ts) and then visually shrunk again by this editor's own zoom
+// `scale` on top of that, so at ordinary on-screen zoom levels a "1px" line
+// can easily compute to well under 1 real device pixel. Reported symptom
+// matched exactly: thin dividers/lines fade or vanish first, then whole
+// unfilled module outlines (a labeled-box with no fill, just a stroke,
+// reads as "the module disappeared" once its only edge is gone) — and it
 // clears the moment the zoom level changes, since which side(s) round to 0
 // is scale-dependent, not a permanent DOM state.
 //
-// Fix: never let a stroke's on-screen (post-transform) width drop below
-// MIN_ONSCREEN_BORDER_PX, by growing the pre-transform CSS border-width as
-// `scale` shrinks so the two cancel out. This is a floor, not a rescale —
-// strokes already thick enough on screen are left exactly as designed.
-const MIN_ONSCREEN_BORDER_PX = 1.5;
+// Fix, in two parts, both floors rather than rescales — anything already
+// thick enough on screen is left exactly as designed:
+//
+// 1. Strokes render as `outline` (+ a matching negative `outline-offset` to
+//    sit it back on the box edge like a border would), not `border` —
+//    deliberately: `outline` never reserves layout space or shrinks a
+//    border-box element's own content area, so flooring its width for
+//    Firefox-safety can't visually swallow a small element's interior the
+//    way a floored `border` did on the first pass at this fix (confirmed:
+//    the month-grid's small date-number box, ~41x45 page-px with a
+//    0.5pt/~2px stroke, turned into a solid-looking blob at lower zoom once
+//    its border was floored, reported as "outlines now look thick and
+//    weird"). The floored width is additionally capped to a fraction of
+//    the element's own size, so even at extreme zoom-out a tiny element's
+//    ring can't grow past its own interior — better to fall slightly short
+//    of the on-screen floor on a handful of very small, very zoomed-out
+//    elements than to turn them into a blob.
+// 2. A fill-only rect whose one dimension is much smaller than the other is
+//    a ruled/divider line (this app's own consistent pattern for drawing
+//    one — see hourlyGridCore.ts/habitTracker.ts/monthGridCore.ts, all
+//    render dividers as `fill` rects with a tiny height or width, never a
+//    stroke) — its thin dimension gets the same on-screen floor, grown
+//    outward from its own center so the line's position doesn't shift.
+const MIN_ONSCREEN_STROKE_PX = 1.25;
+// A fill rect this much narrower than it is long (or vice versa) is
+// treated as a hairline for the floor above, not a small filled shape —
+// comfortably below any checkbox/date-box's own aspect ratio in this
+// app's modules (all closer to square) so it won't misfire on those.
+const HAIRLINE_ASPECT_RATIO = 0.15;
 
 function ElementNode({
   element,
@@ -101,20 +128,48 @@ function ElementNode({
   if (element.type === "figure" && element.subType === "rect") {
     const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
     const hasFill = !!element.fill && element.fill !== "transparent";
-    // See MIN_ONSCREEN_BORDER_PX's comment above — floor the CSS
-    // border-width so it never renders thinner than that on screen.
-    const borderWidth = hasStroke ? Math.max(element.strokeWidth ?? 0, MIN_ONSCREEN_BORDER_PX / scale) : 0;
+
+    // Part 1 of the Firefox fix above — see that comment. Floored,
+    // then capped to a fraction of the box's own size so the ring can
+    // never exceed (and visually swallow) its own interior.
+    let outlineWidth = 0;
+    if (hasStroke) {
+      const natural = element.strokeWidth ?? 0;
+      const needed = MIN_ONSCREEN_STROKE_PX / scale;
+      const maxSafe = Math.max(natural, Math.min(width, height) * 0.4);
+      outlineWidth = Math.min(Math.max(natural, needed), maxSafe);
+    }
+
+    // Part 2 of the Firefox fix above — a fill-only sliver is a
+    // ruled/divider line, not a shape; floor its thin dimension,
+    // growing outward from its own center so its position doesn't
+    // shift.
+    let adjLeft = left;
+    let adjTop = top;
+    let adjWidth = width;
+    let adjHeight = height;
+    if (hasFill && !hasStroke) {
+      const needed = MIN_ONSCREEN_STROKE_PX / scale;
+      if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
+        adjTop = top - (needed - height) / 2;
+        adjHeight = needed;
+      } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
+        adjLeft = left - (needed - width) / 2;
+        adjWidth = needed;
+      }
+    }
+
     return (
       <div
         style={{
           position: "absolute",
-          left,
-          top,
-          width,
-          height,
-          boxSizing: "border-box",
+          left: adjLeft,
+          top: adjTop,
+          width: adjWidth,
+          height: adjHeight,
           background: hasFill ? element.fill : "transparent",
-          border: hasStroke ? `${borderWidth}px solid ${element.stroke}` : undefined,
+          outline: hasStroke ? `${outlineWidth}px solid ${element.stroke}` : undefined,
+          outlineOffset: hasStroke ? `${-outlineWidth}px` : undefined,
           opacity,
           pointerEvents: "none",
         }}
@@ -140,7 +195,7 @@ export function PolotnoJsonRenderer({
   originX: number;
   originY: number;
   // Current on-screen zoom factor of the ancestor transform this renders
-  // under — see MIN_ONSCREEN_BORDER_PX's comment for why a stroke's CSS
+  // under — see MIN_ONSCREEN_STROKE_PX's comment for why a stroke's CSS
   // width needs to know it.
   scale: number;
 }) {
