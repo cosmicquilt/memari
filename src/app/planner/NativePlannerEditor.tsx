@@ -374,11 +374,26 @@ function NativeModule({
           visualOffset.x !== 0 || visualOffset.y !== 0 ? `translate(${visualOffset.x}px, ${visualOffset.y}px)` : undefined,
         // No transition on the dragged item itself — it needs to track
         // the pointer with zero added lag. Everything reacting to it
-        // (a reflow preview) gets a short one, so the shift reads as a
-        // deliberate slide instead of a jump. Also suppressed for one
-        // frame right after a drop (suppressTransition) — see `settling`
-        // state's own comment for why.
-        transition: isDragged || suppressTransition ? undefined : "transform 0.15s ease",
+        // (a reflow preview, or a gravity-shift settle after a delete —
+        // see handleDeleteModule's own comment) gets a real one, so the
+        // shift reads as a deliberate slide instead of a jump. Also
+        // suppressed for one frame right after a commit
+        // (suppressTransition) — see `settling` state's own comment for
+        // why. cubic-bezier(0.4, 0, 0.2, 1) is Material/most native
+        // mobile UI's standard ease-out curve — fast start, decelerating
+        // into place, the same "brain expects things to settle at the
+        // end of a movement" shape iOS's own passive-reflow animations
+        // (Photos grid closing a gap, Springboard icons resettling) use,
+        // as opposed to a springy overshoot curve, which reads better for
+        // a single interactive element arriving (a button press, a
+        // dragged card being released) than for several passive items
+        // moving together — bounce doesn't stay coordinated well across
+        // multiple simultaneous movers. 250ms sits in the "standard
+        // layout" range (200-300ms) rather than "micro-interaction"
+        // (80-150ms, what this was previously): shorter reads as
+        // twitchy for a distance-covering slide, longer starts feeling
+        // sluggish.
+        transition: isDragged || suppressTransition ? undefined : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
         // Lifted, not dimmed, while actively being dragged — a shadow +
         // being drawn above its neighbors is what makes it read as "this
         // is the thing currently moving," matching the classic
@@ -2428,6 +2443,36 @@ export function NativePlannerEditor({
       if (gestureBlockedByPendingCommit()) return;
       try {
         const result = await serializeCommit(() => deleteModuleWithGravity(instanceId));
+        // FLIP settle for the gravity-shifted siblings — reuses the exact
+        // same two-phase `settling` mechanism handleDragEnd's own reflow
+        // already relies on (see that state's own comment for the full
+        // start/settle mechanics). Requested directly: "when i delete a
+        // module, can you make the other animate as they gravity upward
+        // to fill the space." Genuinely different from the drag case
+        // though, not just a copy-paste of it: a drag's reflowed sibling
+        // arrives at the settle already having been *continuously*
+        // animated into place by the live preview while the pointer was
+        // still moving, so its own settle offset is always {0,0} — one
+        // transition-free frame is all it needs. A delete has no such
+        // preceding live phase; the whole visual slide from old row to
+        // new row has to happen inside this one settle animation, so the
+        // residual here is the *entire* pixel distance moved, not a
+        // last-mile correction.
+        const deletedInfo = moduleLookup.get(instanceId);
+        const pageGrid = deletedInfo ? pageGridByPageId[deletedInfo.pageId] : undefined;
+        if (pageGrid && result.shifted.length > 0) {
+          const settleOffsets: Record<string, { x: number; y: number }> = {};
+          for (const s of result.shifted) {
+            const oldPlacement = placements[s.id];
+            if (!oldPlacement) continue;
+            const oldPixel = gridCellToPixels(pageGrid, oldPlacement);
+            const newPixel = gridCellToPixels(pageGrid, { ...oldPlacement, rowStart: s.rowStart });
+            settleOffsets[s.id] = { x: oldPixel.x - newPixel.x, y: oldPixel.y - newPixel.y };
+          }
+          if (Object.keys(settleOffsets).length > 0) {
+            setSettling({ offsets: settleOffsets, phase: "start" });
+          }
+        }
         setPlacements((prev) => {
           const next = { ...prev };
           delete next[result.deletedId];
@@ -2455,7 +2500,14 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [serializeCommit, gestureBlockedByPendingCommit, recomputeHoverAfterLayoutChange]
+    [
+      serializeCommit,
+      gestureBlockedByPendingCommit,
+      recomputeHoverAfterLayoutChange,
+      moduleLookup,
+      placements,
+      pageGridByPageId,
+    ]
   );
 
   // Commits a labeled-box's heading — both the pencil-edit path and the
