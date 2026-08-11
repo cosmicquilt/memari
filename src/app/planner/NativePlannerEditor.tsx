@@ -177,11 +177,7 @@ type ModuleInfo = {
   // current config, not just heading, since updateModuleConfig replaces
   // the whole object server-side rather than merging — sending just
   // {heading} would silently reset every other field (ruled, etc.) back
-  // to its schema default. Also carries templateHeading (the "full
-  // reset" target — see its own comment in prisma/seed.mts), so there's
-  // no separate field for it here: it's just read out of propValues
-  // like heading/ruled are, the same way every writer that touches an
-  // instance's content already keeps propValues in sync.
+  // to its schema default.
   slug: string;
   propValues: Record<string, unknown>;
 };
@@ -247,7 +243,6 @@ function NativeModule({
   onHoverEnd,
   slug,
   heading,
-  templateHeading,
   onUpdateHeading,
   widthPx,
 }: {
@@ -309,14 +304,6 @@ function NativeModule({
   // Current heading, already read out of propValues by the caller
   // (NativePage) — null for any non-labeled-box module.
   heading: string | null;
-  // What the reset button restores — this instance's own persisted
-  // templateHeading (propValues, see prisma/seed.mts's own comment on
-  // it), also read out by the caller; empty/missing means "nothing
-  // meaningful to reset to" (a pre-existing instance the one-time
-  // backfill couldn't recover a true original for), in which case the
-  // reset button just doesn't render at all rather than resetting to a
-  // blank heading.
-  templateHeading: string | null;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
   // This box's own current rendered width, in page-space px — lets the
   // edit-mode overlay below size its height to match the box's *actual*
@@ -487,18 +474,19 @@ function NativeModule({
       {/* Heading edit — labeled-box only (the one module type with a
           single free-text heading in this app today). Same hover-corner-
           badge language as the delete button above, mirrored to the
-          top-left corner so the two don't collide. Swaps for just an
-          input once clicked (the reset button lives separately, right
-          next to this one — see its own comment below on why) rather
-          than the input living alongside this button — simpler than
-          getting an overlay to line up with wherever the rendered SVG
-          heading text happens to sit exactly, but its height is still
-          computed to match that real header band
-          (computeLabeledBoxHeaderHeightPx, editOverlayHeight below) —
-          reported live the first time this shipped with a guessed fixed
-          height instead: "the header gets taller" (that guess ran
-          taller than a real single-line header's true, shorter
-          height). */}
+          top-left corner so the two don't collide. Swaps for an input
+          rather than living alongside it — simpler than getting an
+          overlay to line up with wherever the rendered SVG heading text
+          happens to sit exactly, but its height is still computed to
+          match that real header band (computeLabeledBoxHeaderHeightPx,
+          editOverlayHeight below) — reported live the first time this
+          shipped with a guessed fixed height instead: "the header gets
+          taller" (that guess ran taller than a real single-line
+          header's true, shorter height). A per-module "reset this one
+          heading" badge used to sit right next to this one — removed
+          per direct request once the header's whole-sidebar Reset to
+          Template button existed, which covers the same need at a
+          different scope. */}
       {!locked && slug === "labeled-box" && !isEditingHeading && (
         <button
           type="button"
@@ -533,52 +521,6 @@ function NativeModule({
           }}
         >
           ✎
-        </button>
-      )}
-      {/* Full-reset — its own always-hover-visible corner badge now,
-          same size/language as the pencil/delete buttons right next to
-          it, not something that only showed up after first clicking
-          into edit mode (the earlier version lived inside the edit
-          overlay below — reported twice as "still don't see it," most
-          likely because nothing ever prompted a click into edit mode in
-          the first place to reveal it). Fires immediately on click, no
-          need to open the input first. Hidden while isEditingHeading is
-          true, same as the pencil — the edit overlay covers this exact
-          corner from y:0 down once open, so showing both at once would
-          just be a partial-occlusion mess. */}
-      {!locked && slug === "labeled-box" && !isEditingHeading && templateHeading !== null && templateHeading !== "" && (
-        <button
-          type="button"
-          title="Full reset to template default"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onUpdateHeading(instanceId, templateHeading);
-          }}
-          style={{
-            position: "absolute",
-            top: -35,
-            left: 45,
-            width: 70,
-            height: 70,
-            borderRadius: "50%",
-            border: "none",
-            background: "#c7c7c7",
-            color: "#666666",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 30,
-            lineHeight: 1,
-            padding: 0,
-            cursor: "pointer",
-            opacity: isHovered ? 1 : 0,
-            pointerEvents: isHovered ? "auto" : "none",
-            transition: "opacity 0.12s ease",
-            zIndex: 6,
-          }}
-        >
-          ↺
         </button>
       )}
       {!locked && slug === "labeled-box" && isEditingHeading && (
@@ -747,9 +689,6 @@ function NativePage({
             onHoverEnd={onHoverEnd}
             slug={info.slug}
             heading={info.slug === "labeled-box" ? ((info.propValues.heading as string | undefined) ?? "") : null}
-            templateHeading={
-              info.slug === "labeled-box" ? ((info.propValues.templateHeading as string | undefined) ?? "") : null
-            }
             onUpdateHeading={onUpdateHeading}
             widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
           />
@@ -2545,21 +2484,24 @@ export function NativePlannerEditor({
     [moduleLookup, placements, pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
-  // Debug-only "put the whole planner back exactly like it started" —
-  // see resetPlannerToTemplate's own comment (actions.ts) for what it
-  // wipes/recreates and why this is a whole-page reload rather than a
-  // live state patch the way every other action here is: reconstructing
-  // placements/moduleLookup/every derived map for a full wipe-and-reseed
-  // would just be re-deriving what a fresh page load already does
-  // correctly. window.location.reload(), not router.refresh() — a
-  // Server Component refresh alone wouldn't reset NativePlannerEditor's
-  // own client state (placements, moduleLookup, zoom, ...), and this
-  // needs all of it rebuilt from scratch, not just the server data
-  // underneath it re-fetched.
+  // Debug-only "put the sidebar back exactly like it started" — see
+  // resetPlannerToTemplate's own comment (actions.ts) for what it
+  // wipes/recreates (just the left page's sidebar column — NOT anything
+  // below the hourly grid or on the right page, after an earlier version
+  // wiped those too and was reported as "bottom modules are gone after
+  // reset") and why this is a whole-page reload rather than a live state
+  // patch the way every other action here is: reconstructing placements/
+  // moduleLookup/every derived map for a wipe-and-reseed would just be
+  // re-deriving what a fresh page load already does correctly.
+  // window.location.reload(), not router.refresh() — a Server Component
+  // refresh alone wouldn't reset NativePlannerEditor's own client state
+  // (placements, moduleLookup, zoom, ...), and this needs all of it
+  // rebuilt from scratch, not just the server data underneath it
+  // re-fetched.
   const [isResettingPlanner, setIsResettingPlanner] = useState(false);
   const handleResetPlannerToTemplate = useCallback(async () => {
     const confirmed = window.confirm(
-      "Reset the whole planner back to its original template?\n\nThis deletes anything you've added, moved, resized, or edited in the sidebar and re-creates the original Gratitude/Reminders/Notes boxes."
+      "Reset the sidebar back to its original template?\n\nThis deletes anything you've added, moved, resized, or edited there and re-creates the original Gratitude/Reminders/Notes boxes. Nothing else on the page (like the hourly grid or anything below it) is touched."
     );
     if (!confirmed) return;
     setIsResettingPlanner(true);
@@ -2636,11 +2578,13 @@ export function NativePlannerEditor({
       >
         <strong>Memari planner editor (native)</strong>
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
-        {/* Debug-only whole-planner reset — requested directly: "reset
-            the entire page to the original layout we first made... from
-            the pdf." marginLeft:auto pushes this (and saveError after
-            it) to the header's right edge, same trick saveError used on
-            its own before this existed. */}
+        {/* Debug-only sidebar reset — requested directly: "reset the
+            entire page to the original layout we first made... from the
+            pdf." Scoped to just the sidebar column, not the whole page
+            — see handleResetPlannerToTemplate's own comment on why.
+            marginLeft:auto pushes this (and saveError after it) to the
+            header's right edge, same trick saveError used on its own
+            before this existed. */}
         <button
           type="button"
           onClick={handleResetPlannerToTemplate}

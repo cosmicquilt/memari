@@ -394,29 +394,37 @@ export async function getOrCreatePlanner() {
   return planner;
 }
 
-// Debug-only "put the whole planner back exactly like it started" reset —
-// see NativePlannerEditor's header button for where this is triggered.
-// Wipes every non-locked instance on both pages of the caller's WEEK
-// planner (whatever the user added, moved, resized, or edited away from
-// the template — no attempt to distinguish "the original 3 boxes,
-// edited" from "boxes added later," it's simpler and more predictable to
-// just clear everything non-locked and reseed than to try to reconcile
-// the two) and recreates WEEK_SIDEBAR_TEMPLATE_BOXES fresh on the left
-// page, the exact same data getOrCreatePlanner's own one-time seed uses.
-// Locked instances (week-title, hourly-grid-core) are left untouched —
-// there's no editor UI that can change them in the first place (no
-// drag/resize/delete, no properties panel wired up to them), so there's
+// Debug-only "put the sidebar back exactly like it started" reset — see
+// NativePlannerEditor's header button for where this is triggered.
+// Scoped specifically to the left page's sidebar column (columnStart:0,
+// the same test hasSidebarContent above uses) — NOT every non-locked
+// instance on the planner. An earlier version of this wiped every
+// non-locked instance on both pages, which silently deleted anything the
+// user had added below the hourly grid (a todo-checklist/habit-tracker)
+// with nothing to replace it, reported as "bottom modules are gone after
+// reset" — those were never part of "the original layout... with mantra,
+// etc on the side" (the actual, sidebar-scoped request) to begin with, so
+// they should never have been touched by this in the first place.
+//
+// Wipes every non-locked instance in that one column (whatever the user
+// added, moved, resized, or edited away from the template — no attempt
+// to distinguish "the original 3 boxes, edited" from "boxes added
+// later," simpler and more predictable to just clear the column and
+// reseed) and recreates WEEK_SIDEBAR_TEMPLATE_BOXES fresh, the exact same
+// data getOrCreatePlanner's own one-time seed uses. Locked instances
+// (week-title, hourly-grid-core) are left untouched regardless — there's
+// no editor UI that can change them in the first place, so there's
 // nothing on them that could have drifted from the template to begin
 // with.
 //
 // No live-patchable return value the way updateModuleConfig/
 // resizeAdjacentModules etc. have — reconstructing every piece of
-// client state a whole-page wipe-and-reseed touches (placements,
-// moduleLookup, instanceIdsByPageId, every derived stack/resize-pair
-// map) would mean re-deriving everything loadPlannerPages already does
-// correctly for a fresh page load. Simpler and more robust to do the
-// database work here and let the caller just reload the page afterward
-// — same choice updateWeekSettings already made, for the same reason.
+// client state a wipe-and-reseed touches (placements, moduleLookup,
+// instanceIdsByPageId, every derived stack/resize-pair map) would mean
+// re-deriving everything loadPlannerPages already does correctly for a
+// fresh page load. Simpler and more robust to do the database work here
+// and let the caller just reload the page afterward — same choice
+// updateWeekSettings already made, for the same reason.
 export async function resetPlannerToTemplate() {
   const { userId } = await auth();
   if (!userId) {
@@ -430,8 +438,8 @@ export async function resetPlannerToTemplate() {
   if (!planner) {
     throw new Error("Planner not found");
   }
-  const [leftPage, rightPage] = planner.pages;
-  if (!leftPage || !rightPage) {
+  const [leftPage] = planner.pages;
+  if (!leftPage) {
     throw new Error("Planner is missing a page");
   }
 
@@ -441,7 +449,7 @@ export async function resetPlannerToTemplate() {
 
   await prisma.$transaction([
     prisma.moduleInstance.deleteMany({
-      where: { pageId: { in: [leftPage.id, rightPage.id] }, locked: false },
+      where: { pageId: leftPage.id, locked: false, columnStart: 0 },
     }),
     prisma.moduleInstance.createMany({
       data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
