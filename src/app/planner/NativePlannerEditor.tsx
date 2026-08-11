@@ -367,7 +367,17 @@ function NativeModule({
           the same element tree, and pointerdown bubbles from this button
           up to the wrapper div's handler otherwise. pointerEvents: none
           while hidden so a hidden button sitting in the corner can't
-          swallow a click meant for the module underneath it. */}
+          swallow a click meant for the module underneath it.
+          top/right: -(size/2) straddles the module's own top-right
+          corner exactly — the circle's *center*, not its edge, sits on
+          the corner point, half hanging outside the box. Safe to let it
+          spill past the module's own bounds: NativeModule only sets
+          overflow:hidden while isResizing, never during a plain hover,
+          and it paints above whatever's behind it via its own z-index
+          (the wrapper never sets a z-index of its own outside
+          isDragged/settling, so this compares against the page's other
+          module wrappers directly rather than being trapped under a
+          stacking context of its own). */}
       {!locked && (
         <button
           type="button"
@@ -379,18 +389,18 @@ function NativeModule({
           }}
           style={{
             position: "absolute",
-            top: 6,
-            right: 6,
-            width: 20,
-            height: 20,
+            top: -14,
+            right: -14,
+            width: 28,
+            height: 28,
             borderRadius: "50%",
             border: "none",
-            background: "rgba(120, 120, 120, 0.7)",
-            color: "#3a3a3a",
+            background: "#c7c7c7",
+            color: "#666666",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 14,
+            fontSize: 18,
             lineHeight: 1,
             padding: 0,
             cursor: "pointer",
