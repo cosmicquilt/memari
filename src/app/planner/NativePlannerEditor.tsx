@@ -263,7 +263,10 @@ function NativeModule({
         // real content specifically for that case: always visible while
         // isResizing, on both sides of the pair, so the live edge itself
         // is never dependent on what the frozen content happens to show.
-        outline: isResizing ? "2px dashed #666666" : undefined,
+        // Solid black, not a muted gray/dashed — a faint dashed gray line
+        // against mostly-white content read as the box looking dimmed/
+        // disabled, not as an active resize indicator.
+        outline: isResizing ? "2px solid #000000" : undefined,
         outlineOffset: isResizing ? "-2px" : undefined,
         touchAction: locked ? undefined : "none",
       }}
@@ -282,6 +285,7 @@ function NativePage({
   suppressTransitionIds,
   resizePairs,
   resizingIds,
+  liveOriginOverride,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
@@ -299,6 +303,10 @@ function NativePage({
   suppressTransitionIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
   resizingIds: ReadonlySet<string> | null;
+  // See the main component's own comment on liveOriginOverride — keeps
+  // the resizing pair's bottom module's stale content anchored to its
+  // real stable edge instead of drifting with its moving one.
+  liveOriginOverride: { id: string; originY: number } | null;
   onResizeStart: (pair: ResizePair) => void;
   onResizeMove: (pair: ResizePair, deltaRows: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
@@ -329,6 +337,7 @@ function NativePage({
         // here would keep showing stale pre-resize content forever.
         const info = moduleLookup.get(mi.id);
         if (!placement || !info) return null;
+        const originY = liveOriginOverride?.id === mi.id ? liveOriginOverride.originY : info.originY;
         return (
           <NativeModule
             key={mi.id}
@@ -337,7 +346,7 @@ function NativePage({
             placement={placement}
             elements={info.elements}
             originX={info.originX}
-            originY={info.originY}
+            originY={originY}
             visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
             isDragged={activeId === mi.id}
             isResizing={resizingIds?.has(mi.id) ?? false}
@@ -608,6 +617,42 @@ export function NativePlannerEditor({
     if (!resizeDrag) return null;
     return new Set([resizeDrag.topId, resizeDrag.bottomId]);
   }, [resizeDrag]);
+
+  // Compensates the bottom module's origin during a live resize so its
+  // (frozen-until-commit) content stays visually anchored to its own
+  // genuinely stable edge instead of sliding along with its moving one.
+  // Reported live: "dragging up, the bottom module has two bottom
+  // borders — one at its resized height, one where its original height's
+  // bottom still is." Root cause: a module draws its own border as part
+  // of its content (e.g. labeledBox.ts's own outer rect), positioned via
+  // `element.y - originY` — and PolotnoJsonRenderer's absolute-positioned
+  // elements move automatically with whatever DOM box they're inside, so
+  // when the bottom module's own top-left moves live (its rowStart is the
+  // shared boundary, so it's the one edge of the pair that actually
+  // moves), its frozen content — including that stale border — visually
+  // drags along with it. The result is that stale border ends up
+  // wherever "old height, measured from the box's NEW top" lands, not at
+  // the box's real (unmoved) bottom — a second border sitting adrift
+  // inside the live outline instead of the one true edge it used to be.
+  //
+  // Only the bottom module ever needs this: the top module's own origin
+  // is rowStart-based, and rowStart never changes for it in a coupled
+  // resize (only its rowSpan does) — its content is already correctly
+  // anchored to its own always-fixed top edge by construction, no
+  // compensation needed. Computed via gridCellToPixels twice (old vs
+  // live rowStart), not a hand-derived "deltaRows * pitch" formula,
+  // matching how every other pixel/row conversion in this file already
+  // avoids assuming gridCellToPixels' internal math.
+  const liveOriginOverride = useMemo(() => {
+    if (!resizeDrag || resizeDrag.deltaRows === 0) return null;
+    const info = moduleLookup.get(resizeDrag.bottomId);
+    const pageGrid = pageGridByPageId[resizeDrag.pageId];
+    const bottomPlacement = placements[resizeDrag.bottomId];
+    if (!info || !pageGrid || !bottomPlacement) return null;
+    const oldPixel = gridCellToPixels(pageGrid, bottomPlacement);
+    const newPixel = gridCellToPixels(pageGrid, { ...bottomPlacement, rowStart: bottomPlacement.rowStart + resizeDrag.deltaRows });
+    return { id: resizeDrag.bottomId, originY: info.originY + (newPixel.y - oldPixel.y) };
+  }, [resizeDrag, moduleLookup, pageGridByPageId, placements]);
 
   // Recomputed from the LIVE displayPlacements (not the static `pages`
   // prop, and not the last-committed `placements` either) on every
@@ -1341,6 +1386,7 @@ export function NativePlannerEditor({
                     suppressTransitionIds={suppressTransitionIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     resizingIds={resizingIds}
+                    liveOriginOverride={liveOriginOverride}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
                     onResizeEnd={handleResizeEnd}
