@@ -157,6 +157,29 @@ const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
   { heading: "Notes", rowStart: 17, rowSpan: 13 },
 ];
 
+// The "TO - DO" checklist below the hourly grid, on BOTH pages of the
+// reference PDF's weekly spread — confirmed directly against
+// hourlyjournal.pdf's own extracted text (pymupdf), which has this
+// exact label as the last text block on both page 3 (left) and page 4
+// (right) of week 1, right after the hourly grid's own time labels.
+// getOrCreatePlanner never seeds this (see its own comment on why
+// todo-checklist was deliberately made a regular, drag-it-in-yourself
+// module rather than an auto-placed one) — only resetPlannerToTemplate
+// recreates it, since that's specifically what was asked to match the
+// PDF-original layout. columnStart/columnSpan mirror each page's own
+// hourly-grid-core exactly (see ensureHourlyGridCore's own call sites);
+// rowStart 19/rowSpan 11 is the space directly below it (hourly-grid-
+// core's own rowSpan is 19, out of the page's 30-row grid).
+const WEEK_TODO_TEMPLATE: Array<{
+  page: "left" | "right";
+  columnStart: number;
+  columnSpan: number;
+  dayCount: number;
+}> = [
+  { page: "left", columnStart: 1, columnSpan: 3, dayCount: 3 },
+  { page: "right", columnStart: 0, columnSpan: 4, dayCount: 4 },
+];
+
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
   if (!userId) {
@@ -394,28 +417,30 @@ export async function getOrCreatePlanner() {
   return planner;
 }
 
-// Debug-only "put the sidebar back exactly like it started" reset — see
-// NativePlannerEditor's header button for where this is triggered.
-// Scoped specifically to the left page's sidebar column (columnStart:0,
-// the same test hasSidebarContent above uses) — NOT every non-locked
-// instance on the planner. An earlier version of this wiped every
-// non-locked instance on both pages, which silently deleted anything the
-// user had added below the hourly grid (a todo-checklist/habit-tracker)
-// with nothing to replace it, reported as "bottom modules are gone after
-// reset" — those were never part of "the original layout... with mantra,
-// etc on the side" (the actual, sidebar-scoped request) to begin with, so
-// they should never have been touched by this in the first place.
+// Debug-only "put the sidebar and the TO-DO checklist back exactly like
+// they started" reset — see NativePlannerEditor's header button for
+// where this is triggered. Scoped to two specific regions, not every
+// non-locked instance on the planner:
+//   1. The left page's sidebar column (columnStart:0, labeled-box only
+//      — the same test hasSidebarContent above uses).
+//   2. The TO-DO checklist below the hourly grid, on BOTH pages
+//      (WEEK_TODO_TEMPLATE — see its own comment for why this needs to
+//      exist here at all: it was missing entirely until this was added,
+//      reported as "bottom modules are gone" even after the sidebar-only
+//      version of this fix, because the checklist that PDF page 3/4
+//      actually show there had simply never been seeded by anything,
+//      reset included).
+// An even earlier version of this wiped every non-locked instance on
+// both pages, unconditionally — that was worse than either of the above,
+// silently deleting anything else the user might place on the page with
+// nothing to replace it. Both scoped deletes below key off moduleTypeId,
+// not a position heuristic, so a checklist the user moved or resized
+// away from its template spot is still found and replaced correctly.
 //
-// Wipes every non-locked instance in that one column (whatever the user
-// added, moved, resized, or edited away from the template — no attempt
-// to distinguish "the original 3 boxes, edited" from "boxes added
-// later," simpler and more predictable to just clear the column and
-// reseed) and recreates WEEK_SIDEBAR_TEMPLATE_BOXES fresh, the exact same
-// data getOrCreatePlanner's own one-time seed uses. Locked instances
-// (week-title, hourly-grid-core) are left untouched regardless — there's
-// no editor UI that can change them in the first place, so there's
-// nothing on them that could have drifted from the template to begin
-// with.
+// Locked instances (week-title, hourly-grid-core) are left untouched
+// regardless — there's no editor UI that can change them in the first
+// place, so there's nothing on them that could have drifted from the
+// template to begin with.
 //
 // No live-patchable return value the way updateModuleConfig/
 // resizeAdjacentModules etc. have — reconstructing every piece of
@@ -438,18 +463,20 @@ export async function resetPlannerToTemplate() {
   if (!planner) {
     throw new Error("Planner not found");
   }
-  const [leftPage] = planner.pages;
-  if (!leftPage) {
+  const [leftPage, rightPage] = planner.pages;
+  if (!leftPage || !rightPage) {
     throw new Error("Planner is missing a page");
   }
+  const pagesById: Record<"left" | "right", { id: string }> = { left: leftPage, right: rightPage };
 
-  const boxType = await prisma.moduleType.findUniqueOrThrow({
-    where: { slug: "labeled-box" },
-  });
+  const [boxType, checklistType] = await Promise.all([
+    prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } }),
+    prisma.moduleType.findUniqueOrThrow({ where: { slug: "todo-checklist" } }),
+  ]);
 
   await prisma.$transaction([
     prisma.moduleInstance.deleteMany({
-      where: { pageId: leftPage.id, locked: false, columnStart: 0 },
+      where: { pageId: leftPage.id, moduleTypeId: boxType.id, columnStart: 0 },
     }),
     prisma.moduleInstance.createMany({
       data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
@@ -461,6 +488,23 @@ export async function resetPlannerToTemplate() {
         columnSpan: boxType.defaultColumnSpan,
         rowSpan: box.rowSpan,
         propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
+      })),
+    }),
+    prisma.moduleInstance.deleteMany({
+      where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: checklistType.id },
+    }),
+    prisma.moduleInstance.createMany({
+      data: WEEK_TODO_TEMPLATE.map((todo) => ({
+        pageId: pagesById[todo.page].id,
+        moduleTypeId: checklistType.id,
+        placementMode: "GRID" as const,
+        columnStart: todo.columnStart,
+        // Directly below hourly-grid-core (rowStart 0, rowSpan 19) —
+        // see WEEK_TODO_TEMPLATE's own comment.
+        rowStart: 19,
+        columnSpan: todo.columnSpan,
+        rowSpan: 11,
+        propValues: { dayCount: todo.dayCount },
       })),
     }),
   ]);
