@@ -90,18 +90,37 @@ const HAIRLINE_ASPECT_RATIO = 0.15;
 // the floored one, React flagged the mismatch and — per its own
 // "this won't be patched up" wording — doesn't reliably self-correct it).
 
+// A resizing module's content (elements/origin) is frozen at whatever it
+// was last rendered for — see NativePlannerEditor's resizeFrozenSize
+// comment for the full story. Its own outer-border rect (any module that
+// draws one — labeledBox.ts's first element is the clearest example, but
+// nothing here assumes a specific module) is unambiguously identifiable:
+// a stroked rect positioned exactly at the module's own origin, sized to
+// exactly the module's own frozen full width/height — there's no other
+// reason for a rect to span a module's *entire* bounding box like that.
+// That specific rect can't be repositioned into looking right during a
+// live resize (its own recorded size is stale, not just its position),
+// so it's hidden outright rather than drawn in the wrong place — the
+// module's own CSS outline (NativeModule's isResizing styling) is a
+// live-accurate stand-in for exactly this one element while it's hidden.
+// A small pixel epsilon, not exact equality, since these all round-trip
+// through gridCellToPixels' own floating-point division/multiplication.
+const OUTER_BORDER_MATCH_EPSILON_PX = 0.5;
+
 function ElementNode({
   element,
   originX,
   originY,
   scale,
   isFirefox,
+  suppressOuterBorderSize,
 }: {
   element: RenderedPolotnoElement;
   originX: number;
   originY: number;
   scale: number;
   isFirefox: boolean;
+  suppressOuterBorderSize: { width: number; height: number } | null;
 }) {
   if (element.type === "group") {
     // Synthetic wrapper renderModuleInstance adds around a non-locked
@@ -111,7 +130,15 @@ function ElementNode({
     return (
       <>
         {(element.children ?? []).map((child) => (
-          <ElementNode key={child.id} element={child} originX={originX} originY={originY} scale={scale} isFirefox={isFirefox} />
+          <ElementNode
+            key={child.id}
+            element={child}
+            originX={originX}
+            originY={originY}
+            scale={scale}
+            isFirefox={isFirefox}
+            suppressOuterBorderSize={suppressOuterBorderSize}
+          />
         ))}
       </>
     );
@@ -151,6 +178,18 @@ function ElementNode({
   if (element.type === "figure" && element.subType === "rect") {
     const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
     const hasFill = !!element.fill && element.fill !== "transparent";
+
+    // See suppressOuterBorderSize's own comment above.
+    if (
+      suppressOuterBorderSize &&
+      hasStroke &&
+      Math.abs(left) < OUTER_BORDER_MATCH_EPSILON_PX &&
+      Math.abs(top) < OUTER_BORDER_MATCH_EPSILON_PX &&
+      Math.abs(width - suppressOuterBorderSize.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
+      Math.abs(height - suppressOuterBorderSize.height) < OUTER_BORDER_MATCH_EPSILON_PX
+    ) {
+      return null;
+    }
 
     // Part 1 of the Firefox fix above — see that comment. Floored,
     // then capped to a fraction of the box's own size so the ring can
@@ -215,6 +254,7 @@ export function PolotnoJsonRenderer({
   originY,
   scale,
   isFirefox,
+  suppressOuterBorderSize,
 }: {
   elements: RenderedPolotnoElement[];
   originX: number;
@@ -226,11 +266,22 @@ export function PolotnoJsonRenderer({
   // See isFirefox's own comment above — computed once, client-side only,
   // by NativePlannerEditor and threaded down alongside `scale`.
   isFirefox: boolean;
+  // Non-null only while this module is part of an active live resize —
+  // see the comment above ElementNode's own use of it.
+  suppressOuterBorderSize: { width: number; height: number } | null;
 }) {
   return (
     <>
       {elements.map((element) => (
-        <ElementNode key={element.id} element={element} originX={originX} originY={originY} scale={scale} isFirefox={isFirefox} />
+        <ElementNode
+          key={element.id}
+          element={element}
+          originX={originX}
+          originY={originY}
+          scale={scale}
+          isFirefox={isFirefox}
+          suppressOuterBorderSize={suppressOuterBorderSize}
+        />
       ))}
     </>
   );
