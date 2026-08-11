@@ -464,10 +464,15 @@ function ResizeHandle({
       if (!drag) return 0;
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
       const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
-      // Same clamp resizeAdjacentModules applies server-side, mirrored
-      // here so the live preview can never show a boundary position the
-      // eventual commit wouldn't actually land on.
-      return Math.max(-(drag.topRowSpan - 1), Math.min(drag.bottomRowSpan - 1, rawDeltaRows));
+      // Same clamp resizeAdjacentModules applies server-side (mirrors its
+      // own MIN_ROW_SPAN — kept in sync by hand, this file can't import a
+      // constant from a "use server" file), mirrored here so the live
+      // preview can never show a boundary position the eventual commit
+      // wouldn't actually land on. A single-row sidebar box is barely
+      // more than a sliver, all header/border chrome with no real
+      // writing space left.
+      const MIN_ROW_SPAN = 2;
+      return Math.max(-(drag.topRowSpan - MIN_ROW_SPAN), Math.min(drag.bottomRowSpan - MIN_ROW_SPAN, rawDeltaRows));
     },
     [scale, rowPitchPx]
   );

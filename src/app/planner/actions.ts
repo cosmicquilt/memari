@@ -979,7 +979,15 @@ export async function resizeAdjacentModules(
     throw new Error("Modules aren't vertically adjacent");
   }
 
-  const clampedDelta = Math.max(-(top.rowSpan - 1), Math.min(bottom.rowSpan - 1, deltaRows));
+  // Neither module may shrink below 2 rows (not 1) — a single-row
+  // sidebar box reads as barely more than a sliver, all header/border
+  // chrome with no real writing space left. Authoritative here since
+  // this is what actually persists; useEdgeResize.ts and
+  // NativePlannerEditor.tsx mirror the same MIN_ROW_SPAN client-side so
+  // a drag never visually promises a size the server would then further
+  // clamp.
+  const MIN_ROW_SPAN = 2;
+  const clampedDelta = Math.max(-(top.rowSpan - MIN_ROW_SPAN), Math.min(bottom.rowSpan - MIN_ROW_SPAN, deltaRows));
   if (clampedDelta === 0) {
     throw new Error("Nothing to resize");
   }

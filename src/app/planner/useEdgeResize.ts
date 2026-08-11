@@ -225,7 +225,13 @@ export function useEdgeResize({
         : undefined;
 
       if (below) {
-        const deltaRows = Math.max(-(drag.startRowSpan - 1), Math.min(below.rowSpan - 1, rawDeltaRows));
+        // Mirrors resizeAdjacentModules' own MIN_ROW_SPAN (actions.ts) —
+        // a single-row sidebar box is barely more than a sliver, all
+        // header/border chrome with no real writing space left. Kept in
+        // sync by hand (this file can't import a constant from a "use
+        // server" file), same as NativePlannerEditor.tsx's own copy.
+        const MIN_ROW_SPAN = 2;
+        const deltaRows = Math.max(-(drag.startRowSpan - MIN_ROW_SPAN), Math.min(below.rowSpan - MIN_ROW_SPAN, rawDeltaRows));
         if (deltaRows === 0) return;
         onResizeAdjacent(drag.moduleId, below.id, deltaRows).catch((err) => {
           alert(err instanceof Error ? err.message : String(err));
