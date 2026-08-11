@@ -104,6 +104,7 @@ import {
   resizeStackFromBottom,
   addPaletteModuleAt,
   deleteModuleWithGravity,
+  updateModuleConfig,
 } from "./actions";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -168,6 +169,24 @@ type ModuleInfo = {
   elements: LoadedPage["moduleInstances"][number]["elements"];
   originX: number;
   originY: number;
+  // Needed for inline heading editing (labeled-box only, see
+  // NativeModule's own edit-pencil comment): slug says whether this
+  // instance even has an editable heading; propValues is the FULL
+  // current config, not just heading, since updateModuleConfig replaces
+  // the whole object server-side rather than merging — sending just
+  // {heading} would silently reset every other field (ruled, etc.) back
+  // to its schema default. Kept in sync by every moduleLookup writer
+  // that touches an instance's own content, same as elements/origin.
+  slug: string;
+  propValues: Record<string, unknown>;
+  // The heading this instance had at page load (or at creation, for one
+  // added this session) — what the reset button restores. Deliberately
+  // captured once and never updated again by an edit, even though
+  // propValues.heading changes right alongside it; this is a session-
+  // scoped "undo my edits" baseline; not a value round-tripped through
+  // the database, so it doesn't survive a reload. null for any module
+  // type that doesn't have a heading at all.
+  originalHeading: string | null;
 };
 
 // Two vertically-stacked, directly-adjacent unlocked modules in the same
@@ -229,6 +248,10 @@ function NativeModule({
   isHovered,
   onHoverStart,
   onHoverEnd,
+  slug,
+  heading,
+  originalHeading,
+  onUpdateHeading,
 }: {
   instanceId: string;
   locked: boolean;
@@ -281,6 +304,18 @@ function NativeModule({
   isHovered: boolean;
   onHoverStart: (instanceId: string) => void;
   onHoverEnd: (instanceId: string) => void;
+  // Module type slug — the edit-pencil/heading UI below only makes sense
+  // for labeled-box (the one type with a single free-text heading in
+  // this app today); every other slug just never shows it.
+  slug: string;
+  // Current heading, already read out of propValues by the caller
+  // (NativePage) — null for any non-labeled-box module.
+  heading: string | null;
+  // What the reset button restores — see ModuleInfo's own comment
+  // (main component) on why this is a session-scoped baseline, not a
+  // persisted "original" round-tripped through the database.
+  originalHeading: string | null;
+  onUpdateHeading: (instanceId: string, newHeading: string) => void;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -301,6 +336,23 @@ function NativeModule({
     [listeners]
   );
   const clearPressed = useCallback(() => setIsPressed(false), []);
+  // Inline heading editing (labeled-box only — see the pencil button
+  // below). Local, not lifted: unlike hoveredInstanceId, nothing outside
+  // this one module ever needs to read or force "is this module
+  // currently being edited," so there's no reason to route it through
+  // the main component the way the delete-button hover fix needed to.
+  const [isEditingHeading, setIsEditingHeading] = useState(false);
+  const [draftHeading, setDraftHeading] = useState(heading ?? "");
+  const commitHeading = useCallback(
+    (value: string) => {
+      setIsEditingHeading(false);
+      // Only round-trips to the server if the value actually changed —
+      // blurring/Enter-ing without having typed anything (the common
+      // case: click to look, then click away) shouldn't fire a write.
+      if (value !== heading) onUpdateHeading(instanceId, value);
+    },
+    [heading, instanceId, onUpdateHeading]
+  );
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -418,6 +470,145 @@ function NativeModule({
           ×
         </button>
       )}
+      {/* Heading edit — labeled-box only (the one module type with a
+          single free-text heading in this app today). Same hover-corner-
+          badge language as the delete button above, mirrored to the
+          top-left corner so the two don't collide. Swaps for an input +
+          reset button once clicked, rather than living alongside it —
+          simpler than getting an overlay to line up with wherever the
+          rendered SVG heading text happens to sit (its own height varies
+          between a 1-line and a wrapped 2-line heading — see
+          labeledBox.ts's headingNeedsTwoLines), so this covers a fixed
+          band from the module's own top edge instead of trying to match
+          that exactly. */}
+      {!locked && slug === "labeled-box" && !isEditingHeading && (
+        <button
+          type="button"
+          title="Edit heading"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setDraftHeading(heading ?? "");
+            setIsEditingHeading(true);
+          }}
+          style={{
+            position: "absolute",
+            top: -35,
+            left: -35,
+            width: 70,
+            height: 70,
+            borderRadius: "50%",
+            border: "none",
+            background: "#c7c7c7",
+            color: "#666666",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 30,
+            lineHeight: 1,
+            padding: 0,
+            cursor: "pointer",
+            opacity: isHovered ? 1 : 0,
+            pointerEvents: isHovered ? "auto" : "none",
+            transition: "opacity 0.12s ease",
+            zIndex: 6,
+          }}
+        >
+          ✎
+        </button>
+      )}
+      {!locked && slug === "labeled-box" && isEditingHeading && (
+        <div
+          onPointerDown={(event) => event.stopPropagation()}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 70,
+            background: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "0 10px",
+            boxSizing: "border-box",
+            outline: "2px solid #4a90d9",
+            outlineOffset: -2,
+            zIndex: 7,
+          }}
+        >
+          <input
+            autoFocus
+            type="text"
+            value={draftHeading}
+            onChange={(event) => setDraftHeading(event.target.value)}
+            onFocus={(event) => event.target.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                setDraftHeading(heading ?? "");
+                setIsEditingHeading(false);
+              }
+            }}
+            onBlur={() => commitHeading(draftHeading)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "center",
+              textTransform: "uppercase",
+              fontSize: 18,
+              fontFamily: "Georgia, 'PT Serif', serif",
+              border: "none",
+              outline: "none",
+              background: "transparent",
+              padding: 0,
+            }}
+          />
+          {/* preventDefault on mousedown (not the pointerdown/stopPropagation
+              above, which only stops this from also being read as a drag)
+              is what keeps this click from blurring the input first — the
+              standard technique for a toolbar control next to a focused
+              field. Without it, the input's own onBlur fires first (since
+              focus visibly moves the moment mousedown is processed,
+              before this button's click ever fires) and commits whatever
+              was mid-typed a beat before the reset's own commit lands
+              right after — both correctly ordered through serializeCommit
+              so the *final* state is still right either way, just an
+              extra avoidable round trip without this. */}
+          {originalHeading !== null && (
+            <button
+              type="button"
+              title="Reset to original"
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation();
+                setDraftHeading(originalHeading);
+                commitHeading(originalHeading);
+              }}
+              style={{
+                flexShrink: 0,
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                border: "none",
+                background: "#c7c7c7",
+                color: "#666666",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 16,
+                lineHeight: 1,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              ↺
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -442,6 +633,7 @@ function NativePage({
   onStackResizeEnd,
   onAddModule,
   onDeleteModule,
+  onUpdateHeading,
   hoveredInstanceId,
   onHoverStart,
   onHoverEnd,
@@ -478,6 +670,7 @@ function NativePage({
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
   onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
   onDeleteModule: (instanceId: string) => void;
+  onUpdateHeading: (instanceId: string, newHeading: string) => void;
   // See NativeModule's own isHovered comment — lifted to the main
   // component, threaded down through here.
   hoveredInstanceId: string | null;
@@ -530,6 +723,10 @@ function NativePage({
             isHovered={hoveredInstanceId === id}
             onHoverStart={onHoverStart}
             onHoverEnd={onHoverEnd}
+            slug={info.slug}
+            heading={info.slug === "labeled-box" ? ((info.propValues.heading as string | undefined) ?? "") : null}
+            originalHeading={info.originalHeading}
+            onUpdateHeading={onUpdateHeading}
           />
         );
       })}
@@ -982,7 +1179,17 @@ export function NativePlannerEditor({
     const map = new Map<string, ModuleInfo>();
     for (const page of pages) {
       for (const mi of page.moduleInstances) {
-        map.set(mi.id, { pageId: page.pageId, locked: mi.locked, elements: mi.elements, originX: mi.originX, originY: mi.originY });
+        const propValues = (mi.propValues as Record<string, unknown>) ?? {};
+        map.set(mi.id, {
+          pageId: page.pageId,
+          locked: mi.locked,
+          elements: mi.elements,
+          originX: mi.originX,
+          originY: mi.originY,
+          slug: mi.slug,
+          propValues,
+          originalHeading: mi.slug === "labeled-box" ? ((propValues.heading as string | undefined) ?? "") : null,
+        });
       }
     }
     return map;
@@ -2189,12 +2396,16 @@ export function NativePlannerEditor({
         }));
         setModuleLookup((prev) => {
           const next = new Map(prev);
+          const propValues = (result.propValues as Record<string, unknown>) ?? {};
           next.set(result.instanceId, {
             pageId,
             locked: false,
             elements: [result.element],
             originX: origin.x,
             originY: origin.y,
+            slug: "labeled-box",
+            propValues,
+            originalHeading: (propValues.heading as string | undefined) ?? "",
           });
           return next;
         });
@@ -2257,6 +2468,58 @@ export function NativePlannerEditor({
       }
     },
     [serializeCommit, gestureBlockedByPendingCommit, recomputeHoverAfterLayoutChange]
+  );
+
+  // Commits a labeled-box's heading — both the pencil-edit path and the
+  // reset-to-original button (NativeModule) call this, just with a
+  // different target string. Sends the module's FULL current propValues
+  // with only `heading` swapped, not `{heading}` alone —
+  // updateModuleConfig replaces the whole config server-side rather than
+  // merging (see its own comment), so leaving anything out would reset
+  // it to that field's schema default; ruled being silently flipped back
+  // to false the first time someone edited a heading would be exactly
+  // that bug.
+  //
+  // Recomputes origin fresh from the module's own CURRENT placement, the
+  // same way handleAddModule and the (fixed) top-module branch of
+  // handleResizeAdjacent already do — updateModuleConfig re-renders this
+  // instance's content server-side against whatever row/column it
+  // currently sits at in the DB, so pairing that fresh content with
+  // moduleLookup's *old* origin would reintroduce the exact "jumps to
+  // overlap a neighbor" bug that turned out to be the real cause of the
+  // resize-after-reposition issue — see that fix's own commit for the
+  // full diagnosis. This path regenerates content the same way a resize
+  // does, so it needs the same guard.
+  const handleUpdateHeading = useCallback(
+    async (instanceId: string, newHeading: string) => {
+      if (gestureBlockedByPendingCommit()) return;
+      const info = moduleLookup.get(instanceId);
+      const placement = placements[instanceId];
+      const pageGrid = info ? pageGridByPageId[info.pageId] : undefined;
+      if (!info || !placement || !pageGrid) return;
+      try {
+        const nextPropValues = { ...info.propValues, heading: newHeading };
+        const result = await serializeCommit(() => updateModuleConfig(instanceId, nextPropValues));
+        const origin = gridCellToPixels(pageGrid, placement);
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          const prevInfo = prev.get(instanceId);
+          if (prevInfo) {
+            next.set(instanceId, {
+              ...prevInfo,
+              elements: [result.element],
+              propValues: (result.propValues as Record<string, unknown>) ?? nextPropValues,
+              originX: origin.x,
+              originY: origin.y,
+            });
+          }
+          return next;
+        });
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [moduleLookup, placements, pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
   );
 
   // Live preview: while a drag is in progress, recompute where things
@@ -2387,6 +2650,7 @@ export function NativePlannerEditor({
                     onStackResizeEnd={handleStackResizeEnd}
                     onAddModule={handleAddModule}
                     onDeleteModule={handleDeleteModule}
+                    onUpdateHeading={handleUpdateHeading}
                     hoveredInstanceId={hoveredInstanceId}
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
