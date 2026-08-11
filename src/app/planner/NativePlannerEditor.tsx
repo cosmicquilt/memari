@@ -251,6 +251,20 @@ function NativeModule({
         boxShadow: isDragged ? "0 12px 28px rgba(0,0,0,0.28)" : undefined,
         zIndex: isDragged ? 10 : undefined,
         overflow: isResizing ? "hidden" : undefined,
+        // A resize's live preview only ever moves this *box* — content
+        // (elements/origin) stays frozen at its last-committed size until
+        // release (see isResizing's own comment). That's invisible on its
+        // own for whichever of the pair is only ever growing/shrinking
+        // from a fixed edge (its stale content never has a reason to
+        // move, so the box changing size shows up as nothing but blank
+        // added/removed space with no line to mark where the new edge
+        // actually is) — reported live: "only the module below updates,"
+        // exactly that half of the pair. This outline is a stand-in for
+        // real content specifically for that case: always visible while
+        // isResizing, on both sides of the pair, so the live edge itself
+        // is never dependent on what the frozen content happens to show.
+        outline: isResizing ? "2px dashed #666666" : undefined,
+        outlineOffset: isResizing ? "-2px" : undefined,
         touchAction: locked ? undefined : "none",
       }}
     >
@@ -412,8 +426,6 @@ function ResizeHandle({
     return twoRows.height - oneRow.height;
   }, [pageGrid, pair.columnStart, pair.columnSpan]);
 
-  const [isHover, setIsHover] = useState(false);
-  const [isActive, setIsActive] = useState(false);
   // Frozen at the moment the drag starts — the pair's rowSpans the
   // ongoing delta/clamp math has to stay anchored to. Deliberately NOT
   // read from the live `pair` prop during the drag: once displayPlacements
@@ -444,7 +456,6 @@ function ResizeHandle({
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = { clientY: event.clientY, topRowSpan: pair.topRowSpan, bottomRowSpan: pair.bottomRowSpan };
-      setIsActive(true);
       onResizeStart(pair);
     },
     [pair, onResizeStart]
@@ -460,7 +471,6 @@ function ResizeHandle({
 
   const handlePointerUp = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      setIsActive(false);
       if (!dragRef.current) return;
       const deltaRows = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
@@ -471,7 +481,6 @@ function ResizeHandle({
 
   const handlePointerCancel = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      setIsActive(false);
       const wasDragging = dragRef.current !== null;
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -494,12 +503,11 @@ function ResizeHandle({
         top: rect.y - RESIZE_HANDLE_HALF_HEIGHT_PX,
         width: rect.width,
         height: RESIZE_HANDLE_HALF_HEIGHT_PX * 2,
+        // Cursor is the only affordance — no hover/active highlight (had
+        // one initially; removed on request).
         cursor: "ns-resize",
-        background: isActive ? "rgba(37,99,235,0.45)" : isHover ? "rgba(37,99,235,0.22)" : "transparent",
         touchAction: "none",
       }}
-      onPointerEnter={() => setIsHover(true)}
-      onPointerLeave={() => setIsHover(false)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
