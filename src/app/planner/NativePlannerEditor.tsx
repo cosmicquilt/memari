@@ -226,6 +226,9 @@ function NativeModule({
   scale,
   isFirefox,
   onDelete,
+  isHovered,
+  onHoverStart,
+  onHoverEnd,
 }: {
   instanceId: string;
   locked: boolean;
@@ -270,6 +273,14 @@ function NativeModule({
   // see handleDeleteModule's own comment (main component) for what
   // happens next (gravity-repack the rest of its stack).
   onDelete: (instanceId: string) => void;
+  // Whether *this* module is the one hoveredInstanceId (main component)
+  // currently points at — lifted up there rather than tracked as local
+  // state here, specifically so a delete can reassign it manually after
+  // the DOM shifts under a stationary cursor (see
+  // recomputeHoverAfterLayoutChange's own comment).
+  isHovered: boolean;
+  onHoverStart: (instanceId: string) => void;
+  onHoverEnd: (instanceId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -290,23 +301,17 @@ function NativeModule({
     [listeners]
   );
   const clearPressed = useCallback(() => setIsPressed(false), []);
-  // Drives the delete button's visibility below — plain mouse hover, not
-  // wired to isPressed/isDragged, so it works independently of whether
-  // dnd-kit's own pointer machinery has activated a drag yet. Harmless to
-  // track even for a locked module (cheap local state, no re-render
-  // beyond this one component); only the button's own rendering is
-  // actually gated on `!locked`.
-  const [isHovered, setIsHovered] = useState(false);
   return (
     <div
       ref={locked ? undefined : setNodeRef}
+      data-module-instance-id={instanceId}
       {...(locked ? {} : listeners)}
       {...(locked ? {} : attributes)}
       onPointerDown={locked ? undefined : handlePointerDown}
       onPointerUp={locked ? undefined : clearPressed}
       onPointerCancel={locked ? undefined : clearPressed}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={() => onHoverStart(instanceId)}
+      onMouseLeave={() => onHoverEnd(instanceId)}
       style={{
         position: "relative",
         gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
@@ -389,10 +394,10 @@ function NativeModule({
           }}
           style={{
             position: "absolute",
-            top: -14,
-            right: -14,
-            width: 28,
-            height: 28,
+            top: -70,
+            right: -70,
+            width: 140,
+            height: 140,
             borderRadius: "50%",
             border: "none",
             background: "#c7c7c7",
@@ -400,7 +405,7 @@ function NativeModule({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 18,
+            fontSize: 90,
             lineHeight: 1,
             padding: 0,
             cursor: "pointer",
@@ -437,6 +442,9 @@ function NativePage({
   onStackResizeEnd,
   onAddModule,
   onDeleteModule,
+  hoveredInstanceId,
+  onHoverStart,
+  onHoverEnd,
   scale,
   isFirefox,
 }: {
@@ -470,6 +478,11 @@ function NativePage({
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
   onAddModule: (pageId: string, columnStart: number, rowStart: number) => void;
   onDeleteModule: (instanceId: string) => void;
+  // See NativeModule's own isHovered comment — lifted to the main
+  // component, threaded down through here.
+  hoveredInstanceId: string | null;
+  onHoverStart: (instanceId: string) => void;
+  onHoverEnd: (instanceId: string) => void;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -514,6 +527,9 @@ function NativePage({
             scale={scale}
             isFirefox={isFirefox}
             onDelete={onDeleteModule}
+            isHovered={hoveredInstanceId === id}
+            onHoverStart={onHoverStart}
+            onHoverEnd={onHoverEnd}
           />
         );
       })}
@@ -1563,6 +1579,45 @@ export function NativePlannerEditor({
   const [activeDelta, setActiveDelta] = useState<{ x: number; y: number }>(ZERO_OFFSET);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Which module's own delete button is currently shown — lifted up here
+  // (not local state inside NativeModule, which is where it lived when
+  // this first shipped) specifically so handleDeleteModule below can
+  // reassign it manually after a delete. Real mouseenter/mouseleave only
+  // fire in response to actual pointer movement; when a delete gravity-
+  // shifts a sibling into the screen position the cursor is already
+  // sitting at, nothing moved, so no enter event fires there and no
+  // leave event fires on the (now-removed) deleted module either — its
+  // delete button just stayed showing nowhere, and the module now under
+  // the stationary cursor didn't get one until the user actually moved
+  // the mouse off and back on. recomputeHoverAfterLayoutChange below is
+  // the fix: explicitly re-run the same hit-test the browser would have,
+  // using the last real pointer position, once the DOM has actually
+  // repainted with the post-delete layout.
+  const [hoveredInstanceId, setHoveredInstanceId] = useState<string | null>(null);
+  const lastPointerPositionRef = useRef<{ x: number; y: number } | null>(null);
+  // Two nested rAFs, not one — a single rAF callback can still fire
+  // before the browser has painted the DOM commit that scheduling this
+  // was reacting to (rAF runs *before* the next paint, not after it);
+  // nesting one more frame reliably lands after that paint has already
+  // happened, so elementFromPoint below sees the module's new position,
+  // not its pre-delete one.
+  const recomputeHoverAfterLayoutChange = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const pos = lastPointerPositionRef.current;
+        if (!pos) return;
+        const el = document.elementFromPoint(pos.x, pos.y);
+        const moduleEl = el?.closest<HTMLElement>("[data-module-instance-id]");
+        setHoveredInstanceId(moduleEl?.dataset.moduleInstanceId ?? null);
+      });
+    });
+  }, []);
+  const handleHoverStart = useCallback((instanceId: string) => setHoveredInstanceId(instanceId), []);
+  const handleHoverEnd = useCallback(
+    (instanceId: string) => setHoveredInstanceId((prev) => (prev === instanceId ? null : prev)),
+    []
+  );
+
   // FLIP-style settle animation for the instant right after a drop —
   // reported after drag-to-reposition first shipped: "when dropped they
   // jump up and down before settling into place." Root cause: the moment
@@ -2188,11 +2243,20 @@ export function NativePlannerEditor({
           next.delete(result.deletedId);
           return next;
         });
+        // The deleted module's own DOM node is gone, so it'll never fire
+        // its own mouseleave — clear it here so hoveredInstanceId can't
+        // keep pointing at an id that no longer exists. See
+        // recomputeHoverAfterLayoutChange's own comment for the rest:
+        // whatever gravitated into the cursor's current screen position
+        // needs its hover state set explicitly too, since nothing moved
+        // to trigger that the normal way.
+        setHoveredInstanceId((prev) => (prev === result.deletedId ? null : prev));
+        recomputeHoverAfterLayoutChange();
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [serializeCommit, gestureBlockedByPendingCommit]
+    [serializeCommit, gestureBlockedByPendingCommit, recomputeHoverAfterLayoutChange]
   );
 
   // Live preview: while a drag is in progress, recompute where things
@@ -2261,7 +2325,13 @@ export function NativePlannerEditor({
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
         {saveError && <span style={{ color: "#ff5555", marginLeft: "auto" }}>Save failed: {saveError}</span>}
       </header>
-      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
+      <div
+        ref={scrollContainerRef}
+        onPointerMove={(event) => {
+          lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
+        }}
+        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
+      >
         {/* marginLeft/marginTop: centeringOffsetX/Y(scale), not CSS
             margin:auto or flex+justifyContent:center — both of those
             have a well-known bug where content wider/taller than its
@@ -2317,6 +2387,9 @@ export function NativePlannerEditor({
                     onStackResizeEnd={handleStackResizeEnd}
                     onAddModule={handleAddModule}
                     onDeleteModule={handleDeleteModule}
+                    hoveredInstanceId={hoveredInstanceId}
+                    onHoverStart={handleHoverStart}
+                    onHoverEnd={handleHoverEnd}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
