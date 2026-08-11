@@ -159,6 +159,7 @@ function NativeModule({
   originY,
   visualOffset,
   isDragged,
+  isResizing,
   suppressTransition,
   scale,
   isFirefox,
@@ -175,6 +176,14 @@ function NativeModule({
   // pixel distance to its would-be new row. {0,0} the rest of the time.
   visualOffset: { x: number; y: number };
   isDragged: boolean;
+  // True for the two modules on either side of a resize boundary
+  // currently being dragged (see ResizeHandle) — their box grows/shrinks
+  // live, snapped to the grid, but their *content* (elements/origin)
+  // still reflects the last-committed size until release (no server
+  // round trip mid-drag — see ResizeHandle's own comment on why not).
+  // Clips that content to the live box instead of letting it spill past
+  // a shrinking edge or overlap whatever's now closer on a growing one.
+  isResizing: boolean;
   // True for exactly one frame right after a drop, for whichever
   // instances just had their placement committed (the dropped item and
   // any reflowed siblings) — see the settle-FLIP comment on `settling`
@@ -241,6 +250,7 @@ function NativeModule({
         // once the real element is what's moving.
         boxShadow: isDragged ? "0 12px 28px rgba(0,0,0,0.28)" : undefined,
         zIndex: isDragged ? 10 : undefined,
+        overflow: isResizing ? "hidden" : undefined,
         touchAction: locked ? undefined : "none",
       }}
     >
@@ -257,18 +267,27 @@ function NativePage({
   visualOffsets,
   suppressTransitionIds,
   resizePairs,
-  onResizeAdjacent,
+  resizingIds,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
   scale,
   isFirefox,
 }: {
   page: LoadedPage;
+  // Live display placements — reflects an in-progress resize's snapped
+  // preview (see resizeDrag/displayPlacements in the main component),
+  // not necessarily the last-committed values.
   placements: Record<string, Placement>;
   moduleLookup: Map<string, ModuleInfo>;
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
   suppressTransitionIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
-  onResizeAdjacent: (pageId: string, topId: string, bottomId: string, deltaRows: number) => void;
+  resizingIds: ReadonlySet<string> | null;
+  onResizeStart: (pair: ResizePair) => void;
+  onResizeMove: (pair: ResizePair, deltaRows: number) => void;
+  onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
   scale: number;
   isFirefox: boolean;
 }) {
@@ -307,6 +326,7 @@ function NativePage({
             originY={info.originY}
             visualOffset={visualOffsets[mi.id] ?? ZERO_OFFSET}
             isDragged={activeId === mi.id}
+            isResizing={resizingIds?.has(mi.id) ?? false}
             suppressTransition={suppressTransitionIds?.has(mi.id) ?? false}
             scale={scale}
             isFirefox={isFirefox}
@@ -319,7 +339,15 @@ function NativePage({
           preview for the same screen space otherwise. */}
       {activeId === null &&
         resizePairs.map((pair) => (
-          <ResizeHandle key={pair.key} pair={pair} pageGrid={page.pageGrid} scale={scale} onResize={onResizeAdjacent} />
+          <ResizeHandle
+            key={pair.key}
+            pair={pair}
+            pageGrid={page.pageGrid}
+            scale={scale}
+            onResizeStart={onResizeStart}
+            onResizeMove={onResizeMove}
+            onResizeEnd={onResizeEnd}
+          />
         ))}
     </div>
   );
@@ -341,22 +369,33 @@ const RESIZE_HANDLE_HALF_HEIGHT_PX = 8; // page-space px, each side of the bound
 // own grid-placed div; a handle here has no such enclosing div of its
 // own to subtract.
 //
-// No live visual preview while dragging (matches the old Polotno-hosted
-// editor's useEdgeResize.ts, deliberately — an accurate preview would
-// mean re-rendering the module's real content continuously mid-drag,
-// which needs a server round trip this avoids until release): only the
-// cursor and a subtle highlight change during the drag, then one commit
-// on release.
+// Live, grid-snapped preview while dragging: the boundary (and this
+// handle's own position, since it's derived from `pair`, which reflects
+// the live displayPlacements once a drag is in progress — see the main
+// component's own comment on displayPlacements) jumps a whole row at a
+// time as the drag crosses each row's worth of distance, same as the
+// eventual commit snaps to. Content isn't re-rendered mid-drag (elements/
+// origin only refresh once resizeAdjacentModules actually returns, on
+// release) — a checklist's row count or a labeled-box's ruled lines are
+// recomputed from fixed-pt measurements for a given size server-side, not
+// something CSS can just stretch, and that's still not something to do on
+// every row crossing. NativeModule's own isResizing prop clips that
+// stale content to the live (possibly now smaller) box in the meantime,
+// rather than letting it visibly spill past a shrinking edge.
 function ResizeHandle({
   pair,
   pageGrid,
   scale,
-  onResize,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
 }: {
   pair: ResizePair;
   pageGrid: PageGrid;
   scale: number;
-  onResize: (pageId: string, topId: string, bottomId: string, deltaRows: number) => void;
+  onResizeStart: (pair: ResizePair) => void;
+  onResizeMove: (pair: ResizePair, deltaRows: number) => void;
+  onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
 }) {
   const boundaryRow = pair.topRowStart + pair.topRowSpan;
   const rect = useMemo(
@@ -375,43 +414,77 @@ function ResizeHandle({
 
   const [isHover, setIsHover] = useState(false);
   const [isActive, setIsActive] = useState(false);
-  const dragStartClientYRef = useRef(0);
+  // Frozen at the moment the drag starts — the pair's rowSpans the
+  // ongoing delta/clamp math has to stay anchored to. Deliberately NOT
+  // read from the live `pair` prop during the drag: once displayPlacements
+  // starts reflecting a nonzero deltaRows (exactly so the handle's own
+  // position can track it live — see boundaryRow above), `pair.
+  // topRowSpan`/`bottomRowSpan` are already shifted by that same delta,
+  // and computing a *new* delta on top of an already-shifted baseline
+  // would double-count every row crossed instead of measuring from
+  // where the drag actually began.
+  const dragRef = useRef<{ clientY: number; topRowSpan: number; bottomRowSpan: number } | null>(null);
+
+  const computeClampedDeltaRows = useCallback(
+    (clientY: number) => {
+      const drag = dragRef.current;
+      if (!drag) return 0;
+      const rawDeltaPagePx = (clientY - drag.clientY) / scale;
+      const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
+      // Same clamp resizeAdjacentModules applies server-side, mirrored
+      // here so the live preview can never show a boundary position the
+      // eventual commit wouldn't actually land on.
+      return Math.max(-(drag.topRowSpan - 1), Math.min(drag.bottomRowSpan - 1, rawDeltaRows));
+    },
+    [scale, rowPitchPx]
+  );
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      dragStartClientYRef.current = event.clientY;
+      dragRef.current = { clientY: event.clientY, topRowSpan: pair.topRowSpan, bottomRowSpan: pair.bottomRowSpan };
       setIsActive(true);
+      onResizeStart(pair);
     },
-    []
+    [pair, onResizeStart]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dragRef.current) return;
+      onResizeMove(pair, computeClampedDeltaRows(event.clientY));
+    },
+    [computeClampedDeltaRows, pair, onResizeMove]
   );
 
   const handlePointerUp = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       setIsActive(false);
-      if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-      const rawDeltaPagePx = (event.clientY - dragStartClientYRef.current) / scale;
-      const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
-      if (rawDeltaRows === 0) return;
-      // Same clamp as resizeAdjacentModules applies server-side — done
-      // here too so a drag that overshoots doesn't send a delta the
-      // server would've silently clamped anyway, keeping the client's
-      // own idea of "did anything change" (the `=== 0` no-op check)
-      // consistent with what actually lands.
-      const clampedDeltaRows = Math.max(-(pair.topRowSpan - 1), Math.min(pair.bottomRowSpan - 1, rawDeltaRows));
-      if (clampedDeltaRows === 0) return;
-      onResize(pair.pageId, pair.topId, pair.bottomId, clampedDeltaRows);
+      if (!dragRef.current) return;
+      const deltaRows = computeClampedDeltaRows(event.clientY);
+      dragRef.current = null;
+      onResizeEnd(pair, deltaRows);
     },
-    [scale, rowPitchPx, pair.topRowSpan, pair.bottomRowSpan, pair.pageId, pair.topId, pair.bottomId, onResize]
+    [computeClampedDeltaRows, pair, onResizeEnd]
   );
 
-  const handlePointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    setIsActive(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
+  const handlePointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      setIsActive(false);
+      const wasDragging = dragRef.current !== null;
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      // Reverts the live preview without committing anything, same as a
+      // 0-row release would — a cancel (e.g. touch interrupted by a
+      // system gesture) isn't a deliberate "put it back where it
+      // started" delta of 0, it's "this gesture never happened."
+      if (wasDragging) onResizeEnd(pair, 0);
+    },
+    [pair, onResizeEnd]
+  );
 
   return (
     <div
@@ -428,6 +501,7 @@ function ResizeHandle({
       onPointerEnter={() => setIsHover(true)}
       onPointerLeave={() => setIsHover(false)}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     />
@@ -489,10 +563,50 @@ export function NativePlannerEditor({
     return map;
   }, [pages]);
 
-  // Recomputed from the LIVE placements (not the static `pages` prop) on
-  // every render — a reposition drag can change which modules are
-  // adjacent, so this has to track that instead of only ever reflecting
-  // the page's original load-time layout. Grouped by same
+  // Live boundary-resize state — set for the duration of a ResizeHandle
+  // drag (see handleResizeStart/Move/End below), null the rest of the
+  // time. deltaRows is already clamped and snapped to whole rows by the
+  // handle itself (computeClampedDeltaRows) — this is purely "what to
+  // display," not raw pointer data.
+  const [resizeDrag, setResizeDrag] = useState<{
+    pairKey: string;
+    pageId: string;
+    topId: string;
+    bottomId: string;
+    deltaRows: number;
+  } | null>(null);
+
+  // What to actually render placements as — the live resize preview
+  // layered on top of the last-committed `placements`, not a second copy
+  // of state. `placements` itself only changes once handleResizeAdjacent's
+  // server call actually resolves (see handleResizeEnd below); everything
+  // in between is this derived view, the same "commit stays real,
+  // rendering gets a derived overlay" split drag-to-reposition's own
+  // visualOffsets/settling already use, just applied to span/rowStart
+  // instead of a translate offset.
+  const displayPlacements = useMemo(() => {
+    if (!resizeDrag || resizeDrag.deltaRows === 0) return placements;
+    const top = placements[resizeDrag.topId];
+    const bottom = placements[resizeDrag.bottomId];
+    if (!top || !bottom) return placements;
+    return {
+      ...placements,
+      [resizeDrag.topId]: { ...top, rowSpan: top.rowSpan + resizeDrag.deltaRows },
+      [resizeDrag.bottomId]: { ...bottom, rowStart: bottom.rowStart + resizeDrag.deltaRows, rowSpan: bottom.rowSpan - resizeDrag.deltaRows },
+    };
+  }, [placements, resizeDrag]);
+
+  const resizingIds = useMemo(() => {
+    if (!resizeDrag) return null;
+    return new Set([resizeDrag.topId, resizeDrag.bottomId]);
+  }, [resizeDrag]);
+
+  // Recomputed from the LIVE displayPlacements (not the static `pages`
+  // prop, and not the last-committed `placements` either) on every
+  // render — a reposition drag can change which modules are adjacent, and
+  // an in-progress resize needs this pair's own boundaryRow (and so this
+  // handle's own on-screen position) to track the live snapped preview,
+  // not just jump once the drag actually commits. Grouped by same
   // columnStart+columnSpan (matching resolveModulePlacement's own
   // stackSiblings notion of a "column stack" in grid.ts) and paired up
   // only where one's bottom edge sits exactly on the next one's top edge
@@ -506,7 +620,7 @@ export function NativePlannerEditor({
       const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
       for (const mi of page.moduleInstances) {
         const info = moduleLookup.get(mi.id);
-        const placement = placements[mi.id];
+        const placement = displayPlacements[mi.id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
@@ -537,7 +651,7 @@ export function NativePlannerEditor({
       byPage[page.pageId] = pairs;
     }
     return byPage;
-  }, [pages, placements, moduleLookup]);
+  }, [pages, displayPlacements, moduleLookup]);
 
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
@@ -1071,6 +1185,54 @@ export function NativePlannerEditor({
     [placements, pageGridByPageId]
   );
 
+  // Synchronous "what's the currently-live resize" check for
+  // handleResizeMove/End below — a ref, not just reading resizeDrag state,
+  // for the same reason scaleRef exists elsewhere in this file: a plain
+  // closure captured at render time could be one render behind by the
+  // time a later pointer event's callback actually runs. Set directly
+  // alongside the state updates below rather than through its own syncing
+  // effect, since these are the only three places it ever changes and
+  // they're already synchronous event handlers, not something arriving
+  // faster than an effect could keep up with.
+  const activeResizePairKeyRef = useRef<string | null>(null);
+
+  const handleResizeStart = useCallback((pair: ResizePair) => {
+    activeResizePairKeyRef.current = pair.key;
+    setResizeDrag({ pairKey: pair.key, pageId: pair.pageId, topId: pair.topId, bottomId: pair.bottomId, deltaRows: 0 });
+  }, []);
+
+  const handleResizeMove = useCallback((pair: ResizePair, deltaRows: number) => {
+    // Guards against a second resize drag having started (and overwritten
+    // the ref) before this one's own stream of move events has fully
+    // stopped — extremely unlikely on a single pointer, but cheap to rule
+    // out rather than assume away.
+    if (activeResizePairKeyRef.current !== pair.key) return;
+    setResizeDrag((prev) => (prev && prev.deltaRows !== deltaRows ? { ...prev, deltaRows } : prev));
+  }, []);
+
+  const handleResizeEnd = useCallback(
+    (pair: ResizePair, deltaRows: number) => {
+      if (activeResizePairKeyRef.current !== pair.key) return;
+      activeResizePairKeyRef.current = null;
+      if (deltaRows === 0) {
+        setResizeDrag(null);
+        return;
+      }
+      // Keeps the live (already-correct-looking, snapped) preview showing
+      // for the whole request instead of dropping back to the old
+      // pre-drag placements for one render while it's in flight and then
+      // jumping forward again once it resolves — only clears once the
+      // real, server-committed placements have actually caught up to
+      // match. Guarded by pairKey (not unconditional) so a resolving
+      // request from an abandoned drag can't clear a *newer* one's
+      // still-in-progress preview.
+      handleResizeAdjacent(pair.pageId, pair.topId, pair.bottomId, deltaRows).finally(() => {
+        setResizeDrag((prev) => (prev && prev.pairKey === pair.key ? null : prev));
+      });
+    },
+    [handleResizeAdjacent]
+  );
+
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
   // pixel offsets for rendering (see NativeModule's visualOffset). Merges
@@ -1164,13 +1326,16 @@ export function NativePlannerEditor({
                   <NativePage
                     key={page.pageId}
                     page={page}
-                    placements={placements}
+                    placements={displayPlacements}
                     moduleLookup={moduleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
-                    onResizeAdjacent={handleResizeAdjacent}
+                    resizingIds={resizingIds}
+                    onResizeStart={handleResizeStart}
+                    onResizeMove={handleResizeMove}
+                    onResizeEnd={handleResizeEnd}
                     scale={scale}
                     isFirefox={isFirefox}
                   />
