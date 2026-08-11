@@ -351,9 +351,21 @@ export function NativePlannerEditor({
   // Always the currently-committed scale, readable synchronously from
   // inside zoomAnchored below without making that function depend on
   // `scale` as a React value — see that function's own comment on why
-  // the distinction matters.
+  // the distinction matters. Deliberately useLayoutEffect, not useEffect:
+  // a passive effect is only scheduled to run "soon," not necessarily
+  // before the next requestAnimationFrame callback, and flushWheelZoom
+  // below is exactly that — an rAF callback that can fire again before a
+  // passive effect from the previous one has actually run. That's a
+  // smaller-scale repeat of the same staleness class the zoomAnchored
+  // comment below documents (reported after that fix as lingering jitter,
+  // worse zooming in than out — zooming in needs a bigger compensating
+  // scroll write per frame, so a given staleness window produces a
+  // proportionally bigger visible error). useLayoutEffect runs
+  // synchronously right after the DOM commit, before the browser paints
+  // and before any later rAF can fire, closing the gap instead of just
+  // shrinking it.
   const scaleRef = useRef(scale);
-  useEffect(() => {
+  useLayoutEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
 

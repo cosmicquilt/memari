@@ -69,6 +69,19 @@ const MIN_ONSCREEN_STROKE_PX = 1.25;
 // app's modules (all closer to square) so it won't misfire on those.
 const HAIRLINE_ASPECT_RATIO = 0.15;
 
+// Both floors above are a workaround for a real Firefox-only engine bug
+// (see the comment above) — Chrome/Safari/Edge already render these exact
+// same widths correctly via antialiasing and don't need any adjustment.
+// Reported directly after the first version of this fix shipped: it grew
+// strokes in Chrome too, where nothing was ever missing, and the extra
+// width just read as unwanted, unexplained visual weight ("borders still
+// look thick and weird" — in Chrome specifically, which never had the
+// disappearing-line bug this exists to fix). Gate on Firefox specifically
+// rather than trying to detect the bug's actual trigger condition (no
+// feature-detectable API for it exists) — computed once at module load,
+// not per-render.
+const isFirefox = typeof navigator !== "undefined" && /firefox/i.test(navigator.userAgent);
+
 function ElementNode({
   element,
   originX,
@@ -131,24 +144,25 @@ function ElementNode({
 
     // Part 1 of the Firefox fix above — see that comment. Floored,
     // then capped to a fraction of the box's own size so the ring can
-    // never exceed (and visually swallow) its own interior.
-    let outlineWidth = 0;
-    if (hasStroke) {
-      const natural = element.strokeWidth ?? 0;
+    // never exceed (and visually swallow) its own interior. Firefox
+    // only — see isFirefox's own comment.
+    const naturalOutline = hasStroke ? element.strokeWidth ?? 0 : 0;
+    let outlineWidth = naturalOutline;
+    if (hasStroke && isFirefox) {
       const needed = MIN_ONSCREEN_STROKE_PX / scale;
-      const maxSafe = Math.max(natural, Math.min(width, height) * 0.4);
-      outlineWidth = Math.min(Math.max(natural, needed), maxSafe);
+      const maxSafe = Math.max(naturalOutline, Math.min(width, height) * 0.4);
+      outlineWidth = Math.min(Math.max(naturalOutline, needed), maxSafe);
     }
 
     // Part 2 of the Firefox fix above — a fill-only sliver is a
     // ruled/divider line, not a shape; floor its thin dimension,
     // growing outward from its own center so its position doesn't
-    // shift.
+    // shift. Firefox only, same reasoning as Part 1.
     let adjLeft = left;
     let adjTop = top;
     let adjWidth = width;
     let adjHeight = height;
-    if (hasFill && !hasStroke) {
+    if (isFirefox && hasFill && !hasStroke) {
       const needed = MIN_ONSCREEN_STROKE_PX / scale;
       if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
         adjTop = top - (needed - height) / 2;
