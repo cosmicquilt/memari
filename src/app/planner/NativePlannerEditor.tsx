@@ -2252,9 +2252,12 @@ function ModulePalette({
                   flexDirection: "column",
                   gap: 5,
                   padding: 7,
-                  borderRadius: 8,
+                  borderRadius: 14,
                   background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                  border: highlightSection === s.key ? "1px solid rgba(90, 110, 255, 0.5)" : "1px solid transparent",
+                  // Same RGB as the background fill, just a higher alpha —
+                  // keeps the border a subtle deepening of the fill color
+                  // instead of a separate, brighter blue outline.
+                  border: highlightSection === s.key ? "1px solid rgba(74, 92, 255, 0.35)" : "1px solid transparent",
                   transition: "background 0.4s ease, border-color 0.4s ease",
                 }}
               >
