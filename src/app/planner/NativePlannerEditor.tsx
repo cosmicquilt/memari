@@ -1655,22 +1655,32 @@ function AddModuleButton({
         borderRadius: ADD_MODULE_RADIUS_PX,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
-        // Permanently mounted now (see the caller's own comment) —
-        // this transition is what turns every subsequent change in
-        // top/visualHeight into a visible grow/shrink/slide instead of
-        // an instant jump, including the very first time this goes
-        // from 0-height/invisible to some real room (which reads as
-        // the button sliding up and growing in from wherever its own
-        // top edge currently sits — "appear from the bottom,"
-        // requested directly). Always on, not scoped to a temporary
-        // flag the way the sidebar-push effect's own transition is
-        // (see paletteZoomTransitioning's own comment) — nothing else
-        // ever needs this button's own position/size to apply
-        // instantly; a live-tracked resize drag is exactly the case
-        // this exists for, not one to protect against.
+        // Permanently mounted now (see the caller's own comment) — but
+        // top/height are deliberately NOT transitioned, only opacity
+        // is. First pass at this animated both, and reported back
+        // immediately: "it doesn't snap with above module and it
+        // jumps around and stuff while resizing." Root cause: a
+        // continuous drag can cross several rows within one 0.2s ease
+        // window, so each row crossing restarted a new transition from
+        // wherever the *previous*, still-mid-flight one had gotten to
+        // — permanently chasing a moving target instead of settling,
+        // while the module boundary right above it (which this button
+        // needs to visually align with) tracks the same live data with
+        // zero lag by design, the same "no transition on the thing
+        // that's actively being dragged" rule NativeModule's own
+        // isDragged/suppressTransition already follows elsewhere in
+        // this file. "Snap" (in the same request as "resize") already
+        // meant discrete, instant, per-row jumps, not an eased slide —
+        // consistent with how every other part of this app's own
+        // resize preview behaves (see ResizeHandle's own comment:
+        // "jumps a whole row at a time," no easing). Opacity is the
+        // one property that's safe to animate: it only flips once per
+        // "room appeared/disappeared" transition, never on every row
+        // crossing within an ongoing drag, so a short fade-in still
+        // reads as "appearing" without ever fighting the drag itself.
         opacity: rowSpan > 0 ? 1 : 0,
         pointerEvents: rowSpan > 0 ? "auto" : "none",
-        transition: "top 0.2s ease, height 0.2s ease, opacity 0.2s ease",
+        transition: "opacity 0.2s ease",
       }}
     >
       {/* The dashed edge — see this file's own header comment above
