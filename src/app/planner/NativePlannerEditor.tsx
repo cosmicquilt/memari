@@ -2204,78 +2204,65 @@ function ModulePalette({
                 ref={(el) => {
                   sectionRefs.current[s.key] = el ?? undefined;
                 }}
-                style={{ position: "relative" }}
+                // Highlight styling lives directly on this div now —
+                // not a separate absolutely-positioned overlay sized to
+                // match it. That approach went through three attempts
+                // (a negative-margin bleed, then inset:-7, then inset:0)
+                // and got reported cut off after each one in a
+                // different way ("doesn't match up," then "still cut
+                // off," then "still cut off a bit on the bottom and
+                // right") — every version depended on a *second* box
+                // staying in sync with this one's real content size,
+                // and something about the panel's own nested padding/
+                // collapse/scroll machinery kept finding a new way to
+                // break that sync. Putting the highlight on the actual
+                // content box itself removes the whole problem class at
+                // the root: there's only one box now, so there's
+                // nothing left that could ever get out of sync with it.
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 5,
+                  padding: 7,
+                  borderRadius: 8,
+                  background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
+                  boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
+                  transition: "background 0.4s ease, box-shadow 0.4s ease",
+                }}
               >
-                {/* Highlight layer — position:absolute, but inset:0 now,
-                    not the earlier inset:-7 "bleed past my own bounds"
-                    version. That version fixed the *previous* bug
-                    (misaligning against ancestor padding) but was still
-                    a bleed past this div's own box — and this div sits
-                    inside "Add Module"'s own PaletteCollapse, whose
-                    inner wrapper is overflow:hidden except while a card
-                    drag is in flight (see PaletteCollapse's own
-                    allowOverflow comment). A plain click on a "+" zone
-                    isn't a drag, so allowOverflow is false right when
-                    this highlight needs to show — the bleed got clipped
-                    by that ancestor's overflow:hidden the same way a
-                    dragged card would. Reported directly, again: "the
-                    highlight is still cut off when i click on the plus
-                    box." inset:0 can't be clipped by anything, ever,
-                    since it never extends past this div's own natural
-                    bounds — the "breathing room" that used to come from
-                    the -7px bleed now comes from real padding on the
-                    content div below instead, which *grows this div's
-                    own bounds* rather than needing to escape them.
-                    pointerEvents:none so it never intercepts clicks
-                    meant for the header button/cards stacked above
-                    it. */}
-                <div
-                  aria-hidden
+                <button
+                  type="button"
+                  onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
                   style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: 8,
-                    background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                    boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
-                    transition: "background 0.4s ease, box-shadow 0.4s ease",
-                    pointerEvents: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "left",
                   }}
-                />
-                <div style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative", padding: 7 }}>
-                  <button
-                    type="button"
-                    onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <PaletteChevron open={sectionIsOpen} />
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
-                      <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>{s.hint}</div>
-                    </div>
-                  </button>
-                  <PaletteCollapse open={sectionIsOpen} allowOverflow={isDraggingPaletteCard}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
-                      {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
-                        <PaletteCard
-                          key={m.slug}
-                          slug={m.slug}
-                          label={m.label}
-                          isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-                          dragOffset={activeDelta}
-                        />
-                      ))}
-                    </div>
-                  </PaletteCollapse>
-                </div>
+                >
+                  <PaletteChevron open={sectionIsOpen} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
+                    <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>{s.hint}</div>
+                  </div>
+                </button>
+                <PaletteCollapse open={sectionIsOpen} allowOverflow={isDraggingPaletteCard}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
+                    {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
+                      <PaletteCard
+                        key={m.slug}
+                        slug={m.slug}
+                        label={m.label}
+                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                        dragOffset={activeDelta}
+                      />
+                    ))}
+                  </div>
+                </PaletteCollapse>
               </div>
             );
           })}
