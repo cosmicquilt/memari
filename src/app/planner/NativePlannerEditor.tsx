@@ -1516,27 +1516,48 @@ function StackResizeHandle({
 // `border-style: dashed` (reported: thicker border alone still read
 // as "dots," no independent dash-length control), then as four
 // repeating-gradient background layers, one per side (reported: exact
-// dash length, but the gradients are each straight and independently
-// clipped by the button's own border-radius, so a corner showed a
-// partial/clipped dash instead of one bending smoothly through it —
-// "the dashes are getting cut off in the corner by the border
-// radius"). This version draws one real rounded-rect *stroke* in an
-// inline SVG instead — stroke-dasharray distributes dashes along the
-// actual curved outline, corners included, exactly the way a native
-// CSS dashed border would if border-style had a dash-length knob at
-// all. Not a background-image data URI stretched via background-size
-// (which was the earlier, explicitly-rejected SVG approach, for
-// exactly the distortion risk this button's own widely-varying
-// per-stack size would hit) — this SVG's own viewBox is set to the
-// button's *real*, already-known pixel width/height (gridCellToPixels'
-// own `rect`), so there's no scaling at all: 1 SVG user-unit is
-// exactly 1 real pixel, and stroke-dasharray's px values render at
-// their literal length regardless of the box's own aspect ratio.
+// dash length, but corners showed a partial/clipped dash instead of
+// one bending smoothly through it), then as one continuous dashed
+// rounded-rect stroke via stroke-dasharray (fixed the corner clipping,
+// but a single dasharray/no-offset traversal starts its phase at an
+// arbitrary point — top-left, by SVG's own rounded-rect path
+// convention — so nothing forced the pattern to land the same way on
+// the left and right; reported: "make dashed border symmetric across
+// the middle vertical").
+//
+// This version draws the border as four independent straight edges
+// (each with its own stroke-dashoffset centering a dash exactly at
+// that edge's own midpoint — see edgeDashOffset below) plus four
+// solid, undashed quarter-circle arcs connecting them at the corners.
+// Two problems solved by one design, not stacked fixes: centering
+// each straight edge's own pattern independently is what actually
+// guarantees left-right (and, as a side effect, top-bottom) mirror
+// symmetry — a single global offset on one continuous path can't
+// simultaneously center the top edge, the bottom edge (traversed in
+// the *opposite* direction along a rounded-rect path), and match the
+// left/right edges to each other, without solving a much gnarlier
+// piece of path-length bookkeeping for comparatively little gain. And
+// since corners are now solid rather than dashed, there's nothing
+// left to clip awkwardly through them — the corner-clipping problem
+// the previous version specifically fixed doesn't just stay fixed, it
+// stops being a real question at all.
 const ADD_MODULE_DASH_PX = 80;
 const ADD_MODULE_GAP_PX = 45;
-const ADD_MODULE_BORDER_PX = 6;
-const ADD_MODULE_RADIUS_PX = 64;
+const ADD_MODULE_BORDER_PX = 8;
+const ADD_MODULE_RADIUS_PX = 48;
 const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.6)";
+
+// Centers a dash (not a gap) at the midpoint of a straight run of the
+// given length — the standard SVG stroke-dashoffset centering
+// formula: offset = dash/2 - length/2. Derivation, since dashoffset's
+// own sign convention isn't obvious from the spec text alone: the
+// well-known line-draw-animation technique (dasharray = pathLength,
+// dashoffset animated from pathLength down to 0 to "reveal" the path)
+// only works if increasing dashoffset shifts the pattern so effective
+// position = t + offset, which is what this formula assumes.
+function edgeDashOffset(length: number): number {
+  return ADD_MODULE_DASH_PX / 2 - length / 2;
+}
 
 function AddModuleButton({
   pageGrid,
@@ -1558,6 +1579,42 @@ function AddModuleButton({
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
   const iconSize = Math.max(40, Math.min(64, rect.width * 0.24));
+
+  // Inset by half the stroke width on every side — an SVG stroke is
+  // centered on its own path by default, so without this the outer
+  // half would run past the button's own edge and get clipped instead
+  // of landing flush with it (same "inset a stroke to keep its outer
+  // edge at the box's own boundary" adjustment PolotnoJsonRenderer's
+  // own outline rendering already relies on elsewhere in this file).
+  const half = ADD_MODULE_BORDER_PX / 2;
+  const x0 = half;
+  const y0 = half;
+  const x1 = Math.max(half, rect.width - half);
+  const y1 = Math.max(half, rect.height - half);
+  // Same clamp CSS border-radius applies automatically (and SVG's own
+  // rx/ry did too, in the previous single-<rect> version) — manually
+  // replicated here since these are now four independent lines/arcs
+  // this component builds itself, with no single shape left for the
+  // browser to auto-clamp for it.
+  const r = Math.max(0, Math.min(ADD_MODULE_RADIUS_PX, (x1 - x0) / 2, (y1 - y0) / 2));
+  const flatWidth = Math.max(0, x1 - x0 - 2 * r);
+  const flatHeight = Math.max(0, y1 - y0 - 2 * r);
+  const horizontalDashProps = {
+    stroke: ADD_MODULE_DASH_COLOR,
+    strokeWidth: ADD_MODULE_BORDER_PX,
+    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
+    strokeDashoffset: edgeDashOffset(flatWidth),
+    strokeLinecap: "butt" as const,
+  };
+  const verticalDashProps = {
+    stroke: ADD_MODULE_DASH_COLOR,
+    strokeWidth: ADD_MODULE_BORDER_PX,
+    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
+    strokeDashoffset: edgeDashOffset(flatHeight),
+    strokeLinecap: "butt" as const,
+  };
+  const cornerProps = { fill: "none", stroke: ADD_MODULE_DASH_COLOR, strokeWidth: ADD_MODULE_BORDER_PX };
+
   return (
     <button
       type="button"
@@ -1579,38 +1636,33 @@ function AddModuleButton({
         cursor: "pointer",
       }}
     >
-      {/* The dashed rounded-rect stroke — see this file's own header
-          comment above for why an inline, real-pixel-sized SVG rather
-          than a CSS trick. Absolutely positioned to exactly cover the
-          button, pointerEvents:none so it never intercepts the click
-          meant for the button itself. Inset by half the stroke width
-          on every side (x/y/width/height below) — an SVG stroke is
-          centered on its own path by default, so without this the
-          outer half of the stroke would run past the button's own
-          edge and get clipped instead of landing flush with it, the
-          same "inset a stroke to keep its outer edge at the box's own
-          boundary" adjustment PolotnoJsonRenderer's own outline
-          rendering already relies on elsewhere in this file. rx/ry
-          match the button's own CSS borderRadius so the stroke and
-          the tinted fill trace the identical rounded shape. */}
+      {/* The dashed edge — see this file's own header comment above
+          for the four-edge-plus-solid-corners design and why.
+          Absolutely positioned to exactly cover the button,
+          pointerEvents:none so it never intercepts the click meant
+          for the button itself. */}
       <svg
         width={rect.width}
         height={rect.height}
         style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
       >
-        <rect
-          x={ADD_MODULE_BORDER_PX / 2}
-          y={ADD_MODULE_BORDER_PX / 2}
-          width={Math.max(0, rect.width - ADD_MODULE_BORDER_PX)}
-          height={Math.max(0, rect.height - ADD_MODULE_BORDER_PX)}
-          rx={ADD_MODULE_RADIUS_PX}
-          ry={ADD_MODULE_RADIUS_PX}
-          fill="none"
-          stroke={ADD_MODULE_DASH_COLOR}
-          strokeWidth={ADD_MODULE_BORDER_PX}
-          strokeDasharray={`${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`}
-          strokeLinecap="butt"
-        />
+        {/* Top and bottom: same flatWidth/offset, so besides each
+            being individually centered (the actual requirement), the
+            two also end up mirroring each other — a bonus, not
+            something separately computed for. */}
+        <line x1={x0 + r} y1={y0} x2={x1 - r} y2={y0} {...horizontalDashProps} />
+        <line x1={x0 + r} y1={y1} x2={x1 - r} y2={y1} {...horizontalDashProps} />
+        <line x1={x0} y1={y0 + r} x2={x0} y2={y1 - r} {...verticalDashProps} />
+        <line x1={x1} y1={y0 + r} x2={x1} y2={y1 - r} {...verticalDashProps} />
+        {/* Four quarter-circle corners, solid (no dasharray) —
+            deliberately not dashed at all, so there's nothing for a
+            corner to clip awkwardly through. Clockwise sweep
+            (sweep-flag 1) matches the same direction a rounded-rect's
+            own implicit path already goes in. */}
+        <path d={`M ${x0},${y0 + r} A ${r},${r} 0 0 1 ${x0 + r},${y0}`} {...cornerProps} />
+        <path d={`M ${x1 - r},${y0} A ${r},${r} 0 0 1 ${x1},${y0 + r}`} {...cornerProps} />
+        <path d={`M ${x1},${y1 - r} A ${r},${r} 0 0 1 ${x1 - r},${y1}`} {...cornerProps} />
+        <path d={`M ${x0 + r},${y1} A ${r},${r} 0 0 1 ${x0},${y1 - r}`} {...cornerProps} />
       </svg>
       {/* A real icon, not the text glyph "+" — requested directly
           ("can you change to plus icon as well"). Two round-capped
