@@ -3547,8 +3547,9 @@ export function NativePlannerEditor({
         >
           {paletteOpen ? "✕" : "☰"}
         </button>
-        <strong>Memari planner editor (native)</strong>
-        <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
+        <strong>
+          Memari <span style={{ fontWeight: 300, fontSize: "0.8em", letterSpacing: "0.06em" }}>EDITOR</span>
+        </strong>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
             the pdf." Scoped to the sidebar column and the below-hourly-
