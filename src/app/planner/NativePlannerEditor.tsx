@@ -2299,26 +2299,46 @@ export function NativePlannerEditor({
       }
       const pageGrid = pageGridByPageId[target.pageId];
       if (!pageGrid) return;
+      // Mirrors addPaletteModuleAt's own identical lookup (actions.ts)
+      // — see that copy's comment for the full reasoning. Kept in sync
+      // by hand rather than shared, the same "use server" boundary
+      // constraint every other duplicated constant/helper in this file
+      // already has to live with.
+      const hourlyGridId = (instanceIdsByPageId[target.pageId] ?? []).find(
+        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
+      );
+      const hourlyGridPlacement = hourlyGridId ? placements[hourlyGridId] : undefined;
+      // todo-checklist/habit-tracker size *and position* themselves to
+      // match whichever page they're being dragged over — see
+      // addPaletteModuleAt's own identical comment for the full
+      // reasoning. Without this, the live preview showed a fixed 4-wide
+      // box starting at column 0 regardless of which page it was over
+      // — reported directly: "habit tracker doesn't work on left side
+      // its to big and the highlighted snap box doesn't match the side
+      // it (3 wide on left, 4 wide on right)" — 1 column too wide *and*
+      // wrongly positioned on the left (3-day) page, where the hourly
+      // grid itself starts at column 1, not 0 (column 0 is the
+      // sidebar), so it always collided with sidebar content there
+      // regardless of where the cursor actually was.
+      const isBottomModule = slug === "todo-checklist" || slug === "habit-tracker";
+      const effectiveColumnStart =
+        isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnStart : target.columnStart;
+      const effectiveColumnSpan =
+        isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnSpan : meta.defaultColumnSpan;
       const candidate: GridRect = {
-        columnStart: target.columnStart,
+        columnStart: effectiveColumnStart,
         rowStart: target.rowStart,
-        columnSpan: meta.defaultColumnSpan,
+        columnSpan: effectiveColumnSpan,
         rowSpan: meta.defaultRowSpan,
       };
       const occupied: GridRect[] = (instanceIdsByPageId[target.pageId] ?? [])
         .map((instId) => placements[instId])
         .filter((p): p is Placement => !!p);
-      // Mirrors addPaletteModuleAt's own identical reservation
-      // (actions.ts) — see that copy's comment for the full reasoning.
-      // Kept in sync by hand rather than shared, the same "use server"
-      // boundary constraint every other duplicated constant/helper in
-      // this file already has to live with — this is what keeps the
-      // live preview from ever showing a spot the server would then
-      // relocate away from on drop.
-      const hourlyGridId = (instanceIdsByPageId[target.pageId] ?? []).find(
-        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
-      );
-      const hourlyGridPlacement = hourlyGridId ? placements[hourlyGridId] : undefined;
+      // Reserves the 1-row breathing gap below hourly-grid-core — see
+      // addPaletteModuleAt's own identical reservation (actions.ts) for
+      // the full reasoning. This is what keeps the live preview from
+      // ever showing a spot the server would then relocate away from on
+      // drop.
       if (hourlyGridPlacement) {
         occupied.push({
           columnStart: hourlyGridPlacement.columnStart,
@@ -2328,12 +2348,12 @@ export function NativePlannerEditor({
         });
       }
       const resolved = findNearestFreeCell(pageGrid, candidate, occupied);
-      const finalRect: GridRect = { ...resolved, columnSpan: meta.defaultColumnSpan, rowSpan: meta.defaultRowSpan };
+      const finalRect: GridRect = { ...resolved, columnSpan: effectiveColumnSpan, rowSpan: meta.defaultRowSpan };
       setPaletteDrag({
         pageId: target.pageId,
         columnStart: resolved.columnStart,
         rowStart: resolved.rowStart,
-        columnSpan: meta.defaultColumnSpan,
+        columnSpan: effectiveColumnSpan,
         rowSpan: meta.defaultRowSpan,
         overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
       });

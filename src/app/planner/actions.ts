@@ -804,19 +804,34 @@ export async function addPaletteModuleAt(
         where: { slug: moduleTypeSlug },
       });
 
-      // todo-checklist and habit-tracker size themselves to match
-      // whichever page they land on — 3 day-columns wide on the left
-      // (3-day) page, 4 wide on the right (4-day) page — by reading that
-      // page's own hourly-grid-core instance, rather than always using
-      // the module type's fixed default. Without this, a checklist
-      // dropped on the 4-day page would still only draw 3 day segments
-      // (the schema default), out of step with the hourly grid it's
-      // sitting under.
+      // todo-checklist and habit-tracker size *and position* themselves
+      // to match whichever page they land on — 3 day-columns wide,
+      // starting at column 1 on the left (3-day) page (column 0 is the
+      // sidebar), 4 wide starting at column 0 on the right (4-day) page
+      // — by reading that page's own hourly-grid-core instance, rather
+      // than always using the module type's fixed default/whatever
+      // column the caller happened to request. Previously only
+      // columnSpan was overridden, not columnStart — reported directly:
+      // "habit tracker doesn't work on left side its to big" (a 4-wide
+      // request the caller sends by default, starting at column 0,
+      // still 1 column too wide *and* wrongly positioned even after the
+      // span-only override, so it always collided with the sidebar's
+      // own column-0 content there) "and the highlighted snap box
+      // doesn't match the side it (3 wide on left, 4 wide on right)" —
+      // the client's own live preview (NativePlannerEditor.tsx's
+      // handleDragMove) had no idea this adjustment existed at all, so
+      // it never requested the corrected column range in the first
+      // place, compounding the same gap on the caller's side too.
+      // Without any of this, a checklist/tracker dropped on the 4-day
+      // page would also still only draw 3 day segments (the schema
+      // default), out of step with the hourly grid it's sitting under.
+      let effectiveColumnStart = columnStart;
       let effectiveColumnSpan = moduleType.defaultColumnSpan;
       const configOverrides: Record<string, unknown> = {};
       if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
         const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-        if (hourlyGrid) {
+        if (hourlyGrid && hourlyGrid.columnStart !== null) {
+          effectiveColumnStart = hourlyGrid.columnStart;
           effectiveColumnSpan = hourlyGrid.columnSpan;
           if (moduleTypeSlug === "todo-checklist") {
             const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
@@ -827,7 +842,7 @@ export async function addPaletteModuleAt(
 
       const pageGrid = pageGridFor(page);
       const candidate = clampGridPlacement(pageGrid, {
-        columnStart,
+        columnStart: effectiveColumnStart,
         rowStart,
         columnSpan: effectiveColumnSpan,
         rowSpan: moduleType.defaultRowSpan,
