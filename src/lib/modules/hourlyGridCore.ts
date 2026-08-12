@@ -209,9 +209,10 @@ export function renderHourlyGridCore(
       // bottom (not flush) for the same reason verticalAlign was
       // dropped elsewhere — a small gap off the line reads better than
       // touching it exactly.
-      // Same 5pt -> 5.5pt legibility bump as dateFontSize above,
-      // requested directly ("hour times... slightly larger").
-      const timeLabelFontSize = ptToPx(5.5);
+      // 5pt -> 5.5pt legibility bump (dateFontSize above got the same
+      // one), then eased back to 5.3pt — reported at 5.5pt as crowding
+      // its own surrounding box.
+      const timeLabelFontSize = ptToPx(5.3);
       const timeLabelTextHeight = timeLabelFontSize * 1.2;
       const timeLabelBottomGap = ptToPx(1);
       elements.push({
