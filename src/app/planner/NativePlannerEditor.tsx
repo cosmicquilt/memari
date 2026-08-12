@@ -3107,11 +3107,39 @@ export function NativePlannerEditor({
       const candidate: GridRect = { ...nearestCell, columnSpan: current.columnSpan, rowSpan: current.rowSpan };
 
       const others: Array<GridRect & { id: string; locked: boolean }> = [];
+      let hourlyGridPlacement: Placement | null = null;
       for (const [id, placement] of Object.entries(placements)) {
         if (id === instanceId) continue;
         const otherInfo = moduleLookup.get(id);
         if (!otherInfo || otherInfo.pageId !== info.pageId) continue;
         others.push({ ...placement, id, locked: otherInfo.locked });
+        if (otherInfo.slug === "hourly-grid-core") hourlyGridPlacement = placement;
+      }
+      // Same synthetic 1-row-tall virtual lock addPaletteModuleAt
+      // (actions.ts) and handleDragMove's own palette-preview branch
+      // already reserve below hourly-grid-core, applied here too —
+      // those two only ever covered a *fresh* palette drop; nothing
+      // stopped an already-placed todo-checklist/habit-tracker from
+      // being dragged flush against the hourly grid with no gap at
+      // all, since resolveModulePlacement never knew that specific
+      // boundary existed. Reported directly: "you can still drag
+      // bottom module to a spot with no gap to the hours above it and
+      // it gets stuck there" — once landed there, resolveModulePlacement's
+      // own topBound math (grid.ts) had nothing bounding the stack from
+      // above at all, so a further drag couldn't reliably discover a
+      // valid gapped position either; reserving the row here the same
+      // way the "+" zone below is reserved fixes both — the flush
+      // position becomes unreachable in the first place, not just
+      // patched after landing there.
+      if (hourlyGridPlacement) {
+        others.push({
+          id: "__hourlygridgap__",
+          locked: true,
+          columnStart: hourlyGridPlacement.columnStart,
+          rowStart: hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan,
+          columnSpan: hourlyGridPlacement.columnSpan,
+          rowSpan: 1,
+        });
       }
       // Treats each stack's own reserved "+" add-zone (see
       // AddModuleButton) as a virtual locked block for collision/reflow
