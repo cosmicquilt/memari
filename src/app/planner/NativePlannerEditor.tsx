@@ -1890,6 +1890,23 @@ function ModulePalette({
       setSectionOpen((prev) => ({ ...prev, [highlightSection]: true }));
     }
   }
+  // Forcing a section open (just above) doesn't put it *in view* — the
+  // panel is its own scrollable region (overflow: auto below), and a
+  // "+" zone can be clicked while the panel's scrolled somewhere that
+  // doesn't happen to show the target section at all. Reported
+  // directly: "when i click on a plus box, the highlight of the nav
+  // section is cut off, I can only see the top right border radius of
+  // the highlight, the rest... cut off and hidden" — exactly what
+  // scrolling clips: the section (and its highlight, sized to match
+  // it) was mostly below the panel's own visible scroll area, only a
+  // sliver of its top-right corner actually inside it. A genuine DOM
+  // side effect (scrolling), not a value to derive during render, so
+  // this one really is a useEffect, unlike the setState calls above.
+  const sectionRefs = useRef<Partial<Record<"side" | "bottom", HTMLDivElement>>>({});
+  useEffect(() => {
+    if (!highlightSection) return;
+    sectionRefs.current[highlightSection]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [highlightSection]);
   // Toggle button itself lives in the page header, not here (see the
   // main render's own comment on why) — this just renders the sliding
   // panel. Stays mounted (not conditionally rendered) at all times,
@@ -1982,7 +1999,13 @@ function ModulePalette({
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
             return (
-              <div key={s.key} style={{ position: "relative" }}>
+              <div
+                key={s.key}
+                ref={(el) => {
+                  sectionRefs.current[s.key] = el ?? undefined;
+                }}
+                style={{ position: "relative" }}
+              >
                 {/* Highlight layer — position:absolute + inset, not the
                     earlier padding:7/margin:-7 "bleed past my own
                     bounds" trick. That trick relied on this section's
