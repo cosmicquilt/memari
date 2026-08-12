@@ -1535,10 +1535,17 @@ function StackResizeHandle({
 // debug "+" zone at this border-radius; the straight edges (most of
 // the perimeter) get the exact controllable dash length that was
 // actually asked for.
-const ADD_MODULE_DASH_PX = 14;
-const ADD_MODULE_GAP_PX = 8;
+// Dash/gap both scaled 5x together (70px/40px, not just the dash
+// alone stretched against the old 8px gap) — requested directly as
+// "dashes to be 5x longer," but stretching only the solid segment
+// while leaving a tiny gap would have read as a near-solid line with
+// small nicks in it, not a recognizably *dashed* edge at a bigger
+// scale. Scaling the whole period keeps the same dash:gap proportions,
+// just 5x the size.
+const ADD_MODULE_DASH_PX = 70;
+const ADD_MODULE_GAP_PX = 40;
 const ADD_MODULE_DASH_PERIOD_PX = ADD_MODULE_DASH_PX + ADD_MODULE_GAP_PX;
-const ADD_MODULE_BORDER_PX = 4.5;
+const ADD_MODULE_BORDER_PX = 6;
 const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.6)";
 
 function AddModuleButton({
@@ -1598,14 +1605,27 @@ function AddModuleButton({
           `${ADD_MODULE_BORDER_PX}px ${ADD_MODULE_DASH_PERIOD_PX}px`,
         ].join(", "),
         backgroundPosition: "left top, left bottom, left top, right top",
-        borderRadius: 16,
+        borderRadius: 40,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
-        fontSize: Math.max(32, Math.min(56, rect.width * 0.2)),
-        lineHeight: 1,
       }}
     >
-      +
+      {/* A real icon, not the text glyph "+" — requested directly
+          ("can you change to plus icon as well"). Two round-capped
+          strokes rather than a font character: renders at a precise,
+          consistent weight/proportion regardless of whatever font the
+          browser would've picked for a bare "+", and scales exactly
+          with width/height instead of a font's own line-height
+          quirks. stroke="currentColor" inherits the button's own
+          `color` above rather than duplicating that value here. */}
+      <svg
+        width={Math.max(40, Math.min(64, rect.width * 0.24))}
+        height={Math.max(40, Math.min(64, rect.width * 0.24))}
+        viewBox="0 0 24 24"
+        fill="none"
+      >
+        <path d="M12 4v16M4 12h16" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" />
+      </svg>
     </button>
   );
 }
