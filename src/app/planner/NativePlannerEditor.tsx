@@ -181,7 +181,7 @@ const PALETTE_MODULE_TYPES: Array<{
   defaultColumnSpan: number;
   defaultRowSpan: number;
 }> = [
-  { slug: "labeled-box", label: "Text Box", section: "side", defaultColumnSpan: 1, defaultRowSpan: 2 },
+  { slug: "labeled-box", label: "Prompt Box", section: "side", defaultColumnSpan: 1, defaultRowSpan: 2 },
   { slug: "todo-checklist", label: "To-Do Checklist", section: "bottom", defaultColumnSpan: 3, defaultRowSpan: 10 },
   { slug: "habit-tracker", label: "Habit Tracker", section: "bottom", defaultColumnSpan: 4, defaultRowSpan: 10 },
 ];
@@ -690,25 +690,31 @@ function NativeModule({
         </button>
       )}
       {/* Heading edit — labeled-box only (the one module type with a
-          single free-text heading in this app today). Same hover-corner-
-          badge language as the delete button above, mirrored to the
-          top-left corner so the two don't collide. Swaps for an input
-          rather than living alongside it — simpler than getting an
-          overlay to line up with wherever the rendered SVG heading text
-          happens to sit exactly, but its height is still computed to
-          match that real header band (computeLabeledBoxHeaderHeightPx,
-          editOverlayHeight below) — reported live the first time this
-          shipped with a guessed fixed height instead: "the header gets
-          taller" (that guess ran taller than a real single-line
-          header's true, shorter height). A per-module "reset this one
-          heading" badge used to sit right next to this one — removed
-          per direct request once the header's whole-sidebar Reset to
-          Template button existed, which covers the same need at a
-          different scope. */}
+          single free-text heading in this app today). Used to be a
+          hover-corner pencil badge (top-left, mirroring the delete
+          button's own top-right one) — replaced per direct request:
+          "I want to be able to edit the title of prompt boxes live and
+          I want it to be a text cursor over the title and that's how
+          you edit not the button in the top left." This is now a
+          plain, invisible click target sized to match the real header
+          band exactly (computeLabeledBoxHeaderHeightPx,
+          editOverlayHeight below — same value the edit-mode overlay
+          right after this one already used, so both line up with
+          wherever the rendered heading text actually sits, not a
+          guessed height: reported live the first time this shipped
+          with one, "the header gets taller"). cursor:"text" is the
+          entire affordance, deliberately — nothing else marks this as
+          interactive, matching what was asked for. onPointerDown still
+          stops propagation, same as the old button did: without it, a
+          click here would also register as the start of a drag (the
+          module's own outer wrapper is the drag handle for its whole
+          area otherwise) instead of opening the editor. Trade-off this
+          creates, worth knowing: the module can no longer be
+          drag-repositioned by grabbing its own header band specifically
+          — grabbing anywhere below the header still works exactly like
+          before. */}
       {!locked && slug === "labeled-box" && !isEditingHeading && (
-        <button
-          type="button"
-          title="Edit heading"
+        <div
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -717,29 +723,14 @@ function NativeModule({
           }}
           style={{
             position: "absolute",
-            top: -35,
-            left: -35,
-            width: 70,
-            height: 70,
-            borderRadius: "50%",
-            border: "none",
-            background: "#c7c7c7",
-            color: "#666666",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 30,
-            lineHeight: 1,
-            padding: 0,
-            cursor: "pointer",
-            opacity: isHovered ? 1 : 0,
-            pointerEvents: isHovered ? "auto" : "none",
-            transition: "opacity 0.12s ease",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: editOverlayHeight,
+            cursor: "text",
             zIndex: 6,
           }}
-        >
-          ✎
-        </button>
+        />
       )}
       {!locked && slug === "labeled-box" && isEditingHeading && (
         <div
@@ -1992,7 +1983,7 @@ function ModulePalette({
         }}
       >
         <PaletteChevron open={addModuleOpen} />
-        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Add Module</strong>
+        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Modules</strong>
       </button>
       <PaletteCollapse open={addModuleOpen} allowOverflow={isDraggingPaletteCard}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
