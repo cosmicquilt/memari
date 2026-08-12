@@ -1272,6 +1272,25 @@ function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
+      // Forces the cursor icon for the whole drag, not just this
+      // element's own cursor:ns-resize below — reported directly:
+      // "cursor glitches and flashes between resize move and click."
+      // pointerCapture correctly routes every pointer event to this
+      // element regardless of where the cursor physically is, but the
+      // *cursor icon itself* is a separate concern the browser
+      // determines by hit-testing at the actual mouse position on
+      // every frame — pointer capture doesn't change that. This strip
+      // is only RESIZE_HANDLE_HALF_HEIGHT_PX*2 (16px) tall and only
+      // repositions per row crossing, not continuously with the mouse,
+      // so a normal vertical drag routinely carries the real cursor
+      // position outside the strip's own current bounds — hit-testing
+      // then finds whatever's underneath instead (a module with its
+      // own cursor:grab, or the default arrow), flickering the icon
+      // even though the drag logic itself keeps working correctly.
+      // Setting body.style.cursor pins the icon for the duration of
+      // the drag regardless of what's actually under the pointer; the
+      // pointerup/cancel handlers below clear it again.
+      document.body.style.cursor = "ns-resize";
       dragRef.current = {
         clientY: event.clientY,
         topRowSpan: pair.topRowSpan,
@@ -1297,6 +1316,7 @@ function ResizeHandle({
       if (!dragRef.current) return;
       const deltaRows = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
+      document.body.style.cursor = "";
       onResizeEnd(pair, deltaRows);
     },
     [computeClampedDeltaRows, pair, onResizeEnd]
@@ -1306,6 +1326,7 @@ function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const wasDragging = dragRef.current !== null;
       dragRef.current = null;
+      document.body.style.cursor = "";
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -1452,6 +1473,11 @@ function StackResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
+      // See ResizeHandle's own identical comment (its handlePointerDown)
+      // for the full reasoning — same fix, same underlying cursor-vs-
+      // hit-testing mismatch, this handle's own thin strip has the same
+      // problem.
+      document.body.style.cursor = "ns-resize";
       dragRef.current = {
         clientY: event.clientY,
         memberSpans: stackBottom.members.map((m) => m.rowSpan),
@@ -1476,6 +1502,7 @@ function StackResizeHandle({
       if (!dragRef.current) return;
       const deltaRows = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
+      document.body.style.cursor = "";
       onResizeEnd(stackBottom, deltaRows);
     },
     [computeClampedDeltaRows, stackBottom, onResizeEnd]
@@ -1485,6 +1512,7 @@ function StackResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const wasDragging = dragRef.current !== null;
       dragRef.current = null;
+      document.body.style.cursor = "";
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
