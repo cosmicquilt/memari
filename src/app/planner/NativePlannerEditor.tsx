@@ -1805,6 +1805,43 @@ function AddModuleButton({
 // than the delete button's fixed top/right offsets, since this needs
 // to center on a computed *point* (the zone's own horizontal midpoint
 // at its bottom edge) instead of a fixed corner.
+//
+// Two fixes on top of the first version, both reported directly:
+//
+// 1. "mouse still flickering... it only flickers when i move my
+// mouse within the button." Root cause: `isHovered` alone (derived
+// from hoveredInstanceId — is *some module in this zone* currently
+// hovered) creates a feedback loop the delete button doesn't have.
+// The delete button is a *child* of the one module whose hover state
+// controls it, and mouseenter/mouseleave deliberately don't re-fire
+// when the pointer moves onto a descendant — so hovering the delete
+// button itself never counts as "leaving" its own module. This
+// button is a *sibling* of whatever module it overlaps, not a
+// descendant of it, so that protection doesn't apply: the instant it
+// becomes interactive and the pointer happens to be sitting where it
+// covers part of that module, the module's own mouseleave genuinely
+// fires (hoveredInstanceId -> null -> isHovered -> false), which
+// hides this button, which lets the pointer fall back onto the
+// module, which re-fires *its* mouseenter, which shows this button
+// again — an infinite toggle exactly where the two overlap. Fixed
+// with the standard pattern for exactly this ("submenu closes in the
+// gap between it and its trigger" is the classic version of the same
+// bug): track this button's *own* hover locally too, and stay
+// visible if *either* source says so. The two transitions
+// (module-mouseleave, button-mouseenter) fire back-to-back as part of
+// the same continuous pointer movement, so the OR never has a gap
+// where both are momentarily false.
+//
+// 2. "the button should only be the click pointer cursor within the
+// bounds of the circle plus button" — border-radius is paint-only,
+// it was never true; the actual hit-test area was always this
+// element's full square bounding box, including the four transparent
+// corners outside the visible circle. clipPath (unlike border-radius)
+// does constrain hit-testing, not just what's painted — using it
+// here makes the interactive area match the visible circle exactly,
+// and as a side effect shrinks how much of this button's own
+// footprint can overlap a module underneath it in the first place,
+// narrowing the window fix #1 above has to protect against.
 function SectionAddButton({
   pageGrid,
   columnStart,
@@ -1826,11 +1863,15 @@ function SectionAddButton({
     () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
+  const [selfHovered, setSelfHovered] = useState(false);
+  const visible = isHovered || selfHovered;
   return (
     <button
       type="button"
       title="Add a module here"
       onPointerDown={(event) => event.stopPropagation()}
+      onMouseEnter={() => setSelfHovered(true)}
+      onMouseLeave={() => setSelfHovered(false)}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -1843,6 +1884,7 @@ function SectionAddButton({
         width: 140,
         height: 140,
         borderRadius: "50%",
+        clipPath: "circle(50%)",
         border: "none",
         background: "#c7c7c7",
         color: "#666666",
@@ -1853,8 +1895,8 @@ function SectionAddButton({
         lineHeight: 1,
         padding: 0,
         cursor: "pointer",
-        opacity: isHovered ? 1 : 0,
-        pointerEvents: isHovered ? "auto" : "none",
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? "auto" : "none",
         transition: "opacity 0.12s ease",
         zIndex: 6,
       }}
