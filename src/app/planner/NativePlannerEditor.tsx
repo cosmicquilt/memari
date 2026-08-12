@@ -2195,26 +2195,17 @@ function ModulePalette({
         <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Modules</strong>
       </button>
       <PaletteCollapse open={addModuleOpen} allowOverflow={isDraggingPaletteCard}>
-        {/* padding: not just paddingLeft:14 (the intentional indent)
-            anymore — 2px added on the other three sides too. Reported
-            directly: "side modules cut off on top and right, bottom
-            modules cut off on right and bottom." Root cause: each
-            section's own highlight (previous commit) draws a 1px
-            box-shadow spread, which — unlike a border — renders
-            *outside* the element's own box. This list sits inside "Add
-            Module"'s own PaletteCollapse, whose inner wrapper is
-            overflow:hidden (see PaletteCollapse's own allowOverflow
-            comment) with zero padding of its own. Wherever a section
-            sat flush against that wrapper with nothing to spare, the
-            1px shadow got clipped: the right edge, always (nothing
-            was ever reserved there); the top edge, only for whichever
-            section happens to be first in this list; the bottom edge,
-            only for whichever is last. The existing paddingLeft:14
-            already gave the left edge more than enough room, which is
-            exactly why it was never reported as cut off. 2px is
-            enough to clear a 1px spread with a small safety margin,
-            not a redesign of the indent itself. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "2px 2px 2px 14px" }}>
+        {/* Back to plain paddingLeft:14 (the intentional nested-indent) —
+            the previous "2px 2px 2px 14px" was reserving bleed room for
+            each section's highlight, which drew via box-shadow (paints
+            outside the element's own box, so it needs an ancestor to
+            leave it somewhere to bleed into). The highlight is now a
+            real border instead (see the section div below), which is
+            part of the box's own dimensions and can't be clipped by an
+            ancestor's overflow regardless of how much padding exists
+            anywhere in the chain — so this wrapper no longer needs to
+            carve out space for it. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
             return (
@@ -2238,6 +2229,24 @@ function ModulePalette({
                 // content box itself removes the whole problem class at
                 // the root: there's only one box now, so there's
                 // nothing left that could ever get out of sync with it.
+                //
+                // The outline itself is a real `border`, not a
+                // box-shadow. A box-shadow paints *outside* the
+                // element's own border box, so it always needs the
+                // ancestor chain to reserve extra padding to have
+                // somewhere to bleed into — a padding-tuning fix
+                // (reserving 2px on the sections-list wrapper) reduced
+                // but didn't eliminate reported clipping ("top and
+                // right" on the first section, "bottom and right" on
+                // the last — the section flush against each end of the
+                // scrollable list, same as before, just smaller).
+                // `border` is part of the box's own dimensions, so it
+                // can never be clipped by an ancestor's overflow no
+                // matter how many levels deep or how little padding
+                // exists anywhere in the chain. Always rendering a 1px
+                // border (transparent when not highlighted) keeps the
+                // box's size constant so toggling the highlight never
+                // shifts layout.
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -2245,8 +2254,8 @@ function ModulePalette({
                   padding: 7,
                   borderRadius: 8,
                   background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                  boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
-                  transition: "background 0.4s ease, box-shadow 0.4s ease",
+                  border: highlightSection === s.key ? "1px solid rgba(90, 110, 255, 0.5)" : "1px solid transparent",
+                  transition: "background 0.4s ease, border-color 0.4s ease",
                 }}
               >
                 <button
