@@ -1624,8 +1624,8 @@ function PaletteCard({
       style={{
         position: "relative",
         padding: "6px 10px",
-        borderRadius: 6,
-        border: "1px solid #444",
+        borderRadius: 12,
+        border: "none",
         background: isDragging ? "#2a2a2a" : "#1f1f1f",
         color: "#ddd",
         fontSize: 12,
@@ -1784,7 +1784,17 @@ function ModulePalette({
     >
       <button
         type="button"
-        onClick={() => setAddModuleOpen((v) => !v)}
+        onClick={() => {
+          // Collapsing a parent also collapses its own children, for
+          // the *next* time it's reopened — requested directly: "when
+          // a parent is collapsed it collapses all of its children."
+          // Only on the way to closed, not open: reopening "Add
+          // Module" itself shouldn't force both sections open too,
+          // only reset what collapsing it just did.
+          const next = !addModuleOpen;
+          setAddModuleOpen(next);
+          if (!next) setSectionOpen({ side: false, bottom: false });
+        }}
         style={{
           display: "flex",
           alignItems: "center",
@@ -2256,10 +2266,39 @@ export function NativePlannerEditor({
   const [zoomMode, setZoomMode] = useState<"fit-width" | "fit-page" | "manual">("fit-width");
   const [manualScale, setManualScale] = useState(1);
 
-  const fitWidthScale = clampScale((viewportSize.width - VIEWPORT_PADDING_PX * 2) / spreadWidthPx);
+  // Declared here (ahead of ModulePalette's own state block further
+  // down, which still owns setting it) specifically because
+  // fitWidthScale/fitPageScale/centeringOffsetX below all need its
+  // *value* already — plain useState calls are safe to reorder among
+  // themselves as long as each stays unconditional and in the same
+  // position every render, so relocating just the declaration (not the
+  // logic that sets it) is enough. See paletteReservedWidth's own
+  // comment for what this drives.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // How much of the viewport's left edge ModulePalette's own sliding
+  // panel currently occupies — requested directly: "when you expand
+  // side bar it zooms out a little and scrolls so the canvas is still
+  // in frame... looks like the side bar pushes the canvas over and
+  // doesn't just cover it." Feeds into two places: fitWidthScale/
+  // fitPageScale below (subtracted from the available width, so the
+  // two auto zoom modes shrink to keep the *whole* spread fitting in
+  // whatever room the sidebar leaves — the "zooms out a little" half)
+  // and centeringOffsetX further down (added as a base left margin,
+  // the same way VIEWPORT_PADDING_PX already is — the "pushes the
+  // canvas over" half, so content starts to the *right* of the open
+  // panel instead of just being centered within the full viewport
+  // width and ending up partly behind it). Deliberately NOT subtracted
+  // from manualScale — a user who's explicitly picked a zoom level via
+  // the +/- buttons or wheel-zoom shouldn't have it silently shrunk
+  // just because the palette opened; centeringOffsetX's own push still
+  // applies in manual mode too (that half is about positioning, not
+  // scale, and matters regardless of zoom mode).
+  const paletteReservedWidth = paletteOpen ? PALETTE_SIDEBAR_WIDTH_PX : 0;
+
+  const fitWidthScale = clampScale((viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth) / spreadWidthPx);
   const fitPageScale = clampScale(
     Math.min(
-      (viewportSize.width - VIEWPORT_PADDING_PX * 2) / spreadWidthPx,
+      (viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth) / spreadWidthPx,
       (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2) / PRINT_HEIGHT_PX
     )
   );
@@ -2319,10 +2358,15 @@ export function NativePlannerEditor({
   // the *actual* margin value (not just the extra-centering term) so
   // every call site — the JSX margin below and both places in
   // zoomAnchored's focal-point math — can use the result directly.
+  // centeringOffsetX carries one further baseline term beyond
+  // VIEWPORT_PADDING_PX, same structure/reasoning as this one — see
+  // paletteReservedWidth's own comment above.
   const centeringOffsetX = useCallback(
     (atScale: number) =>
-      VIEWPORT_PADDING_PX + Math.max(0, (viewportSize.width - VIEWPORT_PADDING_PX * 2 - spreadWidthPx * atScale) / 2),
-    [viewportSize.width, spreadWidthPx]
+      VIEWPORT_PADDING_PX +
+      paletteReservedWidth +
+      Math.max(0, (viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth - spreadWidthPx * atScale) / 2),
+    [viewportSize.width, spreadWidthPx, paletteReservedWidth]
   );
   const centeringOffsetY = useCallback(
     (atScale: number) =>
@@ -2566,8 +2610,31 @@ export function NativePlannerEditor({
   // ModulePalette) specifically so AddModuleButton's own "+" zones can
   // drive them too, opening the panel and pointing at the right
   // section from anywhere on the page, not just the panel's own toggle.
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  // paletteOpen itself is declared earlier (see paletteReservedWidth's
+  // own comment for why) — this block just continues owning the rest
+  // of the palette's state.
   const [paletteHighlightSection, setPaletteHighlightSection] = useState<"side" | "bottom" | null>(null);
+  // True for the brief window right after paletteOpen changes —
+  // requested directly ("when you expand side bar it zooms out a
+  // little and scrolls... looks like the side bar pushes the canvas
+  // over"): the canvas's own scale (fitWidthScale/fitPageScale) and
+  // left margin (centeringOffsetX) both already account for
+  // paletteReservedWidth below, so they change value the instant
+  // paletteOpen does — this flag is what makes that change animate
+  // (see the margin-div/scale-div's own transition, further down)
+  // instead of snapping. Scoped to a brief flag rather than a blanket
+  // CSS transition on those same styles, since they're also what
+  // wheel-zoom and the manual zoom buttons drive, and both are
+  // deliberately instant (see zoomAnchored's own comment on the
+  // jitter a delayed/eased scale application caused there before) —
+  // this only turns transitions on for a palette-driven change, never
+  // those.
+  const [paletteZoomTransitioning, setPaletteZoomTransitioning] = useState(false);
+  const setPaletteOpenAnimated = useCallback((next: boolean) => {
+    setPaletteOpen(next);
+    setPaletteZoomTransitioning(true);
+    setTimeout(() => setPaletteZoomTransitioning(false), 320);
+  }, []);
   // Opens the panel and highlights `section`, then clears the
   // highlight after a couple of animation cycles (the highlight's own
   // background/box-shadow transition above is 0.4s — this leaves it
@@ -2578,10 +2645,10 @@ export function NativePlannerEditor({
   // until the user closes it themselves), only the highlight is
   // transient.
   const handleOpenPaletteSection = useCallback((section: "side" | "bottom") => {
-    setPaletteOpen(true);
+    setPaletteOpenAnimated(true);
     setPaletteHighlightSection(section);
     setTimeout(() => setPaletteHighlightSection((current) => (current === section ? null : current)), 1400);
-  }, []);
+  }, [setPaletteOpenAnimated]);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Which module's own delete button is currently shown — lifted up here
@@ -3669,7 +3736,7 @@ export function NativePlannerEditor({
             would just sit on top of it instead of leaving room. */}
         <button
           type="button"
-          onClick={() => setPaletteOpen((v) => !v)}
+          onClick={() => setPaletteOpenAnimated(!paletteOpen)}
           title={paletteOpen ? "Close module palette" : "Open module palette"}
           style={{
             width: 28,
@@ -3769,6 +3836,12 @@ export function NativePlannerEditor({
             marginLeft: centeringOffsetX(scale),
             marginTop: centeringOffsetY(scale),
             marginBottom: VIEWPORT_PADDING_PX,
+            // See paletteZoomTransitioning's own comment (main
+            // component) for why this is scoped to a flag instead of
+            // an unconditional transition — wheel-zoom/manual-zoom
+            // both drive this same marginLeft and need it applied
+            // instantly, not eased.
+            transition: paletteZoomTransitioning ? "margin 0.28s cubic-bezier(0.4, 0, 0.2, 1)" : undefined,
           }}
         >
           {/* DndContext wraps this whole marginLeft/marginTop div *and*
@@ -3789,7 +3862,16 @@ export function NativePlannerEditor({
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           >
-            <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+            <div
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+                // Same scoping reasoning as the marginLeft transition
+                // just above — see paletteZoomTransitioning's own
+                // comment.
+                transition: paletteZoomTransitioning ? "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)" : undefined,
+              }}
+            >
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
                 {pages.map((page) => (
                   <NativePage
