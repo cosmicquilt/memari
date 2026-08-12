@@ -3612,7 +3612,26 @@ export function NativePlannerEditor({
         onPointerMove={(event) => {
           lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
         }}
-        style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}
+        // overflowAnchor: "none" — reported directly: "when resizing
+        // between bottom modules, the window also moves scrolling up
+        // and down snapping as i resize up and down." Root cause:
+        // browser scroll anchoring, a normally-invisible feature (kicks
+        // in whenever a scrollable container's own content changes
+        // size, nudging scrollTop to keep whatever was visually in view
+        // still in view) that this container never needed disabled
+        // before, because nothing inside it used to change its own DOM
+        // structure while a drag was live. A resizing todo-checklist/
+        // habit-tracker now does exactly that — its content is a
+        // genuine live re-render, not frozen (see NativePage's own
+        // contentIsLive comment), so its real row count changes on
+        // every row crossing, adding/removing actual DOM nodes each
+        // time. That's precisely what scroll anchoring watches for; a
+        // resizing labeled-box never triggers this since its own
+        // content stays frozen (only the box's outline moves) until the
+        // drag commits. `none` doesn't disable this container's own
+        // scrolling, only the browser's automatic-compensation behavior
+        // — nothing else here relies on that behavior to begin with.
+        style={{ flex: 1, minHeight: 0, overflow: "auto", overflowAnchor: "none", position: "relative" }}
       >
         {/* marginLeft/marginTop: centeringOffsetX/Y(scale), not CSS
             margin:auto or flex+justifyContent:center — both of those
