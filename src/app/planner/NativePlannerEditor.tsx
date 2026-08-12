@@ -167,11 +167,11 @@ const MIN_ROW_SPAN = 2;
 // of anything else present, so every drop of either type was silently
 // refused. Reported directly: "the dragged bottom modules don't show
 // up at all."
-// `section` groups these for ModulePalette's own collapsible-sidebar
-// layout (side rail, one flyout per section) — "side" for the sidebar
-// column (labeled-box, its one content type), "bottom" for the zone
-// below the hourly grid (todo-checklist/habit-tracker, which share
-// that zone and need a real choice between them, unlike the sidebar).
+// `section` groups these for ModulePalette's own collapsible sidebar
+// layout — "side" for the sidebar column (labeled-box, its one content
+// type), "bottom" for the zone below the hourly grid (todo-checklist/
+// habit-tracker, which share that zone and need a real choice between
+// them, unlike the sidebar).
 // Also what AddModuleButton's own "+" zones use to pick which section
 // to open — see that component's own comment.
 const PALETTE_MODULE_TYPES: Array<{
@@ -948,9 +948,9 @@ function NativePage({
   onStackResizeStart: (stackBottom: StackBottom) => void;
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
-  // Drives ModulePalette's own controlled openSection — see
-  // AddModuleButton's own comment on why its "+" zones open a section
-  // instead of adding a fixed module type directly.
+  // Opens ModulePalette's own sliding panel and highlights the given
+  // section — see AddModuleButton's own comment on why its "+" zones
+  // do this instead of adding a fixed module type directly.
   onOpenPaletteSection: (section: "side" | "bottom") => void;
   onDeleteModule: (instanceId: string) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
@@ -1109,13 +1109,23 @@ function NativePage({
               columnSpan={sb.columnSpan}
               rowStart={sb.stackBottomRowEnd}
               rowSpan={sb.maxBottomBound - sb.stackBottomRowEnd}
-              // The sidebar column is always columnStart 0 (see
-              // hasSidebarContent's own identical test, actions.ts) —
-              // the one reliable signal for which section this
-              // particular stack's own free room belongs to, since
-              // StackBottom itself doesn't carry a slug (a stack could
-              // in principle mix module types).
-              onClick={() => onOpenPaletteSection(sb.columnStart === 0 ? "side" : "bottom")}
+              // columnStart === 0 alone isn't enough to identify the
+              // sidebar — the right page's hourly-grid-core (and so its
+              // own below-the-grid stack) also starts at column 0,
+              // since that page has no sidebar to reserve column 0 for
+              // in the first place. Reported directly: "when i click on
+              // bottom module plus box the side module pallet opens" —
+              // exactly this, on the right page. columnSpan is what
+              // actually distinguishes them: the sidebar is always
+              // exactly 1 column wide (labeled-box's own
+              // defaultColumnSpan, prisma/seed.mts), while the
+              // below-the-grid zone is always 3 or 4 (matching
+              // hourly-grid-core's own width) — never 1. Same
+              // hasSidebarContent/resetPlannerToTemplate (actions.ts)
+              // convention already relies on columnStart === 0 too, but
+              // always paired with an explicit "labeled-box" or
+              // columnSpan check for the same reason.
+              onClick={() => onOpenPaletteSection(sb.columnStart === 0 && sb.columnSpan === 1 ? "side" : "bottom")}
             />
           ))}
       {/* Live palette-drag preview — only rendered on whichever page the
@@ -1632,12 +1642,11 @@ function PaletteCard({
   );
 }
 
-const PALETTE_SECTIONS: Array<{ key: "side" | "bottom"; label: string; hint: string }> = [
-  { key: "side", label: "Side", hint: "Sidebar modules" },
-  { key: "bottom", label: "Bottom", hint: "Below-the-hourly-grid modules" },
+const PALETTE_SECTIONS: Array<{ key: "side" | "bottom"; heading: string; hint: string }> = [
+  { key: "side", heading: "Side Modules", hint: "Sidebar column" },
+  { key: "bottom", heading: "Bottom Modules", hint: "Below the hourly grid" },
 ];
-const PALETTE_RAIL_WIDTH_PX = 68;
-const PALETTE_FLYOUT_WIDTH_PX = 160;
+const PALETTE_SIDEBAR_WIDTH_PX = 260;
 
 // Drag-to-add sidebar — requested directly: "create a pallette on the
 // side to drag and add new module." A sibling of the scaled page
@@ -1647,52 +1656,95 @@ const PALETTE_FLYOUT_WIDTH_PX = 160;
 // the real viewport, not hijacked by the scale transform's own
 // containing-block behavior.
 //
-// Collapsible, Polotno-style — requested directly: "put the pallete in
-// a collapsible sidebar like polotno." A slim rail (PALETTE_RAIL_WIDTH_PX,
-// always visible, fixed at the same top:60/right:12 spot the old
-// always-open panel used) with one button per PALETTE_SECTIONS entry;
-// clicking one opens a flyout of just that section's cards to the
-// rail's own left, closing again on a second click of the same button.
-// `openSection` is controlled (owned by the main component, not local
-// state) specifically so AddModuleButton's own "+" zones can drive it
-// too — see that component's own comment. Collapsed (openSection null)
-// by default: matches the "collapsible" ask as the sidebar's resting
-// state, and keeps the page-canvas view clear of a permanently-open
-// panel most of a session doesn't need.
+// Collapsible, sliding in from the left — requested directly, twice:
+// first "put the pallete in a collapsible sidebar like polotno," then,
+// after a first pass put it as a right-side rail+flyout instead, "i
+// would like to make a collapsible side bar that slide in from the
+// left side... modern minimalist." A single panel (not a rail plus a
+// separate flyout, this time) fixed to the left edge, from just below
+// the header down to the bottom of the viewport (top: HEADER_HEIGHT_PX,
+// not 0 — the header itself, and its own Reset-to-Template/save-error
+// content, stays visible and usable regardless of whether this is
+// open). Toggled by a button in the header's own flow (not rendered by
+// this component — see the main render's own comment on why) —
+// translate-based slide (transform: translateX, not an animated
+// width/left), the GPU-composited technique modern minimalist sidebar
+// implementations consistently use over a layout-triggering property,
+// so the slide stays smooth regardless of how much content the panel
+// holds.
+//
+// Both sections' cards show at once inside the open panel rather than
+// one flyout per section (there are only 3 cards total across both —
+// not enough content to justify a picker step of its own). `open` and
+// `highlightSection` are both controlled (owned by the main component,
+// not local state) specifically so AddModuleButton's own "+" zones can
+// drive them too — see that component's own comment: clicking one
+// opens the panel and briefly highlights the matching section, since
+// both are already visible together rather than needing to switch
+// which one is showing.
 function ModulePalette({
   activeId,
   activeDelta,
-  openSection,
-  onSectionChange,
+  open,
+  highlightSection,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
-  openSection: "side" | "bottom" | null;
-  onSectionChange: (section: "side" | "bottom" | null) => void;
+  open: boolean;
+  highlightSection: "side" | "bottom" | null;
 }) {
+  // Toggle button itself lives in the page header, not here (see the
+  // main render's own comment on why) — this just renders the sliding
+  // panel. Stays mounted (not conditionally rendered) at all times,
+  // sliding fully off-canvas via transform when closed — a mount/
+  // unmount would lose the transition entirely (nothing to animate
+  // *from*) and drop whatever drag state a card mid-drag might have.
+  // top: HEADER_HEIGHT_PX, not 0 — the header bar (and its own Reset-
+  // to-Template/save-error content) stays above and outside the panel
+  // rather than being covered by it, so it's still reachable regardless
+  // of whether the palette is open.
   return (
-    <>
-      {openSection && (
+    <div
+      style={{
+        position: "fixed",
+        top: HEADER_HEIGHT_PX,
+        left: 0,
+        bottom: 0,
+        width: PALETTE_SIDEBAR_WIDTH_PX,
+        background: "#141414",
+        borderRight: "1px solid #262626",
+        boxShadow: open ? "8px 0 32px rgba(0,0,0,0.35)" : "none",
+        transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
+        transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
+        zIndex: 25,
+        overflowY: "auto",
+        padding: "18px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 22,
+      }}
+    >
+      <strong style={{ fontSize: 13, color: "#f0f0f0", letterSpacing: 0.3 }}>Add Module</strong>
+      {PALETTE_SECTIONS.map((s) => (
         <div
+          key={s.key}
           style={{
-            position: "fixed",
-            top: 60,
-            right: 12 + PALETTE_RAIL_WIDTH_PX + 8,
             display: "flex",
             flexDirection: "column",
             gap: 8,
             padding: 10,
-            background: "#141414",
-            border: "1px solid #333",
-            borderRadius: 8,
-            zIndex: 20,
-            width: PALETTE_FLYOUT_WIDTH_PX,
+            margin: -10,
+            borderRadius: 10,
+            background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
+            boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
+            transition: "background 0.4s ease, box-shadow 0.4s ease",
           }}
         >
-          <strong style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>
-            {PALETTE_SECTIONS.find((s) => s.key === openSection)?.hint ?? "Add module"}
-          </strong>
-          {PALETTE_MODULE_TYPES.filter((m) => m.section === openSection).map((m) => (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
+            <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
+          </div>
+          {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
             <PaletteCard
               key={m.slug}
               slug={m.slug}
@@ -1702,45 +1754,8 @@ function ModulePalette({
             />
           ))}
         </div>
-      )}
-      <div
-        style={{
-          position: "fixed",
-          top: 60,
-          right: 12,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          zIndex: 20,
-          width: PALETTE_RAIL_WIDTH_PX,
-        }}
-      >
-        {PALETTE_SECTIONS.map((s) => {
-          const active = openSection === s.key;
-          return (
-            <button
-              key={s.key}
-              type="button"
-              title={s.hint}
-              onClick={() => onSectionChange(active ? null : s.key)}
-              style={{
-                padding: "8px 6px",
-                fontSize: 11,
-                fontWeight: 600,
-                textAlign: "center",
-                background: active ? "#4a5cff" : "#141414",
-                color: active ? "#fff" : "#ccc",
-                border: `1px solid ${active ? "#4a5cff" : "#333"}`,
-                borderRadius: 8,
-                cursor: "pointer",
-              }}
-            >
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
-    </>
+      ))}
+    </div>
   );
 }
 
@@ -2401,12 +2416,28 @@ export function NativePlannerEditor({
   // dividing by `scale` (see file comment: it's the only value in this
   // component that originates *outside* the scaled coordinate space).
   const [activeDelta, setActiveDelta] = useState<{ x: number; y: number }>(ZERO_OFFSET);
-  // Which ModulePalette section (if any) its flyout is currently
-  // showing — see that component's own comment. Owned here (not local
-  // state inside ModulePalette) specifically so AddModuleButton's own
-  // "+" zones can drive it too, opening the matching section from
-  // anywhere on the page, not just the rail itself.
-  const [paletteSection, setPaletteSection] = useState<"side" | "bottom" | null>(null);
+  // Whether ModulePalette's own sliding panel is currently open, and
+  // which section (if any) to briefly highlight right now — see that
+  // component's own comment. Owned here (not local state inside
+  // ModulePalette) specifically so AddModuleButton's own "+" zones can
+  // drive them too, opening the panel and pointing at the right
+  // section from anywhere on the page, not just the panel's own toggle.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteHighlightSection, setPaletteHighlightSection] = useState<"side" | "bottom" | null>(null);
+  // Opens the panel and highlights `section`, then clears the
+  // highlight after a couple of animation cycles (the highlight's own
+  // background/box-shadow transition above is 0.4s — this leaves it
+  // visible for several times that, long enough to actually notice,
+  // not just flash) — the same "commit a value, then a later timer
+  // reverts the transient part of it" shape justAddedIds' own timeout
+  // already uses. Doesn't clear `open`: opening is sticky (stays open
+  // until the user closes it themselves), only the highlight is
+  // transient.
+  const handleOpenPaletteSection = useCallback((section: "side" | "bottom") => {
+    setPaletteOpen(true);
+    setPaletteHighlightSection(section);
+    setTimeout(() => setPaletteHighlightSection((current) => (current === section ? null : current)), 1400);
+  }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Which module's own delete button is currently shown — lifted up here
@@ -3488,6 +3519,34 @@ export function NativePlannerEditor({
           gap: 12,
         }}
       >
+        {/* Toggles ModulePalette's own sliding panel (see its own
+            comment) — lives here, in the header's normal document flow,
+            rather than as a separate position:fixed button floating
+            over the page: this exact top-left corner is already where
+            the header's own title text sits, and a fixed button there
+            would just sit on top of it instead of leaving room. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen((v) => !v)}
+          title={paletteOpen ? "Close module palette" : "Open module palette"}
+          style={{
+            width: 28,
+            height: 28,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: paletteOpen ? "#4a5cff" : "#2a2a2a",
+            border: "1px solid #444",
+            borderRadius: 6,
+            color: "#fff",
+            fontSize: 14,
+            lineHeight: 1,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          {paletteOpen ? "✕" : "☰"}
+        </button>
         <strong>Memari planner editor (native)</strong>
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
@@ -3591,7 +3650,7 @@ export function NativePlannerEditor({
                     onStackResizeStart={handleStackResizeStart}
                     onStackResizeMove={handleStackResizeMove}
                     onStackResizeEnd={handleStackResizeEnd}
-                    onOpenPaletteSection={setPaletteSection}
+                    onOpenPaletteSection={handleOpenPaletteSection}
                     onDeleteModule={handleDeleteModule}
                     onUpdateHeading={handleUpdateHeading}
                     onUpdateHabits={handleUpdateHabits}
@@ -3608,8 +3667,8 @@ export function NativePlannerEditor({
             <ModulePalette
               activeId={activeId}
               activeDelta={activeDelta}
-              openSection={paletteSection}
-              onSectionChange={setPaletteSection}
+              open={paletteOpen}
+              highlightSection={paletteHighlightSection}
             />
           </DndContext>
         </div>
