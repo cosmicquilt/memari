@@ -1626,7 +1626,7 @@ function PaletteCard({
         padding: "6px 10px",
         borderRadius: 12,
         border: "none",
-        background: isDragging ? "#2a2a2a" : "#1f1f1f",
+        background: isDragging ? "#363636" : "#2a2a2a",
         color: "#ddd",
         fontSize: 12,
         cursor: isDragging ? "grabbing" : "grab",
