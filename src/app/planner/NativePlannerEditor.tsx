@@ -1623,7 +1623,7 @@ function PaletteCard({
       {...attributes}
       style={{
         position: "relative",
-        padding: "10px 12px",
+        padding: "6px 10px",
         borderRadius: 6,
         border: "1px solid #444",
         background: isDragging ? "#2a2a2a" : "#1f1f1f",
@@ -1776,10 +1776,10 @@ function ModulePalette({
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
         overflow: isDraggingPaletteCard ? "visible" : "auto",
-        padding: "18px",
+        padding: "14px 18px",
         display: "flex",
         flexDirection: "column",
-        gap: 22,
+        gap: 12,
       }}
     >
       <button
@@ -1788,7 +1788,7 @@ function ModulePalette({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 5,
           background: "none",
           border: "none",
           padding: 0,
@@ -1801,7 +1801,7 @@ function ModulePalette({
         <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Add Module</strong>
       </button>
       <PaletteCollapse open={addModuleOpen}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
             return (
@@ -1810,10 +1810,10 @@ function ModulePalette({
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: 8,
-                  padding: 10,
-                  margin: -10,
-                  borderRadius: 10,
+                  gap: 5,
+                  padding: 7,
+                  margin: -7,
+                  borderRadius: 8,
                   background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
                   boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
                   transition: "background 0.4s ease, box-shadow 0.4s ease",
@@ -1825,7 +1825,7 @@ function ModulePalette({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
+                    gap: 5,
                     background: "none",
                     border: "none",
                     padding: 0,
@@ -1835,12 +1835,12 @@ function ModulePalette({
                 >
                   <PaletteChevron open={sectionIsOpen} />
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
-                    <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
+                    <div style={{ fontSize: 10.5, color: "#888", lineHeight: 1.3 }}>{s.hint}</div>
                   </div>
                 </button>
                 <PaletteCollapse open={sectionIsOpen}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
                     {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
                       <PaletteCard
                         key={m.slug}
@@ -1884,14 +1884,14 @@ function PaletteCollapse({ open, children }: { open: boolean; children: React.Re
 // Small rotating disclosure triangle shared by "Add Module" and each
 // PALETTE_SECTIONS header — a plain CSS rotate on a fixed glyph rather
 // than swapping between two different characters (▸/▾), so the state
-// change animates instead of jumping. fontSize 25 — pushed to 2.5x the
-// original 10 on request.
+// change animates instead of jumping. fontSize 25 (2.5x the original
+// 10) read as too large once seen live; pulled back to 16.
 function PaletteChevron({ open }: { open: boolean }) {
   return (
     <span
       style={{
         display: "inline-block",
-        fontSize: 25,
+        fontSize: 16,
         color: "#888",
         transform: open ? "rotate(90deg)" : "rotate(0deg)",
         transition: "transform 0.18s ease",
