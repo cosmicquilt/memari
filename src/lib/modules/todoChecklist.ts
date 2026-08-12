@@ -35,6 +35,28 @@ const ROW_LINE_WIDTH_PT = 0.35;
 const CHECKBOX_WIDTH_PT = 14.1; // same as hourlyGridCore's time-label box
 const COLUMN_GUTTER_PT = 4.5; // same convention as hourlyGridCore
 
+// Exposes just the height constants NativePlannerEditor.tsx needs to
+// compute this module type's own minimum resize height ("title and one
+// row below," requested directly) without a server round trip — same
+// constants the real renderer above already uses, not a guessed row
+// count. Deliberately just the nominal row height, not the render
+// function's own stretch-to-fit adjustment (rowHeight in
+// renderTodoChecklist, which nudges rowCount whole rows to exactly fill
+// the final committed height) — that adjustment is a sub-pixel
+// correction against one specific, known final height, not something a
+// minimum-size check needs to reproduce exactly.
+export function getTodoChecklistRowMetricsPx(): {
+  headerHeightPx: number;
+  nominalRowHeightPx: number;
+  rowLineWidthPx: number;
+} {
+  return {
+    headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
+    nominalRowHeightPx: ptToPx(ROW_HEIGHT_PT),
+    rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
+  };
+}
+
 export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
   config: TodoChecklistConfig,

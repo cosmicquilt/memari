@@ -91,6 +91,8 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx } from "@/lib/modules/labeledBox";
+import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
+import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -176,22 +178,62 @@ const PALETTE_MODULE_TYPES: Array<{
 ];
 const PALETTE_ID_PREFIX = "palette:";
 
+// Minimum resize size for a module, in grid rows — MIN_ROW_SPAN (2) for
+// most types, matching the sidebar's own labeled-box (a single-row box
+// reads as barely more than a sliver, all header/border chrome, no real
+// writing space left). todo-checklist/habit-tracker get a genuinely
+// computed minimum instead, requested directly: "make them have a min
+// height of the title and one row below" — their own header band (with
+// day-letter columns, checkbox segments, etc.) is taller than a
+// labeled-box's, so the floor needs its own justification, not just a
+// coincidence with the sidebar's. Computed from each type's own real
+// measurements (getTodoChecklistRowMetricsPx/getHabitTrackerRowMetricsPx
+// — the same header/row-height constants their actual renderers use,
+// not a guessed row count) and converted to a grid row count the same
+// "measure two real spans, take the difference" technique every other
+// px<->row conversion in this file already uses (see ResizeHandle's own
+// rowPitchPx) rather than hand-deriving the grid's own per-row pixel
+// math a second time. Floored at MIN_ROW_SPAN regardless — verified by
+// direct computation before writing this that today's real measurements
+// already land there (both types' header+1-row target fits inside 2
+// grid rows on this app's page geometry), so this floor is a safety net
+// for if either module's own measurements ever change, not currently
+// doing any clamping of its own.
+function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid): number {
+  let targetPx: number | null = null;
+  if (slug === "todo-checklist") {
+    const m = getTodoChecklistRowMetricsPx();
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+  } else if (slug === "habit-tracker") {
+    const m = getHabitTrackerRowMetricsPx();
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+  }
+  if (targetPx === null) return MIN_ROW_SPAN;
+  const oneRow = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+  const twoRows = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 });
+  const rowPitchPx = twoRows.height - oneRow.height;
+  const computed = targetPx <= oneRow.height ? 1 : Math.ceil((targetPx - oneRow.height) / rowPitchPx) + 1;
+  return Math.max(MIN_ROW_SPAN, computed);
+}
+
 // The stack-bottom cascade's own math (see StackBottom's type comment
 // and resizeStackFromBottom's own comment for the full reasoning) —
 // shared between the live preview (displayPlacements below) and the
 // handle's own drag-clamp, so the two can never disagree about where a
 // given deltaRows actually lands. Growing (deltaRows > 0) only ever grows
 // the last (bottom-most) member; shrinking cascades upward once each
-// member in turn hits MIN_ROW_SPAN. Pure — doesn't touch rowStart at
-// all, callers repack contiguously from their own top anchor afterward.
-function cascadeStackSpans(originalSpans: number[], deltaRows: number): number[] {
+// member in turn hits *its own* minimum (minSpans, one per member —
+// see getMinRowSpanForSlug's own comment on why this isn't always the
+// uniform MIN_ROW_SPAN). Pure — doesn't touch rowStart at all, callers
+// repack contiguously from their own top anchor afterward.
+function cascadeStackSpans(originalSpans: number[], minSpans: number[], deltaRows: number): number[] {
   const spans = [...originalSpans];
   if (deltaRows > 0) {
     spans[spans.length - 1] += deltaRows;
   } else if (deltaRows < 0) {
     let remaining = -deltaRows;
     for (let i = spans.length - 1; i >= 0 && remaining > 0; i--) {
-      const shrinkable = spans[i] - MIN_ROW_SPAN;
+      const shrinkable = spans[i] - minSpans[i];
       const take = Math.min(shrinkable, remaining);
       spans[i] -= take;
       remaining -= take;
@@ -231,6 +273,13 @@ type ResizePair = {
   topRowStart: number;
   topRowSpan: number;
   bottomRowSpan: number;
+  // Per-side minimum (see getMinRowSpanForSlug's own comment) — the two
+  // can differ, e.g. a todo-checklist paired with a habit-tracker.
+  // Computed once per render alongside the rest of this shape (see
+  // resizePairsByPageId) rather than inside the handle itself, matching
+  // maxBottomBound's own reasoning on StackBottom below.
+  topMinRowSpan: number;
+  bottomMinRowSpan: number;
 };
 
 // The bottom-most unlocked module of a same-column stack, with nothing
@@ -239,15 +288,17 @@ type ResizePair = {
 // StackResizeHandle, for why this is a materially different operation
 // from ResizePair's coupled boundary above, not just a variant of it).
 // `members` is the whole stack, top to bottom, each with its own current
-// rowSpan — the cascading-shrink math needs every member's size, not
-// just the bottom one's.
+// rowSpan (and own minRowSpan, see getMinRowSpanForSlug's own comment —
+// a stack can mix module types, e.g. a todo-checklist stacked with a
+// habit-tracker, each with a different floor) — the cascading-shrink
+// math needs every member's size and floor, not just the bottom one's.
 type StackBottom = {
   key: string;
   pageId: string;
   bottomId: string;
   columnStart: number;
   columnSpan: number;
-  members: Array<{ id: string; rowSpan: number }>;
+  members: Array<{ id: string; rowSpan: number; minRowSpan: number }>;
   stackTopRowStart: number;
   stackBottomRowEnd: number;
   // The furthest row the stack may grow into — a locked block's own
@@ -1076,7 +1127,13 @@ function ResizeHandle({
   // and computing a *new* delta on top of an already-shifted baseline
   // would double-count every row crossed instead of measuring from
   // where the drag actually began.
-  const dragRef = useRef<{ clientY: number; topRowSpan: number; bottomRowSpan: number } | null>(null);
+  const dragRef = useRef<{
+    clientY: number;
+    topRowSpan: number;
+    bottomRowSpan: number;
+    topMinRowSpan: number;
+    bottomMinRowSpan: number;
+  } | null>(null);
 
   const computeClampedDeltaRows = useCallback(
     (clientY: number) => {
@@ -1084,14 +1141,16 @@ function ResizeHandle({
       if (!drag) return 0;
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
       const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
-      // Same clamp resizeAdjacentModules applies server-side (mirrors its
-      // own MIN_ROW_SPAN, module-level above — kept in sync by hand, this
-      // file can't import a constant from a "use server" file), mirrored
+      // Same clamp resizeAdjacentModules applies server-side, mirrored
       // here so the live preview can never show a boundary position the
-      // eventual commit wouldn't actually land on. A single-row sidebar
-      // box is barely more than a sliver, all header/border chrome with
-      // no real writing space left.
-      return Math.max(-(drag.topRowSpan - MIN_ROW_SPAN), Math.min(drag.bottomRowSpan - MIN_ROW_SPAN, rawDeltaRows));
+      // eventual commit wouldn't actually land on. Per-side minimum, not
+      // the uniform MIN_ROW_SPAN — see getMinRowSpanForSlug's own
+      // comment on why a pair can have two different floors (e.g. a
+      // todo-checklist paired with a habit-tracker).
+      return Math.max(
+        -(drag.topRowSpan - drag.topMinRowSpan),
+        Math.min(drag.bottomRowSpan - drag.bottomMinRowSpan, rawDeltaRows)
+      );
     },
     [scale, rowPitchPx]
   );
@@ -1100,7 +1159,13 @@ function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      dragRef.current = { clientY: event.clientY, topRowSpan: pair.topRowSpan, bottomRowSpan: pair.bottomRowSpan };
+      dragRef.current = {
+        clientY: event.clientY,
+        topRowSpan: pair.topRowSpan,
+        bottomRowSpan: pair.bottomRowSpan,
+        topMinRowSpan: pair.topMinRowSpan,
+        bottomMinRowSpan: pair.bottomMinRowSpan,
+      };
       onResizeStart(pair);
     },
     [pair, onResizeStart]
@@ -1212,14 +1277,21 @@ function StackResizeHandle({
   // delta/clamp math has to stay anchored to what they were when the
   // drag actually began, not double-count against an already-shifted
   // baseline.
-  const dragRef = useRef<{ clientY: number; memberSpans: number[]; maxGrow: number } | null>(null);
+  const dragRef = useRef<{ clientY: number; memberSpans: number[]; memberMinSpans: number[]; maxGrow: number } | null>(null);
 
   const computeClampedDeltaRows = useCallback(
     (clientY: number) => {
       const drag = dragRef.current;
       if (!drag) return 0;
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
-      const totalShrinkable = drag.memberSpans.reduce((sum, span) => sum + (span - MIN_ROW_SPAN), 0);
+      // Per-member minimum, not the uniform MIN_ROW_SPAN — see
+      // getMinRowSpanForSlug's own comment on why a stack can mix module
+      // types (e.g. a todo-checklist stacked with a habit-tracker), each
+      // with a different floor.
+      const totalShrinkable = drag.memberSpans.reduce(
+        (sum, span, i) => sum + (span - drag.memberMinSpans[i]),
+        0
+      );
       // Snapped in terms of the resulting *gap* below the stack (maxGrow
       // - delta), not delta directly — a gap of exactly 1 row is never a
       // valid landing point, only 0 or >= MIN_ROW_SPAN. Reported
@@ -1240,7 +1312,13 @@ function StackResizeHandle({
       // true midpoint, giving each one a real, full-width catchment the
       // same as every other snap step already has — resizeStackFromBottom
       // (actions.ts) mirrors this same reasoning server-side, in integer
-      // form, as the authoritative re-check.
+      // form, as the authoritative re-check. Deliberately the uniform
+      // MIN_ROW_SPAN here, not a per-member minimum like totalShrinkable
+      // above — this is about the *next* module that could go in the
+      // freed gap, not about any of this stack's own current members,
+      // and the only thing that can ever land there (AddModuleButton,
+      // the "+" zone) is always a labeled-box, whose own floor is
+      // MIN_ROW_SPAN regardless of what's being resized right now.
       const maxPossibleGap = drag.maxGrow + totalShrinkable;
       const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
       const rawGapRows = drag.maxGrow - rawDeltaPagePx / rowPitchPx;
@@ -1259,6 +1337,7 @@ function StackResizeHandle({
       dragRef.current = {
         clientY: event.clientY,
         memberSpans: stackBottom.members.map((m) => m.rowSpan),
+        memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         maxGrow: stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd,
       };
       onResizeStart(stackBottom);
@@ -1608,6 +1687,11 @@ export function NativePlannerEditor({
     stackKey: string;
     pageId: string;
     memberIds: string[]; // top to bottom
+    // Parallel to memberIds — each member's own minimum (see
+    // getMinRowSpanForSlug's own comment), frozen at drag-start same as
+    // StackResizeHandle's own dragRef, so the cascade math below stays
+    // anchored to what it was when the drag began.
+    memberMinSpans: number[];
     deltaRows: number;
   } | null>(null);
 
@@ -1637,6 +1721,7 @@ export function NativePlannerEditor({
       if (members.every((m): m is Placement => !!m)) {
         const newSpans = cascadeStackSpans(
           members.map((m) => m.rowSpan),
+          stackResizeDrag.memberMinSpans,
           stackResizeDrag.deltaRows
         );
         const patched = { ...next };
@@ -1730,14 +1815,14 @@ export function NativePlannerEditor({
   const resizePairsByPageId = useMemo(() => {
     const byPage: Record<string, ResizePair[]> = {};
     for (const page of pages) {
-      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
+      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number; slug: string }>>();
       for (const id of instanceIdsByPageId[page.pageId] ?? []) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
-        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
+        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan, slug: info.slug });
         byColumn.set(columnKey, group);
       }
       const pairs: ResizePair[] = [];
@@ -1758,6 +1843,8 @@ export function NativePlannerEditor({
             topRowStart: top.rowStart,
             topRowSpan: top.rowSpan,
             bottomRowSpan: bottom.rowSpan,
+            topMinRowSpan: getMinRowSpanForSlug(top.slug, page.pageGrid),
+            bottomMinRowSpan: getMinRowSpanForSlug(bottom.slug, page.pageGrid),
           });
         }
       }
@@ -1773,14 +1860,14 @@ export function NativePlannerEditor({
     const byPage: Record<string, StackBottom[]> = {};
     for (const page of pages) {
       const pageIds = instanceIdsByPageId[page.pageId] ?? [];
-      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number }>>();
+      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number; slug: string }>>();
       for (const id of pageIds) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
-        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan });
+        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan, slug: info.slug });
         byColumn.set(columnKey, group);
       }
       const stackBottoms: StackBottom[] = [];
@@ -1809,7 +1896,7 @@ export function NativePlannerEditor({
           bottomId: bottomMember.id,
           columnStart,
           columnSpan,
-          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan })),
+          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan, minRowSpan: getMinRowSpanForSlug(m.slug, page.pageGrid) })),
           stackTopRowStart: sorted[0].rowStart,
           stackBottomRowEnd,
           maxBottomBound,
@@ -2920,6 +3007,7 @@ export function NativePlannerEditor({
         stackKey: stackBottom.key,
         pageId: stackBottom.pageId,
         memberIds: stackBottom.members.map((m) => m.id),
+        memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         deltaRows: 0,
       });
     },

@@ -8,11 +8,14 @@ import {
   findNearestFreeCell,
   rectsOverlap,
   moduleInstancesToRects,
+  gridCellToPixels,
   type PageGrid,
 } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
+import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
+import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -43,6 +46,31 @@ function pageGridFor(page: {
     gridGapPx: page.gridGapPx,
     marginPx: page.marginPx,
   };
+}
+
+// Minimum resize size for a module, in grid rows — see the identical
+// client-side copy (NativePlannerEditor.tsx's getMinRowSpanForSlug) for
+// the full reasoning ("make them have a min height of the title and one
+// row below," requested directly) and why this can't just import that
+// copy across the "use server" boundary. This is the authoritative
+// version; the client's own copy is only ever a live-preview mirror of
+// it.
+const MIN_ROW_SPAN = 2;
+function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid): number {
+  let targetPx: number | null = null;
+  if (slug === "todo-checklist") {
+    const m = getTodoChecklistRowMetricsPx();
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+  } else if (slug === "habit-tracker") {
+    const m = getHabitTrackerRowMetricsPx();
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+  }
+  if (targetPx === null) return MIN_ROW_SPAN;
+  const oneRow = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+  const twoRows = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 });
+  const rowPitchPx = twoRows.height - oneRow.height;
+  const computed = targetPx <= oneRow.height ? 1 : Math.ceil((targetPx - oneRow.height) / rowPitchPx) + 1;
+  return Math.max(MIN_ROW_SPAN, computed);
 }
 
 // updateModuleConfig accepts propValues straight from the client and
@@ -1294,15 +1322,22 @@ export async function resizeAdjacentModules(
     throw new Error("Modules aren't vertically adjacent");
   }
 
-  // Neither module may shrink below 2 rows (not 1) — a single-row
-  // sidebar box reads as barely more than a sliver, all header/border
-  // chrome with no real writing space left. Authoritative here since
-  // this is what actually persists; useEdgeResize.ts and
-  // NativePlannerEditor.tsx mirror the same MIN_ROW_SPAN client-side so
-  // a drag never visually promises a size the server would then further
-  // clamp.
-  const MIN_ROW_SPAN = 2;
-  const clampedDelta = Math.max(-(top.rowSpan - MIN_ROW_SPAN), Math.min(bottom.rowSpan - MIN_ROW_SPAN, deltaRows));
+  // Neither module may shrink below its own minimum — see
+  // getMinRowSpanForSlug's own comment on why that's not always the
+  // uniform MIN_ROW_SPAN (a labeled-box vs. a todo-checklist/habit-
+  // tracker's own, taller header need different floors; a pair can even
+  // mix the two, e.g. a todo-checklist stacked with a habit-tracker).
+  // Authoritative here since this is what actually persists;
+  // useEdgeResize.ts and NativePlannerEditor.tsx mirror the same
+  // per-slug minimums client-side so a drag never visually promises a
+  // size the server would then further clamp.
+  const pageGrid = pageGridFor(top.page);
+  const topMinRowSpan = getMinRowSpanForSlug(top.moduleType.slug, pageGrid);
+  const bottomMinRowSpan = getMinRowSpanForSlug(bottom.moduleType.slug, pageGrid);
+  const clampedDelta = Math.max(
+    -(top.rowSpan - topMinRowSpan),
+    Math.min(bottom.rowSpan - bottomMinRowSpan, deltaRows)
+  );
   if (clampedDelta === 0) {
     throw new Error("Nothing to resize");
   }
@@ -1321,8 +1356,6 @@ export async function resizeAdjacentModules(
       data: { rowStart: newBottomRowStart, rowSpan: newBottomRowSpan },
     }),
   ]);
-
-  const pageGrid = pageGridFor(top.page);
 
   return {
     top: {
@@ -1416,11 +1449,15 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
     topCursor = above.rowStart;
   }
 
-  const MIN_ROW_SPAN = 2; // mirrors resizeAdjacentModules' own floor, see its own comment on why
-  const originalSpans = stack.map((mi) => mi.rowSpan);
-  const totalShrinkable = originalSpans.reduce((sum, span) => sum + (span - MIN_ROW_SPAN), 0);
-
   const pageGrid = pageGridFor(bottom.page);
+  // Per-member minimum, not the uniform MIN_ROW_SPAN — see
+  // getMinRowSpanForSlug's own comment on why a stack can mix module
+  // types (e.g. a todo-checklist stacked with a habit-tracker), each
+  // with a different floor.
+  const originalSpans = stack.map((mi) => mi.rowSpan);
+  const minSpans = stack.map((mi) => getMinRowSpanForSlug(mi.slug, pageGrid));
+  const totalShrinkable = originalSpans.reduce((sum, span, i) => sum + (span - minSpans[i]), 0);
+
   const stackBottom = bottomRowStart + bottom.rowSpan;
   // How far the stack may grow — up to whatever bounds it from below (a
   // locked block sharing its column range, if any) or the page's own
@@ -1466,7 +1503,7 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   } else {
     let remaining = -clampedDelta;
     for (let i = newSpans.length - 1; i >= 0 && remaining > 0; i--) {
-      const shrinkable = newSpans[i] - MIN_ROW_SPAN;
+      const shrinkable = newSpans[i] - minSpans[i];
       const take = Math.min(shrinkable, remaining);
       newSpans[i] -= take;
       remaining -= take;
