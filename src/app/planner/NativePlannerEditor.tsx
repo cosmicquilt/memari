@@ -2006,32 +2006,34 @@ function ModulePalette({
                 }}
                 style={{ position: "relative" }}
               >
-                {/* Highlight layer — position:absolute + inset, not the
-                    earlier padding:7/margin:-7 "bleed past my own
-                    bounds" trick. That trick relied on this section's
-                    own flex-stretch width exactly filling its parent's
-                    content box, so the negative margin's overflow
-                    landed symmetrically on both sides — it stopped
-                    working once the parent (the sections-list wrapper
-                    below "Add Module") gained its own paddingLeft for
-                    the nested-indent feature, since the section's
-                    stretch-computed width then shrank on the left only
-                    and the "bleed" stopped being even. Reported
-                    directly: "when i click it and the section is
-                    highlighted in the nav, the highlight doesn't match
-                    up with the section." inset:-7 on an absolutely-
-                    positioned sibling is decoupled from all of that —
-                    it's sized purely relative to *this* div's own
-                    border-box (the nearest position:relative ancestor),
-                    never affected by what any ancestor's own padding
-                    happens to be. pointerEvents:none so it never
-                    intercepts clicks meant for the header button/cards
-                    stacked above it. */}
+                {/* Highlight layer — position:absolute, but inset:0 now,
+                    not the earlier inset:-7 "bleed past my own bounds"
+                    version. That version fixed the *previous* bug
+                    (misaligning against ancestor padding) but was still
+                    a bleed past this div's own box — and this div sits
+                    inside "Add Module"'s own PaletteCollapse, whose
+                    inner wrapper is overflow:hidden except while a card
+                    drag is in flight (see PaletteCollapse's own
+                    allowOverflow comment). A plain click on a "+" zone
+                    isn't a drag, so allowOverflow is false right when
+                    this highlight needs to show — the bleed got clipped
+                    by that ancestor's overflow:hidden the same way a
+                    dragged card would. Reported directly, again: "the
+                    highlight is still cut off when i click on the plus
+                    box." inset:0 can't be clipped by anything, ever,
+                    since it never extends past this div's own natural
+                    bounds — the "breathing room" that used to come from
+                    the -7px bleed now comes from real padding on the
+                    content div below instead, which *grows this div's
+                    own bounds* rather than needing to escape them.
+                    pointerEvents:none so it never intercepts clicks
+                    meant for the header button/cards stacked above
+                    it. */}
                 <div
                   aria-hidden
                   style={{
                     position: "absolute",
-                    inset: -7,
+                    inset: 0,
                     borderRadius: 8,
                     background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
                     boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
@@ -2039,7 +2041,7 @@ function ModulePalette({
                     pointerEvents: "none",
                   }}
                 />
-                <div style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative", padding: 7 }}>
                   <button
                     type="button"
                     onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
