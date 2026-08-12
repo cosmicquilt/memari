@@ -2087,7 +2087,25 @@ function ModulePalette({
   const sectionRefs = useRef<Partial<Record<"side" | "bottom", HTMLDivElement>>>({});
   useEffect(() => {
     if (!highlightSection) return;
-    sectionRefs.current[highlightSection]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // Delayed, not immediate — reported directly, twice more: "still
+    // cut off a bit... looks better than before." The section (and,
+    // one level up, "Add Module" itself) can both need to force-open
+    // right as this same click sets highlightSection, and
+    // PaletteCollapse's own open animation is a real 0.22s CSS
+    // transition (grid-template-rows), not instant. Calling
+    // scrollIntoView immediately measures the target *mid-collapse*
+    // — right at the very start of the grow animation, when its own
+    // layout height is still close to zero — so the scroll position
+    // it picks is correct for that fleeting near-zero-height instant,
+    // not for the fully-expanded content the animation keeps growing
+    // into for the next ~220ms afterward. Waiting past both possible
+    // animations (a small buffer over 0.22s covers either or both
+    // needing to run) means this measures the section at its real,
+    // final height instead.
+    const timeout = setTimeout(() => {
+      sectionRefs.current[highlightSection]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 260);
+    return () => clearTimeout(timeout);
   }, [highlightSection]);
   // Toggle button itself lives in the page header, not here (see the
   // main render's own comment on why) — this just renders the sliding
