@@ -3471,9 +3471,7 @@ export function NativePlannerEditor({
   // the server data underneath it re-fetched.
   const [isResettingPlanner, setIsResettingPlanner] = useState(false);
   const handleResetPlannerToTemplate = useCallback(async () => {
-    const confirmed = window.confirm(
-      "Reset the sidebar and to-do area back to the original template?\n\nThis deletes anything you've added, moved, resized, or edited in the sidebar (re-creating the original Gratitude/Reminders/Notes boxes) and below the hourly grid on both pages (re-creating the original full-height TO-DO checklist — any habit-tracker there is removed too, since it isn't part of the original template). The hourly grid itself and anything above it is not touched."
-    );
+    const confirmed = window.confirm("Reset to original template?");
     if (!confirmed) return;
     setIsResettingPlanner(true);
     try {
