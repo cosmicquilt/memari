@@ -1799,8 +1799,10 @@ function AddModuleButton({
 // why this exists alongside AddModuleButton rather than replacing it.
 // Same visual language as NativeModule's own delete button (gray
 // circle, darker gray glyph, opacity-faded in on hover, same
-// background/color/transition values) at 2x that button's own size,
-// requested directly — centered on the zone's own bottom edge instead
+// background/color/transition values), sized larger than that button
+// (105px vs. its own 70px — originally requested at 2x/140px, eased
+// down to 75% of that after seeing it live) — centered on the zone's
+// own bottom edge instead
 // of straddling a corner, via transform:translate(-50%,-50%) rather
 // than the delete button's fixed top/right offsets, since this needs
 // to center on a computed *point* (the zone's own horizontal midpoint
@@ -1881,8 +1883,8 @@ function SectionAddButton({
         left: rect.x + rect.width / 2,
         top: rect.y + rect.height,
         transform: "translate(-50%, -50%)",
-        width: 140,
-        height: 140,
+        width: 105,
+        height: 105,
         borderRadius: "50%",
         clipPath: "circle(50%)",
         border: "none",
@@ -1891,7 +1893,7 @@ function SectionAddButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 90,
+        fontSize: 67.5,
         lineHeight: 1,
         padding: 0,
         cursor: "pointer",
