@@ -1,15 +1,15 @@
-// "HABITS" tracker — a wide habit-name column plus 6 day-letter columns
-// (S M T W F S, always all 7 days of the week regardless of which 3-4
+// "HABITS" tracker — a wide habit-name column plus 7 day-letter columns
+// (S M T W T F S, always all 7 days of the week regardless of which 3-4
 // days the hourly grid above happens to show — habits get checked off
 // daily, not scoped to half a spread). Re-measured from hourlyjournal.pdf
 // page index 23 via get_drawings() (the earlier pass had measured off the
 // wrong page/rect and got the header height wrong — see below): header
 // row (top border to header/body divider) is 587.02-604.14 = 17.12pt
-// tall, and each of the 6 day-letter columns is a fixed ~17.3pt wide
+// tall, and each of the 7 day-letter columns is a fixed ~17.3pt wide
 // (351.85-369.14, 369.14-386.42, etc.) — nearly identical to the header
 // height, which is what makes them square in the reference. The name
 // column (136.00-351.85 = 215.85pt) is what actually varies: it's
-// whatever's left after 6 fixed-width square day-letter columns, not
+// whatever's left after 7 fixed-width square day-letter columns, not
 // the other way around. Same renderer for the short (paired with
 // todo-checklist) and full-height (this page's own new variant) uses —
 // row count is just whatever fits in the given height.
@@ -49,7 +49,17 @@ const ROW_LINE_WIDTH_PT = 0.35;
 // day-letter cells square. The name column absorbs whatever width is
 // left over instead (see below).
 const DAY_COLUMN_WIDTH_PT = 17.3;
-const DAY_LETTERS = ["S", "M", "T", "W", "F", "S"];
+// Sun/Mon/Tue/Wed/Thu/Fri/Sat — 7 entries. Reported directly: "missing
+// a t for thursday" — this had dropped straight to Friday, only 6
+// columns wide, off by exactly one weekday. Every downstream layout
+// value (nameColumnWidth, each day column's own x position, the
+// vertical dividers) is derived from this array's own .length, not a
+// separately hardcoded count, so fixing it here is the whole fix —
+// nothing else needed touching, at any size the module renders at
+// (including a live-resized one — see renderHabitTracker's own
+// contentIsLive caller, NativePlannerEditor.tsx, which calls this
+// exact function during a resize preview too).
+const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 // See todoChecklist.ts's identical getTodoChecklistRowMetricsPx for the
 // full reasoning — same minimum-resize-height need, same "nominal only,
