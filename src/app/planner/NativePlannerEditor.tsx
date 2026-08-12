@@ -1129,6 +1129,37 @@ function NativePage({
               onClick={() => onOpenPaletteSection(sb.columnStart === 0 && sb.columnSpan === 1 ? "side" : "bottom")}
             />
           ))}
+      {/* Hover-triggered "+" over the *whole* zone (top of the stack
+          down to maxBottomBound), not just whatever free room
+          AddModuleButton above is currently showing — requested
+          directly: "when hovering over one of the sections (sidebar,
+          left bottom, right bottom), there would be... a plus at the
+          bottom middle of the section and that would also bring up
+          the relevant side nav module section." Without this, a
+          completely full zone (every row already claimed by real
+          modules) had no discoverable way to even start adding
+          another one — AddModuleButton only exists where there's
+          already free room, so the only path was resizing something
+          smaller first, purely by trial, to make a target for it
+          appear. isHovered is derived from hoveredInstanceId (already
+          tracked per-module, unrelated to this) rather than a new
+          overlay div spanning the zone: an overlay large enough to
+          cover the whole section would sit on top of every real
+          module inside it and swallow their own clicks/drags — this
+          way nothing new is stacked over the modules at all, hovering
+          any one of them is what reveals the button one level up. */}
+      {stackBottoms.map((sb) => (
+        <SectionAddButton
+          key={`section-add:${sb.bottomId}`}
+          pageGrid={page.pageGrid}
+          columnStart={sb.columnStart}
+          columnSpan={sb.columnSpan}
+          rowStart={sb.stackTopRowStart}
+          rowSpan={sb.maxBottomBound - sb.stackTopRowStart}
+          isHovered={hoveredInstanceId !== null && sb.members.some((m) => m.id === hoveredInstanceId)}
+          onClick={() => onOpenPaletteSection(sb.columnStart === 0 && sb.columnSpan === 1 ? "side" : "bottom")}
+        />
+      ))}
       {/* Live palette-drag preview — only rendered on whichever page the
           drag is currently over (see handleDragMove's own comment on how
           that's determined). Grid-snapped, recomputed on every pointer
@@ -1713,6 +1744,76 @@ function AddModuleButton({
       <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none">
         <path d="M12 4v16M4 12h16" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" />
       </svg>
+    </button>
+  );
+}
+
+// Hover-triggered "+" over an entire zone (stackTopRowStart down to
+// maxBottomBound) — see the call site's own comment (NativePage) for
+// why this exists alongside AddModuleButton rather than replacing it.
+// Same visual language as NativeModule's own delete button (gray
+// circle, darker gray glyph, opacity-faded in on hover, same
+// background/color/transition values) at 2x that button's own size,
+// requested directly — centered on the zone's own bottom edge instead
+// of straddling a corner, via transform:translate(-50%,-50%) rather
+// than the delete button's fixed top/right offsets, since this needs
+// to center on a computed *point* (the zone's own horizontal midpoint
+// at its bottom edge) instead of a fixed corner.
+function SectionAddButton({
+  pageGrid,
+  columnStart,
+  columnSpan,
+  rowStart,
+  rowSpan,
+  isHovered,
+  onClick,
+}: {
+  pageGrid: PageGrid;
+  columnStart: number;
+  columnSpan: number;
+  rowStart: number;
+  rowSpan: number;
+  isHovered: boolean;
+  onClick: () => void;
+}) {
+  const rect = useMemo(
+    () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
+    [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
+  );
+  return (
+    <button
+      type="button"
+      title="Add a module here"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      style={{
+        position: "absolute",
+        left: rect.x + rect.width / 2,
+        top: rect.y + rect.height,
+        transform: "translate(-50%, -50%)",
+        width: 140,
+        height: 140,
+        borderRadius: "50%",
+        border: "none",
+        background: "#c7c7c7",
+        color: "#666666",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 90,
+        lineHeight: 1,
+        padding: 0,
+        cursor: "pointer",
+        opacity: isHovered ? 1 : 0,
+        pointerEvents: isHovered ? "auto" : "none",
+        transition: "opacity 0.12s ease",
+        zIndex: 6,
+      }}
+    >
+      +
     </button>
   );
 }
