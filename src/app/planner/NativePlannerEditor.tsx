@@ -1693,6 +1693,34 @@ function ModulePalette({
   open: boolean;
   highlightSection: "side" | "bottom" | null;
 }) {
+  // Nested collapsibility inside the panel — requested directly:
+  // "'Add Module' collapsible as well as 'side modules' and 'bottom
+  // modules'." Local state, not lifted to the main component the way
+  // the panel's own open/highlightSection are: nothing outside this
+  // component ever needs to read or force these except in reaction to
+  // highlightSection changing, right below.
+  const [addModuleOpen, setAddModuleOpen] = useState(true);
+  const [sectionOpen, setSectionOpen] = useState<Record<"side" | "bottom", boolean>>({ side: true, bottom: true });
+  // A "+" zone asking to highlight a section (see the main component's
+  // own handleOpenPaletteSection) is also implicitly asking to *see*
+  // it — force both the "Add Module" group and that specific section
+  // open, or the very thing being pointed at would still be hidden
+  // behind a collapsed header. React's own "adjust state during
+  // rendering" pattern (comparing against a value snapshotted from the
+  // previous render, setState called directly in the render body) —
+  // not a useEffect: this codebase already prefers deriving from state
+  // during render over syncing it with an effect where possible (see
+  // fitWidthScale's own comment), and a plain useEffect+setState here
+  // would additionally trip this project's own "don't call setState
+  // synchronously inside an effect" lint rule.
+  const [lastHighlightSection, setLastHighlightSection] = useState(highlightSection);
+  if (highlightSection !== lastHighlightSection) {
+    setLastHighlightSection(highlightSection);
+    if (highlightSection) {
+      setAddModuleOpen(true);
+      setSectionOpen((prev) => ({ ...prev, [highlightSection]: true }));
+    }
+  }
   // Toggle button itself lives in the page header, not here (see the
   // main render's own comment on why) — this just renders the sliding
   // panel. Stays mounted (not conditionally rendered) at all times,
@@ -1752,38 +1780,97 @@ function ModulePalette({
         gap: 22,
       }}
     >
-      <strong style={{ fontSize: 13, color: "#f0f0f0", letterSpacing: 0.3 }}>Add Module</strong>
-      {PALETTE_SECTIONS.map((s) => (
-        <div
-          key={s.key}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            padding: 10,
-            margin: -10,
-            borderRadius: 10,
-            background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-            boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
-            transition: "background 0.4s ease, box-shadow 0.4s ease",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
-            <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
-          </div>
-          {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
-            <PaletteCard
-              key={m.slug}
-              slug={m.slug}
-              label={m.label}
-              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-              dragOffset={activeDelta}
-            />
-          ))}
-        </div>
-      ))}
+      <button
+        type="button"
+        onClick={() => setAddModuleOpen((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          color: "#f0f0f0",
+          textAlign: "left",
+        }}
+      >
+        <PaletteChevron open={addModuleOpen} />
+        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Add Module</strong>
+      </button>
+      {addModuleOpen &&
+        PALETTE_SECTIONS.map((s) => {
+          const sectionIsOpen = sectionOpen[s.key];
+          return (
+            <div
+              key={s.key}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                padding: 10,
+                margin: -10,
+                borderRadius: 10,
+                background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
+                boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
+                transition: "background 0.4s ease, box-shadow 0.4s ease",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <PaletteChevron open={sectionIsOpen} />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
+                  <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
+                </div>
+              </button>
+              {sectionIsOpen &&
+                PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
+                  <PaletteCard
+                    key={m.slug}
+                    slug={m.slug}
+                    label={m.label}
+                    isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                    dragOffset={activeDelta}
+                  />
+                ))}
+            </div>
+          );
+        })}
     </div>
+  );
+}
+
+// Small rotating disclosure triangle shared by "Add Module" and each
+// PALETTE_SECTIONS header — a plain CSS rotate on a fixed glyph rather
+// than swapping between two different characters (▸/▾), so the state
+// change animates instead of jumping.
+function PaletteChevron({ open }: { open: boolean }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        fontSize: 10,
+        color: "#888",
+        transform: open ? "rotate(90deg)" : "rotate(0deg)",
+        transition: "transform 0.18s ease",
+        flexShrink: 0,
+      }}
+    >
+      ▸
+    </span>
   );
 }
 
