@@ -872,11 +872,36 @@ export async function addPaletteModuleAt(
       // Without any of this, a checklist/tracker dropped on the 4-day
       // page would also still only draw 3 day segments (the schema
       // default), out of step with the hourly grid it's sitting under.
+      const pageGrid = pageGridFor(page);
+      const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+
       let effectiveColumnStart = columnStart;
       let effectiveColumnSpan = moduleType.defaultColumnSpan;
+      let effectiveRowSpan = moduleType.defaultRowSpan;
+      let effectiveRowStart = rowStart;
       const configOverrides: Record<string, unknown> = {};
       if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
-        const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+        // todo-checklist and habit-tracker size *and position* themselves
+        // to match whichever page they land on — 3 day-columns wide,
+        // starting at column 1 on the left (3-day) page (column 0 is the
+        // sidebar), 4 wide starting at column 0 on the right (4-day) page
+        // — by reading that page's own hourly-grid-core instance, rather
+        // than always using the module type's fixed default/whatever
+        // column the caller happened to request. Previously only
+        // columnSpan was overridden, not columnStart — reported directly:
+        // "habit tracker doesn't work on left side its to big" (a 4-wide
+        // request the caller sends by default, starting at column 0,
+        // still 1 column too wide *and* wrongly positioned even after the
+        // span-only override, so it always collided with the sidebar's
+        // own column-0 content there) "and the highlighted snap box
+        // doesn't match the side it (3 wide on left, 4 wide on right)" —
+        // the client's own live preview (NativePlannerEditor.tsx's
+        // handleDragMove) had no idea this adjustment existed at all, so
+        // it never requested the corrected column range in the first
+        // place, compounding the same gap on the caller's side too.
+        // Without any of this, a checklist/tracker dropped on the 4-day
+        // page would also still only draw 3 day segments (the schema
+        // default), out of step with the hourly grid it's sitting under.
         if (hourlyGrid && hourlyGrid.columnStart !== null) {
           effectiveColumnStart = hourlyGrid.columnStart;
           effectiveColumnSpan = hourlyGrid.columnSpan;
@@ -884,15 +909,58 @@ export async function addPaletteModuleAt(
             const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
             configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
           }
+
+          // A fixed-size (moduleType.defaultRowSpan, 10) drop can fail
+          // to find room now that a sibling already in this same zone
+          // can be resized shorter than its own default (see the
+          // vertical-stack/resize feature this pairs with) — reported
+          // directly: "i tried to drag to do list below habit tracker
+          // and it doesn't fit." The search below only ever tries one
+          // fixed size; if the only free room left in this zone is
+          // shorter than the default but still enough to be useful, it
+          // finds nothing and the drop is silently refused instead of
+          // landing at whatever size actually fits — not what a user
+          // dragging a second module into a partially-full stack would
+          // expect. Computed directly rather than via
+          // findNearestFreeCell (which can't discover "how much room is
+          // there," only test one fixed candidate): this zone's own
+          // current bottom edge is either the deepest existing same-
+          // column-range sibling's own row extent, or the zone's own
+          // top (one past hourly-grid-core's reserved gap row) if
+          // nothing's there yet, and the room available for a fresh
+          // drop is whatever's left between that and the page's own
+          // bottom edge — this zone is never bounded by anything else
+          // (see WEEK_TODO_TEMPLATE's own comment: 19 hourly-grid rows
+          // + 1 gap + 10 exactly fills this app's 30-row grid).
+          const zoneTop = hourlyGrid.rowStart !== null ? hourlyGrid.rowStart + hourlyGrid.rowSpan + 1 : rowStart;
+          const zoneSiblings = page.moduleInstances.filter(
+            (mi): mi is typeof mi & { rowStart: number } =>
+              !mi.locked &&
+              mi.columnStart === effectiveColumnStart &&
+              mi.columnSpan === effectiveColumnSpan &&
+              mi.rowStart !== null &&
+              mi.rowStart >= zoneTop
+          );
+          const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((mi) => mi.rowStart + mi.rowSpan)) : zoneTop;
+          const availableRows = pageGrid.gridRows - zoneStart;
+          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid);
+          if (availableRows >= minRowSpan) {
+            effectiveRowSpan = Math.min(moduleType.defaultRowSpan, availableRows);
+            effectiveRowStart = zoneStart;
+          }
+          // else: not enough room even at this type's own minimum —
+          // leave effectiveRowSpan/effectiveRowStart at the original
+          // full-default request; the unchanged findNearestFreeCell
+          // search below will correctly find nothing and refuse the
+          // drop, same as it already does for a genuinely full page.
         }
       }
 
-      const pageGrid = pageGridFor(page);
       const candidate = clampGridPlacement(pageGrid, {
         columnStart: effectiveColumnStart,
-        rowStart,
+        rowStart: effectiveRowStart,
         columnSpan: effectiveColumnSpan,
-        rowSpan: moduleType.defaultRowSpan,
+        rowSpan: effectiveRowSpan,
       });
       // Don't drop a new module on top of something already there — find
       // the nearest free cell instead of just clamping to the page edge.
@@ -916,7 +984,6 @@ export async function addPaletteModuleAt(
       // findNearestFreeCell), so this is inert for anything not sharing
       // a column with the grid — a sidebar box on the left page's
       // column 0 is never affected by the grid's own 1-3 range there.
-      const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
       if (hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null) {
         occupied.push({
           columnStart: hourlyGrid.columnStart,
@@ -927,7 +994,7 @@ export async function addPaletteModuleAt(
       }
       const clamped = findNearestFreeCell(
         pageGrid,
-        { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
+        { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
         occupied
       );
 
@@ -960,7 +1027,7 @@ export async function addPaletteModuleAt(
           columnStart: clamped.columnStart,
           rowStart: clamped.rowStart,
           columnSpan: effectiveColumnSpan,
-          rowSpan: moduleType.defaultRowSpan,
+          rowSpan: effectiveRowSpan,
           propValues: defaultConfig as Prisma.InputJsonValue,
         },
       });

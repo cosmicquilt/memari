@@ -2466,11 +2466,40 @@ export function NativePlannerEditor({
         isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnStart : target.columnStart;
       const effectiveColumnSpan =
         isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnSpan : meta.defaultColumnSpan;
+      // Mirrors addPaletteModuleAt's own identical shrink-to-fit
+      // (actions.ts) — see that copy's comment for the full reasoning.
+      // Without this, the live preview kept showing a full-size (and
+      // "won't fit here," per the overlapping computation below) box
+      // even in a spot the server would actually now accept at a
+      // shrunk size, and handleDragEnd refuses to even call the server
+      // at all once its own local preview says overlapping — so this
+      // isn't just cosmetic, it's what makes the drop reachable in the
+      // first place. Reported directly: "i tried to drag to do list
+      // below habit tracker and it doesn't fit."
+      let effectiveRowSpan = meta.defaultRowSpan;
+      let effectiveRowStart = target.rowStart;
+      if (isBottomModule && hourlyGridPlacement) {
+        const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
+        const zoneSiblings = (instanceIdsByPageId[target.pageId] ?? [])
+          .filter((instId) => moduleLookup.get(instId)?.locked === false)
+          .map((instId) => placements[instId])
+          .filter(
+            (p): p is Placement =>
+              !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan && p.rowStart >= zoneTop
+          );
+        const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((p) => p.rowStart + p.rowSpan)) : zoneTop;
+        const availableRows = pageGrid.gridRows - zoneStart;
+        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid);
+        if (availableRows >= minRowSpan) {
+          effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
+          effectiveRowStart = zoneStart;
+        }
+      }
       const candidate: GridRect = {
         columnStart: effectiveColumnStart,
-        rowStart: target.rowStart,
+        rowStart: effectiveRowStart,
         columnSpan: effectiveColumnSpan,
-        rowSpan: meta.defaultRowSpan,
+        rowSpan: effectiveRowSpan,
       };
       const occupied: GridRect[] = (instanceIdsByPageId[target.pageId] ?? [])
         .map((instId) => placements[instId])
@@ -2489,13 +2518,13 @@ export function NativePlannerEditor({
         });
       }
       const resolved = findNearestFreeCell(pageGrid, candidate, occupied);
-      const finalRect: GridRect = { ...resolved, columnSpan: effectiveColumnSpan, rowSpan: meta.defaultRowSpan };
+      const finalRect: GridRect = { ...resolved, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
       setPaletteDrag({
         pageId: target.pageId,
         columnStart: resolved.columnStart,
         rowStart: resolved.rowStart,
         columnSpan: effectiveColumnSpan,
-        rowSpan: meta.defaultRowSpan,
+        rowSpan: effectiveRowSpan,
         overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
       });
     },
