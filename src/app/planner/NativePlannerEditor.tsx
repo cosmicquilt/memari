@@ -520,6 +520,27 @@ function NativeModule({
   // same as ResizeHandle/AddModuleButton's own gridCellToPixels calls
   // elsewhere in this file.
   const editOverlayHeight = slug === "labeled-box" ? computeLabeledBoxHeaderHeightPx(heading ?? "", widthPx) : 0;
+  // todo-checklist/habit-tracker draw a dense internal grid — per-row
+  // checkbox/task-line dividers, or day-letter columns with their own
+  // vertical dividers — that's frozen at its last-committed size the
+  // same way every module's content is while isResizing (see that
+  // prop's own comment), but unlike labeled-box's sparse or absent
+  // ruled lines, a stale copy of *this* grid clipped against a live
+  // box whose size no longer matches its own row math reads as
+  // visibly wrong rather than just static: a checkbox row cut off
+  // mid-cell, or day-letter dividers stopping partway down a taller
+  // box with bare white space below them. Reported directly: "the
+  // live resize unit grid isn't the same as the todo and habit
+  // tracker rows." Rather than trying to render an approximation of
+  // the correct live grid (attempted once already as a CSS
+  // repeating-gradient row overlay and reverted — see that revert's
+  // own commit message for the two real bugs it had: gutter-blind
+  // lines and header text that read as broken, not intentional), these
+  // two types instead get the exact same treatment isResizing's own
+  // outline already gives the outer-border element alone: hidden
+  // outright for the duration of the drag, with the live outline as
+  // the only size indicator, rather than shown stale and clipped.
+  const suppressAllContentWhileResizing = isResizing && (slug === "todo-checklist" || slug === "habit-tracker");
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -599,7 +620,7 @@ function NativeModule({
       }}
     >
       <PolotnoJsonRenderer
-        elements={elements}
+        elements={suppressAllContentWhileResizing ? [] : elements}
         originX={originX}
         originY={originY}
         scale={scale}
