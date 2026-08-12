@@ -1512,6 +1512,35 @@ function StackResizeHandle({
 // box it should bring me to bottom module section." columnStart === 0
 // is what the caller (NativePage) uses to tell which section a given
 // button's own stack belongs to — see that call site's own comment.
+// AddModuleButton's own dashed edge, as four repeating-gradient
+// background layers (one per side) instead of `border-style: dashed`
+// — reported directly, twice: first that a thicker border alone
+// ("2px dashed" -> "3.5px dashed") still read as too-short dashes
+// ("they look like dots"), then explicitly "much longer border
+// dashes." Plain CSS's dashed border-style has no independent
+// dash-length control at all — every browser's own dash algorithm
+// picks its own short ratio scaled off border-width, which is exactly
+// why leaning on border-width alone (the first attempt) couldn't get
+// there. A repeating-linear-gradient background, one per edge, gives
+// exact px-level control over both dash and gap length, and — unlike
+// an SVG-background approach — tiles at a fixed px period rather than
+// stretching to fill the box, so the dash length stays correct
+// regardless of this button's own per-stack width/height (which
+// varies a lot: a single freed grid cell vs. a whole empty column).
+// Trade-off, accepted: unlike a real `border`, this doesn't curve
+// through the button's own rounded corners — background-clip still
+// confines it to the rounded shape, but each edge's dashes are
+// individually straight, so a corner can show a partial/clipped dash
+// rather than one that bends smoothly around it. Acceptable for a
+// debug "+" zone at this border-radius; the straight edges (most of
+// the perimeter) get the exact controllable dash length that was
+// actually asked for.
+const ADD_MODULE_DASH_PX = 14;
+const ADD_MODULE_GAP_PX = 8;
+const ADD_MODULE_DASH_PERIOD_PX = ADD_MODULE_DASH_PX + ADD_MODULE_GAP_PX;
+const ADD_MODULE_BORDER_PX = 4.5;
+const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.6)";
+
 function AddModuleButton({
   pageGrid,
   columnStart,
@@ -1545,23 +1574,34 @@ function AddModuleButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(120, 130, 255, 0.06)",
-        // Thicker border, requested directly, also does double duty as
-        // "longer dashes" — CSS's dashed border-style has no separate
-        // dash-length control of its own (unlike an SVG stroke's
-        // stroke-dasharray), but every browser's own dash algorithm
-        // scales dash length with border-width, so this is the one
-        // lever plain CSS actually has for both asks at once. A true,
-        // independently-tunable dash length would need an SVG-based
-        // border instead, which doesn't cleanly scale to this button's
-        // own dynamic per-stack width/height without either
-        // distorting the pattern or a lot more complexity — not worth
-        // it for this size of a visual ask.
-        border: "3.5px dashed rgba(120, 130, 255, 0.55)",
+        border: "none",
+        backgroundColor: "rgba(120, 130, 255, 0.06)",
+        // Longhand backgroundImage/Repeat/Size/Position, not the
+        // `background` shorthand above — mixing the shorthand with
+        // these would reset backgroundImage back to `none` as part of
+        // the shorthand's own behavior. Four gradients: top+bottom
+        // edges tile horizontally (repeat-x), left+right tile
+        // vertically (repeat-y); each one paints ADD_MODULE_DASH_PX of
+        // solid color then transparent for the rest of its own
+        // ADD_MODULE_DASH_PERIOD_PX-long tile.
+        backgroundImage: [
+          `linear-gradient(to right, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
+          `linear-gradient(to right, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
+          `linear-gradient(to bottom, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
+          `linear-gradient(to bottom, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
+        ].join(", "),
+        backgroundRepeat: "repeat-x, repeat-x, repeat-y, repeat-y",
+        backgroundSize: [
+          `${ADD_MODULE_DASH_PERIOD_PX}px ${ADD_MODULE_BORDER_PX}px`,
+          `${ADD_MODULE_DASH_PERIOD_PX}px ${ADD_MODULE_BORDER_PX}px`,
+          `${ADD_MODULE_BORDER_PX}px ${ADD_MODULE_DASH_PERIOD_PX}px`,
+          `${ADD_MODULE_BORDER_PX}px ${ADD_MODULE_DASH_PERIOD_PX}px`,
+        ].join(", "),
+        backgroundPosition: "left top, left bottom, left top, right top",
         borderRadius: 16,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
-        fontSize: Math.max(24, Math.min(44, rect.width * 0.16)),
+        fontSize: Math.max(32, Math.min(56, rect.width * 0.2)),
         lineHeight: 1,
       }}
     >
