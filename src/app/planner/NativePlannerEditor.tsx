@@ -2195,7 +2195,26 @@ function ModulePalette({
         <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Modules</strong>
       </button>
       <PaletteCollapse open={addModuleOpen} allowOverflow={isDraggingPaletteCard}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
+        {/* padding: not just paddingLeft:14 (the intentional indent)
+            anymore — 2px added on the other three sides too. Reported
+            directly: "side modules cut off on top and right, bottom
+            modules cut off on right and bottom." Root cause: each
+            section's own highlight (previous commit) draws a 1px
+            box-shadow spread, which — unlike a border — renders
+            *outside* the element's own box. This list sits inside "Add
+            Module"'s own PaletteCollapse, whose inner wrapper is
+            overflow:hidden (see PaletteCollapse's own allowOverflow
+            comment) with zero padding of its own. Wherever a section
+            sat flush against that wrapper with nothing to spare, the
+            1px shadow got clipped: the right edge, always (nothing
+            was ever reserved there); the top edge, only for whichever
+            section happens to be first in this list; the bottom edge,
+            only for whichever is last. The existing paddingLeft:14
+            already gave the left edge more than enough room, which is
+            exactly why it was never reported as cut off. 2px is
+            enough to clear a 1px spread with a small safety margin,
+            not a redesign of the indent itself. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "2px 2px 2px 14px" }}>
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
             return (
