@@ -1201,6 +1201,40 @@ const RESIZE_HANDLE_HALF_HEIGHT_PX = 8; // page-space px, each side of the bound
 // every row crossing. NativeModule's own isResizing prop clips that
 // stale content to the live (possibly now smaller) box in the meantime,
 // rather than letting it visibly spill past a shrinking edge.
+// Pins the cursor icon for an entire resize drag, regardless of what
+// ends up under the pointer partway through it. Reported directly,
+// twice — first "cursor glitches and and flashes between resize move
+// and click," then, after a first attempt (document.body.style.cursor)
+// didn't fix it, "i still get the cursor flicker." The first attempt's
+// own theory (cursor is hit-tested at the real pointer position each
+// frame, not tied to pointer capture) was right, but the fix wasn't
+// strong enough: setting cursor on body only sets the *inherited
+// default* — any element the stray pointer actually lands on with its
+// own explicit cursor style still wins over that, and NativeModule's
+// own wrapper unconditionally sets one (grab/grabbing/default). Since
+// the strip these handles use is thin and only repositions per row
+// crossing, straying onto a module mid-drag is the common case, not
+// an edge case — meaning body.style.cursor was overridden almost
+// immediately in practice. A real stylesheet rule with !important is
+// the one thing that *does* beat another element's own inline cursor
+// style, which is what this injects for the drag's duration instead.
+// Module-level singleton, not one style element per handle instance —
+// only one resize can ever be active at a time in this app already
+// (see gestureBlockedByPendingCommit), so there's never a reason for
+// more than one of these to exist simultaneously.
+let cursorLockStyleEl: HTMLStyleElement | null = null;
+function lockCursor(cursorValue: string) {
+  if (!cursorLockStyleEl) {
+    cursorLockStyleEl = document.createElement("style");
+    document.head.appendChild(cursorLockStyleEl);
+  }
+  cursorLockStyleEl.textContent = `*, *:hover { cursor: ${cursorValue} !important; }`;
+}
+function unlockCursor() {
+  cursorLockStyleEl?.remove();
+  cursorLockStyleEl = null;
+}
+
 function ResizeHandle({
   pair,
   pageGrid,
@@ -1272,25 +1306,9 @@ function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      // Forces the cursor icon for the whole drag, not just this
-      // element's own cursor:ns-resize below — reported directly:
-      // "cursor glitches and flashes between resize move and click."
-      // pointerCapture correctly routes every pointer event to this
-      // element regardless of where the cursor physically is, but the
-      // *cursor icon itself* is a separate concern the browser
-      // determines by hit-testing at the actual mouse position on
-      // every frame — pointer capture doesn't change that. This strip
-      // is only RESIZE_HANDLE_HALF_HEIGHT_PX*2 (16px) tall and only
-      // repositions per row crossing, not continuously with the mouse,
-      // so a normal vertical drag routinely carries the real cursor
-      // position outside the strip's own current bounds — hit-testing
-      // then finds whatever's underneath instead (a module with its
-      // own cursor:grab, or the default arrow), flickering the icon
-      // even though the drag logic itself keeps working correctly.
-      // Setting body.style.cursor pins the icon for the duration of
-      // the drag regardless of what's actually under the pointer; the
-      // pointerup/cancel handlers below clear it again.
-      document.body.style.cursor = "ns-resize";
+      // See lockCursor's own comment (right above this component) for
+      // why this exists and why body.style.cursor alone wasn't enough.
+      lockCursor("ns-resize");
       dragRef.current = {
         clientY: event.clientY,
         topRowSpan: pair.topRowSpan,
@@ -1316,7 +1334,7 @@ function ResizeHandle({
       if (!dragRef.current) return;
       const deltaRows = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
-      document.body.style.cursor = "";
+      unlockCursor();
       onResizeEnd(pair, deltaRows);
     },
     [computeClampedDeltaRows, pair, onResizeEnd]
@@ -1326,7 +1344,7 @@ function ResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const wasDragging = dragRef.current !== null;
       dragRef.current = null;
-      document.body.style.cursor = "";
+      unlockCursor();
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -1473,11 +1491,11 @@ function StackResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      // See ResizeHandle's own identical comment (its handlePointerDown)
-      // for the full reasoning — same fix, same underlying cursor-vs-
-      // hit-testing mismatch, this handle's own thin strip has the same
-      // problem.
-      document.body.style.cursor = "ns-resize";
+      // See lockCursor's own comment (right above ResizeHandle) for
+      // why this exists and why body.style.cursor alone wasn't enough
+      // — same fix, same underlying problem, this handle's own thin
+      // strip has it too.
+      lockCursor("ns-resize");
       dragRef.current = {
         clientY: event.clientY,
         memberSpans: stackBottom.members.map((m) => m.rowSpan),
@@ -1502,7 +1520,7 @@ function StackResizeHandle({
       if (!dragRef.current) return;
       const deltaRows = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
-      document.body.style.cursor = "";
+      unlockCursor();
       onResizeEnd(stackBottom, deltaRows);
     },
     [computeClampedDeltaRows, stackBottom, onResizeEnd]
@@ -1512,7 +1530,7 @@ function StackResizeHandle({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const wasDragging = dragRef.current !== null;
       dragRef.current = null;
-      document.body.style.cursor = "";
+      unlockCursor();
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
