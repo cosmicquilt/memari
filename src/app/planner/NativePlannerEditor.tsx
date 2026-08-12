@@ -3548,7 +3548,7 @@ export function NativePlannerEditor({
           {paletteOpen ? "✕" : "☰"}
         </button>
         <strong>
-          Memari <span style={{ fontWeight: 300, fontSize: "0.8em", letterSpacing: "0.06em" }}>EDITOR</span>
+          Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
         </strong>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
