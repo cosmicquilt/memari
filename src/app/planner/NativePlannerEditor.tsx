@@ -167,15 +167,23 @@ const MIN_ROW_SPAN = 2;
 // of anything else present, so every drop of either type was silently
 // refused. Reported directly: "the dragged bottom modules don't show
 // up at all."
+// `section` groups these for ModulePalette's own collapsible-sidebar
+// layout (side rail, one flyout per section) — "side" for the sidebar
+// column (labeled-box, its one content type), "bottom" for the zone
+// below the hourly grid (todo-checklist/habit-tracker, which share
+// that zone and need a real choice between them, unlike the sidebar).
+// Also what AddModuleButton's own "+" zones use to pick which section
+// to open — see that component's own comment.
 const PALETTE_MODULE_TYPES: Array<{
   slug: string;
   label: string;
+  section: "side" | "bottom";
   defaultColumnSpan: number;
   defaultRowSpan: number;
 }> = [
-  { slug: "labeled-box", label: "Text Box", defaultColumnSpan: 1, defaultRowSpan: 2 },
-  { slug: "todo-checklist", label: "To-Do Checklist", defaultColumnSpan: 3, defaultRowSpan: 10 },
-  { slug: "habit-tracker", label: "Habit Tracker", defaultColumnSpan: 4, defaultRowSpan: 10 },
+  { slug: "labeled-box", label: "Text Box", section: "side", defaultColumnSpan: 1, defaultRowSpan: 2 },
+  { slug: "todo-checklist", label: "To-Do Checklist", section: "bottom", defaultColumnSpan: 3, defaultRowSpan: 10 },
+  { slug: "habit-tracker", label: "Habit Tracker", section: "bottom", defaultColumnSpan: 4, defaultRowSpan: 10 },
 ];
 const PALETTE_ID_PREFIX = "palette:";
 
@@ -402,9 +410,9 @@ function NativeModule({
   // frame specifically, not just while actively dragging.
   suppressTransition: boolean;
   // True for the couple of frames right after this instance was created
-  // (either the "+" button or a palette drag-drop — see the shared
-  // handleAddModule's own comment) — drives a simple opacity fade-in on
-  // mount (see the local `mounted` state below). Deliberately just
+  // by a palette drag-drop (see handleAddModule's own comment) —
+  // drives a simple opacity fade-in on mount (see the local `mounted`
+  // state below). Deliberately just
   // opacity, nothing fancier (no scale/translate) — a plain fade-in
   // doesn't have the "grid jump plus a transform both changing at once"
   // compounding problem the settle-FLIP mechanism exists to solve, so
@@ -896,7 +904,7 @@ function NativePage({
   onStackResizeStart,
   onStackResizeMove,
   onStackResizeEnd,
-  onAddModule,
+  onOpenPaletteSection,
   onDeleteModule,
   onUpdateHeading,
   onUpdateHabits,
@@ -940,7 +948,10 @@ function NativePage({
   onStackResizeStart: (stackBottom: StackBottom) => void;
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
-  onAddModule: (pageId: string, moduleTypeSlug: string, columnStart: number, rowStart: number) => void;
+  // Drives ModulePalette's own controlled openSection — see
+  // AddModuleButton's own comment on why its "+" zones open a section
+  // instead of adding a fixed module type directly.
+  onOpenPaletteSection: (section: "side" | "bottom") => void;
   onDeleteModule: (instanceId: string) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
   onUpdateHabits: (instanceId: string, habits: string[]) => void;
@@ -1098,7 +1109,13 @@ function NativePage({
               columnSpan={sb.columnSpan}
               rowStart={sb.stackBottomRowEnd}
               rowSpan={sb.maxBottomBound - sb.stackBottomRowEnd}
-              onClick={() => onAddModule(page.pageId, "labeled-box", sb.columnStart, sb.stackBottomRowEnd)}
+              // The sidebar column is always columnStart 0 (see
+              // hasSidebarContent's own identical test, actions.ts) —
+              // the one reliable signal for which section this
+              // particular stack's own free room belongs to, since
+              // StackBottom itself doesn't carry a slug (a stack could
+              // in principle mix module types).
+              onClick={() => onOpenPaletteSection(sb.columnStart === 0 ? "side" : "bottom")}
             />
           ))}
       {/* Live palette-drag preview — only rendered on whichever page the
@@ -1369,10 +1386,15 @@ function StackResizeHandle({
       // form, as the authoritative re-check. Deliberately the uniform
       // MIN_ROW_SPAN here, not a per-member minimum like totalShrinkable
       // above — this is about the *next* module that could go in the
-      // freed gap, not about any of this stack's own current members,
-      // and the only thing that can ever land there (AddModuleButton,
-      // the "+" zone) is always a labeled-box, whose own floor is
-      // MIN_ROW_SPAN regardless of what's being resized right now.
+      // freed gap, not about any of this stack's own current members.
+      // In the sidebar, that's always a labeled-box (AddModuleButton's
+      // own "+" zone there); below the hourly grid it could also be a
+      // fresh todo-checklist/habit-tracker shrunk to fit (see
+      // addPaletteModuleAt's own shrink-to-fit comment) — but every one
+      // of these floors is verified to coincide at 2 rows on this app's
+      // real page geometry (see getMinRowSpanForSlug's own comment), so
+      // the uniform constant here still gives the right answer for
+      // either zone without needing to know which one this stack is.
       const maxPossibleGap = drag.maxGrow + totalShrinkable;
       const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
       const rawGapRows = drag.maxGrow - rawDeltaPagePx / rowPitchPx;
@@ -1457,11 +1479,29 @@ function StackResizeHandle({
 // positioned div here: it isn't real page content, it shouldn't be part
 // of anything that gets persisted or exported.
 //
-// Scoped to sidebar-shaped stacks specifically (see handleAddModule's own
-// comment on why it always adds a labeled-box, not a chosen module type)
-// — this app's sidebar content is always labeled-box regardless of
-// heading, so there's a single unambiguous answer to "what gets added
-// here" and no module-type picker UI to build for it.
+// NOT scoped to any one column range — stackBottomsByPageId (main
+// component) groups by whatever column ranges actually exist on the
+// page, sidebar or not, so this shows up below *any* stack with room,
+// including the zone below the hourly grid once todo-checklist/
+// habit-tracker became independently resizable (a claim an earlier
+// version of this comment got wrong, back when that zone could never
+// have spare room to show this at all).
+//
+// Used to add a labeled-box directly on click — fine in the sidebar,
+// its one unambiguous content type, but silently wrong below the
+// hourly grid, where there are two real candidates (todo-checklist,
+// habit-tracker) a single click can't choose between; a labeled-box
+// added there would land undersized and in the wrong place, since
+// addPaletteModuleAt's own column/size overrides only apply to those
+// two slugs. Opens ModulePalette's matching section instead — see its
+// own comment — so the user picks a card and drags it in themselves,
+// landing via the same shrink-to-fit logic a direct drag already uses
+// (addPaletteModuleAt's own comment). Requested directly: "when i
+// click on plus box under side modules it should bring up the side
+// module section of the sidebar... when i click on bottom module plus
+// box it should bring me to bottom module section." columnStart === 0
+// is what the caller (NativePage) uses to tell which section a given
+// button's own stack belongs to — see that call site's own comment.
 function AddModuleButton({
   pageGrid,
   columnStart,
@@ -1592,6 +1632,13 @@ function PaletteCard({
   );
 }
 
+const PALETTE_SECTIONS: Array<{ key: "side" | "bottom"; label: string; hint: string }> = [
+  { key: "side", label: "Side", hint: "Sidebar modules" },
+  { key: "bottom", label: "Bottom", hint: "Below-the-hourly-grid modules" },
+];
+const PALETTE_RAIL_WIDTH_PX = 68;
+const PALETTE_FLYOUT_WIDTH_PX = 160;
+
 // Drag-to-add sidebar — requested directly: "create a pallette on the
 // side to drag and add new module." A sibling of the scaled page
 // content (see the main render's own comment on why), not a descendant
@@ -1599,35 +1646,101 @@ function PaletteCard({
 // ZoomControls' own identical positioning already does — relative to
 // the real viewport, not hijacked by the scale transform's own
 // containing-block behavior.
-function ModulePalette({ activeId, activeDelta }: { activeId: string | null; activeDelta: { x: number; y: number } }) {
+//
+// Collapsible, Polotno-style — requested directly: "put the pallete in
+// a collapsible sidebar like polotno." A slim rail (PALETTE_RAIL_WIDTH_PX,
+// always visible, fixed at the same top:60/right:12 spot the old
+// always-open panel used) with one button per PALETTE_SECTIONS entry;
+// clicking one opens a flyout of just that section's cards to the
+// rail's own left, closing again on a second click of the same button.
+// `openSection` is controlled (owned by the main component, not local
+// state) specifically so AddModuleButton's own "+" zones can drive it
+// too — see that component's own comment. Collapsed (openSection null)
+// by default: matches the "collapsible" ask as the sidebar's resting
+// state, and keeps the page-canvas view clear of a permanently-open
+// panel most of a session doesn't need.
+function ModulePalette({
+  activeId,
+  activeDelta,
+  openSection,
+  onSectionChange,
+}: {
+  activeId: string | null;
+  activeDelta: { x: number; y: number };
+  openSection: "side" | "bottom" | null;
+  onSectionChange: (section: "side" | "bottom" | null) => void;
+}) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 60,
-        right: 12,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        padding: 10,
-        background: "#141414",
-        border: "1px solid #333",
-        borderRadius: 8,
-        zIndex: 20,
-        width: 160,
-      }}
-    >
-      <strong style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>Add module</strong>
-      {PALETTE_MODULE_TYPES.map((m) => (
-        <PaletteCard
-          key={m.slug}
-          slug={m.slug}
-          label={m.label}
-          isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-          dragOffset={activeDelta}
-        />
-      ))}
-    </div>
+    <>
+      {openSection && (
+        <div
+          style={{
+            position: "fixed",
+            top: 60,
+            right: 12 + PALETTE_RAIL_WIDTH_PX + 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            padding: 10,
+            background: "#141414",
+            border: "1px solid #333",
+            borderRadius: 8,
+            zIndex: 20,
+            width: PALETTE_FLYOUT_WIDTH_PX,
+          }}
+        >
+          <strong style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            {PALETTE_SECTIONS.find((s) => s.key === openSection)?.hint ?? "Add module"}
+          </strong>
+          {PALETTE_MODULE_TYPES.filter((m) => m.section === openSection).map((m) => (
+            <PaletteCard
+              key={m.slug}
+              slug={m.slug}
+              label={m.label}
+              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+              dragOffset={activeDelta}
+            />
+          ))}
+        </div>
+      )}
+      <div
+        style={{
+          position: "fixed",
+          top: 60,
+          right: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          zIndex: 20,
+          width: PALETTE_RAIL_WIDTH_PX,
+        }}
+      >
+        {PALETTE_SECTIONS.map((s) => {
+          const active = openSection === s.key;
+          return (
+            <button
+              key={s.key}
+              type="button"
+              title={s.hint}
+              onClick={() => onSectionChange(active ? null : s.key)}
+              style={{
+                padding: "8px 6px",
+                fontSize: 11,
+                fontWeight: 600,
+                textAlign: "center",
+                background: active ? "#4a5cff" : "#141414",
+                color: active ? "#fff" : "#ccc",
+                border: `1px solid ${active ? "#4a5cff" : "#333"}`,
+                borderRadius: 8,
+                cursor: "pointer",
+              }}
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -2288,6 +2401,12 @@ export function NativePlannerEditor({
   // dividing by `scale` (see file comment: it's the only value in this
   // component that originates *outside* the scaled coordinate space).
   const [activeDelta, setActiveDelta] = useState<{ x: number; y: number }>(ZERO_OFFSET);
+  // Which ModulePalette section (if any) its flyout is currently
+  // showing — see that component's own comment. Owned here (not local
+  // state inside ModulePalette) specifically so AddModuleButton's own
+  // "+" zones can drive it too, opening the matching section from
+  // anywhere on the page, not just the rail itself.
+  const [paletteSection, setPaletteSection] = useState<"side" | "bottom" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Which module's own delete button is currently shown — lifted up here
@@ -2660,11 +2779,16 @@ export function NativePlannerEditor({
   // running.
   const gestureBlockedByPendingCommit = useCallback(() => pendingCommitCountRef.current > 0, []);
 
-  // Adds a fresh module of the given type near a specific cell — shared
-  // by the "+" button (always labeled-box, see AddModuleButton's own
-  // comment on why that one never needs a type choice) and a palette
-  // drag-drop (handleDragEnd below, any of PALETTE_MODULE_TYPES). Reuses
-  // addPaletteModuleAt unchanged either way. columnStart/rowStart passed
+  // Adds a fresh module of the given type near a specific cell — called
+  // by a palette drag-drop (handleDragEnd below, any of
+  // PALETTE_MODULE_TYPES) once the user has actually picked and
+  // dragged a card. Not called by the "+" button anymore (see
+  // AddModuleButton's own comment on why: it opens ModulePalette to
+  // the matching section instead of adding a fixed module type
+  // directly), but kept as its own function rather than folded into
+  // handleDragEnd — still exactly the single-purpose "commit this
+  // module type at this requested cell" operation either caller would
+  // need. columnStart/rowStart passed
   // in are only ever a *requested* target, not trusted as the final
   // answer — addPaletteModuleAt's own findNearestFreeCell can relocate
   // the candidate (a collision, or the synthetic hourly-grid gap
@@ -3467,7 +3591,7 @@ export function NativePlannerEditor({
                     onStackResizeStart={handleStackResizeStart}
                     onStackResizeMove={handleStackResizeMove}
                     onStackResizeEnd={handleStackResizeEnd}
-                    onAddModule={handleAddModule}
+                    onOpenPaletteSection={setPaletteSection}
                     onDeleteModule={handleDeleteModule}
                     onUpdateHeading={handleUpdateHeading}
                     onUpdateHabits={handleUpdateHabits}
@@ -3481,7 +3605,12 @@ export function NativePlannerEditor({
                 ))}
               </div>
             </div>
-            <ModulePalette activeId={activeId} activeDelta={activeDelta} />
+            <ModulePalette
+              activeId={activeId}
+              activeDelta={activeDelta}
+              openSection={paletteSection}
+              onSectionChange={setPaletteSection}
+            />
           </DndContext>
         </div>
         <ZoomControls
