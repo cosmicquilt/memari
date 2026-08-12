@@ -338,6 +338,7 @@ function NativeModule({
   isDragged,
   isResizing,
   frozenSize,
+  liveSize,
   suppressTransition,
   justAdded,
   scale,
@@ -377,6 +378,12 @@ function NativeModule({
   // resizeFrozenSize's own comment in the main component. null the rest
   // of the time.
   frozenSize: { width: number; height: number } | null;
+  // The pair's *current*, live pixel size, while isResizing — see
+  // resizeLiveSize's own comment in the main component. null the rest
+  // of the time. Paired with frozenSize to compute a live content
+  // scale for todo-checklist/habit-tracker — see
+  // suppressAllContentWhileResizing's own comment below.
+  liveSize: { width: number; height: number } | null;
   // True for exactly one frame right after a drop, for whichever
   // instances just had their placement committed (the dropped item and
   // any reflowed siblings) — see the settle-FLIP comment on `settling`
@@ -531,16 +538,42 @@ function NativeModule({
   // mid-cell, or day-letter dividers stopping partway down a taller
   // box with bare white space below them. Reported directly: "the
   // live resize unit grid isn't the same as the todo and habit
-  // tracker rows." Rather than trying to render an approximation of
-  // the correct live grid (attempted once already as a CSS
-  // repeating-gradient row overlay and reverted — see that revert's
-  // own commit message for the two real bugs it had: gutter-blind
-  // lines and header text that read as broken, not intentional), these
-  // two types instead get the exact same treatment isResizing's own
-  // outline already gives the outer-border element alone: hidden
-  // outright for the duration of the drag, with the live outline as
-  // the only size indicator, rather than shown stale and clipped.
-  const suppressAllContentWhileResizing = isResizing && (slug === "todo-checklist" || slug === "habit-tracker");
+  // tracker rows."
+  //
+  // A CSS repeating-gradient row overlay was tried once already for
+  // this exact class of problem and reverted (see that revert's own
+  // commit message for the two real bugs it had: gutter-blind lines
+  // and header text hidden in a way that read as broken). Hiding this
+  // content outright (this fix's own previous iteration) was reported
+  // back as its own problem — "inside of table disappears during live
+  // preview" — and the requested alternative was direct: "maybe adjust
+  // the height of each todo so it coincides." That's exactly what
+  // renderTodoChecklist/renderHabitTracker's own rowHeight already does
+  // once a resize actually commits (stretches nominal row height to
+  // fill whatever height it's finally given, no leftover gap — see
+  // either renderer's own comment), just not usable mid-drag without a
+  // real re-render on every row crossing (see ResizeHandle's own
+  // comment on why not). Applying the same idea as a live CSS scale
+  // instead gets the same effect without one: stretch/compress the
+  // frozen content (unchanged row *count* — only its rendered extent
+  // moves) so it always exactly fills the box's current live height,
+  // same as the real renderer would for *some* row count, even though
+  // it's not necessarily the exact row count the final commit will
+  // land on. transformOrigin "top left" keeps the header pinned to the
+  // box's live top edge rather than drifting, matching how the real
+  // content already anchors there once committed. Scaling the whole
+  // content block also stretches/compresses the header text along with
+  // the row grid (a uniform CSS transform can't single out just the row
+  // portion without splitting it into a separate element group these
+  // renderers don't currently emit) — a brief, purely visual artifact
+  // for the duration of the drag, gone the instant it commits and the
+  // real render replaces it; accepted as a better tradeoff than either
+  // prior attempt (a mismatched stale grid, or a fully blank interior).
+  const scalableGrid = slug === "todo-checklist" || slug === "habit-tracker";
+  const contentScaleY =
+    isResizing && scalableGrid && frozenSize && liveSize && frozenSize.height > 0
+      ? liveSize.height / frozenSize.height
+      : 1;
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -619,14 +652,22 @@ function NativeModule({
         touchAction: locked ? undefined : "none",
       }}
     >
-      <PolotnoJsonRenderer
-        elements={suppressAllContentWhileResizing ? [] : elements}
-        originX={originX}
-        originY={originY}
-        scale={scale}
-        isFirefox={isFirefox}
-        suppressOuterBorderSize={isResizing ? frozenSize : null}
-      />
+      <div
+        style={
+          contentScaleY !== 1
+            ? { transform: `scaleY(${contentScaleY})`, transformOrigin: "top left" }
+            : undefined
+        }
+      >
+        <PolotnoJsonRenderer
+          elements={elements}
+          originX={originX}
+          originY={originY}
+          scale={scale}
+          isFirefox={isFirefox}
+          suppressOuterBorderSize={isResizing ? frozenSize : null}
+        />
+      </div>
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
           individually deletable). stopPropagation on pointerdown keeps
@@ -890,6 +931,7 @@ function NativePage({
   stackBottoms,
   resizingIds,
   resizeFrozenSize,
+  resizeLiveSize,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
@@ -934,6 +976,11 @@ function NativePage({
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
   resizeFrozenSize: Record<string, { width: number; height: number }> | null;
+  // See the main component's own comment on resizeLiveSize — paired
+  // with resizeFrozenSize so NativeModule can scale a resizing
+  // todo-checklist/habit-tracker's frozen content to fill the box's
+  // *current* size instead of its last-committed one.
+  resizeLiveSize: Record<string, { width: number; height: number }> | null;
   onResizeStart: (pair: ResizePair) => void;
   onResizeMove: (pair: ResizePair, deltaRows: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
@@ -990,6 +1037,7 @@ function NativePage({
             originX={info.originX}
             originY={info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
+            liveSize={resizeLiveSize?.[id] ?? null}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
@@ -1819,6 +1867,48 @@ export function NativePlannerEditor({
     }
     return result;
   }, [resizeDrag, stackResizeDrag, placements, pageGridByPageId]);
+
+  // Same shape and computation as resizeFrozenSize immediately above,
+  // sourced from displayPlacements (the live, in-progress preview)
+  // instead of the last-committed `placements` — the box's *current*
+  // pixel size, updated on every row crossing as the drag continues.
+  // Requested directly, as an alternative to hiding a resizing
+  // todo-checklist/habit-tracker's content outright (see
+  // suppressAllContentWhileResizing's own comment, NativeModule):
+  // "maybe adjust the height of each todo so it coincides." Paired with
+  // resizeFrozenSize, NativeModule can scale the frozen content
+  // (unchanged row *count*, since that still isn't recomputed mid-drag
+  // — see ResizeHandle's own comment on why not) so it proportionally
+  // stretches or compresses to exactly fill the live box, the same way
+  // renderTodoChecklist/renderHabitTracker's own rowHeight already
+  // stretches nominal row height to fill whatever height they're
+  // finally given — just applied live via a CSS transform instead of a
+  // real re-render, and corrected the instant the drag actually commits
+  // and a real render (with the real, possibly different, row count)
+  // replaces it.
+  const resizeLiveSize = useMemo(() => {
+    if (!resizeDrag && !stackResizeDrag) return null;
+    const result: Record<string, { width: number; height: number }> = {};
+    if (resizeDrag) {
+      const pageGrid = pageGridByPageId[resizeDrag.pageId];
+      const top = displayPlacements[resizeDrag.topId];
+      const bottom = displayPlacements[resizeDrag.bottomId];
+      if (pageGrid && top && bottom) {
+        result[resizeDrag.topId] = gridCellToPixels(pageGrid, top);
+        result[resizeDrag.bottomId] = gridCellToPixels(pageGrid, bottom);
+      }
+    }
+    if (stackResizeDrag) {
+      const pageGrid = pageGridByPageId[stackResizeDrag.pageId];
+      if (pageGrid) {
+        for (const id of stackResizeDrag.memberIds) {
+          const placement = displayPlacements[id];
+          if (placement) result[id] = gridCellToPixels(pageGrid, placement);
+        }
+      }
+    }
+    return result;
+  }, [resizeDrag, stackResizeDrag, displayPlacements, pageGridByPageId]);
 
   // Recomputed from the LIVE displayPlacements (not the static `pages`
   // prop, and not the last-committed `placements` either) on every
@@ -3399,6 +3489,7 @@ export function NativePlannerEditor({
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={resizingIds}
                     resizeFrozenSize={resizeFrozenSize}
+                    resizeLiveSize={resizeLiveSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
                     onResizeEnd={handleResizeEnd}
