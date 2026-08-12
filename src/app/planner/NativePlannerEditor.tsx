@@ -1512,40 +1512,30 @@ function StackResizeHandle({
 // box it should bring me to bottom module section." columnStart === 0
 // is what the caller (NativePage) uses to tell which section a given
 // button's own stack belongs to — see that call site's own comment.
-// AddModuleButton's own dashed edge, as four repeating-gradient
-// background layers (one per side) instead of `border-style: dashed`
-// — reported directly, twice: first that a thicker border alone
-// ("2px dashed" -> "3.5px dashed") still read as too-short dashes
-// ("they look like dots"), then explicitly "much longer border
-// dashes." Plain CSS's dashed border-style has no independent
-// dash-length control at all — every browser's own dash algorithm
-// picks its own short ratio scaled off border-width, which is exactly
-// why leaning on border-width alone (the first attempt) couldn't get
-// there. A repeating-linear-gradient background, one per edge, gives
-// exact px-level control over both dash and gap length, and — unlike
-// an SVG-background approach — tiles at a fixed px period rather than
-// stretching to fill the box, so the dash length stays correct
-// regardless of this button's own per-stack width/height (which
-// varies a lot: a single freed grid cell vs. a whole empty column).
-// Trade-off, accepted: unlike a real `border`, this doesn't curve
-// through the button's own rounded corners — background-clip still
-// confines it to the rounded shape, but each edge's dashes are
-// individually straight, so a corner can show a partial/clipped dash
-// rather than one that bends smoothly around it. Acceptable for a
-// debug "+" zone at this border-radius; the straight edges (most of
-// the perimeter) get the exact controllable dash length that was
-// actually asked for.
-// Dash/gap both scaled 5x together (70px/40px, not just the dash
-// alone stretched against the old 8px gap) — requested directly as
-// "dashes to be 5x longer," but stretching only the solid segment
-// while leaving a tiny gap would have read as a near-solid line with
-// small nicks in it, not a recognizably *dashed* edge at a bigger
-// scale. Scaling the whole period keeps the same dash:gap proportions,
-// just 5x the size.
-const ADD_MODULE_DASH_PX = 70;
-const ADD_MODULE_GAP_PX = 40;
-const ADD_MODULE_DASH_PERIOD_PX = ADD_MODULE_DASH_PX + ADD_MODULE_GAP_PX;
+// AddModuleButton's own dashed edge. First tried as CSS
+// `border-style: dashed` (reported: thicker border alone still read
+// as "dots," no independent dash-length control), then as four
+// repeating-gradient background layers, one per side (reported: exact
+// dash length, but the gradients are each straight and independently
+// clipped by the button's own border-radius, so a corner showed a
+// partial/clipped dash instead of one bending smoothly through it —
+// "the dashes are getting cut off in the corner by the border
+// radius"). This version draws one real rounded-rect *stroke* in an
+// inline SVG instead — stroke-dasharray distributes dashes along the
+// actual curved outline, corners included, exactly the way a native
+// CSS dashed border would if border-style had a dash-length knob at
+// all. Not a background-image data URI stretched via background-size
+// (which was the earlier, explicitly-rejected SVG approach, for
+// exactly the distortion risk this button's own widely-varying
+// per-stack size would hit) — this SVG's own viewBox is set to the
+// button's *real*, already-known pixel width/height (gridCellToPixels'
+// own `rect`), so there's no scaling at all: 1 SVG user-unit is
+// exactly 1 real pixel, and stroke-dasharray's px values render at
+// their literal length regardless of the box's own aspect ratio.
+const ADD_MODULE_DASH_PX = 80;
+const ADD_MODULE_GAP_PX = 45;
 const ADD_MODULE_BORDER_PX = 6;
+const ADD_MODULE_RADIUS_PX = 64;
 const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.6)";
 
 function AddModuleButton({
@@ -1567,6 +1557,7 @@ function AddModuleButton({
     () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
+  const iconSize = Math.max(40, Math.min(64, rect.width * 0.24));
   return (
     <button
       type="button"
@@ -1583,33 +1574,44 @@ function AddModuleButton({
         justifyContent: "center",
         border: "none",
         backgroundColor: "rgba(120, 130, 255, 0.06)",
-        // Longhand backgroundImage/Repeat/Size/Position, not the
-        // `background` shorthand above — mixing the shorthand with
-        // these would reset backgroundImage back to `none` as part of
-        // the shorthand's own behavior. Four gradients: top+bottom
-        // edges tile horizontally (repeat-x), left+right tile
-        // vertically (repeat-y); each one paints ADD_MODULE_DASH_PX of
-        // solid color then transparent for the rest of its own
-        // ADD_MODULE_DASH_PERIOD_PX-long tile.
-        backgroundImage: [
-          `linear-gradient(to right, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
-          `linear-gradient(to right, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
-          `linear-gradient(to bottom, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
-          `linear-gradient(to bottom, ${ADD_MODULE_DASH_COLOR} ${ADD_MODULE_DASH_PX}px, transparent ${ADD_MODULE_DASH_PX}px)`,
-        ].join(", "),
-        backgroundRepeat: "repeat-x, repeat-x, repeat-y, repeat-y",
-        backgroundSize: [
-          `${ADD_MODULE_DASH_PERIOD_PX}px ${ADD_MODULE_BORDER_PX}px`,
-          `${ADD_MODULE_DASH_PERIOD_PX}px ${ADD_MODULE_BORDER_PX}px`,
-          `${ADD_MODULE_BORDER_PX}px ${ADD_MODULE_DASH_PERIOD_PX}px`,
-          `${ADD_MODULE_BORDER_PX}px ${ADD_MODULE_DASH_PERIOD_PX}px`,
-        ].join(", "),
-        backgroundPosition: "left top, left bottom, left top, right top",
-        borderRadius: 40,
+        borderRadius: ADD_MODULE_RADIUS_PX,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
       }}
     >
+      {/* The dashed rounded-rect stroke — see this file's own header
+          comment above for why an inline, real-pixel-sized SVG rather
+          than a CSS trick. Absolutely positioned to exactly cover the
+          button, pointerEvents:none so it never intercepts the click
+          meant for the button itself. Inset by half the stroke width
+          on every side (x/y/width/height below) — an SVG stroke is
+          centered on its own path by default, so without this the
+          outer half of the stroke would run past the button's own
+          edge and get clipped instead of landing flush with it, the
+          same "inset a stroke to keep its outer edge at the box's own
+          boundary" adjustment PolotnoJsonRenderer's own outline
+          rendering already relies on elsewhere in this file. rx/ry
+          match the button's own CSS borderRadius so the stroke and
+          the tinted fill trace the identical rounded shape. */}
+      <svg
+        width={rect.width}
+        height={rect.height}
+        style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+      >
+        <rect
+          x={ADD_MODULE_BORDER_PX / 2}
+          y={ADD_MODULE_BORDER_PX / 2}
+          width={Math.max(0, rect.width - ADD_MODULE_BORDER_PX)}
+          height={Math.max(0, rect.height - ADD_MODULE_BORDER_PX)}
+          rx={ADD_MODULE_RADIUS_PX}
+          ry={ADD_MODULE_RADIUS_PX}
+          fill="none"
+          stroke={ADD_MODULE_DASH_COLOR}
+          strokeWidth={ADD_MODULE_BORDER_PX}
+          strokeDasharray={`${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`}
+          strokeLinecap="round"
+        />
+      </svg>
       {/* A real icon, not the text glyph "+" — requested directly
           ("can you change to plus icon as well"). Two round-capped
           strokes rather than a font character: renders at a precise,
@@ -1618,12 +1620,7 @@ function AddModuleButton({
           with width/height instead of a font's own line-height
           quirks. stroke="currentColor" inherits the button's own
           `color` above rather than duplicating that value here. */}
-      <svg
-        width={Math.max(40, Math.min(64, rect.width * 0.24))}
-        height={Math.max(40, Math.min(64, rect.width * 0.24))}
-        viewBox="0 0 24 24"
-        fill="none"
-      >
+      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none">
         <path d="M12 4v16M4 12h16" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" />
       </svg>
     </button>
