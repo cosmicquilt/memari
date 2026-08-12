@@ -4059,6 +4059,34 @@ export function NativePlannerEditor({
             // both drive this same marginLeft and need it applied
             // instantly, not eased.
             transition: paletteZoomTransitioning ? "margin 0.28s cubic-bezier(0.4, 0, 0.2, 1)" : undefined,
+            // Reported directly: "when i drag individual modules from
+            // side it drags under the canvas instead of over it and i
+            // then cant see it anymore." Root cause: this div (and the
+            // transform:scale(...) wrapper inside it, both position:
+            // static/auto by default) is a plain sibling of ZoomControls
+            // and — one level in — of ModulePalette, both of which are
+            // position:fixed with their own explicit z-index (20 and 25
+            // respectively). A dragged module's own zIndex:10 (see
+            // NativeModule's own comment) only ever competes against its
+            // OWN siblings *inside* this div's stacking context — it can
+            // never outrank a z-indexed element *outside* that context,
+            // no matter how high its own local value is, since stacking
+            // contexts don't let an inner value "escape" to compete at
+            // an outer level. ZoomControls sits fixed at the viewport's
+            // own bottom-center and is always on screen, so dragging any
+            // module down far enough already had a real, reachable path
+            // to end up visually underneath it. position:relative +
+            // zIndex here (elevated only while a drag or its post-drop
+            // settle animation is in flight, matching the same
+            // "elevate only what's actively moving" scoping every other
+            // conditional z-index in this file already uses) outranks
+            // both fixed-position siblings for that whole window — the
+            // dragged module (and the settling one right after drop)
+            // can no longer be covered by either, while ZoomControls/
+            // ModulePalette still correctly sit on top of the plain,
+            // idle canvas the rest of the time.
+            position: "relative",
+            zIndex: activeId || settling ? 30 : undefined,
           }}
         >
           {/* DndContext wraps this whole marginLeft/marginTop div *and*
