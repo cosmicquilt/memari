@@ -153,7 +153,11 @@ export function renderHourlyGridCore(
         align: "left",
       });
 
-      const dateFontSize = ptToPx(5);
+      // Bumped a hair past the reference's own measured 5pt for
+      // legibility, requested directly — same kind of deliberate
+      // departure from the literal measurement as habitTracker.ts's
+      // own DAY_LETTER_FONT_PT (see its comment).
+      const dateFontSize = ptToPx(5.5);
       const dateTextHeight = dateFontSize * 1.2;
       elements.push({
         id: nextId(),
@@ -205,7 +209,9 @@ export function renderHourlyGridCore(
       // bottom (not flush) for the same reason verticalAlign was
       // dropped elsewhere — a small gap off the line reads better than
       // touching it exactly.
-      const timeLabelFontSize = ptToPx(5);
+      // Same 5pt -> 5.5pt legibility bump as dateFontSize above,
+      // requested directly ("hour times... slightly larger").
+      const timeLabelFontSize = ptToPx(5.5);
       const timeLabelTextHeight = timeLabelFontSize * 1.2;
       const timeLabelBottomGap = ptToPx(1);
       elements.push({
