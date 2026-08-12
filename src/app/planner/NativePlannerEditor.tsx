@@ -1994,7 +1994,7 @@ function ModulePalette({
         <PaletteChevron open={addModuleOpen} />
         <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Add Module</strong>
       </button>
-      <PaletteCollapse open={addModuleOpen}>
+      <PaletteCollapse open={addModuleOpen} allowOverflow={isDraggingPaletteCard}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
@@ -2060,7 +2060,7 @@ function ModulePalette({
                       <div style={{ fontSize: 10.5, color: "#888", lineHeight: 1.3 }}>{s.hint}</div>
                     </div>
                   </button>
-                  <PaletteCollapse open={sectionIsOpen}>
+                  <PaletteCollapse open={sectionIsOpen} allowOverflow={isDraggingPaletteCard}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
                       {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
                         <PaletteCard
@@ -2095,10 +2095,35 @@ function ModulePalette({
 // from the tree, just clips them to zero height while collapsed) — a
 // card mid-drag inside a collapsing section doesn't lose its own drag
 // state, and nothing has to re-mount when reopened.
-function PaletteCollapse({ open, children }: { open: boolean; children: React.ReactNode }) {
+function PaletteCollapse({
+  open,
+  allowOverflow,
+  children,
+}: {
+  open: boolean;
+  // Overrides the inner wrapper's own overflow:hidden (needed the rest
+  // of the time to actually clip content to zero height while
+  // collapsed) to "visible" — added after this component shipped, when
+  // it turned out to reintroduce the exact class of bug ModulePalette's
+  // own overflow:visible-while-dragging fix already existed to solve,
+  // just one layer deeper. Every PaletteCard lives inside one (or two,
+  // nested — a section's own card list, itself inside "Add Module"'s
+  // own list of sections) of these wrappers; a dragged card's own
+  // transform carries it outside this wrapper's bounds just as
+  // immediately as it does the outer panel's, and PaletteCollapse's
+  // hidden clip has no idea a drag is even happening unless told.
+  // Reported directly: "it looks like it goes under canvas but it
+  // disappears a bit earlier like it stays within the bottom module
+  // element, with no overflow" — exactly this: clipped the instant it
+  // left its own section's card-list wrapper, well before it ever
+  // reached the panel's own edge (or the canvas beyond it) to test
+  // ModulePalette's own fix at all.
+  allowOverflow: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{ display: "grid", gridTemplateRows: open ? "1fr" : "0fr", transition: "grid-template-rows 0.22s ease" }}>
-      <div style={{ overflow: "hidden", minHeight: 0 }}>{children}</div>
+      <div style={{ overflow: allowOverflow ? "visible" : "hidden", minHeight: 0 }}>{children}</div>
     </div>
   );
 }
