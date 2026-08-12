@@ -2298,6 +2298,25 @@ export function NativePlannerEditor({
       const occupied: GridRect[] = (instanceIdsByPageId[target.pageId] ?? [])
         .map((instId) => placements[instId])
         .filter((p): p is Placement => !!p);
+      // Mirrors addPaletteModuleAt's own identical reservation
+      // (actions.ts) — see that copy's comment for the full reasoning.
+      // Kept in sync by hand rather than shared, the same "use server"
+      // boundary constraint every other duplicated constant/helper in
+      // this file already has to live with — this is what keeps the
+      // live preview from ever showing a spot the server would then
+      // relocate away from on drop.
+      const hourlyGridId = (instanceIdsByPageId[target.pageId] ?? []).find(
+        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
+      );
+      const hourlyGridPlacement = hourlyGridId ? placements[hourlyGridId] : undefined;
+      if (hourlyGridPlacement) {
+        occupied.push({
+          columnStart: hourlyGridPlacement.columnStart,
+          rowStart: hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan,
+          columnSpan: hourlyGridPlacement.columnSpan,
+          rowSpan: 1,
+        });
+      }
       const resolved = findNearestFreeCell(pageGrid, candidate, occupied);
       const finalRect: GridRect = { ...resolved, columnSpan: meta.defaultColumnSpan, rowSpan: meta.defaultRowSpan };
       setPaletteDrag({
@@ -2309,7 +2328,7 @@ export function NativePlannerEditor({
         overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
       });
     },
-    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements]
+    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements, moduleLookup]
   );
 
   // Shared by the live preview (below, every pointer move) and the real

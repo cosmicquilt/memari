@@ -839,6 +839,30 @@ export async function addPaletteModuleAt(
       // which doesn't have "siblings it was already part of" to reorder
       // among.
       const occupied = moduleInstancesToRects(page.moduleInstances);
+      // Reserves the same 1-row breathing gap below hourly-grid-core
+      // that WEEK_TODO_TEMPLATE's own seed values already leave
+      // (rowStart 20, one past the grid's own rowStart 0 + rowSpan 19 —
+      // see that constant's own comment) and resizeStackFromBottom's
+      // cascade math never eats into — a synthetic 1-row-tall occupied
+      // rect, not a special case in the search itself, so
+      // findNearestFreeCell just treats it exactly like it would a real
+      // module sitting there and keeps looking past it. Reported
+      // directly: "dragged in bottom modules have no 1 unit gap with
+      // hours" — a palette drop had no way to know about this
+      // convention at all before, landing flush against the grid
+      // instead. Column-range overlap only (rectsOverlap, inside
+      // findNearestFreeCell), so this is inert for anything not sharing
+      // a column with the grid — a sidebar box on the left page's
+      // column 0 is never affected by the grid's own 1-3 range there.
+      const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+      if (hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null) {
+        occupied.push({
+          columnStart: hourlyGrid.columnStart,
+          rowStart: hourlyGrid.rowStart + hourlyGrid.rowSpan,
+          columnSpan: hourlyGrid.columnSpan,
+          rowSpan: 1,
+        });
+      }
       const clamped = findNearestFreeCell(
         pageGrid,
         { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: moduleType.defaultRowSpan },
