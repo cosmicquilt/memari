@@ -913,6 +913,21 @@ export async function addPaletteModuleAt(
 
   return {
     instanceId: created.id,
+    // columnStart/rowStart: the *actual* committed position, not just
+    // an echo of whatever the caller asked for — findNearestFreeCell
+    // above can relocate the candidate (a collision, or now the
+    // synthetic hourly-grid gap reservation) to somewhere the caller
+    // never explicitly requested. handleAddModule (NativePlannerEditor.
+    // tsx) used to trust its own client-side columnStart/rowStart
+    // unconditionally instead of reading this back — safe as long as
+    // the client's own guess and this function's own resolution could
+    // never disagree, which stopped being reliably true the moment two
+    // independent copies of the same gap-reservation logic existed in
+    // two different files. Returning the real, authoritative position
+    // here removes that assumption entirely rather than trying to keep
+    // both copies in perfect lockstep by hand.
+    columnStart: created.columnStart,
+    rowStart: created.rowStart,
     columnSpan: created.columnSpan,
     rowSpan: created.rowSpan,
     propValues: created.propValues,

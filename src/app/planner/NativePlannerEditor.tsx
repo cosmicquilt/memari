@@ -154,6 +154,16 @@ const MIN_ROW_SPAN = 2;
 // tracker (matching whichever page's hourly grid it lands on) — a
 // reasonable approximation for a still-moving preview; the module
 // snaps to its true, server-computed size the instant the drop commits.
+//
+// todo-checklist/habit-tracker's own defaultRowSpan is 10, not 11 (the
+// module type's own historical default, from before hourly-grid-core's
+// 1-row gap reservation existed — see prisma/seed.mts's own comment on
+// both entries for the full reasoning). 19 (hourly grid) + 1 (gap) + 11
+// > 30 (this app's grid height) — an 11-row default could never
+// actually fit below the hourly grid at all, on either page, regardless
+// of anything else present, so every drop of either type was silently
+// refused. Reported directly: "the dragged bottom modules don't show
+// up at all."
 const PALETTE_MODULE_TYPES: Array<{
   slug: string;
   label: string;
@@ -161,8 +171,8 @@ const PALETTE_MODULE_TYPES: Array<{
   defaultRowSpan: number;
 }> = [
   { slug: "labeled-box", label: "Text Box", defaultColumnSpan: 1, defaultRowSpan: 2 },
-  { slug: "todo-checklist", label: "To-Do Checklist", defaultColumnSpan: 3, defaultRowSpan: 11 },
-  { slug: "habit-tracker", label: "Habit Tracker", defaultColumnSpan: 4, defaultRowSpan: 11 },
+  { slug: "todo-checklist", label: "To-Do Checklist", defaultColumnSpan: 3, defaultRowSpan: 10 },
+  { slug: "habit-tracker", label: "Habit Tracker", defaultColumnSpan: 4, defaultRowSpan: 10 },
 ];
 const PALETTE_ID_PREFIX = "palette:";
 
@@ -2460,24 +2470,31 @@ export function NativePlannerEditor({
   // running.
   const gestureBlockedByPendingCommit = useCallback(() => pendingCommitCountRef.current > 0, []);
 
-  // Adds a fresh module of the given type at a specific cell — shared by
-  // the "+" button (always labeled-box, see AddModuleButton's own
+  // Adds a fresh module of the given type near a specific cell — shared
+  // by the "+" button (always labeled-box, see AddModuleButton's own
   // comment on why that one never needs a type choice) and a palette
   // drag-drop (handleDragEnd below, any of PALETTE_MODULE_TYPES). Reuses
-  // addPaletteModuleAt unchanged either way. columnStart/rowStart are
-  // trusted as-given rather than re-read from the server's own response
-  // — for the "+" button this always targets a gap the file itself just
-  // computed as genuinely empty (stackBottomsByPageId), and for a
-  // palette drop it's whatever paletteDrag's own live preview (mirroring
-  // addPaletteModuleAt's own findNearestFreeCell) already resolved to —
-  // either way addPaletteModuleAt's own search can only land on exactly
-  // that same cell, never relocate.
+  // addPaletteModuleAt unchanged either way. columnStart/rowStart passed
+  // in are only ever a *requested* target, not trusted as the final
+  // answer — addPaletteModuleAt's own findNearestFreeCell can relocate
+  // the candidate (a collision, or the synthetic hourly-grid gap
+  // reservation both this file and actions.ts separately compute) to
+  // somewhere neither caller explicitly asked for, and this now reads
+  // back its response's own columnStart/rowStart (the real, committed
+  // position) rather than assuming its request was honored verbatim.
+  // Reported directly, after the two gap-reservation copies were added:
+  // "the dragged bottom modules don't show up at all" — a module that
+  // actually landed somewhere the client didn't expect, rendered (or
+  // failed to) against the client's own stale guess instead of what's
+  // really in the database, is exactly the same class of bug the
+  // resize-after-reposition jump earlier this session turned out to be
+  // — trusting a client-side assumption instead of the server's own
+  // authoritative result.
   const handleAddModule = useCallback(
     async (pageId: string, moduleTypeSlug: string, columnStart: number, rowStart: number) => {
-      // See gestureBlockedByPendingCommit's own comment — the target
-      // (columnStart/rowStart, captured at click/drop time) could go
-      // stale if a still-pending commit is about to move whatever made
-      // this cell look free out from under it.
+      // See gestureBlockedByPendingCommit's own comment — the requested
+      // target could go stale if a still-pending commit is about to
+      // move whatever made this cell look free out from under it.
       if (gestureBlockedByPendingCommit()) return;
       const pageGrid = pageGridByPageId[pageId];
       if (!pageGrid) return;
@@ -2485,19 +2502,25 @@ export function NativePlannerEditor({
         // See serializeCommit's own comment — guards this against the
         // same race too: adding right after a reposition/resize
         // shouldn't read a stale "what's occupied" view server-side
-        // either, even though this specific call's own target is always
-        // a gap this file already knows is empty (see this function's
-        // own comment).
+        // either.
         const result = await serializeCommit(() => addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart));
+        if (result.columnStart === null || result.rowStart === null) return; // unreachable — GRID-mode instances always have both
+        const finalColumnStart = result.columnStart;
+        const finalRowStart = result.rowStart;
         const origin = gridCellToPixels(pageGrid, {
-          columnStart,
-          rowStart,
+          columnStart: finalColumnStart,
+          rowStart: finalRowStart,
           columnSpan: result.columnSpan,
           rowSpan: result.rowSpan,
         });
         setPlacements((prev) => ({
           ...prev,
-          [result.instanceId]: { columnStart, rowStart, columnSpan: result.columnSpan, rowSpan: result.rowSpan },
+          [result.instanceId]: {
+            columnStart: finalColumnStart,
+            rowStart: finalRowStart,
+            columnSpan: result.columnSpan,
+            rowSpan: result.rowSpan,
+          },
         }));
         setModuleLookup((prev) => {
           const next = new Map(prev);

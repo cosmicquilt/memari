@@ -124,10 +124,23 @@ const moduleTypes = [
         habits: { type: "array", items: { type: "string" }, default: [] },
       },
     },
+    // defaultRowSpan 10, not 11 — 11 was the pre-existing value from
+    // before hourly-grid-core's own 1-row gap requirement (see
+    // NativePlannerEditor.tsx's handleDragMove/actions.ts's
+    // addPaletteModuleAt, both of which now reserve that row) was
+    // established: hourly-grid-core's own 19 rows + a 1-row gap leaves
+    // exactly 10 usable rows below it on this app's 30-row grid, one
+    // short of 11. A default that can never actually fit anywhere on
+    // the page — reported directly, confirmed by the math: 19 + 1 + 11
+    // = 31 > 30, so a full-height habit-tracker was being silently
+    // refused on every drop, on either page, regardless of anything
+    // else present — isn't a sensible default. 10 matches
+    // todo-checklist's own identical gap-respecting sizing (same page,
+    // same "just below the hourly grid" positioning).
     defaultWidth: 1560,
-    defaultHeight: 1060,
+    defaultHeight: 964,
     defaultColumnSpan: 4,
-    defaultRowSpan: 11,
+    defaultRowSpan: 10,
   },
   {
     // Sits below hourly-grid-core, same columns and dayCount. Full-height
@@ -141,10 +154,21 @@ const moduleTypes = [
         dayCount: { type: "integer", enum: [3, 4], default: 3 },
       },
     },
+    // defaultRowSpan 10, not 11 — see habit-tracker's own identical
+    // comment above for the full reasoning (hourly-grid-core's 19 rows
+    // + a 1-row gap leaves exactly 10 usable rows on this app's 30-row
+    // grid). This one was already right in WEEK_TODO_TEMPLATE
+    // (actions.ts, rowSpan 10) — that's what getOrCreatePlanner/
+    // resetPlannerToTemplate actually seed with — but this module
+    // type's own default (what a *fresh* palette drop uses instead of
+    // the seed template) had never been brought in line with it, so a
+    // todo-checklist dragged in from the palette hit the exact same
+    // "never fits, silently refused" bug habit-tracker's own default
+    // did.
     defaultWidth: 1560,
-    defaultHeight: 1060,
+    defaultHeight: 964,
     defaultColumnSpan: 3,
-    defaultRowSpan: 11,
+    defaultRowSpan: 10,
   },
   {
     // "JANUARY" — top of the sidebar column on a monthly page's left
