@@ -1609,7 +1609,7 @@ function AddModuleButton({
           stroke={ADD_MODULE_DASH_COLOR}
           strokeWidth={ADD_MODULE_BORDER_PX}
           strokeDasharray={`${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`}
-          strokeLinecap="round"
+          strokeLinecap="butt"
         />
       </svg>
       {/* A real icon, not the text glyph "+" — requested directly
