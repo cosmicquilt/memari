@@ -1699,8 +1699,10 @@ function ModulePalette({
   // the panel's own open/highlightSection are: nothing outside this
   // component ever needs to read or force these except in reaction to
   // highlightSection changing, right below.
-  const [addModuleOpen, setAddModuleOpen] = useState(true);
-  const [sectionOpen, setSectionOpen] = useState<Record<"side" | "bottom", boolean>>({ side: true, bottom: true });
+  // Both default collapsed, requested directly — the panel opens to
+  // just two header rows rather than every card already expanded.
+  const [addModuleOpen, setAddModuleOpen] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState<Record<"side" | "bottom", boolean>>({ side: false, bottom: false });
   // A "+" zone asking to highlight a section (see the main component's
   // own handleOpenPaletteSection) is also implicitly asking to *see*
   // it — force both the "Add Module" group and that specific section
@@ -1798,57 +1800,83 @@ function ModulePalette({
         <PaletteChevron open={addModuleOpen} />
         <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Add Module</strong>
       </button>
-      {addModuleOpen &&
-        PALETTE_SECTIONS.map((s) => {
-          const sectionIsOpen = sectionOpen[s.key];
-          return (
-            <div
-              key={s.key}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                padding: 10,
-                margin: -10,
-                borderRadius: 10,
-                background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
-                transition: "background 0.4s ease, box-shadow 0.4s ease",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
+      <PaletteCollapse open={addModuleOpen}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {PALETTE_SECTIONS.map((s) => {
+            const sectionIsOpen = sectionOpen[s.key];
+            return (
+              <div
+                key={s.key}
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "none",
-                  border: "none",
-                  padding: 0,
-                  cursor: "pointer",
-                  textAlign: "left",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: 10,
+                  margin: -10,
+                  borderRadius: 10,
+                  background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
+                  boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
+                  transition: "background 0.4s ease, box-shadow 0.4s ease",
                 }}
               >
-                <PaletteChevron open={sectionIsOpen} />
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
-                  <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
-                </div>
-              </button>
-              {sectionIsOpen &&
-                PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
-                  <PaletteCard
-                    key={m.slug}
-                    slug={m.slug}
-                    label={m.label}
-                    isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-                    dragOffset={activeDelta}
-                  />
-                ))}
-            </div>
-          );
-        })}
+                <button
+                  type="button"
+                  onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <PaletteChevron open={sectionIsOpen} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd" }}>{s.heading}</div>
+                    <div style={{ fontSize: 10.5, color: "#888" }}>{s.hint}</div>
+                  </div>
+                </button>
+                <PaletteCollapse open={sectionIsOpen}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
+                      <PaletteCard
+                        key={m.slug}
+                        slug={m.slug}
+                        label={m.label}
+                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                        dragOffset={activeDelta}
+                      />
+                    ))}
+                  </div>
+                </PaletteCollapse>
+              </div>
+            );
+          })}
+        </div>
+      </PaletteCollapse>
+    </div>
+  );
+}
+
+// Animated expand/collapse — requested directly ("can you animate the
+// collapsing"), replacing the previous instant `{open && children}`
+// toggle. The CSS grid-template-rows 0fr/1fr technique: an adaptive-
+// height animation with no JS measuring involved, unlike the classic
+// max-height hack (which needs a guessed ceiling and animates at the
+// wrong apparent speed for any real content shorter than it — a
+// PaletteCard list here is only ever a few dozen px tall, nowhere near
+// a plausible max-height guess, so that hack would look almost
+// instant anyway). Always renders its children (never removes them
+// from the tree, just clips them to zero height while collapsed) — a
+// card mid-drag inside a collapsing section doesn't lose its own drag
+// state, and nothing has to re-mount when reopened.
+function PaletteCollapse({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateRows: open ? "1fr" : "0fr", transition: "grid-template-rows 0.22s ease" }}>
+      <div style={{ overflow: "hidden", minHeight: 0 }}>{children}</div>
     </div>
   );
 }
@@ -1856,13 +1884,14 @@ function ModulePalette({
 // Small rotating disclosure triangle shared by "Add Module" and each
 // PALETTE_SECTIONS header — a plain CSS rotate on a fixed glyph rather
 // than swapping between two different characters (▸/▾), so the state
-// change animates instead of jumping.
+// change animates instead of jumping. fontSize 25 — pushed to 2.5x the
+// original 10 on request.
 function PaletteChevron({ open }: { open: boolean }) {
   return (
     <span
       style={{
         display: "inline-block",
-        fontSize: 10,
+        fontSize: 25,
         color: "#888",
         transform: open ? "rotate(90deg)" : "rotate(0deg)",
         transition: "transform 0.18s ease",
