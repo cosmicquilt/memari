@@ -487,19 +487,30 @@ export async function getOrCreatePlanner() {
 // non-locked instance on the planner:
 //   1. The left page's sidebar column (columnStart:0, labeled-box only
 //      — the same test hasSidebarContent above uses).
-//   2. The TO-DO checklist below the hourly grid, on BOTH pages
-//      (WEEK_TODO_TEMPLATE — see its own comment for why this needs to
-//      exist here at all: it was missing entirely until this was added,
-//      reported as "bottom modules are gone" even after the sidebar-only
-//      version of this fix, because the checklist that PDF page 3/4
-//      actually show there had simply never been seeded by anything,
-//      reset included).
+//   2. The area below the hourly grid, on BOTH pages — template default
+//      is a full-height TO-DO checklist there (WEEK_TODO_TEMPLATE — see
+//      its own comment for why this needs to exist here at all: it was
+//      missing entirely until this was added, reported as "bottom
+//      modules are gone" even after the sidebar-only version of this
+//      fix, because the checklist that PDF page 3/4 actually show there
+//      had simply never been seeded by anything, reset included). Any
+//      habit-tracker sharing that space is deleted too, not just
+//      shrunk-and-left-in-place: it's not part of the original
+//      template (a fresh planner never has one — see getOrCreatePlanner's
+//      own comment on why habit-tracker has no auto-heal step), so a
+//      "put it back exactly like it started" reset has nothing to
+//      preserve it for. Without this, a habit-tracker dropped in
+//      earlier survives the checklist's delete+recreate untouched and
+//      ends up sharing the checklist's newly-restored full-height cell
+//      — reported directly: "reset to template, but left side on the
+//      bottom is a hybrid between to do and habit."
 // An even earlier version of this wiped every non-locked instance on
 // both pages, unconditionally — that was worse than either of the above,
 // silently deleting anything else the user might place on the page with
-// nothing to replace it. Both scoped deletes below key off moduleTypeId,
-// not a position heuristic, so a checklist the user moved or resized
-// away from its template spot is still found and replaced correctly.
+// nothing to replace it. All scoped deletes below key off moduleTypeId,
+// not a position heuristic, so a checklist (or habit-tracker) the user
+// moved or resized away from its template spot is still found and
+// removed/replaced correctly.
 //
 // Locked instances (week-title, hourly-grid-core) are left untouched
 // regardless — there's no editor UI that can change them in the first
@@ -533,9 +544,10 @@ export async function resetPlannerToTemplate() {
   }
   const pagesById: Record<"left" | "right", { id: string }> = { left: leftPage, right: rightPage };
 
-  const [boxType, checklistType] = await Promise.all([
+  const [boxType, checklistType, habitTrackerType] = await Promise.all([
     prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } }),
     prisma.moduleType.findUniqueOrThrow({ where: { slug: "todo-checklist" } }),
+    prisma.moduleType.findUniqueOrThrow({ where: { slug: "habit-tracker" } }),
   ]);
 
   await prisma.$transaction([
@@ -556,6 +568,13 @@ export async function resetPlannerToTemplate() {
     }),
     prisma.moduleInstance.deleteMany({
       where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: checklistType.id },
+    }),
+    // Not part of the original template (see this function's own header
+    // comment) — cleared alongside the checklist it shares the same
+    // below-the-hourly-grid zone with, rather than left behind to
+    // overlap the checklist's freshly-restored full-height cell.
+    prisma.moduleInstance.deleteMany({
+      where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: habitTrackerType.id },
     }),
     prisma.moduleInstance.createMany({
       data: WEEK_TODO_TEMPLATE.map((todo) => ({

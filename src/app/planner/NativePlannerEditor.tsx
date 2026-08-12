@@ -3186,24 +3186,27 @@ export function NativePlannerEditor({
     [commitModulePropValues]
   );
 
-  // Debug-only "put the sidebar back exactly like it started" — see
-  // resetPlannerToTemplate's own comment (actions.ts) for what it
-  // wipes/recreates (just the left page's sidebar column — NOT anything
-  // below the hourly grid or on the right page, after an earlier version
-  // wiped those too and was reported as "bottom modules are gone after
-  // reset") and why this is a whole-page reload rather than a live state
-  // patch the way every other action here is: reconstructing placements/
-  // moduleLookup/every derived map for a wipe-and-reseed would just be
-  // re-deriving what a fresh page load already does correctly.
-  // window.location.reload(), not router.refresh() — a Server Component
-  // refresh alone wouldn't reset NativePlannerEditor's own client state
-  // (placements, moduleLookup, zoom, ...), and this needs all of it
-  // rebuilt from scratch, not just the server data underneath it
-  // re-fetched.
+  // Debug-only "put the sidebar and the below-hourly-grid area back
+  // exactly like they started" — see resetPlannerToTemplate's own
+  // comment (actions.ts) for the exact scope: the left page's sidebar
+  // column, plus a full-height TO-DO checklist (and nothing else — any
+  // habit-tracker sharing that space is deleted, not preserved) below
+  // the hourly grid on BOTH pages. NOT the hourly grid itself or
+  // anything else on the page — an earlier version wiped every
+  // non-locked instance unconditionally and was reported as "bottom
+  // modules are gone after reset." Why this is a whole-page reload
+  // rather than a live state patch the way every other action here is:
+  // reconstructing placements/moduleLookup/every derived map for a
+  // wipe-and-reseed would just be re-deriving what a fresh page load
+  // already does correctly. window.location.reload(), not
+  // router.refresh() — a Server Component refresh alone wouldn't reset
+  // NativePlannerEditor's own client state (placements, moduleLookup,
+  // zoom, ...), and this needs all of it rebuilt from scratch, not just
+  // the server data underneath it re-fetched.
   const [isResettingPlanner, setIsResettingPlanner] = useState(false);
   const handleResetPlannerToTemplate = useCallback(async () => {
     const confirmed = window.confirm(
-      "Reset the sidebar back to its original template?\n\nThis deletes anything you've added, moved, resized, or edited there and re-creates the original Gratitude/Reminders/Notes boxes. Nothing else on the page (like the hourly grid or anything below it) is touched."
+      "Reset the sidebar and to-do area back to the original template?\n\nThis deletes anything you've added, moved, resized, or edited in the sidebar (re-creating the original Gratitude/Reminders/Notes boxes) and below the hourly grid on both pages (re-creating the original full-height TO-DO checklist — any habit-tracker there is removed too, since it isn't part of the original template). The hourly grid itself and anything above it is not touched."
     );
     if (!confirmed) return;
     setIsResettingPlanner(true);
@@ -3280,10 +3283,11 @@ export function NativePlannerEditor({
       >
         <strong>Memari planner editor (native)</strong>
         <span style={{ color: "#999", fontSize: 12 }}>Drag-to-reposition + zoom/pan wired up — resize/palette/save-button still to come</span>
-        {/* Debug-only sidebar reset — requested directly: "reset the
-            entire page to the original layout we first made... from the
-            pdf." Scoped to just the sidebar column, not the whole page
-            — see handleResetPlannerToTemplate's own comment on why.
+        {/* Debug-only sidebar + to-do reset — requested directly: "reset
+            the entire page to the original layout we first made... from
+            the pdf." Scoped to the sidebar column and the below-hourly-
+            grid area on both pages, not the whole page — see
+            handleResetPlannerToTemplate's own comment on why.
             marginLeft:auto pushes this (and saveError after it) to the
             header's right edge, same trick saveError used on its own
             before this existed. */}
@@ -3291,7 +3295,7 @@ export function NativePlannerEditor({
           type="button"
           onClick={handleResetPlannerToTemplate}
           disabled={isResettingPlanner}
-          title="Debug: wipe the sidebar and put back the original template (Things I'm Grateful For / Reminders / Notes)"
+          title="Debug: wipe the sidebar (Things I'm Grateful For / Reminders / Notes) and the to-do area below the hourly grid on both pages, and put back the original template"
           style={{
             marginLeft: "auto",
             padding: "4px 10px",
