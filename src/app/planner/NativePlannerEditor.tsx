@@ -1084,31 +1084,41 @@ function NativePage({
         ))}
       {/* Whatever a stack has freed up by shrinking (see StackBottom's
           maxBottomBound vs its own current stackBottomRowEnd) is exactly
-          where a new module can go — one button per stack that has any
-          such room. Deliberately still shown while a module is being
-          reposition-dragged (unlike the handles above) — its own
-          position doesn't move during that (stackBottomsByPageId isn't
-          affected by a reposition's visualOffsets, which is a pure CSS
+          where a new module can go — one button per stack, always
+          rendered now (not gated on room > 0, and not hidden during an
+          active resize) so it can track the live gap continuously
+          during a StackResizeHandle drag and grow/shrink/appear right
+          along with it — requested directly: "make it resize, snap,
+          and appear from the bottom during the live preview." A pair
+          resize (ResizeHandle) never actually moves a stack's own
+          outer bottom edge — it's zero-sum between two adjacent
+          members, so stackBottomRowEnd/maxBottomBound stay fixed
+          throughout one — so there was never really anything to fight
+          with there in the first place; only StackResizeHandle drags
+          ever change what this button is showing, and now it's allowed
+          to show it live. rowSpan is clamped to >= 0 (never filtered
+          out at exactly 0) specifically so this stays permanently
+          mounted rather than conditionally added/removed from the
+          DOM — AddModuleButton's own CSS transition on top/height/
+          opacity (see its own comment) is what turns "the gap changed"
+          into a visible animation; an element that only exists once
+          there's room to begin with would have no "before" state for a
+          transition to animate from when it first appears. Also still
+          shown during a plain reposition-drag, unchanged from before —
+          its own position doesn't move then (stackBottomsByPageId
+          isn't affected by a reposition's visualOffsets, a pure CSS
           transform, not a placements change), so there's nothing stale
           about keeping it visible, and it doubles as a visual "here's
           where the reserved zone starts" reference while dragging
-          toward it (see resolveDrag's own virtual-lock comment). Still
-          hidden during an active resize specifically, since the gap
-          itself *is* live then (stackBottoms is built off
-          displayPlacements) and would be visibly resizing right under
-          the cursor at the same time as the handle actually being
-          dragged. */}
-      {!resizingIds &&
-        stackBottoms
-          .filter((sb) => sb.maxBottomBound - sb.stackBottomRowEnd > 0)
-          .map((sb) => (
+          toward it (see resolveDrag's own virtual-lock comment). */}
+      {stackBottoms.map((sb) => (
             <AddModuleButton
               key={`add:${sb.bottomId}`}
               pageGrid={page.pageGrid}
               columnStart={sb.columnStart}
               columnSpan={sb.columnSpan}
               rowStart={sb.stackBottomRowEnd}
-              rowSpan={sb.maxBottomBound - sb.stackBottomRowEnd}
+              rowSpan={Math.max(0, sb.maxBottomBound - sb.stackBottomRowEnd)}
               // columnStart === 0 alone isn't enough to identify the
               // sidebar — the right page's hourly-grid-core (and so its
               // own below-the-grid stack) also starts at column 0,
@@ -1578,6 +1588,16 @@ function AddModuleButton({
     () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
+  // gridCellToPixels' own height formula (rowSpan*cellHeight +
+  // (rowSpan-1)*gap) goes *negative* at rowSpan 0 — expected now that
+  // the caller (NativePage) renders this permanently, clamping rowSpan
+  // to >= 0 rather than filtering the whole button out at exactly 0
+  // (see that call site's own comment on why: a permanently-mounted
+  // element is what lets the CSS transition below animate "the gap
+  // changed" into a visible grow/shrink, including the very first time
+  // it goes from 0 to some room). Clamped here, once, and used for
+  // every downstream visual computation instead of the raw rect.height.
+  const visualHeight = Math.max(0, rect.height);
   const iconSize = Math.max(40, Math.min(64, rect.width * 0.24));
 
   // Inset by half the stroke width on every side — an SVG stroke is
@@ -1590,7 +1610,7 @@ function AddModuleButton({
   const x0 = half;
   const y0 = half;
   const x1 = Math.max(half, rect.width - half);
-  const y1 = Math.max(half, rect.height - half);
+  const y1 = Math.max(half, visualHeight - half);
   // Same clamp CSS border-radius applies automatically (and SVG's own
   // rx/ry did too, in the previous single-<rect> version) — manually
   // replicated here since these are now four independent lines/arcs
@@ -1618,22 +1638,39 @@ function AddModuleButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={rowSpan > 0 ? onClick : undefined}
       title="Add a module here"
       style={{
         position: "absolute",
         left: rect.x,
         top: rect.y,
         width: rect.width,
-        height: rect.height,
+        height: visualHeight,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        overflow: "hidden",
         border: "none",
         backgroundColor: "rgba(120, 130, 255, 0.06)",
         borderRadius: ADD_MODULE_RADIUS_PX,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
+        // Permanently mounted now (see the caller's own comment) —
+        // this transition is what turns every subsequent change in
+        // top/visualHeight into a visible grow/shrink/slide instead of
+        // an instant jump, including the very first time this goes
+        // from 0-height/invisible to some real room (which reads as
+        // the button sliding up and growing in from wherever its own
+        // top edge currently sits — "appear from the bottom,"
+        // requested directly). Always on, not scoped to a temporary
+        // flag the way the sidebar-push effect's own transition is
+        // (see paletteZoomTransitioning's own comment) — nothing else
+        // ever needs this button's own position/size to apply
+        // instantly; a live-tracked resize drag is exactly the case
+        // this exists for, not one to protect against.
+        opacity: rowSpan > 0 ? 1 : 0,
+        pointerEvents: rowSpan > 0 ? "auto" : "none",
+        transition: "top 0.2s ease, height 0.2s ease, opacity 0.2s ease",
       }}
     >
       {/* The dashed edge — see this file's own header comment above
@@ -1643,7 +1680,7 @@ function AddModuleButton({
           for the button itself. */}
       <svg
         width={rect.width}
-        height={rect.height}
+        height={visualHeight}
         style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
       >
         {/* Top and bottom: same flatWidth/offset, so besides each
