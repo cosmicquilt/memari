@@ -210,9 +210,15 @@ export function renderHourlyGridCore(
       // dropped elsewhere — a small gap off the line reads better than
       // touching it exactly.
       // 5pt -> 5.5pt legibility bump (dateFontSize above got the same
-      // one), then eased back to 5.3pt — reported at 5.5pt as crowding
-      // its own surrounding box.
-      const timeLabelFontSize = ptToPx(5.3);
+      // one) crowded the box specifically for a two-digit hour
+      // ("10:00"/"10:30"/"11:00"/"11:30"/"12:00"/"12:30" — 4 digits
+      // once the colon's stripped out, vs. 3 for a single-digit hour
+      // like "9:00") — the box's own fixed width was always sized for
+      // the *shorter* strings, so only the longer ones actually needed
+      // easing back down. Single-digit-hour times keep the full 5.5pt.
+      const timeLabelText = formatHour12NoMeridiem(rowMinutes);
+      const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
+      const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5.3 : 5.5);
       const timeLabelTextHeight = timeLabelFontSize * 1.2;
       const timeLabelBottomGap = ptToPx(1);
       elements.push({
@@ -222,7 +228,7 @@ export function renderHourlyGridCore(
         y: labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap,
         width: labelBoxWidth - 4,
         height: timeLabelTextHeight,
-        text: formatHour12NoMeridiem(rowMinutes),
+        text: timeLabelText,
         fontSize: timeLabelFontSize,
         fontFamily: FONT_FAMILY,
         fill: "#666666",
