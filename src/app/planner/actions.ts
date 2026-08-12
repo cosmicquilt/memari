@@ -336,16 +336,7 @@ export async function getOrCreatePlanner() {
       { name: "MONDAY", date: 2 },
       { name: "TUESDAY", date: 3 },
     ],
-    { columnStart: 1, columnSpan: 3 },
-    [
-      {
-        day: 1,
-        startTime: "09:00",
-        endTime: "10:00",
-        label: "Team sync",
-        source: "manual",
-      },
-    ]
+    { columnStart: 1, columnSpan: 3 }
   );
   await ensureHourlyGridCore(
     rightPage,
