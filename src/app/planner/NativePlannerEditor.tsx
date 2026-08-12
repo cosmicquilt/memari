@@ -1782,11 +1782,11 @@ function PaletteCard({
       style={{
         position: "relative",
         padding: "6px 10px",
-        borderRadius: 12,
+        borderRadius: 7,
         border: "none",
         background: isDragging ? "#363636" : "#2a2a2a",
         color: "#ddd",
-        fontSize: 12,
+        fontSize: 11,
         cursor: isDragging ? "grabbing" : "grab",
         userSelect: "none",
         touchAction: "none",
@@ -2050,7 +2050,7 @@ function ModulePalette({
                     <PaletteChevron open={sectionIsOpen} />
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
-                      <div style={{ fontSize: 10.5, color: "#888", lineHeight: 1.3 }}>{s.hint}</div>
+                      <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>{s.hint}</div>
                     </div>
                   </button>
                   <PaletteCollapse open={sectionIsOpen} allowOverflow={isDraggingPaletteCard}>
