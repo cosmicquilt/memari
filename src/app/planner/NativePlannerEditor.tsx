@@ -1703,6 +1703,34 @@ function ModulePalette({
   // to-Template/save-error content) stays above and outside the panel
   // rather than being covered by it, so it's still reachable regardless
   // of whether the palette is open.
+  //
+  // overflow flips to "visible" for the duration of a palette-card drag
+  // — reported directly: "when i tried to drag a habit tracker from
+  // side nav my mouse got stuck scrolling to the side within the side
+  // nav." Root cause: this panel is *both* a CSS-transformed element
+  // (its own open/closed translateX slide) *and* a scrolling container
+  // (overflow: auto below) at the same time. PaletteCard's own drag
+  // also moves via a raw CSS transform (see its own header comment on
+  // why — same "translate the element itself" technique used
+  // throughout this file instead of dnd-kit's DragOverlay), which
+  // doesn't remove it from normal layout, only visually offsets it —
+  // so the instant a drag carries the card outside this panel's own
+  // box (which is immediately, since every real drop target is
+  // elsewhere on the page), the panel's scrollable content area grows
+  // to keep "containing" that visually-offset card, and the browser
+  // starts treating pointer movement as a scroll gesture on this
+  // container instead of purely the JS-driven card drag it's supposed
+  // to be. Can't fix it the way NativeModule's own drag avoids the
+  // exact same class of problem (per this file's "Why this doesn't use
+  // DragOverlay" header comment, position:fixed escapes a transformed
+  // ancestor) — this panel's own transform *is* that ancestor, so a
+  // fixed-position card here would stay trapped relative to the panel,
+  // not the viewport. Simplest real fix instead: this panel only
+  // genuinely needs to scroll while nothing's being dragged out of it
+  // — so overflow just turns off (`visible`) for the one brief window
+  // where staying "auto" would fight the drag, and reverts to `auto`
+  // immediately once the drag ends.
+  const isDraggingPaletteCard = activeId?.startsWith(PALETTE_ID_PREFIX) ?? false;
   return (
     <div
       style={{
@@ -1717,7 +1745,7 @@ function ModulePalette({
         transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
-        overflowY: "auto",
+        overflow: isDraggingPaletteCard ? "visible" : "auto",
         padding: "18px",
         display: "flex",
         flexDirection: "column",
@@ -3536,8 +3564,8 @@ export function NativePlannerEditor({
             alignItems: "center",
             justifyContent: "center",
             background: paletteOpen ? "#4a5cff" : "#2a2a2a",
-            border: "1px solid #444",
-            borderRadius: 6,
+            border: "none",
+            borderRadius: 10,
             color: "#fff",
             fontSize: 14,
             lineHeight: 1,
@@ -3570,7 +3598,7 @@ export function NativePlannerEditor({
             background: "#3a3a3a",
             color: "#ddd",
             border: "1px solid #555",
-            borderRadius: 4,
+            borderRadius: 10,
             cursor: isResettingPlanner ? "default" : "pointer",
             opacity: isResettingPlanner ? 0.6 : 1,
           }}
