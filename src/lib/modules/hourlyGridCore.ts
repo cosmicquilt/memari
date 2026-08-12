@@ -215,10 +215,11 @@ export function renderHourlyGridCore(
       // once the colon's stripped out, vs. 3 for a single-digit hour
       // like "9:00") — the box's own fixed width was always sized for
       // the *shorter* strings, so only the longer ones actually needed
-      // easing back down. Single-digit-hour times keep the full 5.5pt.
+      // easing back down, first to 5.3pt then (still crowded) 5.1pt.
+      // Single-digit-hour times keep the full 5.5pt.
       const timeLabelText = formatHour12NoMeridiem(rowMinutes);
       const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
-      const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5.3 : 5.5);
+      const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5.1 : 5.5);
       const timeLabelTextHeight = timeLabelFontSize * 1.2;
       const timeLabelBottomGap = ptToPx(1);
       elements.push({

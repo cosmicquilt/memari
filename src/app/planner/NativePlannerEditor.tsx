@@ -1546,11 +1546,22 @@ function AddModuleButton({
         alignItems: "center",
         justifyContent: "center",
         background: "rgba(120, 130, 255, 0.06)",
-        border: "2px dashed rgba(120, 130, 255, 0.5)",
-        borderRadius: 8,
+        // Thicker border, requested directly, also does double duty as
+        // "longer dashes" — CSS's dashed border-style has no separate
+        // dash-length control of its own (unlike an SVG stroke's
+        // stroke-dasharray), but every browser's own dash algorithm
+        // scales dash length with border-width, so this is the one
+        // lever plain CSS actually has for both asks at once. A true,
+        // independently-tunable dash length would need an SVG-based
+        // border instead, which doesn't cleanly scale to this button's
+        // own dynamic per-stack width/height without either
+        // distorting the pattern or a lot more complexity — not worth
+        // it for this size of a visual ask.
+        border: "3.5px dashed rgba(120, 130, 255, 0.55)",
+        borderRadius: 16,
         color: "rgba(90, 100, 220, 0.8)",
         cursor: "pointer",
-        fontSize: Math.max(18, Math.min(32, rect.width * 0.12)),
+        fontSize: Math.max(24, Math.min(44, rect.width * 0.16)),
         lineHeight: 1,
       }}
     >
@@ -1815,53 +1826,75 @@ function ModulePalette({
           {PALETTE_SECTIONS.map((s) => {
             const sectionIsOpen = sectionOpen[s.key];
             return (
-              <div
-                key={s.key}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 5,
-                  padding: 7,
-                  margin: -7,
-                  borderRadius: 8,
-                  background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                  boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
-                  transition: "background 0.4s ease, box-shadow 0.4s ease",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
+              <div key={s.key} style={{ position: "relative" }}>
+                {/* Highlight layer — position:absolute + inset, not the
+                    earlier padding:7/margin:-7 "bleed past my own
+                    bounds" trick. That trick relied on this section's
+                    own flex-stretch width exactly filling its parent's
+                    content box, so the negative margin's overflow
+                    landed symmetrically on both sides — it stopped
+                    working once the parent (the sections-list wrapper
+                    below "Add Module") gained its own paddingLeft for
+                    the nested-indent feature, since the section's
+                    stretch-computed width then shrank on the left only
+                    and the "bleed" stopped being even. Reported
+                    directly: "when i click it and the section is
+                    highlighted in the nav, the highlight doesn't match
+                    up with the section." inset:-7 on an absolutely-
+                    positioned sibling is decoupled from all of that —
+                    it's sized purely relative to *this* div's own
+                    border-box (the nearest position:relative ancestor),
+                    never affected by what any ancestor's own padding
+                    happens to be. pointerEvents:none so it never
+                    intercepts clicks meant for the header button/cards
+                    stacked above it. */}
+                <div
+                  aria-hidden
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "left",
+                    position: "absolute",
+                    inset: -7,
+                    borderRadius: 8,
+                    background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
+                    boxShadow: highlightSection === s.key ? "0 0 0 1px rgba(90, 110, 255, 0.5)" : "0 0 0 1px transparent",
+                    transition: "background 0.4s ease, box-shadow 0.4s ease",
+                    pointerEvents: "none",
                   }}
-                >
-                  <PaletteChevron open={sectionIsOpen} />
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
-                    <div style={{ fontSize: 10.5, color: "#888", lineHeight: 1.3 }}>{s.hint}</div>
-                  </div>
-                </button>
-                <PaletteCollapse open={sectionIsOpen}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
-                    {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
-                      <PaletteCard
-                        key={m.slug}
-                        slug={m.slug}
-                        label={m.label}
-                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-                        dragOffset={activeDelta}
-                      />
-                    ))}
-                  </div>
-                </PaletteCollapse>
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <PaletteChevron open={sectionIsOpen} />
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
+                      <div style={{ fontSize: 10.5, color: "#888", lineHeight: 1.3 }}>{s.hint}</div>
+                    </div>
+                  </button>
+                  <PaletteCollapse open={sectionIsOpen}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
+                      {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
+                        <PaletteCard
+                          key={m.slug}
+                          slug={m.slug}
+                          label={m.label}
+                          isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                          dragOffset={activeDelta}
+                        />
+                      ))}
+                    </div>
+                  </PaletteCollapse>
+                </div>
               </div>
             );
           })}
