@@ -2259,14 +2259,16 @@ function ModulePalette({
                   gap: 5,
                   padding: 7,
                   borderRadius: 14,
-                  // Light grey per direct request (was blue) — same RGB
-                  // reused for both background and border. Border alpha
-                  // requested down to "almost no border" — kept just
-                  // barely above the fill's own 0.14 so there's still a
-                  // hairline edge, not a separate visible outline.
+                  // Light grey per direct request (was blue). Border
+                  // faded down to "almost no border," then dropped
+                  // entirely per direct follow-up — background fill
+                  // only now. Still an always-present transparent
+                  // border (not just omitting the property) so the
+                  // section keeps the exact same box size whether or
+                  // not it's highlighted — no layout shift on toggle.
                   background: highlightSection === s.key ? "rgba(220, 220, 220, 0.14)" : "transparent",
-                  border: highlightSection === s.key ? "1px solid rgba(220, 220, 220, 0.18)" : "1px solid transparent",
-                  transition: "background 0.4s ease, border-color 0.4s ease",
+                  border: "1px solid transparent",
+                  transition: "background 0.4s ease",
                 }}
               >
                 <button
