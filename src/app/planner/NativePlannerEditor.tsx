@@ -2260,12 +2260,12 @@ function ModulePalette({
                   padding: 7,
                   borderRadius: 14,
                   // Light grey per direct request (was blue) — same RGB
-                  // reused for both background and border, just a higher
-                  // alpha on the border, so it reads as a subtle
-                  // deepening of the fill instead of a separate outline
-                  // color.
+                  // reused for both background and border. Border alpha
+                  // requested down to "almost no border" — kept just
+                  // barely above the fill's own 0.14 so there's still a
+                  // hairline edge, not a separate visible outline.
                   background: highlightSection === s.key ? "rgba(220, 220, 220, 0.14)" : "transparent",
-                  border: highlightSection === s.key ? "1px solid rgba(220, 220, 220, 0.35)" : "1px solid transparent",
+                  border: highlightSection === s.key ? "1px solid rgba(220, 220, 220, 0.18)" : "1px solid transparent",
                   transition: "background 0.4s ease, border-color 0.4s ease",
                 }}
               >
