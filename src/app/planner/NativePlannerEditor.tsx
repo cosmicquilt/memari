@@ -91,7 +91,7 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
-import { computeLabeledBoxHeaderHeightPx } from "@/lib/modules/labeledBox";
+import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
 import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
 import {
@@ -546,6 +546,12 @@ function NativeModule({
   // same as ResizeHandle/AddModuleButton's own gridCellToPixels calls
   // elsewhere in this file.
   const editOverlayHeight = slug === "labeled-box" ? computeLabeledBoxHeaderHeightPx(heading ?? "", widthPx) : 0;
+  // Same committed `heading` (not draftHeading) that editOverlayHeight
+  // above already uses, for the same reason: the overlay's own height
+  // doesn't live-resize as you type, so the font size it shows
+  // shouldn't drift out of sync with that fixed height either — both
+  // re-sync together once the edit commits and heading changes.
+  const editHeadingFontSizePx = slug === "labeled-box" ? computeLabeledBoxHeadingFontSizePx(heading ?? "", widthPx) : 0;
   return (
     <div
       ref={locked ? undefined : setNodeRef}
@@ -772,7 +778,7 @@ function NativeModule({
               minWidth: 0,
               textAlign: "center",
               textTransform: "uppercase",
-              fontSize: 18,
+              fontSize: editHeadingFontSizePx,
               fontFamily: "Georgia, 'PT Serif', serif",
               border: "none",
               outline: "none",
@@ -2253,11 +2259,13 @@ function ModulePalette({
                   gap: 5,
                   padding: 7,
                   borderRadius: 14,
-                  background: highlightSection === s.key ? "rgba(74, 92, 255, 0.14)" : "transparent",
-                  // Same RGB as the background fill, just a higher alpha —
-                  // keeps the border a subtle deepening of the fill color
-                  // instead of a separate, brighter blue outline.
-                  border: highlightSection === s.key ? "1px solid rgba(74, 92, 255, 0.35)" : "1px solid transparent",
+                  // Light grey per direct request (was blue) — same RGB
+                  // reused for both background and border, just a higher
+                  // alpha on the border, so it reads as a subtle
+                  // deepening of the fill instead of a separate outline
+                  // color.
+                  background: highlightSection === s.key ? "rgba(220, 220, 220, 0.14)" : "transparent",
+                  border: highlightSection === s.key ? "1px solid rgba(220, 220, 220, 0.35)" : "1px solid transparent",
                   transition: "background 0.4s ease, border-color 0.4s ease",
                 }}
               >

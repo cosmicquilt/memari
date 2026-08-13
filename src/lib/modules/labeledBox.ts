@@ -75,6 +75,22 @@ export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: num
   return ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT);
 }
 
+// Same reasoning and same duplicated wrap-check as the height function
+// just above — exposed so the native editor's inline heading-edit
+// <input> can render text at the *actual* size the committed heading
+// renders at (ptToPx(7 or 8)), instead of a plain CSS px guess. That
+// guess (18) was correct-looking in isolation but tiny next to
+// everything else on the canvas, which is all sized in this same
+// print-pixel space (ptToPx(8) is ~33px) and scaled down together by
+// the canvas's own zoom transform — reported live as "the font turns
+// very small" while editing.
+export function computeLabeledBoxHeadingFontSizePx(heading: string, boxWidthPx: number): number {
+  const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
+  const headingAvailableWidth = boxWidthPx - headingPadding * 2;
+  const wraps = headingNeedsTwoLines(heading, headingAvailableWidth);
+  return ptToPx(wraps ? 7 : 8);
+}
+
 export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
   config: LabeledBoxConfig,
