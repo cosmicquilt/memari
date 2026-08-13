@@ -93,7 +93,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
-import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
+import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -220,7 +220,10 @@ function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: numb
   } else if (slug === "habit-tracker") {
     const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
     const m = getHabitTrackerRowMetricsPx(widthPx);
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+    // Mirrors actions.ts's identical addition — compact placement needs
+    // room for 2 full pairs (4 grid rows), not just 1.
+    const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
   }
   if (targetPx === null) return MIN_ROW_SPAN;
   const oneRow = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
@@ -898,6 +901,7 @@ function NativePage({
   justAddedIds,
   resizePairs,
   stackBottoms,
+  emptyZones,
   resizingIds,
   resizeFrozenSize,
   onResizeStart,
@@ -939,6 +943,12 @@ function NativePage({
   justAddedIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
   stackBottoms: StackBottom[];
+  // Zero-member StackBottom stand-ins for a zone with nothing in it yet
+  // — see emptyZonesByPageId's own comment (main component) for why
+  // these are a separate list rather than folded into stackBottoms
+  // itself. Only AddModuleButton/SectionAddButton below read this;
+  // StackResizeHandle stays scoped to stackBottoms alone.
+  emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
@@ -1112,8 +1122,11 @@ function NativePage({
           transform, not a placements change), so there's nothing stale
           about keeping it visible, and it doubles as a visual "here's
           where the reserved zone starts" reference while dragging
-          toward it (see resolveDrag's own virtual-lock comment). */}
-      {stackBottoms.map((sb) => (
+          toward it (see resolveDrag's own virtual-lock comment).
+          Concatenated with emptyZones (not just stackBottoms) so a zone
+          with literally nothing in it yet still gets one, spanning its
+          whole height — see emptyZonesByPageId's own comment. */}
+      {[...stackBottoms, ...emptyZones].map((sb) => (
             <AddModuleButton
               key={`add:${sb.bottomId}`}
               pageGrid={page.pageGrid}
@@ -1158,8 +1171,15 @@ function NativePage({
           cover the whole section would sit on top of every real
           module inside it and swallow their own clicks/drags — this
           way nothing new is stacked over the modules at all, hovering
-          any one of them is what reveals the button one level up. */}
-      {stackBottoms.map((sb) => (
+          any one of them is what reveals the button one level up.
+          Concatenated with emptyZones for the same reason
+          AddModuleButton's own loop just above is, though this one's
+          largely moot there in practice: isHovered can never go true
+          for a zone with zero members (nothing to hover), so an empty
+          zone's own SectionAddButton just never shows — harmless, and
+          AddModuleButton's dashed box (always visible, not hover-gated)
+          already spans that entire empty zone on its own regardless. */}
+      {[...stackBottoms, ...emptyZones].map((sb) => (
         <SectionAddButton
           key={`section-add:${sb.bottomId}`}
           pageGrid={page.pageGrid}
@@ -2723,6 +2743,94 @@ export function NativePlannerEditor({
     return byPage;
   }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
 
+  // A genuinely empty zone (zero unlocked modules in it yet) has no
+  // entry in stackBottomsByPageId at all — that map only ever groups
+  // *existing* same-column unlocked siblings, so a column with nothing
+  // in it forms no group to begin with. Reported directly: "the plus
+  // box no longer shows for the bottom module when deleted" — deleting
+  // the last unlocked module in a zone (the bottom zone below the
+  // hourly grid, or the sidebar) removes its own stackBottoms entry
+  // along with it, and AddModuleButton/SectionAddButton only ever
+  // render one per stackBottoms entry, so the "+" for that zone
+  // vanished entirely, with no way back short of a palette drag landing
+  // there blind.
+  //
+  // Deliberately a separate list, not folded into stackBottomsByPageId
+  // itself: StackResizeHandle and resolveDrag's own virtual-lock
+  // reservation both key off a stack's *real* bottom member (bottomId
+  // has to be an actual instance id for those — handleStackResizeAdjacent
+  // calls the server with it directly), which an empty zone doesn't
+  // have. Mixing a synthetic entry into stackBottomsByPageId would mean
+  // either a fake id those two consumers could break on, or special-
+  // casing every consumer to skip zero-member entries. Keeping this
+  // separate instead means only the two consumers that never actually
+  // needed a real member (AddModuleButton/SectionAddButton — both only
+  // ever read columnStart/columnSpan out of a StackBottom, never
+  // bottomId's own identity) pick these up, via the plain array-concat
+  // at their own two render sites below.
+  const emptyZonesByPageId = useMemo(() => {
+    const byPage: Record<string, StackBottom[]> = {};
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      const existing = stackBottomsByPageId[page.pageId] ?? [];
+      const hasZone = (columnStart: number, columnSpan: number) =>
+        existing.some((sb) => sb.columnStart === columnStart && sb.columnSpan === columnSpan);
+      const zones: StackBottom[] = [];
+
+      const hourlyGridId = pageIds.find((id) => moduleLookup.get(id)?.slug === "hourly-grid-core");
+      const hourlyGridPlacement = hourlyGridId ? displayPlacements[hourlyGridId] : undefined;
+
+      // Bottom zone — same column range as the hourly grid, one row
+      // below its own reserved gap. Every page in this app has one.
+      if (hourlyGridPlacement && !hasZone(hourlyGridPlacement.columnStart, hourlyGridPlacement.columnSpan)) {
+        const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
+        zones.push({
+          key: `emptyzone:${page.pageId}:${hourlyGridPlacement.columnStart}:${hourlyGridPlacement.columnSpan}`,
+          pageId: page.pageId,
+          bottomId: `__emptybottomzone__${page.pageId}`,
+          columnStart: hourlyGridPlacement.columnStart,
+          columnSpan: hourlyGridPlacement.columnSpan,
+          members: [],
+          stackTopRowStart: zoneTop,
+          stackBottomRowEnd: zoneTop,
+          maxBottomBound: page.pageGrid.gridRows,
+        });
+      }
+
+      // Sidebar column — only a real zone on a page where the hourly
+      // grid doesn't already cover column 0 (see AddModuleButton's own
+      // comment on why columnSpan, not columnStart alone, is what
+      // actually tells the two zones apart). Its own top boundary is
+      // wherever the deepest *locked* thing there (week-title) already
+      // reaches, not row 0 — mirrors addPaletteModuleAt's own side-zone
+      // shrink-to-fit reasoning for the exact same "no single locked
+      // anchor, so measure whatever's actually there" situation.
+      if (hourlyGridPlacement && hourlyGridPlacement.columnStart > 0 && !hasZone(0, 1)) {
+        let zoneTop = 0;
+        for (const id of pageIds) {
+          const info = moduleLookup.get(id);
+          const placement = displayPlacements[id];
+          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== 1) continue;
+          zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
+        }
+        zones.push({
+          key: `emptyzone:${page.pageId}:0:1`,
+          pageId: page.pageId,
+          bottomId: `__emptysidezone__${page.pageId}`,
+          columnStart: 0,
+          columnSpan: 1,
+          members: [],
+          stackTopRowStart: zoneTop,
+          stackBottomRowEnd: zoneTop,
+          maxBottomBound: page.pageGrid.gridRows,
+        });
+      }
+
+      byPage[page.pageId] = zones;
+    }
+    return byPage;
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, stackBottomsByPageId]);
+
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
     const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
@@ -3311,11 +3419,20 @@ export function NativePlannerEditor({
       // as a single sidebar-width column, requested directly once that
       // zone's own compact renderers existed to receive a to-do
       // checklist/habit tracker.
-      const isBottomCapable = slug === "todo-checklist" || slug === "habit-tracker";
+      //
+      // labeled-box joined this set too — "the notes in the bottom
+      // modules section should fill the containers width (3 on left, 4
+      // on right)" — but only for the bottom-zone branch; canSideZone
+      // below is deliberately narrower (excludes labeled-box) so a drop
+      // *outside* the bottom zone leaves it on its own long-established
+      // side-zone preview path untouched, same as addPaletteModuleAt's
+      // own identical split.
+      const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
+      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
       let effectiveColumnStart = target.columnStart;
       let effectiveColumnSpan = meta.defaultColumnSpan;
       let droppedInBottomZone = false;
-      if (isBottomCapable) {
+      if (canFillBottomZone) {
         if (
           hourlyGridPlacement &&
           target.columnStart >= hourlyGridPlacement.columnStart &&
@@ -3324,7 +3441,7 @@ export function NativePlannerEditor({
           effectiveColumnStart = hourlyGridPlacement.columnStart;
           effectiveColumnSpan = hourlyGridPlacement.columnSpan;
           droppedInBottomZone = true;
-        } else {
+        } else if (canSideZone) {
           effectiveColumnSpan = 1;
         }
       }
@@ -3362,14 +3479,18 @@ export function NativePlannerEditor({
           effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
           effectiveRowStart = zoneStart;
         }
-      } else if (isBottomCapable) {
+      } else if (canSideZone) {
         // Side-zone shrink-to-fit — see addPaletteModuleAt's own
         // identical branch (actions.ts) for the full reasoning,
         // including why locked siblings (week-title) aren't filtered
         // out here the way the bottom zone's own hourly-grid-adjacent
         // zoneSiblings filters them: there's no single locked anchor to
         // measure from in this column, so the deepest existing item at
-        // all — locked or not — is where free space starts.
+        // all — locked or not — is where free space starts. Deliberately
+        // canSideZone, not canFillBottomZone — labeled-box outside the
+        // bottom zone keeps its own pre-existing preview path untouched
+        // (effectiveRowSpan/effectiveRowStart stay at their plain
+        // meta.defaultRowSpan/target.rowStart declarations above).
         const columnSiblings = (instanceIdsByPageId[target.pageId] ?? [])
           .map((instId) => placements[instId])
           .filter((p): p is Placement => !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan);
@@ -4467,6 +4588,7 @@ export function NativePlannerEditor({
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
+                    emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={resizingIds}
                     resizeFrozenSize={resizeFrozenSize}
                     onResizeStart={handleResizeStart}

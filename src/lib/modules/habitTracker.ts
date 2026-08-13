@@ -85,19 +85,27 @@ const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 // placements — a single sidebar column is ~119pt, 3-4 hourly-grid columns
 // are ~363-486pt — not a value tuned to sit close to either.
 const COMPACT_LAYOUT_MAX_WIDTH_PX = ptToPx(250);
+// Exposed so getMinRowSpanForSlug (both copies) can key its own compact-
+// vs-wide floor off the exact same test this file's own render/metrics
+// functions already use internally, instead of a second, independently-
+// tuned width check that could drift out of sync with this one.
+export function isHabitTrackerCompact(widthPx: number): boolean {
+  return widthPx <= COMPACT_LAYOUT_MAX_WIDTH_PX;
+}
 // Compact layout only: height of each habit's own name/placeholder row.
 // Shorter than ROW_HEIGHT_PT (a wide-layout row is also the checkable
 // cell's own height, which has to match the square day cells there) —
 // this row holds one short line of text and nothing else, so it only
 // needs to comfortably fit that text.
 const NAME_ROW_HEIGHT_PT = 12;
-// Compact layout only: opacity for the "habit" placeholder label a row
+// Compact layout only: opacity for the "HABIT" placeholder label a row
 // shows when no real name has been filled in for it — a side-placed
 // habit tracker has nowhere else to indicate what each row is for, since
 // the compact layout has no separate name column left to leave blank.
-// "Low opacity" per direct request; a real, user-set name still renders
-// at full opacity like the wide layout's own prefilled names do.
-const PLACEHOLDER_OPACITY = 0.35;
+// "Low opacity... a little darker" per direct request/follow-up
+// (started at 0.35). A real, user-set name still renders at full
+// opacity like the wide layout's own prefilled names do.
+const PLACEHOLDER_OPACITY = 0.45;
 
 // See todoChecklist.ts's identical getTodoChecklistRowMetricsPx for the
 // full reasoning — same minimum-resize-height need, same "nominal only,
@@ -112,7 +120,7 @@ export function getHabitTrackerRowMetricsPx(widthPx?: number): {
   nominalRowHeightPx: number;
   rowLineWidthPx: number;
 } {
-  const isCompact = widthPx !== undefined && widthPx <= COMPACT_LAYOUT_MAX_WIDTH_PX;
+  const isCompact = widthPx !== undefined && isHabitTrackerCompact(widthPx);
   const nominalRowHeightPx = isCompact
     ? ptToPx(NAME_ROW_HEIGHT_PT) + widthPx! / DAY_LETTERS.length
     : ptToPx(ROW_HEIGHT_PT);
@@ -128,7 +136,7 @@ export function renderHabitTracker(
   config: HabitTrackerConfig,
   idPrefix: string
 ): RenderedElement[] {
-  if (geometry.width <= COMPACT_LAYOUT_MAX_WIDTH_PX) {
+  if (isHabitTrackerCompact(geometry.width)) {
     return renderHabitTrackerCompact(geometry, config, idPrefix);
   }
 
@@ -392,20 +400,25 @@ function renderHabitTrackerCompact(
     // low-opacity "habit" placeholder. Every row needs its own label here
     // even while empty — unlike the wide layout, there's no separate name
     // column left in the header to hint at what a blank row is for.
+    // The placeholder ("no real name yet") case is centered across the
+    // full row width, all caps, same styling language as the "HABITS"
+    // header above it — requested directly. A real, filled-in name
+    // keeps the wide layout's own inset-from-the-left convention
+    // instead (x/width padded by 6px each side), unaffected.
     const habitName = config.habits?.[i];
     elements.push({
       id: nextId(),
       type: "text",
-      x: geometry.x + 6,
+      x: habitName ? geometry.x + 6 : geometry.x,
       y: pairTop + (actualNameRowHeight - nameTextHeight) / 2,
-      width: geometry.width - 12,
+      width: habitName ? geometry.width - 12 : geometry.width,
       height: nameTextHeight,
-      text: habitName ?? "habit",
+      text: habitName ?? "HABIT",
       fontSize: nameFontSize,
       fontFamily: FONT_FAMILY,
       fill: habitName ? "#333333" : NEAR_BLACK,
       opacity: habitName ? 1 : PLACEHOLDER_OPACITY,
-      align: "left",
+      align: habitName ? "left" : "center",
     });
 
     // Divider between this pair's name row and its own square row.

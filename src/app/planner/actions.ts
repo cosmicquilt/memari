@@ -15,7 +15,7 @@ import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
-import { getHabitTrackerRowMetricsPx } from "@/lib/modules/habitTracker";
+import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -70,7 +70,15 @@ function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: numb
   } else if (slug === "habit-tracker") {
     const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
     const m = getHabitTrackerRowMetricsPx(widthPx);
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
+    // Compact (sidebar) placement needs room for at least 2 full habit
+    // pairs, not just 1 — requested directly: "can the habits side
+    // module have a minimum vertical height of two habits (4 rows)."
+    // Verified by direct computation against this app's real page
+    // geometry before writing this, same as every other minimum here:
+    // header + 2 compact pairs lands at exactly 4 grid rows. The wide
+    // layout keeps its original "header + 1 row" floor.
+    const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
+    targetPx = m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
   }
   if (targetPx === null) return MIN_ROW_SPAN;
   const oneRow = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
@@ -878,7 +886,7 @@ export async function addPaletteModuleAt(
       let effectiveRowSpan = moduleType.defaultRowSpan;
       let effectiveRowStart = rowStart;
       const configOverrides: Record<string, unknown> = {};
-      if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
+      if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker" || moduleTypeSlug === "labeled-box") {
         // todo-checklist and habit-tracker size *and position* themselves
         // to match whichever page they land on — 3 day-columns wide,
         // starting at column 1 on the left (3-day) page (column 0 is the
@@ -902,24 +910,32 @@ export async function addPaletteModuleAt(
         // default), out of step with the hourly grid it's sitting under.
         //
         // That's all still true for a drop *in* the hourly grid's own
-        // column range (the "bottom" zone). Requested directly, once
-        // that zone's own compact renderers existed to receive it: a
-        // drop *outside* that range instead — in practice, only ever
+        // column range (the "bottom" zone) — labeled-box included now,
+        // requested directly: "the notes in the bottom modules section
+        // should fill the containers width (3 on left, 4 on right)."
+        // Same column-matching override as todo-checklist/habit-tracker
+        // already had; a labeled-box just has no dayCount prop to also
+        // override, and its own renderer (labeledBox.ts) already
+        // handles arbitrary width fine (that's how it works in the
+        // sidebar at columnSpan 1 too), so it needs nothing else here.
+        //
+        // A drop *outside* that range instead — in practice, only ever
         // column 0 on the left page, the one column the hourly grid
         // there doesn't cover — lands as a single sidebar-width column
-        // instead, with todo-checklist's own dayCount forced to 1 (see
-        // that module's own top-of-file comment: a single day-column IS
-        // just its existing per-day loop run once, no renderer change
-        // needed) and habit-tracker switching to its own compact,
-        // stacked layout at render time purely from the narrower
-        // allocated width (see that module's own comment on
-        // COMPACT_LAYOUT_MAX_WIDTH_PX). No equivalent shrink-to-fit for
-        // this branch — unlike the bottom zone (always one contiguous
-        // run down to the page's own bottom edge), the sidebar can
-        // already hold other content at arbitrary rows, so this reuses
-        // the same plain findNearestFreeCell search labeled-box already
-        // relies on for that column instead of trying to compute "the"
-        // available gap there.
+        // for todo-checklist/habit-tracker, with todo-checklist's own
+        // dayCount forced to 1 (see that module's own top-of-file
+        // comment: a single day-column IS just its existing per-day
+        // loop run once, no renderer change needed) and habit-tracker
+        // switching to its own compact, stacked layout at render time
+        // purely from the narrower allocated width (see that module's
+        // own comment on COMPACT_LAYOUT_MAX_WIDTH_PX). labeled-box
+        // outside the bottom zone deliberately falls through this whole
+        // block untouched instead (see the plain `else` below, not an
+        // `else if` covering all three slugs) — it already has its own
+        // long-established side-zone placement behavior (this is where
+        // every existing sidebar box has always come from), and this
+        // feature only ever needed to change what happens *in* the
+        // bottom zone, not touch that.
         const inBottomZone =
           hourlyGrid && hourlyGrid.columnStart !== null && columnStart >= hourlyGrid.columnStart && columnStart < hourlyGrid.columnStart + hourlyGrid.columnSpan;
         if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
@@ -973,11 +989,12 @@ export async function addPaletteModuleAt(
           // full-default request; the unchanged findNearestFreeCell
           // search below will correctly find nothing and refuse the
           // drop, same as it already does for a genuinely full page.
-        } else {
+        } else if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
           // Sidebar (side-zone) compact placement — see this block's own
-          // top comment for the full reasoning. columnStart is left as
-          // the caller's own request (in practice always 0, the
-          // sidebar's one column).
+          // top comment for the full reasoning, including why labeled-box
+          // doesn't reach this branch at all (a plain `else`, not `else if`,
+          // would have). columnStart is left as the caller's own request
+          // (in practice always 0, the sidebar's one column).
           effectiveColumnSpan = 1;
           if (moduleTypeSlug === "todo-checklist") {
             configOverrides.dayCount = 1;
