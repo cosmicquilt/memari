@@ -1178,7 +1178,14 @@ function NativePage({
   );
 }
 
-const RESIZE_HANDLE_HALF_HEIGHT_PX = 8; // page-space px, each side of the boundary line — see ResizeHandle's own comment
+// page-space px, each side of the boundary line — see ResizeHandle's own
+// comment. Widened from 8 per direct request ("i would also like the
+// vertical resizing zone between modules to be vertically larger in
+// size") — shared by both ResizeHandle (the strip between two stacked
+// modules) and StackResizeHandle (the strip at a stack's own bottom
+// edge) so their hit zones stay the same size as each other, same as
+// before.
+const RESIZE_HANDLE_HALF_HEIGHT_PX = 16;
 
 // A thin hover strip straddling the shared boundary between two
 // vertically-adjacent, same-column unlocked modules — shows an ns-resize
