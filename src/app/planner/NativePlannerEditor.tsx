@@ -208,13 +208,18 @@ const PALETTE_ID_PREFIX = "palette:";
 // grid rows on this app's page geometry), so this floor is a safety net
 // for if either module's own measurements ever change, not currently
 // doing any clamping of its own.
-function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid): number {
+// columnSpan: mirrors actions.ts's identical addition — needed for
+// habit-tracker only, whose compact (sidebar) layout has a differently-
+// sized nominal row than its wide layout (see getHabitTrackerRowMetricsPx's
+// own comment). todo-checklist and every other slug ignore it.
+function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: number): number {
   let targetPx: number | null = null;
   if (slug === "todo-checklist") {
     const m = getTodoChecklistRowMetricsPx();
     targetPx = m.headerHeightPx + m.nominalRowHeightPx;
   } else if (slug === "habit-tracker") {
-    const m = getHabitTrackerRowMetricsPx();
+    const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
+    const m = getHabitTrackerRowMetricsPx(widthPx);
     targetPx = m.headerHeightPx + m.nominalRowHeightPx;
   }
   if (targetPx === null) return MIN_ROW_SPAN;
@@ -2654,8 +2659,8 @@ export function NativePlannerEditor({
             topRowStart: top.rowStart,
             topRowSpan: top.rowSpan,
             bottomRowSpan: bottom.rowSpan,
-            topMinRowSpan: getMinRowSpanForSlug(top.slug, page.pageGrid),
-            bottomMinRowSpan: getMinRowSpanForSlug(bottom.slug, page.pageGrid),
+            topMinRowSpan: getMinRowSpanForSlug(top.slug, page.pageGrid, columnSpan),
+            bottomMinRowSpan: getMinRowSpanForSlug(bottom.slug, page.pageGrid, columnSpan),
           });
         }
       }
@@ -2707,7 +2712,7 @@ export function NativePlannerEditor({
           bottomId: bottomMember.id,
           columnStart,
           columnSpan,
-          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan, minRowSpan: getMinRowSpanForSlug(m.slug, page.pageGrid) })),
+          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan, minRowSpan: getMinRowSpanForSlug(m.slug, page.pageGrid, columnSpan) })),
           stackTopRowStart: sorted[0].rowStart,
           stackBottomRowEnd,
           maxBottomBound,
@@ -3297,11 +3302,32 @@ export function NativePlannerEditor({
       // grid itself starts at column 1, not 0 (column 0 is the
       // sidebar), so it always collided with sidebar content there
       // regardless of where the cursor actually was.
-      const isBottomModule = slug === "todo-checklist" || slug === "habit-tracker";
-      const effectiveColumnStart =
-        isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnStart : target.columnStart;
-      const effectiveColumnSpan =
-        isBottomModule && hourlyGridPlacement ? hourlyGridPlacement.columnSpan : meta.defaultColumnSpan;
+      //
+      // That's the "bottom zone" (droppedInBottomZone below — the
+      // cursor's own column falls inside the hourly grid's own column
+      // range). Mirrors addPaletteModuleAt's identical branch
+      // (actions.ts) for the other case — a drop outside that range (in
+      // practice, only ever column 0 on the left page) instead previews
+      // as a single sidebar-width column, requested directly once that
+      // zone's own compact renderers existed to receive a to-do
+      // checklist/habit tracker.
+      const isBottomCapable = slug === "todo-checklist" || slug === "habit-tracker";
+      let effectiveColumnStart = target.columnStart;
+      let effectiveColumnSpan = meta.defaultColumnSpan;
+      let droppedInBottomZone = false;
+      if (isBottomCapable) {
+        if (
+          hourlyGridPlacement &&
+          target.columnStart >= hourlyGridPlacement.columnStart &&
+          target.columnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan
+        ) {
+          effectiveColumnStart = hourlyGridPlacement.columnStart;
+          effectiveColumnSpan = hourlyGridPlacement.columnSpan;
+          droppedInBottomZone = true;
+        } else {
+          effectiveColumnSpan = 1;
+        }
+      }
       // Mirrors addPaletteModuleAt's own identical shrink-to-fit
       // (actions.ts) — see that copy's comment for the full reasoning.
       // Without this, the live preview kept showing a full-size (and
@@ -3311,10 +3337,12 @@ export function NativePlannerEditor({
       // at all once its own local preview says overlapping — so this
       // isn't just cosmetic, it's what makes the drop reachable in the
       // first place. Reported directly: "i tried to drag to do list
-      // below habit tracker and it doesn't fit."
+      // below habit tracker and it doesn't fit." Side-zone drops don't
+      // get this treatment — see addPaletteModuleAt's own comment on
+      // why that zone just relies on plain findNearestFreeCell instead.
       let effectiveRowSpan = meta.defaultRowSpan;
       let effectiveRowStart = target.rowStart;
-      if (isBottomModule && hourlyGridPlacement) {
+      if (droppedInBottomZone && hourlyGridPlacement) {
         const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
         const zoneSiblings = (instanceIdsByPageId[target.pageId] ?? [])
           .filter((instId) => moduleLookup.get(instId)?.locked === false)
@@ -3325,7 +3353,7 @@ export function NativePlannerEditor({
           );
         const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((p) => p.rowStart + p.rowSpan)) : zoneTop;
         const availableRows = pageGrid.gridRows - zoneStart;
-        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid);
+        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
         if (availableRows >= minRowSpan) {
           effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
           effectiveRowStart = zoneStart;

@@ -5,6 +5,15 @@
 // whatever height it's given, not hardcoded, so "full height" and
 // "short, paired with habit-tracker" are just different allocations.
 //
+// A third variant — dayCount: 1 — is what a sidebar (single-grid-column)
+// placement uses, once dragging a to-do checklist into the side zone
+// became possible: this needed no actual renderer change, since a single
+// day-column IS just this same loop run once, naturally filling the
+// narrower allocated width with one checkbox+line segment per row
+// instead of several side by side. See actions.ts's addPaletteModuleAt
+// and NativePlannerEditor.tsx's handleDragMove for where dayCount gets
+// set to 1 for that placement.
+//
 // Measured from hourlyjournal.pdf (page 10, get_drawings()): one
 // checkbox+line segment per day-column, same width/pitch as the hourly
 // grid's own day columns and reusing its exact 14.1pt checkbox width.
@@ -12,7 +21,7 @@
 import { ptToPx } from "@/lib/print-spec";
 
 export type TodoChecklistConfig = {
-  dayCount: number; // matches the hourly-grid-core above it (3 or 4)
+  dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
 };
 
 export type RenderedElement = {

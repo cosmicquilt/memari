@@ -56,13 +56,20 @@ function pageGridFor(page: {
 // version; the client's own copy is only ever a live-preview mirror of
 // it.
 const MIN_ROW_SPAN = 2;
-function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid): number {
+// columnSpan: needed for habit-tracker only — its compact (sidebar)
+// layout's own nominal row is a name row plus a day-letter square, whose
+// size depends on the actual allocated width, unlike the wide layout's
+// fixed ROW_HEIGHT_PT (see getHabitTrackerRowMetricsPx's own comment).
+// todo-checklist and every other slug ignore it — a checkbox+line row's
+// height doesn't change with how many of them sit side by side.
+function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: number): number {
   let targetPx: number | null = null;
   if (slug === "todo-checklist") {
     const m = getTodoChecklistRowMetricsPx();
     targetPx = m.headerHeightPx + m.nominalRowHeightPx;
   } else if (slug === "habit-tracker") {
-    const m = getHabitTrackerRowMetricsPx();
+    const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
+    const m = getHabitTrackerRowMetricsPx(widthPx);
     targetPx = m.headerHeightPx + m.nominalRowHeightPx;
   }
   if (targetPx === null) return MIN_ROW_SPAN;
@@ -893,7 +900,29 @@ export async function addPaletteModuleAt(
         // Without any of this, a checklist/tracker dropped on the 4-day
         // page would also still only draw 3 day segments (the schema
         // default), out of step with the hourly grid it's sitting under.
-        if (hourlyGrid && hourlyGrid.columnStart !== null) {
+        //
+        // That's all still true for a drop *in* the hourly grid's own
+        // column range (the "bottom" zone). Requested directly, once
+        // that zone's own compact renderers existed to receive it: a
+        // drop *outside* that range instead — in practice, only ever
+        // column 0 on the left page, the one column the hourly grid
+        // there doesn't cover — lands as a single sidebar-width column
+        // instead, with todo-checklist's own dayCount forced to 1 (see
+        // that module's own top-of-file comment: a single day-column IS
+        // just its existing per-day loop run once, no renderer change
+        // needed) and habit-tracker switching to its own compact,
+        // stacked layout at render time purely from the narrower
+        // allocated width (see that module's own comment on
+        // COMPACT_LAYOUT_MAX_WIDTH_PX). No equivalent shrink-to-fit for
+        // this branch — unlike the bottom zone (always one contiguous
+        // run down to the page's own bottom edge), the sidebar can
+        // already hold other content at arbitrary rows, so this reuses
+        // the same plain findNearestFreeCell search labeled-box already
+        // relies on for that column instead of trying to compute "the"
+        // available gap there.
+        const inBottomZone =
+          hourlyGrid && hourlyGrid.columnStart !== null && columnStart >= hourlyGrid.columnStart && columnStart < hourlyGrid.columnStart + hourlyGrid.columnSpan;
+        if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
           effectiveColumnStart = hourlyGrid.columnStart;
           effectiveColumnSpan = hourlyGrid.columnSpan;
           if (moduleTypeSlug === "todo-checklist") {
@@ -934,7 +963,7 @@ export async function addPaletteModuleAt(
           );
           const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((mi) => mi.rowStart + mi.rowSpan)) : zoneTop;
           const availableRows = pageGrid.gridRows - zoneStart;
-          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid);
+          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
           if (availableRows >= minRowSpan) {
             effectiveRowSpan = Math.min(moduleType.defaultRowSpan, availableRows);
             effectiveRowStart = zoneStart;
@@ -944,6 +973,22 @@ export async function addPaletteModuleAt(
           // full-default request; the unchanged findNearestFreeCell
           // search below will correctly find nothing and refuse the
           // drop, same as it already does for a genuinely full page.
+        } else {
+          // Sidebar (side-zone) compact placement — see this block's own
+          // top comment for the full reasoning. columnStart is left as
+          // the caller's own request (in practice always 0, the
+          // sidebar's one column); effectiveRowSpan is left at
+          // moduleType.defaultRowSpan (10, same as the bottom zone's own
+          // default) rather than a separate compact-specific constant —
+          // that's still a reasonable default box height regardless of
+          // which column it renders in, and findNearestFreeCell below
+          // shrinks nothing, so an oversized request here is simply
+          // refused, same as it already would be for a labeled-box that
+          // doesn't fit.
+          effectiveColumnSpan = 1;
+          if (moduleTypeSlug === "todo-checklist") {
+            configOverrides.dayCount = 1;
+          }
         }
       }
 
@@ -1409,8 +1454,8 @@ export async function resizeAdjacentModules(
   // per-slug minimums client-side so a drag never visually promises a
   // size the server would then further clamp.
   const pageGrid = pageGridFor(top.page);
-  const topMinRowSpan = getMinRowSpanForSlug(top.moduleType.slug, pageGrid);
-  const bottomMinRowSpan = getMinRowSpanForSlug(bottom.moduleType.slug, pageGrid);
+  const topMinRowSpan = getMinRowSpanForSlug(top.moduleType.slug, pageGrid, top.columnSpan);
+  const bottomMinRowSpan = getMinRowSpanForSlug(bottom.moduleType.slug, pageGrid, bottom.columnSpan);
   const clampedDelta = Math.max(
     -(top.rowSpan - topMinRowSpan),
     Math.min(bottom.rowSpan - bottomMinRowSpan, deltaRows)
@@ -1532,7 +1577,11 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   // types (e.g. a todo-checklist stacked with a habit-tracker), each
   // with a different floor.
   const originalSpans = stack.map((mi) => mi.rowSpan);
-  const minSpans = stack.map((mi) => getMinRowSpanForSlug(mi.slug, pageGrid));
+  // bottom.columnSpan for every member, not each member's own — the
+  // siblings filter just above already requires every stack member to
+  // share bottom's own columnSpan (mi.columnSpan === bottom.columnSpan),
+  // so they're guaranteed identical anyway.
+  const minSpans = stack.map((mi) => getMinRowSpanForSlug(mi.slug, pageGrid, bottom.columnSpan));
   const totalShrinkable = originalSpans.reduce((sum, span, i) => sum + (span - minSpans[i]), 0);
 
   const stackBottom = bottomRowStart + bottom.rowSpan;

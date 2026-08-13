@@ -13,6 +13,24 @@
 // the other way around. Same renderer for the short (paired with
 // todo-checklist) and full-height (this page's own new variant) uses —
 // row count is just whatever fits in the given height.
+//
+// A second, genuinely different layout (renderHabitTrackerCompact, below)
+// exists for a narrow, single-grid-column placement — requested directly,
+// once dragging a habit tracker into the sidebar became possible. The
+// side-by-side layout above physically cannot fit there: 7 fixed
+// DAY_COLUMN_WIDTH_PT columns alone need ~121pt, already more than this
+// app's own single sidebar column (~119pt on its actual grid), before any
+// room for a name column at all. The compact layout instead stacks each
+// habit into two rows — a name row, then a row of 7 day-letter squares
+// below it — so the day cells can stay square without needing a wide name
+// column beside them. Which one renders is decided purely by the
+// allocated width (see COMPACT_LAYOUT_MAX_WIDTH_PX below), not by a
+// passed-in flag — this module type is placed at exactly two widths in
+// practice (a single sidebar column or 3-4 hourly-grid columns), and
+// keying off the real allocated size means both this renderer and
+// getHabitTrackerRowMetricsPx's own min-size floor (NativePlannerEditor.
+// tsx/actions.ts's getMinRowSpanForSlug) stay correct automatically
+// regardless of which zone a given instance ends up in.
 
 import { ptToPx } from "@/lib/print-spec";
 
@@ -61,17 +79,46 @@ const DAY_COLUMN_WIDTH_PT = 17.3;
 // exact function during a resize preview too).
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
+// Below this allocated width, renderHabitTracker switches to the compact
+// (stacked name-row + square-row) layout instead of the side-by-side one.
+// 250pt is a wide safety margin on either side of this app's two actual
+// placements — a single sidebar column is ~119pt, 3-4 hourly-grid columns
+// are ~363-486pt — not a value tuned to sit close to either.
+const COMPACT_LAYOUT_MAX_WIDTH_PX = ptToPx(250);
+// Compact layout only: height of each habit's own name/placeholder row.
+// Shorter than ROW_HEIGHT_PT (a wide-layout row is also the checkable
+// cell's own height, which has to match the square day cells there) —
+// this row holds one short line of text and nothing else, so it only
+// needs to comfortably fit that text.
+const NAME_ROW_HEIGHT_PT = 12;
+// Compact layout only: opacity for the "habit" placeholder label a row
+// shows when no real name has been filled in for it — a side-placed
+// habit tracker has nowhere else to indicate what each row is for, since
+// the compact layout has no separate name column left to leave blank.
+// "Low opacity" per direct request; a real, user-set name still renders
+// at full opacity like the wide layout's own prefilled names do.
+const PLACEHOLDER_OPACITY = 0.35;
+
 // See todoChecklist.ts's identical getTodoChecklistRowMetricsPx for the
 // full reasoning — same minimum-resize-height need, same "nominal only,
 // not the render function's own stretch-to-fit adjustment" tradeoff.
-export function getHabitTrackerRowMetricsPx(): {
+// widthPx is optional only for callers that genuinely don't know it yet;
+// every real caller today (getMinRowSpanForSlug, both copies) passes it,
+// since the compact layout's own nominal row (a name row + a square,
+// whose size depends on the allocated width) is a different height than
+// the wide layout's fixed ROW_HEIGHT_PT.
+export function getHabitTrackerRowMetricsPx(widthPx?: number): {
   headerHeightPx: number;
   nominalRowHeightPx: number;
   rowLineWidthPx: number;
 } {
+  const isCompact = widthPx !== undefined && widthPx <= COMPACT_LAYOUT_MAX_WIDTH_PX;
+  const nominalRowHeightPx = isCompact
+    ? ptToPx(NAME_ROW_HEIGHT_PT) + widthPx! / DAY_LETTERS.length
+    : ptToPx(ROW_HEIGHT_PT);
   return {
     headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
-    nominalRowHeightPx: ptToPx(ROW_HEIGHT_PT),
+    nominalRowHeightPx,
     rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
   };
 }
@@ -81,6 +128,10 @@ export function renderHabitTracker(
   config: HabitTrackerConfig,
   idPrefix: string
 ): RenderedElement[] {
+  if (geometry.width <= COMPACT_LAYOUT_MAX_WIDTH_PX) {
+    return renderHabitTrackerCompact(geometry, config, idPrefix);
+  }
+
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
@@ -242,6 +293,184 @@ export function renderHabitTracker(
         align: "left",
       });
     }
+  }
+
+  return elements;
+}
+
+// Compact layout — see this file's own top-of-file comment for why this
+// exists and when it's chosen. "Comes in rows of two" per direct request:
+// each habit gets a name row ("habit," low opacity, when no real name has
+// been filled in) directly above its own row of 7 day-letter squares,
+// instead of the wide layout's single row with the name and day-letters
+// side by side.
+function renderHabitTrackerCompact(
+  geometry: { x: number; y: number; width: number; height: number },
+  config: HabitTrackerConfig,
+  idPrefix: string
+): RenderedElement[] {
+  const elements: RenderedElement[] = [];
+  let idCounter = 0;
+  const nextId = () => `${idPrefix}-${idCounter++}`;
+
+  const contentY = geometry.y;
+  const contentHeight = geometry.height;
+  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
+  const nameRowHeight = ptToPx(NAME_ROW_HEIGHT_PT);
+  // Each day square's own width doubles as its own height (a real square,
+  // same spirit as the wide layout's fixed-width day columns) — derived
+  // from the actual allocated width rather than pinned to
+  // DAY_COLUMN_WIDTH_PT, since a sidebar column's real width depends on
+  // this page's own grid config, not one fixed measurement.
+  const squareSize = geometry.width / DAY_LETTERS.length;
+  const nominalPairHeight = nameRowHeight + squareSize;
+
+  const pairCount = Math.max(0, Math.floor((contentHeight - headerHeight) / nominalPairHeight));
+  // Stretched a hair so pairCount whole pairs exactly fill the allocated
+  // box, same "no rounding gap at the bottom" convention as the wide
+  // layout's own rowHeight — but only the name row absorbs the
+  // remainder; the square row can't, or its cells would stop being
+  // square.
+  const pairHeight = pairCount > 0 ? (contentHeight - headerHeight) / pairCount : nominalPairHeight;
+  const actualNameRowHeight = pairHeight - squareSize;
+
+  // Outer border — reaches the full allocated height exactly.
+  elements.push({
+    id: nextId(),
+    type: "figure",
+    subType: "rect",
+    x: geometry.x,
+    y: contentY,
+    width: geometry.width,
+    height: contentHeight,
+    fill: "transparent",
+    stroke: NEAR_BLACK,
+    strokeWidth: ptToPx(BORDER_WIDTH_PT),
+  });
+
+  // "HABITS" header, centered across the full width — no name/day-letter
+  // column split to center within anymore.
+  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  const headerTextHeight = headerFontSize * 1.2;
+  elements.push({
+    id: nextId(),
+    type: "text",
+    x: geometry.x,
+    y: contentY + (headerHeight - headerTextHeight) / 2,
+    width: geometry.width,
+    height: headerTextHeight,
+    text: "HABITS",
+    fontSize: headerFontSize,
+    fontFamily: FONT_FAMILY,
+    align: "center",
+  });
+
+  // Divider between the header and the first pair.
+  elements.push({
+    id: nextId(),
+    type: "figure",
+    subType: "rect",
+    x: geometry.x,
+    y: contentY + headerHeight - rowLineWidth / 2,
+    width: geometry.width,
+    height: rowLineWidth,
+    fill: NEAR_BLACK,
+    stroke: "none",
+  });
+
+  const dayLetterFontSize = ptToPx(DAY_LETTER_FONT_PT);
+  const dayLetterTextHeight = dayLetterFontSize * 1.2;
+  const nameFontSize = ptToPx(7); // same size the wide layout's own prefilled habit names use
+  const nameTextHeight = nameFontSize * 1.2;
+
+  for (let i = 0; i < pairCount; i++) {
+    const pairTop = contentY + headerHeight + i * pairHeight;
+    const squareRowTop = pairTop + actualNameRowHeight;
+
+    // Habit-name row: the real name if one was pre-filled, otherwise a
+    // low-opacity "habit" placeholder. Every row needs its own label here
+    // even while empty — unlike the wide layout, there's no separate name
+    // column left in the header to hint at what a blank row is for.
+    const habitName = config.habits?.[i];
+    elements.push({
+      id: nextId(),
+      type: "text",
+      x: geometry.x + 6,
+      y: pairTop + (actualNameRowHeight - nameTextHeight) / 2,
+      width: geometry.width - 12,
+      height: nameTextHeight,
+      text: habitName ?? "habit",
+      fontSize: nameFontSize,
+      fontFamily: FONT_FAMILY,
+      fill: habitName ? "#333333" : NEAR_BLACK,
+      opacity: habitName ? 1 : PLACEHOLDER_OPACITY,
+      align: "left",
+    });
+
+    // Divider between this pair's name row and its own square row.
+    elements.push({
+      id: nextId(),
+      type: "figure",
+      subType: "rect",
+      x: geometry.x,
+      y: squareRowTop - rowLineWidth / 2,
+      width: geometry.width,
+      height: rowLineWidth,
+      fill: NEAR_BLACK,
+      stroke: "none",
+      opacity: 0.6,
+    });
+
+    // 7 day-letter squares, plus the vertical dividers between them (the
+    // outer border above already closes off the leftmost and rightmost
+    // edges).
+    DAY_LETTERS.forEach((letter, d) => {
+      const colX = geometry.x + d * squareSize;
+      elements.push({
+        id: nextId(),
+        type: "text",
+        x: colX,
+        y: squareRowTop + (squareSize - dayLetterTextHeight) / 2,
+        width: squareSize,
+        height: dayLetterTextHeight,
+        text: letter,
+        fontSize: dayLetterFontSize,
+        fontFamily: FONT_FAMILY,
+        align: "center",
+      });
+      if (d > 0) {
+        elements.push({
+          id: nextId(),
+          type: "figure",
+          subType: "rect",
+          x: colX - rowLineWidth / 2,
+          y: squareRowTop,
+          width: rowLineWidth,
+          height: squareSize,
+          fill: NEAR_BLACK,
+          stroke: "none",
+          opacity: 0.6,
+        });
+      }
+    });
+
+    // Divider below this pair's square row — between this habit and the
+    // next, or redundant with the outer border for the last one (same
+    // harmless overlap the wide layout's own last-row divider already
+    // has).
+    elements.push({
+      id: nextId(),
+      type: "figure",
+      subType: "rect",
+      x: geometry.x,
+      y: squareRowTop + squareSize - rowLineWidth / 2,
+      width: geometry.width,
+      height: rowLineWidth,
+      fill: NEAR_BLACK,
+      stroke: "none",
+      opacity: 0.6,
+    });
   }
 
   return elements;

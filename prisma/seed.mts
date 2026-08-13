@@ -145,13 +145,18 @@ const moduleTypes = [
   {
     // Sits below hourly-grid-core, same columns and dayCount. Full-height
     // on the page without a habit-tracker. See
-    // src/lib/modules/todoChecklist.ts.
+    // src/lib/modules/todoChecklist.ts. 1 is a third valid value here,
+    // alongside the two hourly-grid-matching ones (3, 4) — a sidebar
+    // (single-grid-column) placement, once dragging a to-do checklist
+    // there became possible, uses dayCount: 1 for a single checkbox+line
+    // column instead of several side by side (see actions.ts's
+    // addPaletteModuleAt).
     slug: "todo-checklist",
     name: "To-Do Checklist",
     configSchema: {
       type: "object",
       properties: {
-        dayCount: { type: "integer", enum: [3, 4], default: 3 },
+        dayCount: { type: "integer", enum: [1, 3, 4], default: 3 },
       },
     },
     // defaultRowSpan 10, not 11 — see habit-tracker's own identical
