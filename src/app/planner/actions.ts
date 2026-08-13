@@ -977,18 +977,49 @@ export async function addPaletteModuleAt(
           // Sidebar (side-zone) compact placement — see this block's own
           // top comment for the full reasoning. columnStart is left as
           // the caller's own request (in practice always 0, the
-          // sidebar's one column); effectiveRowSpan is left at
-          // moduleType.defaultRowSpan (10, same as the bottom zone's own
-          // default) rather than a separate compact-specific constant —
-          // that's still a reasonable default box height regardless of
-          // which column it renders in, and findNearestFreeCell below
-          // shrinks nothing, so an oversized request here is simply
-          // refused, same as it already would be for a labeled-box that
-          // doesn't fit.
+          // sidebar's one column).
           effectiveColumnSpan = 1;
           if (moduleTypeSlug === "todo-checklist") {
             configOverrides.dayCount = 1;
           }
+
+          // Shrink-to-fit whatever room is actually left, same
+          // reasoning as the bottom zone's own identical fix just above
+          // ("i tried to drag to do list below habit tracker and it
+          // doesn't fit") — reported directly here too: "its not
+          // letting me drag the habit and the todo from the side nav to
+          // the bottom empty space of the sidebar." The original
+          // comment on this branch reasoned the sidebar can already
+          // hold other content at arbitrary rows, so a single "the
+          // available gap" number wouldn't mean as much as it does in
+          // the bottom zone — true, but missed that moduleType.
+          // defaultRowSpan (10) essentially never fits below whatever's
+          // already seeded there (week-title, Gratitude/Reminders/
+          // Notes...), so every request silently failed instead of
+          // landing at whatever size the remaining room actually
+          // supports. Unlike the bottom zone, there's no single locked
+          // anchor to measure from (hourly-grid-core there; nothing
+          // equivalent here) — not filtering out locked siblings is
+          // what covers that instead: the deepest existing item this
+          // column has *at all*, locked (week-title) or not, is where
+          // free space starts, mirroring "the bottom empty space of the
+          // sidebar" the way it was actually described.
+          const columnSiblings = page.moduleInstances.filter(
+            (mi): mi is typeof mi & { rowStart: number } =>
+              mi.columnStart === effectiveColumnStart && mi.columnSpan === effectiveColumnSpan && mi.rowStart !== null
+          );
+          const zoneStart =
+            columnSiblings.length > 0 ? Math.max(...columnSiblings.map((mi) => mi.rowStart + mi.rowSpan)) : 0;
+          const availableRows = pageGrid.gridRows - zoneStart;
+          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
+          if (availableRows >= minRowSpan) {
+            effectiveRowSpan = Math.min(moduleType.defaultRowSpan, availableRows);
+            effectiveRowStart = zoneStart;
+          }
+          // else: leave effectiveRowSpan/effectiveRowStart at the
+          // original full-default request — findNearestFreeCell below
+          // will correctly find nothing and refuse the drop, same as a
+          // genuinely full column already behaves for a labeled-box.
         }
       }
 

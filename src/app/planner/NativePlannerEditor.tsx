@@ -3337,9 +3337,13 @@ export function NativePlannerEditor({
       // at all once its own local preview says overlapping — so this
       // isn't just cosmetic, it's what makes the drop reachable in the
       // first place. Reported directly: "i tried to drag to do list
-      // below habit tracker and it doesn't fit." Side-zone drops don't
-      // get this treatment — see addPaletteModuleAt's own comment on
-      // why that zone just relies on plain findNearestFreeCell instead.
+      // below habit tracker and it doesn't fit," then again for the
+      // side zone once that became reachable: "its not letting me drag
+      // the habit and the todo from the side nav to the bottom empty
+      // space of the sidebar" — moduleType.defaultRowSpan (10) almost
+      // never fits below whatever's already seeded in the sidebar
+      // (week-title, Gratitude/Reminders/Notes...), so every side-zone
+      // request was silently failing without this too.
       let effectiveRowSpan = meta.defaultRowSpan;
       let effectiveRowStart = target.rowStart;
       if (droppedInBottomZone && hourlyGridPlacement) {
@@ -3352,6 +3356,24 @@ export function NativePlannerEditor({
               !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan && p.rowStart >= zoneTop
           );
         const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((p) => p.rowStart + p.rowSpan)) : zoneTop;
+        const availableRows = pageGrid.gridRows - zoneStart;
+        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
+        if (availableRows >= minRowSpan) {
+          effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
+          effectiveRowStart = zoneStart;
+        }
+      } else if (isBottomCapable) {
+        // Side-zone shrink-to-fit — see addPaletteModuleAt's own
+        // identical branch (actions.ts) for the full reasoning,
+        // including why locked siblings (week-title) aren't filtered
+        // out here the way the bottom zone's own hourly-grid-adjacent
+        // zoneSiblings filters them: there's no single locked anchor to
+        // measure from in this column, so the deepest existing item at
+        // all — locked or not — is where free space starts.
+        const columnSiblings = (instanceIdsByPageId[target.pageId] ?? [])
+          .map((instId) => placements[instId])
+          .filter((p): p is Placement => !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan);
+        const zoneStart = columnSiblings.length > 0 ? Math.max(...columnSiblings.map((p) => p.rowStart + p.rowSpan)) : 0;
         const availableRows = pageGrid.gridRows - zoneStart;
         const minRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
         if (availableRows >= minRowSpan) {
