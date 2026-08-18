@@ -95,6 +95,7 @@ import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
 import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
+import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -102,6 +103,7 @@ import {
   resolveModulePlacement,
   findNearestFreeCell,
   rectsOverlap,
+  pixelHeightToRowSpan,
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
@@ -115,6 +117,7 @@ import {
   resetPlannerToTemplate,
   updatePlannerFont,
   updateHourlySettings,
+  resizeHourlyGridCore,
 } from "./actions";
 import { useAsyncAction } from "./useAsyncAction";
 
@@ -912,6 +915,7 @@ function NativePage({
   justAddedIds,
   resizePairs,
   stackBottoms,
+  hourlyResizeStackBottoms,
   emptyZones,
   resizingIds,
   resizeFrozenSize,
@@ -955,11 +959,16 @@ function NativePage({
   justAddedIds: ReadonlySet<string> | null;
   resizePairs: ResizePair[];
   stackBottoms: StackBottom[];
+  // hourly-grid-core instances currently in "off" mode, each as its own
+  // single-member StackBottom — see hourlyOffModeStackBottomsByPageId's
+  // own comment (main component) for why this is a separate list from
+  // stackBottoms rather than folded into it.
+  hourlyResizeStackBottoms: StackBottom[];
   // Zero-member StackBottom stand-ins for a zone with nothing in it yet
   // — see emptyZonesByPageId's own comment (main component) for why
   // these are a separate list rather than folded into stackBottoms
   // itself. Only AddModuleButton/SectionAddButton below read this;
-  // StackResizeHandle stays scoped to stackBottoms alone.
+  // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
   // See the main component's own comment on resizeFrozenSize — lets
@@ -1035,7 +1044,18 @@ function NativePage({
         // reproduces exactly what a real commit at the box's *current*
         // size would render, correct row count included, every render
         // for the duration of the drag.
-        const contentIsLive = (resizingIds?.has(id) ?? false) && (info.slug === "todo-checklist" || info.slug === "habit-tracker");
+        // hourly-grid-core joins this list only in "off" mode — its
+        // divider bars are sized proportional to the live box height
+        // (2/3 of it), so they genuinely need to redraw mid-drag too,
+        // same reasoning as todo-checklist/habit-tracker. "on" mode
+        // isn't included: it's never interactively resized (Page
+        // Settings' Hours form recomputes its rowSpan on Save instead —
+        // see updateHourlySettings), so there's no drag to live-preview.
+        const contentIsLive =
+          (resizingIds?.has(id) ?? false) &&
+          (info.slug === "todo-checklist" ||
+            info.slug === "habit-tracker" ||
+            (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
         const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, placement) : null;
         const elements = contentIsLive
           ? renderModuleInstance(
@@ -1103,6 +1123,28 @@ function NativePage({
         ))}
       {activeId === null &&
         stackBottoms.map((stackBottom) => (
+          <StackResizeHandle
+            key={stackBottom.key}
+            stackBottom={stackBottom}
+            pageGrid={page.pageGrid}
+            scale={scale}
+            onResizeStart={onStackResizeStart}
+            onResizeMove={onStackResizeMove}
+            onResizeEnd={onStackResizeEnd}
+          />
+        ))}
+      {/* Same handle, same handlers — hourly-grid-core's own off-mode
+          bottom edge (see hourlyOffModeStackBottomsByPageId's own
+          comment for why this is a separate list from stackBottoms
+          rather than merged into it: stackBottoms is also concatenated
+          with emptyZones below for AddModuleButton/SectionAddButton,
+          which should never render a "+" over hourly-grid-core's own
+          zone). handleStackResizeEnd's own commit step
+          (handleStackResizeAdjacent) branches to resizeHourlyGridCore
+          instead of resizeStackFromBottom by checking the resolved
+          instance's slug — nothing here needs to know the difference. */}
+      {activeId === null &&
+        hourlyResizeStackBottoms.map((stackBottom) => (
           <StackResizeHandle
             key={stackBottom.key}
             stackBottom={stackBottom}
@@ -2467,6 +2509,7 @@ function ModulePalette({
                   startTime={pageSettings.startTime}
                   endTime={pageSettings.endTime}
                   intervalMinutes={pageSettings.intervalMinutes}
+                  intervalMode={pageSettings.intervalMode}
                   weekStartDay={pageSettings.weekStartDay}
                 />
               </div>
@@ -2546,29 +2589,35 @@ const WEEK_START_DAY_LABELS = [
   "Saturday",
 ];
 
-// Page Settings > Hours — start/end time, increment, and week-start-day,
-// applied together via one Save button (unlike FontToggle's click-to-
-// apply switch — this bundles several fields, and a start/end/interval
-// change is a heavier operation server-side (it can resize hourly-grid-
-// core and reflow whatever's below it), so it's gated behind an explicit
-// action rather than firing per keystroke/selection). "Off" increments
-// (the request's other ask, replacing the ruled rows with adjustable
-// blank space) isn't offered here yet — that needs its own render branch
-// and a new drag-resize interaction, landing in a later pass.
+// Page Settings > Hours — start/end time, increment (including "off"),
+// and week-start-day, applied together via one Save button (unlike
+// FontToggle's click-to-apply switch — this bundles several fields, and
+// a start/end/interval change is a heavier operation server-side (it can
+// resize hourly-grid-core and reflow whatever's below it), so it's gated
+// behind an explicit action rather than firing per keystroke/selection).
+// Picking "Off" hides the start/end inputs (moot until switched back —
+// see updateHourlySettings' own "off" branch, which keeps whatever
+// height hourly-grid-core currently has rather than deriving one from
+// them) and hands sizing over to its own drag handle on the canvas
+// instead (StackResizeHandle, via hourlyOffModeStackBottomsByPageId).
 function HoursForm({
   startTime,
   endTime,
   intervalMinutes,
+  intervalMode,
   weekStartDay,
 }: {
   startTime: string;
   endTime: string;
   intervalMinutes: number;
+  intervalMode: "on" | "off";
   weekStartDay: number;
 }) {
   const [draftStart, setDraftStart] = useState(startTime);
   const [draftEnd, setDraftEnd] = useState(endTime);
-  const [draftInterval, setDraftInterval] = useState<30 | 60>(intervalMinutes === 60 ? 60 : 30);
+  const [draftInterval, setDraftInterval] = useState<"30" | "60" | "off">(
+    intervalMode === "off" ? "off" : intervalMinutes === 60 ? "60" : "30"
+  );
   const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
 
@@ -2577,7 +2626,8 @@ function HoursForm({
       await updateHourlySettings({
         startTime: draftStart,
         endTime: draftEnd,
-        intervalMinutes: draftInterval,
+        intervalMinutes: draftInterval === "60" ? 60 : 30,
+        intervalMode: draftInterval === "off" ? "off" : "on",
         weekStartDay: draftWeekStartDay,
       });
       window.location.reload();
@@ -2594,30 +2644,33 @@ function HoursForm({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }}>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <input
-          type="time"
-          value={draftStart}
-          onChange={(event) => setDraftStart(event.target.value)}
-          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
-        />
-        <span style={{ color: "#707070" }}>to</span>
-        <input
-          type="time"
-          value={draftEnd}
-          onChange={(event) => setDraftEnd(event.target.value)}
-          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
-        />
-      </div>
+      {draftInterval !== "off" && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input
+            type="time"
+            value={draftStart}
+            onChange={(event) => setDraftStart(event.target.value)}
+            style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+          />
+          <span style={{ color: "#707070" }}>to</span>
+          <input
+            type="time"
+            value={draftEnd}
+            onChange={(event) => setDraftEnd(event.target.value)}
+            style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+          />
+        </div>
+      )}
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ color: "#707070" }}>Increments</span>
         <select
           value={draftInterval}
-          onChange={(event) => setDraftInterval(Number(event.target.value) === 60 ? 60 : 30)}
+          onChange={(event) => setDraftInterval(event.target.value as "30" | "60" | "off")}
           style={fieldStyle}
         >
-          <option value={30}>30 min</option>
-          <option value={60}>1 hour</option>
+          <option value="30">30 min</option>
+          <option value="60">1 hour</option>
+          <option value="off">Off</option>
         </select>
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -3048,6 +3101,78 @@ export function NativePlannerEditor({
         });
       }
       byPage[page.pageId] = stackBottoms;
+    }
+    return byPage;
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
+
+  // Synthetic single-member StackBottom entries for hourly-grid-core
+  // instances currently in "off" mode (see HourlyGridCoreConfig's own
+  // intervalMode comment) — reuses StackResizeHandle wholesale for the
+  // "drag its bottom edge, bounded above whatever's below it" request
+  // rather than building a parallel component: the underlying invariant
+  // ("don't let a drag leave a dead 1-row gap between this box and
+  // whatever's below it") is the exact same one StackResizeHandle
+  // already enforces for an unlocked stack's own outer bottom edge, and
+  // cascadeStackSpans/displayPlacements/resizingIds/resizeFrozenSize are
+  // all already generic over "a list of member ids" with no locked/slug
+  // assumption baked in — hourly-grid-core just never had an entry
+  // feeding them before now.
+  //
+  // Deliberately a SEPARATE list from stackBottomsByPageId itself (not
+  // merged in), even though both ultimately feed the same
+  // StackResizeHandle: that computation's own grouping loop only ever
+  // considers *unlocked* same-column siblings, and its own
+  // maxBottomBound only checks LOCKED blocks below — safe there because
+  // an unlocked sibling below would already be part of the same group by
+  // construction. Neither assumption holds here: hourly-grid-core is
+  // always locked itself, and what's below it (a real todo-checklist/
+  // habit-tracker) is unlocked, never a member of its own "stack." Its
+  // own resize handler branches to a dedicated server action
+  // (resizeHourlyGridCore) rather than resizeStackFromBottom too, for
+  // the same reason — see handleStackResizeAdjacent's own comment.
+  const hourlyOffModeStackBottomsByPageId = useMemo(() => {
+    const byPage: Record<string, StackBottom[]> = {};
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      const entries: StackBottom[] = [];
+      for (const id of pageIds) {
+        const info = moduleLookup.get(id);
+        const placement = displayPlacements[id];
+        if (!info || info.slug !== "hourly-grid-core" || !placement) continue;
+        const config = info.propValues as unknown as HourlyGridCoreConfig;
+        if (config.intervalMode !== "off") continue;
+
+        const minRowSpan = Math.max(
+          MIN_ROW_SPAN,
+          pixelHeightToRowSpan(page.pageGrid, getHourlyGridCoreOffModeMinHeightPx())
+        );
+        const stackBottomRowEnd = placement.rowStart + placement.rowSpan;
+        // Same 1-row breathing gap convention as the server action.
+        const GAP_ROWS = 1;
+        let maxBottomBound = page.pageGrid.gridRows;
+        for (const otherId of pageIds) {
+          if (otherId === id) continue;
+          const otherPlacement = displayPlacements[otherId];
+          if (!otherPlacement) continue;
+          const sameColumn =
+            otherPlacement.columnStart === placement.columnStart && otherPlacement.columnSpan === placement.columnSpan;
+          if (otherPlacement.rowStart < stackBottomRowEnd || !sameColumn) continue;
+          maxBottomBound = Math.min(maxBottomBound, otherPlacement.rowStart - GAP_ROWS);
+        }
+
+        entries.push({
+          key: `hourly-stack:${id}`,
+          pageId: page.pageId,
+          bottomId: id,
+          columnStart: placement.columnStart,
+          columnSpan: placement.columnSpan,
+          members: [{ id, rowSpan: placement.rowSpan, minRowSpan }],
+          stackTopRowStart: placement.rowStart,
+          stackBottomRowEnd,
+          maxBottomBound,
+        });
+      }
+      byPage[page.pageId] = entries;
     }
     return byPage;
   }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
@@ -4373,20 +4498,27 @@ export function NativePlannerEditor({
   // StackBottom's own type comment and resizeStackFromBottom's own
   // comment (actions.ts) for the full reasoning on why this is a
   // different operation from handleResizeAdjacent above, not a variant
-  // of it. Reuses resizeStackFromBottom unchanged; patches every member
-  // the server touched (which can be more than two) into both
-  // `placements` and `moduleLookup`, recomputing each one's origin fresh
-  // — the whole affected range gets repacked server-side, so more than
-  // just the immediate pair can have moved.
+  // of it. Reuses resizeStackFromBottom unchanged for a normal stack;
+  // branches to resizeHourlyGridCore instead for hourly-grid-core's own
+  // off-mode entry (see hourlyOffModeStackBottomsByPageId's own comment)
+  // — both return the same {id,rowStart,rowSpan,element}[] shape, so
+  // everything below this branch applies either result identically.
+  // Patches every member the server touched (which can be more than two
+  // for a real cascade, always exactly one for the hourly case) into
+  // both `placements` and `moduleLookup`, recomputing each one's origin
+  // fresh — the whole affected range gets repacked server-side, so more
+  // than just the immediate pair can have moved.
   const handleStackResizeAdjacent = useCallback(
-    async (pageId: string, bottomInstanceId: string, deltaRows: number) => {
+    async (stackKey: string, pageId: string, bottomInstanceId: string, deltaRows: number) => {
       const pageGrid = pageGridByPageId[pageId];
       const bottomPlacement = placements[bottomInstanceId];
       if (!pageGrid || !bottomPlacement) return;
-      const stackKey = `stack:${bottomInstanceId}`;
+      const isHourlyGridCore = moduleLookup.get(bottomInstanceId)?.slug === "hourly-grid-core";
       try {
         // See serializeCommit's own comment.
-        const results = await serializeCommit(() => resizeStackFromBottom(bottomInstanceId, deltaRows));
+        const results = await serializeCommit(() =>
+          isHourlyGridCore ? resizeHourlyGridCore(bottomInstanceId, deltaRows) : resizeStackFromBottom(bottomInstanceId, deltaRows)
+        );
         setPlacements((prev) => {
           const next = { ...prev };
           for (const r of results) {
@@ -4420,7 +4552,7 @@ export function NativePlannerEditor({
         setStackResizeDrag((prev) => (prev && prev.stackKey === stackKey ? null : prev));
       }
     },
-    [placements, pageGridByPageId, serializeCommit]
+    [placements, moduleLookup, pageGridByPageId, serializeCommit]
   );
 
   // Same synchronous-ref pattern as activeResizePairKeyRef above.
@@ -4461,7 +4593,7 @@ export function NativePlannerEditor({
       }
       // handleStackResizeAdjacent itself clears stackResizeDrag now — see
       // its own comment.
-      handleStackResizeAdjacent(stackBottom.pageId, stackBottom.bottomId, deltaRows);
+      handleStackResizeAdjacent(stackBottom.key, stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
     [handleStackResizeAdjacent]
   );
@@ -4897,6 +5029,7 @@ export function NativePlannerEditor({
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
+                    hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={resizingIds}
                     resizeFrozenSize={resizeFrozenSize}

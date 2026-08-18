@@ -61,6 +61,11 @@ const moduleTypes = [
         },
         dayBorder: { type: "boolean", default: false },
         events: { type: "array", items: { type: "object" }, default: [] },
+        // Page Settings > Hours' "increments off" option — see
+        // HourlyGridCoreConfig's own comment in hourlyGridCore.ts.
+        // Absent on any instance seeded before this existed; treated as
+        // "on" wherever it's read.
+        intervalMode: { type: "string", enum: ["on", "off"], default: "on" },
       },
     },
     // Sized to leave column 0 free for the sidebar zone (exactly 25%

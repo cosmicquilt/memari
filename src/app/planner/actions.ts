@@ -18,7 +18,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
 import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
-import { getHourlyGridCoreContentHeightPx } from "@/lib/modules/hourlyGridCore";
+import { getHourlyGridCoreContentHeightPx, getHourlyGridCoreOffModeMinHeightPx } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
@@ -1855,22 +1855,35 @@ function timeStringToMinutes(time: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-// Page Settings > Hours (the "on" — 30min/1hr increment — case; "off"
-// is a later stage). Unlike updateWeekSettings' plain propValues merges,
-// this genuinely changes hourly-grid-core's own footprint (its row-count,
-// hence rowSpan, is derived from real point measurements independent of
-// what space happens to be "available" — see
-// getHourlyGridCoreContentHeightPx's own comment), so it needs two things
-// updateWeekSettings never had to: an overflow guard (nothing before this
-// stopped a wide time range from requesting more rows than the page
-// actually has) and a repack of whatever's below it (its own bottom edge
-// moves, so the "below the hourly grid" zone's own top has to move with
-// it) — both applied to each page independently, since dayCount/whatever
-// each page's own below-zone stack holds can differ.
+// Page Settings > Hours. Two very different operations behind one Save
+// button, branched on settings.intervalMode:
+//
+// "on" (30min/1hr increments): unlike updateWeekSettings' plain
+// propValues merges, this genuinely changes hourly-grid-core's own
+// footprint (its row-count, hence rowSpan, is derived from real point
+// measurements independent of what space happens to be "available" —
+// see getHourlyGridCoreContentHeightPx's own comment), so it needs an
+// overflow guard (nothing before this stopped a wide time range from
+// requesting more rows than the page actually has) and a repack of
+// whatever's below it (its own bottom edge moves, so the "below the
+// hourly grid" zone's own top has to move with it) — both applied to
+// each page independently, since dayCount/whatever each page's own
+// below-zone stack holds can differ.
+//
+// "off" (blank, height-adjustable space): none of that applies —
+// turning increments off doesn't change hourly-grid-core's own rowSpan
+// at all (it keeps whatever height it currently has; the user adjusts
+// it afterward via the drag handle — resizeHourlyGridCore below), so
+// this is just a propValues merge, closer to updateWeekSettings' own
+// shape. startTime/endTime/intervalMinutes are still saved even in this
+// branch (not just discarded) so switching back to "on" later restores
+// whatever the user had picked, rather than reverting to schema
+// defaults.
 export async function updateHourlySettings(settings: {
   startTime: string; // "HH:MM"
   endTime: string; // "HH:MM"
   intervalMinutes: 30 | 60;
+  intervalMode: "on" | "off";
   weekStartDay: number; // 0=Sun..6=Sat
 }) {
   const { userId } = await auth();
@@ -1902,94 +1915,119 @@ export async function updateHourlySettings(settings: {
     throw new Error("Planner not found");
   }
 
-  const requiredHeightPx = getHourlyGridCoreContentHeightPx({
-    startTime: settings.startTime,
-    endTime: settings.endTime,
-    intervalMinutes: settings.intervalMinutes,
-  });
+  const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
 
-  // Same 1-row breathing gap convention enforced elsewhere in this file
-  // (addPaletteModuleAt's synthetic reservation rect, resolveDrag's
-  // virtual lock) — kept local rather than a shared constant, matching
-  // how every other site here just inlines the literal 1.
-  const GAP_ROWS = 1;
-
-  type PerPage = {
-    hourlyId: string;
-    hourlyPropValues: unknown;
-    hourlyRowStart: number;
-    newRowSpan: number;
-    belowMembers: Array<{ id: string; rowStart: number; rowSpan: number }>;
-  };
-  const perPage: PerPage[] = [];
-
-  for (const page of planner.pages) {
-    const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-    if (!hourly || hourly.columnStart === null || hourly.rowStart === null) continue;
-    const pageGrid = pageGridFor(page);
-    const newRowSpan = pixelHeightToRowSpan(pageGrid, requiredHeightPx);
-
-    // The below-zone stack: unlocked siblings sharing hourly's own exact
-    // column range — same "exact match, not just overlap" membership
-    // test resizeStackFromBottom/resizeAdjacentModules already use for
-    // "is this really the same stack," not a looser overlap check.
-    const belowMembers = page.moduleInstances.filter(
-      (mi): mi is typeof mi & { rowStart: number } =>
-        !mi.locked &&
-        mi.rowStart !== null &&
-        mi.columnStart === hourly.columnStart &&
-        mi.columnSpan === hourly.columnSpan &&
-        mi.rowStart >= hourly.rowStart! + hourly.rowSpan
-    );
-    // Checked against each member's CURRENT rowSpan, not its own minimum
-    // floor — this repack (packStackFromTop, below) only ever moves a
-    // member's rowStart, it never shrinks a member's own rowSpan to fit.
-    // Checking against the floor instead would let this guard pass while
-    // the repack that follows still pushes an unshrunk module past the
-    // page's own bottom edge (confirmed against this app's real dev data:
-    // a full-day range needs 25 of 30 rows, leaving 4 for the below zone
-    // — comfortably above the existing todo-checklist's own 2-row floor,
-    // but well under its actual current 10-row size).
-    const belowCurrentTotal = belowMembers.reduce((sum, mi) => sum + mi.rowSpan, 0);
-    const availableForBelow = pageGrid.gridRows - newRowSpan - GAP_ROWS;
-    if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
-      throw new Error(
-        "This time range needs more room than the page has — shrink or remove a module below the hourly grid first"
+  if (settings.intervalMode === "off") {
+    for (const page of planner.pages) {
+      const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+      if (!hourly) continue;
+      updates.push(
+        prisma.moduleInstance.update({
+          where: { id: hourly.id },
+          data: {
+            propValues: {
+              ...(hourly.propValues as object),
+              startTime: settings.startTime,
+              endTime: settings.endTime,
+              intervalMinutes: settings.intervalMinutes,
+              intervalMode: "off",
+            } as Prisma.InputJsonValue,
+          },
+        })
       );
     }
-
-    perPage.push({
-      hourlyId: hourly.id,
-      hourlyPropValues: hourly.propValues,
-      hourlyRowStart: hourly.rowStart,
-      newRowSpan,
-      belowMembers: belowMembers.map((mi) => ({ id: mi.id, rowStart: mi.rowStart, rowSpan: mi.rowSpan })),
+    if (updates.length === 0) {
+      throw new Error("No hourly grid found on this planner");
+    }
+  } else {
+    const requiredHeightPx = getHourlyGridCoreContentHeightPx({
+      startTime: settings.startTime,
+      endTime: settings.endTime,
+      intervalMinutes: settings.intervalMinutes,
     });
-  }
-  if (perPage.length === 0) {
-    throw new Error("No hourly grid found on this planner");
-  }
 
-  const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
-  for (const p of perPage) {
-    updates.push(
-      prisma.moduleInstance.update({
-        where: { id: p.hourlyId },
-        data: {
-          rowSpan: p.newRowSpan,
-          propValues: {
-            ...(p.hourlyPropValues as object),
-            startTime: settings.startTime,
-            endTime: settings.endTime,
-            intervalMinutes: settings.intervalMinutes,
-            intervalMode: "on",
-          } as Prisma.InputJsonValue,
-        },
-      })
-    );
-    const newBottom = p.hourlyRowStart + p.newRowSpan + GAP_ROWS;
-    for (const move of packStackFromTop(newBottom, p.belowMembers)) {
-      updates.push(prisma.moduleInstance.update({ where: { id: move.id }, data: { rowStart: move.rowStart } }));
+    // Same 1-row breathing gap convention enforced elsewhere in this
+    // file (addPaletteModuleAt's synthetic reservation rect, resolveDrag's
+    // virtual lock) — kept local rather than a shared constant, matching
+    // how every other site here just inlines the literal 1.
+    const GAP_ROWS = 1;
+
+    type PerPage = {
+      hourlyId: string;
+      hourlyPropValues: unknown;
+      hourlyRowStart: number;
+      newRowSpan: number;
+      belowMembers: Array<{ id: string; rowStart: number; rowSpan: number }>;
+    };
+    const perPage: PerPage[] = [];
+
+    for (const page of planner.pages) {
+      const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+      if (!hourly || hourly.columnStart === null || hourly.rowStart === null) continue;
+      const pageGrid = pageGridFor(page);
+      const newRowSpan = pixelHeightToRowSpan(pageGrid, requiredHeightPx);
+
+      // The below-zone stack: unlocked siblings sharing hourly's own exact
+      // column range — same "exact match, not just overlap" membership
+      // test resizeStackFromBottom/resizeAdjacentModules already use for
+      // "is this really the same stack," not a looser overlap check.
+      const belowMembers = page.moduleInstances.filter(
+        (mi): mi is typeof mi & { rowStart: number } =>
+          !mi.locked &&
+          mi.rowStart !== null &&
+          mi.columnStart === hourly.columnStart &&
+          mi.columnSpan === hourly.columnSpan &&
+          mi.rowStart >= hourly.rowStart! + hourly.rowSpan
+      );
+      // Checked against each member's CURRENT rowSpan, not its own minimum
+      // floor — this repack (packStackFromTop, below) only ever moves a
+      // member's rowStart, it never shrinks a member's own rowSpan to fit.
+      // Checking against the floor instead would let this guard pass while
+      // the repack that follows still pushes an unshrunk module past the
+      // page's own bottom edge (confirmed against this app's real dev data:
+      // a full-day range needs 25 of 30 rows, leaving 4 for the below zone
+      // — comfortably above the existing todo-checklist's own 2-row floor,
+      // but well under its actual current 10-row size).
+      const belowCurrentTotal = belowMembers.reduce((sum, mi) => sum + mi.rowSpan, 0);
+      const availableForBelow = pageGrid.gridRows - newRowSpan - GAP_ROWS;
+      if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
+        throw new Error(
+          "This time range needs more room than the page has — shrink or remove a module below the hourly grid first"
+        );
+      }
+
+      perPage.push({
+        hourlyId: hourly.id,
+        hourlyPropValues: hourly.propValues,
+        hourlyRowStart: hourly.rowStart,
+        newRowSpan,
+        belowMembers: belowMembers.map((mi) => ({ id: mi.id, rowStart: mi.rowStart, rowSpan: mi.rowSpan })),
+      });
+    }
+    if (perPage.length === 0) {
+      throw new Error("No hourly grid found on this planner");
+    }
+
+    for (const p of perPage) {
+      updates.push(
+        prisma.moduleInstance.update({
+          where: { id: p.hourlyId },
+          data: {
+            rowSpan: p.newRowSpan,
+            propValues: {
+              ...(p.hourlyPropValues as object),
+              startTime: settings.startTime,
+              endTime: settings.endTime,
+              intervalMinutes: settings.intervalMinutes,
+              intervalMode: "on",
+            } as Prisma.InputJsonValue,
+          },
+        })
+      );
+      const newBottom = p.hourlyRowStart + p.newRowSpan + 1;
+      for (const move of packStackFromTop(newBottom, p.belowMembers)) {
+        updates.push(prisma.moduleInstance.update({ where: { id: move.id }, data: { rowStart: move.rowStart } }));
+      }
     }
   }
 
@@ -1998,6 +2036,110 @@ export async function updateHourlySettings(settings: {
     ...updates,
     prisma.planner.update({ where: { id: planner.id }, data: { theme: nextTheme as Prisma.InputJsonValue } }),
   ]);
+}
+
+// Drag-resize for hourly-grid-core's own bottom edge, only ever valid
+// while intervalMode is "off" (see that field's own comment in
+// hourlyGridCore.ts) — the one case where a normally-always-locked block
+// becomes user-resizable. Deliberately a separate action, not a
+// loosening of resizeAdjacentModules/resizeStackFromBottom's own
+// `.locked` guard, which protects genuinely-immovable structural blocks
+// everywhere else in this app. Mirrors resizeStackFromBottom's own
+// gap-avoidance math exactly (see that function's own comment for the
+// full reasoning on why a resulting 1-row gap is snapped away, never
+// left as a valid landing) — collapsed to a single member here, since
+// there's no cascade: only this one instance's own rowSpan ever changes,
+// its rowStart never does. Returns the same shape resizeStackFromBottom
+// does (an array of {id, rowStart, rowSpan, element}, always exactly one
+// entry here) so the client's existing handleStackResizeAdjacent can
+// apply either result identically.
+export async function resizeHourlyGridCore(instanceId: string, deltaRows: number) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: {
+      page: {
+        include: {
+          moduleInstances: { include: { moduleType: true } },
+          planner: { select: { theme: true } },
+        },
+      },
+      moduleType: true,
+    },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.moduleType.slug !== "hourly-grid-core") {
+    throw new Error("Not an hourly grid instance");
+  }
+  if (instance.columnStart === null || instance.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+  const props = instance.propValues as { intervalMode?: "on" | "off" };
+  if (props.intervalMode !== "off") {
+    throw new Error("Can only drag-resize the hourly grid while increments are off");
+  }
+
+  const pageGrid = pageGridFor(instance.page);
+  // "around the same minimum size as modules," requested directly —
+  // getHourlyGridCoreOffModeMinHeightPx's own comment explains why
+  // header+gap alone (no extra row) already lands at exactly
+  // MIN_ROW_SPAN on this app's real page geometry; still clamped
+  // through the same Math.max as every other slug's own floor, in case
+  // that geometry ever changes.
+  const minRowSpan = Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()));
+
+  // Same 1-row breathing gap convention as updateHourlySettings above.
+  // Unlike stackBottomsByPageId's own maxBottomBound (client-side, only
+  // checks LOCKED blocks — safe there because an unlocked sibling below
+  // would already be part of the same stack by construction),
+  // hourly-grid-core is never itself a member of the below-zone's own
+  // stack, so this has to check everything below it, locked or not, or
+  // it could grow straight through an existing todo-checklist/
+  // habit-tracker.
+  const GAP_ROWS = 1;
+  const stackBottomRowEnd = instance.rowStart + instance.rowSpan;
+  const below = instance.page.moduleInstances.filter(
+    (mi) =>
+      mi.id !== instance.id &&
+      mi.columnStart === instance.columnStart &&
+      mi.columnSpan === instance.columnSpan &&
+      mi.rowStart !== null &&
+      mi.rowStart >= stackBottomRowEnd
+  );
+  const maxBottomBound =
+    below.length > 0 ? Math.min(...below.map((mi) => mi.rowStart as number)) - GAP_ROWS : pageGrid.gridRows;
+  const maxGrow = Math.max(0, maxBottomBound - stackBottomRowEnd);
+
+  const totalShrinkable = instance.rowSpan - minRowSpan;
+  const maxPossibleGap = maxGrow + totalShrinkable;
+  const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
+  const rawGap = maxGrow - deltaRows;
+  const boundedGap = Math.max(0, Math.min(effectiveMaxGap, rawGap));
+  const targetGap = boundedGap === 1 ? 0 : boundedGap;
+  const clampedDelta = maxGrow - targetGap;
+  if (clampedDelta === 0) {
+    throw new Error("Nothing to resize");
+  }
+
+  const updated = await prisma.moduleInstance.update({
+    where: { id: instance.id },
+    data: { rowSpan: instance.rowSpan + clampedDelta },
+  });
+
+  return [
+    {
+      id: updated.id,
+      rowStart: updated.rowStart as number,
+      rowSpan: updated.rowSpan,
+      element: renderInstance(updated, "hourly-grid-core", pageGrid, fontFamilyFromTheme(instance.page.planner.theme)),
+    },
+  ];
 }
 
 export async function savePageElements(

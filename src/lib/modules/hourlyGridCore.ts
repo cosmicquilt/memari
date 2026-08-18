@@ -29,6 +29,14 @@ export type HourlyGridCoreConfig = {
   hourLineStyle: "full" | "low-transparency" | "gone";
   dayBorder: boolean;
   events: HourlyGridEvent[];
+  // "off" replaces the ruled hour-rows with blank, height-adjustable
+  // space (see renderHourlyGridCore's own branch below) — a materially
+  // different layout from hourLineStyle:"gone", which still allocates
+  // the same rowCount*rowHeight content and still draws each row's time
+  // label, just with the ruled lines themselves faded to invisible.
+  // Optional/defaults to "on" so existing stored instances (seeded
+  // before this field existed) keep rendering exactly as before.
+  intervalMode?: "on" | "off";
 };
 
 export type RenderedElement = {
@@ -101,6 +109,20 @@ export function getHourlyGridCoreContentHeightPx(
   const totalMinutes = timeToMinutes(config.endTime) - timeToMinutes(config.startTime);
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
   return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT) + rowCount * ptToPx(ROW_HEIGHT_PT);
+}
+
+// Minimum content height for the "off" (increments-off, blank-space)
+// layout — just the header + its gap, deliberately NOT plus a nominal
+// row like the "on" mode's own content height above. Requested directly:
+// "for drag resize make a minimum size for the section as well around
+// the same minimum size as modules" — header+gap alone already lands at
+// exactly MIN_ROW_SPAN (2 grid rows) on this app's real page geometry,
+// matching every other module's own resize floor (see actions.ts's
+// getMinRowSpanForSlug, which every one of those ultimately clamps to
+// at minimum); adding a nominal row on top would make this floor taller
+// than everything else's, not "around the same."
+export function getHourlyGridCoreOffModeMinHeightPx(): number {
+  return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT);
 }
 
 export function renderHourlyGridCore(
@@ -194,93 +216,128 @@ export function renderHourlyGridCore(
       });
     }
 
-    // Ruled rows + time labels. The main row line is a single line at
-    // the row's bottom edge, not a bordered box — a box-per-row would
-    // draw phantom vertical dividers the reference doesn't have. The
-    // time label itself sits inside a small separate box whose bottom
-    // edge is flush with that line, per the reference's own structure.
-    const labelBoxWidth = ptToPx(TIME_LABEL_BOX_WIDTH_PT);
-    const labelBoxHeight = ptToPx(TIME_LABEL_BOX_HEIGHT_PT);
-    for (let i = 0; i < rowCount; i++) {
-      const rowY = gridTop + i * rowHeight;
-      const rowMinutes = startMinutes + i * config.intervalMinutes;
-      const lineY = rowY + rowHeight;
-      const labelBoxTop = lineY - labelBoxHeight;
-
-      if (lineOpacity > 0) {
+    if (config.intervalMode === "off") {
+      // Increments turned off: no ruled rows, no time labels — just a
+      // blank, height-adjustable area (its own height comes straight
+      // from geometry.height, i.e. from whatever rowSpan the instance
+      // currently has — see the drag-resize handle in
+      // NativePlannerEditor.tsx) with a vertical divider bar between
+      // each pair of day columns, requested directly: "replace the
+      // hours section with blank space, separated by vertical bars
+      // that extend maybe 2/3 the height." Drawn once per inter-column
+      // boundary (d>0, between column d-1 and d), not per row — there
+      // are no rows in this mode.
+      if (d > 0) {
+        const blankHeight = geometry.y + geometry.height - gridTop;
+        const dividerHeight = blankHeight * (2 / 3);
+        const dividerY = gridTop + (blankHeight - dividerHeight) / 2;
+        const dividerWidth = ptToPx(ROW_LINE_WIDTH_PT);
         elements.push({
           id: nextId(),
           type: "figure",
           subType: "rect",
-          x: dayX,
-          y: labelBoxTop,
-          width: labelBoxWidth,
-          height: labelBoxHeight,
-          fill: "transparent",
-          stroke: LINE_COLOR,
-          strokeWidth: ptToPx(TIME_LABEL_BOX_WIDTH_STROKE_PT),
-          opacity: lineOpacity,
-        });
-      }
-
-      // Centered, not left-aligned — left alignment made shorter
-      // strings ("8:00") look off relative to longer ones ("10:30")
-      // sharing the same fixed-width box. Manually positioned near the
-      // bottom (not flush) for the same reason verticalAlign was
-      // dropped elsewhere — a small gap off the line reads better than
-      // touching it exactly.
-      // 5pt -> 5.5pt legibility bump (dateFontSize above got the same
-      // one) crowded the box specifically for a two-digit hour
-      // ("10:00"/"10:30"/"11:00"/"11:30"/"12:00"/"12:30" — 4 digits
-      // once the colon's stripped out, vs. 3 for a single-digit hour
-      // like "9:00") — the box's own fixed width was always sized for
-      // the *shorter* strings. Eased down twice (5.3pt, then 5.1pt),
-      // still crowded either way — back to the original 5pt
-      // measurement for these specifically, requested directly.
-      // Single-digit-hour times keep the 5.5pt bump.
-      const timeLabelText = formatHour12NoMeridiem(rowMinutes);
-      const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
-      const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5 : 5.5);
-      const timeLabelTextHeight = timeLabelFontSize * 1.2;
-      const timeLabelBottomGap = ptToPx(1);
-      elements.push({
-        id: nextId(),
-        type: "text",
-        x: dayX + 2,
-        y: labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap,
-        width: labelBoxWidth - 4,
-        height: timeLabelTextHeight,
-        text: timeLabelText,
-        fontSize: timeLabelFontSize,
-        fontFamily: FONT_FAMILY,
-        fill: "#666666",
-        align: "center",
-      });
-
-      if (lineOpacity > 0) {
-        // Filled thin rect, not a zero-height stroked one — Polotno
-        // doesn't reliably render sub-2px strokes on degenerate shapes
-        // at the exact requested color (this rendered blue instead of
-        // the specified near-black).
-        const lineWidth = ptToPx(ROW_LINE_WIDTH_PT);
-        elements.push({
-          id: nextId(),
-          type: "figure",
-          subType: "rect",
-          x: dayX,
-          y: lineY - lineWidth / 2,
-          width: dayColumnWidth,
-          height: lineWidth,
+          x: dayX - columnGutter / 2 - dividerWidth / 2,
+          y: dividerY,
+          width: dividerWidth,
+          height: dividerHeight,
           fill: LINE_COLOR,
           stroke: "none",
-          opacity: lineOpacity,
         });
+      }
+    } else {
+      // Ruled rows + time labels. The main row line is a single line at
+      // the row's bottom edge, not a bordered box — a box-per-row would
+      // draw phantom vertical dividers the reference doesn't have. The
+      // time label itself sits inside a small separate box whose bottom
+      // edge is flush with that line, per the reference's own structure.
+      const labelBoxWidth = ptToPx(TIME_LABEL_BOX_WIDTH_PT);
+      const labelBoxHeight = ptToPx(TIME_LABEL_BOX_HEIGHT_PT);
+      for (let i = 0; i < rowCount; i++) {
+        const rowY = gridTop + i * rowHeight;
+        const rowMinutes = startMinutes + i * config.intervalMinutes;
+        const lineY = rowY + rowHeight;
+        const labelBoxTop = lineY - labelBoxHeight;
+
+        if (lineOpacity > 0) {
+          elements.push({
+            id: nextId(),
+            type: "figure",
+            subType: "rect",
+            x: dayX,
+            y: labelBoxTop,
+            width: labelBoxWidth,
+            height: labelBoxHeight,
+            fill: "transparent",
+            stroke: LINE_COLOR,
+            strokeWidth: ptToPx(TIME_LABEL_BOX_WIDTH_STROKE_PT),
+            opacity: lineOpacity,
+          });
+        }
+
+        // Centered, not left-aligned — left alignment made shorter
+        // strings ("8:00") look off relative to longer ones ("10:30")
+        // sharing the same fixed-width box. Manually positioned near the
+        // bottom (not flush) for the same reason verticalAlign was
+        // dropped elsewhere — a small gap off the line reads better than
+        // touching it exactly.
+        // 5pt -> 5.5pt legibility bump (dateFontSize above got the same
+        // one) crowded the box specifically for a two-digit hour
+        // ("10:00"/"10:30"/"11:00"/"11:30"/"12:00"/"12:30" — 4 digits
+        // once the colon's stripped out, vs. 3 for a single-digit hour
+        // like "9:00") — the box's own fixed width was always sized for
+        // the *shorter* strings. Eased down twice (5.3pt, then 5.1pt),
+        // still crowded either way — back to the original 5pt
+        // measurement for these specifically, requested directly.
+        // Single-digit-hour times keep the 5.5pt bump.
+        const timeLabelText = formatHour12NoMeridiem(rowMinutes);
+        const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
+        const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5 : 5.5);
+        const timeLabelTextHeight = timeLabelFontSize * 1.2;
+        const timeLabelBottomGap = ptToPx(1);
+        elements.push({
+          id: nextId(),
+          type: "text",
+          x: dayX + 2,
+          y: labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap,
+          width: labelBoxWidth - 4,
+          height: timeLabelTextHeight,
+          text: timeLabelText,
+          fontSize: timeLabelFontSize,
+          fontFamily: FONT_FAMILY,
+          fill: "#666666",
+          align: "center",
+        });
+
+        if (lineOpacity > 0) {
+          // Filled thin rect, not a zero-height stroked one — Polotno
+          // doesn't reliably render sub-2px strokes on degenerate shapes
+          // at the exact requested color (this rendered blue instead of
+          // the specified near-black).
+          const lineWidth = ptToPx(ROW_LINE_WIDTH_PT);
+          elements.push({
+            id: nextId(),
+            type: "figure",
+            subType: "rect",
+            x: dayX,
+            y: lineY - lineWidth / 2,
+            width: dayColumnWidth,
+            height: lineWidth,
+            fill: LINE_COLOR,
+            stroke: "none",
+            opacity: lineOpacity,
+          });
+        }
       }
     }
 
     // Optional solid border around the whole day column (header + body),
-    // independent of the ruled-line style above.
+    // independent of the ruled-line style above. "off" mode's own body
+    // height is whatever geometry.height gives it (no rowCount to derive
+    // from — see the intervalMode branch above), matching how "on" mode's
+    // own body height is content-derived rather than geometry-derived.
     if (config.dayBorder) {
+      const bodyHeight =
+        config.intervalMode === "off" ? geometry.height - headerHeight : headerToGridGap + rowCount * rowHeight;
       elements.push({
         id: nextId(),
         type: "figure",
@@ -288,15 +345,19 @@ export function renderHourlyGridCore(
         x: dayX,
         y: geometry.y,
         width: dayColumnWidth,
-        height: headerHeight + headerToGridGap + rowCount * rowHeight,
+        height: headerHeight + bodyHeight,
         fill: "transparent",
         stroke: "#222222",
         strokeWidth: 1.5,
       });
     }
 
-    // Synced/manual events for this day, positioned by time.
-    for (const event of config.events.filter((e) => e.day === d)) {
+    // Synced/manual events for this day, positioned by time — has no
+    // well-defined position without a ruled grid to place it against, so
+    // skipped entirely in "off" mode. Low-risk today (see
+    // src/lib/weekDays.ts's identical note): events is always seeded
+    // empty, nothing writes into it yet.
+    for (const event of config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d)) {
       const evStart = timeToMinutes(event.startTime);
       const evEnd = timeToMinutes(event.endTime);
       const evY = gridTop + ((evStart - startMinutes) / config.intervalMinutes) * rowHeight;
