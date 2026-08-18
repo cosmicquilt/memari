@@ -11,6 +11,7 @@ import {
   gridCellToPixels,
   pixelHeightToRowSpan,
   packStackFromTop,
+  resolveModulePlacement,
   type PageGrid,
 } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -1260,6 +1261,191 @@ export async function updateModulePlacement(
     where: { id: instanceId },
     data: { columnStart: clamped.columnStart, rowStart: clamped.rowStart },
   });
+}
+
+// Repositioning an existing todo-checklist/habit-tracker/labeled-box
+// across the side-zone/bottom-zone boundary — requested directly: "make
+// it so i can drag side modules to the bottom and bottom modules to the
+// side and they insert as the minimum height and change according
+// widths automatically depending on section... resizing sections around
+// them even if the section is full." Deliberately a separate action from
+// updateModulePlacement above (which stays untouched as the fast path
+// for the overwhelming majority of drags — an ordinary same-zone
+// reposition never changes columnSpan/rowSpan and has nothing to
+// re-render), since crossing zones can change size, config
+// (todo-checklist's own dayCount), and even shrink OTHER siblings to
+// make room — none of which a plain columnStart/rowStart write can
+// express.
+//
+// `columnStart`/`rowStart` from the caller are only ever used to
+// determine *which zone* the drop targets and where to insert within
+// it — never trusted as the final columnSpan/rowSpan/exact position,
+// which are fully re-derived here (same zone-classification idiom
+// addPaletteModuleAt already uses for a fresh drop, and the same
+// dayCount override it already applies for todo-checklist) before
+// handing off to resolveModulePlacement (grid.ts, shared with the
+// client's own live-preview copy in resolveDrag) for the authoritative
+// placement — including its new shrink-existing-siblings tier, which is
+// the actual "even if the section is full" behavior; nothing here
+// reimplements it.
+export async function moveModuleAcrossZones(instanceId: string, columnStart: number, rowStart: number) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: {
+      page: {
+        include: {
+          moduleInstances: { include: { moduleType: true } },
+          planner: { select: { theme: true } },
+        },
+      },
+      moduleType: true,
+    },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot reposition a locked module");
+  }
+  if (instance.columnStart === null || instance.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+
+  const slug = instance.moduleType.slug;
+  const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
+  const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
+  if (!canFillBottomZone) {
+    throw new Error("This module type can't cross zones");
+  }
+
+  const pageGrid = pageGridFor(instance.page);
+  const hourlyGrid = instance.page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const inBottomZone =
+    !!hourlyGrid &&
+    hourlyGrid.columnStart !== null &&
+    columnStart >= hourlyGrid.columnStart &&
+    columnStart < hourlyGrid.columnStart + hourlyGrid.columnSpan;
+
+  let effectiveColumnStart: number;
+  let effectiveColumnSpan: number;
+  const configOverrides: Record<string, unknown> = {};
+  if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
+    effectiveColumnStart = hourlyGrid.columnStart;
+    effectiveColumnSpan = hourlyGrid.columnSpan;
+    if (slug === "todo-checklist") {
+      const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
+      configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+    }
+  } else if (canSideZone) {
+    effectiveColumnStart = 0;
+    effectiveColumnSpan = 1;
+    if (slug === "todo-checklist") {
+      configOverrides.dayCount = 1;
+    }
+  } else {
+    // labeled-box outside the bottom zone — its own long-established
+    // side-zone placement, not actually a "crossing" this action needs
+    // to handle specially (resolveDrag, NativePlannerEditor.tsx, only
+    // ever calls this action when a real crossing was detected, so this
+    // is a defensive re-check, not an expected path).
+    throw new Error("This module isn't moving into a different zone");
+  }
+  const effectiveRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
+
+  const others: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
+    [];
+  let hourlyGridRect: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number } | null = null;
+  for (const mi of instance.page.moduleInstances) {
+    if (mi.id === instance.id || mi.columnStart === null || mi.rowStart === null) continue;
+    others.push({
+      id: mi.id,
+      locked: mi.locked,
+      columnStart: mi.columnStart,
+      rowStart: mi.rowStart,
+      columnSpan: mi.columnSpan,
+      rowSpan: mi.rowSpan,
+    });
+    if (mi.moduleType.slug === "hourly-grid-core") {
+      hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan };
+    }
+  }
+  // Same synthetic 1-row breathing-gap reservation below hourly-grid-core
+  // as resolveDrag's own identical block (NativePlannerEditor.tsx) and
+  // addPaletteModuleAt above — keeps a landing flush against the hourly
+  // grid unreachable here too, not just on a same-zone drag.
+  if (hourlyGridRect) {
+    others.push({
+      id: "__hourlygridgap__",
+      locked: true,
+      columnStart: hourlyGridRect.columnStart,
+      rowStart: hourlyGridRect.rowStart + hourlyGridRect.rowSpan,
+      columnSpan: hourlyGridRect.columnSpan,
+      rowSpan: 1,
+    });
+  }
+
+  const candidate = { columnStart: effectiveColumnStart, rowStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
+  const minRowSpanById: Record<string, number> = {};
+  for (const o of others) {
+    if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
+    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === o.id);
+    if (!otherMi) continue;
+    minRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, pageGrid, candidate.columnSpan);
+  }
+
+  const { placement: resolved, reflow } = resolveModulePlacement(
+    pageGrid,
+    candidate,
+    others,
+    instance.rowStart,
+    minRowSpanById
+  );
+
+  const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
+  const instanceUpdateData: {
+    columnStart: number;
+    rowStart: number;
+    columnSpan: number;
+    rowSpan: number;
+    propValues?: Prisma.InputJsonValue;
+  } = {
+    columnStart: resolved.columnStart,
+    rowStart: resolved.rowStart,
+    columnSpan: effectiveColumnSpan,
+    rowSpan: effectiveRowSpan,
+  };
+  if (Object.keys(configOverrides).length > 0) {
+    instanceUpdateData.propValues = { ...(instance.propValues as object), ...configOverrides } as Prisma.InputJsonValue;
+  }
+  updates.push(prisma.moduleInstance.update({ where: { id: instance.id }, data: instanceUpdateData }));
+  for (const move of reflow) {
+    updates.push(
+      prisma.moduleInstance.update({
+        where: { id: move.id },
+        data: move.rowSpan !== undefined ? { rowStart: move.rowStart, rowSpan: move.rowSpan } : { rowStart: move.rowStart },
+      })
+    );
+  }
+
+  const updated = await prisma.$transaction(updates);
+
+  const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
+  const slugById = new Map<string, string>([[instance.id, slug]]);
+  for (const move of reflow) {
+    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === move.id);
+    if (otherMi) slugById.set(move.id, otherMi.moduleType.slug);
+  }
+  return updated.map((row) => ({
+    id: row.id,
+    rowStart: row.rowStart as number,
+    rowSpan: row.rowSpan,
+    elements: renderInstanceElements(row, slugById.get(row.id) ?? slug, pageGrid, fontFamily),
+  }));
 }
 
 // Removes a module the user deleted from the canvas (see

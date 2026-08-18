@@ -109,6 +109,7 @@ import {
 } from "@/lib/grid";
 import {
   updateModulePlacement,
+  moveModuleAcrossZones,
   resizeAdjacentModules,
   resizeStackFromBottom,
   addPaletteModuleAt,
@@ -3936,6 +3937,44 @@ export function NativePlannerEditor({
     setSettling(null);
   }, []);
 
+  // Shared zone-detection: given a target column and the page's own
+  // hourly-grid-core placement, figure out which zone (bottom vs side)
+  // that column falls in for a cross-zone-capable slug, and the
+  // resulting columnStart/columnSpan for landing there. Extracted from
+  // handleDragMove's own palette-drag preview (which used to inline this
+  // exact logic) so resolveDrag's own cross-zone reposition preview,
+  // added below, doesn't need a second hand-copy in the same file — no
+  // "use server" boundary forces that duplication here the way it does
+  // for getMinRowSpanForSlug (that one's real, separate copy has to live
+  // in actions.ts too; this one doesn't need to leave this file at all).
+  // Returns null when the slug isn't cross-zone-capable here, or when it
+  // is but the column doesn't land in either zone (labeled-box outside
+  // the bottom zone) — callers fall back to their own pre-existing
+  // default in that case, not an override.
+  const resolveZoneForColumn = useCallback(
+    (
+      hourlyGridPlacement: Placement | undefined,
+      slug: string,
+      targetColumnStart: number
+    ): { columnStart: number; columnSpan: number; isBottomZone: boolean } | null => {
+      const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
+      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
+      if (!canFillBottomZone) return null;
+      if (
+        hourlyGridPlacement &&
+        targetColumnStart >= hourlyGridPlacement.columnStart &&
+        targetColumnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan
+      ) {
+        return { columnStart: hourlyGridPlacement.columnStart, columnSpan: hourlyGridPlacement.columnSpan, isBottomZone: true };
+      }
+      if (canSideZone) {
+        return { columnStart: 0, columnSpan: 1, isBottomZone: false };
+      }
+      return null;
+    },
+    []
+  );
+
   const handleDragMove = useCallback(
     (event: DragMoveEvent) => {
       setActiveDelta({ x: event.delta.x, y: event.delta.y });
@@ -3993,24 +4032,16 @@ export function NativePlannerEditor({
       // *outside* the bottom zone leaves it on its own long-established
       // side-zone preview path untouched, same as addPaletteModuleAt's
       // own identical split.
-      const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
-      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
+      const zone = resolveZoneForColumn(hourlyGridPlacement, slug, target.columnStart);
       let effectiveColumnStart = target.columnStart;
       let effectiveColumnSpan = meta.defaultColumnSpan;
       let droppedInBottomZone = false;
-      if (canFillBottomZone) {
-        if (
-          hourlyGridPlacement &&
-          target.columnStart >= hourlyGridPlacement.columnStart &&
-          target.columnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan
-        ) {
-          effectiveColumnStart = hourlyGridPlacement.columnStart;
-          effectiveColumnSpan = hourlyGridPlacement.columnSpan;
-          droppedInBottomZone = true;
-        } else if (canSideZone) {
-          effectiveColumnSpan = 1;
-        }
+      if (zone) {
+        effectiveColumnStart = zone.columnStart;
+        effectiveColumnSpan = zone.columnSpan;
+        droppedInBottomZone = zone.isBottomZone;
       }
+      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
       // Mirrors addPaletteModuleAt's own identical shrink-to-fit
       // (actions.ts) — see that copy's comment for the full reasoning.
       // Without this, the live preview kept showing a full-size (and
@@ -4101,7 +4132,7 @@ export function NativePlannerEditor({
         overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
       });
     },
-    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements, moduleLookup]
+    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements, moduleLookup, resolveZoneForColumn]
   );
 
   // Shared by the live preview (below, every pointer move) and the real
@@ -4122,12 +4153,7 @@ export function NativePlannerEditor({
 
       const currentPixel = gridCellToPixels(pageGrid, current);
       const draggedPixel = { x: currentPixel.x + dxPagePx, y: currentPixel.y + dyPagePx };
-      const nearestCell = clampGridPlacement(pageGrid, {
-        ...pixelsToGridCell(pageGrid, draggedPixel),
-        columnSpan: current.columnSpan,
-        rowSpan: current.rowSpan,
-      });
-      const candidate: GridRect = { ...nearestCell, columnSpan: current.columnSpan, rowSpan: current.rowSpan };
+      const nearestCellRaw = pixelsToGridCell(pageGrid, draggedPixel);
 
       const others: Array<GridRect & { id: string; locked: boolean }> = [];
       let hourlyGridPlacement: Placement | null = null;
@@ -4138,6 +4164,39 @@ export function NativePlannerEditor({
         others.push({ ...placement, id, locked: otherInfo.locked });
         if (otherInfo.slug === "hourly-grid-core") hourlyGridPlacement = placement;
       }
+
+      // Cross-zone reposition: if this module's slug is cross-zone-
+      // capable (see resolveZoneForColumn) and the pointer's target
+      // column now falls in a DIFFERENT zone (side vs bottom) than the
+      // module's own current one, resize it to that zone's shape at its
+      // own minimum height — requested directly: "drag side modules to
+      // the bottom and bottom modules to the side and they insert as
+      // the minimum height and change according widths automatically
+      // depending on section." Always minimum on a crossing (not
+      // "default size if it fits," which is what a fresh palette drop
+      // does instead) — simpler, and matches the request's own wording.
+      // If the zone hasn't changed (the overwhelming majority of drags —
+      // an ordinary same-zone reposition/reorder), none of this applies:
+      // columnSpan/rowSpan carry over completely unchanged, exactly as
+      // before this feature existed.
+      const targetZone = resolveZoneForColumn(hourlyGridPlacement ?? undefined, info.slug, nearestCellRaw.columnStart);
+      const currentIsBottomZone =
+        !!hourlyGridPlacement &&
+        current.columnStart === hourlyGridPlacement.columnStart &&
+        current.columnSpan === hourlyGridPlacement.columnSpan;
+      const crossingZones = !!targetZone && targetZone.isBottomZone !== currentIsBottomZone;
+      const effectiveColumnSpan = crossingZones ? targetZone!.columnSpan : current.columnSpan;
+      const effectiveRowSpan = crossingZones
+        ? getMinRowSpanForSlug(info.slug, pageGrid, effectiveColumnSpan)
+        : current.rowSpan;
+
+      const nearestCell = clampGridPlacement(pageGrid, {
+        columnStart: crossingZones ? targetZone!.columnStart : nearestCellRaw.columnStart,
+        rowStart: nearestCellRaw.rowStart,
+        columnSpan: effectiveColumnSpan,
+        rowSpan: effectiveRowSpan,
+      });
+      const candidate: GridRect = { ...nearestCell, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
       // Same synthetic 1-row-tall virtual lock addPaletteModuleAt
       // (actions.ts) and handleDragMove's own palette-preview branch
       // already reserve below hourly-grid-core, applied here too —
@@ -4187,10 +4246,36 @@ export function NativePlannerEditor({
         });
       }
 
-      const { placement: resolved, reflow } = resolveModulePlacement(pageGrid, candidate, others, current.rowStart);
-      return { pageGrid, current, resolved, reflow };
+      // Per-sibling floor for the shrink-cascade tier (grid.ts) — only
+      // computed when actually crossing zones: an ordinary same-zone
+      // reorder never needs to shrink anything to make room, matching
+      // this codebase's existing "reordering a stack never touches
+      // anyone's own size" precedent (only a genuinely new arrival at a
+      // new size does). Scoped to unlocked siblings sharing the
+      // candidate's own exact column range — the same set
+      // resolveModulePlacement's own isSameColumnStack test would
+      // recognize as this stack's siblings anyway.
+      let minRowSpanById: Record<string, number> | undefined;
+      if (crossingZones) {
+        minRowSpanById = {};
+        for (const o of others) {
+          if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
+          const otherInfo = moduleLookup.get(o.id);
+          if (!otherInfo) continue;
+          minRowSpanById[o.id] = getMinRowSpanForSlug(otherInfo.slug, pageGrid, candidate.columnSpan);
+        }
+      }
+
+      const { placement: resolved, reflow } = resolveModulePlacement(
+        pageGrid,
+        candidate,
+        others,
+        current.rowStart,
+        minRowSpanById
+      );
+      return { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan };
     },
-    [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId]
+    [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId, resolveZoneForColumn]
   );
 
   // Serializes every server call that writes a module's own position/
@@ -4374,11 +4459,24 @@ export function NativePlannerEditor({
 
       const result = resolveDrag(instanceId, event.delta.x, event.delta.y);
       if (!result) return;
-      const { pageGrid, current, resolved, reflow } = result;
+      const { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan } = result;
 
-      if (resolved.columnStart === current.columnStart && resolved.rowStart === current.rowStart && reflow.length === 0) {
+      if (
+        resolved.columnStart === current.columnStart &&
+        resolved.rowStart === current.rowStart &&
+        effectiveColumnSpan === current.columnSpan &&
+        effectiveRowSpan === current.rowSpan &&
+        reflow.length === 0
+      ) {
         return;
       }
+
+      const newPlacement: Placement = {
+        columnStart: resolved.columnStart,
+        rowStart: resolved.rowStart,
+        columnSpan: effectiveColumnSpan,
+        rowSpan: effectiveRowSpan,
+      };
 
       // See `settling` state's own comment above. The dragged item's
       // residual is the gap between where the pointer actually left it
@@ -4392,7 +4490,7 @@ export function NativePlannerEditor({
       // to, so there's no genuine last-mile left for it to visibly
       // settle — it only needs one transition-free frame.
       const oldPixel = gridCellToPixels(pageGrid, current);
-      const newPixel = gridCellToPixels(pageGrid, { ...current, columnStart: resolved.columnStart, rowStart: resolved.rowStart });
+      const newPixel = gridCellToPixels(pageGrid, newPlacement);
       const lastOffset = { x: event.delta.x / scale, y: event.delta.y / scale };
       const settleOffsets: Record<string, { x: number; y: number }> = {
         [instanceId]: { x: lastOffset.x - (newPixel.x - oldPixel.x), y: lastOffset.y - (newPixel.y - oldPixel.y) },
@@ -4402,13 +4500,56 @@ export function NativePlannerEditor({
 
       setPlacements((prev) => {
         const next = { ...prev };
-        next[instanceId] = { ...current, columnStart: resolved.columnStart, rowStart: resolved.rowStart };
+        next[instanceId] = newPlacement;
         for (const move of reflow) {
           const prevPlacement = prev[move.id];
-          if (prevPlacement) next[move.id] = { ...prevPlacement, rowStart: move.rowStart };
+          if (prevPlacement) {
+            next[move.id] = {
+              ...prevPlacement,
+              rowStart: move.rowStart,
+              ...(move.rowSpan !== undefined ? { rowSpan: move.rowSpan } : {}),
+            };
+          }
         }
         return next;
       });
+
+      if (crossingZones) {
+        // Crossing side<->bottom changes this module's own size (and,
+        // for todo-checklist, its dayCount config) and can shrink other
+        // siblings to make room — none of which a plain columnStart/
+        // rowStart write can express, so this branches to
+        // moveModuleAcrossZones (actions.ts) instead of
+        // updateModulePlacement, and patches moduleLookup the same
+        // generic way handleStackResizeAdjacent's own per-entry commit
+        // already does (fresh server-rendered elements, not just a
+        // position). propValues in moduleLookup is deliberately left as
+        // whatever it already was even though todo-checklist's own
+        // dayCount changed server-side — nothing client-side reads
+        // dayCount outside of rendering, and the fresh `elements` below
+        // already reflect the real new value; only worth revisiting if
+        // a future feature starts reading it directly.
+        serializeCommit(() => moveModuleAcrossZones(instanceId, resolved.columnStart, resolved.rowStart))
+          .then((results) => {
+            setModuleLookup((prev) => {
+              const next = new Map(prev);
+              for (const r of results) {
+                const info = prev.get(r.id);
+                if (!info) continue;
+                const isDragged = r.id === instanceId;
+                const columnStart = isDragged ? newPlacement.columnStart : (placements[r.id]?.columnStart ?? 0);
+                const columnSpan = isDragged ? newPlacement.columnSpan : (placements[r.id]?.columnSpan ?? 1);
+                const origin = gridCellToPixels(pageGrid, { columnStart, rowStart: r.rowStart, columnSpan, rowSpan: r.rowSpan });
+                next.set(r.id, { ...info, elements: r.elements, originX: origin.x, originY: origin.y });
+              }
+              return next;
+            });
+          })
+          .catch((err) => {
+            setSaveError(err instanceof Error ? err.message : String(err));
+          });
+        return;
+      }
 
       // See serializeCommit's own comment — the actual updateModulePlacement
       // calls don't fire until this task's turn in the queue, not
