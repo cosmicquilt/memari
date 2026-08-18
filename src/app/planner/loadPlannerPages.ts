@@ -29,6 +29,7 @@ import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
+import { rotateWeekDays, type DayLabel } from "@/lib/weekDays";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 export type LoadedModuleInstance = {
@@ -61,12 +62,20 @@ export type LoadedPage = {
 };
 
 // Page Settings values the Native editor's sidebar needs to know the
-// current state of (which side of the Font toggle is active, etc.) —
-// separate from weekSettings above, which is edited through the older,
-// unrelated Week Settings flow. Grows in later stages (Hours/week-start-
-// day) once those settings exist.
+// current state of (which side of the Font toggle is active, current
+// start/end/interval, etc.) — separate from weekSettings above, which is
+// edited through the older, unrelated Week Settings flow.
+// startTime/endTime/intervalMinutes/intervalMode read from the left
+// page's own hourly-grid-core propValues — updateHourlySettings always
+// writes both pages' instances together, so they're kept in sync and
+// either would do.
 export type PageSettings = {
   fontFamily: FontChoice;
+  weekStartDay: number; // 0=Sun..6=Sat
+  startTime: string;
+  endTime: string;
+  intervalMinutes: number;
+  intervalMode: "on" | "off";
 };
 
 export type LoadedPlanner = {
@@ -80,8 +89,23 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
   const theme = planner.theme as PlannerTheme | null;
   const fontChoice: FontChoice = theme?.fontFamily === "sans" ? "sans" : "serif";
   const fontFamily = resolveFontFamily(fontChoice);
+  const weekStartDay = theme?.weekStartDay ?? 0;
 
-  const pages: LoadedPage[] = planner.pages.map((page) => {
+  // Computed once, up front, from both pages together — rotateWeekDays
+  // needs the full canonical 7-day list (left's 3 + right's 4) to rotate
+  // correctly, which isn't available yet one page at a time inside the
+  // per-page loop below. The stored dayLabels themselves are untouched;
+  // this only overrides what gets rendered.
+  const [plannerLeftPage, plannerRightPage] = planner.pages;
+  const plannerLeftHourly = plannerLeftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const plannerRightHourly = plannerRightPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const rotatedDayLabels = rotateWeekDays(
+    ((plannerLeftHourly?.propValues as { dayLabels?: DayLabel[] } | undefined)?.dayLabels ?? []) as DayLabel[],
+    ((plannerRightHourly?.propValues as { dayLabels?: DayLabel[] } | undefined)?.dayLabels ?? []) as DayLabel[],
+    weekStartDay
+  );
+
+  const pages: LoadedPage[] = planner.pages.map((page, pageIndex) => {
     const pageGrid: PageGrid = {
       widthPx: PRINT_WIDTH_PX,
       heightPx: PRINT_HEIGHT_PX,
@@ -90,6 +114,10 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
       gridGapPx: page.gridGapPx,
       marginPx: page.marginPx,
     };
+    // pageIndex 0 = left, 1 = right — matches planner.pages' own
+    // orderBy: position "asc" ordering, same assumption the weekSettings
+    // block below (leftPage/rightPage destructure) already relies on.
+    const rotatedForThisPage = pageIndex === 0 ? rotatedDayLabels.left : rotatedDayLabels.right;
 
     const moduleInstances: LoadedModuleInstance[] = [];
     for (const instance of page.moduleInstances) {
@@ -101,6 +129,13 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
         columnSpan: instance.columnSpan,
         rowSpan: instance.rowSpan,
       });
+      // Substitute the rotated day labels only for hourly-grid-core, only
+      // for rendering — the raw instance (and what's stored in the DB)
+      // keeps its original, unrotated dayLabels.
+      const renderInstance =
+        instance.moduleType.slug === "hourly-grid-core"
+          ? { ...instance, propValues: { ...(instance.propValues as object), dayLabels: rotatedForThisPage } }
+          : instance;
       moduleInstances.push({
         id: instance.id,
         slug: instance.moduleType.slug,
@@ -112,7 +147,7 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
         propValues: instance.propValues,
         originX: origin.x,
         originY: origin.y,
-        elements: renderModuleInstance(instance, pageGrid, fontFamily),
+        elements: renderModuleInstance(renderInstance, pageGrid, fontFamily),
       });
     }
     // Sorted so DOM order matches z-index intent (later = painted on
@@ -174,5 +209,20 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
     rightDates: dayDates(rightHourly),
   };
 
-  return { pages, weekSettings, pageSettings: { fontFamily: fontChoice } };
+  const hourlyProps = leftHourly?.propValues as
+    | { startTime?: string; endTime?: string; intervalMinutes?: number; intervalMode?: "on" | "off" }
+    | undefined;
+
+  return {
+    pages,
+    weekSettings,
+    pageSettings: {
+      fontFamily: fontChoice,
+      weekStartDay,
+      startTime: hourlyProps?.startTime ?? "05:30",
+      endTime: hourlyProps?.endTime ?? "23:30",
+      intervalMinutes: hourlyProps?.intervalMinutes ?? 30,
+      intervalMode: hourlyProps?.intervalMode ?? "on",
+    },
+  };
 }

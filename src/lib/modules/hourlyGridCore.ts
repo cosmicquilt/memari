@@ -86,6 +86,23 @@ const TIME_LABEL_BOX_WIDTH_PT = 14;
 const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
 const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
+// Same "expose just the height math NativePlannerEditor.tsx/actions.ts
+// need" convention as todoChecklist.ts's getTodoChecklistRowMetricsPx and
+// habitTracker.ts's getHabitTrackerRowMetricsPx — mirrors
+// renderHourlyGridCore's own header+gap+rowCount*rowHeight computation
+// exactly (not calling into the renderer itself, same reasoning as those
+// two: this needs just the height, not a render pass). Used by
+// updateHourlySettings (actions.ts) to size hourly-grid-core's own
+// rowSpan from a real requested start/end/interval, via grid.ts's
+// pixelHeightToRowSpan.
+export function getHourlyGridCoreContentHeightPx(
+  config: Pick<HourlyGridCoreConfig, "startTime" | "endTime" | "intervalMinutes">
+): number {
+  const totalMinutes = timeToMinutes(config.endTime) - timeToMinutes(config.startTime);
+  const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
+  return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT) + rowCount * ptToPx(ROW_HEIGHT_PT);
+}
+
 export function renderHourlyGridCore(
   geometry: { x: number; y: number; width: number; height: number },
   config: HourlyGridCoreConfig,

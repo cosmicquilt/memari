@@ -20,6 +20,7 @@ import {
   resolveModulePlacement,
   moduleInstancesToRects,
   packStackFromTop,
+  pixelHeightToRowSpan,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -423,6 +424,40 @@ const page: PageGrid = {
 
   // Empty stack: no members, nothing to move, no crash.
   assert(packStackFromTop(5, []).length === 0, "packStackFromTop on an empty stack returns no moves");
+}
+
+// --- pixelHeightToRowSpan ---
+{
+  // Round-trips against gridCellToPixels itself: whatever height N rows
+  // actually render at must convert back to exactly N, for every N — the
+  // property this function exists to guarantee for updateHourlySettings
+  // (Stage 2), which trusts it to size hourly-grid-core's own rowSpan
+  // from real rendered content height.
+  for (const rowSpan of [1, 2, 3, 10, 19, 30]) {
+    const heightPx = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan }).height;
+    assert(
+      pixelHeightToRowSpan(page, heightPx) === rowSpan,
+      `pixelHeightToRowSpan round-trips exactly at ${rowSpan} rows' own rendered height`
+    );
+  }
+
+  // A height a hair under N rows' worth still needs N rows to contain it
+  // (rounds up, never down) — a real caller's content height is rarely
+  // going to land on an exact row boundary.
+  const threeRowsHeight = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 3 }).height;
+  assert(
+    pixelHeightToRowSpan(page, threeRowsHeight - 1) === 3,
+    "pixelHeightToRowSpan rounds up, not down, for a height just under a row boundary"
+  );
+
+  // A height a hair over 2 rows' worth needs a 3rd row, not just 2.
+  const twoRowsHeight = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 }).height;
+  assert(
+    pixelHeightToRowSpan(page, twoRowsHeight + 1) === 3,
+    "pixelHeightToRowSpan needs a 3rd row for a height just over 2 rows' worth"
+  );
+
+  assert(pixelHeightToRowSpan(page, 0) === 1, "pixelHeightToRowSpan floors at 1 row for a zero/negligible height");
 }
 
 if (failures > 0) {

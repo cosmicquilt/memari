@@ -76,6 +76,34 @@ export function pixelsToGridCell(
   return { columnStart, rowStart };
 }
 
+// Inverse of gridCellToPixels for a fixed-width, row-only conversion:
+// given a required content height (px, single column), the number of
+// grid rows needed to contain it. Extracted from actions.ts's
+// getMinRowSpanForSlug, which used to inline this exact computation —
+// that function still owns clamping the result to its own per-slug
+// minimum floor, this just does the raw px-to-rows math so a second
+// caller (updateHourlySettings, computing hourly-grid-core's own
+// required rowSpan from its real content height) doesn't have to
+// duplicate it. rowPitchPx (not cellHeight directly) accounts for the
+// per-row gap baked into gridCellToPixels' own height formula — the
+// difference between a 1-row and 2-row cell's rendered height isolates
+// exactly "one more row, one more gap."
+export function pixelHeightToRowSpan(page: PageGrid, heightPx: number): number {
+  const oneRow = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+  const twoRows = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 });
+  const rowPitchPx = twoRows.height - oneRow.height;
+  if (heightPx <= oneRow.height) return 1;
+  // A tiny epsilon nudge before ceil-ing: cellHeight/rowPitchPx both come
+  // from a division (usableHeight/gridRows) that rarely terminates
+  // exactly, so a height that's genuinely meant to land on a row
+  // boundary (e.g. computed via this same gridCellToPixels formula
+  // elsewhere, as a real round-trip does) can come out a few ULPs past
+  // it — without this, that over-counts by a whole extra row. Caught by
+  // grid.test.mts's own round-trip check before it could reach a real
+  // caller.
+  return Math.ceil((heightPx - oneRow.height) / rowPitchPx - 1e-9) + 1;
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its

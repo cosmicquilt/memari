@@ -114,6 +114,7 @@ import {
   updateModuleConfig,
   resetPlannerToTemplate,
   updatePlannerFont,
+  updateHourlySettings,
 } from "./actions";
 import { useAsyncAction } from "./useAsyncAction";
 
@@ -2093,18 +2094,19 @@ function ModulePalette({
   activeDelta,
   open,
   highlightSection,
-  fontChoice,
+  pageSettings,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
   open: boolean;
   highlightSection: "side" | "bottom" | null;
-  // Current Page Settings > Font state — this component owns rendering
-  // the FontToggle and calling updatePlannerFont itself (same "own the
-  // section's own controls" shape as PALETTE_MODULE_TYPES' cards), so it
-  // only needs the current choice, not a setter — the toggle reloads the
-  // page on success rather than expecting the parent to hold new state.
-  fontChoice: FontChoice;
+  // Current Page Settings state — this component owns rendering the
+  // Font/Hours controls and calling their own save actions directly
+  // (same "own the section's own controls" shape as PALETTE_MODULE_
+  // TYPES' cards), so it only needs the current values, not a setter —
+  // every save here reloads the page on success rather than expecting
+  // the parent to hold new state.
+  pageSettings: PageSettings;
 }) {
   // Nested collapsibility inside the panel — requested directly:
   // "'Add Module' collapsible as well as 'side modules' and 'bottom
@@ -2432,7 +2434,7 @@ function ModulePalette({
             </button>
             <PaletteCollapse open={pageSettingsSectionOpen.font} allowOverflow={false}>
               <div style={{ paddingLeft: 14, paddingTop: 5 }}>
-                <FontToggle fontChoice={fontChoice} />
+                <FontToggle fontChoice={pageSettings.fontFamily} />
               </div>
             </PaletteCollapse>
           </div>
@@ -2460,7 +2462,14 @@ function ModulePalette({
               </div>
             </button>
             <PaletteCollapse open={pageSettingsSectionOpen.hours} allowOverflow={false}>
-              <div style={{ paddingLeft: 14, paddingTop: 5, fontSize: 11, color: "#707070" }}>Coming soon</div>
+              <div style={{ paddingLeft: 14, paddingTop: 5 }}>
+                <HoursForm
+                  startTime={pageSettings.startTime}
+                  endTime={pageSettings.endTime}
+                  intervalMinutes={pageSettings.intervalMinutes}
+                  weekStartDay={pageSettings.weekStartDay}
+                />
+              </div>
             </PaletteCollapse>
           </div>
         </div>
@@ -2523,6 +2532,122 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
         </button>
       </div>
       {error && <span style={{ fontSize: 10.5, color: "#ff5555" }}>{error}</span>}
+    </div>
+  );
+}
+
+const WEEK_START_DAY_LABELS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+// Page Settings > Hours — start/end time, increment, and week-start-day,
+// applied together via one Save button (unlike FontToggle's click-to-
+// apply switch — this bundles several fields, and a start/end/interval
+// change is a heavier operation server-side (it can resize hourly-grid-
+// core and reflow whatever's below it), so it's gated behind an explicit
+// action rather than firing per keystroke/selection). "Off" increments
+// (the request's other ask, replacing the ruled rows with adjustable
+// blank space) isn't offered here yet — that needs its own render branch
+// and a new drag-resize interaction, landing in a later pass.
+function HoursForm({
+  startTime,
+  endTime,
+  intervalMinutes,
+  weekStartDay,
+}: {
+  startTime: string;
+  endTime: string;
+  intervalMinutes: number;
+  weekStartDay: number;
+}) {
+  const [draftStart, setDraftStart] = useState(startTime);
+  const [draftEnd, setDraftEnd] = useState(endTime);
+  const [draftInterval, setDraftInterval] = useState<30 | 60>(intervalMinutes === 60 ? 60 : 30);
+  const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
+  const [pending, error, run] = useAsyncAction();
+
+  const handleSave = () =>
+    run(async () => {
+      await updateHourlySettings({
+        startTime: draftStart,
+        endTime: draftEnd,
+        intervalMinutes: draftInterval,
+        weekStartDay: draftWeekStartDay,
+      });
+      window.location.reload();
+    });
+
+  const fieldStyle: CSSProperties = {
+    background: "#1c1c1c",
+    border: "1px solid #333",
+    borderRadius: 6,
+    color: "#ddd",
+    fontSize: 11,
+    padding: "4px 6px",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="time"
+          value={draftStart}
+          onChange={(event) => setDraftStart(event.target.value)}
+          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+        />
+        <span style={{ color: "#707070" }}>to</span>
+        <input
+          type="time"
+          value={draftEnd}
+          onChange={(event) => setDraftEnd(event.target.value)}
+          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+        />
+      </div>
+      <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ color: "#707070" }}>Increments</span>
+        <select
+          value={draftInterval}
+          onChange={(event) => setDraftInterval(Number(event.target.value) === 60 ? 60 : 30)}
+          style={fieldStyle}
+        >
+          <option value={30}>30 min</option>
+          <option value={60}>1 hour</option>
+        </select>
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ color: "#707070" }}>Week starts on</span>
+        <select
+          value={draftWeekStartDay}
+          onChange={(event) => setDraftWeekStartDay(Number(event.target.value))}
+          style={fieldStyle}
+        >
+          {WEEK_START_DAY_LABELS.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={pending}
+        style={{
+          ...fieldStyle,
+          cursor: pending ? "default" : "pointer",
+          opacity: pending ? 0.6 : 1,
+          textAlign: "center",
+        }}
+      >
+        {pending ? "Saving…" : "Save"}
+      </button>
+      {error && <span style={{ color: "#ff5555" }}>{error}</span>}
     </div>
   );
 }
@@ -4801,7 +4926,7 @@ export function NativePlannerEditor({
               activeDelta={activeDelta}
               open={paletteOpen}
               highlightSection={paletteHighlightSection}
-              fontChoice={pageSettings.fontFamily}
+              pageSettings={pageSettings}
             />
           </DndContext>
         </div>
