@@ -928,6 +928,8 @@ function NativePage({
   hourlyResizeStackBottoms,
   emptyZones,
   resizingIds,
+  crossZoneDraggedId,
+  crossZoneConfigOverrides,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
@@ -981,6 +983,19 @@ function NativePage({
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
+  // Non-null only while the currently-dragged module is actively mid-
+  // crossing a side/bottom zone boundary — see liveDisplayPlacements'
+  // own comment (main component) for why this is a separate id rather
+  // than folded into resizingIds: a zone-crossing reposition isn't a
+  // resize-handle drag at all (activeId already covers "is this id
+  // being dragged," resizingIds covers "is this id a resize-handle/
+  // stack-resize-handle target"), it needs its own signal here purely
+  // so contentIsLive below can recognize this third, distinct case.
+  crossZoneDraggedId: string | null;
+  // Only set alongside crossZoneDraggedId, and only for a todo-checklist
+  // — see liveDisplayPlacements' own comment for why (dayCount has to
+  // track the live target zone's width, not just geometry).
+  crossZoneConfigOverrides: Record<string, unknown> | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1061,8 +1076,18 @@ function NativePage({
         // isn't included: it's never interactively resized (Page
         // Settings' Hours form recomputes its rowSpan on Save instead —
         // see updateHourlySettings), so there's no drag to live-preview.
+        // id === crossZoneDraggedId is the third contributor here — a
+        // live zone-crossing reposition, alongside the pre-existing
+        // resize-handle/stack-resize-handle case resizingIds already
+        // covers (see liveDisplayPlacements' own comment, main
+        // component). Only todo-checklist/habit-tracker need it (their
+        // day-column layout genuinely depends on allocated width) —
+        // labeled-box is also cross-zone-capable but its own renderer
+        // already handles arbitrary width from a plain CSS box, no
+        // content re-render needed, so it's deliberately left off this
+        // list same as it always was for resizingIds.
         const contentIsLive =
-          (resizingIds?.has(id) ?? false) &&
+          ((resizingIds?.has(id) ?? false) || id === crossZoneDraggedId) &&
           (info.slug === "todo-checklist" ||
             info.slug === "habit-tracker" ||
             (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
@@ -1076,7 +1101,10 @@ function NativePage({
                 rowStart: placement.rowStart,
                 columnSpan: placement.columnSpan,
                 rowSpan: placement.rowSpan,
-                propValues: info.propValues,
+                propValues:
+                  id === crossZoneDraggedId && crossZoneConfigOverrides
+                    ? { ...info.propValues, ...crossZoneConfigOverrides }
+                    : info.propValues,
                 moduleType: { slug: info.slug },
               },
               page.pageGrid,
@@ -4278,6 +4306,59 @@ export function NativePlannerEditor({
     [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId, resolveZoneForColumn]
   );
 
+  // Layers a live cross-zone reposition preview on top of
+  // displayPlacements — its own separate memo, not folded into
+  // displayPlacements itself, specifically to avoid a real circular
+  // dependency: resolveDrag (needed here for its own crossingZones/
+  // effectiveColumnSpan/effectiveRowSpan) depends on stackBottomsByPageId,
+  // which itself depends on displayPlacements — calling resolveDrag from
+  // inside displayPlacements's own memo would cycle. This is the piece
+  // that makes the dragged item's own CSS Grid box genuinely resize
+  // mid-drag once it crosses a zone, instead of only popping into shape
+  // on drop (NativePage/NativeModule's gridColumn/gridRow read directly
+  // off whatever placements this ends up producing) — requested
+  // directly: "resize width and live preview affecting other modules...
+  // be dragged into full sections resize around the other modules
+  // live." crossZoneDraggedId is derived alongside it (not a separate
+  // resolveDrag call) — NativePage's own contentIsLive check
+  // (genuine re-render, not just a resized empty box) needs to know
+  // *which* id this applies to, the same way resizingIds already tells
+  // it for a resize-handle drag. crossZoneConfigOverrides mirrors
+  // moveModuleAcrossZones' own dayCount override (actions.ts) for a
+  // todo-checklist specifically — its renderer draws exactly
+  // propValues.dayCount day-columns regardless of the box's actual
+  // pixel width, so a live re-render (NativePage's contentIsLive
+  // branch) with the *old*, pre-crossing dayCount would draw the wrong
+  // number of columns for its new live width. Same fallback the server
+  // action uses (target zone's own columnSpan) — close enough for a
+  // mid-drag preview; the eventual commit re-derives the authoritative
+  // value server-side regardless.
+  const [liveDisplayPlacements, crossZoneDraggedId, crossZoneConfigOverrides] = useMemo((): [
+    Record<string, Placement>,
+    string | null,
+    Record<string, unknown> | null,
+  ] => {
+    if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return [displayPlacements, null, null];
+    const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+    if (!preview?.crossingZones) return [displayPlacements, null, null];
+    const info = moduleLookup.get(activeId);
+    const configOverrides: Record<string, unknown> | null =
+      info?.slug === "todo-checklist" ? { dayCount: preview.effectiveColumnSpan } : null;
+    return [
+      {
+        ...displayPlacements,
+        [activeId]: {
+          columnStart: preview.resolved.columnStart,
+          rowStart: preview.resolved.rowStart,
+          columnSpan: preview.effectiveColumnSpan,
+          rowSpan: preview.effectiveRowSpan,
+        },
+      },
+      activeId,
+      configOverrides,
+    ];
+  }, [displayPlacements, activeId, activeDelta, resolveDrag, moduleLookup]);
+
   // Serializes every server call that writes a module's own position/
   // size (reposition, either resize kind, add) against each other —
   // reported live: performing a reposition, then immediately a resize,
@@ -5070,13 +5151,39 @@ export function NativePlannerEditor({
     if (activeId) {
       const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
       if (preview) {
-        const { pageGrid, reflow } = preview;
-        // The dragged item follows the pointer directly and continuously
-        // — not snapped to the resolved cell, which would make it feel
-        // like it's teleporting between grid lines instead of being
-        // carried by the pointer. dxPagePx/dyPagePx (already
-        // scale-divided) is exactly that raw follow distance.
-        offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+        const { pageGrid, reflow, crossingZones, current, resolved, effectiveColumnSpan, effectiveRowSpan } = preview;
+        if (crossingZones) {
+          // Once a crossing has been detected, the dragged item's own
+          // box has already jumped to its live target cell (see
+          // liveDisplayPlacements, which drives its gridColumn/gridRow
+          // directly) — following the pointer with the same raw delta
+          // used before the crossing would double up on top of that
+          // jump and visibly detach the box from the pointer. Same
+          // residual formula handleDragEnd's own settle FLIP already
+          // uses at drop time (pointer's actual live position minus the
+          // new cell's own native pixel origin) — recomputed every
+          // frame here instead of once, so it stays glued to the
+          // pointer continuously rather than only resolving on release.
+          const oldPixel = gridCellToPixels(pageGrid, current);
+          const newPixel = gridCellToPixels(pageGrid, {
+            columnStart: resolved.columnStart,
+            rowStart: resolved.rowStart,
+            columnSpan: effectiveColumnSpan,
+            rowSpan: effectiveRowSpan,
+          });
+          const rawOffset = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+          offsets[activeId] = {
+            x: rawOffset.x - (newPixel.x - oldPixel.x),
+            y: rawOffset.y - (newPixel.y - oldPixel.y),
+          };
+        } else {
+          // The dragged item follows the pointer directly and
+          // continuously — not snapped to the resolved cell, which
+          // would make it feel like it's teleporting between grid lines
+          // instead of being carried by the pointer. dxPagePx/dyPagePx
+          // (already scale-divided) is exactly that raw follow distance.
+          offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+        }
         for (const move of reflow) {
           const prevPlacement = placements[move.id];
           if (!prevPlacement) continue;
@@ -5295,7 +5402,9 @@ export function NativePlannerEditor({
                     key={page.pageId}
                     page={page}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
-                    placements={displayPlacements}
+                    placements={liveDisplayPlacements}
+                    crossZoneDraggedId={crossZoneDraggedId}
+                    crossZoneConfigOverrides={crossZoneConfigOverrides}
                     moduleLookup={moduleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
