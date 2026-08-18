@@ -460,6 +460,136 @@ const page: PageGrid = {
   assert(pixelHeightToRowSpan(page, 0) === 1, "pixelHeightToRowSpan floors at 1 row for a zero/negligible height");
 }
 
+// --- resolveModulePlacement: minRowSpanById shrink-cascade tier ---
+// Reuses the exact same sidebar-stack fixture as the block above
+// (week-title rows 0-2, Gratitude(6)+Reminders(9)+Notes(13) = 28 rows,
+// exactly filling the 28 rows left below week-title on this app's real
+// 30-row grid) — a genuinely full zone, not a contrived one, so any
+// overlapping candidate immediately needs the new shrink tier to land
+// at all.
+{
+  const weekTitle = { id: "week-title", columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2, locked: true };
+  const gratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 6, locked: false };
+  const reminders = { id: "reminders", columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 9, locked: false };
+  const notes = { id: "notes", columnStart: 0, rowStart: 17, columnSpan: 1, rowSpan: 13, locked: false };
+  const others = [weekTitle, gratitude, reminders, notes];
+
+  // Omitting minRowSpanById entirely (every existing caller) must behave
+  // exactly as before this change — falls through to findNearestFreeCell
+  // (relocated elsewhere, empty reflow) rather than shrinking anything,
+  // even though the zone is genuinely full and a shrink *would* make it
+  // fit. This is the "old callers get identical output" guarantee.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 20, columnSpan: 1, rowSpan: 2 }, others);
+    assert(r.reflow.length === 0, "omitting minRowSpanById: no reflow — falls through to findNearestFreeCell, doesn't repack the stack");
+  }
+
+  // Fits once shrunk: candidate (already at its own 2-row minimum) drops
+  // near the bottom (overlapping Notes), sorts in after Notes on the tie
+  // (draggedOriginalRowStart omitted, same "dragged-last" default as a
+  // fresh drop). deficit is exactly 2 rows short (30 total needed, 28
+  // available) — shrinking Notes alone (floor 2, 11 rows shrinkable)
+  // covers it without needing to touch Gratitude/Reminders at all.
+  {
+    const minRowSpanById = { gratitude: 2, reminders: 4, notes: 2 };
+    const r = resolveModulePlacement(
+      page,
+      { columnStart: 0, rowStart: 20, columnSpan: 1, rowSpan: 2 },
+      others,
+      undefined,
+      minRowSpanById
+    );
+    const notesMove = r.reflow.find((m) => m.id === "notes");
+    assert(!r.reflow.find((m) => m.id === "gratitude"), "fits-with-shrink: gratitude untouched (shrinking notes alone was enough)");
+    assert(!r.reflow.find((m) => m.id === "reminders"), "fits-with-shrink: reminders untouched (shrinking notes alone was enough)");
+    assert(notesMove?.rowSpan === 11, `fits-with-shrink: notes shrinks from 13 to 11 (got ${notesMove?.rowSpan})`);
+    assert(r.placement.rowStart === 28, `fits-with-shrink: dragged candidate lands at row 28, right after shrunk notes (got ${r.placement.rowStart})`);
+    assert(r.placement.rowStart + 2 <= 30, "fits-with-shrink: dragged candidate itself stays on the page");
+  }
+
+  // Doesn't fit even at every floor: floors equal current sizes (zero
+  // shrinkable room anywhere) — must fall through to the exact same
+  // findNearestFreeCell relocation as the no-minRowSpanById case, not a
+  // partial/broken shrink.
+  {
+    const minRowSpanById = { gratitude: 6, reminders: 9, notes: 13 };
+    const r = resolveModulePlacement(
+      page,
+      { columnStart: 0, rowStart: 20, columnSpan: 1, rowSpan: 2 },
+      others,
+      undefined,
+      minRowSpanById
+    );
+    assert(r.reflow.length === 0, "doesn't-fit-even-shrunk: falls through with no reflow, same as omitting minRowSpanById");
+  }
+
+  // Cascade correctly skips a sibling already at its own floor and moves
+  // to the next one — dragged candidate lands at the very TOP this time
+  // (rowStart 0, tolerated as bounded by week-title from above), so the
+  // final merged order is [DRAGGED, gratitude, reminders, notes] — the
+  // shrink must still walk from the TAIL of that order (notes first),
+  // not from wherever the dragged item itself sorted.
+  {
+    const minRowSpanById = { notes: 13, reminders: 4, gratitude: 2 }; // notes has zero room
+    const r = resolveModulePlacement(
+      page,
+      { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 },
+      others,
+      undefined,
+      minRowSpanById
+    );
+    assert(!r.reflow.find((m) => m.id === "notes"), "skip-at-floor-sibling: notes (zero shrinkable room) is left untouched");
+    const remindersMove = r.reflow.find((m) => m.id === "reminders");
+    assert(remindersMove?.rowSpan === 7, `skip-at-floor-sibling: cascade moves on to reminders, 9 -> 7 (got ${remindersMove?.rowSpan})`);
+    assert(r.placement.rowStart === 2, `skip-at-floor-sibling: dragged candidate lands at the very top, row 2 (got ${r.placement.rowStart})`);
+  }
+
+  // Mid-stack insert: candidate lands between Gratitude and Reminders
+  // (not at either physical end of the stack) — confirms the shrink
+  // tier's placement math still slots it into the correct middle
+  // position once everyone's spans are resolved, not just the
+  // top/bottom edge cases above.
+  {
+    const minRowSpanById = { gratitude: 2, reminders: 2, notes: 2 };
+    const r = resolveModulePlacement(
+      page,
+      { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 2 },
+      others,
+      undefined,
+      minRowSpanById
+    );
+    assert(
+      r.placement.rowStart > 2 && r.placement.rowStart < 30,
+      `mid-stack-shrink: dragged candidate lands strictly between week-title and the page bottom (got ${r.placement.rowStart})`
+    );
+    // Whole system (week-title + 3 shrunk siblings + dragged, all now
+    // known) must be internally consistent: no overlaps, nothing runs
+    // off the page — same invariant assertValidStack checks above,
+    // recomputed inline here since the shrunk spans aren't known ahead
+    // of time the way the earlier block's fixed siblingSpans are.
+    const finalSpans: Record<string, number> = { gratitude: 6, reminders: 9, notes: 13 };
+    for (const m of r.reflow) if (m.rowSpan !== undefined) finalSpans[m.id] = m.rowSpan;
+    const finalStarts: Record<string, number> = { gratitude: 2, reminders: 8, notes: 17 };
+    for (const m of r.reflow) finalStarts[m.id] = m.rowStart;
+    const rects = [
+      { id: "dragged", rowStart: r.placement.rowStart, rowSpan: 2 },
+      { id: "week-title", rowStart: 0, rowSpan: 2 },
+      ...["gratitude", "reminders", "notes"].map((id) => ({ id, rowStart: finalStarts[id], rowSpan: finalSpans[id] })),
+    ];
+    for (const rect of rects) {
+      assert(rect.rowStart >= 0 && rect.rowStart + rect.rowSpan <= 30, `mid-stack-shrink: ${rect.id} stays on the page`);
+    }
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        assert(
+          !rectsOverlap({ ...rects[i], columnStart: 0, columnSpan: 1 }, { ...rects[j], columnStart: 0, columnSpan: 1 }),
+          `mid-stack-shrink: ${rects[i].id} and ${rects[j].id} don't overlap`
+        );
+      }
+    }
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exitCode = 1;

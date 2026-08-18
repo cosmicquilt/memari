@@ -214,10 +214,23 @@ export function resolveModulePlacement(
   // see the comment at that tie-break below for why a fixed rule can't
   // get both directions right. Omit it (a brand-new palette drop has no
   // "before" to compare against) to fall back to the neutral default.
-  draggedOriginalRowStart?: number
+  draggedOriginalRowStart?: number,
+  // Per-sibling minimum rowSpan floor, keyed by id — opts into a second
+  // fallback tier (below the normal "fits at current sizes" reorder,
+  // above the final findNearestFreeCell relocation) that shrinks
+  // existing siblings toward their own floors to make room for the
+  // candidate, instead of giving up on the reorder immediately. Omitted
+  // (every existing caller) preserves the exact previous behavior byte
+  // for byte — a sibling missing from the map is treated as unshrinkable
+  // (its own current rowSpan is its floor), not an error. The dragged
+  // candidate itself is never shrunk here — it's expected to already be
+  // at its own minimum by the time it reaches this function (see
+  // NativePlannerEditor.tsx's resolveDrag, the only caller that passes
+  // this).
+  minRowSpanById?: Record<string, number>
 ): {
   placement: { columnStart: number; rowStart: number };
-  reflow: Array<{ id: string; rowStart: number }>;
+  reflow: Array<{ id: string; rowStart: number; rowSpan?: number }>;
 } {
   // Clamp to the page here rather than trusting every caller to have
   // done it already — a candidate that runs off the page on its own
@@ -305,99 +318,105 @@ export function resolveModulePlacement(
       ...boundingLocked.filter((o) => o.rowStart >= siblingsBottom).map((o) => o.rowStart)
     );
 
+    const DRAGGED = "__dragged__";
+    // On an exact rowStart tie between the dragged item and a
+    // sibling, which one sorts first has to depend on which direction
+    // the drag actually moved, not a fixed rule either way — verified
+    // by hand for both directions before writing this:
+    //
+    // Dragging item B UP onto item A's exact rowStart (A was already
+    // directly above B): B needs to sort *before* A, or packing B
+    // right after A lands B back at exactly its own pre-drag row (A's
+    // span exactly bridges the gap, since they were adjacent) and the
+    // whole reflow computes to a no-op.
+    //
+    // Dragging item B DOWN onto item C's exact rowStart (C was already
+    // directly below B): B needs to sort *after* C this time, for the
+    // exact same reason in the other direction — sorting B first would
+    // pack it right after whatever was before B's own old slot,
+    // landing it back at its own pre-drag row again.
+    //
+    // So: dragged-first when candidate.rowStart is at or below where
+    // this item started (moved up or unchanged), dragged-last when it
+    // moved down. draggedOriginalRowStart is undefined for a
+    // brand-new palette drop (nothing to compare against) — falls
+    // back to dragged-last, the long-standing default for "insert new
+    // content," which doesn't have this adjacent-pair failure mode
+    // since a new item was never "originally" anywhere in the stack.
+    const draggedFirstOnTie =
+      draggedOriginalRowStart !== undefined && candidate.rowStart <= draggedOriginalRowStart;
+
+    // Sorted by where the dragged item's own CENTER lands, not its
+    // raw candidate.rowStart — using the raw edge means a swap only
+    // ever triggers once candidate.rowStart reaches all the way to
+    // the target sibling's own rowStart, i.e. the drag has to cover
+    // the dragged item's *entire own span* before anything happens.
+    // For two adjacent items of comparable size that's most of the
+    // drag distance doing nothing: dropping anywhere short of the
+    // target's exact start silently snapped back to the dragged
+    // item's own pre-drag row (same underlying shape as the exact-tie
+    // bug above, just for every row short of the tie instead of only
+    // the tie itself) — caught live dragging the second-to-last box
+    // in a 4-item stack onto the last one, where "most of the drag"
+    // turned out to still be short of that exact row.
+    //
+    // Using the center instead is the same 50%-crossing threshold
+    // every mainstream drag-reorder library (Sortable.js, dnd-kit,
+    // ...) uses: once the dragged item's midpoint has crossed into a
+    // sibling's own row range, that's treated as an intentional swap
+    // with that sibling — verified this doesn't fire on a trivial
+    // one-row nudge that doesn't reach a neighbor's midpoint either.
+    // Only affects sort order, not placement math or the topBound/
+    // bottomBound clamping above, which still use the real candidate.
+    const candidateCenter = candidate.rowStart + candidate.rowSpan / 2;
+    const straddled = stackSiblings.find(
+      (s) => candidateCenter >= s.rowStart && candidateCenter < s.rowStart + s.rowSpan
+    );
+    let sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
+
+    // The center-crossing rule above breaks down for a dragged item
+    // large enough that clampGridPlacement caps its candidate before
+    // its center can ever reach a sibling positioned at the far end of
+    // the stack — confirmed live dragging a 17-row "Notes" box toward
+    // a 7-row "Reminders" box past it: even fully bottomed-out,
+    // Notes' own size puts its center at row 21.5, short of
+    // Reminders' own midpoint at 26.5, so `straddled` never matches
+    // and sortRowStart (falling back to candidate.rowStart, itself
+    // capped well short of Reminders for the same size reason) always
+    // sorts before Reminders — the reorder below repacks everything
+    // right back to Notes' original slot no matter how far down it's
+    // dragged, reading as "the drag doesn't work." No position derived
+    // from the dragged item's own clamped geometry (center, top edge,
+    // or raw rowStart) can fix this in general — a large enough item's
+    // own span mathematically prevents it from ever numerically
+    // sorting past a sibling nearer the boundary. But being clamped
+    // at the stack's own top/bottom bound is itself an unambiguous
+    // "put it all the way at that end" signal, independent of size —
+    // sort it past (or before) every sibling outright instead of
+    // relying on where it itself is able to reach.
+    if (candidate.rowStart + candidate.rowSpan >= bottomBound) sortRowStart = Infinity;
+    else if (candidate.rowStart <= topBound) sortRowStart = -Infinity;
+
+    // Computed once here (not inside either fit-check branch below) —
+    // both the "fits at current sizes" tier and the "shrink to fit"
+    // tier need the exact same merged sort order; the shrink tier's own
+    // bottom-up cascade specifically depends on this being the *final*
+    // post-insertion order, not the original pre-insertion sibling
+    // order (see that tier's own comment).
+    const ordered = [
+      ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
+      { id: DRAGGED, rowStart: sortRowStart, rowSpan: candidate.rowSpan },
+    ].sort(
+      (a, b) =>
+        a.rowStart - b.rowStart ||
+        (a.id === DRAGGED ? (draggedFirstOnTie ? -1 : 1) : b.id === DRAGGED ? (draggedFirstOnTie ? 1 : -1) : 0)
+    );
+
     if (totalHeight <= bottomBound - topBound) {
       const stackTop = Math.max(topBound, Math.min(rawStackTop, bottomBound - totalHeight));
-      const DRAGGED = "__dragged__";
-      // On an exact rowStart tie between the dragged item and a
-      // sibling, which one sorts first has to depend on which direction
-      // the drag actually moved, not a fixed rule either way — verified
-      // by hand for both directions before writing this:
-      //
-      // Dragging item B UP onto item A's exact rowStart (A was already
-      // directly above B): B needs to sort *before* A, or packing B
-      // right after A lands B back at exactly its own pre-drag row (A's
-      // span exactly bridges the gap, since they were adjacent) and the
-      // whole reflow computes to a no-op.
-      //
-      // Dragging item B DOWN onto item C's exact rowStart (C was already
-      // directly below B): B needs to sort *after* C this time, for the
-      // exact same reason in the other direction — sorting B first would
-      // pack it right after whatever was before B's own old slot,
-      // landing it back at its own pre-drag row again.
-      //
-      // So: dragged-first when candidate.rowStart is at or below where
-      // this item started (moved up or unchanged), dragged-last when it
-      // moved down. draggedOriginalRowStart is undefined for a
-      // brand-new palette drop (nothing to compare against) — falls
-      // back to dragged-last, the long-standing default for "insert new
-      // content," which doesn't have this adjacent-pair failure mode
-      // since a new item was never "originally" anywhere in the stack.
-      const draggedFirstOnTie =
-        draggedOriginalRowStart !== undefined && candidate.rowStart <= draggedOriginalRowStart;
-
-      // Sorted by where the dragged item's own CENTER lands, not its
-      // raw candidate.rowStart — using the raw edge means a swap only
-      // ever triggers once candidate.rowStart reaches all the way to
-      // the target sibling's own rowStart, i.e. the drag has to cover
-      // the dragged item's *entire own span* before anything happens.
-      // For two adjacent items of comparable size that's most of the
-      // drag distance doing nothing: dropping anywhere short of the
-      // target's exact start silently snapped back to the dragged
-      // item's own pre-drag row (same underlying shape as the exact-tie
-      // bug above, just for every row short of the tie instead of only
-      // the tie itself) — caught live dragging the second-to-last box
-      // in a 4-item stack onto the last one, where "most of the drag"
-      // turned out to still be short of that exact row.
-      //
-      // Using the center instead is the same 50%-crossing threshold
-      // every mainstream drag-reorder library (Sortable.js, dnd-kit,
-      // ...) uses: once the dragged item's midpoint has crossed into a
-      // sibling's own row range, that's treated as an intentional swap
-      // with that sibling — verified this doesn't fire on a trivial
-      // one-row nudge that doesn't reach a neighbor's midpoint either.
-      // Only affects sort order, not placement math or the topBound/
-      // bottomBound clamping above, which still use the real candidate.
-      const candidateCenter = candidate.rowStart + candidate.rowSpan / 2;
-      const straddled = stackSiblings.find(
-        (s) => candidateCenter >= s.rowStart && candidateCenter < s.rowStart + s.rowSpan
-      );
-      let sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
-
-      // The center-crossing rule above breaks down for a dragged item
-      // large enough that clampGridPlacement caps its candidate before
-      // its center can ever reach a sibling positioned at the far end of
-      // the stack — confirmed live dragging a 17-row "Notes" box toward
-      // a 7-row "Reminders" box past it: even fully bottomed-out,
-      // Notes' own size puts its center at row 21.5, short of
-      // Reminders' own midpoint at 26.5, so `straddled` never matches
-      // and sortRowStart (falling back to candidate.rowStart, itself
-      // capped well short of Reminders for the same size reason) always
-      // sorts before Reminders — the reorder below repacks everything
-      // right back to Notes' original slot no matter how far down it's
-      // dragged, reading as "the drag doesn't work." No position derived
-      // from the dragged item's own clamped geometry (center, top edge,
-      // or raw rowStart) can fix this in general — a large enough item's
-      // own span mathematically prevents it from ever numerically
-      // sorting past a sibling nearer the boundary. But being clamped
-      // at the stack's own top/bottom bound is itself an unambiguous
-      // "put it all the way at that end" signal, independent of size —
-      // sort it past (or before) every sibling outright instead of
-      // relying on where it itself is able to reach.
-      if (candidate.rowStart + candidate.rowSpan >= bottomBound) sortRowStart = Infinity;
-      else if (candidate.rowStart <= topBound) sortRowStart = -Infinity;
-
-      const ordered = [
-        ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
-        { id: DRAGGED, rowStart: sortRowStart, rowSpan: candidate.rowSpan },
-      ].sort(
-        (a, b) =>
-          a.rowStart - b.rowStart ||
-          (a.id === DRAGGED ? (draggedFirstOnTie ? -1 : 1) : b.id === DRAGGED ? (draggedFirstOnTie ? 1 : -1) : 0)
-      );
-
       let cursor = stackTop;
       let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
-      const reflow: Array<{ id: string; rowStart: number }> = [];
+      const reflow: Array<{ id: string; rowStart: number; rowSpan?: number }> = [];
       for (const item of ordered) {
         if (item.id === DRAGGED) {
           placement = { columnStart: candidate.columnStart, rowStart: cursor };
@@ -408,10 +427,68 @@ export function resolveModulePlacement(
       }
       return { placement, reflow };
     }
-    // Doesn't fit even with a full reorder — e.g. enough boxes have piled
-    // into this column that reordering them can't avoid running past a
-    // bound. Leave the siblings alone and just relocate the dragged
-    // module instead of producing a stack that overflows anyway.
+
+    // Doesn't fit at everyone's current size. Before giving up on the
+    // reorder (falling through to findNearestFreeCell, relocating the
+    // dragged module somewhere else entirely), try shrinking existing
+    // siblings toward their own floors to free up enough room — only if
+    // the caller opted in by passing minRowSpanById. Bottom-up through
+    // the *same merged* `ordered` list computed above (siblings + the
+    // dragged candidate spliced into its resolved position), not the
+    // original pre-insertion sibling order: the candidate may have
+    // landed mid-stack, so "the last member" has to mean last in the
+    // new order, or this could shrink a sibling that isn't even
+    // adjacent to where the room is actually needed. Mirrors
+    // cascadeStackSpans' own shrink direction (NativePlannerEditor.tsx)
+    // but is necessarily its own implementation here — that one is
+    // client-only and walks a fixed physical array, not a freshly
+    // computed merge order. The dragged candidate itself is never
+    // shrunk (see minRowSpanById's own comment on why).
+    if (minRowSpanById) {
+      const availableHeight = bottomBound - topBound;
+      const spans = ordered.map((item) => item.rowSpan);
+      let deficit = totalHeight - availableHeight;
+      for (let i = ordered.length - 1; i >= 0 && deficit > 0; i--) {
+        if (ordered[i].id === DRAGGED) continue;
+        const floor = minRowSpanById[ordered[i].id] ?? ordered[i].rowSpan;
+        const shrinkable = spans[i] - floor;
+        const take = Math.min(shrinkable, deficit);
+        spans[i] -= take;
+        deficit -= take;
+      }
+      if (deficit <= 0) {
+        // Fits once shrunk — repack starting at topBound, the same way
+        // a resize-triggered shrink already consumes its own freed
+        // space rather than leaving slack (unlike the fits-at-current-
+        // sizes branch above, which can leave the stack wherever
+        // rawStackTop already had it — there's no equivalent "already
+        // in a good spot" case here, since sizes are changing).
+        let cursor = topBound;
+        let placement = { columnStart: candidate.columnStart, rowStart: candidate.rowStart };
+        const reflow: Array<{ id: string; rowStart: number; rowSpan?: number }> = [];
+        ordered.forEach((item, i) => {
+          if (item.id === DRAGGED) {
+            placement = { columnStart: candidate.columnStart, rowStart: cursor };
+          } else if (item.rowStart !== cursor || spans[i] !== item.rowSpan) {
+            reflow.push({
+              id: item.id,
+              rowStart: cursor,
+              ...(spans[i] !== item.rowSpan ? { rowSpan: spans[i] } : {}),
+            });
+          }
+          cursor += spans[i];
+        });
+        return { placement, reflow };
+      }
+      // else: doesn't fit even with every sibling at its own floor —
+      // fall through below, same as the no-minRowSpanById case.
+    }
+    // Doesn't fit even with a full reorder (or a shrink, if
+    // minRowSpanById was given and it still wasn't enough) — e.g.
+    // enough boxes have piled into this column that reordering/
+    // shrinking them can't avoid running past a bound. Leave the
+    // siblings alone and just relocate the dragged module instead of
+    // producing a stack that overflows anyway.
   }
 
   // Pass the full `others` list, not just what overlapped the original
