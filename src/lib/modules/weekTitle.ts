@@ -20,16 +20,16 @@ export type RenderedElement = {
 
 import { ptToPx } from "@/lib/print-spec";
 
-const FONT_FAMILY = "PT Serif";
-
 export function renderWeekTitle(
   geometry: { x: number; y: number; width: number; height: number },
   config: WeekTitleConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   // Measured from the reference PDF's embedded text metadata: "WEEK
   // 1/52" is 8pt, "DEC 31 - JAN 6" is 13pt.

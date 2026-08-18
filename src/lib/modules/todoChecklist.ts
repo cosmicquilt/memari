@@ -34,7 +34,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const FONT_FAMILY = "PT Serif";
 const NEAR_BLACK = "#231F20";
 const HEADER_HEIGHT_PT = 16.7;
 const HEADER_FONT_PT = 12;
@@ -69,11 +68,13 @@ export function getTodoChecklistRowMetricsPx(): {
 export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
   config: TodoChecklistConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   // Renders flush with its own allocated cell (contentY === geometry.y)
   // — this used to push its content down by a fixed 18.5pt to match the

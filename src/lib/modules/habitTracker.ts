@@ -48,7 +48,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const FONT_FAMILY = "PT Serif";
 const NEAR_BLACK = "#231F20";
 // Corrected from an earlier 23.3 — that value was measured off the wrong
 // rect. The header row (top border to header/body divider) is actually
@@ -134,15 +133,17 @@ export function getHabitTrackerRowMetricsPx(widthPx?: number): {
 export function renderHabitTracker(
   geometry: { x: number; y: number; width: number; height: number },
   config: HabitTrackerConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   if (isHabitTrackerCompact(geometry.width)) {
-    return renderHabitTrackerCompact(geometry, config, idPrefix);
+    return renderHabitTrackerCompact(geometry, config, idPrefix, fontFamily);
   }
 
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   // Renders flush with its own allocated cell (contentY === geometry.y)
   // — see the identical comment in todoChecklist.ts. This used to push
@@ -315,11 +316,13 @@ export function renderHabitTracker(
 function renderHabitTrackerCompact(
   geometry: { x: number; y: number; width: number; height: number },
   config: HabitTrackerConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   const contentY = geometry.y;
   const contentHeight = geometry.height;

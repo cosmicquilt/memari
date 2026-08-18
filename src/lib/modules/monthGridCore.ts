@@ -53,7 +53,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const FONT_FAMILY = "PT Serif";
 const LINE_COLOR = "#231F20"; // same near-black as hourlyGridCore/todoChecklist
 
 const HEADER_HEIGHT_PT = 13.37;
@@ -68,11 +67,13 @@ const ROW_LINE_WIDTH_PT = 0.5;
 export function renderMonthGridCore(
   geometry: { x: number; y: number; width: number; height: number },
   config: MonthGridCoreConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const dateStripHeight = ptToPx(DATE_STRIP_HEIGHT_PT);

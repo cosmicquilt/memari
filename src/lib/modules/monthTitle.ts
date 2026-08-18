@@ -28,16 +28,16 @@ export type RenderedElement = {
 
 import { ptToPx } from "@/lib/print-spec";
 
-const FONT_FAMILY = "PT Serif";
-
 export function renderMonthTitle(
   geometry: { x: number; y: number; width: number; height: number },
   config: MonthTitleConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   // Measured from the reference: 19pt, letter-spaced ("J A N U A R Y"
   // spans a full 107.7pt for a 7-letter word — a deliberately wide

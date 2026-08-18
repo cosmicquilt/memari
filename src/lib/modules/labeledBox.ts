@@ -26,7 +26,6 @@ export type RenderedElement = {
 
 import { ptToPx } from "@/lib/print-spec";
 
-const FONT_FAMILY = "PT Serif";
 const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
 const DIVIDER_WIDTH_PT = 0.5;
@@ -94,11 +93,13 @@ export function computeLabeledBoxHeadingFontSizePx(heading: string, boxWidthPx: 
 export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
   config: LabeledBoxConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  const FONT_FAMILY = fontFamily;
 
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = geometry.width - headingPadding * 2;

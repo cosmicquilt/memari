@@ -75,7 +75,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -86,10 +86,11 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { LoadedPage } from "./loadPlannerPages";
+import type { LoadedPage, PageSettings } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
@@ -112,7 +113,9 @@ import {
   deleteModuleWithGravity,
   updateModuleConfig,
   resetPlannerToTemplate,
+  updatePlannerFont,
 } from "./actions";
+import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
@@ -370,6 +373,7 @@ function NativeModule({
   habits,
   onUpdateHabits,
   widthPx,
+  fontFamily,
 }: {
   instanceId: string;
   locked: boolean;
@@ -471,6 +475,12 @@ function NativeModule({
   // fixed height. Only meaningful (and only passed a real value) for
   // labeled-box.
   widthPx: number;
+  // Page Settings' current font choice — used only by the two inline
+  // edit overlays below (heading text input, habit-names textarea), so
+  // the live edit cursor matches whatever the surrounding canvas is
+  // actually rendering in (previously hardcoded to "Georgia, 'PT Serif',
+  // serif" regardless of the real committed font).
+  fontFamily: string;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -787,7 +797,7 @@ function NativeModule({
               textAlign: "center",
               textTransform: "uppercase",
               fontSize: editHeadingFontSizePx,
-              fontFamily: "Georgia, 'PT Serif', serif",
+              fontFamily,
               border: "none",
               outline: "none",
               background: "transparent",
@@ -878,7 +888,7 @@ function NativeModule({
               padding: 10,
               fontSize: 16,
               lineHeight: 1.5,
-              fontFamily: "Georgia, 'PT Serif', serif",
+              fontFamily,
               border: "none",
               outline: "none",
               background: "transparent",
@@ -920,6 +930,7 @@ function NativePage({
   paletteDragPreview,
   scale,
   isFirefox,
+  fontFamily,
 }: {
   page: LoadedPage;
   // Which instance ids actually live on this page right now — see
@@ -978,6 +989,11 @@ function NativePage({
   paletteDragPreview: PaletteDragPreview | null;
   scale: number;
   isFirefox: boolean;
+  // Page Settings' current font choice, resolved to a real CSS
+  // font-family string — threaded down so this page's own live-preview
+  // re-render (contentIsLive below) and NativeModule's inline edit
+  // overlays render in the same font as everything already committed.
+  fontFamily: string;
 }) {
   return (
     <div
@@ -1032,7 +1048,8 @@ function NativePage({
                 propValues: info.propValues,
                 moduleType: { slug: info.slug },
               },
-              page.pageGrid
+              page.pageGrid,
+              fontFamily
             )
           : info.elements;
         return (
@@ -1063,6 +1080,7 @@ function NativePage({
             habits={info.slug === "habit-tracker" ? ((info.propValues.habits as string[] | undefined) ?? []) : null}
             onUpdateHabits={onUpdateHabits}
             widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
+            fontFamily={fontFamily}
           />
         );
       })}
@@ -2075,11 +2093,18 @@ function ModulePalette({
   activeDelta,
   open,
   highlightSection,
+  fontChoice,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
   open: boolean;
   highlightSection: "side" | "bottom" | null;
+  // Current Page Settings > Font state — this component owns rendering
+  // the FontToggle and calling updatePlannerFont itself (same "own the
+  // section's own controls" shape as PALETTE_MODULE_TYPES' cards), so it
+  // only needs the current choice, not a setter — the toggle reloads the
+  // page on success rather than expecting the parent to hold new state.
+  fontChoice: FontChoice;
 }) {
   // Nested collapsibility inside the panel — requested directly:
   // "'Add Module' collapsible as well as 'side modules' and 'bottom
@@ -2091,6 +2116,14 @@ function ModulePalette({
   // just two header rows rather than every card already expanded.
   const [addModuleOpen, setAddModuleOpen] = useState(false);
   const [sectionOpen, setSectionOpen] = useState<Record<"side" | "bottom", boolean>>({ side: false, bottom: false });
+  // Same collapse shape as addModuleOpen/sectionOpen above, for the
+  // sibling "Page Settings" section — independent state, since the two
+  // top-level sections don't collapse/expand together.
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
+  const [pageSettingsSectionOpen, setPageSettingsSectionOpen] = useState<Record<"font" | "hours", boolean>>({
+    font: false,
+    hours: false,
+  });
   // A "+" zone asking to highlight a section (see the main component's
   // own handleOpenPaletteSection) is also implicitly asking to *see*
   // it — force both the "Add Module" group and that specific section
@@ -2342,6 +2375,154 @@ function ModulePalette({
           })}
         </div>
       </PaletteCollapse>
+      {/* "Page Settings" — sibling to "Modules" above, not nested inside
+          it, requested directly: "add a sibling to 'modules' in the side
+          nav called 'Page settings'." Same top-level button + nested-
+          section pattern as "Modules" itself (PaletteChevron/
+          PaletteCollapse, default collapsed, collapsing the parent
+          collapses its own children too) for visual/interaction
+          consistency, just with settings controls instead of
+          PaletteCards inside each section. */}
+      <button
+        type="button"
+        onClick={() => {
+          const next = !pageSettingsOpen;
+          setPageSettingsOpen(next);
+          if (!next) setPageSettingsSectionOpen({ font: false, hours: false });
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          color: "#f0f0f0",
+          textAlign: "left",
+        }}
+      >
+        <PaletteChevron open={pageSettingsOpen} />
+        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Page Settings</strong>
+      </button>
+      <PaletteCollapse open={pageSettingsOpen} allowOverflow={false}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: 7 }}>
+            <button
+              type="button"
+              onClick={() =>
+                setPageSettingsSectionOpen((prev) => ({ ...prev, font: !prev.font }))
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <PaletteChevron open={pageSettingsSectionOpen.font} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>Font</div>
+                <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>whole canvas</div>
+              </div>
+            </button>
+            <PaletteCollapse open={pageSettingsSectionOpen.font} allowOverflow={false}>
+              <div style={{ paddingLeft: 14, paddingTop: 5 }}>
+                <FontToggle fontChoice={fontChoice} />
+              </div>
+            </PaletteCollapse>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: 7 }}>
+            <button
+              type="button"
+              onClick={() =>
+                setPageSettingsSectionOpen((prev) => ({ ...prev, hours: !prev.hours }))
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <PaletteChevron open={pageSettingsSectionOpen.hours} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>Hours</div>
+                <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>day start/end, increments</div>
+              </div>
+            </button>
+            <PaletteCollapse open={pageSettingsSectionOpen.hours} allowOverflow={false}>
+              <div style={{ paddingLeft: 14, paddingTop: 5, fontSize: 11, color: "#707070" }}>Coming soon</div>
+            </PaletteCollapse>
+          </div>
+        </div>
+      </PaletteCollapse>
+    </div>
+  );
+}
+
+// Page Settings > Font — a two-option segmented switch, each side
+// rendering "Aa" in its own real font so the choice is previewable
+// before clicking, not just a text label. Click applies immediately
+// (no separate Save button — matches "switch" semantics more than a
+// form) via updatePlannerFont, then reloads: same "infrequent,
+// deliberate action" tradeoff updateWeekSettings/WeekSettingsPanel
+// already established elsewhere in this app — a font change affects
+// every already-committed element on both pages at once, not one
+// live-patchable instance, so a full reload is simpler and more
+// reliable than hand-rolling a client-side re-render of locked content
+// that was never sent to the client in the first place.
+function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
+  const [pending, error, run] = useAsyncAction();
+
+  const handlePick = (choice: FontChoice) => {
+    if (choice === fontChoice || pending) return;
+    run(async () => {
+      await updatePlannerFont(choice);
+      window.location.reload();
+    });
+  };
+
+  const optionStyle = (choice: FontChoice, family: string): CSSProperties => ({
+    flex: 1,
+    padding: "8px 0",
+    fontFamily: family,
+    fontSize: 16,
+    border: "none",
+    borderRadius: 8,
+    cursor: pending ? "default" : "pointer",
+    background: fontChoice === choice ? "rgba(220, 220, 220, 0.14)" : "transparent",
+    color: fontChoice === choice ? "#f0f0f0" : "#888",
+    opacity: pending ? 0.6 : 1,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 2,
+          background: "#1c1c1c",
+          borderRadius: 10,
+          padding: 2,
+        }}
+      >
+        <button type="button" disabled={pending} onClick={() => handlePick("serif")} style={optionStyle("serif", FONT_SERIF)}>
+          Aa
+        </button>
+        <button type="button" disabled={pending} onClick={() => handlePick("sans")} style={optionStyle("sans", FONT_SANS)}>
+          Aa
+        </button>
+      </div>
+      {error && <span style={{ fontSize: 10.5, color: "#ff5555" }}>{error}</span>}
     </div>
   );
 }
@@ -2420,10 +2601,13 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 
 export function NativePlannerEditor({
   pages,
+  pageSettings,
 }: {
   pages: LoadedPage[];
   weekSettings: WeekSettings;
+  pageSettings: PageSettings;
 }) {
+  const fontFamily = resolveFontFamily(pageSettings.fontFamily);
   // Current grid placement per module instance — seeded from the loaded
   // snapshot, mutated by drag-to-reposition below. Deliberately separate
   // from each instance's static elements/origin (see file-level
@@ -4607,6 +4791,7 @@ export function NativePlannerEditor({
                     paletteDragPreview={paletteDrag}
                     scale={scale}
                     isFirefox={isFirefox}
+                    fontFamily={fontFamily}
                   />
                 ))}
               </div>
@@ -4616,6 +4801,7 @@ export function NativePlannerEditor({
               activeDelta={activeDelta}
               open={paletteOpen}
               highlightSection={paletteHighlightSection}
+              fontChoice={pageSettings.fontFamily}
             />
           </DndContext>
         </div>

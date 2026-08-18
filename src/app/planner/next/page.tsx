@@ -18,7 +18,7 @@ export default async function NativePlannerPage() {
     return redirectToSignIn();
   }
 
-  const { pages, weekSettings } = await loadPlannerPages();
+  const { pages, weekSettings, pageSettings } = await loadPlannerPages();
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} />;
+  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} />;
 }

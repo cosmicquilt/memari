@@ -28,6 +28,7 @@ import { getOrCreatePlanner } from "./actions";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 export type LoadedModuleInstance = {
@@ -59,13 +60,26 @@ export type LoadedPage = {
   interactiveZones: { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
 };
 
+// Page Settings values the Native editor's sidebar needs to know the
+// current state of (which side of the Font toggle is active, etc.) —
+// separate from weekSettings above, which is edited through the older,
+// unrelated Week Settings flow. Grows in later stages (Hours/week-start-
+// day) once those settings exist.
+export type PageSettings = {
+  fontFamily: FontChoice;
+};
+
 export type LoadedPlanner = {
   pages: LoadedPage[];
   weekSettings: WeekSettings;
+  pageSettings: PageSettings;
 };
 
 export async function loadPlannerPages(): Promise<LoadedPlanner> {
   const planner = await getOrCreatePlanner();
+  const theme = planner.theme as PlannerTheme | null;
+  const fontChoice: FontChoice = theme?.fontFamily === "sans" ? "sans" : "serif";
+  const fontFamily = resolveFontFamily(fontChoice);
 
   const pages: LoadedPage[] = planner.pages.map((page) => {
     const pageGrid: PageGrid = {
@@ -98,7 +112,7 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
         propValues: instance.propValues,
         originX: origin.x,
         originY: origin.y,
-        elements: renderModuleInstance(instance, pageGrid),
+        elements: renderModuleInstance(instance, pageGrid, fontFamily),
       });
     }
     // Sorted so DOM order matches z-index intent (later = painted on
@@ -160,5 +174,5 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
     rightDates: dayDates(rightHourly),
   };
 
-  return { pages, weekSettings };
+  return { pages, weekSettings, pageSettings: { fontFamily: fontChoice } };
 }

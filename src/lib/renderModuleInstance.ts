@@ -25,6 +25,7 @@ import {
   type MonthGridCoreConfig,
 } from "@/lib/modules/monthGridCore";
 import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
+import { FONT_SERIF } from "@/lib/theme";
 
 // A structural subset of the Prisma ModuleInstance (+ its ModuleType), not
 // tied to any specific query's generated type — anything shaped like this
@@ -80,39 +81,44 @@ function renderBySlug(
   slug: string,
   geometry: { x: number; y: number; width: number; height: number },
   propValues: unknown,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedPolotnoElement[] {
   switch (slug) {
     case "hourly-grid-core":
       return renderHourlyGridCore(
         geometry,
         propValues as unknown as HourlyGridCoreConfig,
-        idPrefix
+        idPrefix,
+        fontFamily
       );
     case "labeled-box":
-      return renderLabeledBox(geometry, propValues as unknown as LabeledBoxConfig, idPrefix);
+      return renderLabeledBox(geometry, propValues as unknown as LabeledBoxConfig, idPrefix, fontFamily);
     case "week-title":
-      return renderWeekTitle(geometry, propValues as unknown as WeekTitleConfig, idPrefix);
+      return renderWeekTitle(geometry, propValues as unknown as WeekTitleConfig, idPrefix, fontFamily);
     case "todo-checklist":
       return renderTodoChecklist(
         geometry,
         propValues as unknown as TodoChecklistConfig,
-        idPrefix
+        idPrefix,
+        fontFamily
       );
     case "habit-tracker":
       return renderHabitTracker(
         geometry,
         propValues as unknown as HabitTrackerConfig,
-        idPrefix
+        idPrefix,
+        fontFamily
       );
     case "month-grid-core":
       return renderMonthGridCore(
         geometry,
         propValues as unknown as MonthGridCoreConfig,
-        idPrefix
+        idPrefix,
+        fontFamily
       );
     case "month-title":
-      return renderMonthTitle(geometry, propValues as unknown as MonthTitleConfig, idPrefix);
+      return renderMonthTitle(geometry, propValues as unknown as MonthTitleConfig, idPrefix, fontFamily);
     default:
       // Other module types (e.g. quote-block) don't have renderers yet.
       return [];
@@ -140,7 +146,8 @@ function renderBySlug(
 // this keeps Polotno's own free-form resize handles from appearing.
 export function renderModuleInstance(
   instance: ModuleInstanceForRender,
-  pageGrid: PageGrid
+  pageGrid: PageGrid,
+  fontFamily: string = FONT_SERIF
 ): RenderedPolotnoElement[] {
   if (instance.moduleType.slug === "freeform-element") {
     const props = instance.propValues as { polotnoElement?: RenderedPolotnoElement };
@@ -161,7 +168,8 @@ export function renderModuleInstance(
     instance.moduleType.slug,
     geometry,
     instance.propValues,
-    instance.id
+    instance.id,
+    fontFamily
   );
   if (!elements.length) {
     return elements;

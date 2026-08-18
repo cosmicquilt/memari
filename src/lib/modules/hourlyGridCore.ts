@@ -56,7 +56,6 @@ function formatHour12NoMeridiem(minutesSinceMidnight: number): string {
   return `${h12}:${String(m).padStart(2, "0")}`;
 }
 
-const FONT_FAMILY = "PT Serif";
 // Near-black, not pure black — matches the reference's actual stroke
 // color for box borders and ruled lines (RGB 0.137/0.122/0.125).
 const LINE_COLOR = "#231F20";
@@ -90,11 +89,15 @@ const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 export function renderHourlyGridCore(
   geometry: { x: number; y: number; width: number; height: number },
   config: HourlyGridCoreConfig,
-  idPrefix: string
+  idPrefix: string,
+  fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
   const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Page Settings' font switch (Planner.theme) — aliased to the name
+  // already used everywhere below rather than touching every reference.
+  const FONT_FAMILY = fontFamily;
 
   const startMinutes = timeToMinutes(config.startTime);
   const endMinutes = timeToMinutes(config.endTime);

@@ -16,6 +16,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
 import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
+import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -175,9 +176,10 @@ function renderInstance(
     propValues: unknown;
   },
   slug: string,
-  pageGrid: PageGrid
+  pageGrid: PageGrid,
+  fontFamily: string
 ) {
-  const [element] = renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid);
+  const [element] = renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid, fontFamily);
   return element;
 }
 
@@ -847,7 +849,10 @@ export async function addPaletteModuleAt(
     async (tx) => {
       const page = await tx.page.findFirst({
         where: { id: pageId, planner: { ownerId: userId } },
-        include: { moduleInstances: { include: { moduleType: true } } },
+        include: {
+          moduleInstances: { include: { moduleType: true } },
+          planner: { select: { theme: true } },
+        },
       });
       if (!page) {
         throw new Error("Page not found or not owned by this user");
@@ -1122,7 +1127,7 @@ export async function addPaletteModuleAt(
   );
 
   const pageGrid = pageGridFor(page);
-  const element = renderInstance(created, moduleTypeSlug, pageGrid);
+  const element = renderInstance(created, moduleTypeSlug, pageGrid, fontFamilyFromTheme(page.planner.theme));
 
   return {
     instanceId: created.id,
@@ -1317,7 +1322,7 @@ export async function updateModuleConfig(
 
   const instance = await prisma.moduleInstance.findFirst({
     where: { id: instanceId, page: { planner: { ownerId: userId } } },
-    include: { page: true, moduleType: true },
+    include: { page: { include: { planner: { select: { theme: true } } } }, moduleType: true },
   });
   if (!instance) {
     throw new Error("Module instance not found or not owned by this user");
@@ -1337,7 +1342,12 @@ export async function updateModuleConfig(
   });
 
   const pageGrid = pageGridFor(instance.page);
-  const element = renderInstance(updated, instance.moduleType.slug, pageGrid);
+  const element = renderInstance(
+    updated,
+    instance.moduleType.slug,
+    pageGrid,
+    fontFamilyFromTheme(instance.page.planner.theme)
+  );
 
   return { element, propValues: updated.propValues };
 }
@@ -1370,7 +1380,12 @@ export async function updateModuleSize(
   const instance = await prisma.moduleInstance.findFirst({
     where: { id: instanceId, page: { planner: { ownerId: userId } } },
     include: {
-      page: { include: { moduleInstances: { include: { moduleType: true } } } },
+      page: {
+        include: {
+          moduleInstances: { include: { moduleType: true } },
+          planner: { select: { theme: true } },
+        },
+      },
       moduleType: true,
     },
   });
@@ -1423,7 +1438,12 @@ export async function updateModuleSize(
     data: { columnSpan: clampedColumnSpan, rowSpan: clampedRowSpan },
   });
 
-  const element = renderInstance(updated, instance.moduleType.slug, pageGrid);
+  const element = renderInstance(
+    updated,
+    instance.moduleType.slug,
+    pageGrid,
+    fontFamilyFromTheme(instance.page.planner.theme)
+  );
 
   return { element, columnSpan: updated.columnSpan, rowSpan: updated.rowSpan };
 }
@@ -1456,11 +1476,11 @@ export async function resizeAdjacentModules(
   const [top, bottom] = await Promise.all([
     prisma.moduleInstance.findFirst({
       where: { id: topInstanceId, page: { planner: { ownerId: userId } } },
-      include: { page: true, moduleType: true },
+      include: { page: { include: { planner: { select: { theme: true } } } }, moduleType: true },
     }),
     prisma.moduleInstance.findFirst({
       where: { id: bottomInstanceId, page: { planner: { ownerId: userId } } },
-      include: { page: true, moduleType: true },
+      include: { page: { include: { planner: { select: { theme: true } } } }, moduleType: true },
     }),
   ]);
   if (!top || !bottom) {
@@ -1527,13 +1547,14 @@ export async function resizeAdjacentModules(
     }),
   ]);
 
+  const fontFamily = fontFamilyFromTheme(top.page.planner.theme);
   return {
     top: {
-      element: renderInstance(updatedTop, top.moduleType.slug, pageGrid),
+      element: renderInstance(updatedTop, top.moduleType.slug, pageGrid, fontFamily),
       rowSpan: updatedTop.rowSpan,
     },
     bottom: {
-      element: renderInstance(updatedBottom, bottom.moduleType.slug, pageGrid),
+      element: renderInstance(updatedBottom, bottom.moduleType.slug, pageGrid, fontFamily),
       rowStart: updatedBottom.rowStart,
       rowSpan: updatedBottom.rowSpan,
     },
@@ -1571,7 +1592,15 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
 
   const bottom = await prisma.moduleInstance.findFirst({
     where: { id: bottomInstanceId, page: { planner: { ownerId: userId } } },
-    include: { page: { include: { moduleInstances: { include: { moduleType: true } } } }, moduleType: true },
+    include: {
+      page: {
+        include: {
+          moduleInstances: { include: { moduleType: true } },
+          planner: { select: { theme: true } },
+        },
+      },
+      moduleType: true,
+    },
   });
   if (!bottom) {
     throw new Error("Module instance not found or not owned by this user");
@@ -1698,11 +1727,12 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
     plan.map((p) => prisma.moduleInstance.update({ where: { id: p.id }, data: { rowStart: p.rowStart, rowSpan: p.rowSpan } }))
   );
 
+  const fontFamily = fontFamilyFromTheme(bottom.page.planner.theme);
   return updated.map((row, i) => ({
     id: row.id,
     rowStart: plan[i].rowStart,
     rowSpan: row.rowSpan,
-    element: renderInstance(row, plan[i].slug, pageGrid),
+    element: renderInstance(row, plan[i].slug, pageGrid, fontFamily),
   }));
 }
 
@@ -1785,6 +1815,32 @@ export async function updateWeekSettings(settings: {
   applyDates(rightPage, settings.rightDates);
 
   await Promise.all(updates);
+}
+
+// Page Settings > Font. Planner-wide (not per-page/per-instance) — see
+// src/lib/theme.ts's PlannerTheme shape, stored directly in Planner.theme
+// (a free-form Json? column that was otherwise completely unused). Same
+// "infrequent, deliberate action, caller reloads afterward" tradeoff as
+// updateWeekSettings above, not a live-patchable single element: a font
+// change affects every module on both pages at once, not one instance.
+export async function updatePlannerFont(fontFamily: FontChoice) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+
+  const nextTheme: PlannerTheme = { ...(planner.theme as PlannerTheme | null), fontFamily };
+  await prisma.planner.update({
+    where: { id: planner.id },
+    data: { theme: nextTheme as Prisma.InputJsonValue },
+  });
 }
 
 export async function savePageElements(
