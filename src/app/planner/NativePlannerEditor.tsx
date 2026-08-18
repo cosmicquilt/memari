@@ -1124,7 +1124,21 @@ function NativePage({
             contentIsLive={contentIsLive}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
-            isResizing={resizingIds?.has(id) ?? false}
+            // id === crossZoneDraggedId folds in here too — a live
+            // zone-crossing changes this module's own box size exactly
+            // the way a resize-handle drag does, and for labeled-box
+            // (the one cross-zone-capable slug that DOESN'T also get
+            // contentIsLive — see that memo's own comment) its content
+            // stays frozen at its old, wrong-for-this-box size the same
+            // way a resize-handle drag's does. Without this, that stale
+            // content — sized for its old 1-column sidebar box — spills
+            // out of the new, much smaller live cell with nothing
+            // clipping it (overflow was never engaged for this case),
+            // reported directly: "it jumps wildly and disappears...
+            // jumps off screen." isResizing's own overflow:hidden below
+            // is exactly the fix already established for this same
+            // "stale content, live box" mismatch on an ordinary resize.
+            isResizing={(resizingIds?.has(id) ?? false) || id === crossZoneDraggedId}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
             justAdded={justAddedIds?.has(id) ?? false}
             scale={scale}
