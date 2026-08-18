@@ -519,10 +519,21 @@ export async function getOrCreatePlanner() {
 // moved or resized away from its template spot is still found and
 // removed/replaced correctly.
 //
-// Locked instances (week-title, hourly-grid-core) are left untouched
-// regardless — there's no editor UI that can change them in the first
-// place, so there's nothing on them that could have drifted from the
-// template to begin with.
+// week-title is left untouched regardless — there's no editor UI that
+// can change it, so nothing on it could have drifted from the template.
+// hourly-grid-core USED TO be the same story, but Page Settings > Hours
+// (updateHourlySettings/resizeHourlyGridCore) is now real editor UI that
+// changes it — its own rowSpan and start/end/interval/intervalMode/
+// compactHourRows are reset back to the seed defaults below too, or a
+// planner left with a resized/off-mode hourly grid after "reset to
+// template" would still look wrong, and WEEK_TODO_TEMPLATE's own
+// hardcoded rowStart: 20 (one past hourly-grid-core's default 19-row
+// span) would land the freshly-recreated checklist/habit-tracker
+// overlapping it instead of in the correct gap. dayLabels/dayCount/
+// events/hourLineStyle/dayBorder are deliberately left alone — none of
+// those are part of the Hours feature's own mutable surface, and
+// dayLabels specifically holds real per-week data (Week Settings' own
+// concern), not something a template reset should touch.
 //
 // No live-patchable return value the way updateModuleConfig/
 // resizeAdjacentModules etc. have — reconstructing every piece of
@@ -540,7 +551,12 @@ export async function resetPlannerToTemplate() {
 
   const planner = await prisma.planner.findFirst({
     where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
-    include: { pages: { orderBy: { position: "asc" } } },
+    include: {
+      pages: {
+        orderBy: { position: "asc" },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      },
+    },
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -557,7 +573,33 @@ export async function resetPlannerToTemplate() {
     prisma.moduleType.findUniqueOrThrow({ where: { slug: "habit-tracker" } }),
   ]);
 
+  // Reset each page's own hourly-grid-core back to the seed default —
+  // see this function's own header comment for why. Merges into each
+  // instance's existing propValues (not a wholesale replace) so
+  // dayLabels/dayCount/events/hourLineStyle/dayBorder survive untouched.
+  const hourlyResets = [leftPage, rightPage].flatMap((page) => {
+    const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    if (!hourly) return [];
+    return [
+      prisma.moduleInstance.update({
+        where: { id: hourly.id },
+        data: {
+          rowSpan: 19,
+          propValues: {
+            ...(hourly.propValues as object),
+            startTime: "05:30",
+            endTime: "23:30",
+            intervalMinutes: 30,
+            intervalMode: "on",
+            compactHourRows: false,
+          } as Prisma.InputJsonValue,
+        },
+      }),
+    ];
+  });
+
   await prisma.$transaction([
+    ...hourlyResets,
     prisma.moduleInstance.deleteMany({
       where: { pageId: leftPage.id, moduleTypeId: boxType.id, columnStart: 0 },
     }),
@@ -2053,15 +2095,29 @@ export async function updateHourlySettings(settings: {
 // becomes user-resizable. Deliberately a separate action, not a
 // loosening of resizeAdjacentModules/resizeStackFromBottom's own
 // `.locked` guard, which protects genuinely-immovable structural blocks
-// everywhere else in this app. Mirrors resizeStackFromBottom's own
-// gap-avoidance math exactly (see that function's own comment for the
-// full reasoning on why a resulting 1-row gap is snapped away, never
-// left as a valid landing) — collapsed to a single member here, since
-// there's no cascade: only this one instance's own rowSpan ever changes,
-// its rowStart never does. Returns the same shape resizeStackFromBottom
-// does (an array of {id, rowStart, rowSpan, element}, always exactly one
-// entry here) so the client's existing handleStackResizeAdjacent can
-// apply either result identically.
+// everywhere else in this app.
+//
+// A genuine COUPLED-PAIR resize (growing pushes the below-zone stack
+// down, shrinking pulls it up, both by the same amount — same spirit as
+// resizeAdjacentModules, just bridging the standing gap between hourly-
+// grid-core and the below zone instead of requiring exact zero-gap
+// adjacency), not the "stack grows into unclaimed free space, capped,
+// never touches a neighbor" shape resizeStackFromBottom uses — the first
+// version of this action used that shape and it was wrong: reported
+// directly, "not moving the bottom modules... should change height both
+// sides." Every below-zone instance sharing hourly-grid-core's own exact
+// column range shifts its own rowStart by the same delta (rowSpan
+// unchanged, preserving whatever gap already existed rather than forcing
+// exactly one row) — see hourlyOffModeStackBottomsByPageId's own comment
+// (NativePlannerEditor.tsx) for the client-side mirror of this same math,
+// including the live-preview version.
+//
+// Returns one {id, rowStart, rowSpan, element} entry per instance this
+// actually touched (hourly-grid-core itself, plus every shifted
+// follower) — the same shape resizeStackFromBottom returns (there, one
+// entry per cascaded member), so the client's existing
+// handleStackResizeAdjacent applies either result identically without
+// needing to know which action actually ran.
 export async function resizeHourlyGridCore(instanceId: string, deltaRows: number) {
   const { userId } = await auth();
   if (!userId) {
@@ -2103,52 +2159,72 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
   // that geometry ever changes.
   const minRowSpan = Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()));
 
-  // Same 1-row breathing gap convention as updateHourlySettings above.
-  // Unlike stackBottomsByPageId's own maxBottomBound (client-side, only
-  // checks LOCKED blocks — safe there because an unlocked sibling below
-  // would already be part of the same stack by construction),
-  // hourly-grid-core is never itself a member of the below-zone's own
-  // stack, so this has to check everything below it, locked or not, or
-  // it could grow straight through an existing todo-checklist/
-  // habit-tracker.
-  const GAP_ROWS = 1;
   const stackBottomRowEnd = instance.rowStart + instance.rowSpan;
-  const below = instance.page.moduleInstances.filter(
-    (mi) =>
-      mi.id !== instance.id &&
-      mi.columnStart === instance.columnStart &&
-      mi.columnSpan === instance.columnSpan &&
-      mi.rowStart !== null &&
-      mi.rowStart >= stackBottomRowEnd
-  );
-  const maxBottomBound =
-    below.length > 0 ? Math.min(...below.map((mi) => mi.rowStart as number)) - GAP_ROWS : pageGrid.gridRows;
-  const maxGrow = Math.max(0, maxBottomBound - stackBottomRowEnd);
+  // The below-zone "followers" — every unlocked instance sharing
+  // hourly-grid-core's own exact column range, sitting at or below its
+  // current bottom, sorted top to bottom. All of them move together,
+  // preserving their own relative spacing (they're already gravity-
+  // packed by every other path that places/moves them).
+  const followers = instance.page.moduleInstances
+    .filter(
+      (mi) =>
+        !mi.locked &&
+        mi.id !== instance.id &&
+        mi.columnStart === instance.columnStart &&
+        mi.columnSpan === instance.columnSpan &&
+        mi.rowStart !== null &&
+        mi.rowStart >= stackBottomRowEnd
+    )
+    .sort((a, b) => (a.rowStart as number) - (b.rowStart as number));
 
-  const totalShrinkable = instance.rowSpan - minRowSpan;
-  const maxPossibleGap = maxGrow + totalShrinkable;
-  const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
-  const rawGap = maxGrow - deltaRows;
-  const boundedGap = Math.max(0, Math.min(effectiveMaxGap, rawGap));
-  const targetGap = boundedGap === 1 ? 0 : boundedGap;
-  const clampedDelta = maxGrow - targetGap;
+  // Growing is bounded by whatever's beyond the *followers'* own
+  // combined extent (they move as a rigid block, so their own tail is
+  // what actually risks running into something) — checked against
+  // everything below them, locked or not: hourly-grid-core is never
+  // itself a member of the below-zone's own stack, so an unlocked
+  // sibling further down would already be part of `followers` above
+  // (same test, over the whole page), not something a locked-only check
+  // would still need to catch separately.
+  const tailRowEnd =
+    followers.length > 0
+      ? Math.max(...followers.map((mi) => (mi.rowStart as number) + mi.rowSpan))
+      : stackBottomRowEnd;
+  const followerIds = new Set(followers.map((mi) => mi.id));
+  let boundBelowTail = pageGrid.gridRows;
+  for (const mi of instance.page.moduleInstances) {
+    if (mi.id === instance.id || followerIds.has(mi.id) || mi.rowStart === null) continue;
+    const sameColumn = mi.columnStart === instance.columnStart && mi.columnSpan === instance.columnSpan;
+    if (mi.rowStart < tailRowEnd || !sameColumn) continue;
+    boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
+  }
+  const maxGrow = Math.max(0, boundBelowTail - tailRowEnd);
+
+  const clampedDelta = Math.max(-(instance.rowSpan - minRowSpan), Math.min(maxGrow, deltaRows));
   if (clampedDelta === 0) {
     throw new Error("Nothing to resize");
   }
 
-  const updated = await prisma.moduleInstance.update({
-    where: { id: instance.id },
-    data: { rowSpan: instance.rowSpan + clampedDelta },
-  });
+  const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
+  const [updatedInstance, ...updatedFollowers] = await prisma.$transaction([
+    prisma.moduleInstance.update({
+      where: { id: instance.id },
+      data: { rowSpan: instance.rowSpan + clampedDelta },
+    }),
+    ...followers.map((mi) =>
+      prisma.moduleInstance.update({
+        where: { id: mi.id },
+        data: { rowStart: (mi.rowStart as number) + clampedDelta },
+      })
+    ),
+  ]);
 
-  return [
-    {
-      id: updated.id,
-      rowStart: updated.rowStart as number,
-      rowSpan: updated.rowSpan,
-      element: renderInstance(updated, "hourly-grid-core", pageGrid, fontFamilyFromTheme(instance.page.planner.theme)),
-    },
-  ];
+  const followerSlugById = new Map(followers.map((mi) => [mi.id, mi.moduleType.slug]));
+  return [updatedInstance, ...updatedFollowers].map((row) => ({
+    id: row.id,
+    rowStart: row.rowStart as number,
+    rowSpan: row.rowSpan,
+    element: renderInstance(row, followerSlugById.get(row.id) ?? "hourly-grid-core", pageGrid, fontFamily),
+  }));
 }
 
 export async function savePageElements(

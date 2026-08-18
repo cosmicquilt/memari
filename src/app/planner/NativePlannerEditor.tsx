@@ -332,6 +332,15 @@ type StackBottom = {
   // the handle itself, since it needs the *same* others-on-the-page list
   // that shape is already built from.
   maxBottomBound: number;
+  // Instances that ride along with `members`' own span change instead of
+  // changing their own span — only ever populated by
+  // hourlyOffModeStackBottomsByPageId (see its own comment), empty for
+  // every ordinary stack. `members`' cascade handles "this stack's own
+  // content changes size"; followerIds handles the separate case of
+  // "something else's *position* has to follow along," which ordinary
+  // stacks never need (nothing sits between a stack and its own
+  // members that also has to move).
+  followerIds: string[];
 };
 
 // Live state for a palette-item drag-to-add (see PALETTE_MODULE_TYPES'
@@ -1268,11 +1277,13 @@ function NativePage({
 // comment. Widened from the original 8 per direct request ("i would
 // also like the vertical resizing zone between modules to be
 // vertically larger in size"), then again ("a bit bigger") once 16
-// still wasn't enough — shared by both ResizeHandle (the strip between
-// two stacked modules) and StackResizeHandle (the strip at a stack's
-// own bottom edge) so their hit zones stay the same size as each
-// other, same as before.
-const RESIZE_HANDLE_HALF_HEIGHT_PX = 24;
+// still wasn't enough, then again ("resizng zone be taller vertically")
+// while testing hourly-grid-core's own off-mode handle — shared by both
+// ResizeHandle (the strip between two stacked modules) and
+// StackResizeHandle (the strip at a stack's own bottom edge, which the
+// off-mode handle also reuses) so every hit zone in the app stays the
+// same size as every other.
+const RESIZE_HANDLE_HALF_HEIGHT_PX = 32;
 
 // A thin hover strip straddling the shared boundary between two
 // vertically-adjacent, same-column unlocked modules — shows an ns-resize
@@ -2933,6 +2944,10 @@ export function NativePlannerEditor({
     // anchored to what it was when the drag began.
     memberMinSpans: number[];
     deltaRows: number;
+    // Instances riding along with the member's own span change instead
+    // of changing their own span — see StackBottom's own followerIds
+    // comment. Empty for every ordinary stack resize.
+    followerIds: string[];
   } | null>(null);
 
   // What to actually render placements as — the live resize preview(s)
@@ -2970,6 +2985,24 @@ export function NativePlannerEditor({
           patched[id] = { ...members[i], rowStart: cursor, rowSpan: newSpans[i] };
           cursor += newSpans[i];
         });
+        next = patched;
+      }
+      // Followers ride along with the member's own span change, shifted
+      // by the same raw deltaRows — their own rowSpan never changes,
+      // only their position, preserving whatever gap already existed
+      // between them and the member. See StackBottom's own followerIds
+      // comment (hourlyOffModeStackBottomsByPageId) for why this exists:
+      // hourly-grid-core's off-mode resize is a genuine coupled-pair
+      // operation, not the usual "stack grows into free space" one,
+      // requested directly after the first version shipped without this:
+      // "not moving the bottom modules."
+      if (stackResizeDrag.followerIds.length > 0) {
+        const patched = { ...next };
+        for (const followerId of stackResizeDrag.followerIds) {
+          const follower = patched[followerId];
+          if (!follower) continue;
+          patched[followerId] = { ...follower, rowStart: follower.rowStart + stackResizeDrag.deltaRows };
+        }
         next = patched;
       }
     }
@@ -3140,6 +3173,7 @@ export function NativePlannerEditor({
           stackTopRowStart: sorted[0].rowStart,
           stackBottomRowEnd,
           maxBottomBound,
+          followerIds: [],
         });
       }
       byPage[page.pageId] = stackBottoms;
@@ -3149,29 +3183,36 @@ export function NativePlannerEditor({
 
   // Synthetic single-member StackBottom entries for hourly-grid-core
   // instances currently in "off" mode (see HourlyGridCoreConfig's own
-  // intervalMode comment) — reuses StackResizeHandle wholesale for the
-  // "drag its bottom edge, bounded above whatever's below it" request
-  // rather than building a parallel component: the underlying invariant
-  // ("don't let a drag leave a dead 1-row gap between this box and
-  // whatever's below it") is the exact same one StackResizeHandle
-  // already enforces for an unlocked stack's own outer bottom edge, and
-  // cascadeStackSpans/displayPlacements/resizingIds/resizeFrozenSize are
-  // all already generic over "a list of member ids" with no locked/slug
-  // assumption baked in — hourly-grid-core just never had an entry
-  // feeding them before now.
+  // intervalMode comment) — reuses StackResizeHandle wholesale rather
+  // than building a parallel component: cascadeStackSpans/
+  // displayPlacements/resizingIds/resizeFrozenSize are all already
+  // generic over "a list of member ids" with no locked/slug assumption
+  // baked in — hourly-grid-core just never had an entry feeding them
+  // before now.
+  //
+  // This is a genuine COUPLED-PAIR resize (like ResizePair/
+  // resizeAdjacentModules — dragging the boundary changes both sides),
+  // not a "stack grows into unclaimed free space" one (StackBottom's own
+  // usual meaning, used by every *other* entry in this file) — reported
+  // directly after the first version shipped: "not moving the bottom
+  // modules... should change height both sides." Growing hourly-grid-
+  // core pushes the below-zone stack down by the same amount; shrinking
+  // pulls it up by the same amount, preserving whatever gap already
+  // exists between them rather than forcing it to exactly one row. Only
+  // hourly-grid-core's own `members` entry cascades a SPAN change
+  // (StackResizeHandle/cascadeStackSpans' existing job); `followerIds`
+  // is the new, additive mechanism that shifts the below-zone's own
+  // POSITION by the same delta, spans unchanged — see displayPlacements'
+  // own follower-shift branch and resizeHourlyGridCore's (actions.ts)
+  // matching server-side logic.
   //
   // Deliberately a SEPARATE list from stackBottomsByPageId itself (not
-  // merged in), even though both ultimately feed the same
-  // StackResizeHandle: that computation's own grouping loop only ever
-  // considers *unlocked* same-column siblings, and its own
-  // maxBottomBound only checks LOCKED blocks below — safe there because
-  // an unlocked sibling below would already be part of the same group by
-  // construction. Neither assumption holds here: hourly-grid-core is
-  // always locked itself, and what's below it (a real todo-checklist/
-  // habit-tracker) is unlocked, never a member of its own "stack." Its
-  // own resize handler branches to a dedicated server action
-  // (resizeHourlyGridCore) rather than resizeStackFromBottom too, for
-  // the same reason — see handleStackResizeAdjacent's own comment.
+  // merged in): that computation's own grouping loop only ever considers
+  // *unlocked* same-column siblings, so hourly-grid-core (always locked)
+  // never appears in it: Its own resize handler branches to a dedicated
+  // server action (resizeHourlyGridCore) rather than resizeStackFromBottom
+  // too, for the same reason — see handleStackResizeAdjacent's own
+  // comment.
   const hourlyOffModeStackBottomsByPageId = useMemo(() => {
     const byPage: Record<string, StackBottom[]> = {};
     for (const page of pages) {
@@ -3189,18 +3230,64 @@ export function NativePlannerEditor({
           pixelHeightToRowSpan(page.pageGrid, getHourlyGridCoreOffModeMinHeightPx())
         );
         const stackBottomRowEnd = placement.rowStart + placement.rowSpan;
-        // Same 1-row breathing gap convention as the server action.
-        const GAP_ROWS = 1;
-        let maxBottomBound = page.pageGrid.gridRows;
+
+        // The below-zone "followers" — every unlocked instance sharing
+        // hourly-grid-core's own exact column range, sitting at or below
+        // its current bottom, sorted top to bottom (same membership test
+        // resizeStackFromBottom/updateHourlySettings already use for "is
+        // this really the below-zone stack," not a looser overlap
+        // check). All of them ride along together, preserving their own
+        // relative spacing, since they're already gravity-packed by
+        // every other path that places/moves them.
+        const followers = pageIds
+          .filter((otherId) => {
+            if (otherId === id) return false;
+            const other = moduleLookup.get(otherId);
+            const otherPlacement = displayPlacements[otherId];
+            if (!other || other.locked || !otherPlacement) return false;
+            return (
+              otherPlacement.columnStart === placement.columnStart &&
+              otherPlacement.columnSpan === placement.columnSpan &&
+              otherPlacement.rowStart >= stackBottomRowEnd
+            );
+          })
+          .sort((a, b) => (displayPlacements[a]?.rowStart ?? 0) - (displayPlacements[b]?.rowStart ?? 0));
+
+        // Growing is bounded by whatever's beyond the *followers'* own
+        // combined extent (they move as a rigid block, so their own tail
+        // is what actually risks running into something), not by
+        // hourly-grid-core's own current bottom — the followers.length
+        // === 0 case (nothing to push) falls back to the simpler "bound
+        // is whatever's directly below hourly-grid-core itself" case
+        // every other StackBottom already uses. Either way, only LOCKED
+        // blocks are checked — an unlocked sibling further down would
+        // already be part of `followers` by construction (same test as
+        // the filter above, over the *whole* page, not just adjacency).
+        const tailRowEnd =
+          followers.length > 0
+            ? Math.max(...followers.map((fid) => (displayPlacements[fid]?.rowStart ?? 0) + (displayPlacements[fid]?.rowSpan ?? 0)))
+            : stackBottomRowEnd;
+        let boundBelowTail = page.pageGrid.gridRows;
         for (const otherId of pageIds) {
-          if (otherId === id) continue;
+          if (otherId === id || followers.includes(otherId)) continue;
+          const other = moduleLookup.get(otherId);
           const otherPlacement = displayPlacements[otherId];
-          if (!otherPlacement) continue;
+          if (!other?.locked || !otherPlacement) continue;
           const sameColumn =
             otherPlacement.columnStart === placement.columnStart && otherPlacement.columnSpan === placement.columnSpan;
-          if (otherPlacement.rowStart < stackBottomRowEnd || !sameColumn) continue;
-          maxBottomBound = Math.min(maxBottomBound, otherPlacement.rowStart - GAP_ROWS);
+          if (otherPlacement.rowStart < tailRowEnd || !sameColumn) continue;
+          boundBelowTail = Math.min(boundBelowTail, otherPlacement.rowStart);
         }
+        // maxGrow, translated into a maxBottomBound value that plugs
+        // straight into StackResizeHandle's existing, unmodified
+        // maxGrow = stackBottom.maxBottomBound - stackBottom.
+        // stackBottomRowEnd formula — see this memo's own header comment
+        // for the derivation (boundBelowTail - tailRowEnd is the real
+        // "room left" figure; adding stackBottomRowEnd back converts it
+        // into the bound-relative-to-hourly's-own-edge shape that
+        // formula expects).
+        const maxGrow = boundBelowTail - tailRowEnd;
+        const maxBottomBound = stackBottomRowEnd + maxGrow;
 
         entries.push({
           key: `hourly-stack:${id}`,
@@ -3212,6 +3299,7 @@ export function NativePlannerEditor({
           stackTopRowStart: placement.rowStart,
           stackBottomRowEnd,
           maxBottomBound,
+          followerIds: followers,
         });
       }
       byPage[page.pageId] = entries;
@@ -3270,6 +3358,7 @@ export function NativePlannerEditor({
           stackTopRowStart: zoneTop,
           stackBottomRowEnd: zoneTop,
           maxBottomBound: page.pageGrid.gridRows,
+          followerIds: [],
         });
       }
 
@@ -3299,6 +3388,7 @@ export function NativePlannerEditor({
           stackTopRowStart: zoneTop,
           stackBottomRowEnd: zoneTop,
           maxBottomBound: page.pageGrid.gridRows,
+          followerIds: [],
         });
       }
 
@@ -4615,6 +4705,7 @@ export function NativePlannerEditor({
         memberIds: stackBottom.members.map((m) => m.id),
         memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         deltaRows: 0,
+        followerIds: stackBottom.followerIds,
       });
     },
     [gestureBlockedByPendingCommit]
