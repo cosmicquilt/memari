@@ -66,6 +66,10 @@ const moduleTypes = [
         // Absent on any instance seeded before this existed; treated as
         // "on" wherever it's read.
         intervalMode: { type: "string", enum: ["on", "off"], default: "on" },
+        // Opts a 1-hour interval back into single-height rows instead of
+        // the default doubled height — see getRowHeightPx's own comment
+        // in hourlyGridCore.ts. Ignored at 30-min intervals.
+        compactHourRows: { type: "boolean", default: false },
       },
     },
     // Sized to leave column 0 free for the sidebar zone (exactly 25%

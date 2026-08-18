@@ -37,6 +37,12 @@ export type HourlyGridCoreConfig = {
   // Optional/defaults to "on" so existing stored instances (seeded
   // before this field existed) keep rendering exactly as before.
   intervalMode?: "on" | "off";
+  // Opts a 1-hour interval back into rendering each row at the same
+  // height a 30-min row gets, instead of the default doubled height —
+  // see getRowHeightPx's own comment. Ignored at 30-min intervals (there's
+  // nothing to make "compact" relative to). Optional/defaults to false
+  // so existing stored instances keep the new doubled-height default.
+  compactHourRows?: boolean;
 };
 
 export type RenderedElement = {
@@ -94,6 +100,24 @@ const TIME_LABEL_BOX_WIDTH_PT = 14;
 const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
 const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
+// A 1-hour row renders at double a 30-min row's own measured height by
+// default — requested directly: "make the hour increment setting be
+// double the height of the 30 min [rows]." Without this, switching from
+// 30min to 1hr increments over the same time range halves rowCount but
+// leaves each row the same physical height, so the whole grid's visual
+// size shrinks by half along with it — doubling the row height keeps the
+// total content height roughly the same, trading row count for row
+// height instead. compactHourRows opts back into the original
+// single-height behavior for anyone who prefers the shorter, more
+// compact hourly view instead — requested directly, same turn: "also
+// have a setting to make the hour setting compact." Only 1-hour
+// intervals are affected either way; 30-min rows always render at the
+// one measured ROW_HEIGHT_PT.
+function getRowHeightPx(intervalMinutes: number, compactHourRows: boolean | undefined): number {
+  const base = ptToPx(ROW_HEIGHT_PT);
+  return intervalMinutes === 60 && !compactHourRows ? base * 2 : base;
+}
+
 // Same "expose just the height math NativePlannerEditor.tsx/actions.ts
 // need" convention as todoChecklist.ts's getTodoChecklistRowMetricsPx and
 // habitTracker.ts's getHabitTrackerRowMetricsPx — mirrors
@@ -104,11 +128,15 @@ const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 // rowSpan from a real requested start/end/interval, via grid.ts's
 // pixelHeightToRowSpan.
 export function getHourlyGridCoreContentHeightPx(
-  config: Pick<HourlyGridCoreConfig, "startTime" | "endTime" | "intervalMinutes">
+  config: Pick<HourlyGridCoreConfig, "startTime" | "endTime" | "intervalMinutes" | "compactHourRows">
 ): number {
   const totalMinutes = timeToMinutes(config.endTime) - timeToMinutes(config.startTime);
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
-  return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT) + rowCount * ptToPx(ROW_HEIGHT_PT);
+  return (
+    ptToPx(HEADER_HEIGHT_PT) +
+    ptToPx(HEADER_TO_GRID_GAP_PT) +
+    rowCount * getRowHeightPx(config.intervalMinutes, config.compactHourRows)
+  );
 }
 
 // Minimum content height for the "off" (increments-off, blank-space)
@@ -145,7 +173,7 @@ export function renderHourlyGridCore(
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const headerToGridGap = ptToPx(HEADER_TO_GRID_GAP_PT);
-  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const rowHeight = getRowHeightPx(config.intervalMinutes, config.compactHourRows);
   const gridTop = geometry.y + headerHeight + headerToGridGap;
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
 

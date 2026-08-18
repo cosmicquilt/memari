@@ -76,6 +76,7 @@ export type PageSettings = {
   endTime: string;
   intervalMinutes: number;
   intervalMode: "on" | "off";
+  compactHourRows: boolean;
 };
 
 export type LoadedPlanner = {
@@ -210,7 +211,13 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
   };
 
   const hourlyProps = leftHourly?.propValues as
-    | { startTime?: string; endTime?: string; intervalMinutes?: number; intervalMode?: "on" | "off" }
+    | {
+        startTime?: string;
+        endTime?: string;
+        intervalMinutes?: number;
+        intervalMode?: "on" | "off";
+        compactHourRows?: boolean;
+      }
     | undefined;
 
   return {
@@ -223,6 +230,7 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
       endTime: hourlyProps?.endTime ?? "23:30",
       intervalMinutes: hourlyProps?.intervalMinutes ?? 30,
       intervalMode: hourlyProps?.intervalMode ?? "on",
+      compactHourRows: hourlyProps?.compactHourRows ?? false,
     },
   };
 }

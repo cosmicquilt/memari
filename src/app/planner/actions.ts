@@ -1884,6 +1884,12 @@ export async function updateHourlySettings(settings: {
   endTime: string; // "HH:MM"
   intervalMinutes: 30 | 60;
   intervalMode: "on" | "off";
+  // Only meaningful at intervalMinutes:60 — see getRowHeightPx's own
+  // comment (hourlyGridCore.ts) for why 1-hour rows double their height
+  // by default, and what opting into this reverts to. Harmless to send
+  // even at 30min/off; just ignored wherever row height doesn't depend
+  // on it.
+  compactHourRows: boolean;
   weekStartDay: number; // 0=Sun..6=Sat
 }) {
   const { userId } = await auth();
@@ -1931,6 +1937,7 @@ export async function updateHourlySettings(settings: {
               endTime: settings.endTime,
               intervalMinutes: settings.intervalMinutes,
               intervalMode: "off",
+              compactHourRows: settings.compactHourRows,
             } as Prisma.InputJsonValue,
           },
         })
@@ -1944,6 +1951,7 @@ export async function updateHourlySettings(settings: {
       startTime: settings.startTime,
       endTime: settings.endTime,
       intervalMinutes: settings.intervalMinutes,
+      compactHourRows: settings.compactHourRows,
     });
 
     // Same 1-row breathing gap convention enforced elsewhere in this
@@ -2020,6 +2028,7 @@ export async function updateHourlySettings(settings: {
               endTime: settings.endTime,
               intervalMinutes: settings.intervalMinutes,
               intervalMode: "on",
+              compactHourRows: settings.compactHourRows,
             } as Prisma.InputJsonValue,
           },
         })

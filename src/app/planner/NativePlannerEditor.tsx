@@ -2510,6 +2510,7 @@ function ModulePalette({
                   endTime={pageSettings.endTime}
                   intervalMinutes={pageSettings.intervalMinutes}
                   intervalMode={pageSettings.intervalMode}
+                  compactHourRows={pageSettings.compactHourRows}
                   weekStartDay={pageSettings.weekStartDay}
                 />
               </div>
@@ -2589,28 +2590,46 @@ const WEEK_START_DAY_LABELS = [
   "Saturday",
 ];
 
+// Snaps a raw "HH:MM" <input type="time"> value to the nearest 30-min
+// mark — requested directly: "round inputs to the nearest 30 mins."
+// Clamped to [00:00, 23:30] rather than wrapping past midnight (e.g. a
+// typed 23:45 becomes 23:30, not 00:00) — this app has no notion of an
+// overnight range yet (updateHourlySettings already rejects endTime <=
+// startTime), so wrapping would just produce a value the server refuses.
+function roundToNearestHalfHour(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
+  const snapped = Math.min(23 * 60 + 30, Math.max(0, Math.round((h * 60 + m) / 30) * 30));
+  const snappedHour = Math.floor(snapped / 60);
+  const snappedMinute = snapped % 60;
+  return `${String(snappedHour).padStart(2, "0")}:${String(snappedMinute).padStart(2, "0")}`;
+}
+
 // Page Settings > Hours — start/end time, increment (including "off"),
-// and week-start-day, applied together via one Save button (unlike
-// FontToggle's click-to-apply switch — this bundles several fields, and
-// a start/end/interval change is a heavier operation server-side (it can
-// resize hourly-grid-core and reflow whatever's below it), so it's gated
-// behind an explicit action rather than firing per keystroke/selection).
-// Picking "Off" hides the start/end inputs (moot until switched back —
-// see updateHourlySettings' own "off" branch, which keeps whatever
-// height hourly-grid-core currently has rather than deriving one from
-// them) and hands sizing over to its own drag handle on the canvas
-// instead (StackResizeHandle, via hourlyOffModeStackBottomsByPageId).
+// week-start-day, and (only at 1-hour increments) a compact-rows option,
+// applied together via one Save button (unlike FontToggle's click-to-
+// apply switch — this bundles several fields, and a start/end/interval
+// change is a heavier operation server-side (it can resize hourly-grid-
+// core and reflow whatever's below it), so it's gated behind an explicit
+// action rather than firing per keystroke/selection). Picking "Off" hides
+// the start/end inputs (moot until switched back — see
+// updateHourlySettings' own "off" branch, which keeps whatever height
+// hourly-grid-core currently has rather than deriving one from them) and
+// hands sizing over to its own drag handle on the canvas instead
+// (StackResizeHandle, via hourlyOffModeStackBottomsByPageId).
 function HoursForm({
   startTime,
   endTime,
   intervalMinutes,
   intervalMode,
+  compactHourRows,
   weekStartDay,
 }: {
   startTime: string;
   endTime: string;
   intervalMinutes: number;
   intervalMode: "on" | "off";
+  compactHourRows: boolean;
   weekStartDay: number;
 }) {
   const [draftStart, setDraftStart] = useState(startTime);
@@ -2618,6 +2637,7 @@ function HoursForm({
   const [draftInterval, setDraftInterval] = useState<"30" | "60" | "off">(
     intervalMode === "off" ? "off" : intervalMinutes === 60 ? "60" : "30"
   );
+  const [draftCompact, setDraftCompact] = useState(compactHourRows);
   const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
 
@@ -2628,6 +2648,7 @@ function HoursForm({
         endTime: draftEnd,
         intervalMinutes: draftInterval === "60" ? 60 : 30,
         intervalMode: draftInterval === "off" ? "off" : "on",
+        compactHourRows: draftCompact,
         weekStartDay: draftWeekStartDay,
       });
       window.location.reload();
@@ -2640,26 +2661,41 @@ function HoursForm({
     color: "#ddd",
     fontSize: 11,
     padding: "4px 6px",
+    width: "100%",
+    boxSizing: "border-box",
+    // Tells the browser this control sits on a dark background, so its
+    // own native chrome (here, the time-input's picker-icon button)
+    // renders in a light-appropriate color instead of the default dark
+    // gray — reported directly: "the view time picker button isn't very
+    // visible because it is dark on a dark background."
+    colorScheme: "dark",
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }}>
       {draftInterval !== "off" && (
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input
-            type="time"
-            value={draftStart}
-            onChange={(event) => setDraftStart(event.target.value)}
-            style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
-          />
-          <span style={{ color: "#707070" }}>to</span>
-          <input
-            type="time"
-            value={draftEnd}
-            onChange={(event) => setDraftEnd(event.target.value)}
-            style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
-          />
-        </div>
+        <>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ color: "#707070" }}>Start</span>
+            <input
+              type="time"
+              step={1800}
+              value={draftStart}
+              onChange={(event) => setDraftStart(roundToNearestHalfHour(event.target.value))}
+              style={fieldStyle}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ color: "#707070" }}>End</span>
+            <input
+              type="time"
+              step={1800}
+              value={draftEnd}
+              onChange={(event) => setDraftEnd(roundToNearestHalfHour(event.target.value))}
+              style={fieldStyle}
+            />
+          </label>
+        </>
       )}
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ color: "#707070" }}>Increments</span>
@@ -2673,6 +2709,12 @@ function HoursForm({
           <option value="off">Off</option>
         </select>
       </label>
+      {draftInterval === "60" && (
+        <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#707070" }}>
+          <input type="checkbox" checked={draftCompact} onChange={(event) => setDraftCompact(event.target.checked)} />
+          Compact hour rows
+        </label>
+      )}
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ color: "#707070" }}>Week starts on</span>
         <select
