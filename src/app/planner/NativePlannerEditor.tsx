@@ -4670,7 +4670,7 @@ export function NativePlannerEditor({
               columnSpan: bottomPlacement.columnSpan,
               rowSpan: r.rowSpan,
             });
-            next.set(r.id, { ...info, elements: [r.element], originX: origin.x, originY: origin.y });
+            next.set(r.id, { ...info, elements: r.elements, originX: origin.x, originY: origin.y });
           }
           return next;
         });

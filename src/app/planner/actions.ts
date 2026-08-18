@@ -182,6 +182,36 @@ function renderInstance(
   return element;
 }
 
+// Same wrapper as renderInstance above, but returns every element
+// renderModuleInstance produced instead of just the first — renderInstance's
+// own `const [element] = ...` is only safe for a *non-locked* instance,
+// which renderModuleInstance always wraps in exactly one synthetic
+// `type:"group"` element (see that file's own comment). A locked instance
+// (e.g. hourly-grid-core) renders as a flat list of many real elements
+// instead — day-header rects, divider bars, and so on — and taking only
+// the first one silently drops everything else. Reported directly: "all
+// dividing lines and above days of the week disapear except for the
+// leftmost box... persists until refreshing the page" — resizeHourlyGridCore
+// is the first caller of this shared helper to ever hit a locked,
+// multi-element instance (every existing renderInstance call site is
+// scoped to non-locked types only, so this bug was latent until now).
+function renderInstanceElements(
+  row: {
+    id: string;
+    locked: boolean;
+    columnStart: number | null;
+    rowStart: number | null;
+    columnSpan: number;
+    rowSpan: number;
+    propValues: unknown;
+  },
+  slug: string,
+  pageGrid: PageGrid,
+  fontFamily: string
+) {
+  return renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid, fontFamily);
+}
+
 // The WEEK planner's default sidebar content — the 3 labeled boxes from
 // the reference PDF (Gratitude/Reminders/Notes), sized in the same rough
 // proportions (Notes gets the most room). Shared between getOrCreatePlanner
@@ -1773,7 +1803,7 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
     id: row.id,
     rowStart: plan[i].rowStart,
     rowSpan: row.rowSpan,
-    element: renderInstance(row, plan[i].slug, pageGrid, fontFamily),
+    elements: renderInstanceElements(row, plan[i].slug, pageGrid, fontFamily),
   }));
 }
 
@@ -2223,7 +2253,7 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     id: row.id,
     rowStart: row.rowStart as number,
     rowSpan: row.rowSpan,
-    element: renderInstance(row, followerSlugById.get(row.id) ?? "hourly-grid-core", pageGrid, fontFamily),
+    elements: renderInstanceElements(row, followerSlugById.get(row.id) ?? "hourly-grid-core", pageGrid, fontFamily),
   }));
 }
 
