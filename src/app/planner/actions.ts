@@ -12,6 +12,7 @@ import {
   pixelHeightToRowSpan,
   packStackFromTop,
   resolveModulePlacement,
+  gravityRepackAfterDeparture,
   type PageGrid,
 } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -1406,6 +1407,21 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
     minRowSpanById
   );
 
+  // Crossing leaves a gap in the SOURCE zone (the one being left) —
+  // resolveModulePlacement above only ever reorders/reflows the TARGET
+  // zone's own stack (candidate's own column), since that's the only
+  // one this module's own new placement ever collides with. Mirrors
+  // resolveDrag's own identical addition (NativePlannerEditor.tsx) —
+  // requested directly: "side modules dont live update or move to fill
+  // empty space accordingly." Computed against the module's own
+  // ORIGINAL columnStart/rowStart (before this move) — the two zones
+  // never share a column range, so this can never collide with (or
+  // duplicate an id already in) the target-zone reflow above.
+  const sourceGravity = gravityRepackAfterDeparture(
+    { id: instance.id, columnStart: instance.columnStart, rowStart: instance.rowStart, columnSpan: instance.columnSpan, rowSpan: instance.rowSpan },
+    others
+  );
+
   const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
   const instanceUpdateData: {
     columnStart: number;
@@ -1431,12 +1447,19 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
       })
     );
   }
+  for (const move of sourceGravity) {
+    updates.push(prisma.moduleInstance.update({ where: { id: move.id }, data: { rowStart: move.rowStart } }));
+  }
 
   const updated = await prisma.$transaction(updates);
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const slugById = new Map<string, string>([[instance.id, slug]]);
   for (const move of reflow) {
+    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === move.id);
+    if (otherMi) slugById.set(move.id, otherMi.moduleType.slug);
+  }
+  for (const move of sourceGravity) {
     const otherMi = instance.page.moduleInstances.find((mi) => mi.id === move.id);
     if (otherMi) slugById.set(move.id, otherMi.moduleType.slug);
   }

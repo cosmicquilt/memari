@@ -21,6 +21,7 @@ import {
   moduleInstancesToRects,
   packStackFromTop,
   pixelHeightToRowSpan,
+  gravityRepackAfterDeparture,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -587,6 +588,73 @@ const page: PageGrid = {
         );
       }
     }
+  }
+}
+
+// --- gravityRepackAfterDeparture ---
+// Same real sidebar fixture as the shrink-cascade block above
+// (week-title rows 0-2 locked, Gratitude(6)@2, Reminders(9)@8,
+// Notes(13)@17) — a cross-zone drag's own SOURCE zone (the one being
+// left) needs exactly this: whoever's left behind closes the gap the
+// departing module leaves.
+{
+  const weekTitle = { id: "week-title", columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2, locked: true };
+  const gratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 6, locked: false };
+  const reminders = { id: "reminders", columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 9, locked: false };
+  const notes = { id: "notes", columnStart: 0, rowStart: 17, columnSpan: 1, rowSpan: 13, locked: false };
+  const siblings = [weekTitle, gratitude, reminders, notes];
+
+  // Departing from the TOP of the stack — everyone below shifts up by
+  // exactly the departing member's own rowSpan; nothing above (there's
+  // nothing above gratitude but the locked week-title, which never
+  // moves regardless).
+  {
+    const plan = gravityRepackAfterDeparture(gratitude, siblings.filter((s) => s.id !== "gratitude"));
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m.rowStart]));
+    assert(plan.length === 2, `gravity: departing the top of the stack shifts both remaining members (got ${plan.length})`);
+    assert(byId["reminders"] === 2, `gravity: reminders closes up to row 2 (got ${byId["reminders"]})`);
+    assert(byId["notes"] === 11, `gravity: notes closes up to row 11 (got ${byId["notes"]})`);
+  }
+
+  // Departing from the MIDDLE — only what's below the gap shifts;
+  // gratitude (above it) is already exactly where it needs to be, so it
+  // shouldn't appear in the plan at all (no-op moves are filtered out).
+  {
+    const plan = gravityRepackAfterDeparture(reminders, siblings.filter((s) => s.id !== "reminders"));
+    assert(plan.length === 1, `gravity: departing the middle only moves what's below it (got ${plan.length})`);
+    assert(plan[0]?.id === "notes" && plan[0]?.rowStart === 8, `gravity: notes closes up to row 8 (got ${JSON.stringify(plan[0])})`);
+  }
+
+  // Departing from the BOTTOM — nothing below it to shift, empty plan.
+  {
+    const plan = gravityRepackAfterDeparture(notes, siblings.filter((s) => s.id !== "notes"));
+    assert(plan.length === 0, `gravity: departing the bottom of the stack leaves nothing to shift (got ${plan.length})`);
+  }
+
+  // The locked week-title never appears in a plan, even conceptually
+  // adjacent to the departure point (gratitude sits directly below it).
+  {
+    const plan = gravityRepackAfterDeparture(gratitude, siblings.filter((s) => s.id !== "gratitude"));
+    assert(!plan.some((m) => m.id === "week-title"), "gravity: a locked sibling never appears in the repack plan");
+  }
+
+  // No siblings share the departing member's own column at all — empty
+  // plan, no crash (this is the ordinary case for a page whose sidebar
+  // only ever held the one module being dragged out).
+  {
+    const lone = { id: "lone", columnStart: 0, rowStart: 5, columnSpan: 1, rowSpan: 4 };
+    assert(gravityRepackAfterDeparture(lone, []).length === 0, "gravity: no same-column siblings means an empty plan");
+  }
+
+  // Sibling array order doesn't matter — the function sorts by rowStart
+  // internally, not input position.
+  {
+    const plan = gravityRepackAfterDeparture(gratitude, [notes, reminders]);
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m.rowStart]));
+    assert(
+      byId["reminders"] === 2 && byId["notes"] === 11,
+      `gravity: result is independent of sibling array order (got ${JSON.stringify(byId)})`
+    );
   }
 }
 

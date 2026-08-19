@@ -498,6 +498,63 @@ export function resolveModulePlacement(
   return { placement: findNearestFreeCell(page, candidate, others), reflow: [] };
 }
 
+// Repacks a same-column stack after one of its own members conceptually
+// leaves it — shared by a cross-zone drag (the module's own SOURCE zone,
+// the one it's leaving, needs to close the gap the same way) and mirrors
+// deleteModuleWithGravity's own algorithm (actions.ts, server-only,
+// tied to an actual DB delete) closely enough that it's worth a single
+// shared implementation here rather than a third hand-copy: walk up and
+// down from the departing member's own position to collect the full
+// contiguous unlocked same-column stack it belonged to, then repack
+// everyone else from the stack's own top anchor. Members above the
+// departure point land back exactly where they already were; members
+// below shift up to close the gap it leaves. Requested directly: "side
+// modules dont live update or move to fill empty space accordingly."
+// Only rowStart ever changes — the departing member's own rowSpan is
+// only needed to know how tall a gap it leaves, not applied to anyone
+// else. Return shape (rowSpan optional, never actually populated) just
+// matches resolveModulePlacement's own reflow shape so a caller merging
+// the two arrays (see resolveDrag) gets one consistently-typed list
+// rather than a union TypeScript can't cleanly narrow.
+export function gravityRepackAfterDeparture(
+  departing: { id: string; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
+  siblings: Array<{ id: string; locked: boolean; columnStart: number; columnSpan: number; rowStart: number; rowSpan: number }>
+): Array<{ id: string; rowStart: number; rowSpan?: number }> {
+  const sameColumn = siblings.filter(
+    (s) => !s.locked && s.columnStart === departing.columnStart && s.columnSpan === departing.columnSpan
+  );
+  type Member = { id: string; rowStart: number; rowSpan: number };
+  const stack: Member[] = [{ id: departing.id, rowStart: departing.rowStart, rowSpan: departing.rowSpan }];
+  let topCursor = departing.rowStart;
+  for (;;) {
+    const above = sameColumn.find((s) => s.rowStart + s.rowSpan === topCursor);
+    if (!above) break;
+    stack.unshift({ id: above.id, rowStart: above.rowStart, rowSpan: above.rowSpan });
+    topCursor = above.rowStart;
+  }
+  let bottomCursor = departing.rowStart + departing.rowSpan;
+  for (;;) {
+    const below = sameColumn.find((s) => s.rowStart === bottomCursor);
+    if (!below) break;
+    stack.push({ id: below.id, rowStart: below.rowStart, rowSpan: below.rowSpan });
+    bottomCursor = below.rowStart + below.rowSpan;
+  }
+  let cursor = stack[0].rowStart;
+  const plan: Array<{ id: string; rowStart: number }> = [];
+  for (const m of stack) {
+    // Skip the departing member entirely — including its own rowSpan's
+    // contribution to cursor. Advancing cursor for it too (an earlier,
+    // wrong version of this did) reserves its old slot for nobody,
+    // which just reproduces everyone else's already-gapless starting
+    // positions and computes zero moves — the gap it leaves never
+    // actually closes.
+    if (m.id === departing.id) continue;
+    if (m.rowStart !== cursor) plan.push({ id: m.id, rowStart: cursor });
+    cursor += m.rowSpan;
+  }
+  return plan;
+}
+
 // Repacks a column-stack of sibling modules contiguously from `top`,
 // preserving their current relative order (by rowStart), closing any gap
 // between them — "gravity" toward the top of whatever zone they're in.

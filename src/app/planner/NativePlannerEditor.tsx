@@ -104,6 +104,7 @@ import {
   findNearestFreeCell,
   rectsOverlap,
   pixelHeightToRowSpan,
+  gravityRepackAfterDeparture,
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
@@ -152,6 +153,19 @@ function clampScale(scale: number): number {
 // server-side (actions.ts) — kept in sync by hand, this file can't
 // import a constant from a "use server" file.
 const MIN_ROW_SPAN = 2;
+
+// How far above the bottom zone's own top edge (hourly-grid-core's own
+// rowStart + rowSpan) a drag still counts as targeting it — requested
+// directly: "dont allow it side modules to go to bottom if dragged over
+// hours section only over the adjustable size bottom module section and
+// a bit above it." Without this, resolveZoneForColumn only ever checked
+// the target COLUMN, not row — hovering anywhere in the hours grid's own
+// column range, including directly over the hours grid itself, counted
+// as the bottom zone. A small tolerance rather than an exact boundary:
+// dropping right at the seam between the two should still register as
+// "targeting the bottom zone" rather than needing pixel-perfect
+// precision below it.
+const BOTTOM_ZONE_ROW_TOLERANCE = 2;
 
 // Module types offered in the drag-to-add palette (ModulePalette below)
 // — kept in sync by hand with prisma/seed.mts's own moduleTypes entries
@@ -943,7 +957,6 @@ function NativePage({
   onHoverStart,
   onHoverEnd,
   paletteDragPreview,
-  crossZoneDropPreview,
   scale,
   isFirefox,
   fontFamily,
@@ -1008,13 +1021,6 @@ function NativePage({
   // specifically (see PaletteDragPreview's own type comment above) —
   // drives the live, grid-snapped preview box below, PaletteDropPreview.
   paletteDragPreview: PaletteDragPreview | null;
-  // Non-null only while a cross-zone reposition (an already-placed
-  // module dragged across the side/bottom boundary) is actively
-  // crossing — see crossZoneDropPreview's own comment (main component)
-  // for why this is a separate preview overlay rather than moving the
-  // dragged module's own box. Reuses PaletteDropPreview's exact visual
-  // language and shape.
-  crossZoneDropPreview: PaletteDragPreview | null;
   scale: number;
   isFirefox: boolean;
   // Page Settings' current font choice, resolved to a real CSS
@@ -1277,9 +1283,6 @@ function NativePage({
           resizePairs/stackBottoms' own live previews above. */}
       {paletteDragPreview && paletteDragPreview.pageId === page.pageId && (
         <PaletteDropPreview pageGrid={page.pageGrid} preview={paletteDragPreview} />
-      )}
-      {crossZoneDropPreview && crossZoneDropPreview.pageId === page.pageId && (
-        <PaletteDropPreview pageGrid={page.pageGrid} preview={crossZoneDropPreview} />
       )}
     </div>
   );
@@ -3948,9 +3951,9 @@ export function NativePlannerEditor({
     setSettling(null);
   }, []);
 
-  // Shared zone-detection: given a target column and the page's own
+  // Shared zone-detection: given a target column/row and the page's own
   // hourly-grid-core placement, figure out which zone (bottom vs side)
-  // that column falls in for a cross-zone-capable slug, and the
+  // that point falls in for a cross-zone-capable slug, and the
   // resulting columnStart/columnSpan for landing there. Extracted from
   // handleDragMove's own palette-drag preview (which used to inline this
   // exact logic) so resolveDrag's own cross-zone reposition preview,
@@ -3959,14 +3962,16 @@ export function NativePlannerEditor({
   // for getMinRowSpanForSlug (that one's real, separate copy has to live
   // in actions.ts too; this one doesn't need to leave this file at all).
   // Returns null when the slug isn't cross-zone-capable here, or when it
-  // is but the column doesn't land in either zone (labeled-box outside
-  // the bottom zone) — callers fall back to their own pre-existing
-  // default in that case, not an override.
+  // is but the point doesn't land in either zone (labeled-box outside
+  // the bottom zone, or hovering over the hours grid itself — see
+  // BOTTOM_ZONE_ROW_TOLERANCE) — callers fall back to their own
+  // pre-existing default in that case, not an override.
   const resolveZoneForColumn = useCallback(
     (
       hourlyGridPlacement: Placement | undefined,
       slug: string,
-      targetColumnStart: number
+      targetColumnStart: number,
+      targetRowStart: number
     ): { columnStart: number; columnSpan: number; isBottomZone: boolean } | null => {
       const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
       const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
@@ -3974,7 +3979,8 @@ export function NativePlannerEditor({
       if (
         hourlyGridPlacement &&
         targetColumnStart >= hourlyGridPlacement.columnStart &&
-        targetColumnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan
+        targetColumnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan &&
+        targetRowStart >= hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE
       ) {
         return { columnStart: hourlyGridPlacement.columnStart, columnSpan: hourlyGridPlacement.columnSpan, isBottomZone: true };
       }
@@ -4043,7 +4049,7 @@ export function NativePlannerEditor({
       // *outside* the bottom zone leaves it on its own long-established
       // side-zone preview path untouched, same as addPaletteModuleAt's
       // own identical split.
-      const zone = resolveZoneForColumn(hourlyGridPlacement, slug, target.columnStart);
+      const zone = resolveZoneForColumn(hourlyGridPlacement, slug, target.columnStart, target.rowStart);
       let effectiveColumnStart = target.columnStart;
       let effectiveColumnSpan = meta.defaultColumnSpan;
       let droppedInBottomZone = false;
@@ -4190,7 +4196,12 @@ export function NativePlannerEditor({
       // an ordinary same-zone reposition/reorder), none of this applies:
       // columnSpan/rowSpan carry over completely unchanged, exactly as
       // before this feature existed.
-      const targetZone = resolveZoneForColumn(hourlyGridPlacement ?? undefined, info.slug, nearestCellRaw.columnStart);
+      const targetZone = resolveZoneForColumn(
+        hourlyGridPlacement ?? undefined,
+        info.slug,
+        nearestCellRaw.columnStart,
+        nearestCellRaw.rowStart
+      );
       const currentIsBottomZone =
         !!hourlyGridPlacement &&
         current.columnStart === hourlyGridPlacement.columnStart &&
@@ -4277,64 +4288,37 @@ export function NativePlannerEditor({
         }
       }
 
-      const { placement: resolved, reflow } = resolveModulePlacement(
+      const { placement: resolved, reflow: targetReflow } = resolveModulePlacement(
         pageGrid,
         candidate,
         others,
         current.rowStart,
         minRowSpanById
       );
+      // Crossing leaves a gap in the SOURCE zone (the one being left) —
+      // resolveModulePlacement above only ever reorders/reflows the
+      // TARGET zone's own stack (candidate's own column), since that's
+      // the only one the dragged item's own candidate ever collides
+      // with. Requested directly: "side modules dont live update or
+      // move to fill empty space accordingly." Merged into the same
+      // reflow array rather than tracked separately — every consumer
+      // (the live preview below, and handleDragEnd's optimistic
+      // setPlacements) already treats reflow generically as "these ids'
+      // rowStart changed," with no assumption baked in about which zone
+      // an entry belongs to.
+      const reflow = crossingZones
+        ? [
+            ...targetReflow,
+            ...gravityRepackAfterDeparture(
+              { id: instanceId, columnStart: current.columnStart, rowStart: current.rowStart, columnSpan: current.columnSpan, rowSpan: current.rowSpan },
+              others
+            ),
+          ]
+        : targetReflow;
       return { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan };
     },
     [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId, resolveZoneForColumn]
   );
-
-  // Live preview for a cross-zone reposition — same dashed-outline
-  // language as a palette drag's own PaletteDropPreview, reused wholesale
-  // rather than duplicated, showing where/how-big the dragged module
-  // would land without moving the dragged module's own box there.
-  //
-  // An earlier version of this actually moved the dragged item's own CSS
-  // Grid cell live (liveDisplayPlacements, overriding displayPlacements)
-  // and relied on a compensating transform to keep it glued to the
-  // pointer. The compensation math itself was exactly correct — verified
-  // by hand and by simulation — but reported directly as "flashes the
-  // resized one but then jumps away... can't see it anymore until
-  // releasing." Root cause, traced from the reporter's own console
-  // output: crossing snaps the box's native position a long distance
-  // (sidebar near the top of the page, down to the bottom zone), and at
-  // this app's typical zoomed-out scale, the transform needed to cancel
-  // that jump and keep tracking the pointer put the box's rendered
-  // position well outside the scrollable canvas div's own bounds (one
-  // logged frame computed to roughly -511px above the canvas's own top
-  // edge) — genuinely invisible, not a rendering bug, just outside the
-  // viewport. A normal same-zone drag never faces this because its
-  // native position never jumps anywhere; only a side<->bottom crossing
-  // covers enough page-space distance to trigger it. Rather than fight
-  // that (e.g. a position:fixed dragged item escaping the canvas's own
-  // transform/scroll — the exact tradeoff this file's own "why not
-  // DragOverlay" header comment already weighed and rejected for the
-  // static case), the dragged item's own box now just keeps doing what
-  // it always did pre-crossing-feature: follow the raw pointer delta,
-  // never moving its own native position until drop. This preview overlay
-  // is the separate, lightweight stand-in that makes the target
-  // zone/size still visible live, without ever moving the actual (large,
-  // content-bearing) dragged element there.
-  const crossZoneDropPreview = useMemo((): PaletteDragPreview | null => {
-    if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return null;
-    const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
-    if (!preview?.crossingZones) return null;
-    const info = moduleLookup.get(activeId);
-    if (!info) return null;
-    return {
-      pageId: info.pageId,
-      columnStart: preview.resolved.columnStart,
-      rowStart: preview.resolved.rowStart,
-      columnSpan: preview.effectiveColumnSpan,
-      rowSpan: preview.effectiveRowSpan,
-      overlapping: false,
-    };
-  }, [activeId, activeDelta, resolveDrag, moduleLookup]);
 
   // Serializes every server call that writes a module's own position/
   // size (reposition, either resize kind, add) against each other —
@@ -5134,10 +5118,13 @@ export function NativePlannerEditor({
         // like it's teleporting between grid lines instead of being
         // carried by the pointer. dxPagePx/dyPagePx (already
         // scale-divided) is exactly that raw follow distance. Unchanged
-        // by crossingZones — see crossZoneDropPreview's own comment for
-        // why the dragged item's own native position/transform never
-        // reacts to a crossing anymore (a separate preview outline shows
-        // the target instead).
+        // by crossingZones — the dragged item's own native position
+        // never moves mid-drag (see resolveDrag's own crossing comment
+        // for why); everything the user sees indicating "where it'll go"
+        // comes from the reflow loop below instead (both the target
+        // zone's siblings shrinking to make room, and — new — the source
+        // zone's siblings gravity-filling the gap it leaves), not a
+        // separate preview box.
         offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
         for (const move of reflow) {
           const prevPlacement = placements[move.id];
@@ -5383,7 +5370,6 @@ export function NativePlannerEditor({
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
                     paletteDragPreview={paletteDrag}
-                    crossZoneDropPreview={crossZoneDropPreview}
                     scale={scale}
                     isFirefox={isFirefox}
                     fontFamily={fontFamily}
