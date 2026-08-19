@@ -4320,6 +4320,125 @@ export function NativePlannerEditor({
     [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId, resolveZoneForColumn]
   );
 
+  // Live size preview for a cross-zone reposition — both the dragged
+  // item's own box and any target-zone sibling being shrunk to make
+  // room for it. Requested directly, after the dashed-preview-box
+  // version (dbcff63) shipped: "the height and width aren't live
+  // updating... only updates to correct size when dropped... the
+  // preexisting bottom module's size also didn't live update... it
+  // would move up and down but stay same size."
+  //
+  // placementOverrides deliberately pins columnStart/rowStart at each
+  // id's own CURRENT (pre-drag) position — never at resolveDrag's
+  // resolved target cell — and changes ONLY columnSpan/rowSpan. This is
+  // what avoids bc8502d/3f9e047's actual bug (a compensating transform
+  // that could push the dragged item's rendered position outside the
+  // scrollable canvas at low zoom): gridCellToPixels' own x/y origin
+  // depends only on columnStart/rowStart, never on span, so pinning
+  // position while changing size can't create the "native position
+  // jumps a long distance, needs a canceling transform" problem that
+  // caused that bug — visualOffsets' own transform math (dragged item:
+  // unmodified raw pointer delta; reflowed siblings: the existing
+  // fromPixel/toPixel Y shift, itself also span-independent) keeps
+  // composing correctly on top of a size-only change with no changes
+  // needed there at all.
+  //
+  // dayCountOverride is the same fix a first, reverted attempt at this
+  // already worked out: todo-checklist's own renderer draws exactly
+  // propValues.dayCount day-columns regardless of the box's actual
+  // pixel width (see todoChecklist.ts), so a live content re-render at
+  // the new columnSpan with the OLD dayCount would draw the wrong
+  // number of columns. null for every other slug (habit-tracker infers
+  // its layout from allocated width directly; labeled-box doesn't get a
+  // live content re-render at all — see effectiveResizingIds' own
+  // comment on why that's fine).
+  //
+  // One resolveDrag call serves all of it (not split across separate
+  // memos) — cheap of itself, and keeps every piece of this live
+  // preview reading the exact same crossing snapshot.
+  const crossingLivePreview = useMemo(() => {
+    if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return null;
+    const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+    if (!preview?.crossingZones) return null;
+    const placementOverrides: Record<string, Placement> = {
+      [activeId]: {
+        columnStart: preview.current.columnStart,
+        rowStart: preview.current.rowStart,
+        columnSpan: preview.effectiveColumnSpan,
+        rowSpan: preview.effectiveRowSpan,
+      },
+    };
+    for (const move of preview.reflow) {
+      if (move.rowSpan === undefined) continue;
+      const prev = displayPlacements[move.id];
+      if (!prev) continue;
+      placementOverrides[move.id] = { ...prev, rowSpan: move.rowSpan };
+    }
+    const draggedInfo = moduleLookup.get(activeId);
+    const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
+    return { draggedId: activeId, placementOverrides, dayCountOverride };
+  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup]);
+
+  const liveDisplayPlacements = useMemo(
+    () =>
+      crossingLivePreview ? { ...displayPlacements, ...crossingLivePreview.placementOverrides } : displayPlacements,
+    [displayPlacements, crossingLivePreview]
+  );
+
+  // Overlays the dayCount override above onto the one instance it
+  // applies to — mirrors liveDisplayPlacements' own "overlay onto the
+  // existing map, don't mutate real state" shape, for the same reason:
+  // this only needs to be true for the couple of frames a crossing drag
+  // is actually in progress, never written back to moduleLookup itself.
+  const liveModuleLookup = useMemo(() => {
+    if (!crossingLivePreview || crossingLivePreview.dayCountOverride === null) return moduleLookup;
+    const info = moduleLookup.get(crossingLivePreview.draggedId);
+    if (!info) return moduleLookup;
+    const next = new Map(moduleLookup);
+    next.set(crossingLivePreview.draggedId, {
+      ...info,
+      propValues: { ...info.propValues, dayCount: crossingLivePreview.dayCountOverride },
+    });
+    return next;
+  }, [moduleLookup, crossingLivePreview]);
+
+  // Everyone placementOverrides touches also needs the same
+  // isResizing/contentIsLive treatment an ordinary resize-handle drag
+  // already gives a live-resizing module — reusing that exact
+  // machinery (the outline stand-in and overflow:hidden clip for stale
+  // content, genuine re-render for todo-checklist/habit-tracker) rather
+  // than inventing a parallel one. Unioned into the SAME resizingIds
+  // value passed to NativePage (not a separate prop) specifically so
+  // NativePage's own contentIsLive slug whitelist stays the single
+  // source of truth — a crossing labeled-box gets exactly the outline+
+  // clip treatment a resize-handle-dragged labeled-box already gets
+  // today (its own renderer draws fine at an arbitrary width, so a
+  // frozen-but-clipped stale render is an acceptable stand-in, same as
+  // it already is for a plain resize), not a special-cased third
+  // behavior.
+  const effectiveResizingIds = useMemo(() => {
+    if (!crossingLivePreview) return resizingIds;
+    const crossingIds = Object.keys(crossingLivePreview.placementOverrides);
+    return resizingIds ? new Set([...resizingIds, ...crossingIds]) : new Set(crossingIds);
+  }, [resizingIds, crossingLivePreview]);
+
+  // Same pairing as resizeFrozenSize's own existing per-id map (see its
+  // comment) — the pre-drag committed pixel size for each id
+  // placementOverrides touches, so PolotnoJsonRenderer can recognize
+  // and hide that id's own stale full-box outer-border rect the same
+  // way it already does for a resize-handle drag.
+  const effectiveResizeFrozenSize = useMemo(() => {
+    if (!crossingLivePreview) return resizeFrozenSize;
+    const extra: Record<string, { width: number; height: number }> = {};
+    for (const id of Object.keys(crossingLivePreview.placementOverrides)) {
+      const info = moduleLookup.get(id);
+      const committed = placements[id];
+      const pageGrid = info ? pageGridByPageId[info.pageId] : undefined;
+      if (pageGrid && committed) extra[id] = gridCellToPixels(pageGrid, committed);
+    }
+    return resizeFrozenSize ? { ...resizeFrozenSize, ...extra } : extra;
+  }, [resizeFrozenSize, crossingLivePreview, moduleLookup, placements, pageGridByPageId]);
+
   // Serializes every server call that writes a module's own position/
   // size (reposition, either resize kind, add) against each other —
   // reported live: performing a reposition, then immediately a resize,
@@ -5344,8 +5463,8 @@ export function NativePlannerEditor({
                     key={page.pageId}
                     page={page}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
-                    placements={displayPlacements}
-                    moduleLookup={moduleLookup}
+                    placements={liveDisplayPlacements}
+                    moduleLookup={liveModuleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
@@ -5354,8 +5473,8 @@ export function NativePlannerEditor({
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
-                    resizingIds={resizingIds}
-                    resizeFrozenSize={resizeFrozenSize}
+                    resizingIds={effectiveResizingIds}
+                    resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
                     onResizeEnd={handleResizeEnd}
