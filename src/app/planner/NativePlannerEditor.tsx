@@ -149,6 +149,52 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
+// The dragged item's own live transform during a cross-zone crossing —
+// shared by visualOffsets (every frame) and handleDragEnd (the settle
+// FLIP's own residual, which has to start from the exact same value the
+// live preview was already showing, or the drop reads as a visible pop).
+// Requested directly, after the crossing feature's plain
+// grow-from-top-left version shipped: "jumps off cursor... probably
+// because of differing shape my cursor is off of the new shape."
+//
+// The dragged item's own NATIVE position stays pinned at its pre-drag
+// cell the whole gesture (see resolveDrag's own crossing comment for
+// why — moving it is what caused a real, separately-diagnosed dnd-kit
+// bug). Un-corrected, the box's visible bulk grows/shrinks outward from
+// that fixed top-left corner, not from wherever the pointer actually
+// grabbed it — fine if you happened to grab the exact top-left, visibly
+// drifting otherwise. grabFraction (captured once, at drag start — see
+// handleDragStart) is where, proportionally, within the module's own
+// original box the pointer grabbed it (0,0 = top-left, 0.5,0.5 =
+// center). This offsets the raw pointer-follow transform by exactly how
+// far that same fractional point would move due to nothing but the
+// size change (verified algebraically: the corrected point's own
+// absolute position matches what it would have been had the box never
+// resized at all, so it stays glued to the pointer through the
+// crossing the same way the whole rigid box already does before one).
+function computeDraggedTransformPagePx(
+  pageGrid: PageGrid,
+  rawDeltaPagePx: { x: number; y: number },
+  current: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
+  crossingZones: boolean,
+  effectiveColumnSpan: number,
+  effectiveRowSpan: number,
+  grabFraction: { x: number; y: number }
+): { x: number; y: number } {
+  if (!crossingZones) return rawDeltaPagePx;
+  const oldSize = gridCellToPixels(pageGrid, current);
+  const newSize = gridCellToPixels(pageGrid, {
+    columnStart: 0,
+    rowStart: 0,
+    columnSpan: effectiveColumnSpan,
+    rowSpan: effectiveRowSpan,
+  });
+  return {
+    x: rawDeltaPagePx.x - grabFraction.x * (newSize.width - oldSize.width),
+    y: rawDeltaPagePx.y - grabFraction.y * (newSize.height - oldSize.height),
+  };
+}
+
 // Mirrors resizeAdjacentModules'/resizeStackFromBottom's own floor
 // server-side (actions.ts) — kept in sync by hand, this file can't
 // import a constant from a "use server" file.
@@ -166,6 +212,13 @@ const MIN_ROW_SPAN = 2;
 // "targeting the bottom zone" rather than needing pixel-perfect
 // precision below it.
 const BOTTOM_ZONE_ROW_TOLERANCE = 2;
+
+// See handleDragMove's own comment on dragDeltaCorrectionRef for the
+// full story — screen-pixel distance no single real pointermove event
+// could plausibly cover (generous even for a fast mouse flick, which
+// spreads across many events at typical polling rates; genuinely
+// observed jumps were 800-1200px in one event).
+const DRAG_DELTA_JUMP_THRESHOLD_PX = 300;
 
 // Module types offered in the drag-to-add palette (ModulePalette below)
 // — kept in sync by hand with prisma/seed.mts's own moduleTypes entries
@@ -1075,10 +1128,22 @@ function NativePage({
         // isn't included: it's never interactively resized (Page
         // Settings' Hours form recomputes its rowSpan on Save instead —
         // see updateHourlySettings), so there's no drag to live-preview.
+        // labeled-box joined this list too — reported directly during
+        // cross-zone crossing (the one case that changes its WIDTH, not
+        // just height, live): "the text and header bottom line dont
+        // change just the rectangle... doesn't get wider to fit wider
+        // rectangle." Its own renderer already computes header/
+        // underline width from whatever width it's given (that's how it
+        // renders fine at columnSpan 1 in the sidebar to begin with) —
+        // it just needs to actually be called fresh at the new width,
+        // same as every other type in this list already is. An ordinary
+        // resize-handle drag only ever changes a labeled-box's height,
+        // not width, which is presumably why this never surfaced there.
         const contentIsLive =
           (resizingIds?.has(id) ?? false) &&
           (info.slug === "todo-checklist" ||
             info.slug === "habit-tracker" ||
+            info.slug === "labeled-box" ||
             (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
         const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, placement) : null;
         const elements = contentIsLive
@@ -3767,12 +3832,40 @@ export function NativePlannerEditor({
     };
   }, [flushWheelZoom]);
 
+  // TEMP DEBUG — see the render-count log further down (crossing-drag
+  // diagnostics); remove alongside it.
+  const renderCountRef = useRef(0);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
   // while a drag is in progress — the one thing that genuinely needs
   // dividing by `scale` (see file comment: it's the only value in this
   // component that originates *outside* the scaled coordinate space).
   const [activeDelta, setActiveDelta] = useState<{ x: number; y: number }>(ZERO_OFFSET);
+  // Where, proportionally, within the dragged module's own original box
+  // the pointer actually grabbed it (0,0 top-left, 0.5,0.5 center) —
+  // captured once per gesture (see grabFractionCapturedRef's own
+  // comment for exactly when/why), read by
+  // computeDraggedTransformPagePx's own grab-point anchoring during a
+  // cross-zone crossing. {0,0} (top-left) is a safe default/fallback —
+  // exactly the old, pre-anchoring behavior — for the rare case a real
+  // value can't be computed at all this gesture.
+  const [grabFraction, setGrabFraction] = useState<{ x: number; y: number }>(ZERO_OFFSET);
+  // Whether grabFraction has already been captured for the CURRENT
+  // gesture — reset false on every handleDragStart, flipped true the
+  // first time handleDragMove successfully computes a real value.
+  // Capture can't happen in handleDragStart itself: confirmed from real
+  // logged data (event.active.rect.current.initial was null there,
+  // every time) that dnd-kit doesn't populate the dragged node's own
+  // measured rect until AFTER dispatching onDragStart — it's written
+  // inside a useMemo one render later, not synchronously in the same
+  // dispatch. handleDragMove's own first call, by contrast, always
+  // finds it already populated (dnd-kit needs it internally for
+  // collision/auto-scroll tracking during movement, so it's guaranteed
+  // ready well before the first move event reaches this file). A ref,
+  // not state, since it's a "have we already succeeded this gesture"
+  // guard read-and-written exclusively inside these two event
+  // handlers, never during render.
+  const grabFractionCapturedRef = useRef(false);
   // Whether ModulePalette's own sliding panel is currently open, and
   // which section (if any) to briefly highlight right now — see that
   // component's own comment. Owned here (not local state inside
@@ -3936,9 +4029,45 @@ export function NativePlannerEditor({
     [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
   );
 
+  // Defensive workaround, not a root-cause fix — see handleDragMove's
+  // own extended comment where this is used. Tracks dnd-kit's own last-
+  // reported event.delta plus a running correction, entirely outside
+  // React state (a ref, not useState) since it's read-and-written
+  // exclusively inside handleDragMove/handleDragEnd's own synchronous
+  // event handlers, never during render.
+  const dragDeltaCorrectionRef = useRef({ lastRawX: 0, lastRawY: 0, correctionX: 0, correctionY: 0 });
+  // Shared by handleDragMove and handleDragEnd — a drop event's own
+  // event.delta needs exactly the same correction a move event's would
+  // (dnd-kit doesn't distinguish; both read from the same underlying
+  // pointer-tracking state), and a drop can itself land exactly on an
+  // anomalous jump with no preceding move event to have already caught
+  // it. Mutates the ref in place (updating lastRawX/Y and, if this call
+  // itself detects a jump, correctionX/Y) and returns the corrected
+  // {x, y} to use in place of the event's own raw delta.
+  const applyDragDeltaCorrection = useCallback((rawX: number, rawY: number) => {
+    const corr = dragDeltaCorrectionRef.current;
+    const jumpX = rawX - corr.lastRawX;
+    const jumpY = rawY - corr.lastRawY;
+    if (Math.hypot(jumpX, jumpY) > DRAG_DELTA_JUMP_THRESHOLD_PX) {
+      // TEMP DEBUG — remove alongside the [render] log once confirmed.
+      console.log("[dragDeltaCorrection] caught jump", { rawX, rawY, jumpX, jumpY, prevCorrection: { x: corr.correctionX, y: corr.correctionY } });
+      corr.correctionX -= jumpX;
+      corr.correctionY -= jumpY;
+    }
+    corr.lastRawX = rawX;
+    corr.lastRawY = rawY;
+    return { x: rawX + corr.correctionX, y: rawY + corr.correctionY };
+  }, []);
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setActiveDelta(ZERO_OFFSET);
+    dragDeltaCorrectionRef.current = { lastRawX: 0, lastRawY: 0, correctionX: 0, correctionY: 0 };
+    // Real capture happens in handleDragMove's own first call instead
+    // — see grabFractionCapturedRef's own comment for why. This just
+    // resets both to their "nothing captured yet this gesture" state.
+    grabFractionCapturedRef.current = false;
+    setGrabFraction(ZERO_OFFSET);
     // Unconditional, not just for a palette drag specifically — cheap
     // either way, and keeps this in the same "always reset per-drag
     // state on drag-start" shape as settling right below rather than
@@ -3994,7 +4123,65 @@ export function NativePlannerEditor({
 
   const handleDragMove = useCallback(
     (event: DragMoveEvent) => {
-      setActiveDelta({ x: event.delta.x, y: event.delta.y });
+      // Defensive workaround for a bug five separate attempts (see
+      // crossingLivePreview's own comment for the trail) couldn't root-
+      // cause: the instant a cross-zone drag's crossingZones first
+      // flips true, dnd-kit's own event.delta — on the very next
+      // pointermove event, ~20-35ms later — jumps by 800-1200 screen
+      // px, physically impossible for a real pointer in that time.
+      // Confirmed NOT caused by anything under this app's own control:
+      // reproduced identically whether the dragged item's own box
+      // resizes, only a sibling's does, or literally nothing's DOM size
+      // changes at all (the current, most conservative version) — the
+      // one constant across every version is the crossingZones state
+      // transition itself, not any particular DOM mutation. Also
+      // confirmed NOT a one-frame blip: the jumped value persists as
+      // the new baseline for the rest of the gesture (every subsequent
+      // event continues from it), meaning dnd-kit's own internal
+      // "initial pointer coordinates" reference — event.delta is
+      // computed relative to it — genuinely, permanently shifts at
+      // that moment, for reasons this file's own code doesn't appear
+      // to control.
+      //
+      // Rather than keep guessing at dnd-kit/browser internals with no
+      // way to step through them directly, this detects the signature
+      // directly (a single event's own delta moving further than any
+      // real pointer plausibly could) and cancels it out with a
+      // running correction, computed entirely from dnd-kit's own
+      // already-reported deltas — no assumption about *why* it
+      // jumped, just that a jump this size in one event is never real
+      // pointer movement and should be subtracted back out so the
+      // dragged item's own on-screen tracking stays continuous instead
+      // of teleporting. See applyDragDeltaCorrection's own comment —
+      // shared with handleDragEnd, whose own drop-event delta needs
+      // the identical correction.
+      const correctedDelta = applyDragDeltaCorrection(event.delta.x, event.delta.y);
+      setActiveDelta(correctedDelta);
+      // See grabFractionCapturedRef's own comment (state declarations)
+      // for why this has to happen here, on the first move event,
+      // rather than in handleDragStart where it was first tried —
+      // event.active.rect.current.initial reliably confirmed unset
+      // there. activatorEvent is the SAME original PointerEvent that
+      // activated the drag on every move event (dnd-kit doesn't
+      // replace it), so reading it here still gives the real,
+      // original grab point, not wherever the pointer is now.
+      if (!grabFractionCapturedRef.current) {
+        const rect = event.active.rect.current.initial;
+        const pointerEvent = event.activatorEvent instanceof PointerEvent ? event.activatorEvent : null;
+        if (rect && pointerEvent && rect.width > 0 && rect.height > 0) {
+          grabFractionCapturedRef.current = true;
+          // TEMP DEBUG — remove alongside the other [render]/
+          // [dragDeltaCorrection] logs once confirmed working.
+          console.log("[grabFraction] captured on first move", {
+            x: (pointerEvent.clientX - rect.left) / rect.width,
+            y: (pointerEvent.clientY - rect.top) / rect.height,
+          });
+          setGrabFraction({
+            x: (pointerEvent.clientX - rect.left) / rect.width,
+            y: (pointerEvent.clientY - rect.top) / rect.height,
+          });
+        }
+      }
       const id = String(event.active.id);
       if (!id.startsWith(PALETTE_ID_PREFIX)) return;
       const slug = id.slice(PALETTE_ID_PREFIX.length);
@@ -4149,7 +4336,15 @@ export function NativePlannerEditor({
         overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
       });
     },
-    [screenPointToPageCell, pageGridByPageId, instanceIdsByPageId, placements, moduleLookup, resolveZoneForColumn]
+    [
+      screenPointToPageCell,
+      pageGridByPageId,
+      instanceIdsByPageId,
+      placements,
+      moduleLookup,
+      resolveZoneForColumn,
+      applyDragDeltaCorrection,
+    ]
   );
 
   // Shared by the live preview (below, every pointer move) and the real
@@ -4322,40 +4517,27 @@ export function NativePlannerEditor({
 
   // Live size preview for a cross-zone reposition — both the dragged
   // item's own box and any target-zone sibling being shrunk to make
-  // room for it. Requested directly, after the dashed-preview-box
-  // version (dbcff63) shipped: "the height and width aren't live
-  // updating... only updates to correct size when dropped... the
-  // preexisting bottom module's size also didn't live update... it
-  // would move up and down but stay same size."
+  // room for it genuinely resize (real gridColumn/gridRow span
+  // changes), placement pinned at each id's own CURRENT position and
+  // only columnSpan/rowSpan changing — see this memo's own git history
+  // for the full trail (bc8502d/3f9e047, c17c930, and two narrower
+  // follow-ups) chasing a real bug this exact live-resize kept
+  // reproducing: dnd-kit's own event.delta jumping ~800-1200px in one
+  // event, physically impossible for a real pointer, right as
+  // crossingZones first flips true.
   //
-  // placementOverrides deliberately pins columnStart/rowStart at each
-  // id's own CURRENT (pre-drag) position — never at resolveDrag's
-  // resolved target cell — and changes ONLY columnSpan/rowSpan. This is
-  // what avoids bc8502d/3f9e047's actual bug (a compensating transform
-  // that could push the dragged item's rendered position outside the
-  // scrollable canvas at low zoom): gridCellToPixels' own x/y origin
-  // depends only on columnStart/rowStart, never on span, so pinning
-  // position while changing size can't create the "native position
-  // jumps a long distance, needs a canceling transform" problem that
-  // caused that bug — visualOffsets' own transform math (dragged item:
-  // unmodified raw pointer delta; reflowed siblings: the existing
-  // fromPixel/toPixel Y shift, itself also span-independent) keeps
-  // composing correctly on top of a size-only change with no changes
-  // needed there at all.
-  //
-  // dayCountOverride is the same fix a first, reverted attempt at this
-  // already worked out: todo-checklist's own renderer draws exactly
-  // propValues.dayCount day-columns regardless of the box's actual
-  // pixel width (see todoChecklist.ts), so a live content re-render at
-  // the new columnSpan with the OLD dayCount would draw the wrong
-  // number of columns. null for every other slug (habit-tracker infers
-  // its layout from allocated width directly; labeled-box doesn't get a
-  // live content re-render at all — see effectiveResizingIds' own
-  // comment on why that's fine).
-  //
-  // One resolveDrag call serves all of it (not split across separate
-  // memos) — cheap of itself, and keeps every piece of this live
-  // preview reading the exact same crossing snapshot.
+  // What changed since the last attempt: rather than avoid the DOM
+  // mutation dnd-kit seems to choke on, applyDragDeltaCorrection
+  // (handleDragMove/handleDragEnd) now detects and cancels any single-
+  // event delta jump past a physically-plausible threshold, regardless
+  // of cause. Confirmed live with the overlay-only version — the same
+  // jump still occurred, dnd-kit's own "Maximum update depth exceeded"
+  // warning fired at the exact same instant, but the correction fully
+  // absorbed it (reported directly: "doesn't jump around"). Since that
+  // correction doesn't care *why* dnd-kit's own delta misbehaves, it
+  // should equally absorb whatever the real resize below triggers —
+  // this is that bet, made explicit rather than silently reintroducing
+  // the same live resize a documented bug trail already existed for.
   const crossingLivePreview = useMemo(() => {
     if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return null;
     const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
@@ -4374,6 +4556,11 @@ export function NativePlannerEditor({
       if (!prev) continue;
       placementOverrides[move.id] = { ...prev, rowSpan: move.rowSpan };
     }
+    // todo-checklist's own renderer draws exactly propValues.dayCount
+    // day-columns regardless of the box's actual pixel width, so its
+    // live content re-render (contentIsLive, driven by
+    // effectiveResizingIds below) needs the new dayCount too, or it
+    // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
     const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
     return { draggedId: activeId, placementOverrides, dayCountOverride };
@@ -4402,20 +4589,17 @@ export function NativePlannerEditor({
     return next;
   }, [moduleLookup, crossingLivePreview]);
 
-  // Everyone placementOverrides touches also needs the same
-  // isResizing/contentIsLive treatment an ordinary resize-handle drag
-  // already gives a live-resizing module — reusing that exact
-  // machinery (the outline stand-in and overflow:hidden clip for stale
-  // content, genuine re-render for todo-checklist/habit-tracker) rather
-  // than inventing a parallel one. Unioned into the SAME resizingIds
-  // value passed to NativePage (not a separate prop) specifically so
+  // Everyone placementOverrides touches needs the same isResizing/
+  // contentIsLive treatment an ordinary resize-handle drag already
+  // gives a live-resizing module — reusing that exact machinery (the
+  // outline stand-in and overflow:hidden clip for stale content,
+  // genuine re-render for todo-checklist/habit-tracker) rather than
+  // inventing a parallel one. Unioned into the SAME resizingIds value
+  // passed to NativePage (not a separate prop) specifically so
   // NativePage's own contentIsLive slug whitelist stays the single
   // source of truth — a crossing labeled-box gets exactly the outline+
   // clip treatment a resize-handle-dragged labeled-box already gets
-  // today (its own renderer draws fine at an arbitrary width, so a
-  // frozen-but-clipped stale render is an acceptable stand-in, same as
-  // it already is for a plain resize), not a special-cased third
-  // behavior.
+  // today.
   const effectiveResizingIds = useMemo(() => {
     if (!crossingLivePreview) return resizingIds;
     const crossingIds = Object.keys(crossingLivePreview.placementOverrides);
@@ -4438,6 +4622,39 @@ export function NativePlannerEditor({
     }
     return resizeFrozenSize ? { ...resizeFrozenSize, ...extra } : extra;
   }, [resizeFrozenSize, crossingLivePreview, moduleLookup, placements, pageGridByPageId]);
+
+  // TEMP DEBUG — remove once the "Maximum update depth exceeded" /
+  // dragged-item-jumps-off-screen bug is diagnosed. Fires after every
+  // committed render while a real (non-palette) drag is active — no
+  // dependency array, so it logs every single commit — the goal is to
+  // see whether commit COUNT explodes far beyond what the actual mouse
+  // movement (activeDelta) would explain, which is what "Maximum update
+  // depth exceeded" would look like from here, whether a spike lines up
+  // with the moment the dragged item visually jumps, and — new —
+  // whether crossingZones itself is flickering true/false rapidly right
+  // at the zone boundary (both bug reports describe the glitch
+  // happening exactly at "the edge"/"gets to bottom section," not
+  // sustained deep within a zone, which would fit a boundary
+  // oscillation feeding a resize-observer-style loop).
+  useEffect(() => {
+    renderCountRef.current += 1;
+    if (activeId && !activeId.startsWith(PALETTE_ID_PREFIX)) {
+      const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+      console.log(
+        "[render]",
+        renderCountRef.current,
+        Date.now(),
+        "delta",
+        activeDelta.x,
+        activeDelta.y,
+        "crossingZones",
+        preview?.crossingZones,
+        "span",
+        preview?.effectiveColumnSpan,
+        preview?.effectiveRowSpan
+      );
+    }
+  });
 
   // Serializes every server call that writes a module's own position/
   // size (reposition, either resize kind, add) against each other —
@@ -4616,9 +4833,13 @@ export function NativePlannerEditor({
       setActiveId(null);
       setActiveDelta(ZERO_OFFSET);
       const instanceId = id;
-      if (event.delta.x === 0 && event.delta.y === 0) return;
+      // Same correction handleDragMove's own identical call applies —
+      // see applyDragDeltaCorrection's own comment for why a drop
+      // event's raw delta needs it too, not just a move event's.
+      const dropDelta = applyDragDeltaCorrection(event.delta.x, event.delta.y);
+      if (dropDelta.x === 0 && dropDelta.y === 0) return;
 
-      const result = resolveDrag(instanceId, event.delta.x, event.delta.y);
+      const result = resolveDrag(instanceId, dropDelta.x, dropDelta.y);
       if (!result) return;
       const { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan } = result;
 
@@ -4652,7 +4873,21 @@ export function NativePlannerEditor({
       // settle — it only needs one transition-free frame.
       const oldPixel = gridCellToPixels(pageGrid, current);
       const newPixel = gridCellToPixels(pageGrid, newPlacement);
-      const lastOffset = { x: event.delta.x / scale, y: event.delta.y / scale };
+      // Same grab-point-anchoring correction visualOffsets' own
+      // identical call already applied for every frame of the live
+      // drag — the settle FLIP's own residual has to start from that
+      // same corrected value (not the plain raw delta), or the drop
+      // reads as a visible pop back to the uncorrected position for
+      // one frame before settling.
+      const lastOffset = computeDraggedTransformPagePx(
+        pageGrid,
+        { x: dropDelta.x / scale, y: dropDelta.y / scale },
+        current,
+        crossingZones,
+        effectiveColumnSpan,
+        effectiveRowSpan,
+        grabFraction
+      );
       const settleOffsets: Record<string, { x: number; y: number }> = {
         [instanceId]: { x: lastOffset.x - (newPixel.x - oldPixel.x), y: lastOffset.y - (newPixel.y - oldPixel.y) },
       };
@@ -4676,6 +4911,78 @@ export function NativePlannerEditor({
       });
 
       if (crossingZones) {
+        // Optimistic content patch — the exact same client-side re-
+        // render contentIsLive already showed one frame ago, computed
+        // again here because activeId (cleared above) is what
+        // contentIsLive's own resizingIds union was keyed on, so it
+        // switches off the instant this handler starts. Without this,
+        // there's a real gap — moveModuleAcrossZones' own server round
+        // trip is genuinely slow (200-600ms observed) — where the box
+        // already sits at its new size/position but still shows its
+        // OLD, narrow-box content underneath (moduleLookup not patched
+        // yet), reported directly: "the module goes to the right spot
+        // but momentarily changes to the old shape before changing to
+        // the new shape after the render." Same
+        // renderModuleInstance/gridCellToPixels pair the live preview
+        // and the server response both already use, so this can't
+        // itself introduce a mismatch — it's just filling the gap
+        // between them with the identical computation. The .then below
+        // still overwrites this with the server's own authoritative
+        // version once it lands (dayCount and similar server-derived
+        // config aren't things this client-side pass can know), which
+        // should be visually identical to what's already showing by
+        // then.
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          const draggedInfo = prev.get(instanceId);
+          if (draggedInfo) {
+            const propValues =
+              draggedInfo.slug === "todo-checklist"
+                ? { ...draggedInfo.propValues, dayCount: newPlacement.columnSpan }
+                : draggedInfo.propValues;
+            const elements = renderModuleInstance(
+              {
+                id: instanceId,
+                locked: draggedInfo.locked,
+                columnStart: newPlacement.columnStart,
+                rowStart: newPlacement.rowStart,
+                columnSpan: newPlacement.columnSpan,
+                rowSpan: newPlacement.rowSpan,
+                propValues,
+                moduleType: { slug: draggedInfo.slug },
+              },
+              pageGrid,
+              fontFamily
+            );
+            const origin = gridCellToPixels(pageGrid, newPlacement);
+            next.set(instanceId, { ...draggedInfo, propValues, elements, originX: origin.x, originY: origin.y });
+          }
+          for (const move of reflow) {
+            if (move.rowSpan === undefined) continue;
+            const info = prev.get(move.id);
+            const prevPlacement = placements[move.id];
+            if (!info || !prevPlacement) continue;
+            const siblingPlacement = { ...prevPlacement, rowStart: move.rowStart, rowSpan: move.rowSpan };
+            const elements = renderModuleInstance(
+              {
+                id: move.id,
+                locked: info.locked,
+                columnStart: siblingPlacement.columnStart,
+                rowStart: siblingPlacement.rowStart,
+                columnSpan: siblingPlacement.columnSpan,
+                rowSpan: siblingPlacement.rowSpan,
+                propValues: info.propValues,
+                moduleType: { slug: info.slug },
+              },
+              pageGrid,
+              fontFamily
+            );
+            const origin = gridCellToPixels(pageGrid, siblingPlacement);
+            next.set(move.id, { ...info, elements, originX: origin.x, originY: origin.y });
+          }
+          return next;
+        });
+
         // Crossing side<->bottom changes this module's own size (and,
         // for todo-checklist, its dayCount config) and can shrink other
         // siblings to make room — none of which a plain columnStart/
@@ -4684,12 +4991,8 @@ export function NativePlannerEditor({
         // updateModulePlacement, and patches moduleLookup the same
         // generic way handleStackResizeAdjacent's own per-entry commit
         // already does (fresh server-rendered elements, not just a
-        // position). propValues in moduleLookup is deliberately left as
-        // whatever it already was even though todo-checklist's own
-        // dayCount changed server-side — nothing client-side reads
-        // dayCount outside of rendering, and the fresh `elements` below
-        // already reflect the real new value; only worth revisiting if
-        // a future feature starts reading it directly.
+        // position) — overwriting the optimistic patch above with the
+        // server's own authoritative render once it lands.
         serializeCommit(() => moveModuleAcrossZones(instanceId, resolved.columnStart, resolved.rowStart))
           .then((results) => {
             setModuleLookup((prev) => {
@@ -4729,7 +5032,17 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       });
     },
-    [placements, resolveDrag, scale, serializeCommit, paletteDrag, handleAddModule]
+    [
+      placements,
+      resolveDrag,
+      scale,
+      serializeCommit,
+      paletteDrag,
+      handleAddModule,
+      applyDragDeltaCorrection,
+      fontFamily,
+      grabFraction,
+    ]
   );
 
   // Advances the settle FLIP from "start" (drawn at the residual offset,
@@ -5231,20 +5544,25 @@ export function NativePlannerEditor({
     if (activeId) {
       const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
       if (preview) {
-        const { pageGrid, reflow } = preview;
-        // The dragged item follows the pointer directly and continuously
-        // — not snapped to the resolved cell, which would make it feel
-        // like it's teleporting between grid lines instead of being
-        // carried by the pointer. dxPagePx/dyPagePx (already
-        // scale-divided) is exactly that raw follow distance. Unchanged
-        // by crossingZones — the dragged item's own native position
-        // never moves mid-drag (see resolveDrag's own crossing comment
-        // for why); everything the user sees indicating "where it'll go"
-        // comes from the reflow loop below instead (both the target
-        // zone's siblings shrinking to make room, and — new — the source
-        // zone's siblings gravity-filling the gap it leaves), not a
-        // separate preview box.
-        offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+        const { pageGrid, reflow, current, crossingZones, effectiveColumnSpan, effectiveRowSpan } = preview;
+        // The dragged item follows the pointer directly and
+        // continuously — not snapped to the resolved cell, which would
+        // make it feel like it's teleporting between grid lines instead
+        // of being carried by the pointer. dxPagePx/dyPagePx (already
+        // scale-divided) is exactly that raw follow distance.
+        // computeDraggedTransformPagePx layers the grab-point anchoring
+        // correction on top while crossing (a no-op the rest of the
+        // time, when nobody's own size is changing to correct for) —
+        // see its own comment for the full reasoning.
+        offsets[activeId] = computeDraggedTransformPagePx(
+          pageGrid,
+          { x: activeDelta.x / scale, y: activeDelta.y / scale },
+          current,
+          crossingZones,
+          effectiveColumnSpan,
+          effectiveRowSpan,
+          grabFraction
+        );
         for (const move of reflow) {
           const prevPlacement = placements[move.id];
           if (!prevPlacement) continue;
@@ -5262,7 +5580,7 @@ export function NativePlannerEditor({
     }
 
     return offsets;
-  }, [activeId, activeDelta, placements, resolveDrag, scale, settling]);
+  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction]);
 
   // Which instances need their transition suppressed for the current
   // render — just the settle FLIP's "start" frame (see `settling` state's
@@ -5443,6 +5761,14 @@ export function NativePlannerEditor({
           <DndContext
             id="memari-planner-dnd"
             sensors={sensors}
+            // Disabled while chasing the event.delta-jump bug documented
+            // on crossingLivePreview's own comment — ruled out as the
+            // actual cause (the same jump reproduced identically with
+            // this on or off), but left off anyway: this app's own
+            // canvas already fits the whole spread to the viewport by
+            // default (zoomMode "fit-width"/"fit-page"), so auto-scroll
+            // was never a needed feature here to begin with.
+            autoScroll={false}
             onDragStart={handleDragStart}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}

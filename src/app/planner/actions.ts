@@ -524,8 +524,11 @@ export async function getOrCreatePlanner() {
 // they started" reset — see NativePlannerEditor's header button for
 // where this is triggered. Scoped to two specific regions, not every
 // non-locked instance on the planner:
-//   1. The left page's sidebar column (columnStart:0, labeled-box only
-//      — the same test hasSidebarContent above uses).
+//   1. The left page's sidebar — every labeled-box on either page,
+//      regardless of its current column (see the delete's own comment
+//      below for why this isn't columnStart:0-scoped the way it used
+//      to be), replaced with the template's own sidebar boxes at
+//      columnStart:0.
 //   2. The area below the hourly grid, on BOTH pages — template default
 //      is a full-height TO-DO checklist there (WEEK_TODO_TEMPLATE — see
 //      its own comment for why this needs to exist here at all: it was
@@ -549,7 +552,20 @@ export async function getOrCreatePlanner() {
 // nothing to replace it. All scoped deletes below key off moduleTypeId,
 // not a position heuristic, so a checklist (or habit-tracker) the user
 // moved or resized away from its template spot is still found and
-// removed/replaced correctly.
+// removed/replaced correctly. labeled-box's own delete matches both
+// pages and any column for the exact same reason — it used to be
+// columnStart:0-only (the sidebar's own template column), back when a
+// labeled-box could never be anywhere else. The cross-zone feature
+// broke that assumption: one dragged into the bottom zone (columnStart
+// matching the hourly grid, not 0) survived this delete untouched and
+// was left overlapping the freshly-recreated checklist there, reported
+// directly: "when i reset template after moving side to bottom it
+// stays there and ends up overlapping with the reset bottom module."
+// Deleting every labeled-box on both pages regardless of position is
+// safe, not overzealous: the sidebar's own template boxes are recreated
+// fresh immediately after anyway, and a labeled-box in the bottom zone
+// was never part of the original template to begin with (same
+// reasoning habit-tracker's own delete right below already uses).
 //
 // week-title is left untouched regardless — there's no editor UI that
 // can change it, so nothing on it could have drifted from the template.
@@ -633,7 +649,7 @@ export async function resetPlannerToTemplate() {
   await prisma.$transaction([
     ...hourlyResets,
     prisma.moduleInstance.deleteMany({
-      where: { pageId: leftPage.id, moduleTypeId: boxType.id, columnStart: 0 },
+      where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: boxType.id },
     }),
     prisma.moduleInstance.createMany({
       data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
