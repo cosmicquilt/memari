@@ -499,6 +499,23 @@ type PaletteDragPreview = {
 // animating size, so it only tracks that size if the two ease
 // identically. Differing durations or curves reintroduce the drift
 // (see computeDraggedSizeCompensationPagePx).
+// Consecutive pointer reads a DIFFERENT valid zone must win before it
+// takes over from the one currently held. Sticky targeting (see the
+// lock below) already absorbs flapping between a zone and dead space,
+// because dead space is not an event. It cannot absorb flapping between
+// two ADJACENT VALID zones - the side column against the bottom
+// section, which share a column boundary - since every flip there is a
+// genuine entry into a genuine zone.
+//
+// That matters more than it looks: the dragged box's size is a pure
+// function of the resolved zone, so a flapping zone IS a flapping size,
+// and each flip retargets the resize transition from whatever
+// intermediate size it had reached. Reported as the held box appearing
+// to animate toward some in-between size. Three reads is roughly
+// 25-50ms - long enough to outlast boundary noise, short enough that a
+// deliberate crossing still feels immediate.
+const ZONE_SWITCH_TICKS = 3;
+
 const CROSSING_EASE_MS = 160;
 const CROSSING_EASE = `cubic-bezier(0.4, 0, 0.2, 1)`;
 const CROSSING_RESIZE_TRANSITION = [
@@ -4208,6 +4225,10 @@ export function NativePlannerEditor({
     zoneKey: string | null;
     preview: NonNullable<ReturnType<typeof resolveDrag>>;
   } | null>(null);
+  // Which different zone is currently trying to take over, and for how
+  // many consecutive reads it has been asking. See ZONE_SWITCH_TICKS.
+  const pendingZoneRef = useRef<string | null>(null);
+  const pendingZoneTicksRef = useRef(0);
   // The row to fall back to (below, in resolveDrag) whenever the raw
   // pointer's own column has drifted off the dragged module's own
   // CURRENT column while NOT crossing zones — e.g. hovering over the
@@ -4325,6 +4346,8 @@ export function NativePlannerEditor({
     grabFractionCapturedRef.current = false;
     setGrabFraction(null);
     confirmedCrossingRef.current = null;
+    pendingZoneRef.current = null;
+    pendingZoneTicksRef.current = 0;
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4513,7 +4536,33 @@ export function NativePlannerEditor({
           // gets in initial position." Holding a stale value is now the
           // job of the consumers below, and only while the pointer is
           // somewhere that has no valid target at all.
-          confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
+          const held = confirmedCrossingRef.current;
+          const holdsThisDrag = held?.instanceId === id;
+          if (!holdsThisDrag || held.zoneKey === rawPreview.zoneKey) {
+            // First acquisition of the gesture, or a refresh of the zone
+            // already held. Refreshing has to stay immediate: it is what
+            // keeps the insert row and the reflow preview tracking the
+            // pointer within a zone.
+            pendingZoneRef.current = null;
+            pendingZoneTicksRef.current = 0;
+            confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
+          } else {
+            // A different valid zone wants it. Make it ask repeatedly,
+            // so a pointer sitting on a shared boundary and alternating
+            // never accumulates enough consecutive reads to take over -
+            // it just stays where it is, which is the intent.
+            if (pendingZoneRef.current !== rawPreview.zoneKey) {
+              pendingZoneRef.current = rawPreview.zoneKey;
+              pendingZoneTicksRef.current = 1;
+            } else {
+              pendingZoneTicksRef.current += 1;
+            }
+            if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
+              pendingZoneRef.current = null;
+              pendingZoneTicksRef.current = 0;
+              confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
+            }
+          }
         } else if (confirmedCrossingRef.current?.instanceId !== id) {
           // No zone under the pointer and nothing held for THIS drag -
           // nothing to preserve. A held zone belonging to this drag is
