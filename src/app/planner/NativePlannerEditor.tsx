@@ -4974,8 +4974,20 @@ export function NativePlannerEditor({
       // exact same column range and can only be told apart by row.
       // Reported directly: "freeze positioning isn't happening over
       // right page's hour/upper section."
+      // The pointer has to be within the module's own COLUMN RANGE, not
+      // on its exact starting column. A bottom-zone module is
+      // columnStart 1 / columnSpan 3 on the left page (0/4 on the
+      // right), so an equality test here was true only while the cursor
+      // sat in the leftmost column of a three-wide zone - anywhere else
+      // overOwnColumn went false and the insert row fell back to
+      // pinnedRowStart, freezing the reorder. Reported as a textbox at
+      // the bottom of the bottom-left stack that could not be dragged
+      // above the todo above it. Side-zone modules were unaffected only
+      // because their zone happens to be exactly one column wide, which
+      // is what let the equality look right for so long.
       const isSameZone =
-        pointerCell.columnStart === current.columnStart &&
+        pointerCell.columnStart >= current.columnStart &&
+        pointerCell.columnStart < current.columnStart + current.columnSpan &&
         (!currentIsBottomZone ||
           (!!sourceHourlyGridPlacement &&
             nearestCellRaw.rowStart >=
