@@ -514,8 +514,24 @@ type PaletteDragPreview = {
 // instrumentation showed is no longer happening, and a spring pays the
 // identical per-frame layout cost.
 //
-// Set this above zero to restore the ease; everything else still works,
-// it simply looks worse than snapping while costing more.
+// There is a second, independent reason, found by slowing this to 800ms
+// and watching: the module's CONTENT does not ease with its container.
+// A crossing adds the dragged id to effectiveResizingIds, which makes
+// contentIsLive true for exactly the three crossable types, so their
+// elements are re-rendered at the TARGET geometry immediately, in page
+// pixels - and contentIsLive deliberately switches off the overflow
+// clip that would otherwise hide stale content. At zero duration the
+// container and the content land in the same frame and always agree.
+// Give the container any duration at all and the content sits at its
+// final size inside a box still morphing toward it, which reads as a
+// second rectangle overlaid on the first, sharing its top-left corner.
+// Reported exactly that way.
+//
+// So restoring the ease means more than raising this number. The
+// content would have to hold its OLD size for the duration and re-render
+// once at the end, clipped meanwhile - which is already what the
+// non-live module types get from overflow:hidden. Worth knowing before
+// assuming this is a one-line knob.
 const CROSSING_EASE_MS = 0;
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
