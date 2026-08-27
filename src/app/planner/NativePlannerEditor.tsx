@@ -4244,7 +4244,6 @@ export function NativePlannerEditor({
     zoneKey: string | null;
     preview: NonNullable<ReturnType<typeof resolveDrag>>;
   } | null>(null);
-  const crossingZonesExitStreakRef = useRef(0);
   // The row to fall back to (below, in resolveDrag) whenever the raw
   // pointer's own column has drifted off the dragged module's own
   // CURRENT column while NOT crossing zones — e.g. hovering over the
@@ -4363,7 +4362,6 @@ export function NativePlannerEditor({
     setGrabFraction(null);
     setPickupAnimating(false);
     confirmedCrossingRef.current = null;
-    crossingZonesExitStreakRef.current = 0;
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4525,8 +4523,26 @@ export function NativePlannerEditor({
         // so only this imperative lock update is deferred.
         if (justCapturedGrabFraction) return;
         const rawPreview = resolveDragRef.current?.(id, correctedDelta.x, correctedDelta.y) ?? null;
-        if (rawPreview?.crossingZones) {
-          crossingZonesExitStreakRef.current = 0;
+        // Sticky targets, replacing an exit debounce that counted two
+        // consecutive non-crossing reads. The rule is now "exit
+        // requires entry": whatever zone was last resolved stays in
+        // force until the pointer positively enters a DIFFERENT valid
+        // zone. Dead space - the hours grid, a gutter, off-page - is no
+        // longer an event at all, so it cannot release anything.
+        //
+        // The old shape was two reads of hysteresis leaving and none
+        // entering, survivable while a zone change snapped the size
+        // instantly: the boundary chattered, but each state arrived at
+        // once. Once that resize became animated it stopped being
+        // survivable, because retargeting a CSS transition mid-flight
+        // restarts it from the current computed value with a fresh
+        // duration - the spec's reversing-shortening only shortens an
+        // exact reversal, not a retarget to a third value. A boundary
+        // flapping every few frames therefore produced a box that never
+        // finished easing anywhere. Reported as jitter while crossing.
+        // The animation did not introduce the instability; it made the
+        // existing chatter legible.
+        if (rawPreview?.zoneKey) {
           // Refreshed on EVERY crossing tick, so this always holds the
           // most recent resolution that was actually valid. It used to
           // only capture the first tick of a crossing episode, which
@@ -4539,14 +4555,11 @@ export function NativePlannerEditor({
           // job of the consumers below, and only while the pointer is
           // somewhere that has no valid target at all.
           confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
-        } else if (confirmedCrossingRef.current?.instanceId === id) {
-          crossingZonesExitStreakRef.current += 1;
-          if (crossingZonesExitStreakRef.current >= 2) {
-            confirmedCrossingRef.current = null;
-            crossingZonesExitStreakRef.current = 0;
-          }
-        } else {
-          crossingZonesExitStreakRef.current = 0;
+        } else if (confirmedCrossingRef.current?.instanceId !== id) {
+          // No zone under the pointer and nothing held for THIS drag -
+          // nothing to preserve. A held zone belonging to this drag is
+          // deliberately left alone; that hold is the whole mechanism.
+          confirmedCrossingRef.current = null;
         }
         setConfirmedCrossingPreview(confirmedCrossingRef.current);
         // Feeds lastOwnColumnRow (own comment, near
@@ -5127,7 +5140,12 @@ export function NativePlannerEditor({
             ),
           ]
         : targetReflow;
-      const zoneKey = crossingZones ? `${targetPageId}:${targetZone!.columnStart}:${targetZone!.columnSpan}` : null;
+      // Which zone the pointer is in, whether or not being there
+      // constitutes a crossing. Previously null unless crossing, which
+      // made "back in my own zone" indistinguishable from "over dead
+      // space" - and the sticky rule below has to tell those apart,
+      // because one should release the held zone and the other must not.
+      const zoneKey = targetZone ? `${targetPageId}:${targetZone.columnStart}:${targetZone.columnSpan}` : null;
       // TEMP DEBUG payload — diagnosing "preexisting todo moves too far
       // down and doesn't decrease in size, moving off page" during a
       // side->bottom crossing. Only data assembly here (no logging, no
@@ -5240,12 +5258,16 @@ export function NativePlannerEditor({
     // identically in visualOffsets below; the two must agree on the
     // same preview for a given render or the dragged box's size and its
     // transform desync.
+    // The held zone governs, always. Preferring rawPreview whenever it
+    // happened to say "crossing" is what let boundary chatter through to
+    // the size: the lock only ever applied on non-crossing ticks, which is
+    // exactly when it had nothing to hold back. The held preview refreshes
+    // on every tick the pointer is inside a zone, so this stays live; it
+    // freezes only over dead space, which is the intent.
     const preview =
-      rawPreview?.crossingZones
-        ? rawPreview
-        : confirmedCrossingPreview?.instanceId === activeId
-          ? confirmedCrossingPreview.preview
-          : rawPreview;
+      confirmedCrossingPreview?.instanceId === activeId
+        ? confirmedCrossingPreview.preview
+        : rawPreview;
     if (!preview?.crossingZones) return null;
     const placementOverrides: Record<string, Placement> = {
       [activeId]: {
@@ -6361,12 +6383,16 @@ export function NativePlannerEditor({
       // episode instead of continuously re-resolving.
       const rawPreview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
       // Same rule as crossingLivePreview above — see its comment.
+      // The held zone governs, always. Preferring rawPreview whenever it
+      // happened to say "crossing" is what let boundary chatter through to
+      // the size: the lock only ever applied on non-crossing ticks, which is
+      // exactly when it had nothing to hold back. The held preview refreshes
+      // on every tick the pointer is inside a zone, so this stays live; it
+      // freezes only over dead space, which is the intent.
       const preview =
-        rawPreview?.crossingZones
-          ? rawPreview
-          : confirmedCrossingPreview?.instanceId === activeId
-            ? confirmedCrossingPreview.preview
-            : rawPreview;
+        confirmedCrossingPreview?.instanceId === activeId
+          ? confirmedCrossingPreview.preview
+          : rawPreview;
       if (preview) {
         const { pageGrid, reflow, current, crossingZones, effectiveColumnSpan, effectiveRowSpan } = preview;
         // The dragged item follows the pointer directly and
