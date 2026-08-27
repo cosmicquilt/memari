@@ -13,6 +13,7 @@ import {
   packStackFromTop,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
+  canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -1305,22 +1306,42 @@ export async function updateModulePlacement(
 // placement — including its new shrink-existing-siblings tier, which is
 // the actual "even if the section is full" behavior; nothing here
 // reimplements it.
-export async function moveModuleAcrossZones(instanceId: string, columnStart: number, rowStart: number) {
+export async function moveModuleAcrossZones(instanceId: string, targetPageId: string, columnStart: number, rowStart: number) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
+  // Fetches the whole planner's own pages (each with its own
+  // moduleInstances), not just the dragged instance's own source page —
+  // a cross-page crossing needs BOTH the source page's own siblings
+  // (for the departure-side gravity-fill) and the target page's own
+  // siblings (for the shrink-cascade/reorder), and this is genuinely
+  // new: there's no existing precedent anywhere in this app for
+  // reassigning an existing ModuleInstance's own pageId, so ownership
+  // needs to be established for both pages, not just the source one.
+  // Scoping targetPage's own lookup to planner.pages (rather than a
+  // second, unscoped query by id) gets the "does targetPageId actually
+  // belong to this same, already-ownership-checked planner" check for
+  // free — a same-page move (targetPageId === instance.pageId, the
+  // overwhelming majority of every call to this action) just finds
+  // itself in that same array.
   const instance = await prisma.moduleInstance.findFirst({
     where: { id: instanceId, page: { planner: { ownerId: userId } } },
     include: {
+      moduleType: true,
       page: {
         include: {
-          moduleInstances: { include: { moduleType: true } },
-          planner: { select: { theme: true } },
+          planner: {
+            include: {
+              pages: {
+                orderBy: { position: "asc" },
+                include: { moduleInstances: { include: { moduleType: true } } },
+              },
+            },
+          },
         },
       },
-      moduleType: true,
     },
   });
   if (!instance) {
@@ -1332,16 +1353,20 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
   if (instance.columnStart === null || instance.rowStart === null) {
     throw new Error("Module isn't grid-placed");
   }
+  const sourcePage = instance.page.planner.pages.find((p) => p.id === instance.pageId);
+  const targetPage = instance.page.planner.pages.find((p) => p.id === targetPageId);
+  if (!sourcePage || !targetPage) {
+    throw new Error("Target page not found on this planner");
+  }
 
   const slug = instance.moduleType.slug;
-  const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
-  const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
-  if (!canFillBottomZone) {
+  if (!canCrossZones(slug)) {
     throw new Error("This module type can't cross zones");
   }
 
-  const pageGrid = pageGridFor(instance.page);
-  const hourlyGrid = instance.page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const sourcePageGrid = pageGridFor(sourcePage);
+  const targetPageGrid = pageGridFor(targetPage);
+  const hourlyGrid = targetPage.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
   const inBottomZone =
     !!hourlyGrid &&
     hourlyGrid.columnStart !== null &&
@@ -1358,28 +1383,37 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
       const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
       configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
     }
-  } else if (canSideZone) {
+  } else {
+    // Side zone. Reached by every zone-crossing type now, labeled-box
+    // included — see canCrossZones (grid.ts) for why that used to throw
+    // here instead, and why the asymmetry was a bug.
     effectiveColumnStart = 0;
     effectiveColumnSpan = 1;
     if (slug === "todo-checklist") {
       configOverrides.dayCount = 1;
     }
-  } else {
-    // labeled-box outside the bottom zone — its own long-established
-    // side-zone placement, not actually a "crossing" this action needs
-    // to handle specially (resolveDrag, NativePlannerEditor.tsx, only
-    // ever calls this action when a real crossing was detected, so this
-    // is a defensive re-check, not an expected path).
-    throw new Error("This module isn't moving into a different zone");
   }
-  const effectiveRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
+  const effectiveRowSpan = getMinRowSpanForSlug(slug, targetPageGrid, effectiveColumnSpan);
 
-  const others: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
+  const sourceOthers: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
+    [];
+  for (const mi of sourcePage.moduleInstances) {
+    if (mi.id === instance.id || mi.columnStart === null || mi.rowStart === null) continue;
+    sourceOthers.push({
+      id: mi.id,
+      locked: mi.locked,
+      columnStart: mi.columnStart,
+      rowStart: mi.rowStart,
+      columnSpan: mi.columnSpan,
+      rowSpan: mi.rowSpan,
+    });
+  }
+  const targetOthers: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
     [];
   let hourlyGridRect: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number } | null = null;
-  for (const mi of instance.page.moduleInstances) {
+  for (const mi of targetPage.moduleInstances) {
     if (mi.id === instance.id || mi.columnStart === null || mi.rowStart === null) continue;
-    others.push({
+    targetOthers.push({
       id: mi.id,
       locked: mi.locked,
       columnStart: mi.columnStart,
@@ -1394,9 +1428,10 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
   // Same synthetic 1-row breathing-gap reservation below hourly-grid-core
   // as resolveDrag's own identical block (NativePlannerEditor.tsx) and
   // addPaletteModuleAt above — keeps a landing flush against the hourly
-  // grid unreachable here too, not just on a same-zone drag.
+  // grid unreachable here too, not just on a same-zone drag. Reserved
+  // against the TARGET page's own hourly grid, same as resolveDrag.
   if (hourlyGridRect) {
-    others.push({
+    targetOthers.push({
       id: "__hourlygridgap__",
       locked: true,
       columnStart: hourlyGridRect.columnStart,
@@ -1408,44 +1443,56 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
 
   const candidate = { columnStart: effectiveColumnStart, rowStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
   const minRowSpanById: Record<string, number> = {};
-  for (const o of others) {
+  for (const o of targetOthers) {
     if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
-    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === o.id);
+    const otherMi = targetPage.moduleInstances.find((mi) => mi.id === o.id);
     if (!otherMi) continue;
-    minRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, pageGrid, candidate.columnSpan);
+    minRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, targetPageGrid, candidate.columnSpan);
   }
 
   const { placement: resolved, reflow } = resolveModulePlacement(
-    pageGrid,
+    targetPageGrid,
     candidate,
-    others,
+    targetOthers,
     instance.rowStart,
     minRowSpanById
   );
 
   // Crossing leaves a gap in the SOURCE zone (the one being left) —
   // resolveModulePlacement above only ever reorders/reflows the TARGET
-  // zone's own stack (candidate's own column), since that's the only
-  // one this module's own new placement ever collides with. Mirrors
-  // resolveDrag's own identical addition (NativePlannerEditor.tsx) —
-  // requested directly: "side modules dont live update or move to fill
-  // empty space accordingly." Computed against the module's own
-  // ORIGINAL columnStart/rowStart (before this move) — the two zones
-  // never share a column range, so this can never collide with (or
-  // duplicate an id already in) the target-zone reflow above.
+  // zone's own stack (candidate's own column, on whichever page it
+  // lives on), since that's the only one this module's own new
+  // placement ever collides with. Mirrors resolveDrag's own identical
+  // addition (NativePlannerEditor.tsx) — requested directly: "side
+  // modules dont live update or move to fill empty space accordingly."
+  // Always against sourceOthers (this module's OWN page), never
+  // targetOthers — the gap being closed is always on the page being
+  // LEFT, regardless of where the module is going. Computed against the
+  // module's own ORIGINAL columnStart/rowStart (before this move) — the
+  // source and target stacks never share a column range on the SAME
+  // page, so this can never collide with (or duplicate an id already
+  // in) the target-zone reflow above; when source and target ARE the
+  // same page (the ordinary same-page case), they're still different
+  // columns for the same reason.
   const sourceGravity = gravityRepackAfterDeparture(
     { id: instance.id, columnStart: instance.columnStart, rowStart: instance.rowStart, columnSpan: instance.columnSpan, rowSpan: instance.rowSpan },
-    others
+    sourceOthers
   );
 
   const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
   const instanceUpdateData: {
+    pageId: string;
     columnStart: number;
     rowStart: number;
     columnSpan: number;
     rowSpan: number;
     propValues?: Prisma.InputJsonValue;
   } = {
+    // Written unconditionally, even for a same-page move — that just
+    // writes back the value the row already had, harmless, and keeps
+    // this one code path correct for both cases rather than needing a
+    // conditional.
+    pageId: targetPageId,
     columnStart: resolved.columnStart,
     rowStart: resolved.rowStart,
     columnSpan: effectiveColumnSpan,
@@ -1464,7 +1511,12 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
     );
   }
   for (const move of sourceGravity) {
-    updates.push(prisma.moduleInstance.update({ where: { id: move.id }, data: { rowStart: move.rowStart } }));
+    updates.push(
+      prisma.moduleInstance.update({
+        where: { id: move.id },
+        data: move.rowSpan !== undefined ? { rowStart: move.rowStart, rowSpan: move.rowSpan } : { rowStart: move.rowStart },
+      })
+    );
   }
 
   const updated = await prisma.$transaction(updates);
@@ -1472,18 +1524,24 @@ export async function moveModuleAcrossZones(instanceId: string, columnStart: num
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const slugById = new Map<string, string>([[instance.id, slug]]);
   for (const move of reflow) {
-    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === move.id);
+    const otherMi = targetPage.moduleInstances.find((mi) => mi.id === move.id);
     if (otherMi) slugById.set(move.id, otherMi.moduleType.slug);
   }
   for (const move of sourceGravity) {
-    const otherMi = instance.page.moduleInstances.find((mi) => mi.id === move.id);
+    const otherMi = sourcePage.moduleInstances.find((mi) => mi.id === move.id);
     if (otherMi) slugById.set(move.id, otherMi.moduleType.slug);
   }
+  // Target page's own grid for the dragged instance and its target-
+  // reflow siblings, source page's own grid for source-gravity rows —
+  // both shapes are confirmed identical today (same schema defaults on
+  // every page), but this makes that correctness explicit rather than
+  // incidental to it.
+  const targetIds = new Set<string>([instance.id, ...reflow.map((m) => m.id)]);
   return updated.map((row) => ({
     id: row.id,
     rowStart: row.rowStart as number,
     rowSpan: row.rowSpan,
-    elements: renderInstanceElements(row, slugById.get(row.id) ?? slug, pageGrid, fontFamily),
+    elements: renderInstanceElements(row, slugById.get(row.id) ?? slug, targetIds.has(row.id) ? targetPageGrid : sourcePageGrid, fontFamily),
   }));
 }
 
