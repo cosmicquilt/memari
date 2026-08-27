@@ -76,6 +76,36 @@ export function pixelsToGridCell(
   return { columnStart, rowStart };
 }
 
+// Which cell CONTAINS a point — as opposed to pixelsToGridCell above,
+// which returns the NEAREST cell.
+//
+// The two answer genuinely different questions and both are needed.
+// Nearest (round) is right for snapping: a dragged box's corner should
+// settle onto whichever gridline it's closest to. Containment (floor) is
+// right for hit testing: "is the pointer over the sidebar" should become
+// true the moment the pointer crosses into the sidebar column.
+//
+// Using nearest for hit testing puts the effective boundary at the
+// column's MIDPOINT, so only the right half of a one-column-wide sidebar
+// registers as the sidebar. Reported directly: "it only went back when
+// my cursor reached the center of the side column." Half a column is
+// invisible to the user and it makes a narrow zone feel unreachable.
+export function pixelsToContainingCell(
+  page: PageGrid,
+  pixel: { x: number; y: number }
+): { columnStart: number; rowStart: number } {
+  const { cellWidth, cellHeight } = usableArea(page);
+  const columnStart = Math.min(
+    page.gridColumns - 1,
+    Math.max(0, Math.floor((pixel.x - page.marginPx) / (cellWidth + page.gridGapPx)))
+  );
+  const rowStart = Math.min(
+    page.gridRows - 1,
+    Math.max(0, Math.floor((pixel.y - page.marginPx) / (cellHeight + page.gridGapPx)))
+  );
+  return { columnStart, rowStart };
+}
+
 // Inverse of gridCellToPixels for a fixed-width, row-only conversion:
 // given a required content height (px, single column), the number of
 // grid rows needed to contain it. Extracted from actions.ts's
@@ -508,14 +538,54 @@ export function resolveModulePlacement(
 // contiguous unlocked same-column stack it belonged to, then repack
 // everyone else from the stack's own top anchor. Members above the
 // departure point land back exactly where they already were; members
-// below shift up to close the gap it leaves. Requested directly: "side
-// modules dont live update or move to fill empty space accordingly."
-// Only rowStart ever changes — the departing member's own rowSpan is
-// only needed to know how tall a gap it leaves, not applied to anyone
-// else. Return shape (rowSpan optional, never actually populated) just
-// matches resolveModulePlacement's own reflow shape so a caller merging
-// the two arrays (see resolveDrag) gets one consistently-typed list
-// rather than a union TypeScript can't cleanly narrow.
+// below shift up to close the gap it leaves.
+//
+// The stack's own BOTTOM-MOST remaining member also grows by exactly
+// the departing member's own rowSpan, so the stack's total footprint
+// stays exactly what it was before — matching how every other stack in
+// this app already only ever grows from the bottom (StackResizeHandle/
+// cascadeStackSpans' own identical convention). A first version of this
+// only shifted, never grew, leaving a permanent gap at the zone's own
+// bottom edge equal to the departing member's own height — reported
+// directly: "side module still dont increase in size to fill gap...
+// there shouldn't be a gap at the bottom." Verified by hand for a top,
+// middle, and bottom departure against the real sidebar fixture
+// (week-title + Gratitude(6)/Reminders(9)/Notes(13), the same one this
+// file's own tests already use) before writing this — all three land
+// on the exact same total footprint (28 rows) the stack already had.
+//
+// Only the bottom-most member's rowSpan ever changes — the departing
+// member's own rowSpan is only needed to know how much to grow it by.
+// Return shape matches resolveModulePlacement's own reflow shape so a
+// caller merging the two arrays (see resolveDrag) gets one
+// consistently-typed list rather than a union TypeScript can't cleanly
+// narrow.
+// Which module types can move between the side zone and a bottom zone at
+// all. ONE definition, deliberately: this used to be two hand-written
+// predicates (canFillBottomZone / canSideZone) duplicated across
+// NativePlannerEditor.tsx and actions.ts — four copies — and they
+// disagreed about labeled-box. It was listed as bottom-capable but NOT
+// side-capable, so a labeled-box could be dragged from the sidebar into
+// the bottom zone and then could never come back: resolveZoneForColumn
+// returned null for the side zone, crossingZones never went true, and the
+// drag silently did nothing. Reported directly: "dragged textbox from
+// side to bottom left then tried to drag back to side and it wouldn't go
+// back even when dragged."
+//
+// labeled-box belongs in both. Its own palette entry is section "side"
+// with defaultColumnSpan 1 — the sidebar is its home shape — and the
+// feature's own design called for it to "shrink back to columnSpan: 1
+// when dragged back to the side zone." The asymmetry was a bug, not a
+// policy.
+//
+// Lives here rather than in either caller because grid.ts is already the
+// shared module both the client editor and the "use server" actions
+// import from — the same reason the placement algorithms sit here
+// instead of being hand-synced copies.
+export function canCrossZones(slug: string): boolean {
+  return slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
+}
+
 export function gravityRepackAfterDeparture(
   departing: { id: string; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
   siblings: Array<{ id: string; locked: boolean; columnStart: number; columnSpan: number; rowStart: number; rowSpan: number }>
@@ -539,8 +609,32 @@ export function gravityRepackAfterDeparture(
     stack.push({ id: below.id, rowStart: below.rowStart, rowSpan: below.rowSpan });
     bottomCursor = below.rowStart + below.rowSpan;
   }
+
+  const remaining = stack.filter((m) => m.id !== departing.id);
+  if (remaining.length === 0) return [];
+
+  // Departing member's own rowSpan is split as evenly as possible across
+  // EVERY remaining sibling, not dumped entirely on the bottom-most one —
+  // requested directly: "distribute gap size between however remaining
+  // siblings there are as evenly split as possible." A first version only
+  // grew the last member (see this function's own history above); with 2+
+  // remaining siblings that read as one box ballooning while its
+  // neighbors stayed exactly their old size, not a shared gravity-fill.
+  // Remainder (when departing.rowSpan doesn't divide evenly) goes to the
+  // LATER members — same "stacks grow from the bottom" convention this
+  // function's own siblings/cascadeStackSpans already follow elsewhere,
+  // just applied per-extra-row instead of all-at-once. With exactly one
+  // remaining sibling this reduces to the original behavior (it alone
+  // absorbs the full departing.rowSpan) — verified by hand it can't do
+  // otherwise: base = floor(n/1) = n, remainder = n % 1 = 0.
+  const share = Math.floor(departing.rowSpan / remaining.length);
+  const remainder = departing.rowSpan % remaining.length;
+  const growthById = new Map<string, number>(
+    remaining.map((m, i) => [m.id, share + (i >= remaining.length - remainder ? 1 : 0)])
+  );
+
   let cursor = stack[0].rowStart;
-  const plan: Array<{ id: string; rowStart: number }> = [];
+  const plan: Array<{ id: string; rowStart: number; rowSpan?: number }> = [];
   for (const m of stack) {
     // Skip the departing member entirely — including its own rowSpan's
     // contribution to cursor. Advancing cursor for it too (an earlier,
@@ -549,8 +643,12 @@ export function gravityRepackAfterDeparture(
     // positions and computes zero moves — the gap it leaves never
     // actually closes.
     if (m.id === departing.id) continue;
-    if (m.rowStart !== cursor) plan.push({ id: m.id, rowStart: cursor });
-    cursor += m.rowSpan;
+    const growth = growthById.get(m.id) ?? 0;
+    const newRowSpan = growth > 0 ? m.rowSpan + growth : undefined;
+    if (m.rowStart !== cursor || newRowSpan !== undefined) {
+      plan.push({ id: m.id, rowStart: cursor, ...(newRowSpan !== undefined ? { rowSpan: newRowSpan } : {}) });
+    }
+    cursor += newRowSpan ?? m.rowSpan;
   }
   return plan;
 }

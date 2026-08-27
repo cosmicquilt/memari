@@ -22,6 +22,7 @@ import {
   packStackFromTop,
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
+  pixelsToContainingCell,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -594,9 +595,16 @@ const page: PageGrid = {
 // --- gravityRepackAfterDeparture ---
 // Same real sidebar fixture as the shrink-cascade block above
 // (week-title rows 0-2 locked, Gratitude(6)@2, Reminders(9)@8,
-// Notes(13)@17) — a cross-zone drag's own SOURCE zone (the one being
-// left) needs exactly this: whoever's left behind closes the gap the
-// departing module leaves.
+// Notes(13)@17, total footprint 28 rows) — a cross-zone drag's own
+// SOURCE zone (the one being left) needs exactly this: whoever's left
+// behind closes the gap the departing module leaves, with the
+// departing member's own rowSpan split as evenly as possible across
+// EVERY remaining sibling (not dumped entirely on the bottom-most one
+// — requested directly: "distribute gap size between however remaining
+// siblings there are as evenly split as possible"). Every scenario
+// below lands on the exact same 28-row total footprint the stack
+// already had, just redistributed differently than a single-recipient
+// version would.
 {
   const weekTitle = { id: "week-title", columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2, locked: true };
   const gratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 6, locked: false };
@@ -604,31 +612,63 @@ const page: PageGrid = {
   const notes = { id: "notes", columnStart: 0, rowStart: 17, columnSpan: 1, rowSpan: 13, locked: false };
   const siblings = [weekTitle, gratitude, reminders, notes];
 
-  // Departing from the TOP of the stack — everyone below shifts up by
-  // exactly the departing member's own rowSpan; nothing above (there's
-  // nothing above gratitude but the locked week-title, which never
-  // moves regardless).
+  // Departing from the TOP of the stack (gratitude, rowSpan 6) — split
+  // evenly 2 ways (3/3, no remainder) between the two remaining
+  // siblings. reminders closes up to row 2 and grows 9 -> 12; notes
+  // closes up to row 14 (right after reminders' own new end) and grows
+  // 13 -> 16. Total: 12 + 16 = 28, same footprint as before.
   {
     const plan = gravityRepackAfterDeparture(gratitude, siblings.filter((s) => s.id !== "gratitude"));
-    const byId = Object.fromEntries(plan.map((m) => [m.id, m.rowStart]));
-    assert(plan.length === 2, `gravity: departing the top of the stack shifts both remaining members (got ${plan.length})`);
-    assert(byId["reminders"] === 2, `gravity: reminders closes up to row 2 (got ${byId["reminders"]})`);
-    assert(byId["notes"] === 11, `gravity: notes closes up to row 11 (got ${byId["notes"]})`);
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m]));
+    assert(plan.length === 2, `gravity: departing the top touches both remaining members (got ${plan.length})`);
+    assert(
+      byId["reminders"]?.rowStart === 2 && byId["reminders"]?.rowSpan === 12,
+      `gravity: reminders closes up to row 2 and grows 9 -> 12 (got ${JSON.stringify(byId["reminders"])})`
+    );
+    assert(
+      byId["notes"]?.rowStart === 14 && byId["notes"]?.rowSpan === 16,
+      `gravity: notes closes up to row 14 and grows 13 -> 16 (got ${JSON.stringify(byId["notes"])})`
+    );
   }
 
-  // Departing from the MIDDLE — only what's below the gap shifts;
-  // gratitude (above it) is already exactly where it needs to be, so it
-  // shouldn't appear in the plan at all (no-op moves are filtered out).
+  // Departing from the MIDDLE (reminders, rowSpan 9) — 9 doesn't split
+  // evenly 2 ways: floor(9/2) = 4 each, remainder 1 goes to the LATER
+  // member (notes, matching the "stacks grow from the bottom"
+  // convention). gratitude stays at row 2 (already correctly
+  // positioned) but still grows 6 -> 10 — unlike the old single-
+  // recipient version, it now appears in the plan even though its own
+  // rowStart didn't move, since its rowSpan did. notes closes up to
+  // row 12 and grows 13 -> 18 (the extra +1 remainder row).
   {
     const plan = gravityRepackAfterDeparture(reminders, siblings.filter((s) => s.id !== "reminders"));
-    assert(plan.length === 1, `gravity: departing the middle only moves what's below it (got ${plan.length})`);
-    assert(plan[0]?.id === "notes" && plan[0]?.rowStart === 8, `gravity: notes closes up to row 8 (got ${JSON.stringify(plan[0])})`);
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m]));
+    assert(plan.length === 2, `gravity: departing the middle now touches both remaining members, not just one (got ${plan.length})`);
+    assert(
+      byId["gratitude"]?.rowStart === 2 && byId["gratitude"]?.rowSpan === 10,
+      `gravity: gratitude stays at row 2 but grows 6 -> 10 (got ${JSON.stringify(byId["gratitude"])})`
+    );
+    assert(
+      byId["notes"]?.rowStart === 12 && byId["notes"]?.rowSpan === 18,
+      `gravity: notes closes up to row 12 and grows 13 -> 18, taking the remainder (got ${JSON.stringify(byId["notes"])})`
+    );
   }
 
-  // Departing from the BOTTOM — nothing below it to shift, empty plan.
+  // Departing from the BOTTOM (notes, rowSpan 13) — floor(13/2) = 6
+  // each, remainder 1 to reminders (the later of the two). gratitude
+  // stays at row 2 but grows 6 -> 12; reminders closes up to row 14 and
+  // grows 9 -> 16 (the extra +1 remainder row).
   {
     const plan = gravityRepackAfterDeparture(notes, siblings.filter((s) => s.id !== "notes"));
-    assert(plan.length === 0, `gravity: departing the bottom of the stack leaves nothing to shift (got ${plan.length})`);
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m]));
+    assert(plan.length === 2, `gravity: departing the bottom now touches both remaining members, not just one (got ${plan.length})`);
+    assert(
+      byId["gratitude"]?.rowStart === 2 && byId["gratitude"]?.rowSpan === 12,
+      `gravity: gratitude stays at row 2 but grows 6 -> 12 (got ${JSON.stringify(byId["gratitude"])})`
+    );
+    assert(
+      byId["reminders"]?.rowStart === 14 && byId["reminders"]?.rowSpan === 16,
+      `gravity: reminders closes up to row 14 and grows 9 -> 16, taking the remainder (got ${JSON.stringify(byId["reminders"])})`
+    );
   }
 
   // The locked week-title never appears in a plan, even conceptually
@@ -636,6 +676,19 @@ const page: PageGrid = {
   {
     const plan = gravityRepackAfterDeparture(gratitude, siblings.filter((s) => s.id !== "gratitude"));
     assert(!plan.some((m) => m.id === "week-title"), "gravity: a locked sibling never appears in the repack plan");
+  }
+
+  // Exactly one remaining sibling — reduces to the original "sole
+  // survivor absorbs the whole departing rowSpan" behavior (base =
+  // departing.rowSpan / 1, remainder = departing.rowSpan % 1 = 0
+  // always, so there's never anyone else to split with).
+  {
+    const twoStack = [gratitude, reminders];
+    const plan = gravityRepackAfterDeparture(gratitude, twoStack.filter((s) => s.id !== "gratitude"));
+    assert(
+      plan.length === 1 && plan[0]?.id === "reminders" && plan[0]?.rowStart === 2 && plan[0]?.rowSpan === 15,
+      `gravity: with only one remaining sibling, it alone absorbs the full departing rowSpan (got ${JSON.stringify(plan)})`
+    );
   }
 
   // No siblings share the departing member's own column at all — empty
@@ -650,9 +703,12 @@ const page: PageGrid = {
   // internally, not input position.
   {
     const plan = gravityRepackAfterDeparture(gratitude, [notes, reminders]);
-    const byId = Object.fromEntries(plan.map((m) => [m.id, m.rowStart]));
+    const byId = Object.fromEntries(plan.map((m) => [m.id, m]));
     assert(
-      byId["reminders"] === 2 && byId["notes"] === 11,
+      byId["reminders"]?.rowStart === 2 &&
+        byId["reminders"]?.rowSpan === 12 &&
+        byId["notes"]?.rowStart === 14 &&
+        byId["notes"]?.rowSpan === 16,
       `gravity: result is independent of sibling array order (got ${JSON.stringify(byId)})`
     );
   }
@@ -663,4 +719,43 @@ if (failures > 0) {
   process.exitCode = 1;
 } else {
   console.log("All grid.ts checks passed.");
+}
+
+// --- pixelsToContainingCell ---
+// Containment (floor) vs pixelsToGridCell's nearest (round). The whole
+// point is that a point anywhere inside a cell reports that cell, where
+// "nearest" flips at the midpoint — see the function's own comment for
+// the sidebar-hit-testing bug that motivated it.
+{
+  const page = { widthPx: 2175, heightPx: 3075, gridColumns: 4, gridRows: 30, gridGapPx: 12, marginPx: 75 };
+  const cell = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+  const colPitch = gridCellToPixels(page, { columnStart: 1, rowStart: 0, columnSpan: 1, rowSpan: 1 }).x - cell.x;
+
+  // Just inside column 0's right-hand edge: contained by 0, but NEAREST
+  // to gridline 1 — exactly the case that made the sidebar feel like it
+  // only occupied its right half.
+  const nearRightEdge = { x: page.marginPx + colPitch * 0.9, y: page.marginPx + 5 };
+  assert(
+    pixelsToContainingCell(page, nearRightEdge).columnStart === 0,
+    "containing: a point inside column 0 reports column 0, however close to its far edge"
+  );
+  assert(
+    pixelsToGridCell(page, nearRightEdge).columnStart === 1,
+    "containing: pixelsToGridCell still rounds that same point to the nearer gridline (1) — the two differ by design"
+  );
+
+  // Dead centre of column 0 — both agree.
+  const centre = { x: page.marginPx + colPitch * 0.5, y: page.marginPx + 5 };
+  assert(pixelsToContainingCell(page, centre).columnStart === 0, "containing: centre of column 0 is column 0");
+
+  // Clamped at both ends rather than running off the grid.
+  assert(pixelsToContainingCell(page, { x: -9999, y: -9999 }).columnStart === 0, "containing: clamps below 0");
+  assert(
+    pixelsToContainingCell(page, { x: 99999, y: 99999 }).columnStart === page.gridColumns - 1,
+    "containing: clamps to the last column"
+  );
+  assert(
+    pixelsToContainingCell(page, { x: 99999, y: 99999 }).rowStart === page.gridRows - 1,
+    "containing: clamps to the last row"
+  );
 }
