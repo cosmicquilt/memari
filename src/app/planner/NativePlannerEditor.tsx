@@ -525,13 +525,20 @@ type PaletteDragPreview = {
 // identical per-frame layout cost. So a longer duration here buys more
 // dropped frames, not a smoother movement.
 //
-// CONTENTS. The module's contents ease on this same clock and curve, via
-// PolotnoJsonRenderer's geometryEaseMs. That is not a nicety: without it
-// the content re-renders at the TARGET geometry on the first frame of
-// the ease while the container is still travelling there, and since
-// contentIsLive also turns off the overflow clip, the finished box is
-// drawn inside the unfinished one - two rectangles sharing a top-left
-// corner. Found by slowing this to 800ms and watching.
+// CONTENTS. The contents are NOT animated. They render at their final
+// geometry immediately and the easing box clips them, so the box reads
+// as a window: shrinking cuts content off at the moving edge, growing
+// reveals it. See NativeModule's clipToBox.
+//
+// Animating them instead was tried and is wrong. It looks right for a
+// labeled-box, whose elements are the same at every width, and wrong
+// for anything whose element count depends on its width - a
+// todo-checklist gains and loses day columns, and a column that does
+// not exist at the old size has nothing to animate from, so it popped
+// in and out mid-sweep. Without either mechanism the content is simply
+// drawn at full size inside a smaller box, which reads as a second,
+// already-finished rectangle. All three states were watched at 800ms
+// before settling here.
 const CROSSING_EASE_MS = 250;
 
 // How long a sibling takes to slide when a reflow moves it. Separate
@@ -576,7 +583,7 @@ function NativeModule({
   isResizing,
   frozenSize,
   contentIsLive,
-  geometryEaseMs,
+  clipToBox,
   suppressTransition,
   scale,
   justAdded,
@@ -650,13 +657,12 @@ function NativeModule({
   // them anyway would draw a second, redundant border alongside the
   // real, already-accurate one.
   contentIsLive: boolean;
-  // Duration for this module's CONTENTS while its box eases between zone
-  // shapes; 0 the rest of the time. Same clock and curve as the box
-  // itself, so the rects and text inside travel with it instead of
-  // landing at the new geometry while the box is still on its way -
-  // which is visible as a second, already-finished rectangle drawn
-  // inside the one still moving.
-  geometryEaseMs: number;
+  // True only while this module's box is easing between zone shapes.
+  // The contents are already at their FINAL geometry - they are not
+  // animated - so the easing box has to clip them, which is what makes
+  // it read as a window opening and closing over the content rather
+  // than a second rectangle drawn inside the first.
+  clipToBox: boolean;
   // True for exactly one frame right after a drop, for whichever
   // instances just had their placement committed (the dropped item and
   // any reflowed siblings) — see the settle-FLIP comment on `settling`
@@ -942,14 +948,45 @@ function NativeModule({
         touchAction: locked ? undefined : "none",
       }}
     >
-      <PolotnoJsonRenderer
-        elements={elements}
-        originX={originX}
-        originY={originY}
-        scale={scale}
-        suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
-        geometryEaseMs={geometryEaseMs}
-      />
+      {/* The clip lives here, around the drawing only, and NOT on the
+          module container. Putting it on the container clips the delete
+          button too - it sits at top/right -35, deliberately half
+          outside the box - which was reported the last time overflow
+          was applied at that level. inset:0 gives this exactly the
+          container's own content box, and the container has no padding,
+          so every element's left/top means the same thing inside it as
+          outside; the coordinate system is untouched.
+
+          While the box is easing between zone shapes the contents are
+          already at their FINAL geometry - they are not animated - so
+          clipping is what makes the box read as a window over them:
+          shrinking cuts the content off at the moving edge, growing
+          reveals it. Requested in those terms.
+
+          Animating the contents instead was tried and is wrong. It
+          looks right for a labeled-box, whose elements are the same at
+          every width, and wrong for anything whose element count
+          depends on width - a todo-checklist gains and loses day
+          columns, and a column that does not exist at the old size has
+          nothing to animate from, so it popped in and out mid-sweep. A
+          window has no such problem: the columns are simply there and
+          the edge sweeps across them. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: clipToBox ? "hidden" : "visible",
+          pointerEvents: "none",
+        }}
+      >
+        <PolotnoJsonRenderer
+          elements={elements}
+          originX={originX}
+          originY={originY}
+          scale={scale}
+          suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
+        />
+      </div>
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
           individually deletable). stopPropagation on pointerdown keeps
@@ -1402,7 +1439,7 @@ function NativePage({
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
             contentIsLive={contentIsLive}
-            geometryEaseMs={id === contentEasingId ? CROSSING_EASE_MS : 0}
+            clipToBox={id === contentEasingId}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}

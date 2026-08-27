@@ -82,20 +82,6 @@ const OUTER_BORDER_MATCH_EPSILON_PX = 0.5;
 // for the length of every crossing.
 export const RESIZE_EASE_CURVE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
-// CSS transition for an SVG rect's geometry. x/y/width/height are real
-// CSS properties on SVG2 geometry, not just presentation attributes, so
-// they transition like any other length in Chrome and Firefox. Where
-// they do not, the rect simply snaps, which is the behaviour this had
-// before.
-function rectGeometryTransition(easeMs: number): string | undefined {
-  if (easeMs <= 0) return undefined;
-  return ["x", "y", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
-}
-
-function boxGeometryTransition(easeMs: number): string | undefined {
-  if (easeMs <= 0) return undefined;
-  return ["left", "top", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
-}
 
 // Non-rect elements only (in practice: text). Rects are drawn by
 // RectLayer below instead — see its own comment for why they had to
@@ -106,15 +92,10 @@ function ElementNode({
   element,
   originX,
   originY,
-  geometryEaseMs,
 }: {
   element: RenderedPolotnoElement;
   originX: number;
   originY: number;
-  // Non-zero only while this module's box is easing between zone
-  // shapes. Text moves with the box instead of jumping to its new
-  // position the instant the new geometry is computed.
-  geometryEaseMs: number;
 }) {
   if (element.type === "group") {
     // Synthetic wrapper renderModuleInstance adds around a non-locked
@@ -129,7 +110,6 @@ function ElementNode({
             element={child}
             originX={originX}
             originY={originY}
-            geometryEaseMs={geometryEaseMs}
           />
         ))}
       </>
@@ -160,7 +140,6 @@ function ElementNode({
           lineHeight: 1.2,
           whiteSpace: "pre",
           pointerEvents: "none",
-          transition: boxGeometryTransition(geometryEaseMs),
         }}
       >
         {element.text}
@@ -211,7 +190,6 @@ function RectLayer({
   originY,
   scale,
   suppressOuterBorderSize,
-  geometryEaseMs,
   structureKey,
 }: {
   rects: RenderedPolotnoElement[];
@@ -221,7 +199,6 @@ function RectLayer({
   // device pixels into this layer's own page-pixel coordinate space.
   scale: number;
   suppressOuterBorderSize: { width: number; height: number } | null;
-  geometryEaseMs: number;
   // See PolotnoJsonRenderer's own comment: element ids are positional,
   // so they only name the same thing within one element structure.
   structureKey: number;
@@ -295,7 +272,6 @@ function RectLayer({
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
             opacity={element.opacity ?? 1}
-            style={{ transition: rectGeometryTransition(geometryEaseMs) }}
           />
         );
       })}
@@ -322,7 +298,6 @@ export function PolotnoJsonRenderer({
   originY,
   scale,
   suppressOuterBorderSize,
-  geometryEaseMs = 0,
 }: {
   elements: RenderedPolotnoElement[];
   originX: number;
@@ -332,11 +307,6 @@ export function PolotnoJsonRenderer({
   // Non-null only while this module is part of an active live resize —
   // see the comment above ElementNode's own use of it.
   suppressOuterBorderSize: { width: number; height: number } | null;
-  // Non-zero only while this module's own box is easing between zone
-  // shapes. Everything inside then travels on the same curve and the
-  // same clock as the box, so the contents are never drawn at a size
-  // the box has not reached yet.
-  geometryEaseMs?: number;
 }) {
   // Rects go into one shared <svg> (see RectLayer); everything else —
   // in practice text — stays as absolutely-positioned DOM, which has no
@@ -383,7 +353,6 @@ export function PolotnoJsonRenderer({
         originY={originY}
         scale={scale}
         suppressOuterBorderSize={suppressOuterBorderSize}
-        geometryEaseMs={geometryEaseMs}
         structureKey={structureKey}
       />
       {rest.map((element) => (
@@ -392,7 +361,6 @@ export function PolotnoJsonRenderer({
           element={element}
           originX={originX}
           originY={originY}
-          geometryEaseMs={geometryEaseMs}
         />
       ))}
     </>
