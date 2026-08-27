@@ -471,6 +471,7 @@ function NativeModule({
   instanceId,
   locked,
   placement,
+  rectPx,
   elements,
   originX,
   originY,
@@ -498,6 +499,24 @@ function NativeModule({
   instanceId: string;
   locked: boolean;
   placement: Placement;
+  // Non-null only while this module is the one being dragged. When set,
+  // the module leaves grid flow and positions itself absolutely against
+  // the page container instead, at exactly the rectangle CSS Grid would
+  // have given it — gridCellToPixels mirrors the 1fr track math on
+  // purpose (see this file's header), and the container has padding but
+  // no border, so its padding box (an absolutely positioned child's
+  // containing block) starts at the same origin gridCellToPixels
+  // measures marginPx from. The two therefore agree to the pixel.
+  //
+  // Why bother: in grid flow a module's size is its column/row SPAN,
+  // which is a line index and cannot be interpolated — that is what
+  // forces the "size snaps, position glides" split. Out of flow the
+  // size is a width and a height, which are ordinary animatable
+  // lengths. Note that grid-column/grid-row must come OFF when this is
+  // set: an absolutely positioned grid child that still carries them
+  // takes its GRID AREA as its containing block rather than the
+  // container's padding box, which would double-count the offset.
+  rectPx: { x: number; y: number; width: number; height: number } | null;
   elements: LoadedPage["moduleInstances"][number]["elements"];
   originX: number;
   originY: number;
@@ -700,9 +719,23 @@ function NativeModule({
       onMouseEnter={() => onHoverStart(instanceId)}
       onMouseLeave={() => onHoverEnd(instanceId)}
       style={{
-        position: "relative",
-        gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
-        gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
+        // Out of grid flow while dragged (see rectPx), in it otherwise.
+        // Every module carries an explicit grid-column/grid-row, so no
+        // sibling depends on auto-placement and removing one from flow
+        // cannot reflow the rest.
+        ...(rectPx
+          ? {
+              position: "absolute" as const,
+              left: rectPx.x,
+              top: rectPx.y,
+              width: rectPx.width,
+              height: rectPx.height,
+            }
+          : {
+              position: "relative" as const,
+              gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
+              gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
+            }),
         cursor: locked ? "default" : isDragged || isPressed ? "grabbing" : "grab",
         // translate3d, not translate — the z component is always 0 and
         // changes nothing geometrically, but it opts this element into
@@ -1247,6 +1280,11 @@ function NativePage({
             instanceId={id}
             locked={info.locked}
             placement={placement}
+            rectPx={
+              activeId === id
+                ? gridCellToPixels(page.pageGrid, placement)
+                : null
+            }
             elements={elements}
             originX={liveOrigin ? liveOrigin.x : info.originX}
             originY={liveOrigin ? liveOrigin.y : info.originY}
