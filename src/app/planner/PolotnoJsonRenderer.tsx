@@ -124,7 +124,13 @@ function ElementNode({
     return (
       <>
         {(element.children ?? []).map((child) => (
-          <ElementNode key={child.id} element={child} originX={originX} originY={originY} geometryEaseMs={geometryEaseMs} />
+          <ElementNode
+            key={child.id}
+            element={child}
+            originX={originX}
+            originY={originY}
+            geometryEaseMs={geometryEaseMs}
+          />
         ))}
       </>
     );
@@ -206,6 +212,7 @@ function RectLayer({
   scale,
   suppressOuterBorderSize,
   geometryEaseMs,
+  structureKey,
 }: {
   rects: RenderedPolotnoElement[];
   originX: number;
@@ -215,6 +222,9 @@ function RectLayer({
   scale: number;
   suppressOuterBorderSize: { width: number; height: number } | null;
   geometryEaseMs: number;
+  // See PolotnoJsonRenderer's own comment: element ids are positional,
+  // so they only name the same thing within one element structure.
+  structureKey: number;
 }) {
   return (
     <svg
@@ -276,7 +286,7 @@ function RectLayer({
         }
         return (
           <rect
-            key={element.id}
+            key={`${structureKey}:${element.id}`}
             x={rx + inset}
             y={ry + inset}
             width={Math.max(0, rw - strokeWidth)}
@@ -338,6 +348,31 @@ export function PolotnoJsonRenderer({
   // is the thing to check if some module ever draws a filled rect
   // deliberately over its own text.
   const flat = flattenElements(elements);
+
+  // Element ids are positional counters in the module renderers -
+  // `${idPrefix}-${idCounter++}` - so an id is stable across renders
+  // without naming a stable thing. Re-render a todo-checklist at a
+  // different dayCount and the counter hands the same id to a different
+  // logical element. React matches the key, reuses the DOM node, and a
+  // geometry transition then animates that node from whatever the OLD
+  // element occupied to wherever the NEW one sits. Reported as the todo
+  // animating to and from an intermediate point on the bottom right
+  // while being dragged from the side into the bottom section.
+  //
+  // Folding the element COUNT into the key fixes that at the source
+  // rather than by suppressing the symptom: an id now only names the
+  // same thing within one structure, so a structural change produces
+  // fresh nodes, and a fresh node has no previous geometry to animate
+  // from - it simply appears, which is what it did before any of this.
+  // Modules whose element set does not depend on their size, like a
+  // labeled-box (heading, rule and border at every width), keep their
+  // keys and therefore keep the animation that was asked for.
+  //
+  // The real fix is semantic ids in the module renderers, so a key
+  // names one thing for its whole life. That is a change across all of
+  // them plus the server render, and worth doing on its own.
+  const structureKey = flat.length;
+
   const rects = flat.filter((element) => element.type === "figure" && element.subType === "rect");
   const rest = flat.filter((element) => !(element.type === "figure" && element.subType === "rect"));
   return (
@@ -349,10 +384,11 @@ export function PolotnoJsonRenderer({
         scale={scale}
         suppressOuterBorderSize={suppressOuterBorderSize}
         geometryEaseMs={geometryEaseMs}
+        structureKey={structureKey}
       />
       {rest.map((element) => (
         <ElementNode
-          key={element.id}
+          key={`${structureKey}:${element.id}`}
           element={element}
           originX={originX}
           originY={originY}
