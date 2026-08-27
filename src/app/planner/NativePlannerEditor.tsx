@@ -496,6 +496,12 @@ type PaletteDragPreview = {
 // How long the dragged module's box takes to ease between zone shapes,
 // and the single clock everything that moves with it runs on.
 //
+// 250ms to match the reflow transition siblings already use
+// ("transform 0.25s" on NativeModule below). A crossing moves both at
+// once - the dragged box changing shape, and the modules around it
+// sliding to make room - so they should land together. Two durations
+// would read as one movement chasing the other.
+//
 // Read the two notes below before changing this. Neither is a reason not
 // to have the animation - it was asked for and it works - but both are
 // things it cost to get right, and both come straight back if this is
@@ -526,7 +532,7 @@ type PaletteDragPreview = {
 // contentIsLive also turns off the overflow clip, the finished box is
 // drawn inside the unfinished one - two rectangles sharing a top-left
 // corner. Found by slowing this to 800ms and watching.
-const CROSSING_EASE_MS = 400;
+const CROSSING_EASE_MS = 250;
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
     ? ["left", "top", "width", "height"]
