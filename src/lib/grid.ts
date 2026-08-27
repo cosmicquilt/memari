@@ -390,19 +390,45 @@ export function resolveModulePlacement(
     // in a 4-item stack onto the last one, where "most of the drag"
     // turned out to still be short of that exact row.
     //
-    // Using the center instead is the same 50%-crossing threshold
-    // every mainstream drag-reorder library (Sortable.js, dnd-kit,
-    // ...) uses: once the dragged item's midpoint has crossed into a
-    // sibling's own row range, that's treated as an intentional swap
-    // with that sibling — verified this doesn't fire on a trivial
-    // one-row nudge that doesn't reach a neighbor's midpoint either.
-    // Only affects sort order, not placement math or the topBound/
-    // bottomBound clamping above, which still use the real candidate.
-    const candidateCenter = candidate.rowStart + candidate.rowSpan / 2;
-    const straddled = stackSiblings.find(
-      (s) => candidateCenter >= s.rowStart && candidateCenter < s.rowStart + s.rowSpan
-    );
-    let sortRowStart = straddled ? straddled.rowStart : candidate.rowStart;
+    // An earlier version compared the
+    // dragged item's center against whether it had entered a sibling's
+    // row RANGE, and snapped the sort key to that sibling's rowStart —
+    // but entering a sibling's range means crossing its near EDGE, which
+    // is a 0% crossing of that sibling, not the 50% one this was meant
+    // to be. The error is exactly half the sibling's height, and its
+    // perceived direction flips with the relative sizes, which is what
+    // it felt like in the hand: dragging DOWN, the swap fires when the
+    // center reaches the lower sibling's top edge, so a short item
+    // passing a tall one swaps well before its bottom reaches that
+    // sibling's midpoint; dragging UP, it fires at the upper sibling's
+    // bottom edge, so a tall item passing a short one swaps well after.
+    // Reported as "jumps too soon going down, takes too long going up",
+    // which is one bug, not two. The left side column is spans 6, 9 and
+    // 13, so the mismatch is up to 3.5 rows.
+    //
+    // The rule instead: the dragged item's LEADING edge against the
+    // sibling's CENTER. Going down the leading edge is the bottom, so
+    // the swap fires as the bottom passes the lower sibling's midpoint;
+    // going up it's the top, so it fires as the top passes the upper
+    // sibling's midpoint. That is the same threshold Sortable.js uses,
+    // and it is the one that matches what the gesture looks like from
+    // either direction — you push a neighbour out of the way when you
+    // have covered half of it, whichever way you are travelling and
+    // whatever the two heights are.
+    //
+    // Note the travel required is deliberately NOT equal in the two
+    // directions: dragging A down past B takes half of B's height,
+    // dragging B up past A takes half of A's. That asymmetry is
+    // correct — each is "move until your leading edge reaches the
+    // other's midpoint". The bug was an asymmetry in the RULE, not in
+    // the distances the rule produces.
+    //
+    // Only the sort key changes — placement math and the topBound/
+    // bottomBound clamping still use the real candidate.
+    const movingDown = !draggedFirstOnTie;
+    let draggedSortKey = movingDown
+      ? candidate.rowStart + candidate.rowSpan
+      : candidate.rowStart;
 
     // The center-crossing rule above breaks down for a dragged item
     // large enough that clampGridPlacement caps its candidate before
@@ -424,8 +450,8 @@ export function resolveModulePlacement(
     // "put it all the way at that end" signal, independent of size —
     // sort it past (or before) every sibling outright instead of
     // relying on where it itself is able to reach.
-    if (candidate.rowStart + candidate.rowSpan >= bottomBound) sortRowStart = Infinity;
-    else if (candidate.rowStart <= topBound) sortRowStart = -Infinity;
+    if (candidate.rowStart + candidate.rowSpan >= bottomBound) draggedSortKey = Infinity;
+    else if (candidate.rowStart <= topBound) draggedSortKey = -Infinity;
 
     // Computed once here (not inside either fit-check branch below) —
     // both the "fits at current sizes" tier and the "shrink to fit"
@@ -433,12 +459,26 @@ export function resolveModulePlacement(
     // bottom-up cascade specifically depends on this being the *final*
     // post-insertion order, not the original pre-insertion sibling
     // order (see that tier's own comment).
+    // rowStart stays each sibling's REAL row — the packing loops below
+    // read it to tell whether an item actually moved, and would emit
+    // no-op reflow entries for everyone if it carried a sort key
+    // instead. The dragged entry's own rowStart is never read.
     const ordered = [
-      ...stackSiblings.map((s) => ({ id: s.id, rowStart: s.rowStart, rowSpan: s.rowSpan })),
-      { id: DRAGGED, rowStart: sortRowStart, rowSpan: candidate.rowSpan },
+      ...stackSiblings.map((s) => ({
+        id: s.id,
+        rowStart: s.rowStart,
+        rowSpan: s.rowSpan,
+        sortKey: s.rowStart + s.rowSpan / 2,
+      })),
+      {
+        id: DRAGGED,
+        rowStart: candidate.rowStart,
+        rowSpan: candidate.rowSpan,
+        sortKey: draggedSortKey,
+      },
     ].sort(
       (a, b) =>
-        a.rowStart - b.rowStart ||
+        a.sortKey - b.sortKey ||
         (a.id === DRAGGED ? (draggedFirstOnTie ? -1 : 1) : b.id === DRAGGED ? (draggedFirstOnTie ? 1 : -1) : 0)
     );
 

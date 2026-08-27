@@ -289,19 +289,22 @@ const page: PageGrid = {
 
   // Dragging a module only PART of the way onto the sibling below it —
   // not all the way to that sibling's own exact rowStart — still
-  // triggers the swap once the dragged item's own CENTER has crossed
-  // into the sibling's row range. This used to require reaching the
-  // sibling's exact rowStart (an edge-to-edge match) before anything
-  // happened, which for two items of comparable size meant most of a
-  // realistic drag distance computed to a no-op — caught live dragging
-  // the second-to-last box of a 4-item stack onto the last one, where
-  // the natural drag distance landed short of that exact row. Ported to
-  // this file's 3-box fixtures: reminders (rowSpan 9) dragged down only
-  // to row 13, not all the way to notes' own rowStart (17) — its center
-  // (13+4.5=17.5) already lands inside notes' range [17,30), so the
-  // swap should trigger anyway.
+  // triggers the swap. The original bug this guards was a drag that had
+  // covered most of a realistic distance computing to a no-op, because
+  // the swap needed an edge-to-edge match with the sibling's own
+  // rowStart before anything happened; caught live dragging the
+  // second-to-last box of a 4-item stack onto the last one.
+  //
+  // The threshold has moved twice since. It was briefly "the dragged
+  // center has entered the sibling's row range", which over-corrected:
+  // entering a range means crossing its near EDGE, so going down the
+  // swap fired half the sibling's height early. It is now the dragged
+  // item's leading edge against the sibling's center (see grid.ts), so
+  // for reminders (rowSpan 9) against notes (rows 17-30, center 23.5)
+  // the boundary is row 14.5. Row 15 is still well short of notes' own
+  // rowStart of 17, so this keeps testing what it was written to test.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(r.placement.rowStart !== 8, "dragging reminders only partway onto notes still swaps, not snapping back to its own start");
     assert(
       r.reflow.some((m) => m.id === "notes" && m.rowStart === 8),
@@ -462,6 +465,110 @@ const page: PageGrid = {
   assert(pixelHeightToRowSpan(page, 0) === 1, "pixelHeightToRowSpan floors at 1 row for a zero/negligible height");
 }
 
+// --- resolveModulePlacement: reorder threshold is center-vs-center ---
+{
+  // Same real sidebar stack: week-title(0-2, locked), Gratitude(2-8),
+  // Reminders(8-17), Notes(17-30). Spans 6, 9 and 13 — deliberately
+  // unequal, which is what exposes an asymmetric threshold.
+  //
+  // A swap should happen when the two items' CENTERS cross, which is
+  // symmetric: the crossing row is the same whichever of the pair is
+  // the one being dragged. The earlier rule compared the dragged
+  // center against whether it had entered the sibling's row RANGE —
+  // i.e. against that sibling's near EDGE — so the threshold was off
+  // by half the sibling's height, early going down and late going up.
+  const weekTitle = { id: "week-title", columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2, locked: true };
+  const gratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 6, locked: false };
+  const reminders = { id: "reminders", columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 9, locked: false };
+  const notes = { id: "notes", columnStart: 0, rowStart: 17, columnSpan: 1, rowSpan: 13, locked: false };
+
+  // Did the dragged module end up above the named sibling?
+  function draggedIsAbove(
+    r: { placement: { rowStart: number }; reflow: Array<{ id: string; rowStart: number }> },
+    siblingId: string,
+    siblingDefaultRow: number
+  ) {
+    const siblingRow = r.reflow.find((x) => x.id === siblingId)?.rowStart ?? siblingDefaultRow;
+    return r.placement.rowStart < siblingRow;
+  }
+
+  // Reminders (span 9, center at rowStart+4.5) dragged DOWN past Notes
+  // (rows 17-30, center 23.5). Centers cross at rowStart 19.
+  //
+  // Going down, the leading edge is the BOTTOM, so the threshold is
+  // rowStart + 9 against Notes' center of 23.5 — i.e. row 14.5. At row
+  // 13 the bottom is 22, short of it, so Reminders stays above. This is
+  // the case that felt like "the one below jumps up too soon": the old
+  // rule fired at Notes' top EDGE (row 17), reached at rowStart 12.5.
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(draggedIsAbove(r, "notes", 17), "reorder-threshold: reminders at row 13 stays above notes (bottom 22 < 23.5)");
+  }
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    assert(!draggedIsAbove(r, "notes", 17), "reorder-threshold: reminders at row 15 moves below notes (bottom 24 > 23.5)");
+  }
+
+  // Notes (span 13, center at rowStart+6.5) dragged UP past Reminders
+  // (rows 8-17, center 12.5). Centers cross at rowStart 6.
+  //
+  // Going up, the leading edge is the TOP, so the threshold is Notes'
+  // own rowStart against Reminders' center of 12.5 — nothing to do with
+  // Notes' height. At row 13 the top has not reached it yet; at row 12
+  // it has. The old rule fired at Reminders' bottom EDGE (row 17), i.e.
+  // as soon as the dragged center dipped below 17, which is why the
+  // swap it produced arrived only after the item had visibly passed the
+  // midpoint: "takes too long going up".
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
+    assert(!draggedIsAbove(r, "reminders", 8), "reorder-threshold: notes at row 13 stays below reminders (top 13 > 12.5)");
+  }
+  {
+    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 12, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
+    assert(draggedIsAbove(r, "reminders", 8), "reorder-threshold: notes at row 12 moves above reminders (top 12 < 12.5)");
+  }
+
+  // The invariant, swept rather than spot-checked: in each direction
+  // the row at which the order flips is exactly the row at which the
+  // dragged item's LEADING edge passes the sibling's center. Sweeping
+  // catches any future rule that reintroduces a size-dependent bias,
+  // which is what the reported "too soon down, too late up" was.
+  //
+  // Note the two flip rows are not mirror images and are not meant to
+  // be — dragging Reminders down past Notes takes half of Notes'
+  // height, dragging Notes up past Reminders takes half of Reminders'.
+  // Equal travel would mean the rule depended on the DRAGGED item's
+  // size, which is the bias being removed.
+  function flipRow(
+    draggedSpan: number,
+    others: Array<typeof weekTitle>,
+    originalRow: number,
+    siblingId: string,
+    siblingDefaultRow: number,
+    goingDown: boolean
+  ) {
+    const rows = goingDown
+      ? Array.from({ length: 28 }, (_, i) => i + 2)
+      : Array.from({ length: 28 }, (_, i) => 29 - i);
+    for (const row of rows) {
+      const r = resolveModulePlacement(page, { columnStart: 0, rowStart: row, columnSpan: 1, rowSpan: draggedSpan }, others, originalRow);
+      if (draggedIsAbove(r, siblingId, siblingDefaultRow) !== goingDown) return row;
+    }
+    return null;
+  }
+  {
+    // Reminders (span 9) down past Notes (center 23.5): bottom is
+    // row + 9, so the first row that clears 23.5 is 15.
+    const downFlip = flipRow(9, [weekTitle, gratitude, notes], 8, "notes", 17, true);
+    assert(downFlip === 15, `reorder-threshold: reminders flips below notes at row 15 (got ${downFlip})`);
+
+    // Notes (span 13) up past Reminders (center 12.5): top is the row
+    // itself, so the last row still clearing 12.5 going up is 12.
+    const upFlip = flipRow(13, [weekTitle, gratitude, reminders], 17, "reminders", 8, false);
+    assert(upFlip === 12, `reorder-threshold: notes flips above reminders at row 12 (got ${upFlip})`);
+  }
+}
+
 // --- resolveModulePlacement: minRowSpanById shrink-cascade tier ---
 // Reuses the exact same sidebar-stack fixture as the block above
 // (week-title rows 0-2, Gratitude(6)+Reminders(9)+Notes(13) = 28 rows,
@@ -505,7 +612,18 @@ const page: PageGrid = {
     assert(!r.reflow.find((m) => m.id === "gratitude"), "fits-with-shrink: gratitude untouched (shrinking notes alone was enough)");
     assert(!r.reflow.find((m) => m.id === "reminders"), "fits-with-shrink: reminders untouched (shrinking notes alone was enough)");
     assert(notesMove?.rowSpan === 11, `fits-with-shrink: notes shrinks from 13 to 11 (got ${notesMove?.rowSpan})`);
-    assert(r.placement.rowStart === 28, `fits-with-shrink: dragged candidate lands at row 28, right after shrunk notes (got ${r.placement.rowStart})`);
+    // Lands ABOVE notes, not below. The drop is at row 20 with a 2-row
+    // span, so its bottom edge is 22 against notes' center of 23.5 —
+    // dropped into the upper part of notes, so it sorts in above it.
+    // This used to land at row 28 (below notes) because the old rule
+    // snapped the sort key to notes' rowStart whenever the dragged
+    // center fell anywhere inside notes' range, producing an exact tie
+    // that the "dragged-last on tie" default for fresh drops then
+    // resolved downward. With a real comparison there is no tie to
+    // break, and a small item dropped near the top of a large one
+    // staying near the top is the less surprising outcome.
+    assert(r.placement.rowStart === 17, `fits-with-shrink: dragged candidate lands at row 17, just above shrunk notes (got ${r.placement.rowStart})`);
+    assert(notesMove?.rowStart === 19, `fits-with-shrink: notes repacks to row 19, below the dragged item (got ${notesMove?.rowStart})`);
     assert(r.placement.rowStart + 2 <= 30, "fits-with-shrink: dragged candidate itself stays on the page");
   }
 
