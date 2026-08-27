@@ -157,30 +157,17 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-// How the dragged item's own box is anchored to the pointer while its
-// size changes mid-gesture (a cross-zone/cross-page crossing). Two
-// modes, toggleable live from the header while comparing feel:
+// How the dragged item's box stays anchored to the pointer while its
+// size changes mid-gesture (a cross-zone or cross-page crossing): the
+// point you actually grabbed stays glued to the pointer, whatever the
+// box resizes to.
 //
-//   "grab"   - the point you actually grabbed stays glued to the
-//              pointer, whatever the box resizes to. Mathematically
-//              faithful, but the correction scales with how far from
-//              the box's own origin you grabbed: an edge grab
-//              (fraction ~0.9) on a 1-col -> 3-col crossing swings the
-//              box by ~0.9 x the full width delta, which reads as
-//              violent even though it's "correct."
-//   "center" - the box centers itself under the pointer on pickup and
-//              stays centered for the rest of the gesture. Worst-case
-//              movement on a resize is capped at half the size delta,
-//              regardless of where you grabbed, and it behaves
-//              identically in both directions across repeated zone
-//              changes.
-type DragAnchorMode = "grab" | "center";
-
-// How long the dragged item eases from where it was picked up to its
-// anchored position. Only visible in "center" mode. Short on purpose:
-// pointer tracking is transition-free the rest of the gesture, so any
-// window where it isn't reads as lag if stretched much past this.
-const PICKUP_EASE_MS = 160;
+// A centre-anchored alternative was built and compared side by side
+// from a header toggle - the box centring itself under the pointer,
+// which caps worst-case movement at half the size delta instead of
+// scaling with how near an edge you grabbed. Grab-point won on feel and
+// the other was deleted along with the pickup ease that only existed to
+// stop centre mode teleporting the box at mousedown.
 
 // The dragged item's own live transform — shared by visualOffsets
 // (every frame) and handleDragEnd (the settle FLIP's own residual,
@@ -238,11 +225,10 @@ function computeDraggedSizeCompensationPagePx(
   crossingZones: boolean,
   effectiveColumnSpan: number,
   effectiveRowSpan: number,
-  grabFraction: { x: number; y: number } | null,
-  mode: DragAnchorMode
+  grabFraction: { x: number; y: number } | null
 ): { x: number; y: number } {
   if (!grabFraction) return { x: 0, y: 0 };
-  if (mode === "grab" && !crossingZones) return { x: 0, y: 0 };
+  if (!crossingZones) return { x: 0, y: 0 };
   const oldSize = gridCellToPixels(pageGrid, current);
   const newSize = gridCellToPixels(pageGrid, {
     columnStart: 0,
@@ -250,11 +236,11 @@ function computeDraggedSizeCompensationPagePx(
     columnSpan: effectiveColumnSpan,
     rowSpan: effectiveRowSpan,
   });
-  const kx = mode === "center" ? 0.5 : grabFraction.x;
-  const ky = mode === "center" ? 0.5 : grabFraction.y;
+  // k is the grab fraction: the point you took hold of stays under the
+  // pointer as the box changes shape around it.
   return {
-    x: grabFraction.x * oldSize.width - kx * newSize.width,
-    y: grabFraction.y * oldSize.height - ky * newSize.height,
+    x: grabFraction.x * (oldSize.width - newSize.width),
+    y: grabFraction.y * (oldSize.height - newSize.height),
   };
 }
 
@@ -268,8 +254,7 @@ function computeDraggedTransformPagePx(
   crossingZones: boolean,
   effectiveColumnSpan: number,
   effectiveRowSpan: number,
-  grabFraction: { x: number; y: number } | null,
-  mode: DragAnchorMode
+  grabFraction: { x: number; y: number } | null
 ): { x: number; y: number } {
   const c = computeDraggedSizeCompensationPagePx(
     pageGrid,
@@ -277,8 +262,7 @@ function computeDraggedTransformPagePx(
     crossingZones,
     effectiveColumnSpan,
     effectiveRowSpan,
-    grabFraction,
-    mode
+    grabFraction
   );
   return { x: rawDeltaPagePx.x + c.x, y: rawDeltaPagePx.y + c.y };
 }
@@ -538,7 +522,6 @@ function NativeModule({
   frozenSize,
   contentIsLive,
   suppressTransition,
-  pickupAnimating,
   scale,
   justAdded,
   onDelete,
@@ -617,10 +600,6 @@ function NativeModule({
   // state below for why a transition has to be suppressed for that one
   // frame specifically, not just while actively dragging.
   suppressTransition: boolean;
-  // See the main component's own pickupAnimating state — true only
-  // for the brief window the dragged item is easing into its anchored
-  // position right after pickup.
-  pickupAnimating: boolean;
   // True for the couple of frames right after this instance was created
   // by a palette drag-drop (see handleAddModule's own comment) —
   // drives a simple opacity fade-in on mount (see the local `mounted`
@@ -847,9 +826,7 @@ function NativeModule({
               // wherever it was grabbed to centered under the cursor)
               // and snapping that instantly reads as a glitch rather
               // than a deliberate movement.
-              pickupAnimating
-              ? `transform ${PICKUP_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1), ${CROSSING_RESIZE_TRANSITION}`
-              : CROSSING_RESIZE_TRANSITION
+              CROSSING_RESIZE_TRANSITION
             : suppressTransition
             ? undefined
             : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
@@ -1159,7 +1136,6 @@ function NativePage({
   visualOffsets,
   draggedAnchorPx,
   suppressTransitionIds,
-  pickupAnimating,
   justAddedIds,
   resizePairs,
   stackBottoms,
@@ -1203,7 +1179,6 @@ function NativePage({
   // cursor. {0,0} whenever nothing is crossing zones.
   draggedAnchorPx: { x: number; y: number };
   suppressTransitionIds: ReadonlySet<string> | null;
-  pickupAnimating: boolean;
   // See NativeModule's own justAdded comment — a module in this set
   // gets its mount fade-in; the main component clears each id out a
   // couple of frames after adding it, so this only ever briefly
@@ -1361,7 +1336,6 @@ function NativePage({
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
-            pickupAnimating={pickupAnimating && activeId === id}
             scale={scale}
             justAdded={justAddedIds?.has(id) ?? false}
             onDelete={onDeleteModule}
@@ -4012,16 +3986,7 @@ export function NativePlannerEditor({
   // computeDraggedTransformPagePx. NULL until that capture happens, and
   // null is a meaningful value there, not a placeholder: both anchor
   // modes fall back to the plain raw delta while it's null, which is
-  // what keeps "center" mode from teleporting the box at mousedown
-  // (it eases into the pointer's grip on first movement instead).
   const [grabFraction, setGrabFraction] = useState<{ x: number; y: number } | null>(null);
-  // Which anchoring model the dragged item uses while its size changes
-  // mid-gesture — see DragAnchorMode's own comment. Live-toggleable
-  // from the header specifically so the two can be compared by feel on
-  // the same drag rather than by rebuilding between them; "grab" is
-  // the default because it reproduces exactly the behavior that
-  // shipped before this comparison existed.
-  const [dragAnchorMode, setDragAnchorMode] = useState<DragAnchorMode>("grab");
   // True for a short window right after grabFraction is captured, so
   // the dragged item can EASE from wherever it was picked up to its
   // anchored position instead of snapping there. Only visibly does
@@ -4029,7 +3994,6 @@ export function NativePlannerEditor({
   // capture time IS where it already is, so there's nothing to
   // animate) — requested directly: "every picked up module animates to
   // the center of the cursor then just keep it there."
-  const [pickupAnimating, setPickupAnimating] = useState(false);
   // Whether grabFraction has already been captured for the CURRENT
   // gesture — reset false on every handleDragStart, flipped true the
   // first time handleDragMove successfully computes a real value.
@@ -4360,7 +4324,6 @@ export function NativePlannerEditor({
     // resets both to their "nothing captured yet this gesture" state.
     grabFractionCapturedRef.current = false;
     setGrabFraction(null);
-    setPickupAnimating(false);
     confirmedCrossingRef.current = null;
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
@@ -4471,10 +4434,6 @@ export function NativePlannerEditor({
           // pointer for the first sixth of a second of every drag. That
           // was an unintended regression in the default mode; gating it
           // here keeps "grab" byte-identical to its shipped behavior.
-          if (dragAnchorMode === "center") {
-            setPickupAnimating(true);
-            window.setTimeout(() => setPickupAnimating(false), PICKUP_EASE_MS);
-          }
         }
       }
       const id = String(event.active.id);
@@ -4755,7 +4714,6 @@ export function NativePlannerEditor({
       resolveZoneForColumn,
       readPointerDelta,
       lastOwnColumnRow,
-      dragAnchorMode,
     ]
   );
 
@@ -5685,8 +5643,7 @@ export function NativePlannerEditor({
         crossingZones,
         effectiveColumnSpan,
         effectiveRowSpan,
-        grabFraction,
-        dragAnchorMode
+        grabFraction
       );
       // Only a cross-PAGE crossing needs this term. The dragged
       // module's own native DOM position re-parents from the source
@@ -5883,7 +5840,6 @@ export function NativePlannerEditor({
       fontFamily,
       grabFraction,
       pages,
-      dragAnchorMode,
     ]
   );
 
@@ -6428,8 +6384,7 @@ export function NativePlannerEditor({
           crossingZones,
           effectiveColumnSpan,
           effectiveRowSpan,
-          grabFraction,
-          dragAnchorMode
+          grabFraction
         );
         // Skipped while crossingZones: crossingLivePreview already moves
         // this sibling's real gridRow live (a genuine span/position
@@ -6468,7 +6423,7 @@ export function NativePlannerEditor({
     }
 
     return { offsets, draggedAnchor };
-  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction, confirmedCrossingPreview, dragAnchorMode]);
+  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction, confirmedCrossingPreview]);
 
   const visualOffsets = dragVisuals.offsets;
   // Page-pixel correction folded into the dragged module's left/top so
@@ -6552,35 +6507,6 @@ export function NativePlannerEditor({
         <strong>
           Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
         </strong>
-        {/* Temporary A/B toggle for the two drag-anchor models — see
-            DragAnchorMode's own comment. Lives in the header rather
-            than behind a build flag specifically so the two can be
-            compared by feel within a single session, on the same
-            drag, instead of by rebuilding between them. Remove once
-            one of the two is settled on.
-            Placed BEFORE the Reset button deliberately: that one owns
-            marginLeft:auto, so anything after it lands in the header's
-            right-hand group, and this header is nowrap — a long label
-            there gets crushed or pushed off the right edge entirely.
-            flexShrink:0 for the same reason. */}
-        <button
-          type="button"
-          onClick={() => setDragAnchorMode((prev) => (prev === "grab" ? "center" : "grab"))}
-          title="Toggle how a dragged module anchors to the cursor while it resizes"
-          style={{
-            padding: "4px 10px",
-            fontSize: 12,
-            flexShrink: 0,
-            whiteSpace: "nowrap",
-            background: dragAnchorMode === "center" ? "#4a5cff" : "#2a2a2a",
-            color: "#ddd",
-            border: "1px solid #555",
-            borderRadius: 10,
-            cursor: "pointer",
-          }}
-        >
-          Anchor: {dragAnchorMode === "center" ? "Center" : "Grab point"}
-        </button>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
             the pdf." Scoped to the sidebar column and the below-hourly-
@@ -6742,7 +6668,6 @@ export function NativePlannerEditor({
                     visualOffsets={visualOffsets}
                     draggedAnchorPx={draggedAnchorPx}
                     suppressTransitionIds={suppressTransitionIds}
-                    pickupAnimating={pickupAnimating}
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
