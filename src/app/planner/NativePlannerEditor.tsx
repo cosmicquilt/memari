@@ -532,7 +532,7 @@ type PaletteDragPreview = {
 // once at the end, clipped meanwhile - which is already what the
 // non-live module types get from overflow:hidden. Worth knowing before
 // assuming this is a one-line knob.
-const CROSSING_EASE_MS = 0;
+const CROSSING_EASE_MS = 400;
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
     ? ["left", "top", "width", "height"]
@@ -1188,6 +1188,7 @@ function NativePage({
   hourlyResizeStackBottoms,
   emptyZones,
   resizingIds,
+  contentFrozenId,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
@@ -1244,6 +1245,13 @@ function NativePage({
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
+  // The one module whose box is mid-resize-ease and whose CONTENT must
+  // therefore stay at its old size for the duration - see
+  // CROSSING_EASE_MS. It still counts as resizing, so it keeps the
+  // overflow clip, the outline stand-in and the suppressed stale outer
+  // border; it just does not get a live re-render at the new geometry
+  // while the box is still travelling there.
+  contentFrozenId: string | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1336,6 +1344,7 @@ function NativePage({
         // not width, which is presumably why this never surfaced there.
         const contentIsLive =
           (resizingIds?.has(id) ?? false) &&
+          id !== contentFrozenId &&
           (info.slug === "todo-checklist" ||
             info.slug === "habit-tracker" ||
             info.slug === "labeled-box" ||
@@ -4283,6 +4292,30 @@ export function NativePlannerEditor({
   // from - and that is the wanted behaviour, confirmed directly, not an
   // artefact to be tidied away. Preview and commit agree on it.
   const [lastOwnColumnRow, setLastOwnColumnRow] = useState<{ instanceId: string; rowStart: number } | null>(null);
+  // While the dragged module's box is easing between two zone shapes,
+  // its content must hold the size it already had. Without this the
+  // content re-renders at the TARGET geometry on the first frame of the
+  // ease while the container is still travelling there, and because
+  // contentIsLive also turns off the overflow clip, you see the finished
+  // box sitting inside the unfinished one - two rectangles sharing a
+  // top-left corner. Reported exactly that way.
+  const [contentFrozenId, setContentFrozenId] = useState<string | null>(null);
+  const contentFreezeTimerRef = useRef<number | null>(null);
+  // Armed from handleDragMove, NOT from an effect. The zone is adopted
+  // in that handler, so setting the freeze there batches it into the
+  // same render that first applies the new spans. An effect runs after
+  // commit, which would let the content render once at the target size
+  // before freezing - a single-frame flash of the exact artefact this
+  // exists to remove.
+  const freezeContentDuringEase = useCallback((instanceId: string) => {
+    if (CROSSING_EASE_MS <= 0) return;
+    setContentFrozenId(instanceId);
+    if (contentFreezeTimerRef.current !== null) window.clearTimeout(contentFreezeTimerRef.current);
+    contentFreezeTimerRef.current = window.setTimeout(() => {
+      contentFreezeTimerRef.current = null;
+      setContentFrozenId(null);
+    }, CROSSING_EASE_MS);
+  }, []);
   // handleDragMove (below) needs to call resolveDrag, but resolveDrag
   // is declared later in this same component — a plain reference
   // inside handleDragMove's own CALLBACK BODY would be fine (closures
@@ -4380,6 +4413,11 @@ export function NativePlannerEditor({
     confirmedCrossingRef.current = null;
     pendingZoneRef.current = null;
     pendingZoneTicksRef.current = 0;
+    if (contentFreezeTimerRef.current !== null) {
+      window.clearTimeout(contentFreezeTimerRef.current);
+      contentFreezeTimerRef.current = null;
+    }
+    setContentFrozenId(null);
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4570,6 +4608,15 @@ export function NativePlannerEditor({
           // somewhere that has no valid target at all.
           const held = confirmedCrossingRef.current;
           const holdsThisDrag = held?.instanceId === id;
+          // The size the box is rendering at now, against the size the
+          // incoming resolution would give it. Comparing spans rather
+          // than crossingZones catches every case that actually moves
+          // the box - including zone-to-zone, where crossing stays true
+          // throughout but the shape still changes.
+          const shownSpans = holdsThisDrag
+            ? `${held.preview.effectiveColumnSpan}x${held.preview.effectiveRowSpan}`
+            : `${rawPreview.current.columnSpan}x${rawPreview.current.rowSpan}`;
+          const nextSpans = `${rawPreview.effectiveColumnSpan}x${rawPreview.effectiveRowSpan}`;
           if (!holdsThisDrag || held.zoneKey === rawPreview.zoneKey) {
             // First acquisition of the gesture, or a refresh of the zone
             // already held. Refreshing has to stay immediate: it is what
@@ -4577,6 +4624,7 @@ export function NativePlannerEditor({
             // pointer within a zone.
             pendingZoneRef.current = null;
             pendingZoneTicksRef.current = 0;
+            if (shownSpans !== nextSpans) freezeContentDuringEase(id);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
           } else {
             // A different valid zone wants it. Make it ask repeatedly,
@@ -4592,7 +4640,8 @@ export function NativePlannerEditor({
             if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
               pendingZoneRef.current = null;
               pendingZoneTicksRef.current = 0;
-              confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
+              if (shownSpans !== nextSpans) freezeContentDuringEase(id);
+            confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
             }
           }
         } else if (confirmedCrossingRef.current?.instanceId !== id) {
@@ -4787,6 +4836,7 @@ export function NativePlannerEditor({
       });
     },
     [
+      freezeContentDuringEase,
       screenPointToPageCell,
       pageGridByPageId,
       instanceIdsByPageId,
@@ -6686,6 +6736,7 @@ export function NativePlannerEditor({
                     hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={effectiveResizingIds}
+                    contentFrozenId={contentFrozenId}
                     resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
