@@ -316,6 +316,7 @@ export function PolotnoJsonRenderer({
   originY,
   scale,
   suppressOuterBorderSize,
+  textElements,
   textEaseMs = 0,
 }: {
   elements: RenderedPolotnoElement[];
@@ -326,6 +327,19 @@ export function PolotnoJsonRenderer({
   // Non-null only while this module is part of an active live resize —
   // see the comment above ElementNode's own use of it.
   suppressOuterBorderSize: { width: number; height: number } | null;
+  // Non-null only while this module's box is easing between zone
+  // shapes, when rects and text need DIFFERENT geometry and cannot come
+  // from one render.
+  //
+  // Rects are drawn at the larger of the two sizes so the easing box
+  // always has something to clip - that is what makes it a window.
+  // Text has to be at its FINAL position instead, because text is
+  // animated rather than clipped, and it can only animate if its
+  // position actually changes at the start of the ease. Sharing one
+  // geometry breaks one of the two: at the larger size the text sits
+  // still for the whole ease and then jumps when the ease ends, which
+  // is what shrinking a todo-checklist looked like.
+  textElements?: RenderedPolotnoElement[] | null;
   // Non-zero only while this module's box is easing between zone
   // shapes. Applies to text only - see textPositionTransition.
   textEaseMs?: number;
@@ -390,8 +404,12 @@ export function PolotnoJsonRenderer({
     return `${base}#${seen}`;
   };
 
-  const rects = flat.filter((element) => element.type === "figure" && element.subType === "rect");
-  const rest = flat.filter((element) => !(element.type === "figure" && element.subType === "rect"));
+  const isRect = (element: RenderedPolotnoElement) => element.type === "figure" && element.subType === "rect";
+  const rects = flat.filter(isRect);
+  // Text comes from its own render when one is supplied - see
+  // textElements. Same origin either way: the two renders differ only
+  // in span, never in columnStart/rowStart, so they share a top-left.
+  const rest = (textElements ? flattenElements(textElements) : flat).filter((element) => !isRect(element));
   return (
     <>
       <RectLayer

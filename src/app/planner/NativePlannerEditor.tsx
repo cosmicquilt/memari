@@ -576,6 +576,7 @@ function NativeModule({
   placement,
   rectPx,
   elements,
+  textElements,
   originX,
   originY,
   visualOffset,
@@ -621,6 +622,10 @@ function NativeModule({
   // container's padding box, which would double-count the offset.
   rectPx: { x: number; y: number; width: number; height: number } | null;
   elements: LoadedPage["moduleInstances"][number]["elements"];
+  // Non-null only while this module's box is easing: a second render at
+  // the final geometry, used for text alone. See PolotnoJsonRenderer's
+  // own comment on why rects and text cannot share one geometry here.
+  textElements: LoadedPage["moduleInstances"][number]["elements"] | null;
   originX: number;
   originY: number;
   // Page-pixel translate applied on top of the committed grid slot — for
@@ -981,6 +986,7 @@ function NativeModule({
       >
         <PolotnoJsonRenderer
           elements={elements}
+          textElements={textElements}
           originX={originX}
           originY={originY}
           scale={scale}
@@ -1424,6 +1430,34 @@ function NativePage({
               fontFamily
             )
           : info.elements;
+        // A second render at the module's FINAL geometry, for text only,
+        // and only while the box is easing. Rects above are drawn at the
+        // larger of the two sizes so the box has something to clip; text
+        // has to be at its final position instead, or it sits still for
+        // the whole ease and jumps when the ease ends - which is exactly
+        // what shrinking a todo-checklist looked like. The two renders
+        // differ only in span, so they share an origin.
+        //
+        // Cheap enough to do twice: renderModuleInstance is pure, it is
+        // the same call the initial page load already makes, and this
+        // runs for one module for the length of one ease.
+        const textElements =
+          contentIsLive && easeContent?.instanceId === id
+            ? renderModuleInstance(
+                {
+                  id,
+                  locked: info.locked,
+                  columnStart: placement.columnStart,
+                  rowStart: placement.rowStart,
+                  columnSpan: placement.columnSpan,
+                  rowSpan: placement.rowSpan,
+                  propValues: info.propValues,
+                  moduleType: { slug: info.slug },
+                },
+                page.pageGrid,
+                fontFamily
+              )
+            : null;
         // The dragged module leaves grid flow: its box is the committed
         // cell in pixels, sized by whatever span the live preview says
         // it should be, and shifted by the grab-point correction so
@@ -1441,6 +1475,7 @@ function NativePage({
             placement={placement}
             rectPx={draggedRectPx}
             elements={elements}
+            textElements={textElements}
             originX={liveOrigin ? liveOrigin.x : info.originX}
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
