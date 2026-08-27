@@ -29,13 +29,19 @@
 // fresh elements/origin from the server, the same way the Polotno-hosted
 // editor's swapCanvasElement already does for resize today.
 //
-// Cross-page dragging isn't specially prevented — it doesn't need to be.
-// The delta-based target cell is always resolved against the dragged
-// module's own page's grid, and clampGridPlacement keeps it within that
-// page's own bounds regardless of how far the pointer actually moved, so
-// a drag toward the other page just clamps at the edge instead of
-// crossing over. Matches this project's existing "skip cross-spine
-// dragging" scope decision from earlier this session, for free.
+// Cross-page dragging (a bottom-zone-capable module moving between the
+// left and right page's own bottom zones, or all the way from the left
+// page's side zone to the right page's bottom zone) is a first-class
+// case, not just tolerated — resolveDrag resolves the target PAGE (not
+// just the target zone within an assumed single page) by extending its
+// own corner-relative pixel math arithmetically across the page-gap
+// boundary, and the dragged module's own pageId gets reassigned on
+// commit (moduleLookup, and the DB via moveModuleAcrossZones) the same
+// way its columnStart/rowStart already do for an ordinary same-page
+// reposition. Its own native DOM position, notably, still never moves
+// mid-drag regardless of which page it's crossing into or out of — see
+// computeDraggedTransformPagePx's own comment for why that invariant
+// matters (retriggering a documented dnd-kit delta-corruption bug).
 //
 // --- Why this doesn't use <DragOverlay> ---
 // The first version of this file did, and it was broken: dragging the
@@ -75,7 +81,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -99,12 +105,14 @@ import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "
 import {
   gridCellToPixels,
   pixelsToGridCell,
+  pixelsToContainingCell,
   clampGridPlacement,
   resolveModulePlacement,
   findNearestFreeCell,
   rectsOverlap,
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
+  canCrossZones,
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
@@ -149,29 +157,63 @@ function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 }
 
-// The dragged item's own live transform during a cross-zone crossing —
-// shared by visualOffsets (every frame) and handleDragEnd (the settle
-// FLIP's own residual, which has to start from the exact same value the
-// live preview was already showing, or the drop reads as a visible pop).
-// Requested directly, after the crossing feature's plain
-// grow-from-top-left version shipped: "jumps off cursor... probably
-// because of differing shape my cursor is off of the new shape."
+// How the dragged item's own box is anchored to the pointer while its
+// size changes mid-gesture (a cross-zone/cross-page crossing). Two
+// modes, toggleable live from the header while comparing feel:
+//
+//   "grab"   - the point you actually grabbed stays glued to the
+//              pointer, whatever the box resizes to. Mathematically
+//              faithful, but the correction scales with how far from
+//              the box's own origin you grabbed: an edge grab
+//              (fraction ~0.9) on a 1-col -> 3-col crossing swings the
+//              box by ~0.9 x the full width delta, which reads as
+//              violent even though it's "correct."
+//   "center" - the box centers itself under the pointer on pickup and
+//              stays centered for the rest of the gesture. Worst-case
+//              movement on a resize is capped at half the size delta,
+//              regardless of where you grabbed, and it behaves
+//              identically in both directions across repeated zone
+//              changes.
+type DragAnchorMode = "grab" | "center";
+
+// How long the dragged item eases from where it was picked up to its
+// anchored position. Only visible in "center" mode. Short on purpose:
+// pointer tracking is transition-free the rest of the gesture, so any
+// window where it isn't reads as lag if stretched much past this.
+const PICKUP_EASE_MS = 160;
+
+// The dragged item's own live transform — shared by visualOffsets
+// (every frame) and handleDragEnd (the settle FLIP's own residual,
+// which has to start from the exact same value the live preview was
+// already showing, or the drop reads as a visible pop). Requested
+// directly, after the crossing feature's plain grow-from-top-left
+// version shipped: "jumps off cursor... probably because of differing
+// shape my cursor is off of the new shape."
 //
 // The dragged item's own NATIVE position stays pinned at its pre-drag
 // cell the whole gesture (see resolveDrag's own crossing comment for
 // why — moving it is what caused a real, separately-diagnosed dnd-kit
-// bug). Un-corrected, the box's visible bulk grows/shrinks outward from
-// that fixed top-left corner, not from wherever the pointer actually
-// grabbed it — fine if you happened to grab the exact top-left, visibly
-// drifting otherwise. grabFraction (captured once, at drag start — see
-// handleDragStart) is where, proportionally, within the module's own
-// original box the pointer grabbed it (0,0 = top-left, 0.5,0.5 =
-// center). This offsets the raw pointer-follow transform by exactly how
-// far that same fractional point would move due to nothing but the
-// size change (verified algebraically: the corrected point's own
-// absolute position matches what it would have been had the box never
-// resized at all, so it stays glued to the pointer through the
-// crossing the same way the whole rigid box already does before one).
+// bug), so ALL of its visible movement comes from this transform.
+//
+// Both modes are the same single expression, differing only in the
+// coefficient applied to the NEW size:
+//
+//   T = f * S_old + rawDelta - k * S_new      k = f (grab) | 0.5 (center)
+//
+// Derivation (identical for both): the pointer began at f of the
+// ORIGINAL box, so its current page position is C + f*S_old + rawDelta.
+// We want k of the CURRENT box to sit under it, i.e. C + T + k*S_new =
+// P_cursor. Solving for T gives the line above. "grab" additionally
+// short-circuits to the raw delta whenever the size isn't changing,
+// where the two terms cancel exactly (f*S_old - f*S_old = 0) — the
+// pre-existing behavior, kept byte-identical so toggling to "grab"
+// reproduces exactly what shipped before this comparison existed.
+//
+// grabFraction is null until handleDragMove's first call captures it
+// (see grabFractionCapturedRef's own comment for why it can't happen at
+// drag start). Until then both modes fall back to the raw delta, which
+// is what makes "center" read as the box easing into the pointer's grip
+// on first movement rather than teleporting there at mousedown.
 function computeDraggedTransformPagePx(
   pageGrid: PageGrid,
   rawDeltaPagePx: { x: number; y: number },
@@ -179,9 +221,11 @@ function computeDraggedTransformPagePx(
   crossingZones: boolean,
   effectiveColumnSpan: number,
   effectiveRowSpan: number,
-  grabFraction: { x: number; y: number }
+  grabFraction: { x: number; y: number } | null,
+  mode: DragAnchorMode
 ): { x: number; y: number } {
-  if (!crossingZones) return rawDeltaPagePx;
+  if (!grabFraction) return rawDeltaPagePx;
+  if (mode === "grab" && !crossingZones) return rawDeltaPagePx;
   const oldSize = gridCellToPixels(pageGrid, current);
   const newSize = gridCellToPixels(pageGrid, {
     columnStart: 0,
@@ -189,9 +233,11 @@ function computeDraggedTransformPagePx(
     columnSpan: effectiveColumnSpan,
     rowSpan: effectiveRowSpan,
   });
+  const kx = mode === "center" ? 0.5 : grabFraction.x;
+  const ky = mode === "center" ? 0.5 : grabFraction.y;
   return {
-    x: rawDeltaPagePx.x - grabFraction.x * (newSize.width - oldSize.width),
-    y: rawDeltaPagePx.y - grabFraction.y * (newSize.height - oldSize.height),
+    x: rawDeltaPagePx.x + grabFraction.x * oldSize.width - kx * newSize.width,
+    y: rawDeltaPagePx.y + grabFraction.y * oldSize.height - ky * newSize.height,
   };
 }
 
@@ -212,13 +258,6 @@ const MIN_ROW_SPAN = 2;
 // "targeting the bottom zone" rather than needing pixel-perfect
 // precision below it.
 const BOTTOM_ZONE_ROW_TOLERANCE = 2;
-
-// See handleDragMove's own comment on dragDeltaCorrectionRef for the
-// full story — screen-pixel distance no single real pointermove event
-// could plausibly cover (generous even for a fast mouse flick, which
-// spreads across many events at typical polling rates; genuinely
-// observed jumps were 800-1200px in one event).
-const DRAG_DELTA_JUMP_THRESHOLD_PX = 300;
 
 // Module types offered in the drag-to-add palette (ModulePalette below)
 // — kept in sync by hand with prisma/seed.mts's own moduleTypes entries
@@ -441,9 +480,9 @@ function NativeModule({
   frozenSize,
   contentIsLive,
   suppressTransition,
-  justAdded,
+  pickupAnimating,
   scale,
-  isFirefox,
+  justAdded,
   onDelete,
   isHovered,
   onHoverStart,
@@ -502,6 +541,10 @@ function NativeModule({
   // state below for why a transition has to be suppressed for that one
   // frame specifically, not just while actively dragging.
   suppressTransition: boolean;
+  // See the main component's own pickupAnimating state — true only
+  // for the brief window the dragged item is easing into its anchored
+  // position right after pickup.
+  pickupAnimating: boolean;
   // True for the couple of frames right after this instance was created
   // by a palette drag-drop (see handleAddModule's own comment) —
   // drives a simple opacity fade-in on mount (see the local `mounted`
@@ -512,15 +555,9 @@ function NativeModule({
   // it doesn't need that machinery at all, just a value that starts at
   // 0 and is committed to 1 in a *later* render than the mount itself.
   justAdded: boolean;
-  // Current on-screen zoom factor — passed all the way down to
-  // PolotnoJsonRenderer so it can keep hairline borders from vanishing
-  // under Firefox's transform-scale border bug. See that component's
-  // own comment for why.
+  // Current on-screen zoom factor — forwarded to PolotnoJsonRenderer for
+  // its rule-legibility floor (see MIN_ONSCREEN_RECT_PX there).
   scale: number;
-  // Also passed down to PolotnoJsonRenderer, alongside scale — see
-  // PolotnoJsonRenderer's own isFirefox comment for why this has to be
-  // computed client-side-only, further up, rather than read here.
-  isFirefox: boolean;
   // Hover-to-delete button below calls this with `instanceId` on click —
   // see handleDeleteModule's own comment (main component) for what
   // happens next (gravity-repack the rest of its stack).
@@ -667,8 +704,29 @@ function NativeModule({
         gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
         gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
         cursor: locked ? "default" : isDragged || isPressed ? "grabbing" : "grab",
+        // translate3d, not translate — the z component is always 0 and
+        // changes nothing geometrically, but it opts this element into
+        // GPU compositing, so a transform change becomes a compositor
+        // move rather than a main-thread repaint of the box AND its
+        // large blurred drag shadow.
         transform:
-          visualOffset.x !== 0 || visualOffset.y !== 0 ? `translate(${visualOffset.x}px, ${visualOffset.y}px)` : undefined,
+          visualOffset.x !== 0 || visualOffset.y !== 0
+            ? `translate3d(${visualOffset.x}px, ${visualOffset.y}px, 0)`
+            : undefined,
+        // Promotes the dragged module to its own compositor layer for
+        // the duration of the gesture. Reported directly: the native
+        // grabbing-hand cursor rendered with "dark pixels in it" —
+        // speckled/torn pixels inside the fist icon. That's a hardware-
+        // cursor compositing artifact: Chrome draws the cursor overlay
+        // against whatever is repainting beneath it, and without an
+        // explicit promotion this element repainted every single
+        // pointermove (transform + a 28px-blur box-shadow), with the
+        // cursor sitting right in that repaint region. Scoped to
+        // isDragged rather than set permanently — will-change costs
+        // real memory per layer, and there are dozens of modules on a
+        // spread, so promoting them all continuously would be worse
+        // than the problem it solves.
+        willChange: isDragged ? "transform" : undefined,
         // No transition on the dragged item itself — it needs to track
         // the pointer with zero added lag. Everything reacting to it
         // (a reflow preview, or a gravity-shift settle after a delete —
@@ -691,7 +749,18 @@ function NativeModule({
         // twitchy for a distance-covering slide, longer starts feeling
         // sluggish.
         transition:
-          isDragged || suppressTransition
+          isDragged
+            ? // Transition-free the whole gesture EXCEPT the brief
+              // pickup ease — the dragged item has to track the pointer
+              // with zero added lag, but at pickup it has a real
+              // distance to cover (in "center" mode it moves from
+              // wherever it was grabbed to centered under the cursor)
+              // and snapping that instantly reads as a glitch rather
+              // than a deliberate movement.
+              pickupAnimating
+              ? `transform ${PICKUP_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`
+              : undefined
+            : suppressTransition
             ? undefined
             : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
         // Mount fade-in for a freshly-added module (see fadedIn's own
@@ -708,7 +777,18 @@ function NativeModule({
         // once the real element is what's moving.
         boxShadow: isDragged ? "0 12px 28px rgba(0,0,0,0.28)" : undefined,
         zIndex: isDragged ? 10 : undefined,
-        overflow: isResizing ? "hidden" : undefined,
+        // !contentIsLive here too, same reasoning as the outline below —
+        // this clip exists only to hide stale, pre-resize content
+        // peeking past a box that's already changed size. A contentIsLive
+        // module never has stale content to hide (it's genuinely
+        // redrawn at the live size every render), so clipping it serves
+        // no purpose and only costs something real: reported directly
+        // during a cross-zone crossing, where the dragged module is both
+        // isResizing and continuously hovered (the pointer's on it) —
+        // its own delete button (top/right: -35, deliberately straddling
+        // the corner half outside the box) was getting clipped off by
+        // this exact rule the instant it appeared.
+        overflow: isResizing && !contentIsLive ? "hidden" : undefined,
         // A resize's live preview only ever moves this *box* — for most
         // module types, content (elements/origin) stays frozen at its
         // last-committed size until release (see isResizing's own
@@ -737,7 +817,6 @@ function NativeModule({
         originX={originX}
         originY={originY}
         scale={scale}
-        isFirefox={isFirefox}
         suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
       />
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
@@ -989,6 +1068,7 @@ function NativePage({
   activeId,
   visualOffsets,
   suppressTransitionIds,
+  pickupAnimating,
   justAddedIds,
   resizePairs,
   stackBottoms,
@@ -1011,7 +1091,6 @@ function NativePage({
   onHoverEnd,
   paletteDragPreview,
   scale,
-  isFirefox,
   fontFamily,
 }: {
   page: LoadedPage;
@@ -1029,6 +1108,7 @@ function NativePage({
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
   suppressTransitionIds: ReadonlySet<string> | null;
+  pickupAnimating: boolean;
   // See NativeModule's own justAdded comment — a module in this set
   // gets its mount fade-in; the main component clears each id out a
   // couple of frames after adding it, so this only ever briefly
@@ -1075,7 +1155,6 @@ function NativePage({
   // drives the live, grid-snapped preview box below, PaletteDropPreview.
   paletteDragPreview: PaletteDragPreview | null;
   scale: number;
-  isFirefox: boolean;
   // Page Settings' current font choice, resolved to a real CSS
   // font-family string — threaded down so this page's own live-preview
   // re-render (contentIsLive below) and NativeModule's inline edit
@@ -1177,9 +1256,9 @@ function NativePage({
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
-            justAdded={justAddedIds?.has(id) ?? false}
+            pickupAnimating={pickupAnimating && activeId === id}
             scale={scale}
-            isFirefox={isFirefox}
+            justAdded={justAddedIds?.has(id) ?? false}
             onDelete={onDeleteModule}
             isHovered={hoveredInstanceId === id}
             onHoverStart={onHoverStart}
@@ -3538,26 +3617,6 @@ export function NativePlannerEditor({
   );
   const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
 
-  // Threaded down to PolotnoJsonRenderer (see its own isFirefox comment)
-  // for the Firefox-only hairline/border floor. useSyncExternalStore, not
-  // a plain useState+useEffect — this is exactly the case it exists for
-  // (React's own docs use `window`-derived values as the example): a
-  // value that depends on a browser API unavailable during SSR needs a
-  // getServerSnapshot to render *something* consistent server-side, and
-  // this component's first render does run server-side, where `navigator`
-  // doesn't exist at all. Rendering `false` server- and client-side on
-  // the first pass, then re-checking after mount, is what keeps that
-  // first client render's output identical to what the server already
-  // sent — a real hydration mismatch from skipping this shipped and was
-  // caught live in the dev log: server always rendered the unadjusted
-  // width, Firefox's client render wanted the floored one, on every
-  // single page load. No real subscription exists (the answer can't
-  // change after mount), so `subscribe` is a no-op.
-  const isFirefox = useSyncExternalStore(
-    () => () => {},
-    () => /firefox/i.test(navigator.userAgent),
-    () => false
-  );
 
   // The scaled content's actual marginLeft/marginTop at a given scale —
   // VIEWPORT_PADDING_PX's own minimum gutter on that side, plus half of
@@ -3845,11 +3904,27 @@ export function NativePlannerEditor({
   // the pointer actually grabbed it (0,0 top-left, 0.5,0.5 center) —
   // captured once per gesture (see grabFractionCapturedRef's own
   // comment for exactly when/why), read by
-  // computeDraggedTransformPagePx's own grab-point anchoring during a
-  // cross-zone crossing. {0,0} (top-left) is a safe default/fallback —
-  // exactly the old, pre-anchoring behavior — for the rare case a real
-  // value can't be computed at all this gesture.
-  const [grabFraction, setGrabFraction] = useState<{ x: number; y: number }>(ZERO_OFFSET);
+  // computeDraggedTransformPagePx. NULL until that capture happens, and
+  // null is a meaningful value there, not a placeholder: both anchor
+  // modes fall back to the plain raw delta while it's null, which is
+  // what keeps "center" mode from teleporting the box at mousedown
+  // (it eases into the pointer's grip on first movement instead).
+  const [grabFraction, setGrabFraction] = useState<{ x: number; y: number } | null>(null);
+  // Which anchoring model the dragged item uses while its size changes
+  // mid-gesture — see DragAnchorMode's own comment. Live-toggleable
+  // from the header specifically so the two can be compared by feel on
+  // the same drag rather than by rebuilding between them; "grab" is
+  // the default because it reproduces exactly the behavior that
+  // shipped before this comparison existed.
+  const [dragAnchorMode, setDragAnchorMode] = useState<DragAnchorMode>("grab");
+  // True for a short window right after grabFraction is captured, so
+  // the dragged item can EASE from wherever it was picked up to its
+  // anchored position instead of snapping there. Only visibly does
+  // anything in "center" mode (in "grab" mode the anchored position at
+  // capture time IS where it already is, so there's nothing to
+  // animate) — requested directly: "every picked up module animates to
+  // the center of the cursor then just keep it there."
+  const [pickupAnimating, setPickupAnimating] = useState(false);
   // Whether grabFraction has already been captured for the CURRENT
   // gesture — reset false on every handleDragStart, flipped true the
   // first time handleDragMove successfully computes a real value.
@@ -3866,6 +3941,16 @@ export function NativePlannerEditor({
   // guard read-and-written exclusively inside these two event
   // handlers, never during render.
   const grabFractionCapturedRef = useRef(false);
+  // Debounced crossingZones preview — see confirmedCrossingRef's own
+  // comment (near readPointerDelta) for the full reasoning.
+  // Mirrors that ref's current value so crossingLivePreview/
+  // visualOffsets (render-time memos) can read it declaratively;
+  // handleDragMove is the only writer.
+  const [confirmedCrossingPreview, setConfirmedCrossingPreview] = useState<{
+    instanceId: string;
+    zoneKey: string | null;
+    preview: NonNullable<ReturnType<typeof resolveDrag>>;
+  } | null>(null);
   // Whether ModulePalette's own sliding panel is currently open, and
   // which section (if any) to briefly highlight right now — see that
   // component's own comment. Owned here (not local state inside
@@ -4029,45 +4114,153 @@ export function NativePlannerEditor({
     [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
   );
 
-  // Defensive workaround, not a root-cause fix — see handleDragMove's
-  // own extended comment where this is used. Tracks dnd-kit's own last-
-  // reported event.delta plus a running correction, entirely outside
-  // React state (a ref, not useState) since it's read-and-written
-  // exclusively inside handleDragMove/handleDragEnd's own synchronous
-  // event handlers, never during render.
-  const dragDeltaCorrectionRef = useRef({ lastRawX: 0, lastRawY: 0, correctionX: 0, correctionY: 0 });
-  // Shared by handleDragMove and handleDragEnd — a drop event's own
-  // event.delta needs exactly the same correction a move event's would
-  // (dnd-kit doesn't distinguish; both read from the same underlying
-  // pointer-tracking state), and a drop can itself land exactly on an
-  // anomalous jump with no preceding move event to have already caught
-  // it. Mutates the ref in place (updating lastRawX/Y and, if this call
-  // itself detects a jump, correctionX/Y) and returns the corrected
-  // {x, y} to use in place of the event's own raw delta.
-  const applyDragDeltaCorrection = useCallback((rawX: number, rawY: number) => {
-    const corr = dragDeltaCorrectionRef.current;
-    const jumpX = rawX - corr.lastRawX;
-    const jumpY = rawY - corr.lastRawY;
-    if (Math.hypot(jumpX, jumpY) > DRAG_DELTA_JUMP_THRESHOLD_PX) {
-      // TEMP DEBUG — remove alongside the [render] log once confirmed.
-      console.log("[dragDeltaCorrection] caught jump", { rawX, rawY, jumpX, jumpY, prevCorrection: { x: corr.correctionX, y: corr.correctionY } });
-      corr.correctionX -= jumpX;
-      corr.correctionY -= jumpY;
-    }
-    corr.lastRawX = rawX;
-    corr.lastRawY = rawY;
-    return { x: rawX + corr.correctionX, y: rawY + corr.correctionY };
+  // TEMP DEBUG — dedupe key for resolveDrag's own crossing-zone log
+  // below (see that log's own comment).
+  const lastCrossingDebugLogRef = useRef<string | null>(null);
+  // Debounces a single-event crossingZones flip back to false — one
+  // resolveDrag evaluation can land on the wrong side of the zone
+  // boundary for exactly one move event before the next event's own
+  // tracking catches up, e.g. a pointer hovering right on the seam
+  // (reported directly: "side glitches to previous error then corrects
+  // all during live"). Source of truth
+  // — mutated only inside handleDragMove, a real event handler, never
+  // during render — confirmedCrossingPreview (state, declared near
+  // grabFraction) just mirrors it for crossingLivePreview/visualOffsets
+  // to read declaratively. Entering a crossing (false -> true) needs no
+  // debounce and updates this immediately: nothing renders wrong on the
+  // way in, only a spurious *exit* risks flashing stale-looking content
+  // for one frame. Requires TWO CONSECUTIVE non-crossing evaluations
+  // before actually accepting an exit — one stray reading is
+  // suppressed (the last confirmed preview is reused instead), a
+  // genuinely sustained exit still commits within ~1 extra move event
+  // (imperceptible, well under a frame or two at normal drag speed).
+  const confirmedCrossingRef = useRef<{
+    instanceId: string;
+    zoneKey: string | null;
+    preview: NonNullable<ReturnType<typeof resolveDrag>>;
+  } | null>(null);
+  const crossingZonesExitStreakRef = useRef(0);
+  // The row to fall back to (below, in resolveDrag) whenever the raw
+  // pointer's own column has drifted off the dragged module's own
+  // CURRENT column while NOT crossing zones — e.g. hovering over the
+  // hours grid without having reached BOTTOM_ZONE_ROW_TOLERANCE yet.
+  // resolveDrag's own existing column-pin only stops the CANDIDATE's
+  // column from following the pointer there; the row never got the
+  // same treatment ("reordering within a zone has only ever been a row
+  // (Y) operation" — that assumption held until this: reported
+  // directly, "the side module positions still update... while im over
+  // the hour section... i want it to stay in the position where it was
+  // when i crossed from the side modules over to the hours"). Updated
+  // only from handleDragMove (a real event handler), every tick the
+  // pointer genuinely IS still over the module's own column — capturing
+  // "the last row that was actually meaningful for this stack" before
+  // the pointer wanders off it, not just re-deriving something
+  // arbitrary. STATE, not a ref — resolveDrag itself needs to read this
+  // (react-hooks/refs flags reading a ref, not just writing one, inside
+  // any function invoked during render, and resolveDrag is invoked from
+  // crossingLivePreview/visualOffsets, both render-time memos — see
+  // resolveDragRef's own comment for the mirror-image problem this
+  // file already hit once with confirmedCrossingPreview).
+  const [lastOwnColumnRow, setLastOwnColumnRow] = useState<{ instanceId: string; rowStart: number } | null>(null);
+  // handleDragMove (below) needs to call resolveDrag, but resolveDrag
+  // is declared later in this same component — a plain reference
+  // inside handleDragMove's own CALLBACK BODY would be fine (closures
+  // resolve at call time, well after this whole render finishes), but
+  // adding resolveDrag to handleDragMove's OWN dependency array would
+  // not: that array is evaluated immediately, at this line, during
+  // THIS render — before resolveDrag's own `const` below has run —
+  // a genuine "cannot access before initialization" TDZ error, not
+  // just a lint complaint. Routing through a ref that's kept in sync
+  // via the useEffect right after resolveDrag's declaration sidesteps
+  // the ordering problem entirely: handleDragMove reads
+  // resolveDragRef.current (always up to date by the time a real
+  // event fires) instead of closing over resolveDrag directly, so it
+  // never needs to appear in that dependency array at all.
+  const resolveDragRef = useRef<((instanceId: string, rawDeltaX: number, rawDeltaY: number) => ReturnType<typeof resolveDrag>) | null>(
+    null
+  );
+  // The drag delta, measured from the REAL pointer rather than from
+  // dnd-kit's own event.delta — see readPointerDelta below for the full
+  // reasoning. lastPointerRef is updated by the always-on listener
+  // right after this; pointerOriginRef is stamped once per gesture at
+  // handleDragStart.
+  const lastPointerRef = useRef({ x: 0, y: 0 });
+  const pointerOriginRef = useRef<{ x: number; y: number } | null>(null);
+  // Capture phase, so this always runs BEFORE dnd-kit's own
+  // ownerDocument-level (bubble phase) pointermove handler for the same
+  // event — that ordering is what guarantees readPointerDelta is
+  // reading THIS event's position, not the previous one's, by the time
+  // handleDragMove runs. Always-on rather than mounted per-drag: it
+  // only ever writes two numbers to a ref (no state, no re-render), so
+  // there's nothing to gain from tearing it down between gestures, and
+  // one less thing to get wrong around drag start/end edges.
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointermove", onPointerMove, { capture: true, passive: true });
+    return () => window.removeEventListener("pointermove", onPointerMove, { capture: true });
+  }, []);
+  // Shared by handleDragMove and handleDragEnd. Computes the gesture's
+  // delta from the pointer's own real screen position minus where the
+  // gesture started, INSTEAD of trusting dnd-kit's own event.delta.
+  //
+  // Why: dnd-kit's event.delta demonstrably corrupts itself mid-gesture
+  // in this app — see this file's own git history for the full trail
+  // (five separate attempts at root-causing it in dnd-kit/browser
+  // internals, none conclusive). The previous approach here was a
+  // defensive correction that watched for a single event's delta moving
+  // further than any real pointer plausibly could
+  // (DRAG_DELTA_JUMP_THRESHOLD_PX = 300) and cancelled the difference
+  // back out. That worked for the large corruptions (a confirmed
+  // ~(696, 1261) px jump in one ~20ms event) but is fundamentally a
+  // guess: a real corruption of ~236px was later caught on video
+  // slipping straight under the threshold and reaching the screen as a
+  // visible jump — reported directly, "when i crossed from hours
+  // section to bottom module section on left page the dragged module
+  // jumped" — and the threshold can't simply be lowered, because a
+  // genuine fast flick covers that same distance in the ~107ms those
+  // two events were actually apart. Any threshold is guessing at which
+  // side of that line a given jump falls on.
+  //
+  // The pointer's own clientX/clientY has no such ambiguity — it IS the
+  // ground truth dnd-kit's delta is supposed to be reporting, so there's
+  // nothing left to detect or correct. activatorEvent (stamped into
+  // pointerOriginRef at drag start) is the same original PointerEvent
+  // for the whole gesture, confirmed earlier when grabFraction needed
+  // exactly that guarantee — so this origin stays fixed and correct
+  // even across whatever dnd-kit does internally.
+  //
+  // Falls back to dnd-kit's own delta when there's no pointer origin —
+  // a non-pointer sensor (keyboard) has no clientX/clientY to measure
+  // from, and its delta was never affected by this bug anyway.
+  const readPointerDelta = useCallback((fallback: { x: number; y: number }) => {
+    const origin = pointerOriginRef.current;
+    if (!origin) return { x: fallback.x, y: fallback.y };
+    return { x: lastPointerRef.current.x - origin.x, y: lastPointerRef.current.y - origin.y };
   }, []);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setActiveDelta(ZERO_OFFSET);
-    dragDeltaCorrectionRef.current = { lastRawX: 0, lastRawY: 0, correctionX: 0, correctionY: 0 };
+    // Origin for readPointerDelta (see its own comment) — the gesture's
+    // own starting pointer position, in the same screen coordinate
+    // space every later pointermove reports. Null for a non-pointer
+    // sensor, which readPointerDelta treats as "fall back to dnd-kit's
+    // own delta."
+    const activatorPointer = event.activatorEvent instanceof PointerEvent ? event.activatorEvent : null;
+    pointerOriginRef.current = activatorPointer ? { x: activatorPointer.clientX, y: activatorPointer.clientY } : null;
+    if (activatorPointer) lastPointerRef.current = { x: activatorPointer.clientX, y: activatorPointer.clientY };
     // Real capture happens in handleDragMove's own first call instead
     // — see grabFractionCapturedRef's own comment for why. This just
     // resets both to their "nothing captured yet this gesture" state.
     grabFractionCapturedRef.current = false;
-    setGrabFraction(ZERO_OFFSET);
+    setGrabFraction(null);
+    setPickupAnimating(false);
+    confirmedCrossingRef.current = null;
+    crossingZonesExitStreakRef.current = 0;
+    setConfirmedCrossingPreview(null);
+    setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
     // either way, and keeps this in the same "always reset per-drag
     // state on drag-start" shape as settling right below rather than
@@ -4102,9 +4295,7 @@ export function NativePlannerEditor({
       targetColumnStart: number,
       targetRowStart: number
     ): { columnStart: number; columnSpan: number; isBottomZone: boolean } | null => {
-      const canFillBottomZone = slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
-      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
-      if (!canFillBottomZone) return null;
+      if (!canCrossZones(slug)) return null;
       if (
         hourlyGridPlacement &&
         targetColumnStart >= hourlyGridPlacement.columnStart &&
@@ -4113,7 +4304,21 @@ export function NativePlannerEditor({
       ) {
         return { columnStart: hourlyGridPlacement.columnStart, columnSpan: hourlyGridPlacement.columnSpan, isBottomZone: true };
       }
-      if (canSideZone) {
+      // Side zone only exists on a page whose own hourly-grid-core
+      // leaves column 0 free (columnStart > 0) — the right page's own
+      // hourly-grid-core spans the full width (columnStart: 0), so it
+      // has no sidebar column at all. Checking the shape here rather
+      // than hardcoding "left page" keeps this correct without needing
+      // to know which page is which, and naturally extends to
+      // cross-page crossings (resolveDrag, below) once the caller
+      // passes a TARGET page's own hourlyGridPlacement instead of
+      // always the dragged module's own source page. Preserves the
+      // original fallback for a genuinely undefined hourlyGridPlacement
+      // (side zone still offered — matches this function's own
+      // documented "callers fall back to their own pre-existing
+      // default" contract elsewhere) — only an ACTUAL full-width
+      // hourly grid (columnStart: 0) rules the side zone out.
+      if (!hourlyGridPlacement || hourlyGridPlacement.columnStart > 0) {
         return { columnStart: 0, columnSpan: 1, isBottomZone: false };
       }
       return null;
@@ -4123,39 +4328,11 @@ export function NativePlannerEditor({
 
   const handleDragMove = useCallback(
     (event: DragMoveEvent) => {
-      // Defensive workaround for a bug five separate attempts (see
-      // crossingLivePreview's own comment for the trail) couldn't root-
-      // cause: the instant a cross-zone drag's crossingZones first
-      // flips true, dnd-kit's own event.delta — on the very next
-      // pointermove event, ~20-35ms later — jumps by 800-1200 screen
-      // px, physically impossible for a real pointer in that time.
-      // Confirmed NOT caused by anything under this app's own control:
-      // reproduced identically whether the dragged item's own box
-      // resizes, only a sibling's does, or literally nothing's DOM size
-      // changes at all (the current, most conservative version) — the
-      // one constant across every version is the crossingZones state
-      // transition itself, not any particular DOM mutation. Also
-      // confirmed NOT a one-frame blip: the jumped value persists as
-      // the new baseline for the rest of the gesture (every subsequent
-      // event continues from it), meaning dnd-kit's own internal
-      // "initial pointer coordinates" reference — event.delta is
-      // computed relative to it — genuinely, permanently shifts at
-      // that moment, for reasons this file's own code doesn't appear
-      // to control.
-      //
-      // Rather than keep guessing at dnd-kit/browser internals with no
-      // way to step through them directly, this detects the signature
-      // directly (a single event's own delta moving further than any
-      // real pointer plausibly could) and cancels it out with a
-      // running correction, computed entirely from dnd-kit's own
-      // already-reported deltas — no assumption about *why* it
-      // jumped, just that a jump this size in one event is never real
-      // pointer movement and should be subtracted back out so the
-      // dragged item's own on-screen tracking stays continuous instead
-      // of teleporting. See applyDragDeltaCorrection's own comment —
-      // shared with handleDragEnd, whose own drop-event delta needs
-      // the identical correction.
-      const correctedDelta = applyDragDeltaCorrection(event.delta.x, event.delta.y);
+      // Measured from the real pointer, NOT dnd-kit's own event.delta,
+      // which demonstrably corrupts itself mid-gesture in this app —
+      // see readPointerDelta's own comment for the full reasoning and
+      // the trail behind it.
+      const correctedDelta = readPointerDelta(event.delta);
       setActiveDelta(correctedDelta);
       // See grabFractionCapturedRef's own comment (state declarations)
       // for why this has to happen here, on the first move event,
@@ -4165,25 +4342,140 @@ export function NativePlannerEditor({
       // activated the drag on every move event (dnd-kit doesn't
       // replace it), so reading it here still gives the real,
       // original grab point, not wherever the pointer is now.
+      let justCapturedGrabFraction = false;
       if (!grabFractionCapturedRef.current) {
         const rect = event.active.rect.current.initial;
         const pointerEvent = event.activatorEvent instanceof PointerEvent ? event.activatorEvent : null;
         if (rect && pointerEvent && rect.width > 0 && rect.height > 0) {
           grabFractionCapturedRef.current = true;
-          // TEMP DEBUG — remove alongside the other [render]/
-          // [dragDeltaCorrection] logs once confirmed working.
-          console.log("[grabFraction] captured on first move", {
-            x: (pointerEvent.clientX - rect.left) / rect.width,
-            y: (pointerEvent.clientY - rect.top) / rect.height,
-          });
+          justCapturedGrabFraction = true;
           setGrabFraction({
             x: (pointerEvent.clientX - rect.left) / rect.width,
             y: (pointerEvent.clientY - rect.top) / rect.height,
           });
+          // Arms the ease-into-grip animation for this gesture. Cleared
+          // on a timer rather than a transitionend listener: the
+          // transform is being rewritten every pointermove, so
+          // transitionend either never fires or fires against the wrong
+          // intermediate value. PICKUP_EASE_MS is deliberately short —
+          // long enough to read as movement, short enough that pointer
+          // tracking doesn't feel laggy while it's still running.
+          //
+          // "center" mode ONLY. In "grab" mode the anchored position at
+          // capture time is exactly where the box already is, so there
+          // is nothing to ease toward — but the transition would still
+          // be live for PICKUP_EASE_MS, making the box visibly lag the
+          // pointer for the first sixth of a second of every drag. That
+          // was an unintended regression in the default mode; gating it
+          // here keeps "grab" byte-identical to its shipped behavior.
+          if (dragAnchorMode === "center") {
+            setPickupAnimating(true);
+            window.setTimeout(() => setPickupAnimating(false), PICKUP_EASE_MS);
+          }
         }
       }
       const id = String(event.active.id);
-      if (!id.startsWith(PALETTE_ID_PREFIX)) return;
+      if (!id.startsWith(PALETTE_ID_PREFIX)) {
+        // See confirmedCrossingRef's own comment (near
+        // readPointerDelta) — debounces a single-event
+        // crossingZones flip back to false so crossingLivePreview/
+        // visualOffsets don't flash the pre-crossing layout for one
+        // frame before the next move event confirms (or reverses) it.
+        // Also now LOCKS the resolution on the first confirmed tick of
+        // each crossing EPISODE (the guard below) rather than
+        // refreshing it on every subsequent true reading — requested
+        // directly: "when i move the module of the side to the hours, i
+        // want it to stay returning to that position it was in when i
+        // went off the section, not keep updating depending on the
+        // height." Before this, candidate.rowStart tracked the raw
+        // pointer continuously within the target zone, so the resolved
+        // insert row (and which existing sibling ended up shrinking)
+        // could keep changing as the pointer moved deeper into the zone
+        // — reported as "very jittery." Re-acquires on `zoneKey`
+        // changing, not just `instanceId` — without this, a continuous
+        // left-side -> right-bottom drag (passing near/through
+        // left-bottom's own row range en route) would acquire the lock
+        // at left-bottom and never let go, visibly stuck showing
+        // "insert into left-bottom" the rest of the way to right-bottom
+        // (crossingZones stays true continuously the whole time — the
+        // target keeps differing from the source regardless of which of
+        // the two OTHER zones the pointer is actually over). A fresh
+        // crossing, or a crossing into a genuinely different zone, still
+        // captures immediately either way.
+        // Skipped on the tick that just captured grabFraction.
+        // setGrabFraction above is a STATE update, so the resolveDrag
+        // closure this line reaches still holds the previous value —
+        // null — and resolveDrag falls back to the box's own top-left
+        // corner when grabFraction is null. For a 3-column-wide module
+        // dragged left that corner is already over the sidebar column
+        // while the pointer is still two columns away, so this
+        // acquired a bogus side-zone lock on stale data, flashed the
+        // side-zone size and gravity for a frame or two, then the exit
+        // debounce dropped it. Reported directly: "it flashes as the
+        // correct size and live gravity pushes other modules for a
+        // split second then goes back to the bottom module size."
+        // Nothing is lost by waiting one pointermove (~16ms): the
+        // render triggered by this same handler already recomputes
+        // crossingLivePreview with the freshly-committed grabFraction,
+        // so only this imperative lock update is deferred.
+        if (justCapturedGrabFraction) return;
+        const rawPreview = resolveDragRef.current?.(id, correctedDelta.x, correctedDelta.y) ?? null;
+        if (rawPreview?.crossingZones) {
+          crossingZonesExitStreakRef.current = 0;
+          // Refreshed on EVERY crossing tick, so this always holds the
+          // most recent resolution that was actually valid. It used to
+          // only capture the first tick of a crossing episode, which
+          // froze the insert row for the rest of the gesture — dragging
+          // a to-do from the bottom zone up through the sidebar kept
+          // previewing the slot it first entered at, no matter how far
+          // up it then moved. Reported directly: "it does end up in
+          // right spot when released but it doesn't live update once it
+          // gets in initial position." Holding a stale value is now the
+          // job of the consumers below, and only while the pointer is
+          // somewhere that has no valid target at all.
+          confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
+        } else if (confirmedCrossingRef.current?.instanceId === id) {
+          crossingZonesExitStreakRef.current += 1;
+          if (crossingZonesExitStreakRef.current >= 2) {
+            confirmedCrossingRef.current = null;
+            crossingZonesExitStreakRef.current = 0;
+          }
+        } else {
+          crossingZonesExitStreakRef.current = 0;
+        }
+        setConfirmedCrossingPreview(confirmedCrossingRef.current);
+        // Feeds lastOwnColumnRow (own comment, near
+        // readPointerDelta) — only records a new "last known good
+        // row" while the pointer is genuinely still within a recognized
+        // zone (overOwnColumn true covers both a real crossing, where
+        // the column pin is targetZone's own column instead, and an
+        // ordinary same-zone reorder). Left untouched otherwise, so it
+        // keeps holding whatever it last captured while the pointer
+        // wanders somewhere unrecognized — that's the whole point.
+        //
+        // Value-equality guarded, not called unconditionally — since
+        // the fix broadening overOwnColumn to !!targetZone (its own
+        // comment), this fires on nearly every move event a normal drag
+        // ever produces (being IN a zone is the common case, not the
+        // exception), and setLastOwnColumnRow's argument is always a
+        // freshly-literal object even when the row value hasn't
+        // actually changed — React can't bail out via its own
+        // Object.is check on a brand-new object, so every single tick
+        // was forcing an extra render on top of the one setActiveDelta
+        // already causes. Confirmed via a real "Maximum update depth
+        // exceeded" trace pointing directly at this handler's own
+        // setActiveDelta call (not dnd-kit internals this time) —
+        // consistent with dnd-kit's own sensor dispatch getting
+        // outpaced by React's render cycle under this much avoidable
+        // per-tick render pressure.
+        if (
+          rawPreview?.overOwnColumn &&
+          (lastOwnColumnRow?.instanceId !== id || lastOwnColumnRow.rowStart !== rawPreview.nearestCellRaw.rowStart)
+        ) {
+          setLastOwnColumnRow({ instanceId: id, rowStart: rawPreview.nearestCellRaw.rowStart });
+        }
+        return;
+      }
       const slug = id.slice(PALETTE_ID_PREFIX.length);
       const meta = PALETTE_MODULE_TYPES.find((m) => m.slug === slug);
       const rect = event.active.rect.current.translated;
@@ -4343,7 +4635,9 @@ export function NativePlannerEditor({
       placements,
       moduleLookup,
       resolveZoneForColumn,
-      applyDragDeltaCorrection,
+      readPointerDelta,
+      lastOwnColumnRow,
+      dragAnchorMode,
     ]
   );
 
@@ -4357,59 +4651,228 @@ export function NativePlannerEditor({
       const info = moduleLookup.get(instanceId);
       const current = placements[instanceId];
       if (!info || !current) return null;
-      const pageGrid = pageGridByPageId[info.pageId];
-      if (!pageGrid) return null;
+      const sourcePageGrid = pageGridByPageId[info.pageId];
+      if (!sourcePageGrid) return null;
 
       const dxPagePx = rawDeltaX / scale;
       const dyPagePx = rawDeltaY / scale;
 
-      const currentPixel = gridCellToPixels(pageGrid, current);
+      const currentPixel = gridCellToPixels(sourcePageGrid, current);
       const draggedPixel = { x: currentPixel.x + dxPagePx, y: currentPixel.y + dyPagePx };
-      const nearestCellRaw = pixelsToGridCell(pageGrid, draggedPixel);
 
-      const others: Array<GridRect & { id: string; locked: boolean }> = [];
-      let hourlyGridPlacement: Placement | null = null;
+      // Everything below resolves against the POINTER's own position, not
+      // the dragged box's top-left corner. Those differ by however far
+      // into the box you grabbed, which for a 3-4 column wide bottom-zone
+      // module is most of a page: dragging one leftward, its left EDGE
+      // enters the sidebar column while the pointer is still two columns
+      // to the right, and the zone flipped to "side" before the user had
+      // pointed anywhere near it. Reported directly: "i tried to drag a
+      // todo... back to its original spot but it went to side instead."
+      //
+      // Derived rather than measured, so this stays usable from the
+      // render-time memos that call resolveDrag (a ref holding the live
+      // pointer can't be read during render). Before any crossing
+      // resize takes effect the box renders at `current`'s own size with
+      // its top-left exactly at draggedPixel, so the grabbed point — and
+      // therefore the pointer — sits grabFraction of that size into it.
+      // grabFraction is null only until handleDragMove's first call
+      // captures it, by which point the delta is still ~0 and the
+      // distinction doesn't matter.
+      const currentSizePx = gridCellToPixels(sourcePageGrid, current);
+      const pointerPagePx = {
+        x: draggedPixel.x + (grabFraction?.x ?? 0) * currentSizePx.width,
+        y: draggedPixel.y + (grabFraction?.y ?? 0) * currentSizePx.height,
+      };
+
+      // Which page the pointer is now physically over — extends the
+      // existing corner-relative draggedPixel math arithmetically
+      // across the page-gap boundary instead of introducing a second,
+      // cursor-relative measurement (e.g. from screenPointToPageCell,
+      // which stays used only by the palette-drop path it already
+      // serves): draggedPixel.x can already legitimately exceed one
+      // page's own width once the pointer has moved far enough, since
+      // it's expressed in the shared spread's own continuous coordinate
+      // space. Math.floor + clamping means a drag flung past the whole
+      // spread lands on the nearest real page rather than resolving to
+      // nothing. When the pointer hasn't left the source page at all
+      // (the overwhelming majority of every drag, including every
+      // ordinary same-page one), hoveredPageIndex === sourcePageIndex
+      // and this is byte-for-byte the same computation as before this
+      // feature existed.
+      const sourcePageIndex = pages.findIndex((p) => p.pageId === info.pageId);
+      const spreadUnit = PRINT_WIDTH_PX + PAGE_GAP_PX;
+      const hoveredPageIndex =
+        sourcePageIndex === -1
+          ? sourcePageIndex
+          : Math.max(0, Math.min(pages.length - 1, sourcePageIndex + Math.floor(pointerPagePx.x / spreadUnit)));
+      const hoveredPage = hoveredPageIndex === -1 ? undefined : pages[hoveredPageIndex];
+      const hoveredPageId = hoveredPage?.pageId ?? info.pageId;
+      const hoveredPageGrid = pageGridByPageId[hoveredPageId] ?? sourcePageGrid;
+      const hoveredLocalX =
+        sourcePageIndex === -1 ? pointerPagePx.x : pointerPagePx.x - (hoveredPageIndex - sourcePageIndex) * spreadUnit;
+      const nearestCellRaw = pixelsToGridCell(hoveredPageGrid, { x: hoveredLocalX, y: pointerPagePx.y });
+      // Which cell the pointer is INSIDE, vs nearestCellRaw's "closest
+      // gridline" — see pixelsToContainingCell (grid.ts). Zone/hit
+      // testing wants containment so a one-column-wide sidebar is
+      // reachable across its full width rather than only its right half;
+      // the insert ROW below stays on nearestCellRaw, where snapping to
+      // the closest boundary is the behavior a reorder threshold wants.
+      const pointerCell = pixelsToContainingCell(hoveredPageGrid, { x: hoveredLocalX, y: pointerPagePx.y });
+
+      // Two independent sibling sets: sourceOthers (this module's OWN
+      // page) is always needed — gravityRepackAfterDeparture (source-
+      // zone gap-fill) and currentIsBottomZone both operate against it
+      // regardless of whether this tick ends up being a genuine
+      // crossing. hoveredOthers (whichever page the pointer is
+      // physically over) only matters once a crossing is actually
+      // confirmed below — see targetOthers. When hoveredPageId ===
+      // info.pageId (same page) these end up as two distinct arrays
+      // with identical contents, which is fine — nothing here mutates
+      // either in a way the other would need to see.
+      const sourceOthers: Array<GridRect & { id: string; locked: boolean }> = [];
+      const hoveredOthers: Array<GridRect & { id: string; locked: boolean }> = [];
+      let sourceHourlyGridPlacement: Placement | null = null;
+      let hoveredHourlyGridPlacement: Placement | null = null;
       for (const [id, placement] of Object.entries(placements)) {
         if (id === instanceId) continue;
         const otherInfo = moduleLookup.get(id);
-        if (!otherInfo || otherInfo.pageId !== info.pageId) continue;
-        others.push({ ...placement, id, locked: otherInfo.locked });
-        if (otherInfo.slug === "hourly-grid-core") hourlyGridPlacement = placement;
+        if (!otherInfo) continue;
+        if (otherInfo.pageId === info.pageId) {
+          sourceOthers.push({ ...placement, id, locked: otherInfo.locked });
+          if (otherInfo.slug === "hourly-grid-core") sourceHourlyGridPlacement = placement;
+        }
+        if (otherInfo.pageId === hoveredPageId) {
+          hoveredOthers.push({ ...placement, id, locked: otherInfo.locked });
+          if (otherInfo.slug === "hourly-grid-core") hoveredHourlyGridPlacement = placement;
+        }
       }
 
-      // Cross-zone reposition: if this module's slug is cross-zone-
-      // capable (see resolveZoneForColumn) and the pointer's target
-      // column now falls in a DIFFERENT zone (side vs bottom) than the
-      // module's own current one, resize it to that zone's shape at its
-      // own minimum height — requested directly: "drag side modules to
-      // the bottom and bottom modules to the side and they insert as
-      // the minimum height and change according widths automatically
-      // depending on section." Always minimum on a crossing (not
-      // "default size if it fits," which is what a fresh palette drop
-      // does instead) — simpler, and matches the request's own wording.
-      // If the zone hasn't changed (the overwhelming majority of drags —
-      // an ordinary same-zone reposition/reorder), none of this applies:
-      // columnSpan/rowSpan carry over completely unchanged, exactly as
-      // before this feature existed.
+      // Cross-zone/cross-page reposition: if this module's slug is
+      // cross-zone-capable (see resolveZoneForColumn) and the pointer's
+      // target zone now differs from the module's own current one —
+      // either a different zone on the SAME page (side vs bottom), or
+      // the pointer has moved onto a DIFFERENT PAGE entirely — resize
+      // it to that zone's shape at its own minimum height. Requested
+      // directly (same-page): "drag side modules to the bottom and
+      // bottom modules to the side and they insert as the minimum
+      // height and change according widths automatically depending on
+      // section." Requested directly (cross-page): side modules on the
+      // left page dragged to the right page's bottom section, and
+      // bottom modules moved between the left and right page's own
+      // bottom zones. Always minimum on any crossing (not "default size
+      // if it fits," which is what a fresh palette drop does instead)
+      // — simpler, consistent with the shipped same-page behavior, and
+      // forced anyway for a page-to-page bottom-zone move since
+      // columnSpan itself changes (3 on the left page, 4 on the right).
+      // If the zone AND page both stay the same (the overwhelming
+      // majority of drags — an ordinary reposition/reorder), none of
+      // this applies: columnSpan/rowSpan carry over completely
+      // unchanged, exactly as before this feature existed.
       const targetZone = resolveZoneForColumn(
-        hourlyGridPlacement ?? undefined,
+        hoveredHourlyGridPlacement ?? undefined,
         info.slug,
-        nearestCellRaw.columnStart,
-        nearestCellRaw.rowStart
+        pointerCell.columnStart,
+        pointerCell.rowStart
       );
       const currentIsBottomZone =
-        !!hourlyGridPlacement &&
-        current.columnStart === hourlyGridPlacement.columnStart &&
-        current.columnSpan === hourlyGridPlacement.columnSpan;
-      const crossingZones = !!targetZone && targetZone.isBottomZone !== currentIsBottomZone;
+        !!sourceHourlyGridPlacement &&
+        current.columnStart === sourceHourlyGridPlacement.columnStart &&
+        current.columnSpan === sourceHourlyGridPlacement.columnSpan;
+      const crossingZones = !!targetZone && (targetZone.isBottomZone !== currentIsBottomZone || hoveredPageId !== info.pageId);
+
+      // Once crossingZones is known, "the page/siblings this candidate
+      // actually resolves against" collapses to either the hovered page
+      // (a genuine crossing) or the source page itself — covers both
+      // an ordinary same-page reorder AND hovering a DIFFERENT page's
+      // hours grid without reaching a real zone there (mirrors this
+      // function's own existing "pin to current, not raw cursor" rule
+      // for a same-page non-crossing hover, just extended across pages
+      // too — there's no third, legitimate "different page, not
+      // crossing" position to resolve against by page alone).
+      const targetPageId = crossingZones ? hoveredPageId : info.pageId;
+      const targetPageGrid = crossingZones ? hoveredPageGrid : sourcePageGrid;
+      const targetOthers = crossingZones ? hoveredOthers : sourceOthers;
+      const targetHourlyGridPlacement = crossingZones ? hoveredHourlyGridPlacement : sourceHourlyGridPlacement;
+
       const effectiveColumnSpan = crossingZones ? targetZone!.columnSpan : current.columnSpan;
       const effectiveRowSpan = crossingZones
-        ? getMinRowSpanForSlug(info.slug, pageGrid, effectiveColumnSpan)
+        ? getMinRowSpanForSlug(info.slug, targetPageGrid, effectiveColumnSpan)
         : current.rowSpan;
 
-      const nearestCell = clampGridPlacement(pageGrid, {
-        columnStart: crossingZones ? targetZone!.columnStart : nearestCellRaw.columnStart,
-        rowStart: nearestCellRaw.rowStart,
+      // Pinned at the module's own CURRENT column whenever not
+      // crossing — never nearestCellRaw.columnStart (the pointer's own
+      // raw column), which only belongs here for a genuine crossing.
+      // Reported directly: dragging a side module down toward the
+      // middle of the sidebar, then further right over the hours grid
+      // (not far enough down to register as a bottom-zone crossing —
+      // see BOTTOM_ZONE_ROW_TOLERANCE), should still land at that
+      // middle reorder target on release, not wherever the pointer's
+      // raw column happens to be. Every draggable module type today is
+      // cross-zone-capable and only ever occupies one of exactly two
+      // column ranges (the sidebar's own single column, or the hourly
+      // grid's own column range) — there's no third, legitimate
+      // "different column, same zone" position to reach by column
+      // alone, so pinning here can't break any other case.
+      //
+      // The ROW needs the same treatment once the pointer has drifted
+      // off any RECOGNIZED zone for this module while not crossing —
+      // "reordering within a zone has only ever been a row (Y)
+      // operation" held right up until it didn't: reported directly,
+      // "the side module positions still update... while im over the
+      // hour section... i want it to stay in the position where it was
+      // when i crossed from the side modules over to the hours." Falls
+      // back to lastOwnColumnRow's own last-known-good value (its own
+      // comment, near readPointerDelta) — the row from the last
+      // tick the pointer genuinely was still in a recognized zone —
+      // rather than letting nearestCellRaw.rowStart keep tracking
+      // wherever the pointer wanders once it's left one.
+      //
+      // Compared against the module's own CURRENT zone's bounds
+      // directly — not targetZone (a genuinely different question:
+      // "could THIS SLUG cross INTO whatever zone the pointer is over,"
+      // which is exactly the wrong test here). A first attempt at this
+      // fix used `!!targetZone`, and broke ordinary same-zone reorder
+      // dead: resolveZoneForColumn's own side-zone branch is gated on
+      // canSideZone (todo-checklist/habit-tracker only) — labeled-box
+      // is deliberately excluded from THAT gate even though the
+      // sidebar is its normal home (it can be dragged INTO the bottom
+      // zone, but never back OUT to a side zone via crossing — it's
+      // already there by default). So targetZone was always null for a
+      // labeled-box being reordered within its own sidebar, freezing
+      // its row permanently — reported directly: "side modules not
+      // rearranging" (persisted after drop, not just a live-preview
+      // glitch — the candidate's own row genuinely never moved from
+      // its start position for the whole gesture).
+      //
+      // Same-column comparison as the original version (isSameZone's
+      // own column check), PLUS — this is the actual right-page fix —
+      // also requires meeting the bottom zone's own row-tolerance
+      // whenever the module's CURRENT zone is itself a bottom zone.
+      // That second clause is a no-op for a side-zone module (side
+      // zone spans its whole column regardless of row, matching how
+      // resolveZoneForColumn's own side-zone branch has no row check
+      // either) — it only matters for a page like the right one, where
+      // the bottom zone and the hours-grid area above it share the
+      // exact same column range and can only be told apart by row.
+      // Reported directly: "freeze positioning isn't happening over
+      // right page's hour/upper section."
+      const isSameZone =
+        pointerCell.columnStart === current.columnStart &&
+        (!currentIsBottomZone ||
+          (!!sourceHourlyGridPlacement &&
+            nearestCellRaw.rowStart >=
+              sourceHourlyGridPlacement.rowStart + sourceHourlyGridPlacement.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE));
+      const overOwnColumn = crossingZones || isSameZone;
+      const pinnedRowStart =
+        lastOwnColumnRow?.instanceId === instanceId ? lastOwnColumnRow.rowStart : current.rowStart;
+      // nearestCellRaw is already pointer-relative (see pointerPagePx
+      // above), so the insert row needs no further correction — an
+      // earlier version re-derived it a second time from the box's own
+      // grab-anchored draw position, which was approximating exactly
+      // this and is now redundant.
+      const nearestCell = clampGridPlacement(targetPageGrid, {
+        columnStart: crossingZones ? targetZone!.columnStart : current.columnStart,
+        rowStart: overOwnColumn ? nearestCellRaw.rowStart : pinnedRowStart,
         columnSpan: effectiveColumnSpan,
         rowSpan: effectiveRowSpan,
       });
@@ -4430,13 +4893,21 @@ export function NativePlannerEditor({
       // way the "+" zone below is reserved fixes both — the flush
       // position becomes unreachable in the first place, not just
       // patched after landing there.
-      if (hourlyGridPlacement) {
-        others.push({
+      //
+      // Built as a fresh copy of targetOthers, not a mutation of it —
+      // targetOthers is straight-up sourceOthers (same array reference)
+      // whenever !crossingZones, so pushing onto it directly would leak
+      // these two reservations into gravityRepackAfterDeparture's own
+      // sourceOthers call below. Harmless in practice (it filters out
+      // locked entries internally regardless), but not worth relying on.
+      const targetOthersWithReservations = [...targetOthers];
+      if (targetHourlyGridPlacement) {
+        targetOthersWithReservations.push({
           id: "__hourlygridgap__",
           locked: true,
-          columnStart: hourlyGridPlacement.columnStart,
-          rowStart: hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan,
-          columnSpan: hourlyGridPlacement.columnSpan,
+          columnStart: targetHourlyGridPlacement.columnStart,
+          rowStart: targetHourlyGridPlacement.rowStart + targetHourlyGridPlacement.rowSpan,
+          columnSpan: targetHourlyGridPlacement.columnSpan,
           rowSpan: 1,
         });
       }
@@ -4449,11 +4920,13 @@ export function NativePlannerEditor({
       // Reported live: dropping a module into that space left it
       // floating, disconnected from the packed stack above it, with its
       // own stray gap above it — not a bug in resolveModulePlacement,
-      // just a boundary it never knew existed.
-      for (const stackBottom of stackBottomsByPageId[info.pageId] ?? []) {
+      // just a boundary it never knew existed. Pulled from targetPageId
+      // (not always info.pageId — a genuine crossing needs the TARGET
+      // page's own reserved add-zones, not the source page's).
+      for (const stackBottom of stackBottomsByPageId[targetPageId] ?? []) {
         const gapRowSpan = stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd;
         if (gapRowSpan <= 0) continue;
-        others.push({
+        targetOthersWithReservations.push({
           id: `__addzone__${stackBottom.bottomId}`,
           locked: true,
           columnStart: stackBottom.columnStart,
@@ -4475,45 +4948,145 @@ export function NativePlannerEditor({
       let minRowSpanById: Record<string, number> | undefined;
       if (crossingZones) {
         minRowSpanById = {};
-        for (const o of others) {
+        for (const o of targetOthersWithReservations) {
           if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
           const otherInfo = moduleLookup.get(o.id);
           if (!otherInfo) continue;
-          minRowSpanById[o.id] = getMinRowSpanForSlug(otherInfo.slug, pageGrid, candidate.columnSpan);
+          minRowSpanById[o.id] = getMinRowSpanForSlug(otherInfo.slug, targetPageGrid, candidate.columnSpan);
         }
       }
 
-      const { placement: resolved, reflow: targetReflow } = resolveModulePlacement(
-        pageGrid,
+      const { placement: rawResolved, reflow: targetReflow } = resolveModulePlacement(
+        targetPageGrid,
         candidate,
-        others,
+        targetOthersWithReservations,
         current.rowStart,
         minRowSpanById
       );
+
+      // Pack the arriving module up against whatever sits directly above
+      // it in the target zone. resolveModulePlacement only reflows on a
+      // COLLISION, so dropping into an empty zone leaves the module
+      // wherever the pointer released it — reported directly: "it
+      // actually went to a spot one row lower than it is supposed to
+      // given the location of the top of the bottom modules section the
+      // top row was white space." Every other placement path in this app
+      // gravitates to the top of its zone; this makes a crossing match.
+      //
+      // Measured against the POST-reflow picture (targetReflow applied),
+      // since a sibling that just moved to make room defines the real
+      // edge above. The zone's own top needs no special case: the
+      // synthetic __hourlygridgap__ lock is the bottom zone's ceiling and
+      // week-title is the side zone's, and both are already in
+      // targetOthersWithReservations spanning the right columns, so the
+      // same "highest bottom edge above me" scan finds them.
+      //
+      // Only ever pulls UP, and only into genuinely empty space: when the
+      // module lands mid-stack the sibling above ends exactly at its top
+      // edge, topEdge equals rawResolved.rowStart, and nothing changes.
+      // Crossings only — same-zone reorder keeps its existing behavior.
+      let resolved = rawResolved;
+      if (crossingZones) {
+        const movedById = new Map(targetReflow.map((m) => [m.id, m]));
+        let topEdge = 0;
+        for (const o of targetOthersWithReservations) {
+          if (o.columnStart >= candidate.columnStart + effectiveColumnSpan) continue;
+          if (o.columnStart + o.columnSpan <= candidate.columnStart) continue;
+          const moved = movedById.get(o.id);
+          const bottom = (moved?.rowStart ?? o.rowStart) + (moved?.rowSpan ?? o.rowSpan);
+          if (bottom <= rawResolved.rowStart && bottom > topEdge) topEdge = bottom;
+        }
+        if (topEdge < rawResolved.rowStart) resolved = { ...rawResolved, rowStart: topEdge };
+      }
       // Crossing leaves a gap in the SOURCE zone (the one being left) —
       // resolveModulePlacement above only ever reorders/reflows the
-      // TARGET zone's own stack (candidate's own column), since that's
-      // the only one the dragged item's own candidate ever collides
-      // with. Requested directly: "side modules dont live update or
-      // move to fill empty space accordingly." Merged into the same
-      // reflow array rather than tracked separately — every consumer
-      // (the live preview below, and handleDragEnd's optimistic
-      // setPlacements) already treats reflow generically as "these ids'
-      // rowStart changed," with no assumption baked in about which zone
-      // an entry belongs to.
+      // TARGET zone's own stack (candidate's own column, on whichever
+      // page that zone lives on), since that's the only one the dragged
+      // item's own candidate ever collides with. Requested directly:
+      // "side modules dont live update or move to fill empty space
+      // accordingly." Always against sourceOthers (the module's OWN
+      // page), never targetOthers — the gap being closed is always on
+      // the page being LEFT, regardless of where the module is going.
+      // Merged into the same reflow array rather than tracked
+      // separately — every consumer (the live preview below, and
+      // handleDragEnd's optimistic setPlacements) already treats reflow
+      // generically as "these ids' rowStart changed," with no
+      // assumption baked in about which zone or page an entry belongs
+      // to.
       const reflow = crossingZones
         ? [
             ...targetReflow,
             ...gravityRepackAfterDeparture(
               { id: instanceId, columnStart: current.columnStart, rowStart: current.rowStart, columnSpan: current.columnSpan, rowSpan: current.rowSpan },
-              others
+              sourceOthers
             ),
           ]
         : targetReflow;
-      return { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan };
+      const zoneKey = crossingZones ? `${targetPageId}:${targetZone!.columnStart}:${targetZone!.columnSpan}` : null;
+      // TEMP DEBUG payload — diagnosing "preexisting todo moves too far
+      // down and doesn't decrease in size, moving off page" during a
+      // side->bottom crossing. Only data assembly here (no logging, no
+      // ref access) — resolveDrag is a useCallback invoked during
+      // render from crossingLivePreview/visualOffsets below, so writing
+      // to a ref or console.log-ing here directly trips React's
+      // "Cannot access refs during render" rule the same way the old
+      // inline [render] counter once did (see its own comment). The
+      // actual console.log lives in a useEffect further down instead,
+      // reading this via crossingLivePreview's own _debug field.
+      const debug = crossingZones
+        ? {
+            instanceId,
+            candidate,
+            sourcePageId: info.pageId,
+            targetPageId,
+            zoneKey,
+            targetPageGridRows: targetPageGrid.gridRows,
+            minRowSpanById,
+            targetReflow,
+            gravityReflow: reflow.filter((m) => !targetReflow.includes(m)),
+            resolved,
+            targetOthers: targetOthersWithReservations
+              .filter((o) => !o.locked)
+              .map((o) => ({ id: o.id, rowStart: o.rowStart, rowSpan: o.rowSpan, columnStart: o.columnStart, columnSpan: o.columnSpan })),
+          }
+        : null;
+      return {
+        pageGrid: sourcePageGrid,
+        current,
+        resolved,
+        reflow,
+        crossingZones,
+        effectiveColumnSpan,
+        effectiveRowSpan,
+        debug,
+        nearestCellRaw,
+        overOwnColumn,
+        sourcePageId: info.pageId,
+        targetPageId,
+        targetPageGrid,
+        zoneKey,
+      };
     },
-    [placements, moduleLookup, pageGridByPageId, scale, stackBottomsByPageId, resolveZoneForColumn]
+    [
+      placements,
+      moduleLookup,
+      pageGridByPageId,
+      scale,
+      stackBottomsByPageId,
+      resolveZoneForColumn,
+      lastOwnColumnRow,
+      pages,
+      grabFraction,
+    ]
   );
+
+  // Keeps resolveDragRef (declared near confirmedCrossingRef, above
+  // handleDragMove) pointing at the current resolveDrag closure — see
+  // that ref's own comment for why handleDragMove reads it indirectly
+  // instead of closing over resolveDrag directly.
+  useEffect(() => {
+    resolveDragRef.current = resolveDrag;
+  }, [resolveDrag]);
 
   // Live size preview for a cross-zone reposition — both the dragged
   // item's own box and any target-zone sibling being shrunk to make
@@ -4526,21 +5099,48 @@ export function NativePlannerEditor({
   // event, physically impossible for a real pointer, right as
   // crossingZones first flips true.
   //
-  // What changed since the last attempt: rather than avoid the DOM
-  // mutation dnd-kit seems to choke on, applyDragDeltaCorrection
-  // (handleDragMove/handleDragEnd) now detects and cancels any single-
-  // event delta jump past a physically-plausible threshold, regardless
-  // of cause. Confirmed live with the overlay-only version — the same
-  // jump still occurred, dnd-kit's own "Maximum update depth exceeded"
-  // warning fired at the exact same instant, but the correction fully
-  // absorbed it (reported directly: "doesn't jump around"). Since that
-  // correction doesn't care *why* dnd-kit's own delta misbehaves, it
-  // should equally absorb whatever the real resize below triggers —
-  // this is that bet, made explicit rather than silently reintroducing
-  // the same live resize a documented bug trail already existed for.
+  // What changed since that trail: the live drag no longer consumes
+  // dnd-kit's own event.delta at all. readPointerDelta (its own
+  // comment) measures the gesture straight from the pointer's real
+  // screen position instead, so whatever dnd-kit does to its own
+  // internal reference mid-gesture simply isn't in this path anymore —
+  // there's no jump left to detect, absorb, or threshold-tune. That
+  // makes the live resize below safe to keep in a way the earlier
+  // threshold-based correction never quite was (a real ~236px
+  // corruption was eventually caught slipping under its 300px bar and
+  // reaching the screen).
   const crossingLivePreview = useMemo(() => {
     if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return null;
-    const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+    const rawPreview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+    // Prefers the LOCKED preview (confirmedCrossingRef's own comment,
+    // near readPointerDelta) whenever this instance has one —
+    // handleDragMove freezes it on the first confirmed tick of each
+    // crossing episode and never refreshes it again until a genuine
+    // exit, so the live preview stops re-resolving (and the insert
+    // target stops moving around) as the pointer wanders deeper into
+    // the target zone. Only falls back to the fresh raw evaluation when
+    // there's no lock yet for this instance (a brand-new crossing, not
+    // yet reflected in state) or the raw reading has genuinely dropped
+    // to not-crossing (handled by the lock clearing itself, in which
+    // case rawPreview is what should render — probably null/not
+    // crossing).
+    // Fresh resolution whenever the pointer is genuinely over a zone
+    // this module can land in; the last confirmed one ONLY when it
+    // isn't. That single rule covers both behaviours this has to have:
+    // reorder previews track the pointer live within a zone (standard
+    // drag-reorder), and the target stops drifting while the pointer is
+    // somewhere with no valid target — over the hours grid mid-way,
+    // say, which was the original "i want it to stay returning to that
+    // position it was in when i went off the section" request. Applied
+    // identically in visualOffsets below; the two must agree on the
+    // same preview for a given render or the dragged box's size and its
+    // transform desync.
+    const preview =
+      rawPreview?.crossingZones
+        ? rawPreview
+        : confirmedCrossingPreview?.instanceId === activeId
+          ? confirmedCrossingPreview.preview
+          : rawPreview;
     if (!preview?.crossingZones) return null;
     const placementOverrides: Record<string, Placement> = {
       [activeId]: {
@@ -4550,10 +5150,28 @@ export function NativePlannerEditor({
         rowSpan: preview.effectiveRowSpan,
       },
     };
+    // Only siblings whose SIZE changes get a real gridRow override.
+    // A position-only mover keeps its grid cell and slides via
+    // transform instead (visualOffsets below) — exactly how an ordinary
+    // same-zone reorder already animates. Overriding its grid row here
+    // instead would snap it, since CSS Grid line placement can't be
+    // transitioned. Reported directly: "it does live update the rest of
+    // the side module but its not animated like normal."
     for (const move of preview.reflow) {
       if (move.rowSpan === undefined) continue;
       const prev = displayPlacements[move.id];
       if (!prev) continue;
+      // rowSpan ONLY — rowStart deliberately stays at prev. Splitting
+      // the two lets each be driven by the mechanism that can actually
+      // express it: the SIZE change goes through CSS Grid (which cannot
+      // be transitioned, so it snaps, unavoidably), while the POSITION
+      // change is left to visualOffsets' transform below, which
+      // animates. Overriding rowStart here too made the grid jump the
+      // box instantly AND forced its transition off to stop the two
+      // fighting, so a resizing sibling never animated again for the
+      // rest of the gesture — reported directly: "when i drag side
+      // module to bottom and without releasing grab re arrange it,
+      // there is no animations."
       placementOverrides[move.id] = { ...prev, rowSpan: move.rowSpan };
     }
     // todo-checklist's own renderer draws exactly propValues.dayCount
@@ -4563,8 +5181,22 @@ export function NativePlannerEditor({
     // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
     const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
-    return { draggedId: activeId, placementOverrides, dayCountOverride };
-  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup]);
+    return { draggedId: activeId, placementOverrides, dayCountOverride, debug: preview.debug };
+  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview]);
+
+  // TEMP DEBUG — the actual console.log for resolveDrag's own debug
+  // payload (assembled above, see its own comment) lives here, not
+  // inline in resolveDrag/crossingLivePreview — this is a real effect
+  // (runs after commit), so writing to a ref for the dedupe check is
+  // safe here in a way it isn't during render.
+  useEffect(() => {
+    const debug = crossingLivePreview?.debug;
+    if (!debug) return;
+    const signature = JSON.stringify(debug);
+    if (signature === lastCrossingDebugLogRef.current) return;
+    lastCrossingDebugLogRef.current = signature;
+    console.log("[resolveDrag] crossing", JSON.stringify(debug, null, 2));
+  }, [crossingLivePreview]);
 
   const liveDisplayPlacements = useMemo(
     () =>
@@ -4833,15 +5465,38 @@ export function NativePlannerEditor({
       setActiveId(null);
       setActiveDelta(ZERO_OFFSET);
       const instanceId = id;
-      // Same correction handleDragMove's own identical call applies —
-      // see applyDragDeltaCorrection's own comment for why a drop
-      // event's raw delta needs it too, not just a move event's.
-      const dropDelta = applyDragDeltaCorrection(event.delta.x, event.delta.y);
+      // Same real-pointer measurement handleDragMove's own identical
+      // call uses — the drop has to resolve against exactly the same
+      // delta the live preview was showing a frame earlier, or the
+      // committed result disagrees with what was on screen. See
+      // readPointerDelta's own comment.
+      const dropDelta = readPointerDelta(event.delta);
       if (dropDelta.x === 0 && dropDelta.y === 0) return;
 
       const result = resolveDrag(instanceId, dropDelta.x, dropDelta.y);
       if (!result) return;
-      const { pageGrid, current, resolved, reflow, crossingZones, effectiveColumnSpan, effectiveRowSpan } = result;
+      const {
+        pageGrid,
+        current,
+        resolved,
+        reflow,
+        crossingZones,
+        effectiveColumnSpan,
+        effectiveRowSpan,
+        sourcePageId,
+        targetPageId,
+        targetPageGrid,
+      } = result;
+      // TEMP DEBUG — same "todo moves too far down, doesn't shrink,
+      // off page" investigation as resolveDrag's own debug payload
+      // (see its comment), but at the actual DROP, since that's what
+      // gets sent to moveModuleAcrossZones and persisted — the live-
+      // drag preview logged elsewhere only shows what's on screen
+      // *during* the drag, not what's committed. This is a real event
+      // handler (not render), so logging directly here is safe.
+      if (result.debug) {
+        console.log("[handleDragEnd] drop", JSON.stringify({ dropDelta, ...result.debug }, null, 2));
+      }
 
       if (
         resolved.columnStart === current.columnStart &&
@@ -4872,7 +5527,12 @@ export function NativePlannerEditor({
       // to, so there's no genuine last-mile left for it to visibly
       // settle — it only needs one transition-free frame.
       const oldPixel = gridCellToPixels(pageGrid, current);
-      const newPixel = gridCellToPixels(pageGrid, newPlacement);
+      // targetPageGrid, not pageGrid (source) — newPlacement is a
+      // placement within the TARGET page's own coordinate space. Both
+      // pages share identical PageGrid shape today so this produces the
+      // same numeric pixels either way, but it's the semantically
+      // correct grid to convert against.
+      const newPixel = gridCellToPixels(targetPageGrid, newPlacement);
       // Same grab-point-anchoring correction visualOffsets' own
       // identical call already applied for every frame of the live
       // drag — the settle FLIP's own residual has to start from that
@@ -4886,10 +5546,34 @@ export function NativePlannerEditor({
         crossingZones,
         effectiveColumnSpan,
         effectiveRowSpan,
-        grabFraction
+        grabFraction,
+        dragAnchorMode
       );
+      // Only a cross-PAGE crossing needs this term. The dragged
+      // module's own native DOM position re-parents from the source
+      // page's own container to the target page's, in this same commit
+      // (moduleLookup.pageId flips below) — a real, one-time jump the
+      // live per-frame transform never had to account for (it never
+      // moves the module's own native position at all, see
+      // computeDraggedTransformPagePx's own comment). That re-parent
+      // already covers pageOffsetPx of the visual distance "for free,"
+      // as a side effect of the browser laying the target page's own
+      // container out at its own physical screen position — the
+      // residual transform below has to subtract it out, or it'd be
+      // double-counted (the box would overshoot by a full page-width
+      // for one frame, then snap back). Pages sit in a single row, so
+      // this only ever affects x, never y.
+      const sourcePageIndex = pages.findIndex((p) => p.pageId === sourcePageId);
+      const targetPageIndex = pages.findIndex((p) => p.pageId === targetPageId);
+      const pageOffsetPx =
+        sourcePageIndex === -1 || targetPageIndex === -1
+          ? 0
+          : (targetPageIndex - sourcePageIndex) * (PRINT_WIDTH_PX + PAGE_GAP_PX);
       const settleOffsets: Record<string, { x: number; y: number }> = {
-        [instanceId]: { x: lastOffset.x - (newPixel.x - oldPixel.x), y: lastOffset.y - (newPixel.y - oldPixel.y) },
+        [instanceId]: {
+          x: lastOffset.x - (newPixel.x - oldPixel.x) - pageOffsetPx,
+          y: lastOffset.y - (newPixel.y - oldPixel.y),
+        },
       };
       for (const move of reflow) settleOffsets[move.id] = ZERO_OFFSET;
       setSettling({ offsets: settleOffsets, phase: "start" });
@@ -4955,7 +5639,15 @@ export function NativePlannerEditor({
               fontFamily
             );
             const origin = gridCellToPixels(pageGrid, newPlacement);
-            next.set(instanceId, { ...draggedInfo, propValues, elements, originX: origin.x, originY: origin.y });
+            // pageId: targetPageId — without this, instanceIdsByPageId
+            // (derived from moduleLookup, not placements) would keep
+            // rendering the module inside its OLD page's own grid
+            // container, where these same columnStart/columnSpan
+            // numbers mean something different (e.g. a right-bottom-
+            // shaped columnStart:0/columnSpan:4 box collides with the
+            // left page's own sidebar and hourly grid). A same-page
+            // move just writes back the value it already had.
+            next.set(instanceId, { ...draggedInfo, pageId: targetPageId, propValues, elements, originX: origin.x, originY: origin.y });
           }
           for (const move of reflow) {
             if (move.rowSpan === undefined) continue;
@@ -4993,7 +5685,7 @@ export function NativePlannerEditor({
         // already does (fresh server-rendered elements, not just a
         // position) — overwriting the optimistic patch above with the
         // server's own authoritative render once it lands.
-        serializeCommit(() => moveModuleAcrossZones(instanceId, resolved.columnStart, resolved.rowStart))
+        serializeCommit(() => moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart))
           .then((results) => {
             setModuleLookup((prev) => {
               const next = new Map(prev);
@@ -5004,7 +5696,16 @@ export function NativePlannerEditor({
                 const columnStart = isDragged ? newPlacement.columnStart : (placements[r.id]?.columnStart ?? 0);
                 const columnSpan = isDragged ? newPlacement.columnSpan : (placements[r.id]?.columnSpan ?? 1);
                 const origin = gridCellToPixels(pageGrid, { columnStart, rowStart: r.rowStart, columnSpan, rowSpan: r.rowSpan });
-                next.set(r.id, { ...info, elements: r.elements, originX: origin.x, originY: origin.y });
+                // Same pageId fix as the optimistic patch above, applied
+                // to the server's own authoritative response too — only
+                // the dragged instance's own page can ever change.
+                next.set(r.id, {
+                  ...info,
+                  ...(isDragged ? { pageId: targetPageId } : {}),
+                  elements: r.elements,
+                  originX: origin.x,
+                  originY: origin.y,
+                });
               }
               return next;
             });
@@ -5039,9 +5740,11 @@ export function NativePlannerEditor({
       serializeCommit,
       paletteDrag,
       handleAddModule,
-      applyDragDeltaCorrection,
+      readPointerDelta,
       fontFamily,
       grabFraction,
+      pages,
+      dragAnchorMode,
     ]
   );
 
@@ -5542,7 +6245,22 @@ export function NativePlannerEditor({
     const offsets: Record<string, { x: number; y: number }> = {};
 
     if (activeId) {
-      const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+      // Same "prefer the locked preview" logic as crossingLivePreview's
+      // own identical code (see its comment, and confirmedCrossingRef's
+      // near readPointerDelta) — kept consistent with it on
+      // purpose: both need to agree on the same preview for a given
+      // render, or the dragged item's own grab-point-anchored transform
+      // here would desync from its actual live grid box size over
+      // there, once that size is locked for the rest of the crossing
+      // episode instead of continuously re-resolving.
+      const rawPreview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
+      // Same rule as crossingLivePreview above — see its comment.
+      const preview =
+        rawPreview?.crossingZones
+          ? rawPreview
+          : confirmedCrossingPreview?.instanceId === activeId
+            ? confirmedCrossingPreview.preview
+            : rawPreview;
       if (preview) {
         const { pageGrid, reflow, current, crossingZones, effectiveColumnSpan, effectiveRowSpan } = preview;
         // The dragged item follows the pointer directly and
@@ -5561,9 +6279,30 @@ export function NativePlannerEditor({
           crossingZones,
           effectiveColumnSpan,
           effectiveRowSpan,
-          grabFraction
+          grabFraction,
+          dragAnchorMode
         );
+        // Skipped while crossingZones: crossingLivePreview already moves
+        // this sibling's real gridRow live (a genuine span/position
+        // change, not just a transform preview — see its own comment).
+        // This transform-offset trick exists for the ORDINARY same-zone
+        // reorder case, where the sibling's real grid cell deliberately
+        // stays untouched until drop (setPlacements in handleDragEnd)
+        // and the transform alone creates the slide illusion. During a
+        // crossing both mechanisms were firing off the same
+        // preview.reflow at once, so every reflowed sibling moved
+        // TWICE — once via its real (already correct) grid position,
+        // again via this offset stacked on top. Reported directly:
+        // "side modules went above its bounds... bottom module...
+        // going below its bounds" — exactly what doubling a shift in
+        // each direction produces.
         for (const move of reflow) {
+          // Every reflowed sibling, resizing or not. The transform is
+          // now the ONLY thing moving any of them (crossingLivePreview
+          // above overrides span but never rowStart), so there's no
+          // double-shift to guard against — that was the overshoot bug,
+          // and it's structurally impossible once exactly one mechanism
+          // owns position.
           const prevPlacement = placements[move.id];
           if (!prevPlacement) continue;
           const fromPixel = gridCellToPixels(pageGrid, prevPlacement);
@@ -5580,15 +6319,39 @@ export function NativePlannerEditor({
     }
 
     return offsets;
-  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction]);
+  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction, confirmedCrossingPreview, dragAnchorMode]);
 
   // Which instances need their transition suppressed for the current
-  // render — just the settle FLIP's "start" frame (see `settling` state's
-  // own comment); the dragged item's own transition-suppression is
-  // handled separately via isDragged, unaffected by this.
+  // render — the settle FLIP's "start" frame (see `settling` state's
+  // own comment), unioned with anyone crossingLivePreview is currently
+  // overriding. That second part: during an active crossing, a
+  // reflow-affected sibling's visualOffset is always exactly {0,0}
+  // (visualOffsets' own comment — the real grid position already
+  // carries the move live, no transform needed on top), but the
+  // element still carries its normal "transform 0.25s" transition. The
+  // INSTANT crossingZones flips, its transform has to jump from
+  // whatever residual offset it had a moment ago (e.g. from an
+  // ordinary same-zone reflow preview, active right up until the
+  // crossing began) down to {0,0} — and since the grid cell itself
+  // already snapped to the correct spot instantly (CSS Grid line
+  // placement isn't animatable, only transform/opacity are), that
+  // leftover transform easing toward zero over the normal 250ms reads
+  // as the box overshooting past its already-correct position before
+  // settling into it. Reported directly: "jumps up to close gap but
+  // goes too far before going to the correct spot." Suppressing the
+  // transition for exactly these ids removes the residual-transform
+  // easing entirely — there's nothing left to animate once
+  // visualOffset is pinned at {0,0} anyway, so nothing is lost.
+  // Deliberately narrower than effectiveResizingIds (which also covers
+  // an ordinary resize-handle drag, an unrelated interaction that
+  // doesn't go through visualOffsets/crossingLivePreview at all) —
+  // scoped to exactly the ids this specific bug touches.
   const suppressTransitionIds = useMemo(() => {
-    if (!settling || settling.phase !== "start") return null;
-    return new Set(Object.keys(settling.offsets));
+    const ids = new Set<string>();
+    if (settling && settling.phase === "start") {
+      for (const id of Object.keys(settling.offsets)) ids.add(id);
+    }
+    return ids.size > 0 ? ids : null;
   }, [settling]);
 
   return (
@@ -5634,6 +6397,35 @@ export function NativePlannerEditor({
         <strong>
           Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
         </strong>
+        {/* Temporary A/B toggle for the two drag-anchor models — see
+            DragAnchorMode's own comment. Lives in the header rather
+            than behind a build flag specifically so the two can be
+            compared by feel within a single session, on the same
+            drag, instead of by rebuilding between them. Remove once
+            one of the two is settled on.
+            Placed BEFORE the Reset button deliberately: that one owns
+            marginLeft:auto, so anything after it lands in the header's
+            right-hand group, and this header is nowrap — a long label
+            there gets crushed or pushed off the right edge entirely.
+            flexShrink:0 for the same reason. */}
+        <button
+          type="button"
+          onClick={() => setDragAnchorMode((prev) => (prev === "grab" ? "center" : "grab"))}
+          title="Toggle how a dragged module anchors to the cursor while it resizes"
+          style={{
+            padding: "4px 10px",
+            fontSize: 12,
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            background: dragAnchorMode === "center" ? "#4a5cff" : "#2a2a2a",
+            color: "#ddd",
+            border: "1px solid #555",
+            borderRadius: 10,
+            cursor: "pointer",
+          }}
+        >
+          Anchor: {dragAnchorMode === "center" ? "Center" : "Grab point"}
+        </button>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
             the pdf." Scoped to the sidebar column and the below-hourly-
@@ -5794,6 +6586,7 @@ export function NativePlannerEditor({
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     suppressTransitionIds={suppressTransitionIds}
+                    pickupAnimating={pickupAnimating}
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
@@ -5816,7 +6609,6 @@ export function NativePlannerEditor({
                     onHoverEnd={handleHoverEnd}
                     paletteDragPreview={paletteDrag}
                     scale={scale}
-                    isFirefox={isFirefox}
                     fontFamily={fontFamily}
                   />
                 ))}
