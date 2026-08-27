@@ -4257,6 +4257,15 @@ export function NativePlannerEditor({
   // crossingLivePreview/visualOffsets, both render-time memos — see
   // resolveDragRef's own comment for the mirror-image problem this
   // file already hit once with confirmedCrossingPreview).
+  //
+  // Do not assume sticky zone targeting made this redundant. Reading the
+  // code suggests it did: the held zone covers the pointer being over
+  // dead space, and since the drop reads the held preview too, the raw
+  // previews this pinned row feeds look unreachable. Testing says
+  // otherwise. Dragging a side module into the bottom zone and then up
+  // over the hours grid returns it to its own zone at the row it left
+  // from - and that is the wanted behaviour, confirmed directly, not an
+  // artefact to be tidied away. Preview and commit agree on it.
   const [lastOwnColumnRow, setLastOwnColumnRow] = useState<{ instanceId: string; rowStart: number } | null>(null);
   // handleDragMove (below) needs to call resolveDrag, but resolveDrag
   // is declared later in this same component — a plain reference
