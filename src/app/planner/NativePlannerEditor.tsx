@@ -533,6 +533,15 @@ type PaletteDragPreview = {
 // drawn inside the unfinished one - two rectangles sharing a top-left
 // corner. Found by slowing this to 800ms and watching.
 const CROSSING_EASE_MS = 250;
+
+// How long a sibling takes to slide when a reflow moves it. Separate
+// from CROSSING_EASE_MS because they animate different things - one a
+// box changing shape, the other a neighbour getting out of its way -
+// but deliberately the same number: a crossing runs both at once and
+// they should land together. Was written inline as "0.25s" in the
+// transition string below; named here so both clocks can be changed
+// together, which is exactly what inspecting either of them requires.
+const REFLOW_EASE_MS = 250;
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
     ? ["left", "top", "width", "height"]
@@ -883,7 +892,7 @@ function NativeModule({
               CROSSING_RESIZE_TRANSITION
             : suppressTransition
             ? undefined
-            : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
+            : `transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`,
         // Mount fade-in for a freshly-added module (see fadedIn's own
         // comment) — 1 for every pre-existing module (this condition is
         // just a no-op true/true comparison for them), only ever
