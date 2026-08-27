@@ -549,6 +549,15 @@ const CROSSING_EASE_MS = 250;
 // transition string below; named here so both clocks can be changed
 // together, which is exactly what inspecting either of them requires.
 const REFLOW_EASE_MS = 250;
+
+// A resizing sibling is absolutely positioned for the length of a
+// crossing, so its position and size are both lengths on one clock.
+// Same property list and curve as the dragged module's own transition;
+// only the duration differs, and only because reflow has its own
+// constant.
+const REFLOW_BOX_TRANSITION = ["left", "top", "width", "height"]
+  .map((prop) => `${prop} ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}`)
+  .join(", ");
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
     ? ["left", "top", "width", "height"]
@@ -903,6 +912,11 @@ function NativeModule({
               CROSSING_RESIZE_TRANSITION
             : suppressTransition
             ? undefined
+            : rectPx
+            ? // A resizing sibling: out of grid flow, moving and growing
+              // on one transition rather than snapping one and gliding
+              // the other.
+              `${REFLOW_BOX_TRANSITION}, opacity 0.25s ease`
             : `transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`,
         // Mount fade-in for a freshly-added module (see fadedIn's own
         // comment) — 1 for every pre-existing module (this condition is
@@ -991,7 +1005,7 @@ function NativeModule({
           originY={originY}
           scale={scale}
           suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
-          textEaseMs={clipToBox ? CROSSING_EASE_MS : 0}
+          textEaseMs={clipToBox ? (isDragged ? CROSSING_EASE_MS : REFLOW_EASE_MS) : 0}
         />
       </div>
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
@@ -1251,6 +1265,7 @@ function NativePage({
   emptyZones,
   resizingIds,
   easeContent,
+  reflowContent,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
@@ -1312,6 +1327,11 @@ function NativePage({
   // larger of the two sizes, so the easing box always has something to
   // clip. See the memo that builds it.
   easeContent: { instanceId: string; placement: Placement } | null;
+  // Siblings a crossing is resizing, with the geometry their CONTENT
+  // should render at - the larger of their old and new size, so their
+  // own easing box has something to clip. Their box comes from
+  // `placements`, which already carries the target placement for them.
+  reflowContent: Record<string, Placement> | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1412,7 +1432,15 @@ function NativePage({
         // only while this module's box is easing, when the content is
         // deliberately drawn at the larger of the two sizes so the box
         // can clip it (see easeContent's own comment).
-        const contentPlacement = easeContent?.instanceId === id ? easeContent.placement : placement;
+        // A resizing sibling gets the same treatment as the dragged
+        // module: out of grid flow so position and size share a clock,
+        // content drawn at the larger of the two sizes, box clipping it.
+        const reflowContentPlacement = reflowContent?.[id] ?? null;
+        const isEasingBox = easeContent?.instanceId === id || reflowContentPlacement !== null;
+        const contentPlacement =
+          easeContent?.instanceId === id
+            ? easeContent.placement
+            : (reflowContentPlacement ?? placement);
         const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, contentPlacement) : null;
         const elements = contentIsLive
           ? renderModuleInstance(
@@ -1442,7 +1470,7 @@ function NativePage({
         // the same call the initial page load already makes, and this
         // runs for one module for the length of one ease.
         const textElements =
-          contentIsLive && easeContent?.instanceId === id
+          contentIsLive && isEasingBox
             ? renderModuleInstance(
                 {
                   id,
@@ -1463,10 +1491,18 @@ function NativePage({
         // it should be, and shifted by the grab-point correction so
         // that resize can animate without the box sliding under the
         // cursor while it does.
-        const baseRect = activeId === id ? gridCellToPixels(page.pageGrid, placement) : null;
-        const draggedRectPx = baseRect
-          ? { ...baseRect, x: baseRect.x + draggedAnchorPx.x, y: baseRect.y + draggedAnchorPx.y }
-          : null;
+        // Absolute for the dragged module, and for any sibling this
+        // crossing is resizing. The grab-point correction applies only
+        // to the dragged one - a sibling is not anchored to a pointer.
+        const baseRect =
+          activeId === id || reflowContentPlacement !== null
+            ? gridCellToPixels(page.pageGrid, placement)
+            : null;
+        const draggedRectPx = !baseRect
+          ? null
+          : activeId === id
+            ? { ...baseRect, x: baseRect.x + draggedAnchorPx.x, y: baseRect.y + draggedAnchorPx.y }
+            : baseRect;
         return (
           <NativeModule
             key={id}
@@ -1480,7 +1516,7 @@ function NativePage({
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
             contentIsLive={contentIsLive}
-            clipToBox={easeContent?.instanceId === id}
+            clipToBox={isEasingBox}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
@@ -5453,6 +5489,24 @@ export function NativePlannerEditor({
         rowSpan: preview.effectiveRowSpan,
       },
     };
+    // A sibling that only MOVES keeps its grid cell and slides via a
+    // transform (visualOffsets below). A sibling that also RESIZES
+    // cannot: its height is a rowSpan, a grid line index, which does not
+    // interpolate. Splitting it - snap the size, glide the position -
+    // is what produced the overlap during a gravity redistribution: the
+    // module above became taller instantly, extending down into space
+    // the module below had not finished vacating, for the whole length
+    // of the slide. Reported as the gravity and the fill being out of
+    // sync.
+    //
+    // So a resizing sibling gets the same treatment the dragged module
+    // already gets: a full target placement, rendered as an absolute
+    // pixel rect, with position and size on one transition. Two lengths
+    // on one clock cannot desync the way a line index and a transform
+    // can. It also needs the clip and the larger-of-the-two content
+    // geometry for the same reason the dragged box does, or it shows
+    // the double box while it grows.
+    const reflowContentPlacements: Record<string, Placement> = {};
     // Only siblings whose SIZE changes get a real gridRow override.
     // A position-only mover keeps its grid cell and slides via
     // transform instead (visualOffsets below) — exactly how an ordinary
@@ -5475,7 +5529,13 @@ export function NativePlannerEditor({
       // rest of the gesture — reported directly: "when i drag side
       // module to bottom and without releasing grab re arrange it,
       // there is no animations."
-      placementOverrides[move.id] = { ...prev, rowSpan: move.rowSpan };
+      const box = { ...prev, rowStart: move.rowStart, rowSpan: move.rowSpan };
+      placementOverrides[move.id] = box;
+      reflowContentPlacements[move.id] = {
+        ...box,
+        columnSpan: Math.max(box.columnSpan, prev.columnSpan),
+        rowSpan: Math.max(box.rowSpan, prev.rowSpan),
+      };
     }
     // todo-checklist's own renderer draws exactly propValues.dayCount
     // day-columns regardless of the box's actual pixel width, so its
@@ -5484,7 +5544,7 @@ export function NativePlannerEditor({
     // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
     const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
-    return { draggedId: activeId, placementOverrides, dayCountOverride };
+    return { draggedId: activeId, placementOverrides, reflowContentPlacements, dayCountOverride };
   }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview]);
 
 
@@ -6595,12 +6655,14 @@ export function NativePlannerEditor({
         // going below its bounds" — exactly what doubling a shift in
         // each direction produces.
         for (const move of reflow) {
-          // Every reflowed sibling, resizing or not. The transform is
-          // now the ONLY thing moving any of them (crossingLivePreview
-          // above overrides span but never rowStart), so there's no
-          // double-shift to guard against — that was the overshoot bug,
-          // and it's structurally impossible once exactly one mechanism
-          // owns position.
+          // Position-only movers ONLY. A sibling that also resizes is
+          // absolutely positioned by crossingLivePreview instead, with
+          // its position and size on one transition (see its own
+          // comment) - adding a transform on top would move it twice,
+          // which is the overshoot bug this loop already once caused.
+          // Exactly one mechanism owns position for any given sibling;
+          // which mechanism just depends on whether it is resizing.
+          if (move.rowSpan !== undefined) continue;
           const prevPlacement = placements[move.id];
           if (!prevPlacement) continue;
           const fromPixel = gridCellToPixels(pageGrid, prevPlacement);
@@ -6869,6 +6931,7 @@ export function NativePlannerEditor({
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={effectiveResizingIds}
                     easeContent={easeContent}
+                    reflowContent={crossingLivePreview?.reflowContentPlacements ?? null}
                     resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
