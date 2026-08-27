@@ -214,9 +214,26 @@ const PICKUP_EASE_MS = 160;
 // drag start). Until then both modes fall back to the raw delta, which
 // is what makes "center" read as the box easing into the pointer's grip
 // on first movement rather than teleporting there at mousedown.
-function computeDraggedTransformPagePx(
+// The size-change half of the dragged item's placement, on its own:
+// f*S_old - k*S_new, with no pointer-follow term in it. Keeping the two
+// separable is what lets the box's SIZE animate without the grab point
+// sliding around while it does.
+//
+// The reason is worth spelling out. Rendered top-left is left/top plus
+// transform, and the grab point sits k of the way into the box, so
+// holding the pointer still requires left + transform + k*S = P for
+// whatever S is on screen RIGHT NOW. Put the correction in the
+// transform against the FINAL size and it is wrong by k*(S_final - S)
+// for the whole of an animated resize — on a one-to-three column
+// crossing that is most of a page, i.e. exactly the jumping this
+// system spent so long removing. Put it in left/top instead and
+// transition left/top/width/height together with identical easing, and
+// the correction is an affine function of the animating size, so it
+// tracks it exactly, for free, with no per-frame work. The transform is
+// then purely the pointer-follow term and stays untransitioned, so it
+// still tracks the cursor with no lag.
+function computeDraggedSizeCompensationPagePx(
   pageGrid: PageGrid,
-  rawDeltaPagePx: { x: number; y: number },
   current: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
   crossingZones: boolean,
   effectiveColumnSpan: number,
@@ -224,8 +241,8 @@ function computeDraggedTransformPagePx(
   grabFraction: { x: number; y: number } | null,
   mode: DragAnchorMode
 ): { x: number; y: number } {
-  if (!grabFraction) return rawDeltaPagePx;
-  if (mode === "grab" && !crossingZones) return rawDeltaPagePx;
+  if (!grabFraction) return { x: 0, y: 0 };
+  if (mode === "grab" && !crossingZones) return { x: 0, y: 0 };
   const oldSize = gridCellToPixels(pageGrid, current);
   const newSize = gridCellToPixels(pageGrid, {
     columnStart: 0,
@@ -236,9 +253,34 @@ function computeDraggedTransformPagePx(
   const kx = mode === "center" ? 0.5 : grabFraction.x;
   const ky = mode === "center" ? 0.5 : grabFraction.y;
   return {
-    x: rawDeltaPagePx.x + grabFraction.x * oldSize.width - kx * newSize.width,
-    y: rawDeltaPagePx.y + grabFraction.y * oldSize.height - ky * newSize.height,
+    x: grabFraction.x * oldSize.width - kx * newSize.width,
+    y: grabFraction.y * oldSize.height - ky * newSize.height,
   };
+}
+
+// Both halves together — still what the settle FLIP wants, since at
+// drop the module returns to grid flow and a single transform has to
+// carry the whole residual again.
+function computeDraggedTransformPagePx(
+  pageGrid: PageGrid,
+  rawDeltaPagePx: { x: number; y: number },
+  current: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
+  crossingZones: boolean,
+  effectiveColumnSpan: number,
+  effectiveRowSpan: number,
+  grabFraction: { x: number; y: number } | null,
+  mode: DragAnchorMode
+): { x: number; y: number } {
+  const c = computeDraggedSizeCompensationPagePx(
+    pageGrid,
+    current,
+    crossingZones,
+    effectiveColumnSpan,
+    effectiveRowSpan,
+    grabFraction,
+    mode
+  );
+  return { x: rawDeltaPagePx.x + c.x, y: rawDeltaPagePx.y + c.y };
 }
 
 // Mirrors resizeAdjacentModules'/resizeStackFromBottom's own floor
@@ -466,6 +508,21 @@ type PaletteDragPreview = {
   rowSpan: number;
   overlapping: boolean;
 };
+
+// Duration and curve for the dragged module's zone-crossing resize.
+// left/top/width/height MUST all carry exactly this — the grab-point
+// correction lives in left/top and is an affine function of the
+// animating size, so it only tracks that size if the two ease
+// identically. Differing durations or curves reintroduce the drift
+// (see computeDraggedSizeCompensationPagePx).
+const CROSSING_EASE_MS = 160;
+const CROSSING_EASE = `cubic-bezier(0.4, 0, 0.2, 1)`;
+const CROSSING_RESIZE_TRANSITION = [
+  `left ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
+  `top ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
+  `width ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
+  `height ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
+].join(", ");
 
 function NativeModule({
   instanceId,
@@ -791,8 +848,8 @@ function NativeModule({
               // and snapping that instantly reads as a glitch rather
               // than a deliberate movement.
               pickupAnimating
-              ? `transform ${PICKUP_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`
-              : undefined
+              ? `transform ${PICKUP_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1), ${CROSSING_RESIZE_TRANSITION}`
+              : CROSSING_RESIZE_TRANSITION
             : suppressTransition
             ? undefined
             : "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
@@ -1100,6 +1157,7 @@ function NativePage({
   moduleLookup,
   activeId,
   visualOffsets,
+  draggedAnchorPx,
   suppressTransitionIds,
   pickupAnimating,
   justAddedIds,
@@ -1140,6 +1198,10 @@ function NativePage({
   moduleLookup: Map<string, ModuleInfo>;
   activeId: string | null;
   visualOffsets: Record<string, { x: number; y: number }>;
+  // Page-pixel shift folded into the dragged module's left/top so its
+  // size can animate without the grab point sliding out from under the
+  // cursor. {0,0} whenever nothing is crossing zones.
+  draggedAnchorPx: { x: number; y: number };
   suppressTransitionIds: ReadonlySet<string> | null;
   pickupAnimating: boolean;
   // See NativeModule's own justAdded comment — a module in this set
@@ -1274,17 +1336,22 @@ function NativePage({
               fontFamily
             )
           : info.elements;
+        // The dragged module leaves grid flow: its box is the committed
+        // cell in pixels, sized by whatever span the live preview says
+        // it should be, and shifted by the grab-point correction so
+        // that resize can animate without the box sliding under the
+        // cursor while it does.
+        const baseRect = activeId === id ? gridCellToPixels(page.pageGrid, placement) : null;
+        const draggedRectPx = baseRect
+          ? { ...baseRect, x: baseRect.x + draggedAnchorPx.x, y: baseRect.y + draggedAnchorPx.y }
+          : null;
         return (
           <NativeModule
             key={id}
             instanceId={id}
             locked={info.locked}
             placement={placement}
-            rectPx={
-              activeId === id
-                ? gridCellToPixels(page.pageGrid, placement)
-                : null
-            }
+            rectPx={draggedRectPx}
             elements={elements}
             originX={liveOrigin ? liveOrigin.x : info.originX}
             originY={liveOrigin ? liveOrigin.y : info.originY}
@@ -6279,8 +6346,9 @@ export function NativePlannerEditor({
   // inside handleDragEnd after clearing it) but merging rather than
   // early-returning keeps that an incidental fact rather than something
   // this has to assume.
-  const visualOffsets = useMemo(() => {
+  const dragVisuals = useMemo(() => {
     const offsets: Record<string, { x: number; y: number }> = {};
+    let draggedAnchor: { x: number; y: number } = { x: 0, y: 0 };
 
     if (activeId) {
       // Same "prefer the locked preview" logic as crossingLivePreview's
@@ -6310,9 +6378,14 @@ export function NativePlannerEditor({
         // correction on top while crossing (a no-op the rest of the
         // time, when nobody's own size is changing to correct for) —
         // see its own comment for the full reasoning.
-        offsets[activeId] = computeDraggedTransformPagePx(
+        // Pointer-follow only. The size correction is deliberately NOT
+        // here — it goes into left/top instead, so it can be eased in
+        // lockstep with width/height while this stays untransitioned
+        // and keeps tracking the cursor exactly. See
+        // computeDraggedSizeCompensationPagePx's own comment.
+        offsets[activeId] = { x: activeDelta.x / scale, y: activeDelta.y / scale };
+        draggedAnchor = computeDraggedSizeCompensationPagePx(
           pageGrid,
-          { x: activeDelta.x / scale, y: activeDelta.y / scale },
           current,
           crossingZones,
           effectiveColumnSpan,
@@ -6356,8 +6429,14 @@ export function NativePlannerEditor({
       }
     }
 
-    return offsets;
+    return { offsets, draggedAnchor };
   }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction, confirmedCrossingPreview, dragAnchorMode]);
+
+  const visualOffsets = dragVisuals.offsets;
+  // Page-pixel correction folded into the dragged module's left/top so
+  // its size can animate without the grab point sliding (see
+  // computeDraggedSizeCompensationPagePx).
+  const draggedAnchorPx = dragVisuals.draggedAnchor;
 
   // Which instances need their transition suppressed for the current
   // render — the settle FLIP's "start" frame (see `settling` state's
@@ -6623,6 +6702,7 @@ export function NativePlannerEditor({
                     moduleLookup={liveModuleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
+                    draggedAnchorPx={draggedAnchorPx}
                     suppressTransitionIds={suppressTransitionIds}
                     pickupAnimating={pickupAnimating}
                     justAddedIds={justAddedIds}
