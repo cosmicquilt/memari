@@ -4000,9 +4000,6 @@ export function NativePlannerEditor({
     };
   }, [flushWheelZoom]);
 
-  // TEMP DEBUG — see the render-count log further down (crossing-drag
-  // diagnostics); remove alongside it.
-  const renderCountRef = useRef(0);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
   // while a drag is in progress — the one thing that genuinely needs
@@ -4213,9 +4210,6 @@ export function NativePlannerEditor({
     [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
   );
 
-  // TEMP DEBUG — dedupe key for resolveDrag's own crossing-zone log
-  // below (see that log's own comment).
-  const lastCrossingDebugLogRef = useRef<string | null>(null);
   // Debounces a single-event crossingZones flip back to false — one
   // resolveDrag evaluation can land on the wrong side of the zone
   // boundary for exactly one move event before the next event's own
@@ -5178,33 +5172,6 @@ export function NativePlannerEditor({
       // space" - and the sticky rule below has to tell those apart,
       // because one should release the held zone and the other must not.
       const zoneKey = targetZone ? `${targetPageId}:${targetZone.columnStart}:${targetZone.columnSpan}` : null;
-      // TEMP DEBUG payload — diagnosing "preexisting todo moves too far
-      // down and doesn't decrease in size, moving off page" during a
-      // side->bottom crossing. Only data assembly here (no logging, no
-      // ref access) — resolveDrag is a useCallback invoked during
-      // render from crossingLivePreview/visualOffsets below, so writing
-      // to a ref or console.log-ing here directly trips React's
-      // "Cannot access refs during render" rule the same way the old
-      // inline [render] counter once did (see its own comment). The
-      // actual console.log lives in a useEffect further down instead,
-      // reading this via crossingLivePreview's own _debug field.
-      const debug = crossingZones
-        ? {
-            instanceId,
-            candidate,
-            sourcePageId: info.pageId,
-            targetPageId,
-            zoneKey,
-            targetPageGridRows: targetPageGrid.gridRows,
-            minRowSpanById,
-            targetReflow,
-            gravityReflow: reflow.filter((m) => !targetReflow.includes(m)),
-            resolved,
-            targetOthers: targetOthersWithReservations
-              .filter((o) => !o.locked)
-              .map((o) => ({ id: o.id, rowStart: o.rowStart, rowSpan: o.rowSpan, columnStart: o.columnStart, columnSpan: o.columnSpan })),
-          }
-        : null;
       return {
         pageGrid: sourcePageGrid,
         current,
@@ -5213,7 +5180,6 @@ export function NativePlannerEditor({
         crossingZones,
         effectiveColumnSpan,
         effectiveRowSpan,
-        debug,
         nearestCellRaw,
         overOwnColumn,
         sourcePageId: info.pageId,
@@ -5340,22 +5306,9 @@ export function NativePlannerEditor({
     // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
     const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
-    return { draggedId: activeId, placementOverrides, dayCountOverride, debug: preview.debug };
+    return { draggedId: activeId, placementOverrides, dayCountOverride };
   }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview]);
 
-  // TEMP DEBUG — the actual console.log for resolveDrag's own debug
-  // payload (assembled above, see its own comment) lives here, not
-  // inline in resolveDrag/crossingLivePreview — this is a real effect
-  // (runs after commit), so writing to a ref for the dedupe check is
-  // safe here in a way it isn't during render.
-  useEffect(() => {
-    const debug = crossingLivePreview?.debug;
-    if (!debug) return;
-    const signature = JSON.stringify(debug);
-    if (signature === lastCrossingDebugLogRef.current) return;
-    lastCrossingDebugLogRef.current = signature;
-    console.log("[resolveDrag] crossing", JSON.stringify(debug, null, 2));
-  }, [crossingLivePreview]);
 
   const liveDisplayPlacements = useMemo(
     () =>
@@ -5414,38 +5367,6 @@ export function NativePlannerEditor({
     return resizeFrozenSize ? { ...resizeFrozenSize, ...extra } : extra;
   }, [resizeFrozenSize, crossingLivePreview, moduleLookup, placements, pageGridByPageId]);
 
-  // TEMP DEBUG — remove once the "Maximum update depth exceeded" /
-  // dragged-item-jumps-off-screen bug is diagnosed. Fires after every
-  // committed render while a real (non-palette) drag is active — no
-  // dependency array, so it logs every single commit — the goal is to
-  // see whether commit COUNT explodes far beyond what the actual mouse
-  // movement (activeDelta) would explain, which is what "Maximum update
-  // depth exceeded" would look like from here, whether a spike lines up
-  // with the moment the dragged item visually jumps, and — new —
-  // whether crossingZones itself is flickering true/false rapidly right
-  // at the zone boundary (both bug reports describe the glitch
-  // happening exactly at "the edge"/"gets to bottom section," not
-  // sustained deep within a zone, which would fit a boundary
-  // oscillation feeding a resize-observer-style loop).
-  useEffect(() => {
-    renderCountRef.current += 1;
-    if (activeId && !activeId.startsWith(PALETTE_ID_PREFIX)) {
-      const preview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
-      console.log(
-        "[render]",
-        renderCountRef.current,
-        Date.now(),
-        "delta",
-        activeDelta.x,
-        activeDelta.y,
-        "crossingZones",
-        preview?.crossingZones,
-        "span",
-        preview?.effectiveColumnSpan,
-        preview?.effectiveRowSpan
-      );
-    }
-  });
 
   // Serializes every server call that writes a module's own position/
   // size (reposition, either resize kind, add) against each other —
@@ -5632,7 +5553,22 @@ export function NativePlannerEditor({
       const dropDelta = readPointerDelta(event.delta);
       if (dropDelta.x === 0 && dropDelta.y === 0) return;
 
-      const result = resolveDrag(instanceId, dropDelta.x, dropDelta.y);
+      // The SAME preview the last rendered frame used, not a fresh
+      // resolution. Both render consumers read the held zone (see their
+      // own comments), and the held zone is refreshed on every tick the
+      // pointer is inside one - so while the pointer is in a zone this
+      // is identical to resolving again. The difference is release over
+      // DEAD SPACE, the hours grid say: the screen is showing the held
+      // zone, but a fresh resolve there finds no target zone at all,
+      // reports crossingZones false, and commits the module at its
+      // original size in its original zone. Preview and commit
+      // disagreeing, silently, which is the failure mode this whole
+      // system is most prone to.
+      const heldPreview =
+        confirmedCrossingRef.current?.instanceId === instanceId
+          ? confirmedCrossingRef.current.preview
+          : null;
+      const result = heldPreview ?? resolveDrag(instanceId, dropDelta.x, dropDelta.y);
       if (!result) return;
       const {
         pageGrid,
@@ -5646,17 +5582,6 @@ export function NativePlannerEditor({
         targetPageId,
         targetPageGrid,
       } = result;
-      // TEMP DEBUG — same "todo moves too far down, doesn't shrink,
-      // off page" investigation as resolveDrag's own debug payload
-      // (see its comment), but at the actual DROP, since that's what
-      // gets sent to moveModuleAcrossZones and persisted — the live-
-      // drag preview logged elsewhere only shows what's on screen
-      // *during* the drag, not what's committed. This is a real event
-      // handler (not render), so logging directly here is safe.
-      if (result.debug) {
-        console.log("[handleDragEnd] drop", JSON.stringify({ dropDelta, ...result.debug }, null, 2));
-      }
-
       if (
         resolved.columnStart === current.columnStart &&
         resolved.rowStart === current.rowStart &&
