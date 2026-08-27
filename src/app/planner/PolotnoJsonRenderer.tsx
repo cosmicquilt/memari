@@ -365,6 +365,31 @@ export function PolotnoJsonRenderer({
   // them plus the server render, and worth doing on its own.
   const structureKey = flat.length;
 
+  // Text is keyed by what it SAYS, not by where it sits in the element
+  // list. Rects above are scoped to structureKey precisely because a
+  // positional id stops naming the same thing when the element count
+  // changes - but that scoping also remounts every node on such a
+  // change, and a remounted node has no previous position to animate
+  // from. So a todo-checklist's title jumped to its new position
+  // instead of sliding to it: its dayCount changed, so the count
+  // changed, so its key changed, so it was a new element. Reported
+  // exactly that way.
+  //
+  // Content is the stable identity text actually has. A heading is the
+  // same heading at every width, so it keeps its node and slides. A day
+  // header that exists at both sizes keeps its node too; one that only
+  // exists at the wider size is genuinely new and appears, which is
+  // correct. Duplicate strings are disambiguated by order of
+  // appearance, which is stable for anything that survives the change.
+  const textKeyCounts = new Map<string, number>();
+  const textKey = (element: RenderedPolotnoElement): string => {
+    if (element.type !== "text") return `${structureKey}:${element.id}`;
+    const base = `t:${element.text ?? ""}`;
+    const seen = textKeyCounts.get(base) ?? 0;
+    textKeyCounts.set(base, seen + 1);
+    return `${base}#${seen}`;
+  };
+
   const rects = flat.filter((element) => element.type === "figure" && element.subType === "rect");
   const rest = flat.filter((element) => !(element.type === "figure" && element.subType === "rect"));
   return (
@@ -379,7 +404,7 @@ export function PolotnoJsonRenderer({
       />
       {rest.map((element) => (
         <ElementNode
-          key={`${structureKey}:${element.id}`}
+          key={textKey(element)}
           element={element}
           originX={originX}
           originY={originY}
