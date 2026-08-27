@@ -493,12 +493,37 @@ type PaletteDragPreview = {
   overlapping: boolean;
 };
 
-// Duration and curve for the dragged module's zone-crossing resize.
-// left/top/width/height MUST all carry exactly this — the grab-point
-// correction lives in left/top and is an affine function of the
-// animating size, so it only tracks that size if the two ease
-// identically. Differing durations or curves reintroduce the drift
-// (see computeDraggedSizeCompensationPagePx).
+// The dragged module's box is NOT tweened between zone shapes. It still
+// resizes live - crossing a zone boundary changes its span immediately -
+// but the change lands in one frame instead of easing over several.
+//
+// A 160ms ease was tried and measured. left/top/width/height are layout
+// properties, so every frame of that ease costs a layout recalculation
+// and a repaint, on an element carrying a 28px blurred shadow whose
+// geometry is changing underneath it. Instrumented over a real
+// side-to-bottom crossing (spans 1x13 -> 3x2), the frames during the
+// ease came in at 79ms, 50ms, 29ms, 20ms - roughly three frames drawn
+// across the whole animation. Three frames is not an ease, it is three
+// jumps, and because the grab-point correction moves left/top in step
+// with width/height, those jumps read as the box resizing about one of
+// its corners. Reported exactly that way.
+//
+// will-change does not help: it promotes the element for transform, and
+// a size change still forces layout regardless. Spring physics does not
+// help either - springs solve retargeting wobble, which the same
+// instrumentation showed is no longer happening, and a spring pays the
+// identical per-frame layout cost.
+//
+// Set this above zero to restore the ease; everything else still works,
+// it simply looks worse than snapping while costing more.
+const CROSSING_EASE_MS = 0;
+const CROSSING_RESIZE_TRANSITION =
+  CROSSING_EASE_MS > 0
+    ? ["left", "top", "width", "height"]
+        .map((prop) => `${prop} ${CROSSING_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`)
+        .join(", ")
+    : undefined;
+
 // Consecutive pointer reads a DIFFERENT valid zone must win before it
 // takes over from the one currently held. Sticky targeting (see the
 // lock below) already absorbs flapping between a zone and dead space,
@@ -507,23 +532,11 @@ type PaletteDragPreview = {
 // section, which share a column boundary - since every flip there is a
 // genuine entry into a genuine zone.
 //
-// That matters more than it looks: the dragged box's size is a pure
-// function of the resolved zone, so a flapping zone IS a flapping size,
-// and each flip retargets the resize transition from whatever
-// intermediate size it had reached. Reported as the held box appearing
-// to animate toward some in-between size. Three reads is roughly
-// 25-50ms - long enough to outlast boundary noise, short enough that a
-// deliberate crossing still feels immediate.
+// Three reads is roughly 25-50ms: long enough to outlast boundary
+// noise, short enough that a deliberate crossing still feels immediate.
+// Instrumented over real crossings, every switch came through as a
+// clean "asking 1, 2, 3, adopted" with no oscillation.
 const ZONE_SWITCH_TICKS = 3;
-
-const CROSSING_EASE_MS = 160;
-const CROSSING_EASE = `cubic-bezier(0.4, 0, 0.2, 1)`;
-const CROSSING_RESIZE_TRANSITION = [
-  `left ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
-  `top ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
-  `width ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
-  `height ${CROSSING_EASE_MS}ms ${CROSSING_EASE}`,
-].join(", ");
 
 function NativeModule({
   instanceId,
