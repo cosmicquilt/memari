@@ -985,6 +985,7 @@ function NativeModule({
           originY={originY}
           scale={scale}
           suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
+          textEaseMs={clipToBox ? CROSSING_EASE_MS : 0}
         />
       </div>
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
@@ -1243,7 +1244,7 @@ function NativePage({
   hourlyResizeStackBottoms,
   emptyZones,
   resizingIds,
-  contentEasingId,
+  easeContent,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
@@ -1300,11 +1301,11 @@ function NativePage({
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
-  // The one module whose box is currently easing between zone shapes.
-  // Its contents get the same duration and curve, so rects and text
-  // travel with the box rather than jumping to the new geometry the
-  // instant it is computed.
-  contentEasingId: string | null;
+  // The one module whose box is currently easing between zone shapes,
+  // with the geometry its CONTENT should render at meanwhile - the
+  // larger of the two sizes, so the easing box always has something to
+  // clip. See the memo that builds it.
+  easeContent: { instanceId: string; placement: Placement } | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1401,16 +1402,21 @@ function NativePage({
             info.slug === "habit-tracker" ||
             info.slug === "labeled-box" ||
             (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
-        const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, placement) : null;
+        // The box uses `placement`; the CONTENT uses this. They differ
+        // only while this module's box is easing, when the content is
+        // deliberately drawn at the larger of the two sizes so the box
+        // can clip it (see easeContent's own comment).
+        const contentPlacement = easeContent?.instanceId === id ? easeContent.placement : placement;
+        const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, contentPlacement) : null;
         const elements = contentIsLive
           ? renderModuleInstance(
               {
                 id,
                 locked: info.locked,
-                columnStart: placement.columnStart,
-                rowStart: placement.rowStart,
-                columnSpan: placement.columnSpan,
-                rowSpan: placement.rowSpan,
+                columnStart: contentPlacement.columnStart,
+                rowStart: contentPlacement.rowStart,
+                columnSpan: contentPlacement.columnSpan,
+                rowSpan: contentPlacement.rowSpan,
                 propValues: info.propValues,
                 moduleType: { slug: info.slug },
               },
@@ -1439,7 +1445,7 @@ function NativePage({
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
             contentIsLive={contentIsLive}
-            clipToBox={id === contentEasingId}
+            clipToBox={easeContent?.instanceId === id}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
@@ -4352,7 +4358,11 @@ export function NativePlannerEditor({
   // contentIsLive also turns off the overflow clip, you see the finished
   // box sitting inside the unfinished one - two rectangles sharing a
   // top-left corner. Reported exactly that way.
-  const [contentEasingId, setContentEasingId] = useState<string | null>(null);
+  const [contentEasing, setContentEasing] = useState<{
+    instanceId: string;
+    fromColumnSpan: number;
+    fromRowSpan: number;
+  } | null>(null);
   const contentEaseTimerRef = useRef<number | null>(null);
   // Armed from handleDragMove, NOT from an effect. The zone is adopted
   // in that handler, so setting the freeze there batches it into the
@@ -4360,15 +4370,18 @@ export function NativePlannerEditor({
   // commit, which would let the content render once at the target size
   // before freezing - a single-frame flash of the exact artefact this
   // exists to remove.
-  const easeContentDuringResize = useCallback((instanceId: string) => {
-    if (CROSSING_EASE_MS <= 0) return;
-    setContentEasingId(instanceId);
-    if (contentEaseTimerRef.current !== null) window.clearTimeout(contentEaseTimerRef.current);
-    contentEaseTimerRef.current = window.setTimeout(() => {
-      contentEaseTimerRef.current = null;
-      setContentEasingId(null);
-    }, CROSSING_EASE_MS);
-  }, []);
+  const easeContentDuringResize = useCallback(
+    (instanceId: string, fromColumnSpan: number, fromRowSpan: number) => {
+      if (CROSSING_EASE_MS <= 0) return;
+      setContentEasing({ instanceId, fromColumnSpan, fromRowSpan });
+      if (contentEaseTimerRef.current !== null) window.clearTimeout(contentEaseTimerRef.current);
+      contentEaseTimerRef.current = window.setTimeout(() => {
+        contentEaseTimerRef.current = null;
+        setContentEasing(null);
+      }, CROSSING_EASE_MS);
+    },
+    []
+  );
   // handleDragMove (below) needs to call resolveDrag, but resolveDrag
   // is declared later in this same component — a plain reference
   // inside handleDragMove's own CALLBACK BODY would be fine (closures
@@ -4470,7 +4483,7 @@ export function NativePlannerEditor({
       window.clearTimeout(contentEaseTimerRef.current);
       contentEaseTimerRef.current = null;
     }
-    setContentEasingId(null);
+    setContentEasing(null);
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4666,9 +4679,11 @@ export function NativePlannerEditor({
           // than crossingZones catches every case that actually moves
           // the box - including zone-to-zone, where crossing stays true
           // throughout but the shape still changes.
-          const shownSpans = holdsThisDrag
-            ? `${held.preview.effectiveColumnSpan}x${held.preview.effectiveRowSpan}`
-            : `${rawPreview.current.columnSpan}x${rawPreview.current.rowSpan}`;
+          const shownColumnSpan = holdsThisDrag
+            ? held.preview.effectiveColumnSpan
+            : rawPreview.current.columnSpan;
+          const shownRowSpan = holdsThisDrag ? held.preview.effectiveRowSpan : rawPreview.current.rowSpan;
+          const shownSpans = `${shownColumnSpan}x${shownRowSpan}`;
           const nextSpans = `${rawPreview.effectiveColumnSpan}x${rawPreview.effectiveRowSpan}`;
           if (!holdsThisDrag || held.zoneKey === rawPreview.zoneKey) {
             // First acquisition of the gesture, or a refresh of the zone
@@ -4677,7 +4692,7 @@ export function NativePlannerEditor({
             // pointer within a zone.
             pendingZoneRef.current = null;
             pendingZoneTicksRef.current = 0;
-            if (shownSpans !== nextSpans) easeContentDuringResize(id);
+            if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
           } else {
             // A different valid zone wants it. Make it ask repeatedly,
@@ -4693,7 +4708,7 @@ export function NativePlannerEditor({
             if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
               pendingZoneRef.current = null;
               pendingZoneTicksRef.current = 0;
-              if (shownSpans !== nextSpans) easeContentDuringResize(id);
+              if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
             }
           }
@@ -5443,6 +5458,35 @@ export function NativePlannerEditor({
       crossingLivePreview ? { ...displayPlacements, ...crossingLivePreview.placementOverrides } : displayPlacements,
     [displayPlacements, crossingLivePreview]
   );
+
+  // While the box eases between zone shapes the content renders at the
+  // LARGER of the two geometries, never the smaller one.
+  //
+  // That single rule is what makes the box behave as a window in both
+  // directions. Content bigger than the box means the clip always has
+  // something to cut: growing reveals it, shrinking cuts it off. Content
+  // SMALLER than the box is the failure - the finished content sits
+  // inside an unfinished box with empty space around it, which is
+  // exactly the "double box" that kept coming back. Rendering at the
+  // target size gets this right expanding and wrong shrinking, which is
+  // precisely how it was reported: fine one way, doubled the other.
+  //
+  // The from-size is the spans actually on screen when the ease was
+  // armed, not the module's committed spans - a second crossing starts
+  // from wherever the first one left it, not from where the drag began.
+  const easeContent = useMemo(() => {
+    if (!contentEasing) return null;
+    const target = liveDisplayPlacements[contentEasing.instanceId];
+    if (!target) return null;
+    return {
+      instanceId: contentEasing.instanceId,
+      placement: {
+        ...target,
+        columnSpan: Math.max(target.columnSpan, contentEasing.fromColumnSpan),
+        rowSpan: Math.max(target.rowSpan, contentEasing.fromRowSpan),
+      },
+    };
+  }, [contentEasing, liveDisplayPlacements]);
 
   // Overlays the dayCount override above onto the one instance it
   // applies to — mirrors liveDisplayPlacements' own "overlay onto the
@@ -6789,7 +6833,7 @@ export function NativePlannerEditor({
                     hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={effectiveResizingIds}
-                    contentEasingId={contentEasingId}
+                    easeContent={easeContent}
                     resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}

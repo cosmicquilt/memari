@@ -82,6 +82,20 @@ const OUTER_BORDER_MATCH_EPSILON_PX = 0.5;
 // for the length of every crossing.
 export const RESIZE_EASE_CURVE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
+// Text alone gets a position transition while a module's box eases.
+// Rects deliberately do not: the box clips them, so a rect is revealed
+// or cut off rather than moved, and transitioning them breaks any module
+// whose element count depends on its width - a todo-checklist gains and
+// loses day columns, and a column with no counterpart at the old size
+// has nothing to animate from. Text has no such problem. It is the same
+// handful of labels before and after, and a window that reveals a title
+// already sitting at its final position reads as the title having
+// jumped, which is exactly how it was reported.
+function textPositionTransition(easeMs: number): string | undefined {
+  if (easeMs <= 0) return undefined;
+  return ["left", "top", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
+}
+
 
 // Non-rect elements only (in practice: text). Rects are drawn by
 // RectLayer below instead — see its own comment for why they had to
@@ -92,10 +106,12 @@ function ElementNode({
   element,
   originX,
   originY,
+  textEaseMs,
 }: {
   element: RenderedPolotnoElement;
   originX: number;
   originY: number;
+  textEaseMs: number;
 }) {
   if (element.type === "group") {
     // Synthetic wrapper renderModuleInstance adds around a non-locked
@@ -110,6 +126,7 @@ function ElementNode({
             element={child}
             originX={originX}
             originY={originY}
+            textEaseMs={textEaseMs}
           />
         ))}
       </>
@@ -140,6 +157,7 @@ function ElementNode({
           lineHeight: 1.2,
           whiteSpace: "pre",
           pointerEvents: "none",
+          transition: textPositionTransition(textEaseMs),
         }}
       >
         {element.text}
@@ -298,6 +316,7 @@ export function PolotnoJsonRenderer({
   originY,
   scale,
   suppressOuterBorderSize,
+  textEaseMs = 0,
 }: {
   elements: RenderedPolotnoElement[];
   originX: number;
@@ -307,6 +326,9 @@ export function PolotnoJsonRenderer({
   // Non-null only while this module is part of an active live resize —
   // see the comment above ElementNode's own use of it.
   suppressOuterBorderSize: { width: number; height: number } | null;
+  // Non-zero only while this module's box is easing between zone
+  // shapes. Applies to text only - see textPositionTransition.
+  textEaseMs?: number;
 }) {
   // Rects go into one shared <svg> (see RectLayer); everything else —
   // in practice text — stays as absolutely-positioned DOM, which has no
@@ -361,6 +383,7 @@ export function PolotnoJsonRenderer({
           element={element}
           originX={originX}
           originY={originY}
+          textEaseMs={textEaseMs}
         />
       ))}
     </>
