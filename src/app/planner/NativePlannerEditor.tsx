@@ -94,7 +94,7 @@ import {
 } from "@dnd-kit/core";
 import type { LoadedPage, PageSettings } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
-import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
+import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -493,11 +493,15 @@ type PaletteDragPreview = {
   overlapping: boolean;
 };
 
-// The dragged module's box is NOT tweened between zone shapes. It still
-// resizes live - crossing a zone boundary changes its span immediately -
-// but the change lands in one frame instead of easing over several.
+// How long the dragged module's box takes to ease between zone shapes,
+// and the single clock everything that moves with it runs on.
 //
-// A 160ms ease was tried and measured. left/top/width/height are layout
+// Read the two notes below before changing this. Neither is a reason not
+// to have the animation - it was asked for and it works - but both are
+// things it cost to get right, and both come straight back if this is
+// treated as an isolated number.
+//
+// FRAME COST. left/top/width/height are layout left/top/width/height are layout
 // properties, so every frame of that ease costs a layout recalculation
 // and a repaint, on an element carrying a 28px blurred shadow whose
 // geometry is changing underneath it. Instrumented over a real
@@ -512,31 +516,21 @@ type PaletteDragPreview = {
 // a size change still forces layout regardless. Spring physics does not
 // help either - springs solve retargeting wobble, which the same
 // instrumentation showed is no longer happening, and a spring pays the
-// identical per-frame layout cost.
+// identical per-frame layout cost. So a longer duration here buys more
+// dropped frames, not a smoother movement.
 //
-// There is a second, independent reason, found by slowing this to 800ms
-// and watching: the module's CONTENT does not ease with its container.
-// A crossing adds the dragged id to effectiveResizingIds, which makes
-// contentIsLive true for exactly the three crossable types, so their
-// elements are re-rendered at the TARGET geometry immediately, in page
-// pixels - and contentIsLive deliberately switches off the overflow
-// clip that would otherwise hide stale content. At zero duration the
-// container and the content land in the same frame and always agree.
-// Give the container any duration at all and the content sits at its
-// final size inside a box still morphing toward it, which reads as a
-// second rectangle overlaid on the first, sharing its top-left corner.
-// Reported exactly that way.
-//
-// So restoring the ease means more than raising this number. The
-// content would have to hold its OLD size for the duration and re-render
-// once at the end, clipped meanwhile - which is already what the
-// non-live module types get from overflow:hidden. Worth knowing before
-// assuming this is a one-line knob.
+// CONTENTS. The module's contents ease on this same clock and curve, via
+// PolotnoJsonRenderer's geometryEaseMs. That is not a nicety: without it
+// the content re-renders at the TARGET geometry on the first frame of
+// the ease while the container is still travelling there, and since
+// contentIsLive also turns off the overflow clip, the finished box is
+// drawn inside the unfinished one - two rectangles sharing a top-left
+// corner. Found by slowing this to 800ms and watching.
 const CROSSING_EASE_MS = 400;
 const CROSSING_RESIZE_TRANSITION =
   CROSSING_EASE_MS > 0
     ? ["left", "top", "width", "height"]
-        .map((prop) => `${prop} ${CROSSING_EASE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`)
+        .map((prop) => `${prop} ${CROSSING_EASE_MS}ms ${RESIZE_EASE_CURVE}`)
         .join(", ")
     : undefined;
 
@@ -567,6 +561,7 @@ function NativeModule({
   isResizing,
   frozenSize,
   contentIsLive,
+  geometryEaseMs,
   suppressTransition,
   scale,
   justAdded,
@@ -640,6 +635,13 @@ function NativeModule({
   // them anyway would draw a second, redundant border alongside the
   // real, already-accurate one.
   contentIsLive: boolean;
+  // Duration for this module's CONTENTS while its box eases between zone
+  // shapes; 0 the rest of the time. Same clock and curve as the box
+  // itself, so the rects and text inside travel with it instead of
+  // landing at the new geometry while the box is still on its way -
+  // which is visible as a second, already-finished rectangle drawn
+  // inside the one still moving.
+  geometryEaseMs: number;
   // True for exactly one frame right after a drop, for whichever
   // instances just had their placement committed (the dropped item and
   // any reflowed siblings) — see the settle-FLIP comment on `settling`
@@ -931,6 +933,7 @@ function NativeModule({
         originY={originY}
         scale={scale}
         suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
+        geometryEaseMs={geometryEaseMs}
       />
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
@@ -1188,7 +1191,7 @@ function NativePage({
   hourlyResizeStackBottoms,
   emptyZones,
   resizingIds,
-  contentFrozenId,
+  contentEasingId,
   resizeFrozenSize,
   onResizeStart,
   onResizeMove,
@@ -1245,13 +1248,11 @@ function NativePage({
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
   resizingIds: ReadonlySet<string> | null;
-  // The one module whose box is mid-resize-ease and whose CONTENT must
-  // therefore stay at its old size for the duration - see
-  // CROSSING_EASE_MS. It still counts as resizing, so it keeps the
-  // overflow clip, the outline stand-in and the suppressed stale outer
-  // border; it just does not get a live re-render at the new geometry
-  // while the box is still travelling there.
-  contentFrozenId: string | null;
+  // The one module whose box is currently easing between zone shapes.
+  // Its contents get the same duration and curve, so rects and text
+  // travel with the box rather than jumping to the new geometry the
+  // instant it is computed.
+  contentEasingId: string | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1344,7 +1345,6 @@ function NativePage({
         // not width, which is presumably why this never surfaced there.
         const contentIsLive =
           (resizingIds?.has(id) ?? false) &&
-          id !== contentFrozenId &&
           (info.slug === "todo-checklist" ||
             info.slug === "habit-tracker" ||
             info.slug === "labeled-box" ||
@@ -1387,6 +1387,7 @@ function NativePage({
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
             contentIsLive={contentIsLive}
+            geometryEaseMs={id === contentEasingId ? CROSSING_EASE_MS : 0}
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
@@ -4299,21 +4300,21 @@ export function NativePlannerEditor({
   // contentIsLive also turns off the overflow clip, you see the finished
   // box sitting inside the unfinished one - two rectangles sharing a
   // top-left corner. Reported exactly that way.
-  const [contentFrozenId, setContentFrozenId] = useState<string | null>(null);
-  const contentFreezeTimerRef = useRef<number | null>(null);
+  const [contentEasingId, setContentEasingId] = useState<string | null>(null);
+  const contentEaseTimerRef = useRef<number | null>(null);
   // Armed from handleDragMove, NOT from an effect. The zone is adopted
   // in that handler, so setting the freeze there batches it into the
   // same render that first applies the new spans. An effect runs after
   // commit, which would let the content render once at the target size
   // before freezing - a single-frame flash of the exact artefact this
   // exists to remove.
-  const freezeContentDuringEase = useCallback((instanceId: string) => {
+  const easeContentDuringResize = useCallback((instanceId: string) => {
     if (CROSSING_EASE_MS <= 0) return;
-    setContentFrozenId(instanceId);
-    if (contentFreezeTimerRef.current !== null) window.clearTimeout(contentFreezeTimerRef.current);
-    contentFreezeTimerRef.current = window.setTimeout(() => {
-      contentFreezeTimerRef.current = null;
-      setContentFrozenId(null);
+    setContentEasingId(instanceId);
+    if (contentEaseTimerRef.current !== null) window.clearTimeout(contentEaseTimerRef.current);
+    contentEaseTimerRef.current = window.setTimeout(() => {
+      contentEaseTimerRef.current = null;
+      setContentEasingId(null);
     }, CROSSING_EASE_MS);
   }, []);
   // handleDragMove (below) needs to call resolveDrag, but resolveDrag
@@ -4413,11 +4414,11 @@ export function NativePlannerEditor({
     confirmedCrossingRef.current = null;
     pendingZoneRef.current = null;
     pendingZoneTicksRef.current = 0;
-    if (contentFreezeTimerRef.current !== null) {
-      window.clearTimeout(contentFreezeTimerRef.current);
-      contentFreezeTimerRef.current = null;
+    if (contentEaseTimerRef.current !== null) {
+      window.clearTimeout(contentEaseTimerRef.current);
+      contentEaseTimerRef.current = null;
     }
-    setContentFrozenId(null);
+    setContentEasingId(null);
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4624,7 +4625,7 @@ export function NativePlannerEditor({
             // pointer within a zone.
             pendingZoneRef.current = null;
             pendingZoneTicksRef.current = 0;
-            if (shownSpans !== nextSpans) freezeContentDuringEase(id);
+            if (shownSpans !== nextSpans) easeContentDuringResize(id);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
           } else {
             // A different valid zone wants it. Make it ask repeatedly,
@@ -4640,7 +4641,7 @@ export function NativePlannerEditor({
             if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
               pendingZoneRef.current = null;
               pendingZoneTicksRef.current = 0;
-              if (shownSpans !== nextSpans) freezeContentDuringEase(id);
+              if (shownSpans !== nextSpans) easeContentDuringResize(id);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
             }
           }
@@ -4836,7 +4837,7 @@ export function NativePlannerEditor({
       });
     },
     [
-      freezeContentDuringEase,
+      easeContentDuringResize,
       screenPointToPageCell,
       pageGridByPageId,
       instanceIdsByPageId,
@@ -6736,7 +6737,7 @@ export function NativePlannerEditor({
                     hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={effectiveResizingIds}
-                    contentFrozenId={contentFrozenId}
+                    contentEasingId={contentEasingId}
                     resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
