@@ -409,7 +409,21 @@ export function PolotnoJsonRenderer({
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
-  const rest = (textElements ? flattenElements(textElements) : flat).filter((element) => !isRect(element));
+  // Text comes from its own render whenever one is supplied, even when
+  // the two renders disagree structurally. They can: a todo-checklist
+  // crossing a width boundary has four day-columns in the render being
+  // swept away and three in the one it is becoming. Mixing is safe here
+  // because text is keyed by CONTENT (see textKey) - a label present in
+  // both keeps its node and slides to its new position, one that only
+  // existed at the old width unmounts, and one that is new appears.
+  // Identity is per-label, so a changing count costs nothing.
+  //
+  // An earlier version rejected the text render when the counts
+  // differed, which fell back to the swept render's text and made a
+  // todo's title snap at the end of the sweep rather than move with it.
+  const rest = (textElements ? flattenElements(textElements) : flat).filter(
+    (element) => !isRect(element)
+  );
   return (
     <>
       <RectLayer

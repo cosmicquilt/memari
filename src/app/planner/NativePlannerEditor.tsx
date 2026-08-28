@@ -594,6 +594,7 @@ function NativeModule({
   frozenSize,
   contentIsLive,
   clipToBox,
+  clipContentSizePx,
   suppressTransition,
   scale,
   justAdded,
@@ -677,6 +678,12 @@ function NativeModule({
   // it read as a window opening and closing over the content rather
   // than a second rectangle drawn inside the first.
   clipToBox: boolean;
+  // The pixel size the CONTENT was rendered at while clipToBox is set -
+  // the larger of the module's old and new geometry. Lets the renderer
+  // recognise and hide that render's own full-box outer border, which
+  // is drawn at a size the box has not reached, so the container's
+  // outline can stand in for it accurately instead. null otherwise.
+  clipContentSizePx: { width: number; height: number } | null;
   // True for exactly one frame right after a drop, for whichever
   // instances just had their placement committed (the dropped item and
   // any reflowed siblings) — see the settle-FLIP comment on `settling`
@@ -913,10 +920,11 @@ function NativeModule({
             : suppressTransition
             ? undefined
             : rectPx
-            ? // A resizing sibling: out of grid flow, moving and growing
-              // on one transition rather than snapping one and gliding
-              // the other.
-              `${REFLOW_BOX_TRANSITION}, opacity 0.25s ease`
+            ? // Out of grid flow for the drag. A resizing sibling moves
+              // and grows on the box transition; a position-only mover
+              // still slides on transform, and needs that listed here
+              // too or it jumps - both paths share this branch.
+              `${REFLOW_BOX_TRANSITION}, transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`
             : `transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`,
         // Mount fade-in for a freshly-added module (see fadedIn's own
         // comment) — 1 for every pre-existing module (this condition is
@@ -962,8 +970,17 @@ function NativeModule({
         // gray/dashed — a faint dashed gray line against mostly-white
         // content read as the box looking dimmed/disabled, not as an
         // active resize indicator.
-        outline: isResizing && !contentIsLive ? "2px solid #000000" : undefined,
-        outlineOffset: isResizing && !contentIsLive ? "-2px" : undefined,
+        // Also while a box is easing between zone shapes. Its content
+        // is drawn at the larger of the two sizes so the box can clip
+        // it, which means the content's own outer border sits at a size
+        // the box has not got to - clipped away entirely while growing,
+        // so the module loses its bottom and right edges for the length
+        // of the animation. Reported as the bottom lines of the
+        // remaining side modules disappearing. The outline follows the
+        // real box, so the frame stays put while the contents are
+        // revealed or cut off inside it.
+        outline: (isResizing && !contentIsLive) || clipToBox ? "2px solid #000000" : undefined,
+        outlineOffset: (isResizing && !contentIsLive) || clipToBox ? "-2px" : undefined,
         touchAction: locked ? undefined : "none",
       }}
     >
@@ -1004,7 +1021,9 @@ function NativeModule({
           originX={originX}
           originY={originY}
           scale={scale}
-          suppressOuterBorderSize={isResizing && !contentIsLive ? frozenSize : null}
+          suppressOuterBorderSize={
+            isResizing && !contentIsLive ? frozenSize : clipContentSizePx
+          }
           textEaseMs={clipToBox ? (isDragged ? CROSSING_EASE_MS : REFLOW_EASE_MS) : 0}
         />
       </div>
@@ -1422,16 +1441,6 @@ function NativePage({
         // same as every other type in this list already is. An ordinary
         // resize-handle drag only ever changes a labeled-box's height,
         // not width, which is presumably why this never surfaced there.
-        const contentIsLive =
-          (resizingIds?.has(id) ?? false) &&
-          (info.slug === "todo-checklist" ||
-            info.slug === "habit-tracker" ||
-            info.slug === "labeled-box" ||
-            (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
-        // The box uses `placement`; the CONTENT uses this. They differ
-        // only while this module's box is easing, when the content is
-        // deliberately drawn at the larger of the two sizes so the box
-        // can clip it (see easeContent's own comment).
         // A resizing sibling gets the same treatment as the dragged
         // module: out of grid flow so position and size share a clock,
         // content drawn at the larger of the two sizes, box clipping it.
@@ -1441,6 +1450,29 @@ function NativePage({
           easeContent?.instanceId === id
             ? easeContent.placement
             : (reflowContentPlacement ?? placement);
+        // isEasingBox, not just resizingIds. When a crossing ENDS,
+        // crossingLivePreview returns null, so this id leaves
+        // effectiveResizingIds and the live re-render switches off - but
+        // the box is still easing back down to its original size. The
+        // content would fall back to the server-rendered elements at the
+        // committed size, which is SMALLER than the box for the length
+        // of that ease, and content smaller than its box is exactly the
+        // double box. Reported dragging a textbox to the bottom zone and
+        // then back up out of it without releasing.
+        //
+        // Keeping it live for the ease means it renders at
+        // contentPlacement - the larger of the two - so the clip has
+        // something to cut the whole way down.
+        const contentIsLive =
+          ((resizingIds?.has(id) ?? false) || isEasingBox) &&
+          (info.slug === "todo-checklist" ||
+            info.slug === "habit-tracker" ||
+            info.slug === "labeled-box" ||
+            (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
+        // The box uses `placement`; the CONTENT uses this. They differ
+        // only while this module's box is easing, when the content is
+        // deliberately drawn at the larger of the two sizes so the box
+        // can clip it (see easeContent's own comment).
         const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, contentPlacement) : null;
         const elements = contentIsLive
           ? renderModuleInstance(
@@ -1479,7 +1511,22 @@ function NativePage({
                   rowStart: placement.rowStart,
                   columnSpan: placement.columnSpan,
                   rowSpan: placement.rowSpan,
-                  propValues: info.propValues,
+                  // The FINAL dayCount, not the eased one. moduleLookup
+                  // is patched with the dayCount matching the larger
+                  // geometry, because that is what the main render above
+                  // needs - but this render is the module as it will be
+                  // when the ease finishes, and it has to be consistent
+                  // about that. Pairing the old dayCount with the target
+                  // width put a todo's title where it would sit if four
+                  // day-columns had to fit into three columns' width:
+                  // slightly too far right, then correct once the ease
+                  // ended. dayCount tracks columnSpan for the dragged
+                  // module (see dayCountOverride), so the target span is
+                  // the target count.
+                  propValues:
+                    info.slug === "todo-checklist"
+                      ? { ...info.propValues, dayCount: placement.columnSpan }
+                      : info.propValues,
                   moduleType: { slug: info.slug },
                 },
                 page.pageGrid,
@@ -1491,13 +1538,26 @@ function NativePage({
         // it should be, and shifted by the grab-point correction so
         // that resize can animate without the box sliding under the
         // cursor while it does.
-        // Absolute for the dragged module, and for any sibling this
-        // crossing is resizing. The grab-point correction applies only
-        // to the dragged one - a sibling is not anchored to a pointer.
-        const baseRect =
-          activeId === id || reflowContentPlacement !== null
-            ? gridCellToPixels(page.pageGrid, placement)
-            : null;
+        // Every module on the page leaves grid flow for the length of a
+        // drag, not just the ones that end up moving.
+        //
+        // A CSS transition needs a previous value to interpolate from. A
+        // module sitting in grid flow has no left/top/width/height at
+        // all, so switching it to absolute AND to its target geometry on
+        // the same frame gives the browser nothing to animate: it simply
+        // appears there. That is what made the side modules jump to
+        // their final positions instead of filling in - they only went
+        // absolute at the moment they were already supposed to have
+        // moved.
+        //
+        // Going absolute at drag START costs nothing visually, because
+        // gridCellToPixels reproduces the grid's own 1fr math exactly
+        // (this file's header, and the step that first moved the dragged
+        // module out of flow), so the rect it computes IS where the grid
+        // had the module. Nothing shifts; the module just stops being
+        // laid out and starts being positioned. A reflow later in the
+        // gesture is then a change to an existing value, which animates.
+        const baseRect = activeId !== null ? gridCellToPixels(page.pageGrid, placement) : null;
         const draggedRectPx = !baseRect
           ? null
           : activeId === id
@@ -1517,6 +1577,17 @@ function NativePage({
             frozenSize={resizeFrozenSize?.[id] ?? null}
             contentIsLive={contentIsLive}
             clipToBox={isEasingBox}
+            clipContentSizePx={
+              isEasingBox
+                ? // Whatever geometry the content above was actually
+                  // rendered at, so the renderer recognises that
+                  // render's own full-box border and hides it. A live
+                  // render uses contentPlacement; a module type with no
+                  // live renderer still has its committed elements, at
+                  // `placement`.
+                  gridCellToPixels(page.pageGrid, contentIsLive ? contentPlacement : placement)
+                : null
+            }
             visualOffset={visualOffsets[id] ?? ZERO_OFFSET}
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
@@ -5592,13 +5663,29 @@ export function NativePlannerEditor({
     if (!crossingLivePreview || crossingLivePreview.dayCountOverride === null) return moduleLookup;
     const info = moduleLookup.get(crossingLivePreview.draggedId);
     if (!info) return moduleLookup;
+    // While the box is easing, this has to describe the geometry the
+    // content is actually drawn at - the LARGER of the two sizes - not
+    // the target. A todo-checklist draws exactly dayCount day-columns
+    // whatever pixel width it is given, so pairing the target dayCount
+    // with the larger geometry builds a freshly-sized grid stretched
+    // across the old width and then trims it, instead of sweeping the
+    // old grid away. Reported dragging a todo from the right page's
+    // bottom zone to the left page's, where the width shrinks 4 columns
+    // to 3: no sweep, just a restretched grid.
+    //
+    // Expanding, the larger size IS the target, so this changes nothing
+    // there - which is why only the shrink direction was wrong.
+    const dayCount =
+      easeContent?.instanceId === crossingLivePreview.draggedId
+        ? easeContent.placement.columnSpan
+        : crossingLivePreview.dayCountOverride;
     const next = new Map(moduleLookup);
     next.set(crossingLivePreview.draggedId, {
       ...info,
-      propValues: { ...info.propValues, dayCount: crossingLivePreview.dayCountOverride },
+      propValues: { ...info.propValues, dayCount },
     });
     return next;
-  }, [moduleLookup, crossingLivePreview]);
+  }, [moduleLookup, crossingLivePreview, easeContent]);
 
   // Everyone placementOverrides touches needs the same isResizing/
   // contentIsLive treatment an ordinary resize-handle drag already
