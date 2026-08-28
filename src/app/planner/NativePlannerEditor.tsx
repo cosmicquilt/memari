@@ -539,30 +539,21 @@ type PaletteDragPreview = {
 // drawn at full size inside a smaller box, which reads as a second,
 // already-finished rectangle. All three states were watched at 800ms
 // before settling here.
-const CROSSING_EASE_MS = 250;
+// Default length of every animation a crossing runs: the dragged box
+// changing shape, its contents being swept, and the siblings moving and
+// growing out of the way. One number for all of them on purpose - a
+// crossing runs them at once and they should land together; two
+// durations read as one movement chasing another.
+//
+// A slider in the header overrides this live (see easeMs state). It
+// exists because every animation bug in this area was found by slowing
+// it down and watching, and rebuilding between values loses the drag
+// you were in the middle of.
+const DEFAULT_EASE_MS = 250;
 
-// How long a sibling takes to slide when a reflow moves it. Separate
-// from CROSSING_EASE_MS because they animate different things - one a
-// box changing shape, the other a neighbour getting out of its way -
-// but deliberately the same number: a crossing runs both at once and
-// they should land together. Was written inline as "0.25s" in the
-// transition string below; named here so both clocks can be changed
-// together, which is exactly what inspecting either of them requires.
-const REFLOW_EASE_MS = 250;
-
-// A resizing sibling is absolutely positioned for the length of a
-// crossing, so its position and size are both lengths on one clock.
-// Same property list and curve as the dragged module's own transition;
-// only the duration differs, and only because reflow has its own
-// constant.
-const REFLOW_BOX_TRANSITION = ["left", "top", "width", "height"]
-  .map((prop) => `${prop} ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}`)
-  .join(", ");
-const CROSSING_RESIZE_TRANSITION =
-  CROSSING_EASE_MS > 0
-    ? ["left", "top", "width", "height"]
-        .map((prop) => `${prop} ${CROSSING_EASE_MS}ms ${RESIZE_EASE_CURVE}`)
-        .join(", ")
+const boxResizeTransition = (easeMs: number) =>
+  easeMs > 0
+    ? ["left", "top", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ")
     : undefined;
 
 // Consecutive pointer reads a DIFFERENT valid zone must win before it
@@ -596,6 +587,8 @@ function NativeModule({
   clipToBox,
   clipContentSizePx,
   suppressTransition,
+  isSettling,
+  easeMs,
   scale,
   justAdded,
   onDelete,
@@ -690,6 +683,12 @@ function NativeModule({
   // state below for why a transition has to be suppressed for that one
   // frame specifically, not just while actively dragging.
   suppressTransition: boolean;
+  // Still being carried home by the settle FLIP. Released overlapping
+  // the other page, a module is out of position for the whole settle,
+  // so it has to keep the elevation and layer it had while dragged.
+  isSettling: boolean;
+  // Live value of the header's duration slider - see DEFAULT_EASE_MS.
+  easeMs: number;
   // True for the couple of frames right after this instance was created
   // by a palette drag-drop (see handleAddModule's own comment) —
   // drives a simple opacity fade-in on mount (see the local `mounted`
@@ -885,7 +884,27 @@ function NativeModule({
         // real memory per layer, and there are dozens of modules on a
         // spread, so promoting them all continuously would be worse
         // than the problem it solves.
-        willChange: isDragged ? "transform" : undefined,
+        // Extended from the dragged module to anything absolutely
+        // positioned for the gesture, which is now every module on the
+        // page while a drag is live.
+        //
+        // These animate left/top/width/height - layout properties - and
+        // they sit inside the zoom wrapper's CSS transform. Chrome does
+        // not reliably invalidate the PREVIOUS paint rect in that
+        // combination, so faint remnants of borders and rules are left
+        // behind in regions a module has just moved out of or is about
+        // to occupy, and they persist until something forces a full
+        // repaint - which releasing the drag does, which is why they
+        // vanished exactly then. Reported as low-opacity ghosting of
+        // horizontal lines in the landing region, and as a leftover
+        // vertical line on a side module's original left edge.
+        //
+        // Promoting makes the element its own layer, re-rastered as a
+        // unit, so there is no stale tile to leave behind. Still scoped
+        // to the gesture rather than set permanently, for the memory
+        // reason above - it just now covers the drag rather than one
+        // module within it.
+        willChange: rectPx || isSettling ? "transform" : undefined,
         // No transition on the dragged item itself — it needs to track
         // the pointer with zero added lag. Everything reacting to it
         // (a reflow preview, or a gravity-shift settle after a delete —
@@ -916,7 +935,7 @@ function NativeModule({
               // wherever it was grabbed to centered under the cursor)
               // and snapping that instantly reads as a glitch rather
               // than a deliberate movement.
-              CROSSING_RESIZE_TRANSITION
+              boxResizeTransition(easeMs)
             : suppressTransition
             ? undefined
             : rectPx
@@ -924,8 +943,8 @@ function NativeModule({
               // and grows on the box transition; a position-only mover
               // still slides on transform, and needs that listed here
               // too or it jumps - both paths share this branch.
-              `${REFLOW_BOX_TRANSITION}, transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`
-            : `transform ${REFLOW_EASE_MS}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`,
+              `${boxResizeTransition(easeMs) ?? ""}${easeMs > 0 ? ", " : ""}transform ${easeMs}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`
+            : `transform ${easeMs}ms ${RESIZE_EASE_CURVE}, opacity 0.25s ease`,
         // Mount fade-in for a freshly-added module (see fadedIn's own
         // comment) — 1 for every pre-existing module (this condition is
         // just a no-op true/true comparison for them), only ever
@@ -939,7 +958,13 @@ function NativeModule({
         // file comment on why that's gone) and didn't do anything useful
         // once the real element is what's moving.
         boxShadow: isDragged ? "0 12px 28px rgba(0,0,0,0.28)" : undefined,
-        zIndex: isDragged ? 10 : undefined,
+        // Held through the settle, not dropped at release. A module let
+        // go while it overlaps the other page is still overlapping for
+        // the length of its animation home, and the other page paints
+        // over it the moment this goes - which reads as the module being
+        // cut off at the page edge rather than as it being behind
+        // something. Reported exactly that way.
+        zIndex: isDragged || isSettling ? 10 : undefined,
         // !contentIsLive here too, same reasoning as the outline below —
         // this clip exists only to hide stale, pre-resize content
         // peeking past a box that's already changed size. A contentIsLive
@@ -1024,7 +1049,7 @@ function NativeModule({
           suppressOuterBorderSize={
             isResizing && !contentIsLive ? frozenSize : clipContentSizePx
           }
-          textEaseMs={clipToBox ? (isDragged ? CROSSING_EASE_MS : REFLOW_EASE_MS) : 0}
+          textEaseMs={clipToBox ? easeMs : 0}
         />
       </div>
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
@@ -1277,6 +1302,8 @@ function NativePage({
   visualOffsets,
   draggedAnchorPx,
   suppressTransitionIds,
+  settlingIds,
+  easeMs,
   justAddedIds,
   resizePairs,
   stackBottoms,
@@ -1322,6 +1349,11 @@ function NativePage({
   // cursor. {0,0} whenever nothing is crossing zones.
   draggedAnchorPx: { x: number; y: number };
   suppressTransitionIds: ReadonlySet<string> | null;
+  // Modules the settle FLIP is still moving, either phase. They keep the
+  // dragged module's elevation and promotion until they land.
+  settlingIds: ReadonlySet<string> | null;
+  // Live value of the header's duration slider.
+  easeMs: number;
   // See NativeModule's own justAdded comment — a module in this set
   // gets its mount fade-in; the main component clears each id out a
   // couple of frames after adding it, so this only ever briefly
@@ -1592,6 +1624,8 @@ function NativePage({
             isDragged={activeId === id}
             isResizing={resizingIds?.has(id) ?? false}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
+            isSettling={settlingIds?.has(id) ?? false}
+            easeMs={easeMs}
             scale={scale}
             justAdded={justAddedIds?.has(id) ?? false}
             onDelete={onDeleteModule}
@@ -4512,6 +4546,10 @@ export function NativePlannerEditor({
   // commit, which would let the content render once at the target size
   // before freezing - a single-frame flash of the exact artefact this
   // exists to remove.
+  // Length of every crossing animation, adjustable live from the header.
+  // See DEFAULT_EASE_MS for why they all share one number.
+  const [easeMs, setEaseMs] = useState(DEFAULT_EASE_MS);
+
   // The same thing for SIBLINGS a reflow is resizing. They need it for
   // the same reason the dragged module does and could not previously
   // have it: their "am I easing?" was derived from whether a crossing
@@ -4532,26 +4570,26 @@ export function NativePlannerEditor({
   );
   const siblingEaseTimerRef = useRef<number | null>(null);
   const easeSiblingsDuringResize = useCallback((from: Record<string, { columnSpan: number; rowSpan: number }>) => {
-    if (CROSSING_EASE_MS <= 0 || Object.keys(from).length === 0) return;
+    if (easeMs <= 0 || Object.keys(from).length === 0) return;
     setSiblingEase(from);
     if (siblingEaseTimerRef.current !== null) window.clearTimeout(siblingEaseTimerRef.current);
     siblingEaseTimerRef.current = window.setTimeout(() => {
       siblingEaseTimerRef.current = null;
       setSiblingEase(null);
-    }, REFLOW_EASE_MS);
-  }, []);
+    }, easeMs);
+  }, [easeMs]);
 
   const easeContentDuringResize = useCallback(
     (instanceId: string, fromColumnSpan: number, fromRowSpan: number) => {
-      if (CROSSING_EASE_MS <= 0) return;
+      if (easeMs <= 0) return;
       setContentEasing({ instanceId, fromColumnSpan, fromRowSpan });
       if (contentEaseTimerRef.current !== null) window.clearTimeout(contentEaseTimerRef.current);
       contentEaseTimerRef.current = window.setTimeout(() => {
         contentEaseTimerRef.current = null;
         setContentEasing(null);
-      }, CROSSING_EASE_MS);
+      }, easeMs);
     },
-    []
+    [easeMs]
   );
   // handleDragMove (below) needs to call resolveDrag, but resolveDrag
   // is declared later in this same component — a plain reference
@@ -6892,6 +6930,18 @@ export function NativePlannerEditor({
   // an ordinary resize-handle drag, an unrelated interaction that
   // doesn't go through visualOffsets/crossingLivePreview at all) —
   // scoped to exactly the ids this specific bug touches.
+  // Everyone the settle is still moving, in BOTH phases - not just the
+  // transition-free first frame suppressTransitionIds covers. A module
+  // released while it visually overlaps the other page is still out of
+  // position for the length of the settle, and needs to keep the
+  // elevation and the layer promotion it had during the drag until it
+  // arrives.
+  const settlingIds = useMemo(() => {
+    if (!settling) return null;
+    const ids = new Set(Object.keys(settling.offsets));
+    return ids.size > 0 ? ids : null;
+  }, [settling]);
+
   const suppressTransitionIds = useMemo(() => {
     const ids = new Set<string>();
     if (settling && settling.phase === "start") {
@@ -6943,6 +6993,48 @@ export function NativePlannerEditor({
         <strong>
           Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
         </strong>
+        {/* Live control over how long every crossing animation takes.
+            Every animation bug in this area was found by slowing it
+            down and watching one, and rebuilding between values loses
+            the drag you were in the middle of - so it is a slider
+            rather than a constant to edit.
+
+            Placed BEFORE the Reset button deliberately: that one owns
+            marginLeft:auto, so anything after it lands in the header's
+            right-hand group, and this header is nowrap - a control
+            there gets crushed or pushed off the right edge. Same
+            lesson the anchor toggle taught before it was deleted.
+
+            0 disables the animation entirely, which is a genuinely
+            useful setting and not just the bottom of the range: it is
+            how the resize behaved before any of this, and the fastest
+            way to tell an animation bug from a layout one. */}
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            fontSize: 12,
+            color: "#bbb",
+          }}
+          title="How long a cross-zone resize and the reflow around it take"
+        >
+          Ease
+          <input
+            type="range"
+            min={0}
+            max={1200}
+            step={50}
+            value={easeMs}
+            onChange={(event) => setEaseMs(Number(event.target.value))}
+            style={{ width: 110, cursor: "pointer" }}
+          />
+          <span style={{ minWidth: 46, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#ddd" }}>
+            {easeMs}ms
+          </span>
+        </label>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
             the pdf." Scoped to the sidebar column and the below-hourly-
@@ -7104,6 +7196,8 @@ export function NativePlannerEditor({
                     visualOffsets={visualOffsets}
                     draggedAnchorPx={draggedAnchorPx}
                     suppressTransitionIds={suppressTransitionIds}
+                    settlingIds={settlingIds}
+                    easeMs={easeMs}
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
