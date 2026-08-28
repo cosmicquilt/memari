@@ -4512,6 +4512,35 @@ export function NativePlannerEditor({
   // commit, which would let the content render once at the target size
   // before freezing - a single-frame flash of the exact artefact this
   // exists to remove.
+  // The same thing for SIBLINGS a reflow is resizing. They need it for
+  // the same reason the dragged module does and could not previously
+  // have it: their "am I easing?" was derived from whether a crossing
+  // was currently active, which stops being true at exactly the moment
+  // the ease begins. When a crossing ends their overrides vanish in one
+  // frame, so the box eases back down while the content re-renders at
+  // the committed size immediately - and since the content's own border
+  // is the visible edge, the module appears to snap to its final size
+  // while the box animates invisibly behind it. Reported dragging Notes
+  // out of the side column and back: the box above it adjusted
+  // instantly instead of animating.
+  //
+  // Keyed by id, holding the spans each sibling was last RENDERED at,
+  // so the content can go on being drawn at the larger of the two for
+  // the length of the ease.
+  const [siblingEase, setSiblingEase] = useState<Record<string, { columnSpan: number; rowSpan: number }> | null>(
+    null
+  );
+  const siblingEaseTimerRef = useRef<number | null>(null);
+  const easeSiblingsDuringResize = useCallback((from: Record<string, { columnSpan: number; rowSpan: number }>) => {
+    if (CROSSING_EASE_MS <= 0 || Object.keys(from).length === 0) return;
+    setSiblingEase(from);
+    if (siblingEaseTimerRef.current !== null) window.clearTimeout(siblingEaseTimerRef.current);
+    siblingEaseTimerRef.current = window.setTimeout(() => {
+      siblingEaseTimerRef.current = null;
+      setSiblingEase(null);
+    }, REFLOW_EASE_MS);
+  }, []);
+
   const easeContentDuringResize = useCallback(
     (instanceId: string, fromColumnSpan: number, fromRowSpan: number) => {
       if (CROSSING_EASE_MS <= 0) return;
@@ -4626,6 +4655,11 @@ export function NativePlannerEditor({
       contentEaseTimerRef.current = null;
     }
     setContentEasing(null);
+    if (siblingEaseTimerRef.current !== null) {
+      window.clearTimeout(siblingEaseTimerRef.current);
+      siblingEaseTimerRef.current = null;
+    }
+    setSiblingEase(null);
     setConfirmedCrossingPreview(null);
     setLastOwnColumnRow(null);
     // Unconditional, not just for a palette drag specifically — cheap
@@ -4827,6 +4861,21 @@ export function NativePlannerEditor({
           const shownRowSpan = holdsThisDrag ? held.preview.effectiveRowSpan : rawPreview.current.rowSpan;
           const shownSpans = `${shownColumnSpan}x${shownRowSpan}`;
           const nextSpans = `${rawPreview.effectiveColumnSpan}x${rawPreview.effectiveRowSpan}`;
+          // The spans each resizing sibling is on screen at right now,
+          // taken from the reflow currently being rendered. Their
+          // columnSpan never changes in a reflow, only their height, so
+          // it comes from the committed placement. Captured here rather
+          // than derived later because the reflow that describes it is
+          // about to be replaced.
+          const siblingSpansShown: Record<string, { columnSpan: number; rowSpan: number }> = {};
+          if (held && holdsThisDrag) {
+            for (const move of held.preview.reflow) {
+              if (move.rowSpan === undefined) continue;
+              const committed = placements[move.id];
+              if (!committed) continue;
+              siblingSpansShown[move.id] = { columnSpan: committed.columnSpan, rowSpan: move.rowSpan };
+            }
+          }
           if (!holdsThisDrag || held.zoneKey === rawPreview.zoneKey) {
             // First acquisition of the gesture, or a refresh of the zone
             // already held. Refreshing has to stay immediate: it is what
@@ -4834,7 +4883,10 @@ export function NativePlannerEditor({
             // pointer within a zone.
             pendingZoneRef.current = null;
             pendingZoneTicksRef.current = 0;
-            if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+            if (shownSpans !== nextSpans) {
+              easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+              easeSiblingsDuringResize(siblingSpansShown);
+            }
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
           } else {
             // A different valid zone wants it. Make it ask repeatedly,
@@ -4850,7 +4902,10 @@ export function NativePlannerEditor({
             if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
               pendingZoneRef.current = null;
               pendingZoneTicksRef.current = 0;
-              if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+              if (shownSpans !== nextSpans) {
+              easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+              easeSiblingsDuringResize(siblingSpansShown);
+            }
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
             }
           }
@@ -5047,6 +5102,7 @@ export function NativePlannerEditor({
     },
     [
       easeContentDuringResize,
+      easeSiblingsDuringResize,
       screenPointToPageCell,
       pageGridByPageId,
       instanceIdsByPageId,
@@ -5653,6 +5709,29 @@ export function NativePlannerEditor({
       },
     };
   }, [contentEasing, liveDisplayPlacements]);
+
+  // Content geometry for siblings whose box is still easing. Same rule
+  // as the dragged module's: the larger of what they were rendered at
+  // and what they are becoming, so the box always has something to
+  // clip. Merged UNDER the live crossing values, which are current and
+  // win where both exist - this only has to cover the window after a
+  // crossing ends, when the overrides are gone but the boxes have not
+  // finished moving.
+  const reflowContentAll = useMemo(() => {
+    const live = crossingLivePreview?.reflowContentPlacements ?? null;
+    if (!siblingEase) return live;
+    const out: Record<string, Placement> = {};
+    for (const [id, from] of Object.entries(siblingEase)) {
+      const base = liveDisplayPlacements[id];
+      if (!base) continue;
+      out[id] = {
+        ...base,
+        columnSpan: Math.max(base.columnSpan, from.columnSpan),
+        rowSpan: Math.max(base.rowSpan, from.rowSpan),
+      };
+    }
+    return live ? { ...out, ...live } : out;
+  }, [siblingEase, liveDisplayPlacements, crossingLivePreview]);
 
   // Overlays the dayCount override above onto the one instance it
   // applies to — mirrors liveDisplayPlacements' own "overlay onto the
@@ -7018,7 +7097,7 @@ export function NativePlannerEditor({
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     resizingIds={effectiveResizingIds}
                     easeContent={easeContent}
-                    reflowContent={crossingLivePreview?.reflowContentPlacements ?? null}
+                    reflowContent={reflowContentAll}
                     resizeFrozenSize={effectiveResizeFrozenSize}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
