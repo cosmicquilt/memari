@@ -549,7 +549,7 @@ type PaletteDragPreview = {
 // exists because every animation bug in this area was found by slowing
 // it down and watching, and rebuilding between values loses the drag
 // you were in the middle of.
-const DEFAULT_EASE_MS = 250;
+const DEFAULT_EASE_MS = 400;
 
 const boxResizeTransition = (easeMs: number) =>
   easeMs > 0
