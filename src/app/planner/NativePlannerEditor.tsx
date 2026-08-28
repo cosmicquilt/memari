@@ -4867,15 +4867,32 @@ export function NativePlannerEditor({
           // it comes from the committed placement. Captured here rather
           // than derived later because the reflow that describes it is
           // about to be replaced.
-          const siblingSpansShown: Record<string, { columnSpan: number; rowSpan: number }> = {};
-          if (held && holdsThisDrag) {
-            for (const move of held.preview.reflow) {
+          const siblingSpansOf = (reflow: { id: string; rowStart: number; rowSpan?: number }[]) => {
+            const out: Record<string, { columnSpan: number; rowSpan: number }> = {};
+            for (const move of reflow) {
               if (move.rowSpan === undefined) continue;
               const committed = placements[move.id];
               if (!committed) continue;
-              siblingSpansShown[move.id] = { columnSpan: committed.columnSpan, rowSpan: move.rowSpan };
+              out[move.id] = { columnSpan: committed.columnSpan, rowSpan: move.rowSpan };
             }
-          }
+            return out;
+          };
+          const siblingSpansKey = (spans: Record<string, { columnSpan: number; rowSpan: number }>) =>
+            Object.keys(spans)
+              .sort()
+              .map((k) => `${k}:${spans[k].columnSpan}x${spans[k].rowSpan}`)
+              .join("|");
+          const siblingSpansShown = held && holdsThisDrag ? siblingSpansOf(held.preview.reflow) : {};
+          const siblingSpansNext = siblingSpansOf(rawPreview.reflow);
+          // Armed on the SIBLINGS' own spans changing, independently of
+          // the dragged module's. Tying it to the dragged module covered
+          // a crossing, where both change together, but not a reflow
+          // that resizes a sibling while the dragged module keeps its
+          // size - moving the insert row within one zone changes which
+          // sibling shrinks and by how much, and that sibling needs the
+          // ease just as much. Compared rather than armed every tick, so
+          // this fires when something actually changes.
+          const siblingsResized = siblingSpansKey(siblingSpansShown) !== siblingSpansKey(siblingSpansNext);
           if (!holdsThisDrag || held.zoneKey === rawPreview.zoneKey) {
             // First acquisition of the gesture, or a refresh of the zone
             // already held. Refreshing has to stay immediate: it is what
@@ -4883,10 +4900,8 @@ export function NativePlannerEditor({
             // pointer within a zone.
             pendingZoneRef.current = null;
             pendingZoneTicksRef.current = 0;
-            if (shownSpans !== nextSpans) {
-              easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
-              easeSiblingsDuringResize(siblingSpansShown);
-            }
+            if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+            if (siblingsResized) easeSiblingsDuringResize(siblingSpansShown);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
           } else {
             // A different valid zone wants it. Make it ask repeatedly,
@@ -4902,10 +4917,8 @@ export function NativePlannerEditor({
             if (pendingZoneTicksRef.current >= ZONE_SWITCH_TICKS) {
               pendingZoneRef.current = null;
               pendingZoneTicksRef.current = 0;
-              if (shownSpans !== nextSpans) {
-              easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
-              easeSiblingsDuringResize(siblingSpansShown);
-            }
+              if (shownSpans !== nextSpans) easeContentDuringResize(id, shownColumnSpan, shownRowSpan);
+            if (siblingsResized) easeSiblingsDuringResize(siblingSpansShown);
             confirmedCrossingRef.current = { instanceId: id, zoneKey: rawPreview.zoneKey, preview: rawPreview };
             }
           }
@@ -5739,30 +5752,31 @@ export function NativePlannerEditor({
   // this only needs to be true for the couple of frames a crossing drag
   // is actually in progress, never written back to moduleLookup itself.
   const liveModuleLookup = useMemo(() => {
-    if (!crossingLivePreview || crossingLivePreview.dayCountOverride === null) return moduleLookup;
-    const info = moduleLookup.get(crossingLivePreview.draggedId);
-    if (!info) return moduleLookup;
-    // While the box is easing, this has to describe the geometry the
-    // content is actually drawn at - the LARGER of the two sizes - not
-    // the target. A todo-checklist draws exactly dayCount day-columns
-    // whatever pixel width it is given, so pairing the target dayCount
-    // with the larger geometry builds a freshly-sized grid stretched
-    // across the old width and then trims it, instead of sweeping the
-    // old grid away. Reported dragging a todo from the right page's
-    // bottom zone to the left page's, where the width shrinks 4 columns
-    // to 3: no sweep, just a restretched grid.
-    //
-    // Expanding, the larger size IS the target, so this changes nothing
-    // there - which is why only the shrink direction was wrong.
+    // Keyed on the ease as well as the crossing, not the crossing
+    // alone. Returning to the zone a module is COMMITTED to is not a
+    // crossing, so crossingLivePreview is null there - but the box is
+    // still easing back to that zone's size, and the content is still
+    // being drawn at the larger of the two. Gating on the crossing left
+    // dayCount at its committed value while the geometry was the larger
+    // one, which is the same stretched-then-trimmed grid the target
+    // dayCount produced before, arriving by a different route.
+    // Reported dragging a todo 3 columns to 4 and back to 3 without
+    // releasing: the second shrink did not sweep.
+    const draggedId = crossingLivePreview?.draggedId ?? easeContent?.instanceId ?? null;
+    if (!draggedId) return moduleLookup;
+    const info = moduleLookup.get(draggedId);
+    if (!info || info.slug !== "todo-checklist") return moduleLookup;
+    // A todo-checklist draws exactly dayCount day-columns whatever pixel
+    // width it is given, so this has to describe the geometry the
+    // content is actually drawn at. While easing that is the larger of
+    // the two sizes; otherwise it is the live crossing's own target.
     const dayCount =
-      easeContent?.instanceId === crossingLivePreview.draggedId
+      easeContent?.instanceId === draggedId
         ? easeContent.placement.columnSpan
-        : crossingLivePreview.dayCountOverride;
+        : crossingLivePreview?.dayCountOverride;
+    if (dayCount == null) return moduleLookup;
     const next = new Map(moduleLookup);
-    next.set(crossingLivePreview.draggedId, {
-      ...info,
-      propValues: { ...info.propValues, dayCount },
-    });
+    next.set(draggedId, { ...info, propValues: { ...info.propValues, dayCount } });
     return next;
   }, [moduleLookup, crossingLivePreview, easeContent]);
 
