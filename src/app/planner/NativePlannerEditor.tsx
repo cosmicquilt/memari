@@ -120,6 +120,7 @@ import {
   resizeAdjacentModules,
   resizeStackFromBottom,
   addPaletteModuleAt,
+  restoreModulePlacements,
   deleteModuleWithGravity,
   updateModuleConfig,
   resetPlannerToTemplate,
@@ -444,6 +445,10 @@ function cascadeStackSpans(originalSpans: number[], minSpans: number[], deltaRow
 }
 
 type Placement = { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number };
+// One undo step: where every real module sat, and on which page. See
+// the history state's own comment for why geometry alone is enough to
+// reverse a move or a resize, and why adds and deletes are not in here.
+type GeometrySnapshot = Array<{ id: string; pageId: string } & Placement>;
 type ModuleInfo = {
   pageId: string;
   locked: boolean;
@@ -3191,6 +3196,61 @@ function PaletteCollapse({
 // than swapping between two different characters (▸/▾), so the state
 // change animates instead of jumping. fontSize 25 (2.5x the original
 // 10) read as too large once seen live; pulled back to 16.
+// Undo/redo, icon only. A curved arrow over a baseline, mirrored for
+// redo - the shape every editor uses, so it needs no label. Disabled
+// rather than hidden when there is nothing to step to: a control that
+// vanishes makes the toolbar jump, and greyed-out still tells you the
+// feature exists.
+function HistoryButton({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: "undo" | "redo";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const isUndo = direction === "undo";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={isUndo ? "Undo move or resize" : "Redo move or resize"}
+      aria-label={isUndo ? "Undo" : "Redo"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 28,
+        height: 28,
+        flexShrink: 0,
+        padding: 0,
+        borderRadius: 8,
+        border: "1px solid #3a3a3a",
+        background: "#2a2a2a",
+        color: disabled ? "#5a5a5a" : "#ddd",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.55 : 1,
+        transition: "opacity 0.15s ease, color 0.15s ease",
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <g transform={isUndo ? undefined : "translate(24 0) scale(-1 1)"}>
+          <path
+            d="M4 9h10a5 5 0 0 1 0 10h-3"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M8 5 4 9l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+      </svg>
+    </button>
+  );
+}
+
 function PaletteChevron({ open }: { open: boolean }) {
   return (
     <span
@@ -4207,6 +4267,23 @@ export function NativePlannerEditor({
     setPaletteHighlightModules(true);
     setTimeout(() => setPaletteHighlightModules(false), 1400);
   }, [setPaletteOpenAnimated]);
+  // Undo/redo over GEOMETRY only - where modules sit and how big they
+  // are, including the reflow and gravity fill a move or resize sets
+  // off. Every one of those mutations ends as a set of rows with new
+  // placements, so one snapshot of every module's geometry can undo any
+  // of them without needing a bespoke inverse per action.
+  //
+  // Adding and deleting are deliberately NOT undoable, and they CLEAR
+  // the history rather than being recorded in it. A snapshot describes
+  // a set of modules; restoring one after the set has changed would put
+  // siblings back around a module that no longer exists, or leave a
+  // newly added one sitting on top of the space its neighbours just
+  // reclaimed. Refusing is honest; a half-undo that silently overlaps
+  // things is not.
+  const [history, setHistory] = useState<{ past: GeometrySnapshot[]; future: GeometrySnapshot[] }>({
+    past: [],
+    future: [],
+  });
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Which module's own delete button is currently shown — lifted up here
@@ -5787,6 +5864,9 @@ export function NativePlannerEditor({
       if (gestureBlockedByPendingCommit()) return;
       const pageGrid = pageGridByPageId[pageId];
       if (!pageGrid) return;
+      // See the history state's own comment: a snapshot describes a set
+      // of modules, and this changes the set.
+      setHistory({ past: [], future: [] });
       try {
         // See serializeCommit's own comment — guards this against the
         // same race too: adding right after a reposition/resize
@@ -5887,6 +5967,97 @@ export function NativePlannerEditor({
       }
     },
     [pageGridByPageId, placements, serializeCommit, gestureBlockedByPendingCommit]
+  );
+
+  // Current geometry of every real module. The phantom is excluded - it
+  // is not a module yet and has no row to restore.
+  const captureGeometry = useCallback((): GeometrySnapshot => {
+    const out: GeometrySnapshot = [];
+    for (const [id, placement] of Object.entries(placements)) {
+      if (id === PHANTOM_ID) continue;
+      const info = moduleLookup.get(id);
+      if (!info) continue;
+      out.push({ id, pageId: info.pageId, ...placement });
+    }
+    return out;
+  }, [placements, moduleLookup]);
+
+  // Called immediately BEFORE a geometry commit, capturing the state
+  // being left. Clears the redo stack, since branching off a redone
+  // state makes the old future unreachable.
+  const recordGeometry = useCallback(() => {
+    const snapshot = captureGeometry();
+    setHistory((prev) => ({ past: [...prev.past, snapshot].slice(-40), future: [] }));
+  }, [captureGeometry]);
+
+  // Add and delete change WHICH modules exist, which every snapshot
+  // assumes is fixed. See the history state's own comment.
+  const clearGeometryHistory = useCallback(() => setHistory({ past: [], future: [] }), []);
+
+  const applyRestored = useCallback(
+    (rows: Awaited<ReturnType<typeof restoreModulePlacements>>) => {
+      setPlacements((prev) => {
+        const next = { ...prev };
+        for (const row of rows) {
+          next[row.id] = {
+            columnStart: row.columnStart,
+            rowStart: row.rowStart,
+            columnSpan: row.columnSpan,
+            rowSpan: row.rowSpan,
+          };
+        }
+        return next;
+      });
+      setModuleLookup((prev) => {
+        const next = new Map(prev);
+        for (const row of rows) {
+          const before = next.get(row.id);
+          if (!before) continue;
+          const grid = pageGridByPageId[row.pageId];
+          if (!grid) continue;
+          const origin = gridCellToPixels(grid, {
+            columnStart: row.columnStart,
+            rowStart: row.rowStart,
+            columnSpan: row.columnSpan,
+            rowSpan: row.rowSpan,
+          });
+          next.set(row.id, {
+            ...before,
+            pageId: row.pageId,
+            elements: row.elements,
+            originX: origin.x,
+            originY: origin.y,
+          });
+        }
+        return next;
+      });
+    },
+    [pageGridByPageId]
+  );
+
+  const stepHistory = useCallback(
+    async (direction: "undo" | "redo") => {
+      if (gestureBlockedByPendingCommit()) return;
+      const stack = direction === "undo" ? history.past : history.future;
+      const target = stack[stack.length - 1];
+      if (!target) return;
+      const current = captureGeometry();
+      // Moved before the await, not after: the button reads these to
+      // decide whether it is enabled, and a slow round trip should not
+      // leave it looking clickable for a step already taken.
+      setHistory((prev) =>
+        direction === "undo"
+          ? { past: prev.past.slice(0, -1), future: [...prev.future, current] }
+          : { past: [...prev.past, current], future: prev.future.slice(0, -1) }
+      );
+      try {
+        const rows = await serializeCommit(() => restoreModulePlacements(target));
+        applyRestored(rows);
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : "Could not undo");
+      }
+    },
+    [history, captureGeometry, applyRestored, serializeCommit, gestureBlockedByPendingCommit]
   );
 
   const handleDragEnd = useCallback(
@@ -6147,6 +6318,7 @@ export function NativePlannerEditor({
         // already does (fresh server-rendered elements, not just a
         // position) — overwriting the optimistic patch above with the
         // server's own authoritative render once it lands.
+        recordGeometry();
         serializeCommit(() => moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart))
           .then((results) => {
             setModuleLookup((prev) => {
@@ -6197,6 +6369,7 @@ export function NativePlannerEditor({
     },
     [
       placements,
+      recordGeometry,
       removePhantom,
       resolveDrag,
       scale,
@@ -6394,6 +6567,7 @@ export function NativePlannerEditor({
         setResizeDrag(null);
         return;
       }
+      recordGeometry();
       // Keeps the live (already-correct-looking, snapped) preview showing
       // for the whole request instead of dropping back to the old
       // pre-drag placements while it's in flight — handleResizeAdjacent
@@ -6402,7 +6576,7 @@ export function NativePlannerEditor({
       // has to be synchronous with the commit, not a later microtask).
       handleResizeAdjacent(pair.pageId, pair.topId, pair.bottomId, deltaRows);
     },
-    [handleResizeAdjacent]
+    [handleResizeAdjacent, recordGeometry]
   );
 
   // Cascading resize from a stack's own outer bottom edge — see
@@ -6503,11 +6677,12 @@ export function NativePlannerEditor({
         setStackResizeDrag(null);
         return;
       }
+      recordGeometry();
       // handleStackResizeAdjacent itself clears stackResizeDrag now — see
       // its own comment.
       handleStackResizeAdjacent(stackBottom.key, stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
-    [handleStackResizeAdjacent]
+    [handleStackResizeAdjacent, recordGeometry]
   );
 
   // Hover-delete (NativeModule's own × button). Removes the module and
@@ -6532,6 +6707,9 @@ export function NativePlannerEditor({
       // a resize that hasn't landed yet), which this delete would then be
       // racing.
       if (gestureBlockedByPendingCommit()) return;
+      // See the history state's own comment: a snapshot describes a set
+      // of modules, and this changes the set.
+      clearGeometryHistory();
       try {
         const result = await serializeCommit(() => deleteModuleWithGravity(instanceId));
         // FLIP settle for the gravity-shifted siblings — reuses the exact
@@ -6592,6 +6770,7 @@ export function NativePlannerEditor({
       }
     },
     [
+      clearGeometryHistory,
       serializeCommit,
       gestureBlockedByPendingCommit,
       recomputeHoverAfterLayoutChange,
@@ -6887,6 +7066,14 @@ export function NativePlannerEditor({
         <strong>
           Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
         </strong>
+        {/* Icon only, per request. Placed BEFORE the Reset button for
+            the same reason everything else here is: that one owns
+            marginLeft:auto, and this header is nowrap, so anything
+            after it gets crushed off the right edge. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <HistoryButton direction="undo" disabled={history.past.length === 0} onClick={() => void stepHistory("undo")} />
+          <HistoryButton direction="redo" disabled={history.future.length === 0} onClick={() => void stepHistory("redo")} />
+        </div>
         {/* Live control over how long every crossing animation takes.
             Every animation bug in this area was found by slowing it
             down and watching one, and rebuilding between values loses

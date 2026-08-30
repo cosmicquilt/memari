@@ -2665,3 +2665,96 @@ export async function savePageElements(
     }),
   ]);
 }
+
+// Bulk placement restore, for undo/redo.
+//
+// Every geometry mutation in this editor - a move, a resize, and the
+// reflow or gravity fill each one triggers - ends as a set of rows with
+// new columnStart/rowStart/columnSpan/rowSpan, and sometimes a new
+// pageId. So undo does not need an inverse for each of those actions
+// individually; it needs one action that can put a set of rows back
+// where they were. The client keeps snapshots and hands one back.
+//
+// Deliberately does NOT resolve, reflow or clamp. Every other write in
+// this file re-derives placement server-side because the client's
+// request is a guess about where something should end up. This one is
+// not a guess - it is a state this planner was actually in, produced by
+// those same resolutions - so re-resolving it would be re-deciding an
+// already-decided question, and could land somewhere the user never saw.
+export async function restoreModulePlacements(
+  entries: Array<{
+    id: string;
+    pageId: string;
+    columnStart: number;
+    rowStart: number;
+    columnSpan: number;
+    rowSpan: number;
+  }>
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  if (entries.length === 0) return [];
+
+  // One ownership check covering every id at once - anything not inside
+  // a planner this user owns simply is not returned, and the count
+  // check below turns that into a refusal rather than a partial write.
+  const owned = await prisma.moduleInstance.findMany({
+    where: { id: { in: entries.map((e) => e.id) }, page: { planner: { ownerId: userId } } },
+    include: { moduleType: true, page: { include: { planner: true } } },
+  });
+  if (owned.length !== entries.length) {
+    throw new Error("Module instances not found or not owned by this user");
+  }
+  const ownedById = new Map(owned.map((mi) => [mi.id, mi]));
+
+  // Target pages must belong to the same planner too - pageId is
+  // caller-supplied and a restore can legitimately move a module back
+  // to the page it came from, so it cannot just be trusted.
+  const plannerId = owned[0].page.plannerId;
+  const pages = await prisma.page.findMany({
+    where: { plannerId, planner: { ownerId: userId } },
+  });
+  const pageById = new Map(pages.map((p) => [p.id, p]));
+  for (const entry of entries) {
+    if (!pageById.has(entry.pageId)) {
+      throw new Error("Target page not found or not owned by this user");
+    }
+  }
+
+  const updated = await prisma.$transaction(
+    entries.map((entry) =>
+      prisma.moduleInstance.update({
+        where: { id: entry.id },
+        data: {
+          pageId: entry.pageId,
+          columnStart: entry.columnStart,
+          rowStart: entry.rowStart,
+          columnSpan: entry.columnSpan,
+          rowSpan: entry.rowSpan,
+        },
+      })
+    )
+  );
+
+  const fontFamily = fontFamilyFromTheme(owned[0].page.planner.theme);
+  return updated.map((row) => {
+    const page = pageById.get(row.pageId);
+    const mi = ownedById.get(row.id);
+    return {
+      id: row.id,
+      pageId: row.pageId,
+      columnStart: row.columnStart as number,
+      rowStart: row.rowStart as number,
+      columnSpan: row.columnSpan,
+      rowSpan: row.rowSpan,
+      elements: renderInstanceElements(
+        row,
+        mi?.moduleType.slug ?? "",
+        pageGridFor(page!),
+        fontFamily
+      ),
+    };
+  });
+}
