@@ -934,7 +934,7 @@ export async function addPaletteModuleAt(
   // loser instead of silently allowing both writes; the client already
   // guards against the same-tab case (see PlannerEditorCanvas's
   // addInFlight ref), this is the backstop for anything that gets past it.
-  const { page, created } = await prisma.$transaction(
+  const { page, created, reflowedRows } = await prisma.$transaction(
     async (tx) => {
       const page = await tx.page.findFirst({
         where: { id: pageId, planner: { ownerId: userId } },
@@ -1246,14 +1246,19 @@ export async function addPaletteModuleAt(
         defaultConfig.templateHeading = defaultConfig.heading;
       }
 
+      // Rows are kept, not discarded. The caller has to be told what
+      // MOVED as well as what was created - see the return value.
+      const reflowedRows: Awaited<ReturnType<typeof tx.moduleInstance.update>>[] = [];
       for (const move of paletteReflow) {
-        await tx.moduleInstance.update({
-          where: { id: move.id },
-          data:
-            move.rowSpan !== undefined
-              ? { rowStart: move.rowStart, rowSpan: move.rowSpan }
-              : { rowStart: move.rowStart },
-        });
+        reflowedRows.push(
+          await tx.moduleInstance.update({
+            where: { id: move.id },
+            data:
+              move.rowSpan !== undefined
+                ? { rowStart: move.rowStart, rowSpan: move.rowSpan }
+                : { rowStart: move.rowStart },
+          })
+        );
       }
       const created = await tx.moduleInstance.create({
         data: {
@@ -1268,13 +1273,14 @@ export async function addPaletteModuleAt(
         },
       });
 
-      return { page, moduleType, effectiveColumnSpan, created };
+      return { page, moduleType, effectiveColumnSpan, created, reflowedRows };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
 
   const pageGrid = pageGridFor(page);
-  const element = renderInstance(created, moduleTypeSlug, pageGrid, fontFamilyFromTheme(page.planner.theme));
+  const paletteFontFamily = fontFamilyFromTheme(page.planner.theme);
+  const element = renderInstance(created, moduleTypeSlug, pageGrid, paletteFontFamily);
 
   return {
     instanceId: created.id,
@@ -1298,6 +1304,24 @@ export async function addPaletteModuleAt(
     rowSpan: created.rowSpan,
     propValues: created.propValues,
     element,
+    // Everything the drop MOVED, re-rendered at its new geometry, the
+    // same shape moveModuleAcrossZones returns. Without this the caller
+    // applied the new module and nothing else, so siblings stayed where
+    // they were client-side while the new module was drawn in the space
+    // they had just been told to vacate - two modules on one cell, both
+    // painted. Reported as a habit tracker and a to-do "combining into
+    // a hybrid module with both titles overlapping."
+    reflowed: reflowedRows.map((row) => ({
+      id: row.id,
+      rowStart: row.rowStart as number,
+      rowSpan: row.rowSpan,
+      elements: renderInstanceElements(
+        row,
+        page.moduleInstances.find((mi) => mi.id === row.id)?.moduleType.slug ?? moduleTypeSlug,
+        pageGrid,
+        paletteFontFamily
+      ),
+    })),
   };
 }
 

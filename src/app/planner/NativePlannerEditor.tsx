@@ -5784,15 +5784,41 @@ export function NativePlannerEditor({
           columnSpan: result.columnSpan,
           rowSpan: result.rowSpan,
         });
-        setPlacements((prev) => ({
-          ...prev,
-          [result.instanceId]: {
-            columnStart: finalColumnStart,
-            rowStart: finalRowStart,
-            columnSpan: result.columnSpan,
-            rowSpan: result.rowSpan,
-          },
-        }));
+        // Origins for the moved siblings, computed here rather than
+        // inside the updater below - reflow never changes a column, so
+        // the pre-move placement is enough to derive the new box.
+        const movedOrigins = new Map<string, { x: number; y: number }>();
+        for (const moved of result.reflowed) {
+          const prevPlacement = placements[moved.id];
+          if (!prevPlacement) continue;
+          movedOrigins.set(
+            moved.id,
+            gridCellToPixels(pageGrid, { ...prevPlacement, rowStart: moved.rowStart, rowSpan: moved.rowSpan })
+          );
+        }
+        // The new module AND everything the drop moved to admit it.
+        // Applying only the former left siblings where they were while
+        // the new module was drawn in the space they had just been told
+        // to vacate - two modules on one cell, both painted. Reported
+        // as a habit tracker and a to-do "combining into a hybrid
+        // module with both titles overlapping."
+        setPlacements((prev) => {
+          const next: Record<string, Placement> = {
+            ...prev,
+            [result.instanceId]: {
+              columnStart: finalColumnStart,
+              rowStart: finalRowStart,
+              columnSpan: result.columnSpan,
+              rowSpan: result.rowSpan,
+            },
+          };
+          for (const moved of result.reflowed) {
+            const before = next[moved.id];
+            if (!before) continue;
+            next[moved.id] = { ...before, rowStart: moved.rowStart, rowSpan: moved.rowSpan };
+          }
+          return next;
+        });
         setModuleLookup((prev) => {
           const next = new Map(prev);
           const propValues = (result.propValues as Record<string, unknown>) ?? {};
@@ -5805,6 +5831,21 @@ export function NativePlannerEditor({
             slug: moduleTypeSlug,
             propValues,
           });
+          // Reflowed siblings need their re-rendered content and a new
+          // origin too - their geometry changed, so content generated
+          // for the old one would be drawn at the wrong offset inside
+          // the new box.
+          for (const moved of result.reflowed) {
+            const before = next.get(moved.id);
+            const movedOrigin = movedOrigins.get(moved.id);
+            if (!before || !movedOrigin) continue;
+            next.set(moved.id, {
+              ...before,
+              elements: moved.elements,
+              originX: movedOrigin.x,
+              originY: movedOrigin.y,
+            });
+          }
           return next;
         });
         // Mount fade-in (see NativeModule's own justAdded comment) —
@@ -5827,7 +5868,7 @@ export function NativePlannerEditor({
         setSaveError(err instanceof Error ? err.message : String(err));
       }
     },
-    [pageGridByPageId, serializeCommit, gestureBlockedByPendingCommit]
+    [pageGridByPageId, placements, serializeCommit, gestureBlockedByPendingCommit]
   );
 
   const handleDragEnd = useCallback(
