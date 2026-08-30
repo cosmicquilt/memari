@@ -108,8 +108,6 @@ import {
   pixelsToContainingCell,
   clampGridPlacement,
   resolveModulePlacement,
-  findNearestFreeCell,
-  rectsOverlap,
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
   canCrossZones,
@@ -363,6 +361,15 @@ const PANEL_FAINT = "#9a9a9a";
 const PANEL_FILL = "#f6f6f6";
 const PANEL_FILL_HOVER = "#ededed";
 const PALETTE_ID_PREFIX = "palette:";
+// The provisional instance a palette drag becomes once the pointer
+// reaches a page. Not a real module until the drop commits, but it
+// lives in `placements` and `moduleLookup` for the duration of the
+// gesture, which are both real state - so every memo downstream treats
+// it as an ordinary module without knowing otherwise, and the whole
+// resolveDrag machinery (live resize, zone crossing, reflow, gravity,
+// the eases) applies to it for free. That is the point: there is one
+// drag path now, not two.
+const PHANTOM_ID = "__palette_phantom__";
 
 // Minimum resize size for a module, in grid rows — MIN_ROW_SPAN (2) for
 // most types, matching the sidebar's own labeled-box (a single-row box
@@ -513,22 +520,6 @@ type StackBottom = {
   followerIds: string[];
 };
 
-// Live state for a palette-item drag-to-add (see PALETTE_MODULE_TYPES'
-// own comment and the handleDragMove branch that computes this) — the
-// grid cell it would land in *right now* if dropped, recomputed on
-// every pointer move the same way a reposition's own live reflow
-// preview is. `overlapping` true means findNearestFreeCell couldn't
-// find genuinely free room for it (the page is full for this span) —
-// the preview box still renders, just styled to read as "won't work
-// here," and handleDragEnd refuses to commit it.
-type PaletteDragPreview = {
-  pageId: string;
-  columnStart: number;
-  rowStart: number;
-  columnSpan: number;
-  rowSpan: number;
-  overlapping: boolean;
-};
 
 // How long the dragged module's box takes to ease between zone shapes,
 // and the single clock everything that moves with it runs on.
@@ -1363,7 +1354,6 @@ function NativePage({
   hoveredInstanceId,
   onHoverStart,
   onHoverEnd,
-  paletteDragPreview,
   scale,
   fontFamily,
 }: {
@@ -1447,7 +1437,6 @@ function NativePage({
   // Non-null while a palette item is being dragged over *this* page
   // specifically (see PaletteDragPreview's own type comment above) —
   // drives the live, grid-snapped preview box below, PaletteDropPreview.
-  paletteDragPreview: PaletteDragPreview | null;
   scale: number;
   // Page Settings' current font choice, resolved to a real CSS
   // font-family string — threaded down so this page's own live-preview
@@ -1833,9 +1822,6 @@ function NativePage({
           that's determined). Grid-snapped, recomputed on every pointer
           move, same "show it before you commit to it" idea as
           resizePairs/stackBottoms' own live previews above. */}
-      {paletteDragPreview && paletteDragPreview.pageId === page.pageId && (
-        <PaletteDropPreview pageGrid={page.pageGrid} preview={paletteDragPreview} />
-      )}
     </div>
   );
 }
@@ -2592,34 +2578,6 @@ function SectionAddButton({
 // tinted red and non-interactive when overlapping is true (the page has
 // no free room for this span; dropping here won't commit anything —
 // see handleDragEnd's own check).
-function PaletteDropPreview({ pageGrid, preview }: { pageGrid: PageGrid; preview: PaletteDragPreview }) {
-  const rect = useMemo(
-    () =>
-      gridCellToPixels(pageGrid, {
-        columnStart: preview.columnStart,
-        rowStart: preview.rowStart,
-        columnSpan: preview.columnSpan,
-        rowSpan: preview.rowSpan,
-      }),
-    [pageGrid, preview.columnStart, preview.rowStart, preview.columnSpan, preview.rowSpan]
-  );
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: rect.x,
-        top: rect.y,
-        width: rect.width,
-        height: rect.height,
-        border: preview.overlapping ? "2px dashed rgba(220, 90, 90, 0.7)" : "2px dashed rgba(120, 130, 255, 0.7)",
-        background: preview.overlapping ? "rgba(220, 90, 90, 0.08)" : "rgba(120, 130, 255, 0.1)",
-        borderRadius: 8,
-        pointerEvents: "none",
-        zIndex: 8,
-      }}
-    />
-  );
-}
 
 // One draggable card in ModulePalette below. Its own transform tracks
 // the raw pointer delta directly, *not* divided by scale — unlike a
@@ -2777,6 +2735,7 @@ function ModulePalette({
   activeDelta,
   open,
   highlightModules,
+  paletteGestureActive,
   pageSettings,
   pageGrid,
   fontFamily,
@@ -2784,6 +2743,11 @@ function ModulePalette({
   activeId: string | null;
   activeDelta: { x: number; y: number };
   open: boolean;
+  // True for the whole of a palette drag, including after it has handed
+  // over to a phantom and activeId no longer names a palette card. The
+  // panel's scroll guard below has to stay off for the entire gesture,
+  // not just its first few frames.
+  paletteGestureActive: boolean;
   // A "+" zone was clicked and is asking for the module list to be
   // shown and briefly marked. Used to be "side" | "bottom" | null,
   // picking which of two groups to reveal; there is only one group now,
@@ -2844,7 +2808,7 @@ function ModulePalette({
   // treating the gesture as a scroll. Reported directly: "my mouse got
   // stuck scrolling to the side within the side nav." The panel only
   // needs to scroll while nothing is being dragged out of it.
-  const isDraggingPaletteCard = activeId?.startsWith(PALETTE_ID_PREFIX) ?? false;
+  const isDraggingPaletteCard = paletteGestureActive || (activeId?.startsWith(PALETTE_ID_PREFIX) ?? false);
 
   const groupButton = (label: string, isOpen: boolean, onClick: () => void) => (
     <button
@@ -2889,36 +2853,6 @@ function ModulePalette({
         color: PANEL_TEXT,
       }}
     >
-      {groupButton("Modules", modulesOpen, () => setModulesOpen((v) => !v))}
-      <PaletteCollapse open={modulesOpen} allowOverflow={isDraggingPaletteCard}>
-        <div
-          ref={modulesRef}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            paddingLeft: 14,
-            paddingTop: 4,
-            borderRadius: 12,
-            background: highlightModules ? "rgba(0, 0, 0, 0.05)" : "transparent",
-            transition: "background 0.4s ease",
-          }}
-        >
-          {PALETTE_MODULE_TYPES.map((m) => (
-            <PaletteCard
-              key={m.slug}
-              slug={m.slug}
-              label={m.label}
-              previewProps={m.previewProps}
-              pageGrid={pageGrid}
-              fontFamily={fontFamily}
-              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-              dragOffset={activeDelta}
-            />
-          ))}
-        </div>
-      </PaletteCollapse>
-
       {groupButton("Page Settings", pageSettingsOpen, () => setPageSettingsOpen((v) => !v))}
       <PaletteCollapse open={pageSettingsOpen} allowOverflow={false}>
         {/* Font and Hours sit directly here now rather than behind a
@@ -2946,6 +2880,36 @@ function ModulePalette({
               weekStartDay={pageSettings.weekStartDay}
             />
           </div>
+        </div>
+      </PaletteCollapse>
+
+      {groupButton("Modules", modulesOpen, () => setModulesOpen((v) => !v))}
+      <PaletteCollapse open={modulesOpen} allowOverflow={isDraggingPaletteCard}>
+        <div
+          ref={modulesRef}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            paddingLeft: 14,
+            paddingTop: 4,
+            borderRadius: 12,
+            background: highlightModules ? "rgba(0, 0, 0, 0.05)" : "transparent",
+            transition: "background 0.4s ease",
+          }}
+        >
+          {PALETTE_MODULE_TYPES.map((m) => (
+            <PaletteCard
+              key={m.slug}
+              slug={m.slug}
+              label={m.label}
+              previewProps={m.previewProps}
+              pageGrid={pageGrid}
+              fontFamily={fontFamily}
+              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+              dragOffset={activeDelta}
+            />
+          ))}
         </div>
       </PaletteCollapse>
     </div>
@@ -4315,7 +4279,28 @@ export function NativePlannerEditor({
   // Live preview state for a palette-item drag (see PaletteDragPreview's
   // own type comment) — null whenever nothing's being dragged from the
   // palette, or the drag isn't currently over any page.
-  const [paletteDrag, setPaletteDrag] = useState<PaletteDragPreview | null>(null);
+  // Which palette slug is currently in flight as a phantom, and a ref
+  // mirroring it so the drag handlers can read it synchronously (they
+  // run before the state they set has been committed).
+  const [phantomSlug, setPhantomSlug] = useState<string | null>(null);
+  const phantomRef = useRef<{ slug: string; pageId: string } | null>(null);
+  const removePhantom = useCallback(() => {
+    if (!phantomRef.current) return;
+    phantomRef.current = null;
+    setPhantomSlug(null);
+    setPlacements((prev) => {
+      if (!(PHANTOM_ID in prev)) return prev;
+      const next = { ...prev };
+      delete next[PHANTOM_ID];
+      return next;
+    });
+    setModuleLookup((prev) => {
+      if (!prev.has(PHANTOM_ID)) return prev;
+      const next = new Map(prev);
+      next.delete(PHANTOM_ID);
+      return next;
+    });
+  }, []);
   // Ids of whatever module(s) were created most recently — drives each
   // one's own mount fade-in (see NativeModule's justAdded comment).
   // Cleared a couple of frames after being set; never meant to hold more
@@ -4576,6 +4561,7 @@ export function NativePlannerEditor({
     // resets both to their "nothing captured yet this gesture" state.
     grabFractionCapturedRef.current = false;
     setGrabFraction(null);
+    removePhantom();
     confirmedCrossingRef.current = null;
     pendingZoneRef.current = null;
     pendingZoneTicksRef.current = 0;
@@ -4594,14 +4580,11 @@ export function NativePlannerEditor({
     // Unconditional, not just for a palette drag specifically — cheap
     // either way, and keeps this in the same "always reset per-drag
     // state on drag-start" shape as settling right below rather than
-    // leaving a stale preview around on the off chance a previous drag
-    // ended in some way that skipped clearing it.
-    setPaletteDrag(null);
     // Starting a new drag mid-settle (rare — would need to happen within
     // the ~150ms settle window) just cancels the old settle in place
     // rather than trying to run two independently-timed settles at once.
     setSettling(null);
-  }, []);
+  }, [removePhantom]);
 
   // Shared zone-detection: given a target column/row and the page's own
   // hourly-grid-core placement, figure out which zone (bottom vs side)
@@ -4700,7 +4683,12 @@ export function NativePlannerEditor({
           // here keeps "grab" byte-identical to its shipped behavior.
         }
       }
-      const id = String(event.active.id);
+      // Once a phantom exists this IS an ordinary module drag, so it
+      // takes the branch below under the phantom's own id. dnd-kit's
+      // active id stays the palette card's throughout - only this
+      // file's notion of "what is being dragged" changes.
+      const rawId = String(event.active.id);
+      const id = phantomRef.current ? PHANTOM_ID : rawId;
       if (!id.startsWith(PALETTE_ID_PREFIX)) {
         // See confirmedCrossingRef's own comment (near
         // readPointerDelta) — debounces a single-event
@@ -4890,167 +4878,71 @@ export function NativePlannerEditor({
         }
         return;
       }
-      const slug = id.slice(PALETTE_ID_PREFIX.length);
+      // No phantom yet: this is the window between picking a card up
+      // and the pointer first reaching a page. Create one the moment it
+      // does, and every tick after this takes the branch above.
+      //
+      // What this replaces was ~150 lines re-deriving addPaletteModuleAt's
+      // zone resolution, effective spans and shrink-to-fit client-side,
+      // hand-synced with the server copy, ending in a dashed rectangle
+      // and an overlap test that refused the drop rather than making
+      // room. A palette drop consequently behaved nothing like dragging
+      // the same module once it was on the page. All of it is gone.
+      const slug = rawId.slice(PALETTE_ID_PREFIX.length);
       const meta = PALETTE_MODULE_TYPES.find((m) => m.slug === slug);
-      const rect = event.active.rect.current.translated;
-      if (!meta || !rect) {
-        setPaletteDrag(null);
-        return;
-      }
-      const target = screenPointToPageCell(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      if (!target) {
-        setPaletteDrag(null);
-        return;
-      }
-      const pageGrid = pageGridByPageId[target.pageId];
-      if (!pageGrid) return;
-      // Mirrors addPaletteModuleAt's own identical lookup (actions.ts)
-      // — see that copy's comment for the full reasoning. Kept in sync
-      // by hand rather than shared, the same "use server" boundary
-      // constraint every other duplicated constant/helper in this file
-      // already has to live with.
-      const hourlyGridId = (instanceIdsByPageId[target.pageId] ?? []).find(
-        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
-      );
-      const hourlyGridPlacement = hourlyGridId ? placements[hourlyGridId] : undefined;
-      // todo-checklist/habit-tracker size *and position* themselves to
-      // match whichever page they're being dragged over — see
-      // addPaletteModuleAt's own identical comment for the full
-      // reasoning. Without this, the live preview showed a fixed 4-wide
-      // box starting at column 0 regardless of which page it was over
-      // — reported directly: "habit tracker doesn't work on left side
-      // its to big and the highlighted snap box doesn't match the side
-      // it (3 wide on left, 4 wide on right)" — 1 column too wide *and*
-      // wrongly positioned on the left (3-day) page, where the hourly
-      // grid itself starts at column 1, not 0 (column 0 is the
-      // sidebar), so it always collided with sidebar content there
-      // regardless of where the cursor actually was.
-      //
-      // That's the "bottom zone" (droppedInBottomZone below — the
-      // cursor's own column falls inside the hourly grid's own column
-      // range). Mirrors addPaletteModuleAt's identical branch
-      // (actions.ts) for the other case — a drop outside that range (in
-      // practice, only ever column 0 on the left page) instead previews
-      // as a single sidebar-width column, requested directly once that
-      // zone's own compact renderers existed to receive a to-do
-      // checklist/habit tracker.
-      //
-      // labeled-box joined this set too — "the notes in the bottom
-      // modules section should fill the containers width (3 on left, 4
-      // on right)" — but only for the bottom-zone branch; canSideZone
-      // below is deliberately narrower (excludes labeled-box) so a drop
-      // *outside* the bottom zone leaves it on its own long-established
-      // side-zone preview path untouched, same as addPaletteModuleAt's
-      // own identical split.
-      const zone = resolveZoneForColumn(hourlyGridPlacement, slug, target.columnStart, target.rowStart);
-      let effectiveColumnStart = target.columnStart;
-      let effectiveColumnSpan = meta.defaultColumnSpan;
-      let droppedInBottomZone = false;
-      if (zone) {
-        effectiveColumnStart = zone.columnStart;
-        effectiveColumnSpan = zone.columnSpan;
-        droppedInBottomZone = zone.isBottomZone;
-      }
-      const canSideZone = slug === "todo-checklist" || slug === "habit-tracker";
-      // Mirrors addPaletteModuleAt's own identical shrink-to-fit
-      // (actions.ts) — see that copy's comment for the full reasoning.
-      // Without this, the live preview kept showing a full-size (and
-      // "won't fit here," per the overlapping computation below) box
-      // even in a spot the server would actually now accept at a
-      // shrunk size, and handleDragEnd refuses to even call the server
-      // at all once its own local preview says overlapping — so this
-      // isn't just cosmetic, it's what makes the drop reachable in the
-      // first place. Reported directly: "i tried to drag to do list
-      // below habit tracker and it doesn't fit," then again for the
-      // side zone once that became reachable: "its not letting me drag
-      // the habit and the todo from the side nav to the bottom empty
-      // space of the sidebar" — moduleType.defaultRowSpan (10) almost
-      // never fits below whatever's already seeded in the sidebar
-      // (week-title, Gratitude/Reminders/Notes...), so every side-zone
-      // request was silently failing without this too.
-      let effectiveRowSpan = meta.defaultRowSpan;
-      let effectiveRowStart = target.rowStart;
-      if (droppedInBottomZone && hourlyGridPlacement) {
-        const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
-        const zoneSiblings = (instanceIdsByPageId[target.pageId] ?? [])
-          .filter((instId) => moduleLookup.get(instId)?.locked === false)
-          .map((instId) => placements[instId])
-          .filter(
-            (p): p is Placement =>
-              !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan && p.rowStart >= zoneTop
-          );
-        const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((p) => p.rowStart + p.rowSpan)) : zoneTop;
-        const availableRows = pageGrid.gridRows - zoneStart;
-        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
-        if (availableRows >= minRowSpan) {
-          effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
-          effectiveRowStart = zoneStart;
-        }
-      } else if (canSideZone) {
-        // Side-zone shrink-to-fit — see addPaletteModuleAt's own
-        // identical branch (actions.ts) for the full reasoning,
-        // including why locked siblings (week-title) aren't filtered
-        // out here the way the bottom zone's own hourly-grid-adjacent
-        // zoneSiblings filters them: there's no single locked anchor to
-        // measure from in this column, so the deepest existing item at
-        // all — locked or not — is where free space starts. Deliberately
-        // canSideZone, not canFillBottomZone — labeled-box outside the
-        // bottom zone keeps its own pre-existing preview path untouched
-        // (effectiveRowSpan/effectiveRowStart stay at their plain
-        // meta.defaultRowSpan/target.rowStart declarations above).
-        const columnSiblings = (instanceIdsByPageId[target.pageId] ?? [])
-          .map((instId) => placements[instId])
-          .filter((p): p is Placement => !!p && p.columnStart === effectiveColumnStart && p.columnSpan === effectiveColumnSpan);
-        const zoneStart = columnSiblings.length > 0 ? Math.max(...columnSiblings.map((p) => p.rowStart + p.rowSpan)) : 0;
-        const availableRows = pageGrid.gridRows - zoneStart;
-        const minRowSpan = getMinRowSpanForSlug(slug, pageGrid, effectiveColumnSpan);
-        if (availableRows >= minRowSpan) {
-          effectiveRowSpan = Math.min(meta.defaultRowSpan, availableRows);
-          effectiveRowStart = zoneStart;
-        }
-      }
-      const candidate: GridRect = {
-        columnStart: effectiveColumnStart,
-        rowStart: effectiveRowStart,
-        columnSpan: effectiveColumnSpan,
-        rowSpan: effectiveRowSpan,
+      if (!meta) return;
+      const pointer = lastPointerRef.current;
+      const target = screenPointToPageCell(pointer.x, pointer.y);
+      // Still off-canvas - nothing to place it against yet.
+      if (!target) return;
+      const phantomPageGrid = pageGridByPageId[target.pageId];
+      if (!phantomPageGrid) return;
+      const placement: Placement = {
+        ...clampGridPlacement(phantomPageGrid, {
+          columnStart: target.columnStart,
+          rowStart: target.rowStart,
+          columnSpan: meta.defaultColumnSpan,
+          rowSpan: meta.defaultRowSpan,
+        }),
+        columnSpan: meta.defaultColumnSpan,
+        rowSpan: meta.defaultRowSpan,
       };
-      const occupied: GridRect[] = (instanceIdsByPageId[target.pageId] ?? [])
-        .map((instId) => placements[instId])
-        .filter((p): p is Placement => !!p);
-      // Reserves the 1-row breathing gap below hourly-grid-core — see
-      // addPaletteModuleAt's own identical reservation (actions.ts) for
-      // the full reasoning. This is what keeps the live preview from
-      // ever showing a spot the server would then relocate away from on
-      // drop.
-      if (hourlyGridPlacement) {
-        occupied.push({
-          columnStart: hourlyGridPlacement.columnStart,
-          rowStart: hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan,
-          columnSpan: hourlyGridPlacement.columnSpan,
-          rowSpan: 1,
-        });
-      }
-      const resolved = findNearestFreeCell(pageGrid, candidate, occupied);
-      const finalRect: GridRect = { ...resolved, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
-      setPaletteDrag({
-        pageId: target.pageId,
-        columnStart: resolved.columnStart,
-        rowStart: resolved.rowStart,
-        columnSpan: effectiveColumnSpan,
-        rowSpan: effectiveRowSpan,
-        overlapping: occupied.some((o) => rectsOverlap(finalRect, o)),
-      });
+      const origin = gridCellToPixels(phantomPageGrid, placement);
+      phantomRef.current = { slug, pageId: target.pageId };
+      setPhantomSlug(slug);
+      setPlacements((prev) => ({ ...prev, [PHANTOM_ID]: placement }));
+      setModuleLookup((prev) =>
+        new Map(prev).set(PHANTOM_ID, {
+          pageId: target.pageId,
+          locked: false,
+          elements: renderModuleInstance(
+            { id: PHANTOM_ID, locked: false, ...placement, propValues: meta.previewProps, moduleType: { slug } },
+            phantomPageGrid,
+            fontFamily
+          ),
+          originX: origin.x,
+          originY: origin.y,
+          slug,
+          propValues: meta.previewProps,
+        })
+      );
+      setActiveId(PHANTOM_ID);
+      // The gesture restarts here. Delta is measured from the moment of
+      // entry rather than from the card pickup, and the module arrives
+      // centred on the pointer - so the grab fraction is the middle,
+      // not whatever fraction of a palette card happened to be grabbed.
+      pointerOriginRef.current = { x: pointer.x, y: pointer.y };
+      setActiveDelta(ZERO_OFFSET);
+      grabFractionCapturedRef.current = true;
+      setGrabFraction({ x: 0.5, y: 0.5 });
     },
     [
       easeContentDuringResize,
       easeSiblingsDuringResize,
+      fontFamily,
       screenPointToPageCell,
       pageGridByPageId,
-      instanceIdsByPageId,
       placements,
-      moduleLookup,
-      resolveZoneForColumn,
       readPointerDelta,
       lastOwnColumnRow,
     ]
@@ -5908,19 +5800,39 @@ export function NativePlannerEditor({
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      const id = String(event.active.id);
-      if (id.startsWith(PALETTE_ID_PREFIX)) {
+      const rawId = String(event.active.id);
+      if (rawId.startsWith(PALETTE_ID_PREFIX)) {
+        const phantom = phantomRef.current;
+        if (!phantom) {
+          // Released without ever reaching a page.
+          setActiveId(null);
+          setActiveDelta(ZERO_OFFSET);
+          return;
+        }
+        // Resolved exactly the way a committed module is, from the same
+        // held preview the last rendered frame used - see the identical
+        // reasoning below for why the held one and not a fresh resolve.
+        const phantomDelta = readPointerDelta(event.delta);
+        const phantomHeld =
+          confirmedCrossingRef.current?.instanceId === PHANTOM_ID
+            ? confirmedCrossingRef.current.preview
+            : null;
+        const phantomResult = phantomHeld ?? resolveDrag(PHANTOM_ID, phantomDelta.x, phantomDelta.y);
+        removePhantom();
         setActiveId(null);
         setActiveDelta(ZERO_OFFSET);
-        const drag = paletteDrag;
-        setPaletteDrag(null);
-        if (!drag || drag.overlapping) return;
-        handleAddModule(drag.pageId, id.slice(PALETTE_ID_PREFIX.length), drag.columnStart, drag.rowStart);
+        if (!phantomResult) return;
+        handleAddModule(
+          phantomResult.targetPageId,
+          phantom.slug,
+          phantomResult.resolved.columnStart,
+          phantomResult.resolved.rowStart
+        );
         return;
       }
       setActiveId(null);
       setActiveDelta(ZERO_OFFSET);
-      const instanceId = id;
+      const instanceId = rawId;
       // Same real-pointer measurement handleDragMove's own identical
       // call uses — the drop has to resolve against exactly the same
       // delta the live preview was showing a frame earlier, or the
@@ -6194,10 +6106,10 @@ export function NativePlannerEditor({
     },
     [
       placements,
+      removePhantom,
       resolveDrag,
       scale,
       serializeCommit,
-      paletteDrag,
       handleAddModule,
       readPointerDelta,
       fontFamily,
@@ -7111,7 +7023,6 @@ export function NativePlannerEditor({
                     hoveredInstanceId={hoveredInstanceId}
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
-                    paletteDragPreview={paletteDrag}
                     scale={scale}
                     fontFamily={fontFamily}
                   />
@@ -7123,6 +7034,7 @@ export function NativePlannerEditor({
               activeDelta={activeDelta}
               open={paletteOpen}
               highlightModules={paletteHighlightModules}
+              paletteGestureActive={phantomSlug !== null}
               pageSettings={pageSettings}
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
