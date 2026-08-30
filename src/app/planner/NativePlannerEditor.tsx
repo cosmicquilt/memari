@@ -5117,7 +5117,25 @@ export function NativePlannerEditor({
         !!sourceHourlyGridPlacement &&
         current.columnStart === sourceHourlyGridPlacement.columnStart &&
         current.columnSpan === sourceHourlyGridPlacement.columnSpan;
-      const crossingZones = !!targetZone && (targetZone.isBottomZone !== currentIsBottomZone || hoveredPageId !== info.pageId);
+      // A palette phantom is ALWAYS crossing. It has no home zone: it
+      // is arriving from outside the page entirely, so there is nothing
+      // for "is this a different zone than the one I live in" to mean.
+      //
+      // Entering the zone already correctly shaped (see the phantom's
+      // own creation in handleDragMove) made this read false, because
+      // the phantom's committed placement was already in the zone under
+      // the pointer. crossingZones false is what gates minRowSpanById,
+      // and minRowSpanById is what lets siblings shrink to admit an
+      // arriving module - so in a zone with no spare rows nothing moved
+      // and the module had nowhere to go. Reported as the live update
+      // not working for the sidebar or the left bottom zone, the two
+      // that are full by default; the right bottom zone happened to
+      // have room.
+      const crossingZones =
+        !!targetZone &&
+        (instanceId === PHANTOM_ID ||
+          targetZone.isBottomZone !== currentIsBottomZone ||
+          hoveredPageId !== info.pageId);
 
       // Once crossingZones is known, "the page/siblings this candidate
       // actually resolves against" collapses to either the hovered page
