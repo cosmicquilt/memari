@@ -121,6 +121,7 @@ import {
   resizeStackFromBottom,
   addPaletteModuleAt,
   restoreModulePlacements,
+  deleteModuleInstance,
   deleteModuleWithGravity,
   updateModuleConfig,
   resetPlannerToTemplate,
@@ -449,6 +450,17 @@ type Placement = { columnStart: number; rowStart: number; columnSpan: number; ro
 // the history state's own comment for why geometry alone is enough to
 // reverse a move or a resize, and why adds and deletes are not in here.
 type GeometrySnapshot = Array<{ id: string; pageId: string } & Placement>;
+
+// One entry on the undo stack. "geometry" is symmetric - the inverse of
+// a move or a resize is another geometry, so undo and redo are the same
+// operation run against a different snapshot. "add" is not: its inverse
+// deletes a module, and re-doing it would have to create one, which the
+// server would give a NEW id to and every snapshot below it on the
+// stack still refers to the old one. So an add can be undone but not
+// redone, and undoing one drops the redo stack (see stepHistory).
+type HistoryStep =
+  | { kind: "geometry"; snapshot: GeometrySnapshot }
+  | { kind: "add"; instanceId: string; snapshot: GeometrySnapshot };
 type ModuleInfo = {
   pageId: string;
   locked: boolean;
@@ -4273,14 +4285,19 @@ export function NativePlannerEditor({
   // placements, so one snapshot of every module's geometry can undo any
   // of them without needing a bespoke inverse per action.
   //
-  // Adding and deleting are deliberately NOT undoable, and they CLEAR
-  // the history rather than being recorded in it. A snapshot describes
-  // a set of modules; restoring one after the set has changed would put
-  // siblings back around a module that no longer exists, or leave a
-  // newly added one sitting on top of the space its neighbours just
-  // reclaimed. Refusing is honest; a half-undo that silently overlaps
-  // things is not.
-  const [history, setHistory] = useState<{ past: GeometrySnapshot[]; future: GeometrySnapshot[] }>({
+  // A snapshot describes a SET of modules, so anything that changes
+  // which modules exist cannot be expressed as one - restoring it would
+  // put siblings back around a module that no longer exists, or leave a
+  // new one sitting on the space its neighbours just reclaimed. Delete
+  // therefore still clears the stack outright.
+  //
+  // Add used to as well, and that made the undo button permanently
+  // grey in the one workflow it most obviously belonged in: dropping
+  // modules in from the palette, then wanting the last one back out.
+  // Reported as "the undo button stays greyed out." An add carries its
+  // own inverse instead (delete that instance, restore the rows from
+  // just before it landed) - see HistoryStep.
+  const [history, setHistory] = useState<{ past: HistoryStep[]; future: HistoryStep[] }>({
     past: [],
     future: [],
   });
@@ -4765,6 +4782,39 @@ export function NativePlannerEditor({
       // active id stays the palette card's throughout - only this
       // file's notion of "what is being dragged" changes.
       const rawId = String(event.active.id);
+      // Dragged back over the palette: take the module off the page
+      // again. Asked for directly - "i would like to be able to drag
+      // modules back into the pallete if i dont want to use it."
+      //
+      // Deleting the phantom is the whole implementation. It is a real
+      // entry in placements and moduleLookup, so removing it makes the
+      // siblings it had displaced fall back into their committed rows
+      // on the very next frame, animated by the same reflow easing that
+      // moved them aside - the page un-makes room exactly the way it
+      // made it. And with no phantom, the code below is back in its
+      // "carrying a palette card, not yet over a page" state: the card
+      // draws in the panel again (activeDelta is re-zeroed against the
+      // pointer here, so it sits in its home slot rather than trailing
+      // wherever the gesture wandered), and moving back out onto a page
+      // simply creates a fresh phantom. Nothing was committed, so there
+      // is nothing to roll back.
+      if (phantomRef.current && paletteOpen) {
+        const p = lastPointerRef.current;
+        if (p.x <= PALETTE_SIDEBAR_WIDTH_PX && p.y >= HEADER_HEIGHT_PX) {
+          removePhantom();
+          confirmedCrossingRef.current = null;
+          setConfirmedCrossingPreview(null);
+          setActiveId(rawId);
+          pointerOriginRef.current = { x: p.x, y: p.y };
+          // grabFractionCapturedRef is deliberately left set. Clearing
+          // it would re-run the capture above against the palette card's
+          // rect and re-arm the ease-into-grip animation, and the value
+          // is overwritten with {0.5, 0.5} the moment a new phantom is
+          // created anyway.
+          setActiveDelta(ZERO_OFFSET);
+          return;
+        }
+      }
       const id = phantomRef.current ? PHANTOM_ID : rawId;
       if (!id.startsWith(PALETTE_ID_PREFIX)) {
         // See confirmedCrossingRef's own comment (near
@@ -5002,16 +5052,36 @@ export function NativePlannerEditor({
       );
       if (!phantomZone) return;
       const phantomColumnSpan = phantomZone.columnSpan;
+      const phantomRowSpan = getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan);
+      // Centred on the pointer, not hung off it.
+      //
+      // The phantom draws at its committed cell plus the grab-point
+      // compensation, and that compensation is exactly zero on this
+      // first frame: it is grabFraction * oldSize - grabFraction *
+      // newSize, and entering at the zone's own shape makes those two
+      // sizes the same. So the committed cell IS where the module
+      // paints, and entering at the cell under the pointer put the
+      // module's top-left CORNER on the cursor with the whole body
+      // hanging down-right of it - "once i exit pallete the module
+      // isnt on my cursor."
+      //
+      // The column is not ours to pick; the zone dictates it, and a
+      // module snapping to its zone's width is the correct behaviour.
+      // The row is, so back the module up by half its height. That
+      // also makes the (0.5, 0.5) grab fraction stamped below TRUE
+      // rather than merely asserted - resolveDrag reconstructs the
+      // pointer as cell + grabFraction * size, which only lands back
+      // on the real pointer if the module is genuinely centred on it.
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
           columnStart: phantomZone.columnStart,
-          rowStart: target.rowStart,
+          rowStart: target.rowStart - Math.floor(phantomRowSpan / 2),
           columnSpan: phantomColumnSpan,
-          rowSpan: getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan),
+          rowSpan: phantomRowSpan,
         }),
         columnStart: phantomZone.columnStart,
         columnSpan: phantomColumnSpan,
-        rowSpan: getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan),
+        rowSpan: phantomRowSpan,
       };
       const origin = gridCellToPixels(phantomPageGrid, placement);
       phantomRef.current = { slug, pageId: target.pageId };
@@ -5054,6 +5124,8 @@ export function NativePlannerEditor({
       placements,
       readPointerDelta,
       lastOwnColumnRow,
+      paletteOpen,
+      removePhantom,
     ]
   );
 
@@ -5868,17 +5940,46 @@ export function NativePlannerEditor({
   // resize-after-reposition jump earlier this session turned out to be
   // — trusting a client-side assumption instead of the server's own
   // authoritative result.
+  // Current geometry of every real module. The phantom is excluded - it
+  // is not a module yet and has no row to restore.
+  const captureGeometry = useCallback((): GeometrySnapshot => {
+    const out: GeometrySnapshot = [];
+    for (const [id, placement] of Object.entries(placements)) {
+      if (id === PHANTOM_ID) continue;
+      const info = moduleLookup.get(id);
+      if (!info) continue;
+      out.push({ id, pageId: info.pageId, ...placement });
+    }
+    return out;
+  }, [placements, moduleLookup]);
+
   const handleAddModule = useCallback(
-    async (pageId: string, moduleTypeSlug: string, columnStart: number, rowStart: number) => {
+    async (
+      pageId: string,
+      moduleTypeSlug: string,
+      columnStart: number,
+      rowStart: number,
+      // Geometry as it stood BEFORE this add - what undoing it restores.
+      // The palette drop has to pass its own, captured before it commits
+      // the phantom preview locally; by the time it calls this, the
+      // siblings have already moved aside on screen and capturing here
+      // would snapshot the layout that includes the add. The "+" button
+      // path has nothing optimistic in front of it, so it captures here.
+      before?: GeometrySnapshot
+    ) => {
+      const beforeSnapshot = before ?? captureGeometry();
       // See gestureBlockedByPendingCommit's own comment — the requested
       // target could go stale if a still-pending commit is about to
       // move whatever made this cell look free out from under it.
-      if (gestureBlockedByPendingCommit()) return;
+      if (gestureBlockedByPendingCommit()) {
+        removePhantom();
+        return;
+      }
       const pageGrid = pageGridByPageId[pageId];
-      if (!pageGrid) return;
-      // See the history state's own comment: a snapshot describes a set
-      // of modules, and this changes the set.
-      setHistory({ past: [], future: [] });
+      if (!pageGrid) {
+        removePhantom();
+        return;
+      }
       try {
         // See serializeCommit's own comment — guards this against the
         // same race too: adding right after a reposition/resize
@@ -5974,36 +6075,41 @@ export function NativePlannerEditor({
             return next;
           });
         }, 300);
+        const addStep: HistoryStep = { kind: "add", instanceId: result.instanceId, snapshot: beforeSnapshot };
+        setHistory((prev) => ({ past: [...prev.past, addStep].slice(-40), future: [] }));
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        // The real module is in placements and moduleLookup by now (or
+        // the add failed), so the phantom's job is done. Batched into
+        // the same commit as the inserts above, which is what makes the
+        // swap invisible: two identically-shaped boxes, one leaving and
+        // one arriving, in a single paint.
+        removePhantom();
       }
     },
-    [pageGridByPageId, placements, serializeCommit, gestureBlockedByPendingCommit]
+    [
+      pageGridByPageId,
+      placements,
+      serializeCommit,
+      gestureBlockedByPendingCommit,
+      captureGeometry,
+      removePhantom,
+    ]
   );
-
-  // Current geometry of every real module. The phantom is excluded - it
-  // is not a module yet and has no row to restore.
-  const captureGeometry = useCallback((): GeometrySnapshot => {
-    const out: GeometrySnapshot = [];
-    for (const [id, placement] of Object.entries(placements)) {
-      if (id === PHANTOM_ID) continue;
-      const info = moduleLookup.get(id);
-      if (!info) continue;
-      out.push({ id, pageId: info.pageId, ...placement });
-    }
-    return out;
-  }, [placements, moduleLookup]);
 
   // Called immediately BEFORE a geometry commit, capturing the state
   // being left. Clears the redo stack, since branching off a redone
   // state makes the old future unreachable.
   const recordGeometry = useCallback(() => {
     const snapshot = captureGeometry();
-    setHistory((prev) => ({ past: [...prev.past, snapshot].slice(-40), future: [] }));
+    const step: HistoryStep = { kind: "geometry", snapshot };
+    setHistory((prev) => ({ past: [...prev.past, step].slice(-40), future: [] }));
   }, [captureGeometry]);
 
-  // Add and delete change WHICH modules exist, which every snapshot
-  // assumes is fixed. See the history state's own comment.
+  // Delete changes WHICH modules exist, which every snapshot assumes is
+  // fixed. See the history state's own comment for why add no longer
+  // needs this.
   const clearGeometryHistory = useCallback(() => setHistory({ past: [], future: [] }), []);
 
   const applyRestored = useCallback(
@@ -6053,7 +6159,40 @@ export function NativePlannerEditor({
       const stack = direction === "undo" ? history.past : history.future;
       const target = stack[stack.length - 1];
       if (!target) return;
-      const current = captureGeometry();
+      const current: HistoryStep = { kind: "geometry", snapshot: captureGeometry() };
+      if (target.kind === "add") {
+        // Only ever reached going backwards - an add is never pushed
+        // onto the future, and popping it empties what is there. Every
+        // redo below it described a layout that included this module,
+        // and it is about to stop existing. See HistoryStep.
+        setHistory((prev) => ({ past: prev.past.slice(0, -1), future: [] }));
+        try {
+          // deleteModuleInstance, not deleteModuleWithGravity: the
+          // snapshot already says where every remaining module belongs.
+          // Repacking first would just be a second opinion for the
+          // restore to overwrite.
+          const rows = await serializeCommit(async () => {
+            await deleteModuleInstance(target.instanceId);
+            return restoreModulePlacements(target.snapshot);
+          });
+          setPlacements((prev) => {
+            if (!(target.instanceId in prev)) return prev;
+            const next = { ...prev };
+            delete next[target.instanceId];
+            return next;
+          });
+          setModuleLookup((prev) => {
+            if (!prev.has(target.instanceId)) return prev;
+            const next = new Map(prev);
+            next.delete(target.instanceId);
+            return next;
+          });
+          applyRestored(rows);
+        } catch (error) {
+          setSaveError(error instanceof Error ? error.message : "Could not undo");
+        }
+        return;
+      }
       // Moved before the await, not after: the button reads these to
       // decide whether it is enabled, and a slow round trip should not
       // leave it looking clickable for a step already taken.
@@ -6063,7 +6202,7 @@ export function NativePlannerEditor({
           : { past: [...prev.past, current], future: prev.future.slice(0, -1) }
       );
       try {
-        const rows = await serializeCommit(() => restoreModulePlacements(target));
+        const rows = await serializeCommit(() => restoreModulePlacements(target.snapshot));
         applyRestored(rows);
       } catch (error) {
         setSaveError(error instanceof Error ? error.message : "Could not undo");
@@ -6078,7 +6217,10 @@ export function NativePlannerEditor({
       if (rawId.startsWith(PALETTE_ID_PREFIX)) {
         const phantom = phantomRef.current;
         if (!phantom) {
-          // Released without ever reaching a page.
+          // Released without ever reaching a page, or released back
+          // over the palette - which removes the phantom, see the
+          // discard branch in handleDragMove. Nothing was committed
+          // either way, so there is nothing to add and nothing to undo.
           setActiveId(null);
           setActiveDelta(ZERO_OFFSET);
           return;
@@ -6092,15 +6234,132 @@ export function NativePlannerEditor({
             ? confirmedCrossingRef.current.preview
             : null;
         const phantomResult = phantomHeld ?? resolveDrag(PHANTOM_ID, phantomDelta.x, phantomDelta.y);
-        removePhantom();
         setActiveId(null);
         setActiveDelta(ZERO_OFFSET);
-        if (!phantomResult) return;
+        if (!phantomResult) {
+          removePhantom();
+          return;
+        }
+        // The phantom STAYS, and the preview it was showing is
+        // committed locally right here.
+        //
+        // What this replaces removed the phantom on release and let
+        // handleAddModule's server round trip put the real module in.
+        // For the 200-600ms that takes, the phantom and its whole
+        // preview reflow were simply gone: every sibling it had pushed
+        // aside snapped back to its committed row, then jumped again
+        // when the response landed. Reported as "when i release
+        // modules, the screen goes back to the previous configuration
+        // for a little before rendering correctly."
+        //
+        // The phantom is a first-class module (it is in placements and
+        // moduleLookup), so it can just be moved to where it landed and
+        // left there, siblings and all, exactly the way an in-canvas
+        // drop commits below. handleAddModule swaps it for the real
+        // module once the server answers - a same-batch delete and
+        // insert of two identical-looking boxes, which paints as
+        // nothing at all. What is left is the sequence asked for:
+        // animate into place, then re-render in place.
+        // Captured before the optimistic commit below moves anything -
+        // see handleAddModule's own `before` parameter.
+        const phantomBefore = captureGeometry();
+        const dropped: Placement = {
+          columnStart: phantomResult.resolved.columnStart,
+          rowStart: phantomResult.resolved.rowStart,
+          columnSpan: phantomResult.effectiveColumnSpan,
+          rowSpan: phantomResult.effectiveRowSpan,
+        };
+        // Same settle FLIP an in-canvas drop runs - see its own long
+        // comment below for what every term here is doing.
+        const phantomOld = gridCellToPixels(phantomResult.pageGrid, phantomResult.current);
+        const phantomNew = gridCellToPixels(phantomResult.targetPageGrid, dropped);
+        const phantomLast = computeDraggedTransformPagePx(
+          phantomResult.pageGrid,
+          { x: phantomDelta.x / scale, y: phantomDelta.y / scale },
+          phantomResult.current,
+          phantomResult.crossingZones,
+          phantomResult.effectiveColumnSpan,
+          phantomResult.effectiveRowSpan,
+          grabFraction
+        );
+        const phantomSourceIndex = pages.findIndex((p) => p.pageId === phantomResult.sourcePageId);
+        const phantomTargetIndex = pages.findIndex((p) => p.pageId === phantomResult.targetPageId);
+        const phantomPageOffset =
+          phantomSourceIndex === -1 || phantomTargetIndex === -1
+            ? 0
+            : (phantomTargetIndex - phantomSourceIndex) * (PRINT_WIDTH_PX + PAGE_GAP_PX);
+        const phantomSettle: Record<string, { x: number; y: number }> = {
+          [PHANTOM_ID]: {
+            x: phantomLast.x - (phantomNew.x - phantomOld.x) - phantomPageOffset,
+            y: phantomLast.y - (phantomNew.y - phantomOld.y),
+          },
+        };
+        for (const move of phantomResult.reflow) phantomSettle[move.id] = ZERO_OFFSET;
+        setSettling({ offsets: phantomSettle, phase: "start" });
+        setPlacements((prev) => {
+          const next: Record<string, Placement> = { ...prev, [PHANTOM_ID]: dropped };
+          for (const move of phantomResult.reflow) {
+            const before = next[move.id];
+            if (!before) continue;
+            next[move.id] = {
+              ...before,
+              rowStart: move.rowStart,
+              ...(move.rowSpan !== undefined ? { rowSpan: move.rowSpan } : {}),
+            };
+          }
+          return next;
+        });
+        setModuleLookup((prev) => {
+          const next = new Map(prev);
+          const info = prev.get(PHANTOM_ID);
+          if (info) {
+            const propValues =
+              info.slug === "todo-checklist"
+                ? { ...info.propValues, dayCount: dropped.columnSpan }
+                : info.propValues;
+            const origin = gridCellToPixels(phantomResult.targetPageGrid, dropped);
+            next.set(PHANTOM_ID, {
+              ...info,
+              pageId: phantomResult.targetPageId,
+              propValues,
+              elements: renderModuleInstance(
+                { id: PHANTOM_ID, locked: false, ...dropped, propValues, moduleType: { slug: info.slug } },
+                phantomResult.targetPageGrid,
+                fontFamily
+              ),
+              originX: origin.x,
+              originY: origin.y,
+            });
+          }
+          // Only siblings whose SPAN changed need re-rendered content;
+          // a pure row shift reuses what it already has, at a new box.
+          for (const move of phantomResult.reflow) {
+            if (move.rowSpan === undefined) continue;
+            const sib = prev.get(move.id);
+            const sibBefore = placements[move.id];
+            const sibGrid = sib ? pageGridByPageId[sib.pageId] : undefined;
+            if (!sib || !sibBefore || !sibGrid) continue;
+            const sibNext = { ...sibBefore, rowStart: move.rowStart, rowSpan: move.rowSpan };
+            const sibOrigin = gridCellToPixels(sibGrid, sibNext);
+            next.set(move.id, {
+              ...sib,
+              elements: renderModuleInstance(
+                { id: move.id, locked: sib.locked, ...sibNext, propValues: sib.propValues, moduleType: { slug: sib.slug } },
+                sibGrid,
+                fontFamily
+              ),
+              originX: sibOrigin.x,
+              originY: sibOrigin.y,
+            });
+          }
+          return next;
+        });
         handleAddModule(
           phantomResult.targetPageId,
           phantom.slug,
-          phantomResult.resolved.columnStart,
-          phantomResult.resolved.rowStart
+          dropped.columnStart,
+          dropped.rowStart,
+          phantomBefore
         );
         return;
       }
@@ -6391,6 +6650,8 @@ export function NativePlannerEditor({
       fontFamily,
       grabFraction,
       pages,
+      captureGeometry,
+      pageGridByPageId,
     ]
   );
 
