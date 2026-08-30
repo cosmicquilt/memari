@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import {
   clampGridPlacement,
-  findNearestFreeCell,
   rectsOverlap,
   moduleInstancesToRects,
   gridCellToPixels,
@@ -1147,34 +1146,83 @@ export async function addPaletteModuleAt(
       // reflow (see PlannerEditorCanvas) — reasonable for a fresh drop,
       // which doesn't have "siblings it was already part of" to reorder
       // among.
-      const occupied = moduleInstancesToRects(page.moduleInstances);
+      const occupied: Array<{
+        id: string;
+        locked: boolean;
+        columnStart: number;
+        rowStart: number;
+        columnSpan: number;
+        rowSpan: number;
+      }> = [];
+      for (const mi of page.moduleInstances) {
+        if (mi.columnStart === null || mi.rowStart === null) continue;
+        occupied.push({
+          id: mi.id,
+          locked: mi.locked,
+          columnStart: mi.columnStart,
+          rowStart: mi.rowStart,
+          columnSpan: mi.columnSpan,
+          rowSpan: mi.rowSpan,
+        });
+      }
       // Reserves the same 1-row breathing gap below hourly-grid-core
       // that WEEK_TODO_TEMPLATE's own seed values already leave
       // (rowStart 20, one past the grid's own rowStart 0 + rowSpan 19 —
       // see that constant's own comment) and resizeStackFromBottom's
       // cascade math never eats into — a synthetic 1-row-tall occupied
-      // rect, not a special case in the search itself, so
-      // findNearestFreeCell just treats it exactly like it would a real
-      // module sitting there and keeps looking past it. Reported
-      // directly: "dragged in bottom modules have no 1 unit gap with
-      // hours" — a palette drop had no way to know about this
-      // convention at all before, landing flush against the grid
-      // instead. Column-range overlap only (rectsOverlap, inside
-      // findNearestFreeCell), so this is inert for anything not sharing
-      // a column with the grid — a sidebar box on the left page's
-      // column 0 is never affected by the grid's own 1-3 range there.
+      // rect, not a special case in the resolver itself, so
+      // resolveModulePlacement treats it exactly as it would a real
+      // locked module sitting there. Reported directly: "dragged in
+      // bottom modules have no 1 unit gap with hours" — a palette drop
+      // had no way to know about this convention at all before, landing
+      // flush against the grid instead. Column-range overlap only, so
+      // this is inert for anything not sharing a column with the grid —
+      // a sidebar box on the left page's column 0 is never affected by
+      // the grid's own 1-3 range there.
       if (hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null) {
+        // Carries an id and locked:true so it stays a real member of
+        // the others list now that resolveModulePlacement consumes it -
+        // same virtual-lock convention resolveDrag uses client-side
+        // (__hourlygridgap__), and locked keeps it a bound rather than
+        // something the reflow could try to move.
         occupied.push({
+          id: "__hourlygridgap__",
+          locked: true,
           columnStart: hourlyGrid.columnStart,
           rowStart: hourlyGrid.rowStart + hourlyGrid.rowSpan,
           columnSpan: hourlyGrid.columnSpan,
           rowSpan: 1,
         });
       }
-      const clamped = findNearestFreeCell(
+      // Resolve the way a cross-zone MOVE resolves, not by hunting for
+      // a gap. findNearestFreeCell only ever finds space that is
+      // already free - it never asks anyone to make room - so a drop
+      // into a full zone landed somewhere the user had not pointed at,
+      // while the drag preview had been showing the zone's own modules
+      // shrinking to admit it. Preview and commit disagreeing, which is
+      // the failure mode this system is most prone to.
+      //
+      // Mirrors moveModuleAcrossZones' own identical block below: the
+      // same resolveModulePlacement, the same minRowSpanById floors for
+      // siblings sharing the target column, the same reflow applied
+      // afterwards. draggedOriginalRowStart is undefined here and only
+      // here - a fresh module has no row it is coming from, which is
+      // exactly the "insert new content" case the resolver already has
+      // a documented default for.
+      const paletteMinRowSpanById: Record<string, number> = {};
+      for (const o of occupied) {
+        if (o.locked) continue;
+        if (o.columnStart !== effectiveColumnStart || o.columnSpan !== effectiveColumnSpan) continue;
+        const otherMi = page.moduleInstances.find((mi) => mi.id === o.id);
+        if (!otherMi) continue;
+        paletteMinRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, pageGrid, effectiveColumnSpan);
+      }
+      const { placement: clamped, reflow: paletteReflow } = resolveModulePlacement(
         pageGrid,
-        { ...candidate, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
-        occupied
+        { ...candidate, columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
+        occupied,
+        undefined,
+        paletteMinRowSpanById
       );
 
       // Pull each config field's declared default out of the JSON
@@ -1198,6 +1246,15 @@ export async function addPaletteModuleAt(
         defaultConfig.templateHeading = defaultConfig.heading;
       }
 
+      for (const move of paletteReflow) {
+        await tx.moduleInstance.update({
+          where: { id: move.id },
+          data:
+            move.rowSpan !== undefined
+              ? { rowStart: move.rowStart, rowSpan: move.rowSpan }
+              : { rowStart: move.rowStart },
+        });
+      }
       const created = await tx.moduleInstance.create({
         data: {
           pageId,
@@ -1222,10 +1279,11 @@ export async function addPaletteModuleAt(
   return {
     instanceId: created.id,
     // columnStart/rowStart: the *actual* committed position, not just
-    // an echo of whatever the caller asked for — findNearestFreeCell
-    // above can relocate the candidate (a collision, or now the
-    // synthetic hourly-grid gap reservation) to somewhere the caller
-    // never explicitly requested. handleAddModule (NativePlannerEditor.
+    // an echo of whatever the caller asked for — resolveModulePlacement
+    // above can land the candidate somewhere the caller never
+    // explicitly requested, whether by reordering it into the target
+    // stack, shrinking siblings around it, or relocating it outright
+    // when neither fits. handleAddModule (NativePlannerEditor.
     // tsx) used to trust its own client-side columnStart/rowStart
     // unconditionally instead of reading this back — safe as long as
     // the client's own guess and this function's own resolution could

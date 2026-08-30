@@ -4897,15 +4897,44 @@ export function NativePlannerEditor({
       if (!target) return;
       const phantomPageGrid = pageGridByPageId[target.pageId];
       if (!phantomPageGrid) return;
+      // Enter ALREADY ZONED, not at the raw cell under the pointer.
+      //
+      // resolveDrag works out where a module is going by comparing the
+      // zone under the pointer against the zone the module currently
+      // occupies - so a phantom whose committed placement is not a
+      // valid zone gives it nonsense to compare against. A 4-wide habit
+      // tracker clamped to column 0 spans the sidebar as well as the
+      // bottom zone on the left page, which is no zone at all: the zone
+      // still read as empty (its "+" placeholder stayed up) and every
+      // resolution after that was computed against a placement no real
+      // module could have. It worked on the right page only because
+      // 4-wide at column 0 happens to BE that page's bottom zone.
+      //
+      // So the phantom waits until the pointer is over a real zone and
+      // then enters at that zone's own shape, exactly as a module
+      // crossing into it from elsewhere would - which is the behaviour
+      // being asked for.
+      const phantomHourlyId = (instanceIdsByPageId[target.pageId] ?? []).find(
+        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
+      );
+      const phantomZone = resolveZoneForColumn(
+        phantomHourlyId ? placements[phantomHourlyId] : undefined,
+        slug,
+        target.columnStart,
+        target.rowStart
+      );
+      if (!phantomZone) return;
+      const phantomColumnSpan = phantomZone.columnSpan;
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
-          columnStart: target.columnStart,
+          columnStart: phantomZone.columnStart,
           rowStart: target.rowStart,
-          columnSpan: meta.defaultColumnSpan,
-          rowSpan: meta.defaultRowSpan,
+          columnSpan: phantomColumnSpan,
+          rowSpan: getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan),
         }),
-        columnSpan: meta.defaultColumnSpan,
-        rowSpan: meta.defaultRowSpan,
+        columnStart: phantomZone.columnStart,
+        columnSpan: phantomColumnSpan,
+        rowSpan: getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan),
       };
       const origin = gridCellToPixels(phantomPageGrid, placement);
       phantomRef.current = { slug, pageId: target.pageId };
@@ -4940,6 +4969,9 @@ export function NativePlannerEditor({
       easeContentDuringResize,
       easeSiblingsDuringResize,
       fontFamily,
+      instanceIdsByPageId,
+      moduleLookup,
+      resolveZoneForColumn,
       screenPointToPageCell,
       pageGridByPageId,
       placements,
