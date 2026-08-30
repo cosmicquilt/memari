@@ -307,24 +307,61 @@ const BOTTOM_ZONE_ROW_TOLERANCE = 2;
 // of anything else present, so every drop of either type was silently
 // refused. Reported directly: "the dragged bottom modules don't show
 // up at all."
-// `section` groups these for ModulePalette's own collapsible sidebar
-// layout — "side" for the sidebar column (labeled-box, its one content
-// type), "bottom" for the zone below the hourly grid (todo-checklist/
-// habit-tracker, which share that zone and need a real choice between
-// them, unlike the sidebar).
-// Also what AddModuleButton's own "+" zones use to pick which section
-// to open — see that component's own comment.
+// No `section` field any more. These used to be split "side" (sidebar
+// column) and "bottom" (below the hourly grid), and the palette had a
+// collapsible group for each — but that split stopped being true once
+// cross-zone dragging landed: all three of these can live in either
+// zone, and the palette was still telling the user otherwise. One list
+// now.
+//
+// previewProps are the schema defaults from prisma/seed.mts's own
+// configSchema entries, hand-synced the same way defaultColumnSpan/
+// defaultRowSpan already are (the "use server" boundary MIN_ROW_SPAN's
+// comment explains) — the real defaults live in the database and the
+// client cannot read them. They exist only to draw the card preview;
+// a real drop still gets its values from the schema, server-side.
+// dayCount is 1 rather than the schema's 3 because the preview renders
+// each module at its narrowest single-column form.
 const PALETTE_MODULE_TYPES: Array<{
   slug: string;
   label: string;
-  section: "side" | "bottom";
   defaultColumnSpan: number;
   defaultRowSpan: number;
+  previewProps: Record<string, unknown>;
 }> = [
-  { slug: "labeled-box", label: "Prompt Box", section: "side", defaultColumnSpan: 1, defaultRowSpan: 2 },
-  { slug: "todo-checklist", label: "To-Do Checklist", section: "bottom", defaultColumnSpan: 3, defaultRowSpan: 10 },
-  { slug: "habit-tracker", label: "Habit Tracker", section: "bottom", defaultColumnSpan: 4, defaultRowSpan: 10 },
+  {
+    slug: "labeled-box",
+    label: "Note Box",
+    defaultColumnSpan: 1,
+    defaultRowSpan: 2,
+    previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
+  },
+  {
+    slug: "todo-checklist",
+    label: "To-Do",
+    defaultColumnSpan: 3,
+    defaultRowSpan: 10,
+    previewProps: { dayCount: 1 },
+  },
+  {
+    slug: "habit-tracker",
+    label: "Habits",
+    defaultColumnSpan: 4,
+    defaultRowSpan: 10,
+    previewProps: { dayCount: 1 },
+  },
 ];
+
+// The palette is a light panel on a dark app chrome — requested
+// directly. Tokens rather than scattered hex so the panel and the
+// settings controls inside it cannot drift apart.
+const PANEL_BG = "#ffffff";
+const PANEL_EDGE = "#e4e4e4";
+const PANEL_TEXT = "#1a1a1a";
+const PANEL_MUTED = "#6b6b6b";
+const PANEL_FAINT = "#9a9a9a";
+const PANEL_FILL = "#f6f6f6";
+const PANEL_FILL_HOVER = "#ededed";
 const PALETTE_ID_PREFIX = "palette:";
 
 // Minimum resize size for a module, in grid rows — MIN_ROW_SPAN (2) for
@@ -1319,7 +1356,7 @@ function NativePage({
   onStackResizeStart,
   onStackResizeMove,
   onStackResizeEnd,
-  onOpenPaletteSection,
+  onOpenPaletteModules,
   onDeleteModule,
   onUpdateHeading,
   onUpdateHabits,
@@ -1393,10 +1430,12 @@ function NativePage({
   onStackResizeStart: (stackBottom: StackBottom) => void;
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onStackResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
-  // Opens ModulePalette's own sliding panel and highlights the given
-  // section — see AddModuleButton's own comment on why its "+" zones
-  // do this instead of adding a fixed module type directly.
-  onOpenPaletteSection: (section: "side" | "bottom") => void;
+  // Opens ModulePalette's own sliding panel and briefly marks the
+  // module list — see AddModuleButton's own comment on why its "+"
+  // zones do this instead of adding a fixed module type directly. No
+  // longer takes a section: every module type can live in either zone
+  // now, so there is only one list to point at.
+  onOpenPaletteModules: () => void;
   onDeleteModule: (instanceId: string) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
   onUpdateHabits: (instanceId: string, habits: string[]) => void;
@@ -1748,7 +1787,7 @@ function NativePage({
               // convention already relies on columnStart === 0 too, but
               // always paired with an explicit "labeled-box" or
               // columnSpan check for the same reason.
-              onClick={() => onOpenPaletteSection(sb.columnStart === 0 && sb.columnSpan === 1 ? "side" : "bottom")}
+              onClick={() => onOpenPaletteModules()}
             />
           ))}
       {/* Hover-triggered "+" over the *whole* zone (top of the stack
@@ -1786,7 +1825,7 @@ function NativePage({
           rowStart={sb.stackTopRowStart}
           rowSpan={sb.maxBottomBound - sb.stackTopRowStart}
           isHovered={hoveredInstanceId !== null && sb.members.some((m) => m.id === hoveredInstanceId)}
-          onClick={() => onOpenPaletteSection(sb.columnStart === 0 && sb.columnSpan === 1 ? "side" : "bottom")}
+          onClick={() => onOpenPaletteModules()}
         />
       ))}
       {/* Live palette-drag preview — only rendered on whichever page the
@@ -2595,15 +2634,51 @@ function PaletteDropPreview({ pageGrid, preview }: { pageGrid: PageGrid; preview
 function PaletteCard({
   slug,
   label,
+  previewProps,
+  pageGrid,
+  fontFamily,
   isDragging,
   dragOffset,
 }: {
   slug: string;
   label: string;
+  previewProps: Record<string, unknown>;
+  pageGrid: PageGrid;
+  fontFamily: string;
   isDragging: boolean;
   dragOffset: { x: number; y: number };
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `${PALETTE_ID_PREFIX}${slug}` });
+  // The card shows the module as it would actually be drawn, at its
+  // narrowest single-column form — the same renderModuleInstance the
+  // page itself uses, not an illustration of it. One column because
+  // that is the smallest a module ever gets, so the card promises the
+  // least and every real drop is at least this legible.
+  const preview = useMemo(() => {
+    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, 1);
+    const placement = { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan };
+    const rect = gridCellToPixels(pageGrid, placement);
+    const elements = renderModuleInstance(
+      {
+        id: `palette-preview-${slug}`,
+        locked: false,
+        ...placement,
+        propValues: previewProps,
+        moduleType: { slug },
+      },
+      pageGrid,
+      fontFamily
+    );
+    return { rect, elements };
+  }, [slug, previewProps, pageGrid, fontFamily]);
+
+  // Scaled to the card's own width. The rendered module is ~500 print
+  // pixels across at one column, so this is a large reduction - fine
+  // for the rects and rules, and the reason the label sits outside the
+  // preview rather than relying on the module's own type being
+  // readable at this size.
+  const scale = PALETTE_PREVIEW_WIDTH_PX / preview.rect.width;
+
   return (
     <div
       ref={setNodeRef}
@@ -2611,30 +2686,56 @@ function PaletteCard({
       {...attributes}
       style={{
         position: "relative",
-        padding: "6px 10px",
-        borderRadius: 7,
-        border: "none",
-        background: isDragging ? "#363636" : "#2a2a2a",
-        color: "#ddd",
-        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: 10,
+        borderRadius: 10,
+        border: `1px solid ${isDragging ? "#c9c9c9" : PANEL_EDGE}`,
+        background: isDragging ? PANEL_FILL_HOVER : PANEL_FILL,
+        color: PANEL_TEXT,
         cursor: isDragging ? "grabbing" : "grab",
         userSelect: "none",
         touchAction: "none",
         transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
-        boxShadow: isDragging ? "0 12px 28px rgba(0,0,0,0.35)" : undefined,
+        boxShadow: isDragging ? "0 12px 28px rgba(0,0,0,0.22)" : undefined,
         zIndex: isDragging ? 10 : undefined,
       }}
     >
-      {label}
+      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>{label}</div>
+      {/* Fixed box sized to the scaled render, with the module drawn
+          inside it at page scale. overflow:hidden because a module's
+          own outer border sits exactly on its bounds and a half-pixel
+          of it otherwise spills past the rounded corner. */}
+      <div
+        style={{
+          position: "relative",
+          width: PALETTE_PREVIEW_WIDTH_PX,
+          height: preview.rect.height * scale,
+          overflow: "hidden",
+          background: PANEL_BG,
+          borderRadius: 4,
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+          <PolotnoJsonRenderer
+            elements={preview.elements}
+            originX={preview.rect.x}
+            originY={preview.rect.y}
+            scale={scale}
+            suppressOuterBorderSize={null}
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
-const PALETTE_SECTIONS: Array<{ key: "side" | "bottom"; heading: string; hint: string }> = [
-  { key: "side", heading: "Side Modules", hint: "Sidebar column" },
-  { key: "bottom", heading: "Bottom Modules", hint: "Below the hourly grid" },
-];
 const PALETTE_SIDEBAR_WIDTH_PX = 260;
+// Card preview width — the panel's own width less its padding, the
+// card's padding, and the nesting indent.
+const PALETTE_PREVIEW_WIDTH_PX = 186;
 
 // Drag-to-add sidebar — requested directly: "create a pallette on the
 // side to drag and add new module." A sibling of the scaled page
@@ -2661,145 +2762,111 @@ const PALETTE_SIDEBAR_WIDTH_PX = 260;
 // so the slide stays smooth regardless of how much content the panel
 // holds.
 //
-// Both sections' cards show at once inside the open panel rather than
-// one flyout per section (there are only 3 cards total across both —
-// not enough content to justify a picker step of its own). `open` and
-// `highlightSection` are both controlled (owned by the main component,
-// not local state) specifically so AddModuleButton's own "+" zones can
-// drive them too — see that component's own comment: clicking one
-// opens the panel and briefly highlights the matching section, since
-// both are already visible together rather than needing to switch
-// which one is showing.
+// One module list, not two. It used to be split into "Side Modules"
+// and "Bottom Modules", which described where each type belonged — a
+// distinction cross-zone dragging removed: all three can live in
+// either zone now, and the palette was the last place still claiming
+// otherwise.
+//
+// `open` and `highlightModules` are both controlled (owned by the main
+// component, not local state) specifically so AddModuleButton's own
+// "+" zones can drive them too — clicking one opens the panel and
+// briefly marks the list.
 function ModulePalette({
   activeId,
   activeDelta,
   open,
-  highlightSection,
+  highlightModules,
   pageSettings,
+  pageGrid,
+  fontFamily,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
   open: boolean;
-  highlightSection: "side" | "bottom" | null;
-  // Current Page Settings state — this component owns rendering the
-  // Font/Hours controls and calling their own save actions directly
-  // (same "own the section's own controls" shape as PALETTE_MODULE_
-  // TYPES' cards), so it only needs the current values, not a setter —
-  // every save here reloads the page on success rather than expecting
-  // the parent to hold new state.
+  // A "+" zone was clicked and is asking for the module list to be
+  // shown and briefly marked. Used to be "side" | "bottom" | null,
+  // picking which of two groups to reveal; there is only one group now,
+  // so it is just a flag.
+  highlightModules: boolean;
+  // Current Page Settings state - this component owns rendering the
+  // Font/Hours controls and calling their own save actions directly, so
+  // it only needs the current values, not a setter.
   pageSettings: PageSettings;
+  // For the card previews, which render each module for real rather
+  // than illustrating it. Any page's grid will do - they share config.
+  pageGrid: PageGrid;
+  fontFamily: string;
 }) {
-  // Nested collapsibility inside the panel — requested directly:
-  // "'Add Module' collapsible as well as 'side modules' and 'bottom
-  // modules'." Local state, not lifted to the main component the way
-  // the panel's own open/highlightSection are: nothing outside this
-  // component ever needs to read or force these except in reaction to
-  // highlightSection changing, right below.
-  // Both default collapsed, requested directly — the panel opens to
-  // just two header rows rather than every card already expanded.
-  const [addModuleOpen, setAddModuleOpen] = useState(false);
-  const [sectionOpen, setSectionOpen] = useState<Record<"side" | "bottom", boolean>>({ side: false, bottom: false });
-  // Same collapse shape as addModuleOpen/sectionOpen above, for the
-  // sibling "Page Settings" section — independent state, since the two
-  // top-level sections don't collapse/expand together.
+  // Two top-level groups, each independently collapsible, both default
+  // collapsed so the panel opens to two header rows rather than every
+  // card expanded. The per-section nesting inside each group is gone:
+  // "Modules" had a "Side"/"Bottom" split that stopped being true once
+  // modules could cross zones, and "Page Settings" had Font and Hours
+  // as separate collapsibles for two controls, which is a click to
+  // reach one field.
+  const [modulesOpen, setModulesOpen] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
-  const [pageSettingsSectionOpen, setPageSettingsSectionOpen] = useState<Record<"font" | "hours", boolean>>({
-    font: false,
-    hours: false,
-  });
-  // A "+" zone asking to highlight a section (see the main component's
-  // own handleOpenPaletteSection) is also implicitly asking to *see*
-  // it — force both the "Add Module" group and that specific section
-  // open, or the very thing being pointed at would still be hidden
-  // behind a collapsed header. React's own "adjust state during
-  // rendering" pattern (comparing against a value snapshotted from the
-  // previous render, setState called directly in the render body) —
-  // not a useEffect: this codebase already prefers deriving from state
-  // during render over syncing it with an effect where possible (see
-  // fitWidthScale's own comment), and a plain useEffect+setState here
-  // would additionally trip this project's own "don't call setState
-  // synchronously inside an effect" lint rule.
-  const [lastHighlightSection, setLastHighlightSection] = useState(highlightSection);
-  if (highlightSection !== lastHighlightSection) {
-    setLastHighlightSection(highlightSection);
-    if (highlightSection) {
-      setAddModuleOpen(true);
-      setSectionOpen((prev) => ({ ...prev, [highlightSection]: true }));
-    }
+
+  // A "+" zone asking to highlight the module list is also asking to
+  // see it - force the group open, or the thing being pointed at stays
+  // hidden behind a collapsed header. React's "adjust state during
+  // rendering" pattern (compare against a value snapshotted from the
+  // previous render, setState in the render body), not a useEffect:
+  // this file prefers deriving during render, and a useEffect+setState
+  // here would trip the project's own lint rule.
+  const [lastHighlight, setLastHighlight] = useState(highlightModules);
+  if (highlightModules !== lastHighlight) {
+    setLastHighlight(highlightModules);
+    if (highlightModules) setModulesOpen(true);
   }
-  // Forcing a section open (just above) doesn't put it *in view* — the
-  // panel is its own scrollable region (overflow: auto below), and a
-  // "+" zone can be clicked while the panel's scrolled somewhere that
-  // doesn't happen to show the target section at all. Reported
-  // directly: "when i click on a plus box, the highlight of the nav
-  // section is cut off, I can only see the top right border radius of
-  // the highlight, the rest... cut off and hidden" — exactly what
-  // scrolling clips: the section (and its highlight, sized to match
-  // it) was mostly below the panel's own visible scroll area, only a
-  // sliver of its top-right corner actually inside it. A genuine DOM
-  // side effect (scrolling), not a value to derive during render, so
-  // this one really is a useEffect, unlike the setState calls above.
-  const sectionRefs = useRef<Partial<Record<"side" | "bottom", HTMLDivElement>>>({});
+
+  // Forcing it open does not put it in view - the panel is its own
+  // scrollable region and a "+" can be clicked while it is scrolled
+  // elsewhere. A real DOM side effect, so this one genuinely is an
+  // effect. Delayed past PaletteCollapse's own 0.22s grow animation:
+  // measuring mid-collapse picks a scroll position correct for a
+  // near-zero height that the animation is still growing out of.
+  const modulesRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!highlightSection) return;
-    // Delayed, not immediate — reported directly, twice more: "still
-    // cut off a bit... looks better than before." The section (and,
-    // one level up, "Add Module" itself) can both need to force-open
-    // right as this same click sets highlightSection, and
-    // PaletteCollapse's own open animation is a real 0.22s CSS
-    // transition (grid-template-rows), not instant. Calling
-    // scrollIntoView immediately measures the target *mid-collapse*
-    // — right at the very start of the grow animation, when its own
-    // layout height is still close to zero — so the scroll position
-    // it picks is correct for that fleeting near-zero-height instant,
-    // not for the fully-expanded content the animation keeps growing
-    // into for the next ~220ms afterward. Waiting past both possible
-    // animations (a small buffer over 0.22s covers either or both
-    // needing to run) means this measures the section at its real,
-    // final height instead.
+    if (!highlightModules) return;
     const timeout = setTimeout(() => {
-      sectionRefs.current[highlightSection]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      modulesRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 260);
     return () => clearTimeout(timeout);
-  }, [highlightSection]);
-  // Toggle button itself lives in the page header, not here (see the
-  // main render's own comment on why) — this just renders the sliding
-  // panel. Stays mounted (not conditionally rendered) at all times,
-  // sliding fully off-canvas via transform when closed — a mount/
-  // unmount would lose the transition entirely (nothing to animate
-  // *from*) and drop whatever drag state a card mid-drag might have.
-  // top: HEADER_HEIGHT_PX, not 0 — the header bar (and its own Reset-
-  // to-Template/save-error content) stays above and outside the panel
-  // rather than being covered by it, so it's still reachable regardless
-  // of whether the palette is open.
-  //
-  // overflow flips to "visible" for the duration of a palette-card drag
-  // — reported directly: "when i tried to drag a habit tracker from
-  // side nav my mouse got stuck scrolling to the side within the side
-  // nav." Root cause: this panel is *both* a CSS-transformed element
-  // (its own open/closed translateX slide) *and* a scrolling container
-  // (overflow: auto below) at the same time. PaletteCard's own drag
-  // also moves via a raw CSS transform (see its own header comment on
-  // why — same "translate the element itself" technique used
-  // throughout this file instead of dnd-kit's DragOverlay), which
-  // doesn't remove it from normal layout, only visually offsets it —
-  // so the instant a drag carries the card outside this panel's own
-  // box (which is immediately, since every real drop target is
-  // elsewhere on the page), the panel's scrollable content area grows
-  // to keep "containing" that visually-offset card, and the browser
-  // starts treating pointer movement as a scroll gesture on this
-  // container instead of purely the JS-driven card drag it's supposed
-  // to be. Can't fix it the way NativeModule's own drag avoids the
-  // exact same class of problem (per this file's "Why this doesn't use
-  // DragOverlay" header comment, position:fixed escapes a transformed
-  // ancestor) — this panel's own transform *is* that ancestor, so a
-  // fixed-position card here would stay trapped relative to the panel,
-  // not the viewport. Simplest real fix instead: this panel only
-  // genuinely needs to scroll while nothing's being dragged out of it
-  // — so overflow just turns off (`visible`) for the one brief window
-  // where staying "auto" would fight the drag, and reverts to `auto`
-  // immediately once the drag ends.
+  }, [highlightModules]);
+
+  // overflow flips to "visible" for the duration of a card drag. This
+  // panel is both a CSS-transformed element (its open/closed slide) and
+  // a scrolling container, and PaletteCard drags via its own transform
+  // - so the instant a drag carries the card outside this panel's box,
+  // the scroll area grows to keep containing it and the browser starts
+  // treating the gesture as a scroll. Reported directly: "my mouse got
+  // stuck scrolling to the side within the side nav." The panel only
+  // needs to scroll while nothing is being dragged out of it.
   const isDraggingPaletteCard = activeId?.startsWith(PALETTE_ID_PREFIX) ?? false;
+
+  const groupButton = (label: string, isOpen: boolean, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        color: PANEL_TEXT,
+        textAlign: "left",
+      }}
+    >
+      <PaletteChevron open={isOpen} />
+      <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>{label}</strong>
+    </button>
+  );
+
   return (
     <div
       style={{
@@ -2808,9 +2875,9 @@ function ModulePalette({
         left: 0,
         bottom: 0,
         width: PALETTE_SIDEBAR_WIDTH_PX,
-        background: "#141414",
-        borderRight: "1px solid #262626",
-        boxShadow: open ? "8px 0 32px rgba(0,0,0,0.35)" : "none",
+        background: PANEL_BG,
+        borderRight: `1px solid ${PANEL_EDGE}`,
+        boxShadow: open ? "8px 0 32px rgba(0,0,0,0.12)" : "none",
         transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
@@ -2819,241 +2886,65 @@ function ModulePalette({
         display: "flex",
         flexDirection: "column",
         gap: 12,
+        color: PANEL_TEXT,
       }}
     >
-      <button
-        type="button"
-        onClick={() => {
-          // Collapsing a parent also collapses its own children, for
-          // the *next* time it's reopened — requested directly: "when
-          // a parent is collapsed it collapses all of its children."
-          // Only on the way to closed, not open: reopening "Add
-          // Module" itself shouldn't force both sections open too,
-          // only reset what collapsing it just did.
-          const next = !addModuleOpen;
-          setAddModuleOpen(next);
-          if (!next) setSectionOpen({ side: false, bottom: false });
-        }}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          background: "none",
-          border: "none",
-          padding: 0,
-          cursor: "pointer",
-          color: "#f0f0f0",
-          textAlign: "left",
-        }}
-      >
-        <PaletteChevron open={addModuleOpen} />
-        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Modules</strong>
-      </button>
-      <PaletteCollapse open={addModuleOpen} allowOverflow={isDraggingPaletteCard}>
-        {/* Back to plain paddingLeft:14 (the intentional nested-indent) —
-            the previous "2px 2px 2px 14px" was reserving bleed room for
-            each section's highlight, which drew via box-shadow (paints
-            outside the element's own box, so it needs an ancestor to
-            leave it somewhere to bleed into). The highlight is now a
-            real border instead (see the section div below), which is
-            part of the box's own dimensions and can't be clipped by an
-            ancestor's overflow regardless of how much padding exists
-            anywhere in the chain — so this wrapper no longer needs to
-            carve out space for it. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
-          {PALETTE_SECTIONS.map((s) => {
-            const sectionIsOpen = sectionOpen[s.key];
-            return (
-              <div
-                key={s.key}
-                ref={(el) => {
-                  sectionRefs.current[s.key] = el ?? undefined;
-                }}
-                // Highlight styling lives directly on this div now —
-                // not a separate absolutely-positioned overlay sized to
-                // match it. That approach went through three attempts
-                // (a negative-margin bleed, then inset:-7, then inset:0)
-                // and got reported cut off after each one in a
-                // different way ("doesn't match up," then "still cut
-                // off," then "still cut off a bit on the bottom and
-                // right") — every version depended on a *second* box
-                // staying in sync with this one's real content size,
-                // and something about the panel's own nested padding/
-                // collapse/scroll machinery kept finding a new way to
-                // break that sync. Putting the highlight on the actual
-                // content box itself removes the whole problem class at
-                // the root: there's only one box now, so there's
-                // nothing left that could ever get out of sync with it.
-                //
-                // The outline itself is a real `border`, not a
-                // box-shadow. A box-shadow paints *outside* the
-                // element's own border box, so it always needs the
-                // ancestor chain to reserve extra padding to have
-                // somewhere to bleed into — a padding-tuning fix
-                // (reserving 2px on the sections-list wrapper) reduced
-                // but didn't eliminate reported clipping ("top and
-                // right" on the first section, "bottom and right" on
-                // the last — the section flush against each end of the
-                // scrollable list, same as before, just smaller).
-                // `border` is part of the box's own dimensions, so it
-                // can never be clipped by an ancestor's overflow no
-                // matter how many levels deep or how little padding
-                // exists anywhere in the chain. Always rendering a 1px
-                // border (transparent when not highlighted) keeps the
-                // box's size constant so toggling the highlight never
-                // shifts layout.
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 5,
-                  padding: 7,
-                  borderRadius: 14,
-                  // Light grey per direct request (was blue). Border
-                  // faded down to "almost no border," then dropped
-                  // entirely per direct follow-up — background fill
-                  // only now. Still an always-present transparent
-                  // border (not just omitting the property) so the
-                  // section keeps the exact same box size whether or
-                  // not it's highlighted — no layout shift on toggle.
-                  background: highlightSection === s.key ? "rgba(220, 220, 220, 0.14)" : "transparent",
-                  border: "1px solid transparent",
-                  transition: "background 0.4s ease",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSectionOpen((prev) => ({ ...prev, [s.key]: !prev[s.key] }))}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <PaletteChevron open={sectionIsOpen} />
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>{s.heading}</div>
-                    <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>{s.hint}</div>
-                  </div>
-                </button>
-                <PaletteCollapse open={sectionIsOpen} allowOverflow={isDraggingPaletteCard}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, paddingLeft: 14, paddingTop: 5 }}>
-                    {PALETTE_MODULE_TYPES.filter((m) => m.section === s.key).map((m) => (
-                      <PaletteCard
-                        key={m.slug}
-                        slug={m.slug}
-                        label={m.label}
-                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-                        dragOffset={activeDelta}
-                      />
-                    ))}
-                  </div>
-                </PaletteCollapse>
-              </div>
-            );
-          })}
+      {groupButton("Modules", modulesOpen, () => setModulesOpen((v) => !v))}
+      <PaletteCollapse open={modulesOpen} allowOverflow={isDraggingPaletteCard}>
+        <div
+          ref={modulesRef}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            paddingLeft: 14,
+            paddingTop: 4,
+            borderRadius: 12,
+            background: highlightModules ? "rgba(0, 0, 0, 0.05)" : "transparent",
+            transition: "background 0.4s ease",
+          }}
+        >
+          {PALETTE_MODULE_TYPES.map((m) => (
+            <PaletteCard
+              key={m.slug}
+              slug={m.slug}
+              label={m.label}
+              previewProps={m.previewProps}
+              pageGrid={pageGrid}
+              fontFamily={fontFamily}
+              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+              dragOffset={activeDelta}
+            />
+          ))}
         </div>
       </PaletteCollapse>
-      {/* "Page Settings" — sibling to "Modules" above, not nested inside
-          it, requested directly: "add a sibling to 'modules' in the side
-          nav called 'Page settings'." Same top-level button + nested-
-          section pattern as "Modules" itself (PaletteChevron/
-          PaletteCollapse, default collapsed, collapsing the parent
-          collapses its own children too) for visual/interaction
-          consistency, just with settings controls instead of
-          PaletteCards inside each section. */}
-      <button
-        type="button"
-        onClick={() => {
-          const next = !pageSettingsOpen;
-          setPageSettingsOpen(next);
-          if (!next) setPageSettingsSectionOpen({ font: false, hours: false });
-        }}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          background: "none",
-          border: "none",
-          padding: 0,
-          cursor: "pointer",
-          color: "#f0f0f0",
-          textAlign: "left",
-        }}
-      >
-        <PaletteChevron open={pageSettingsOpen} />
-        <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>Page Settings</strong>
-      </button>
+
+      {groupButton("Page Settings", pageSettingsOpen, () => setPageSettingsOpen((v) => !v))}
       <PaletteCollapse open={pageSettingsOpen} allowOverflow={false}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: 7 }}>
-            <button
-              type="button"
-              onClick={() =>
-                setPageSettingsSectionOpen((prev) => ({ ...prev, font: !prev.font }))
-              }
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <PaletteChevron open={pageSettingsSectionOpen.font} />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>Font</div>
-                <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>whole canvas</div>
-              </div>
-            </button>
-            <PaletteCollapse open={pageSettingsSectionOpen.font} allowOverflow={false}>
-              <div style={{ paddingLeft: 14, paddingTop: 5 }}>
-                <FontToggle fontChoice={pageSettings.fontFamily} />
-              </div>
-            </PaletteCollapse>
+        {/* Font and Hours sit directly here now rather than behind a
+            collapsible each. Two controls between them - a header row
+            you have to click to reach one field was costing more than
+            it organised. Small labels keep them distinguishable
+            without the extra interaction. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingLeft: 14, paddingTop: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Font
+            </div>
+            <FontToggle fontChoice={pageSettings.fontFamily} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: 7 }}>
-            <button
-              type="button"
-              onClick={() =>
-                setPageSettingsSectionOpen((prev) => ({ ...prev, hours: !prev.hours }))
-              }
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <PaletteChevron open={pageSettingsSectionOpen.hours} />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#ddd", lineHeight: 1.3 }}>Hours</div>
-                <div style={{ fontSize: 9.5, color: "#707070", lineHeight: 1.3 }}>day start/end, increments</div>
-              </div>
-            </button>
-            <PaletteCollapse open={pageSettingsSectionOpen.hours} allowOverflow={false}>
-              <div style={{ paddingLeft: 14, paddingTop: 5 }}>
-                <HoursForm
-                  startTime={pageSettings.startTime}
-                  endTime={pageSettings.endTime}
-                  intervalMinutes={pageSettings.intervalMinutes}
-                  intervalMode={pageSettings.intervalMode}
-                  compactHourRows={pageSettings.compactHourRows}
-                  weekStartDay={pageSettings.weekStartDay}
-                />
-              </div>
-            </PaletteCollapse>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Hours
+            </div>
+            <HoursForm
+              startTime={pageSettings.startTime}
+              endTime={pageSettings.endTime}
+              intervalMinutes={pageSettings.intervalMinutes}
+              intervalMode={pageSettings.intervalMode}
+              compactHourRows={pageSettings.compactHourRows}
+              weekStartDay={pageSettings.weekStartDay}
+            />
           </div>
         </div>
       </PaletteCollapse>
@@ -3091,8 +2982,8 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
     border: "none",
     borderRadius: 8,
     cursor: pending ? "default" : "pointer",
-    background: fontChoice === choice ? "rgba(220, 220, 220, 0.14)" : "transparent",
-    color: fontChoice === choice ? "#f0f0f0" : "#888",
+    background: fontChoice === choice ? PANEL_FILL_HOVER : "transparent",
+    color: fontChoice === choice ? PANEL_TEXT : PANEL_FAINT,
     opacity: pending ? 0.6 : 1,
   });
 
@@ -3102,7 +2993,7 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
         style={{
           display: "flex",
           gap: 2,
-          background: "#1c1c1c",
+          background: PANEL_BG,
           borderRadius: 10,
           padding: 2,
         }}
@@ -3114,7 +3005,7 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
           Aa
         </button>
       </div>
-      {error && <span style={{ fontSize: 10.5, color: "#ff5555" }}>{error}</span>}
+      {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>
   );
 }
@@ -3194,10 +3085,10 @@ function HoursForm({
     });
 
   const fieldStyle: CSSProperties = {
-    background: "#1c1c1c",
-    border: "1px solid #333",
+    background: PANEL_BG,
+    border: `1px solid ${PANEL_EDGE}`,
     borderRadius: 6,
-    color: "#ddd",
+    color: PANEL_TEXT,
     fontSize: 11,
     padding: "4px 6px",
     width: "100%",
@@ -3215,7 +3106,7 @@ function HoursForm({
       {draftInterval !== "off" && (
         <>
           <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ color: "#707070" }}>Start</span>
+            <span style={{ color: PANEL_MUTED }}>Start</span>
             <input
               type="time"
               step={1800}
@@ -3225,7 +3116,7 @@ function HoursForm({
             />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ color: "#707070" }}>End</span>
+            <span style={{ color: PANEL_MUTED }}>End</span>
             <input
               type="time"
               step={1800}
@@ -3237,7 +3128,7 @@ function HoursForm({
         </>
       )}
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ color: "#707070" }}>Increments</span>
+        <span style={{ color: PANEL_MUTED }}>Increments</span>
         <select
           value={draftInterval}
           onChange={(event) => setDraftInterval(event.target.value as "30" | "60" | "off")}
@@ -3249,13 +3140,13 @@ function HoursForm({
         </select>
       </label>
       {draftInterval === "60" && (
-        <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#707070" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, color: PANEL_MUTED }}>
           <input type="checkbox" checked={draftCompact} onChange={(event) => setDraftCompact(event.target.checked)} />
           Compact hour rows
         </label>
       )}
       <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ color: "#707070" }}>Week starts on</span>
+        <span style={{ color: PANEL_MUTED }}>Week starts on</span>
         <select
           value={draftWeekStartDay}
           onChange={(event) => setDraftWeekStartDay(Number(event.target.value))}
@@ -3281,7 +3172,7 @@ function HoursForm({
       >
         {pending ? "Saving…" : "Save"}
       </button>
-      {error && <span style={{ color: "#ff5555" }}>{error}</span>}
+      {error && <span style={{ color: "#c0392b" }}>{error}</span>}
     </div>
   );
 }
@@ -3331,8 +3222,8 @@ function PaletteCollapse({
   );
 }
 
-// Small rotating disclosure triangle shared by "Add Module" and each
-// PALETTE_SECTIONS header — a plain CSS rotate on a fixed glyph rather
+// Small rotating disclosure triangle shared by the panel's two group
+// headers — a plain CSS rotate on a fixed glyph rather
 // than swapping between two different characters (▸/▾), so the state
 // change animates instead of jumping. fontSize 25 (2.5x the original
 // 10) read as too large once seen live; pulled back to 16.
@@ -3342,7 +3233,7 @@ function PaletteChevron({ open }: { open: boolean }) {
       style={{
         display: "inline-block",
         fontSize: 16,
-        color: "#888",
+        color: PANEL_FAINT,
         transform: open ? "rotate(90deg)" : "rotate(0deg)",
         transition: "transform 0.18s ease",
         flexShrink: 0,
@@ -4316,7 +4207,7 @@ export function NativePlannerEditor({
   // paletteOpen itself is declared earlier (see paletteReservedWidth's
   // own comment for why) — this block just continues owning the rest
   // of the palette's state.
-  const [paletteHighlightSection, setPaletteHighlightSection] = useState<"side" | "bottom" | null>(null);
+  const [paletteHighlightModules, setPaletteHighlightModules] = useState(false);
   // True for the brief window right after paletteOpen changes —
   // requested directly ("when you expand side bar it zooms out a
   // little and scrolls... looks like the side bar pushes the canvas
@@ -4347,10 +4238,10 @@ export function NativePlannerEditor({
   // already uses. Doesn't clear `open`: opening is sticky (stays open
   // until the user closes it themselves), only the highlight is
   // transient.
-  const handleOpenPaletteSection = useCallback((section: "side" | "bottom") => {
+  const handleOpenPaletteModules = useCallback(() => {
     setPaletteOpenAnimated(true);
-    setPaletteHighlightSection(section);
-    setTimeout(() => setPaletteHighlightSection((current) => (current === section ? null : current)), 1400);
+    setPaletteHighlightModules(true);
+    setTimeout(() => setPaletteHighlightModules(false), 1400);
   }, [setPaletteOpenAnimated]);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -7213,7 +7104,7 @@ export function NativePlannerEditor({
                     onStackResizeStart={handleStackResizeStart}
                     onStackResizeMove={handleStackResizeMove}
                     onStackResizeEnd={handleStackResizeEnd}
-                    onOpenPaletteSection={handleOpenPaletteSection}
+                    onOpenPaletteModules={handleOpenPaletteModules}
                     onDeleteModule={handleDeleteModule}
                     onUpdateHeading={handleUpdateHeading}
                     onUpdateHabits={handleUpdateHabits}
@@ -7231,8 +7122,10 @@ export function NativePlannerEditor({
               activeId={activeId}
               activeDelta={activeDelta}
               open={paletteOpen}
-              highlightSection={paletteHighlightSection}
+              highlightModules={paletteHighlightModules}
               pageSettings={pageSettings}
+              pageGrid={pages[0].pageGrid}
+              fontFamily={fontFamily}
             />
           </DndContext>
         </div>
