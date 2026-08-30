@@ -5459,15 +5459,27 @@ export function NativePlannerEditor({
       // generically as "these ids' rowStart changed," with no
       // assumption baked in about which zone or page an entry belongs
       // to.
-      const reflow = crossingZones
-        ? [
-            ...targetReflow,
-            ...gravityRepackAfterDeparture(
-              { id: instanceId, columnStart: current.columnStart, rowStart: current.rowStart, columnSpan: current.columnSpan, rowSpan: current.rowSpan },
-              sourceOthers
-            ),
-          ]
-        : targetReflow;
+      // A phantom is excluded from the gravity fill: it is arriving, not
+      // departing, so there is no gap behind it to close.
+      //
+      // Running it anyway was actively destructive. The phantom's
+      // committed placement sits in the very zone it is entering, so
+      // gravity told those siblings to GROW into the space it was
+      // supposedly vacating at the same moment the target reflow told
+      // them to SHRINK to admit it - two opposite instructions to the
+      // same modules in one tick. Reported as a sidebar sibling growing
+      // and overlapping instead of making room, and it corrupted the
+      // resolved row the drop was then committed at.
+      const reflow =
+        crossingZones && instanceId !== PHANTOM_ID
+          ? [
+              ...targetReflow,
+              ...gravityRepackAfterDeparture(
+                { id: instanceId, columnStart: current.columnStart, rowStart: current.rowStart, columnSpan: current.columnSpan, rowSpan: current.rowSpan },
+                sourceOthers
+              ),
+            ]
+          : targetReflow;
       // Which zone the pointer is in, whether or not being there
       // constitutes a crossing. Previously null unless crossing, which
       // made "back in my own zone" indistinguishable from "over dead

@@ -1134,6 +1134,22 @@ export async function addPaletteModuleAt(
         }
       }
 
+      // The size a module gets for ARRIVING in a zone, which is what
+      // this is - the same getMinRowSpanForSlug moveModuleAcrossZones
+      // gives one crossing into the same zone.
+      //
+      // Everything above computed effectiveRowSpan from defaultRowSpan
+      // (10 for a to-do or a habit tracker), shrinking it only when it
+      // would not otherwise fit. That was the rule when a palette drop
+      // was its own separate path with a dashed-rectangle preview. It
+      // is not the rule the drag shows any more: the preview renders
+      // the module at the arriving size, so committing ten rows made it
+      // visibly resize itself the instant it was released. Reported as
+      // a to-do and a habit tracker "not rendering in place."
+      //
+      // Applied last, after every branch above has settled
+      // effectiveColumnSpan, because the minimum depends on the width.
+      effectiveRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
       const candidate = clampGridPlacement(pageGrid, {
         columnStart: effectiveColumnStart,
         rowStart: effectiveRowStart,
