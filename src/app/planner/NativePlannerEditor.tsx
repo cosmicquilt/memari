@@ -1354,6 +1354,7 @@ function NativePage({
   stackBottoms,
   hourlyResizeStackBottoms,
   emptyZones,
+  suppressAddZones,
   resizingIds,
   easeContent,
   reflowContent,
@@ -1416,6 +1417,10 @@ function NativePage({
   // itself. Only AddModuleButton/SectionAddButton below read this;
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
+  // True while a crossing drag is live. Both "+" affordances below are
+  // positioned from committed geometry, which a crossing has
+  // deliberately departed from on screen - see their own render guards.
+  suppressAddZones: boolean;
   resizingIds: ReadonlySet<string> | null;
   // The one module whose box is currently easing between zone shapes,
   // with the geometry its CONTENT should render at meanwhile - the
@@ -1769,7 +1774,23 @@ function NativePage({
           Concatenated with emptyZones (not just stackBottoms) so a zone
           with literally nothing in it yet still gets one, spanning its
           whole height — see emptyZonesByPageId's own comment. */}
-      {[...stackBottoms, ...emptyZones].map((sb) => (
+      {/* Hidden for the duration of a crossing drag.
+          The reasoning just above holds for a plain reposition - a pure
+          CSS transform moves nothing this button reads. A CROSSING is
+          different: the arriving module makes the target stack taller
+          and departure gravity makes the source stack shorter, both
+          live on screen, while stackBottomsByPageId still reports the
+          committed extents. So this drew at the OLD stack bottom while
+          the modules drew at their previewed rows, and the dashed box
+          landed on top of the last one. Reported as "blue box popped up
+          when dragging habit to side at bottom overlapping the last
+          side module, disappeared when i released."
+          Only the source and target zones actually diverge, but the
+          button is inert mid-drag either way, so hiding all of them is
+          one rule instead of a second description of which two zones a
+          crossing touches - and this file's recurring bug is exactly
+          two descriptions of the same geometry drifting apart. */}
+      {(suppressAddZones ? [] : [...stackBottoms, ...emptyZones]).map((sb) => (
             <AddModuleButton
               key={`add:${sb.bottomId}`}
               pageGrid={page.pageGrid}
@@ -1822,7 +1843,9 @@ function NativePage({
           zone's own SectionAddButton just never shows — harmless, and
           AddModuleButton's dashed box (always visible, not hover-gated)
           already spans that entire empty zone on its own regardless. */}
-      {[...stackBottoms, ...emptyZones].map((sb) => (
+      {/* Same suppression, same reason - this one spans the whole zone
+          from stackTopRowStart, so a crossing moves both of its edges. */}
+      {(suppressAddZones ? [] : [...stackBottoms, ...emptyZones]).map((sb) => (
         <SectionAddButton
           key={`section-add:${sb.bottomId}`}
           pageGrid={page.pageGrid}
@@ -4353,6 +4376,18 @@ export function NativePlannerEditor({
   // own bounds (the gap between pages, or off the spread entirely), not
   // just clamped into the nearest one — a palette drag that isn't over
   // any page shouldn't show a preview anywhere.
+  // A crossing drag is in flight, so every zone's committed geometry is
+  // a description the screen has departed from. Drives the "+" add-zone
+  // suppression - see the render guards for AddModuleButton.
+  //
+  // crossingZones specifically, not merely "a drag is happening":
+  // confirmedCrossingPreview is set whenever the pointer is over any
+  // valid zone, reorder included, and a same-zone reorder preserves each
+  // member's span so the stack's total extent - the only thing these
+  // buttons read - does not move.
+  const crossingInProgress =
+    activeId !== null && (confirmedCrossingPreview?.preview.crossingZones ?? false);
+
   const emptyZonesByPageId = useMemo(() => {
     const previewZoneKey = activeId ? confirmedCrossingPreview?.zoneKey ?? null : null;
     const byPage: Record<string, StackBottom[]> = {};
@@ -7641,6 +7676,7 @@ export function NativePlannerEditor({
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
+                    suppressAddZones={crossingInProgress}
                     resizingIds={effectiveResizingIds}
                     easeContent={easeContent}
                     reflowContent={reflowContentAll}
