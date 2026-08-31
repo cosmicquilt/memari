@@ -978,7 +978,9 @@ export async function addPaletteModuleAt(
       let effectiveColumnStart = columnStart;
       let effectiveColumnSpan = moduleType.defaultColumnSpan;
       let effectiveRowSpan = moduleType.defaultRowSpan;
-      let effectiveRowStart = rowStart;
+      // The caller's own requested row, passed straight through. Nothing
+      // reassigns this any more - see the sidebar branch below.
+      const effectiveRowStart = rowStart;
       const configOverrides: Record<string, unknown> = {};
       if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker" || moduleTypeSlug === "labeled-box") {
         // todo-checklist and habit-tracker size *and position* themselves
@@ -1040,49 +1042,10 @@ export async function addPaletteModuleAt(
             configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
           }
 
-          // A fixed-size (moduleType.defaultRowSpan, 10) drop can fail
-          // to find room now that a sibling already in this same zone
-          // can be resized shorter than its own default (see the
-          // vertical-stack/resize feature this pairs with) — reported
-          // directly: "i tried to drag to do list below habit tracker
-          // and it doesn't fit." The search below only ever tries one
-          // fixed size; if the only free room left in this zone is
-          // shorter than the default but still enough to be useful, it
-          // finds nothing and the drop is silently refused instead of
-          // landing at whatever size actually fits — not what a user
-          // dragging a second module into a partially-full stack would
-          // expect. Computed directly rather than via
-          // findNearestFreeCell (which can't discover "how much room is
-          // there," only test one fixed candidate): this zone's own
-          // current bottom edge is either the deepest existing same-
-          // column-range sibling's own row extent, or the zone's own
-          // top (one past hourly-grid-core's reserved gap row) if
-          // nothing's there yet, and the room available for a fresh
-          // drop is whatever's left between that and the page's own
-          // bottom edge — this zone is never bounded by anything else
-          // (see WEEK_TODO_TEMPLATE's own comment: 19 hourly-grid rows
-          // + 1 gap + 10 exactly fills this app's 30-row grid).
-          const zoneTop = hourlyGrid.rowStart !== null ? hourlyGrid.rowStart + hourlyGrid.rowSpan + 1 : rowStart;
-          const zoneSiblings = page.moduleInstances.filter(
-            (mi): mi is typeof mi & { rowStart: number } =>
-              !mi.locked &&
-              mi.columnStart === effectiveColumnStart &&
-              mi.columnSpan === effectiveColumnSpan &&
-              mi.rowStart !== null &&
-              mi.rowStart >= zoneTop
-          );
-          const zoneStart = zoneSiblings.length > 0 ? Math.max(...zoneSiblings.map((mi) => mi.rowStart + mi.rowSpan)) : zoneTop;
-          const availableRows = pageGrid.gridRows - zoneStart;
-          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
-          if (availableRows >= minRowSpan) {
-            effectiveRowSpan = Math.min(moduleType.defaultRowSpan, availableRows);
-            effectiveRowStart = zoneStart;
-          }
-          // else: not enough room even at this type's own minimum —
-          // leave effectiveRowSpan/effectiveRowStart at the original
-          // full-default request; the unchanged findNearestFreeCell
-          // search below will correctly find nothing and refuse the
-          // drop, same as it already does for a genuinely full page.
+          // This branch used to also force effectiveRowStart to the
+          // zone's own bottom edge, appending the new module below
+          // everything already there and ignoring the requested row.
+          // See the sidebar branch below for why that is gone.
         } else if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
           // Sidebar (side-zone) compact placement — see this block's own
           // top comment for the full reasoning, including why labeled-box
@@ -1094,43 +1057,36 @@ export async function addPaletteModuleAt(
             configOverrides.dayCount = 1;
           }
 
-          // Shrink-to-fit whatever room is actually left, same
-          // reasoning as the bottom zone's own identical fix just above
-          // ("i tried to drag to do list below habit tracker and it
-          // doesn't fit") — reported directly here too: "its not
-          // letting me drag the habit and the todo from the side nav to
-          // the bottom empty space of the sidebar." The original
-          // comment on this branch reasoned the sidebar can already
-          // hold other content at arbitrary rows, so a single "the
-          // available gap" number wouldn't mean as much as it does in
-          // the bottom zone — true, but missed that moduleType.
-          // defaultRowSpan (10) essentially never fits below whatever's
-          // already seeded there (week-title, Gratitude/Reminders/
-          // Notes...), so every request silently failed instead of
-          // landing at whatever size the remaining room actually
-          // supports. Unlike the bottom zone, there's no single locked
-          // anchor to measure from (hourly-grid-core there; nothing
-          // equivalent here) — not filtering out locked siblings is
-          // what covers that instead: the deepest existing item this
-          // column has *at all*, locked (week-title) or not, is where
-          // free space starts, mirroring "the bottom empty space of the
-          // sidebar" the way it was actually described.
-          const columnSiblings = page.moduleInstances.filter(
-            (mi): mi is typeof mi & { rowStart: number } =>
-              mi.columnStart === effectiveColumnStart && mi.columnSpan === effectiveColumnSpan && mi.rowStart !== null
-          );
-          const zoneStart =
-            columnSiblings.length > 0 ? Math.max(...columnSiblings.map((mi) => mi.rowStart + mi.rowSpan)) : 0;
-          const availableRows = pageGrid.gridRows - zoneStart;
-          const minRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
-          if (availableRows >= minRowSpan) {
-            effectiveRowSpan = Math.min(moduleType.defaultRowSpan, availableRows);
-            effectiveRowStart = zoneStart;
-          }
-          // else: leave effectiveRowSpan/effectiveRowStart at the
-          // original full-default request — findNearestFreeCell below
-          // will correctly find nothing and refuse the drop, same as a
-          // genuinely full column already behaves for a labeled-box.
+          // The requested row is honoured, not overridden.
+          //
+          // Both this branch and the bottom-zone one above used to end
+          // by forcing effectiveRowStart to the deepest existing bottom
+          // edge in the column - append to the end of the zone. That
+          // was right when a palette drop was its own path with a
+          // dashed-rectangle preview and no meaningful row to point at.
+          // It is wrong now: the drag previews the module inserted at a
+          // specific row, with siblings shrinking around it, and the
+          // caller passes exactly the row that preview resolved. The
+          // server then quietly appended it to the bottom instead.
+          //
+          // The visible symptom was not the module being low down - it
+          // was a HOLE. The client optimistically commits the preview's
+          // own reflow on release and then applies whatever the server
+          // says moved. Appending moves nobody, so the server's
+          // "reflowed" list came back empty, the optimistically-shifted
+          // siblings were never corrected, and the space they had
+          // opened up mid-stack stayed open with the new module sitting
+          // below all of it. Reported as "i dropped habits on side ...
+          // it went in the side but left a large gap above it."
+          //
+          // What is left here is the part still true: the sidebar is
+          // one column wide, and a to-do renders one day-column in it.
+          // Sizing is settled below by getMinRowSpanForSlug (the
+          // arriving-size rule, which already overwrote everything this
+          // branch used to compute), and fitting is settled by
+          // resolveModulePlacement, which unlike the old fixed-size
+          // search can ask siblings to shrink - the same thing the
+          // preview was already showing.
         }
       }
 
@@ -1233,13 +1189,43 @@ export async function addPaletteModuleAt(
         if (!otherMi) continue;
         paletteMinRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, pageGrid, effectiveColumnSpan);
       }
-      const { placement: clamped, reflow: paletteReflow } = resolveModulePlacement(
+      const { placement: resolvedPlacement, reflow: paletteReflow } = resolveModulePlacement(
         pageGrid,
         { ...candidate, columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
         occupied,
         undefined,
         paletteMinRowSpanById
       );
+
+      // Pack the arriving module up against whatever sits directly
+      // above it, exactly as resolveDrag does client-side for a
+      // crossing (NativePlannerEditor.tsx - see its own comment for the
+      // derivation). resolveModulePlacement only reflows on a
+      // COLLISION, so a drop into free space stays wherever it was
+      // asked for; every other placement path in this app gravitates to
+      // the top of its zone, and the drag preview already draws it
+      // there. Without this, honouring the requested row above would
+      // have traded one gap for another.
+      //
+      // Measured against the post-reflow picture, since a sibling that
+      // just moved to make room defines the real edge above. The zone's
+      // own ceiling needs no special case: __hourlygridgap__ bounds the
+      // bottom zone and week-title the sidebar, both already in
+      // `occupied` spanning the right columns. Only ever pulls UP, and
+      // only into genuinely empty space.
+      const paletteMovedById = new Map(paletteReflow.map((m) => [m.id, m]));
+      let paletteTopEdge = 0;
+      for (const o of occupied) {
+        if (o.columnStart >= effectiveColumnStart + effectiveColumnSpan) continue;
+        if (o.columnStart + o.columnSpan <= effectiveColumnStart) continue;
+        const moved = paletteMovedById.get(o.id);
+        const bottom = (moved?.rowStart ?? o.rowStart) + (moved?.rowSpan ?? o.rowSpan);
+        if (bottom <= resolvedPlacement.rowStart && bottom > paletteTopEdge) paletteTopEdge = bottom;
+      }
+      const clamped =
+        paletteTopEdge < resolvedPlacement.rowStart
+          ? { ...resolvedPlacement, rowStart: paletteTopEdge }
+          : resolvedPlacement;
 
       // Pull each config field's declared default out of the JSON
       // Schema, so a freshly-added instance starts in a sensible state,
