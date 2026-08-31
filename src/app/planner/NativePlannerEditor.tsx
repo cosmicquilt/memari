@@ -4419,7 +4419,15 @@ export function NativePlannerEditor({
   // just clamped into the nearest one — a palette drag that isn't over
   // any page shouldn't show a preview anywhere.
   const screenPointToPageCell = useCallback(
-    (clientX: number, clientY: number): { pageId: string; columnStart: number; rowStart: number } | null => {
+    (
+      clientX: number,
+      clientY: number
+      // pageX/pageY are the same page-local pixel position the cell is
+      // derived from, handed back rather than thrown away. A cell is
+      // too coarse for anything that has to line up with the pointer
+      // itself - see the phantom's own entry, which needs to know where
+      // in the cell the cursor actually is.
+    ): { pageId: string; columnStart: number; rowStart: number; pageX: number; pageY: number } | null => {
       const container = scrollContainerRef.current;
       if (!container) return null;
       const containerRect = container.getBoundingClientRect();
@@ -4435,7 +4443,13 @@ export function NativePlannerEditor({
       const pageGrid = pageGridByPageId[page.pageId];
       if (!pageGrid) return null;
       const cell = pixelsToGridCell(pageGrid, { x: localX, y: contentY });
-      return { pageId: page.pageId, columnStart: cell.columnStart, rowStart: cell.rowStart };
+      return {
+        pageId: page.pageId,
+        columnStart: cell.columnStart,
+        rowStart: cell.rowStart,
+        pageX: localX,
+        pageY: contentY,
+      };
     },
     [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
   );
@@ -5018,10 +5032,11 @@ export function NativePlannerEditor({
       const slug = rawId.slice(PALETTE_ID_PREFIX.length);
       const meta = PALETTE_MODULE_TYPES.find((m) => m.slug === slug);
       if (!meta) return;
-      const pointer = lastPointerRef.current;
-      const target = screenPointToPageCell(pointer.x, pointer.y);
+      const clientPointer = lastPointerRef.current;
+      const target = screenPointToPageCell(clientPointer.x, clientPointer.y);
       // Still off-canvas - nothing to place it against yet.
       if (!target) return;
+      const pointer = { x: clientPointer.x, y: clientPointer.y, pageX: target.pageX, pageY: target.pageY };
       const phantomPageGrid = pageGridByPageId[target.pageId];
       if (!phantomPageGrid) return;
       // Enter ALREADY ZONED, not at the raw cell under the pointer.
@@ -5053,29 +5068,10 @@ export function NativePlannerEditor({
       if (!phantomZone) return;
       const phantomColumnSpan = phantomZone.columnSpan;
       const phantomRowSpan = getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan);
-      // Centred on the pointer, not hung off it.
-      //
-      // The phantom draws at its committed cell plus the grab-point
-      // compensation, and that compensation is exactly zero on this
-      // first frame: it is grabFraction * oldSize - grabFraction *
-      // newSize, and entering at the zone's own shape makes those two
-      // sizes the same. So the committed cell IS where the module
-      // paints, and entering at the cell under the pointer put the
-      // module's top-left CORNER on the cursor with the whole body
-      // hanging down-right of it - "once i exit pallete the module
-      // isnt on my cursor."
-      //
-      // The column is not ours to pick; the zone dictates it, and a
-      // module snapping to its zone's width is the correct behaviour.
-      // The row is, so back the module up by half its height. That
-      // also makes the (0.5, 0.5) grab fraction stamped below TRUE
-      // rather than merely asserted - resolveDrag reconstructs the
-      // pointer as cell + grabFraction * size, which only lands back
-      // on the real pointer if the module is genuinely centred on it.
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
           columnStart: phantomZone.columnStart,
-          rowStart: target.rowStart - Math.floor(phantomRowSpan / 2),
+          rowStart: target.rowStart,
           columnSpan: phantomColumnSpan,
           rowSpan: phantomRowSpan,
         }),
@@ -5103,12 +5099,47 @@ export function NativePlannerEditor({
         })
       );
       setActiveId(PHANTOM_ID);
-      // The gesture restarts here. Delta is measured from the moment of
+      // The gesture restarts here: delta is measured from the moment of
       // entry rather than from the card pickup, and the module arrives
       // centred on the pointer - so the grab fraction is the middle,
       // not whatever fraction of a palette card happened to be grabbed.
-      pointerOriginRef.current = { x: pointer.x, y: pointer.y };
-      setActiveDelta(ZERO_OFFSET);
+      //
+      // Centring is done by OFFSETTING THE ORIGIN, not by moving the
+      // committed cell. The first attempt at this backed `placement`
+      // up by half a rowSpan, which was wrong twice over: a cell is far
+      // too coarse to line a box up with a cursor, and worse, it broke
+      // the invariant the block above exists to maintain - a phantom
+      // entering the bottom zone half a module high lands its committed
+      // cell inside the hourly grid, which is no zone at all, and every
+      // resolution after that compares against a placement no real
+      // module could hold.
+      //
+      // So the placement stays exactly zone-aligned and the offset goes
+      // where offsets belong. Rendered top-left is cell + rawDelta (the
+      // size compensation is zero here - old and new size are the same
+      // on the entry frame), rawDelta is (pointer - origin) / scale,
+      // and we want rendered top-left to be pointer - size/2. Solving
+      // for the origin gives the line below. Every later move event
+      // measures from that same origin, so the box stays glued to the
+      // cursor for the rest of the gesture, and resolveDrag - which
+      // reconstructs the pointer as cell + grabFraction * size + delta
+      // - recovers the real pointer exactly, which is what makes the
+      // (0.5, 0.5) stamped here true rather than merely asserted.
+      const phantomSize = gridCellToPixels(phantomPageGrid, {
+        columnStart: 0,
+        rowStart: 0,
+        columnSpan: phantomColumnSpan,
+        rowSpan: phantomRowSpan,
+      });
+      const centringDelta = {
+        x: pointer.pageX - phantomSize.width / 2 - origin.x,
+        y: pointer.pageY - phantomSize.height / 2 - origin.y,
+      };
+      pointerOriginRef.current = {
+        x: pointer.x - centringDelta.x * scale,
+        y: pointer.y - centringDelta.y * scale,
+      };
+      setActiveDelta({ x: centringDelta.x * scale, y: centringDelta.y * scale });
       grabFractionCapturedRef.current = true;
       setGrabFraction({ x: 0.5, y: 0.5 });
     },
@@ -5126,6 +5157,7 @@ export function NativePlannerEditor({
       lastOwnColumnRow,
       paletteOpen,
       removePhantom,
+      scale,
     ]
   );
 
@@ -6413,6 +6445,18 @@ export function NativePlannerEditor({
         return;
       }
 
+      // Both commit paths below change geometry, so this sits above the
+      // fork rather than inside one of them. It used to live in the
+      // crossing branch only, which meant the single most ordinary thing
+      // you can do to a layout - drag a module up or down its own stack
+      // - was the one thing undo could not take back. Reported as "undo
+      // doesn't work for when you rearrange modules."
+      //
+      // Called before the setPlacements below, and reading `placements`
+      // from the closure regardless, so what it captures is the layout
+      // being left rather than the one being committed.
+      recordGeometry();
+
       const newPlacement: Placement = {
         columnStart: resolved.columnStart,
         rowStart: resolved.rowStart,
@@ -6589,7 +6633,6 @@ export function NativePlannerEditor({
         // already does (fresh server-rendered elements, not just a
         // position) — overwriting the optimistic patch above with the
         // server's own authoritative render once it lands.
-        recordGeometry();
         serializeCommit(() => moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart))
           .then((results) => {
             setModuleLookup((prev) => {
