@@ -3787,71 +3787,6 @@ export function NativePlannerEditor({
   // ever read columnStart/columnSpan out of a StackBottom, never
   // bottomId's own identity) pick these up, via the plain array-concat
   // at their own two render sites below.
-  const emptyZonesByPageId = useMemo(() => {
-    const byPage: Record<string, StackBottom[]> = {};
-    for (const page of pages) {
-      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
-      const existing = stackBottomsByPageId[page.pageId] ?? [];
-      const hasZone = (columnStart: number, columnSpan: number) =>
-        existing.some((sb) => sb.columnStart === columnStart && sb.columnSpan === columnSpan);
-      const zones: StackBottom[] = [];
-
-      const hourlyGridId = pageIds.find((id) => moduleLookup.get(id)?.slug === "hourly-grid-core");
-      const hourlyGridPlacement = hourlyGridId ? displayPlacements[hourlyGridId] : undefined;
-
-      // Bottom zone — same column range as the hourly grid, one row
-      // below its own reserved gap. Every page in this app has one.
-      if (hourlyGridPlacement && !hasZone(hourlyGridPlacement.columnStart, hourlyGridPlacement.columnSpan)) {
-        const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
-        zones.push({
-          key: `emptyzone:${page.pageId}:${hourlyGridPlacement.columnStart}:${hourlyGridPlacement.columnSpan}`,
-          pageId: page.pageId,
-          bottomId: `__emptybottomzone__${page.pageId}`,
-          columnStart: hourlyGridPlacement.columnStart,
-          columnSpan: hourlyGridPlacement.columnSpan,
-          members: [],
-          stackTopRowStart: zoneTop,
-          stackBottomRowEnd: zoneTop,
-          maxBottomBound: page.pageGrid.gridRows,
-          followerIds: [],
-        });
-      }
-
-      // Sidebar column — only a real zone on a page where the hourly
-      // grid doesn't already cover column 0 (see AddModuleButton's own
-      // comment on why columnSpan, not columnStart alone, is what
-      // actually tells the two zones apart). Its own top boundary is
-      // wherever the deepest *locked* thing there (week-title) already
-      // reaches, not row 0 — mirrors addPaletteModuleAt's own side-zone
-      // shrink-to-fit reasoning for the exact same "no single locked
-      // anchor, so measure whatever's actually there" situation.
-      if (hourlyGridPlacement && hourlyGridPlacement.columnStart > 0 && !hasZone(0, 1)) {
-        let zoneTop = 0;
-        for (const id of pageIds) {
-          const info = moduleLookup.get(id);
-          const placement = displayPlacements[id];
-          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== 1) continue;
-          zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
-        }
-        zones.push({
-          key: `emptyzone:${page.pageId}:0:1`,
-          pageId: page.pageId,
-          bottomId: `__emptysidezone__${page.pageId}`,
-          columnStart: 0,
-          columnSpan: 1,
-          members: [],
-          stackTopRowStart: zoneTop,
-          stackBottomRowEnd: zoneTop,
-          maxBottomBound: page.pageGrid.gridRows,
-          followerIds: [],
-        });
-      }
-
-      byPage[page.pageId] = zones;
-    }
-    return byPage;
-  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, stackBottomsByPageId]);
-
   const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
   useEffect(() => {
     const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
@@ -4418,6 +4353,112 @@ export function NativePlannerEditor({
   // own bounds (the gap between pages, or off the spread entirely), not
   // just clamped into the nearest one — a palette drag that isn't over
   // any page shouldn't show a preview anywhere.
+  const emptyZonesByPageId = useMemo(() => {
+    const previewZoneKey = activeId ? confirmedCrossingPreview?.zoneKey ?? null : null;
+    const byPage: Record<string, StackBottom[]> = {};
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      const existing = stackBottomsByPageId[page.pageId] ?? [];
+      const hasZone = (columnStart: number, columnSpan: number) =>
+        existing.some((sb) => sb.columnStart === columnStart && sb.columnSpan === columnSpan);
+      const zones: StackBottom[] = [];
+
+      const hourlyGridId = pageIds.find((id) => moduleLookup.get(id)?.slug === "hourly-grid-core");
+      const hourlyGridPlacement = hourlyGridId ? displayPlacements[hourlyGridId] : undefined;
+
+      // A zone the live drag is currently previewing a module INTO is
+      // not empty, whatever placements still says it holds.
+      //
+      // hasZone above reads committed geometry, and a crossing does not
+      // commit anything until the drop - so a module previewed from the
+      // bottom zone into the sidebar leaves its committed placement in
+      // the bottom, the sidebar forms no stack group, and this offered
+      // it a "+" placeholder underneath the module being previewed on
+      // top of it. Reported as "i dragged todo to side, and blue box
+      // came up during live preview but went to right place when
+      // [released]" - the drop was always correct, only the placeholder
+      // was wrong. Reachable with any module, but a palette drag hits
+      // it most: the phantom is created wherever the pointer first
+      // crossed a zone boundary, so approaching the sidebar across the
+      // bottom zone commits it there and previews it here.
+      //
+      // Same key resolveDrag builds for targetZone, so the two agree by
+      // construction rather than by matching field-by-field. Gated on
+      // activeId because confirmedCrossingPreview is only cleared on the
+      // next drag START, and a zone that a finished drag previewed into
+      // is either genuinely occupied now (hasZone covers it) or was
+      // never taken.
+
+      // Bottom zone — same column range as the hourly grid, one row
+      // below its own reserved gap. Every page in this app has one.
+      if (
+        hourlyGridPlacement &&
+        !hasZone(hourlyGridPlacement.columnStart, hourlyGridPlacement.columnSpan) &&
+        previewZoneKey !== `${page.pageId}:${hourlyGridPlacement.columnStart}:${hourlyGridPlacement.columnSpan}`
+      ) {
+        const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
+        zones.push({
+          key: `emptyzone:${page.pageId}:${hourlyGridPlacement.columnStart}:${hourlyGridPlacement.columnSpan}`,
+          pageId: page.pageId,
+          bottomId: `__emptybottomzone__${page.pageId}`,
+          columnStart: hourlyGridPlacement.columnStart,
+          columnSpan: hourlyGridPlacement.columnSpan,
+          members: [],
+          stackTopRowStart: zoneTop,
+          stackBottomRowEnd: zoneTop,
+          maxBottomBound: page.pageGrid.gridRows,
+          followerIds: [],
+        });
+      }
+
+      // Sidebar column — only a real zone on a page where the hourly
+      // grid doesn't already cover column 0 (see AddModuleButton's own
+      // comment on why columnSpan, not columnStart alone, is what
+      // actually tells the two zones apart). Its own top boundary is
+      // wherever the deepest *locked* thing there (week-title) already
+      // reaches, not row 0 — mirrors addPaletteModuleAt's own side-zone
+      // shrink-to-fit reasoning for the exact same "no single locked
+      // anchor, so measure whatever's actually there" situation.
+      if (
+        hourlyGridPlacement &&
+        hourlyGridPlacement.columnStart > 0 &&
+        !hasZone(0, 1) &&
+        previewZoneKey !== `${page.pageId}:0:1`
+      ) {
+        let zoneTop = 0;
+        for (const id of pageIds) {
+          const info = moduleLookup.get(id);
+          const placement = displayPlacements[id];
+          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== 1) continue;
+          zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
+        }
+        zones.push({
+          key: `emptyzone:${page.pageId}:0:1`,
+          pageId: page.pageId,
+          bottomId: `__emptysidezone__${page.pageId}`,
+          columnStart: 0,
+          columnSpan: 1,
+          members: [],
+          stackTopRowStart: zoneTop,
+          stackBottomRowEnd: zoneTop,
+          maxBottomBound: page.pageGrid.gridRows,
+          followerIds: [],
+        });
+      }
+
+      byPage[page.pageId] = zones;
+    }
+    return byPage;
+  }, [
+    pages,
+    displayPlacements,
+    moduleLookup,
+    instanceIdsByPageId,
+    stackBottomsByPageId,
+    activeId,
+    confirmedCrossingPreview,
+  ]);
+
   const screenPointToPageCell = useCallback(
     (
       clientX: number,
