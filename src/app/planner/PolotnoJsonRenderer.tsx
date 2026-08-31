@@ -96,6 +96,21 @@ function textPositionTransition(easeMs: number): string | undefined {
   return ["left", "top", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
 }
 
+// The same thing for rects, which are SVG and so animate x/y/width/
+// height rather than left/top/width/height. These are SVG2 geometry
+// PROPERTIES, not just attributes, which is what makes them
+// transitionable at all; setting them as attributes still works because
+// a presentation attribute feeds the same computed value the transition
+// reads. A browser without that support simply snaps to the final
+// geometry, which is what every rect did before this.
+//
+// Only ever applied when the two renders describe the same set of
+// elements - see animateRects.
+function rectGeometryTransition(easeMs: number): string | undefined {
+  if (easeMs <= 0) return undefined;
+  return ["x", "y", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
+}
+
 
 // Non-rect elements only (in practice: text). Rects are drawn by
 // RectLayer below instead — see its own comment for why they had to
@@ -209,6 +224,7 @@ function RectLayer({
   scale,
   suppressOuterBorderSize,
   structureKey,
+  easeMs,
 }: {
   rects: RenderedPolotnoElement[];
   originX: number;
@@ -220,6 +236,9 @@ function RectLayer({
   // See PolotnoJsonRenderer's own comment: element ids are positional,
   // so they only name the same thing within one element structure.
   structureKey: number;
+  // Non-zero only when these rects are being animated to their final
+  // geometry rather than clipped at their largest - see animateRects.
+  easeMs: number;
 }) {
   return (
     <svg
@@ -290,6 +309,7 @@ function RectLayer({
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
             opacity={element.opacity ?? 1}
+            style={{ transition: rectGeometryTransition(easeMs) }}
           />
         );
       })}
@@ -317,6 +337,7 @@ export function PolotnoJsonRenderer({
   scale,
   suppressOuterBorderSize,
   textElements,
+  textSizePx = null,
   textEaseMs = 0,
 }: {
   elements: RenderedPolotnoElement[];
@@ -340,8 +361,14 @@ export function PolotnoJsonRenderer({
   // still for the whole ease and then jumps when the ease ends, which
   // is what shrinking a todo-checklist looked like.
   textElements?: RenderedPolotnoElement[] | null;
+  // Pixel size textElements was rendered at - the module's FINAL
+  // geometry. Only read when the rects come from that render too (see
+  // animateRects), where it replaces suppressOuterBorderSize: the
+  // border being recognised is whichever render actually drew it.
+  textSizePx?: { width: number; height: number } | null;
   // Non-zero only while this module's box is easing between zone
-  // shapes. Applies to text only - see textPositionTransition.
+  // shapes. Applies to text, and to rects when they are animated rather
+  // than clipped - see textPositionTransition and animateRects.
   textEaseMs?: number;
 }) {
   // Rects go into one shared <svg> (see RectLayer); everything else —
@@ -405,7 +432,40 @@ export function PolotnoJsonRenderer({
   };
 
   const isRect = (element: RenderedPolotnoElement) => element.type === "figure" && element.subType === "rect";
-  const rects = flat.filter(isRect);
+
+  // Rects slide to their final geometry instead of being revealed by
+  // the clip, WHEN the two renders describe the same set of elements.
+  //
+  // The window-over-fixed-content design exists because rects could not
+  // animate, and the reason they could not is real but narrow: a module
+  // whose element count depends on its width gains and loses columns,
+  // and a column with no counterpart at the old size has nothing to
+  // animate from, so it pops in and out mid-sweep. That is
+  // todo-checklist, whose day columns come and go with dayCount.
+  //
+  // It is not habit-tracker, which has seven days at every width - 19
+  // elements at three columns wide and 19 at four, differing only in x.
+  // Its day separators were therefore not animating for a reason that
+  // did not apply to them: they sat at the wide render's positions from
+  // the first frame while the box was still narrow, so the rightmost
+  // ones were clipped away and swept back in. Reported as the vertical
+  // lines between the days disappearing during the resize, with a
+  // request that they slide as a group instead.
+  //
+  // Equal element counts is exactly the condition under which the rect
+  // keys (structureKey, below) survive the change - and a node has to
+  // survive to have a previous geometry to animate FROM. So the same
+  // test decides both, and the modules that genuinely cannot animate
+  // keep the window they need.
+  //
+  // Content then tracks the box rather than being cut by it: both
+  // interpolate the same easing over the same duration, and a rule at a
+  // fixed fraction of the content width stays at that fraction
+  // throughout. Nothing overflows, so the clip becomes a no-op for
+  // these modules rather than something to fight.
+  const textFlat = textElements ? flattenElements(textElements) : null;
+  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0;
+  const rects = (animateRects ? textFlat : flat).filter(isRect);
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
@@ -431,8 +491,9 @@ export function PolotnoJsonRenderer({
         originX={originX}
         originY={originY}
         scale={scale}
-        suppressOuterBorderSize={suppressOuterBorderSize}
+        suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
         structureKey={structureKey}
+        easeMs={animateRects ? textEaseMs : 0}
       />
       {rest.map((element) => (
         <ElementNode

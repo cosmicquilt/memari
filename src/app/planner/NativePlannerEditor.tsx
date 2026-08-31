@@ -622,6 +622,7 @@ function NativeModule({
   rectPx,
   elements,
   textElements,
+  textSizePx,
   originX,
   originY,
   visualOffset,
@@ -674,6 +675,11 @@ function NativeModule({
   // the final geometry, used for text alone. See PolotnoJsonRenderer's
   // own comment on why rects and text cannot share one geometry here.
   textElements: LoadedPage["moduleInstances"][number]["elements"] | null;
+  // Pixel size textElements was rendered at - this module's FINAL
+  // geometry. Only used when the rects come from that same render (see
+  // PolotnoJsonRenderer's animateRects), where it is what identifies
+  // that render's own full-box border.
+  textSizePx: { width: number; height: number } | null;
   originX: number;
   originY: number;
   // Page-pixel translate applied on top of the committed grid slot — for
@@ -1088,6 +1094,7 @@ function NativeModule({
         <PolotnoJsonRenderer
           elements={elements}
           textElements={textElements}
+          textSizePx={textSizePx}
           originX={originX}
           originY={originY}
           scale={scale}
@@ -1654,6 +1661,7 @@ function NativePage({
             rectPx={draggedRectPx}
             elements={elements}
             textElements={textElements}
+            textSizePx={isEasingBox ? gridCellToPixels(page.pageGrid, placement) : null}
             originX={liveOrigin ? liveOrigin.x : info.originX}
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}
