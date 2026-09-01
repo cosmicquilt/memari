@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx src/lib/grid.test.mts && tsx src/lib/monthCalendar.test.mts && tsx src/lib/weekDays.test.mts",
+    "test:properties": "tsx src/lib/grid.property.test.mts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "fast-check": "^4.9.0",
     "prisma": "^7.9.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.9",
