@@ -112,7 +112,12 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
       heightPx: PRINT_HEIGHT_PX,
       gridColumns: page.gridColumns,
       gridRows: page.gridRows,
-      gridGapPx: page.gridGapPx,
+      // The DB still stores this as gridGapPx, a gap between boxes. It is
+      // now consumed as an inset of half that on each box, which puts the
+      // same amount of white between two neighbours while leaving the
+      // pitch equal to the cell. See PageGrid.boxInsetPx. The column is
+      // renamed when the lattice migration touches the schema.
+      boxInsetPx: page.gridGapPx / 2,
       marginPx: page.marginPx,
     };
     // pageIndex 0 = left, 1 = right — matches planner.pages' own

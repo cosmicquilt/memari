@@ -8,7 +8,24 @@ export type PageGrid = {
   heightPx: number;
   gridColumns: number;
   gridRows: number;
-  gridGapPx: number;
+  // Visual separation between adjacent module boxes, applied as an inset on
+  // the DRAWN box — deliberately NOT part of the pitch.
+  //
+  // This used to be gridGapPx, and it sat inside the pitch: a module's
+  // origin stepped by (cellHeight + gridGapPx) while anything drawn on a
+  // regular interval — the dot lattice, the hour rules — steps by the cell.
+  // The two drift apart by one gap per row, which is unfixable rather than
+  // merely wrong: no choice of gap makes a pitch of (cell + gap) agree with
+  // a pitch of cell. It printed as hour rules missing the dots, and showed
+  // up in the editor as the stack resize handle sitting one gap below the
+  // module it belonged to.
+  //
+  // Now the allocation grid tiles the usable area exactly — cell to cell,
+  // no gaps — and the visible separation comes from insetting the box
+  // inside its allocation. The boxes look the same; the coordinate system
+  // underneath them is regular. gridCellToAllocation is the lattice,
+  // gridCellToPixels is the ink.
+  boxInsetPx: number;
   marginPx: number; // inset of the whole grid from the page edge
 };
 
@@ -20,38 +37,74 @@ export type GridPlacement = {
 };
 
 function usableArea(page: PageGrid) {
-  const usableWidth = page.widthPx - page.marginPx * 2;
-  const usableHeight = page.heightPx - page.marginPx * 2;
   return {
-    cellWidth:
-      (usableWidth - page.gridGapPx * (page.gridColumns - 1)) /
-      page.gridColumns,
-    cellHeight:
-      (usableHeight - page.gridGapPx * (page.gridRows - 1)) / page.gridRows,
+    cellWidth: (page.widthPx - page.marginPx * 2) / page.gridColumns,
+    cellHeight: (page.heightPx - page.marginPx * 2) / page.gridRows,
   };
 }
 
-export function gridCellToPixels(
+/**
+ * The cells a placement OWNS — the lattice. Allocations tile the usable
+ * area exactly: the bottom of row N is the top of row N+1, to the pixel.
+ *
+ * This is what anything drawn on a regular interval must measure from —
+ * hour rules, the dot field, a box's internal ruling — so that interval
+ * stays in phase with the grid all the way down the page. It is also the
+ * right frame for "which cell is the pointer over".
+ */
+export function gridCellToAllocation(
   page: PageGrid,
   placement: GridPlacement
 ): { x: number; y: number; width: number; height: number } {
   const { cellWidth, cellHeight } = usableArea(page);
-
   return {
-    x: page.marginPx + placement.columnStart * (cellWidth + page.gridGapPx),
-    y: page.marginPx + placement.rowStart * (cellHeight + page.gridGapPx),
-    width:
-      placement.columnSpan * cellWidth +
-      (placement.columnSpan - 1) * page.gridGapPx,
-    height:
-      placement.rowSpan * cellHeight +
-      (placement.rowSpan - 1) * page.gridGapPx,
+    x: page.marginPx + placement.columnStart * cellWidth,
+    y: page.marginPx + placement.rowStart * cellHeight,
+    width: placement.columnSpan * cellWidth,
+    height: placement.rowSpan * cellHeight,
+  };
+}
+
+/**
+ * The box a placement is DRAWN as — its allocation inset on all four
+ * sides, which is what separates it from its neighbours.
+ *
+ * Every existing caller wants this one: it means exactly what it always
+ * meant, an inked module box. Only the arithmetic behind it changed.
+ */
+export function gridCellToPixels(
+  page: PageGrid,
+  placement: GridPlacement
+): { x: number; y: number; width: number; height: number } {
+  const allocation = gridCellToAllocation(page, placement);
+  const inset = page.boxInsetPx;
+  return {
+    x: allocation.x + inset,
+    y: allocation.y + inset,
+    width: allocation.width - inset * 2,
+    height: allocation.height - inset * 2,
   };
 }
 
 // Inverse: given a pixel position (e.g. where a user dropped something),
 // find the nearest grid cell. This is what the editor's snapping logic
-// will call on drag/drop once that UI is built.
+// calls on drag/drop.
+//
+// Ties break DOWNWARD — toward the cell the point is inside — via
+// ceil(t - 0.5) rather than Math.round, which breaks them upward.
+//
+// A cell's own centre is exactly half a cell from both of its gridlines,
+// so it is exactly such a tie, and it must resolve to the cell it is the
+// centre OF rather than the neighbour. That case was already covered by a
+// test, and it used to pass by accident: with the gap inside the pitch a
+// centre landed at 0.4989 of a cell, not 0.5, so Math.round happened to
+// give the right answer. Taking the gap out made the lattice regular and
+// turned that near-miss into a real tie, which is how a latent ambiguity
+// became 24 failures in one run.
+function roundHalfDown(value: number): number {
+  return Math.ceil(value - 0.5);
+}
+
 export function pixelsToGridCell(
   page: PageGrid,
   pixel: { x: number; y: number }
@@ -60,17 +113,11 @@ export function pixelsToGridCell(
 
   const columnStart = Math.min(
     page.gridColumns - 1,
-    Math.max(
-      0,
-      Math.round((pixel.x - page.marginPx) / (cellWidth + page.gridGapPx))
-    )
+    Math.max(0, roundHalfDown((pixel.x - page.marginPx) / cellWidth))
   );
   const rowStart = Math.min(
     page.gridRows - 1,
-    Math.max(
-      0,
-      Math.round((pixel.y - page.marginPx) / (cellHeight + page.gridGapPx))
-    )
+    Math.max(0, roundHalfDown((pixel.y - page.marginPx) / cellHeight))
   );
 
   return { columnStart, rowStart };
@@ -97,11 +144,11 @@ export function pixelsToContainingCell(
   const { cellWidth, cellHeight } = usableArea(page);
   const columnStart = Math.min(
     page.gridColumns - 1,
-    Math.max(0, Math.floor((pixel.x - page.marginPx) / (cellWidth + page.gridGapPx)))
+    Math.max(0, Math.floor((pixel.x - page.marginPx) / cellWidth))
   );
   const rowStart = Math.min(
     page.gridRows - 1,
-    Math.max(0, Math.floor((pixel.y - page.marginPx) / (cellHeight + page.gridGapPx)))
+    Math.max(0, Math.floor((pixel.y - page.marginPx) / cellHeight))
   );
   return { columnStart, rowStart };
 }
@@ -114,10 +161,10 @@ export function pixelsToContainingCell(
 // minimum floor, this just does the raw px-to-rows math so a second
 // caller (updateHourlySettings, computing hourly-grid-core's own
 // required rowSpan from its real content height) doesn't have to
-// duplicate it. rowPitchPx (not cellHeight directly) accounts for the
-// per-row gap baked into gridCellToPixels' own height formula — the
-// difference between a 1-row and 2-row cell's rendered height isolates
-// exactly "one more row, one more gap."
+// duplicate it. rowPitchPx is measured as the difference between a 1-row
+// and a 2-row box rather than read off cellHeight, so it keeps telling the
+// truth whatever gridCellToPixels does internally — it survived the gap
+// coming out of the pitch without an edit, which is the point.
 export function pixelHeightToRowSpan(page: PageGrid, heightPx: number): number {
   const oneRow = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
   const twoRows = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 });

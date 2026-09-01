@@ -41,7 +41,7 @@ const page: PageGrid = {
   heightPx: 3075,
   gridColumns: 4,
   gridRows: 30,
-  gridGapPx: 12,
+  boxInsetPx: 6,
   marginPx: 75,
 };
 
@@ -845,7 +845,7 @@ if (failures > 0) {
 // "nearest" flips at the midpoint — see the function's own comment for
 // the sidebar-hit-testing bug that motivated it.
 {
-  const page = { widthPx: 2175, heightPx: 3075, gridColumns: 4, gridRows: 30, gridGapPx: 12, marginPx: 75 };
+  const page = { widthPx: 2175, heightPx: 3075, gridColumns: 4, gridRows: 30, boxInsetPx: 6, marginPx: 75 };
   const cell = gridCellToPixels(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
   const colPitch = gridCellToPixels(page, { columnStart: 1, rowStart: 0, columnSpan: 1, rowSpan: 1 }).x - cell.x;
 

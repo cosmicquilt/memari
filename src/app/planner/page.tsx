@@ -21,7 +21,7 @@ export default async function PlannerPage() {
       heightPx: PRINT_HEIGHT_PX,
       gridColumns: page.gridColumns,
       gridRows: page.gridRows,
-      gridGapPx: page.gridGapPx,
+      boxInsetPx: page.gridGapPx / 2,
       marginPx: page.marginPx,
     };
     const elements = page.moduleInstances

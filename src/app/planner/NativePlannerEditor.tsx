@@ -1535,7 +1535,6 @@ function NativePage({
         display: "grid",
         gridTemplateColumns: `repeat(${page.pageGrid.gridColumns}, 1fr)`,
         gridTemplateRows: `repeat(${page.pageGrid.gridRows}, 1fr)`,
-        gap: page.pageGrid.gridGapPx,
         padding: page.pageGrid.marginPx,
         flexShrink: 0,
       }}

@@ -21,6 +21,7 @@ import fc from "fast-check";
 import {
   gridCellToPixels,
   pixelsToGridCell,
+  gridCellToAllocation,
   rectsOverlap,
   findNearestFreeCell,
   resolveModulePlacement,
@@ -50,7 +51,7 @@ const pageArb: fc.Arbitrary<PageGrid> = fc.record({
   heightPx: fc.constant(3075),
   gridColumns: fc.integer({ min: 1, max: 8 }),
   gridRows: fc.integer({ min: 4, max: 36 }),
-  gridGapPx: fc.constantFrom(0, 12),
+  boxInsetPx: fc.constantFrom(0, 6),
   marginPx: fc.constantFrom(0, 37.5),
 });
 
@@ -186,12 +187,47 @@ check(
   )
 );
 
-// The gap-versus-pitch confusion that put the printed hour rules off the
-// dot lattice and rendered the stack resize handle 12px low. Stated as a
-// property so it cannot come back silently: the bottom of row N and the
-// top of row N+1 are the same line only when there is no gap.
+// THE lattice invariant, and the reason the gap came out of the pitch.
+// Allocations must tile with no seam: the bottom of row N is the top of
+// row N+1 exactly. Anything drawn on a regular interval measures from
+// these, so if this holds, an interval that divides the cell stays in
+// phase all the way down the page. Before the change this was off by one
+// gridGapPx per row, which is what put the printed hour rules off the dot
+// lattice and the stack resize handle 12px below its module.
 check(
-  "row N's bottom and row N+1's top differ by exactly gridGapPx",
+  "allocations tile with no seam",
+  fc.property(
+    pageArb.chain((page) =>
+      fc.integer({ min: 0, max: Math.max(0, page.gridRows - 2) }).map((row) => ({ page, row }))
+    ),
+    ({ page, row }) => {
+      const a = gridCellToAllocation(page, { columnStart: 0, rowStart: row, columnSpan: 1, rowSpan: 1 });
+      const b = gridCellToAllocation(page, { columnStart: 0, rowStart: row + 1, columnSpan: 1, rowSpan: 1 });
+      return Math.abs(b.y - (a.y + a.height)) < 1e-9;
+    }
+  )
+);
+
+// An n-row allocation is exactly n single rows tall — no per-row fudge
+// hiding inside a multi-row span, which is where the old formula kept its.
+check(
+  "an n-row allocation is exactly n rows tall",
+  fc.property(
+    pageArb.chain((page) =>
+      fc.integer({ min: 1, max: page.gridRows }).map((rowSpan) => ({ page, rowSpan }))
+    ),
+    ({ page, rowSpan }) => {
+      const one = gridCellToAllocation(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+      const many = gridCellToAllocation(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan });
+      return Math.abs(many.height - one.height * rowSpan) < 1e-9;
+    }
+  )
+);
+
+// And the ink still separates: two vertically adjacent boxes are exactly
+// two insets apart, which is the white the old gap used to provide.
+check(
+  "adjacent boxes are separated by exactly two insets",
   fc.property(
     pageArb.chain((page) =>
       fc.integer({ min: 0, max: Math.max(0, page.gridRows - 2) }).map((row) => ({ page, row }))
@@ -199,7 +235,7 @@ check(
     ({ page, row }) => {
       const a = gridCellToPixels(page, { columnStart: 0, rowStart: row, columnSpan: 1, rowSpan: 1 });
       const b = gridCellToPixels(page, { columnStart: 0, rowStart: row + 1, columnSpan: 1, rowSpan: 1 });
-      return Math.abs(b.y - (a.y + a.height) - page.gridGapPx) < 1e-9;
+      return Math.abs(b.y - (a.y + a.height) - page.boxInsetPx * 2) < 1e-9;
     }
   )
 );
