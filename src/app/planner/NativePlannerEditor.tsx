@@ -671,6 +671,7 @@ function NativeModule({
   locked,
   placement,
   rectPx,
+  boxInsetPx,
   elements,
   textElements,
   textSizePx,
@@ -721,6 +722,9 @@ function NativeModule({
   // takes its GRID AREA as its containing block rather than the
   // container's padding box, which would double-count the offset.
   rectPx: { x: number; y: number; width: number; height: number } | null;
+  // PageGrid.boxInsetPx. The in-flow branch below needs it to describe the
+  // same box the dragged branch gets from gridCellToPixels; see there.
+  boxInsetPx: number;
   elements: LoadedPage["moduleInstances"][number]["elements"];
   // Non-null only while this module's box is easing: a second render at
   // the final geometry, used for text alone. See PolotnoJsonRenderer's
@@ -962,6 +966,16 @@ function NativeModule({
               position: "relative" as const,
               gridColumn: `${placement.columnStart + 1} / span ${placement.columnSpan}`,
               gridRow: `${placement.rowStart + 1} / span ${placement.rowSpan}`,
+              // The grid area is the module's ALLOCATION; this margin insets
+              // it to the drawn box, so the two branches of this ternary
+              // describe the same rectangle. They are two independent
+              // descriptions of one geometry, which is this file's oldest
+              // failure mode: while the container carried gap:12 they agreed
+              // by coincidence, and taking the gap out of the pitch broke
+              // that coincidence - a module grew by one inset the moment it
+              // was picked up. A margin on a grid item shrinks it inside its
+              // area, which is exactly what an inset is.
+              margin: boxInsetPx,
             }),
         cursor: locked ? "default" : isDragged || isPressed ? "grabbing" : "grab",
         // translate3d, not translate — the z component is always 0 and
@@ -1708,6 +1722,7 @@ function NativePage({
             instanceId={id}
             locked={info.locked}
             placement={placement}
+            boxInsetPx={page.pageGrid.boxInsetPx}
             rectPx={draggedRectPx}
             elements={elements}
             textElements={textElements}
