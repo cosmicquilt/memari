@@ -3398,8 +3398,8 @@ function PaletteChevron({ open }: { open: boolean }) {
   return (
     <svg
       viewBox="0 0 8 12"
-      width={8}
-      height={12}
+      width={7}
+      height={10.5}
       aria-hidden="true"
       style={{
         color: PANEL_FAINT,
@@ -3412,7 +3412,7 @@ function PaletteChevron({ open }: { open: boolean }) {
         d="M1.5 1 L6.5 6 L1.5 11"
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.6}
+        strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
