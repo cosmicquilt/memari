@@ -52,16 +52,23 @@ model Page {
   plannerId       String
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
   position        Int
-  // 4 columns so a 1-column sidebar is exactly 25% width, matching the
-  // reference PDF's proportions. 30 rows / 12px gap — reverted from a
-  // brief detour to 35/10 that was based on a slack calculation missing
-  // the (rowSpan-1)*gap term a multi-row component's own height also
-  // includes; once computed correctly, 30/12 already gives near-zero
-  // slack (see hourly-grid-core's defaultRowSpan in prisma/seed.mts).
-  gridColumns     Int              @default(4)
-  gridRows        Int              @default(30)
+  // 24 columns x 36 rows of exactly 75 x 75 print px - one cell is one
+  // 1/4in dot at 300dpi, and the cell is square. The margin follows from
+  // wanting whole dots rather than the other way round: 24 dots is
+  // 1800px, so (2175 - 1800) / 2 = 187.5px each side, and 36 dots is
+  // 2700px, so (3075 - 2700) / 2 = 187.5px - the same number on both
+  // axes, with no residue on either. That is 0.5in in from the trim.
+  //
+  // A day column is 6 dots (1.500in) and the sidebar is one of four such
+  // units, so the sidebar stays exactly 1/8 of the spread.
+  //
+  // gridGapPx is gone from the coordinate system: see PageGrid.boxInsetPx
+  // in src/lib/grid.ts. The column still exists and is read as an inset of
+  // half its value, which is why it is 12 rather than 6 here.
+  gridColumns     Int              @default(24)
+  gridRows        Int              @default(36)
   gridGapPx       Float            @default(12)
-  marginPx        Float            @default(75)
+  marginPx        Float            @default(187.5)
   moduleInstances ModuleInstance[]
 
   @@unique([plannerId, position])

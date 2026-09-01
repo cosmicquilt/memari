@@ -228,9 +228,9 @@ const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
 }> = [
   // Starts at row 2 — week-title occupies rows 0-1 at the 30-row grid
   // resolution. Same 2:3:4 visual ratio as before.
-  { heading: "Things I'm Grateful For", rowStart: 2, rowSpan: 6 },
-  { heading: "Reminders", rowStart: 8, rowSpan: 9 },
-  { heading: "Notes", rowStart: 17, rowSpan: 13 },
+  { heading: "Things I'm Grateful For", rowStart: 3, rowSpan: 7 },
+  { heading: "Reminders", rowStart: 10, rowSpan: 11 },
+  { heading: "Notes", rowStart: 21, rowSpan: 15 },
 ];
 
 // The "TO - DO" checklist below the hourly grid, on BOTH pages of the
@@ -254,8 +254,8 @@ const WEEK_TODO_TEMPLATE: Array<{
   rowSpan: number;
   dayCount: number;
 }> = [
-  { page: "left", columnStart: 1, columnSpan: 3, rowStart: 20, rowSpan: 10, dayCount: 3 },
-  { page: "right", columnStart: 0, columnSpan: 4, rowStart: 20, rowSpan: 10, dayCount: 4 },
+  { page: "left", columnStart: 6, columnSpan: 18, rowStart: 21, rowSpan: 15, dayCount: 3 },
+  { page: "right", columnStart: 0, columnSpan: 24, rowStart: 21, rowSpan: 15, dayCount: 4 },
 ];
 
 export async function getOrCreatePlanner() {
@@ -384,7 +384,7 @@ export async function getOrCreatePlanner() {
       { name: "MONDAY", date: 2 },
       { name: "TUESDAY", date: 3 },
     ],
-    { columnStart: 1, columnSpan: 3 }
+    { columnStart: 6, columnSpan: 18 }
   );
   await ensureHourlyGridCore(
     rightPage,
@@ -394,7 +394,7 @@ export async function getOrCreatePlanner() {
       { name: "FRIDAY", date: 6 },
       { name: "SATURDAY", date: 7 },
     ],
-    { columnStart: 0, columnSpan: 4 }
+    { columnStart: 0, columnSpan: 24 }
   );
 
   // todo-checklist and habit-tracker used to be auto-placed here as
@@ -575,7 +575,7 @@ export async function getOrCreatePlanner() {
 // compactHourRows are reset back to the seed defaults below too, or a
 // planner left with a resized/off-mode hourly grid after "reset to
 // template" would still look wrong, and WEEK_TODO_TEMPLATE's own
-// hardcoded rowStart: 20 (one past hourly-grid-core's default 19-row
+// hardcoded rowStart: 21 (one past hourly-grid-core's default 20-row
 // span) would land the freshly-recreated checklist/habit-tracker
 // overlapping it instead of in the correct gap. dayLabels/dayCount/
 // events/hourLineStyle/dayBorder are deliberately left alone — none of
@@ -632,7 +632,9 @@ export async function resetPlannerToTemplate() {
       prisma.moduleInstance.update({
         where: { id: hourly.id },
         data: {
-          rowSpan: 19,
+          // 20 dots: 2 of header (13.7pt tab + 22.3pt gap = 36.0pt) plus
+          // 36 half-hour slots at 9pt = 324pt = 18 dots. Lands exactly.
+          rowSpan: 20,
           propValues: {
             ...(hourly.propValues as object),
             startTime: "05:30",
@@ -797,8 +799,8 @@ export async function getOrCreateMonthPlanner() {
   // Same column convention as hourly-grid-core: left page reserves
   // column 0 for the sidebar, right page's day columns take the full
   // width since it has no sidebar.
-  await ensureMonthGridCore(leftPage, 0, 3, { columnStart: 1, columnSpan: 3 });
-  await ensureMonthGridCore(rightPage, 3, 4, { columnStart: 0, columnSpan: 4 });
+  await ensureMonthGridCore(leftPage, 0, 3, { columnStart: 6, columnSpan: 18 });
+  await ensureMonthGridCore(rightPage, 3, 4, { columnStart: 0, columnSpan: 24 });
 
   // NOTES sits below month-grid-core on *both* pages (unlike the weekly
   // layout's todo-checklist/habit-tracker, which only occupy whichever
@@ -827,16 +829,16 @@ export async function getOrCreateMonthPlanner() {
         moduleTypeId: boxType.id,
         placementMode: "GRID",
         columnStart: placement.columnStart,
-        rowStart: 18,
+        rowStart: 23,
         columnSpan: placement.columnSpan,
-        rowSpan: 12,
+        rowSpan: 13,
         propValues: { heading: "Notes", ruled: false },
       },
     });
     needsRefetch = true;
   };
-  await ensureNotesBox(leftPage, { columnStart: 1, columnSpan: 3 });
-  await ensureNotesBox(rightPage, { columnStart: 0, columnSpan: 4 });
+  await ensureNotesBox(leftPage, { columnStart: 6, columnSpan: 18 });
+  await ensureNotesBox(rightPage, { columnStart: 0, columnSpan: 24 });
 
   const hasMonthTitle = leftPage.moduleInstances.some((mi) => mi.moduleType.slug === "month-title");
   if (!hasMonthTitle) {

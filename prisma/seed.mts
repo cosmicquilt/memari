@@ -26,10 +26,10 @@ const moduleTypes = [
     },
     defaultWidth: 300,
     defaultHeight: 170,
-    defaultColumnSpan: 1,
+    defaultColumnSpan: 6,
     // 2 rows at the 30-row grid (~86px/row ≈ 172px) — comfortable room
     // for the two lines of text (~110-160px needed).
-    defaultRowSpan: 2,
+    defaultRowSpan: 3,
   },
   {
     // "Core" block, locked by default (see ModuleInstance.locked) — a
@@ -82,8 +82,8 @@ const moduleTypes = [
     // fixed-measurement content (6.15in) — 1.9px of slack.
     defaultWidth: 1560,
     defaultHeight: 1850,
-    defaultColumnSpan: 3,
-    defaultRowSpan: 19,
+    defaultColumnSpan: 18,
+    defaultRowSpan: 20,
   },
   {
     // The reusable "heading + blank/ruled body" pattern — covers Monthly
@@ -116,8 +116,8 @@ const moduleTypes = [
     // sidebar without immediately needing a resize.
     defaultWidth: 300,
     defaultHeight: 200,
-    defaultColumnSpan: 1,
-    defaultRowSpan: 2,
+    defaultColumnSpan: 6,
+    defaultRowSpan: 3,
   },
   {
     // Sits below hourly-grid-core, same columns. Full-height on whichever
@@ -148,8 +148,8 @@ const moduleTypes = [
     // same "just below the hourly grid" positioning).
     defaultWidth: 1560,
     defaultHeight: 964,
-    defaultColumnSpan: 4,
-    defaultRowSpan: 10,
+    defaultColumnSpan: 24,
+    defaultRowSpan: 13,
   },
   {
     // Sits below hourly-grid-core, same columns and dayCount. Full-height
@@ -181,8 +181,8 @@ const moduleTypes = [
     // did.
     defaultWidth: 1560,
     defaultHeight: 964,
-    defaultColumnSpan: 3,
-    defaultRowSpan: 10,
+    defaultColumnSpan: 18,
+    defaultRowSpan: 13,
   },
   {
     // "JANUARY" — top of the sidebar column on a monthly page's left
@@ -201,12 +201,12 @@ const moduleTypes = [
     },
     defaultWidth: 300,
     defaultHeight: 170,
-    defaultColumnSpan: 1,
+    defaultColumnSpan: 6,
     // Same rowSpan as week-title despite one line of (bigger) text
     // instead of two — rowSpan 1 (85.9px cell) is shorter than the
     // title's own ~95px rendered text height and would clip it; rowSpan
     // 2 (183.8px) comfortably contains it. See src/lib/modules/monthTitle.ts.
-    defaultRowSpan: 2,
+    defaultRowSpan: 3,
   },
   {
     // "Core" block, locked by default — a whole monthly spread's
@@ -243,8 +243,8 @@ const moduleTypes = [
     // contains it, ~40px/0.13in of slack.
     defaultWidth: 1560,
     defaultHeight: 1652,
-    defaultColumnSpan: 3,
-    defaultRowSpan: 17,
+    defaultColumnSpan: 18,
+    defaultRowSpan: 22,
   },
   {
     slug: "quote-block",
@@ -258,7 +258,7 @@ const moduleTypes = [
     },
     defaultWidth: 1400,
     defaultHeight: 400,
-    defaultColumnSpan: 6,
+    defaultColumnSpan: 24,
     defaultRowSpan: 1,
   },
   {
@@ -276,7 +276,7 @@ const moduleTypes = [
     },
     defaultWidth: 200,
     defaultHeight: 200,
-    defaultColumnSpan: 1,
+    defaultColumnSpan: 6,
     defaultRowSpan: 1,
   },
 ];
