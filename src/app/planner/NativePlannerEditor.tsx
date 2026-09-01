@@ -468,6 +468,18 @@ function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: numb
 // see getMinRowSpanForSlug's own comment on why this isn't always the
 // uniform MIN_ROW_SPAN). Pure — doesn't touch rowStart at all, callers
 // repack contiguously from their own top anchor afterward.
+// How far a stack's bottom edge can actually travel: what it can grow
+// into, plus what its members can give up. Below MIN_ROW_SPAN there is no
+// reachable landing other than where it already sits — computeClamped-
+// DeltaRows treats that as "no resize" and returns 0 for every pointer
+// position, and StackResizeHandle uses this same answer to decide whether
+// to render at all. One function, so the affordance and the behaviour can
+// never disagree about whether a resize exists; they did, and the handle
+// showed a resize cursor it could not honour.
+function stackResizeTravel(spans: number[], minSpans: number[], maxGrow: number): number {
+  return maxGrow + spans.reduce((sum, span, i) => sum + (span - minSpans[i]), 0);
+}
+
 function cascadeStackSpans(originalSpans: number[], minSpans: number[], deltaRows: number): number[] {
   const spans = [...originalSpans];
   if (deltaRows > 0) {
@@ -2158,16 +2170,23 @@ function StackResizeHandle({
   onResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
   onResizeEnd: (stackBottom: StackBottom, deltaRows: number) => void;
 }) {
-  const rect = useMemo(
-    () =>
-      gridCellToPixels(pageGrid, {
-        columnStart: stackBottom.columnStart,
-        rowStart: stackBottom.stackBottomRowEnd,
-        columnSpan: stackBottom.columnSpan,
-        rowSpan: 1,
-      }),
-    [pageGrid, stackBottom.columnStart, stackBottom.columnSpan, stackBottom.stackBottomRowEnd]
-  );
+  // The handle belongs on the stack's own bottom EDGE. Asking
+  // gridCellToPixels for rowStart = stackBottomRowEnd returns the TOP of
+  // the row *after* the stack, which is one gridGapPx lower — so this
+  // rendered 12px below the module it belongs to, at every position on
+  // the page (measured against grid.ts: off by 12.0px at rows 10, 20, 29
+  // and 30). At the last row that put it past the end of the usable area
+  // entirely. Same cell-vs-cell+gap confusion that put the printed hour
+  // rules off the dot lattice — the gap does not belong in a pitch.
+  const rect = useMemo(() => {
+    const lastRow = gridCellToPixels(pageGrid, {
+      columnStart: stackBottom.columnStart,
+      rowStart: stackBottom.stackBottomRowEnd - 1,
+      columnSpan: stackBottom.columnSpan,
+      rowSpan: 1,
+    });
+    return { x: lastRow.x, y: lastRow.y + lastRow.height, width: lastRow.width };
+  }, [pageGrid, stackBottom.columnStart, stackBottom.columnSpan, stackBottom.stackBottomRowEnd]);
   const rowPitchPx = useMemo(() => {
     const oneRow = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 1 });
     const twoRows = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 2 });
@@ -2191,10 +2210,6 @@ function StackResizeHandle({
       // getMinRowSpanForSlug's own comment on why a stack can mix module
       // types (e.g. a todo-checklist stacked with a habit-tracker), each
       // with a different floor.
-      const totalShrinkable = drag.memberSpans.reduce(
-        (sum, span, i) => sum + (span - drag.memberMinSpans[i]),
-        0
-      );
       // Snapped in terms of the resulting *gap* below the stack (maxGrow
       // - delta), not delta directly — a gap of exactly 1 row is never a
       // valid landing point, only 0 or >= MIN_ROW_SPAN. Reported
@@ -2227,7 +2242,7 @@ function StackResizeHandle({
       // real page geometry (see getMinRowSpanForSlug's own comment), so
       // the uniform constant here still gives the right answer for
       // either zone without needing to know which one this stack is.
-      const maxPossibleGap = drag.maxGrow + totalShrinkable;
+      const maxPossibleGap = stackResizeTravel(drag.memberSpans, drag.memberMinSpans, drag.maxGrow);
       const effectiveMaxGap = maxPossibleGap >= MIN_ROW_SPAN ? maxPossibleGap : 0;
       const rawGapRows = drag.maxGrow - rawDeltaPagePx / rowPitchPx;
       const boundedGapRows = Math.max(0, Math.min(effectiveMaxGap, rawGapRows));
@@ -2289,6 +2304,23 @@ function StackResizeHandle({
     },
     [stackBottom, onResizeEnd]
   );
+
+  // A handle with nowhere to go is a lie. computeClampedDeltaRows zeroes
+  // effectiveMaxGap unless (maxGrow + totalShrinkable) reaches
+  // MIN_ROW_SPAN, so below that threshold every pointer position resolves
+  // to a delta of 0 — the strip still took the pointer and still showed
+  // ns-resize, it just could not move. Reported as "shows the icon to
+  // resize but doesn't respond". A module dragged into the sidebar hits
+  // both halves at once: nothing below it to grow into, and already at
+  // its own per-slug floor (a compact habit-tracker's floor is two full
+  // pairs, so it lands there readily). Same predicate as the clamp, so
+  // the two cannot disagree about whether a resize exists.
+  const travel = stackResizeTravel(
+    stackBottom.members.map((m) => m.rowSpan),
+    stackBottom.members.map((m) => m.minRowSpan),
+    stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd
+  );
+  if (travel < MIN_ROW_SPAN) return null;
 
   return (
     <div
