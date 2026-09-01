@@ -219,6 +219,45 @@ function clampScale(scale: number): number {
 // tracks it exactly, for free, with no per-frame work. The transform is
 // then purely the pointer-follow term and stays untransitioned, so it
 // still tracks the cursor with no lag.
+// The geometry a module's CONTENT is drawn at while its box is easing
+// between two sizes, given where it is going (`target`) and the size it
+// was last drawn at (`from`). The two axes deliberately disagree.
+//
+// WIDTH takes the larger of the two, so the box always has something to
+// clip and a narrowing module wipes rather than reflows. That was asked
+// for directly - "the shrink width animation doesn't do the sweeping
+// overflow hidden."
+//
+// HEIGHT takes the target. It used to take the larger as well, by
+// symmetry, and that was wrong for anything whose row count follows its
+// height: a shrinking to-do or ruled box kept the OLD number of rules at
+// the OLD spacing while the box closed past them, so the clip landed
+// part-way through a row and the last one looked squashed against the
+// border. Reported as the last line not lining up with the resized
+// bottom edge, correcting itself on release.
+//
+// The asymmetry is not arbitrary. A ruled box's bottom rule has a
+// defined relationship to its bottom border and the eye checks it, so
+// cutting between them reads as broken. Nothing equivalent holds
+// horizontally, where a cut mid-glyph just reads as a wipe.
+//
+// Drawing at the target height means the content is SMALLER than the box
+// for the length of a shrink, which is the double-box shape - except
+// that suppressOuterBorderSize is handed this same geometry, so the
+// content's own border rect is recognised and dropped, and the
+// container's outline (already drawn whenever clipToBox is set) carries
+// the animating frame on its own.
+function easingContentGeometry(
+  target: Placement,
+  from: { columnSpan: number; rowSpan: number }
+): Placement {
+  return {
+    ...target,
+    columnSpan: Math.max(target.columnSpan, from.columnSpan),
+    rowSpan: target.rowSpan,
+  };
+}
+
 function computeDraggedSizeCompensationPagePx(
   pageGrid: PageGrid,
   current: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
@@ -5819,11 +5858,7 @@ export function NativePlannerEditor({
       // there is no animations."
       const box = { ...prev, rowStart: move.rowStart, rowSpan: move.rowSpan };
       placementOverrides[move.id] = box;
-      reflowContentPlacements[move.id] = {
-        ...box,
-        columnSpan: Math.max(box.columnSpan, prev.columnSpan),
-        rowSpan: Math.max(box.rowSpan, prev.rowSpan),
-      };
+      reflowContentPlacements[move.id] = easingContentGeometry(box, prev);
     }
     // todo-checklist's own renderer draws exactly propValues.dayCount
     // day-columns regardless of the box's actual pixel width, so its
@@ -5863,21 +5898,20 @@ export function NativePlannerEditor({
     if (!target) return null;
     return {
       instanceId: contentEasing.instanceId,
-      placement: {
-        ...target,
-        columnSpan: Math.max(target.columnSpan, contentEasing.fromColumnSpan),
-        rowSpan: Math.max(target.rowSpan, contentEasing.fromRowSpan),
-      },
+      placement: easingContentGeometry(target, {
+        columnSpan: contentEasing.fromColumnSpan,
+        rowSpan: contentEasing.fromRowSpan,
+      }),
     };
   }, [contentEasing, liveDisplayPlacements]);
 
   // Content geometry for siblings whose box is still easing. Same rule
-  // as the dragged module's: the larger of what they were rendered at
-  // and what they are becoming, so the box always has something to
-  // clip. Merged UNDER the live crossing values, which are current and
-  // win where both exist - this only has to cover the window after a
-  // crossing ends, when the overrides are gone but the boxes have not
-  // finished moving.
+  // as the dragged module's - see easingContentGeometry, which is now
+  // the one place it is written down; all three callers used to carry
+  // their own copy of it. Merged UNDER the live crossing values, which
+  // are current and win where both exist - this only has to cover the
+  // window after a crossing ends, when the overrides are gone but the
+  // boxes have not finished moving.
   const reflowContentAll = useMemo(() => {
     const live = crossingLivePreview?.reflowContentPlacements ?? null;
     if (!siblingEase) return live;
@@ -5885,11 +5919,7 @@ export function NativePlannerEditor({
     for (const [id, from] of Object.entries(siblingEase)) {
       const base = liveDisplayPlacements[id];
       if (!base) continue;
-      out[id] = {
-        ...base,
-        columnSpan: Math.max(base.columnSpan, from.columnSpan),
-        rowSpan: Math.max(base.rowSpan, from.rowSpan),
-      };
+      out[id] = easingContentGeometry(base, from);
     }
     return live ? { ...out, ...live } : out;
   }, [siblingEase, liveDisplayPlacements, crossingLivePreview]);
