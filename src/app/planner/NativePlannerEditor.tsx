@@ -2749,9 +2749,14 @@ function PaletteCard({
     >
       <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>{label}</div>
       {/* Fixed box sized to the scaled render, with the module drawn
-          inside it at page scale. overflow:hidden because a module's
-          own outer border sits exactly on its bounds and a half-pixel
-          of it otherwise spills past the rounded corner. */}
+          inside it at page scale. Square-cornered on purpose: a
+          module's own outer border sits exactly on these bounds, so any
+          radius here clips the module's real corners off and the card
+          shows something the page will never print. This box used to
+          have borderRadius 4 and overflow:hidden to stop the border
+          spilling past that radius — the radius was causing the spill
+          it was hiding. overflow:hidden stays, for the half-pixel the
+          scale transform can round outward. */}
       <div
         style={{
           position: "relative",
@@ -2759,7 +2764,6 @@ function PaletteCard({
           height: preview.rect.height * scale,
           overflow: "hidden",
           background: PANEL_BG,
-          borderRadius: 4,
           pointerEvents: "none",
         }}
       >
@@ -2897,6 +2901,13 @@ function ModulePalette({
   // needs to scroll while nothing is being dragged out of it.
   const isDraggingPaletteCard = paletteGestureActive || (activeId?.startsWith(PALETTE_ID_PREFIX) ?? false);
 
+  // The group header is the same kind of label as the "Font" and "Hours"
+  // labels inside the groups, one step up: same uppercase-and-tracked
+  // treatment, larger and heavier and darker. It used to be 13px bold
+  // sentence case, which shared nothing with the field labels under it —
+  // two label systems in one panel, and the headers ended up heavier than
+  // the controls they contain. Nothing inside either group changes; this
+  // is only the row you click.
   const groupButton = (label: string, isOpen: boolean, onClick: () => void) => (
     <button
       type="button"
@@ -2914,7 +2925,20 @@ function ModulePalette({
       }}
     >
       <PaletteChevron open={isOpen} />
-      <strong style={{ fontSize: 13, letterSpacing: 0.3 }}>{label}</strong>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: 0.9,
+          textTransform: "uppercase",
+          // Open is the one you are working in, so it is the one that
+          // gets the ink; the closed header recedes to muted.
+          color: isOpen ? PANEL_TEXT : PANEL_MUTED,
+          transition: "color 0.18s ease",
+        }}
+      >
+        {label}
+      </span>
     </button>
   );
 
@@ -3333,20 +3357,34 @@ function HistoryButton({
   );
 }
 
+// Drawn, not typed. This used to be the text character "▸", which is a
+// different shape and a different vertical offset in every font it falls
+// back to — so it never sat on the label's centre line, and the amount it
+// was off by depended on the machine. An SVG is the same everywhere and
+// its box is exactly the size we ask for.
 function PaletteChevron({ open }: { open: boolean }) {
   return (
-    <span
+    <svg
+      viewBox="0 0 8 12"
+      width={8}
+      height={12}
+      aria-hidden="true"
       style={{
-        display: "inline-block",
-        fontSize: 16,
         color: PANEL_FAINT,
         transform: open ? "rotate(90deg)" : "rotate(0deg)",
         transition: "transform 0.18s ease",
         flexShrink: 0,
       }}
     >
-      ▸
-    </span>
+      <path
+        d="M1.5 1 L6.5 6 L1.5 11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
