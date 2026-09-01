@@ -2779,7 +2779,24 @@ function PaletteCard({
         zIndex: isDragging ? 10 : undefined,
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>{label}</div>
+      {/* Same label system as the group headers above, one step down: the
+          headers are 11px/0.9 tracking, these are 10px/0.7, both 600 and
+          uppercase. Size and tracking carry the hierarchy so the card
+          title never competes with the group it sits inside. Distinct
+          from the 10px "Font"/"Hours" field labels by weight and colour
+          (those are normal weight in PANEL_FAINT), which keeps three
+          readable tiers out of two sizes. */}
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 0.7,
+          textTransform: "uppercase",
+          lineHeight: 1.2,
+        }}
+      >
+        {label}
+      </div>
       {/* Fixed box sized to the scaled render, with the module drawn
           inside it at page scale. Square-cornered on purpose: a
           module's own outer border sits exactly on these bounds, so any
