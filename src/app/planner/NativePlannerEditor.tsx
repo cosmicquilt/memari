@@ -103,6 +103,7 @@ import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
 import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
 import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import {
+  gridCellToAllocation,
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
   columnSpanToDayCount,
@@ -2429,7 +2430,21 @@ const ADD_MODULE_DASH_PX = 80;
 const ADD_MODULE_GAP_PX = 45;
 const ADD_MODULE_BORDER_PX = 8;
 const ADD_MODULE_RADIUS_PX = 48;
-const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.6)";
+// The blue add-zone sits OVER the dot field now, so it steps back and lets
+// the dots read as the primary thing - "change the blue plus box to a low
+// opacity over the dot grid".
+const ADD_MODULE_DASH_COLOR = "rgba(120, 130, 255, 0.28)";
+
+// The 1/4in dot lattice, drawn ONLY inside an empty zone - never behind a
+// module, where the module's own structure already carries the page.
+//
+// Dots sit on the ALLOCATION grid, not on the button's own box: one cell is
+// one dot, so a dot lands on every cell corner and the field stays in phase
+// with everything else on the page. That is what taking the gap out of the
+// pitch bought - before it, no fixed dot spacing could have stayed aligned
+// all the way down.
+const DOT_RADIUS_PX = 2.8;      // ~0.47mm at 300dpi, the commercial convention
+const DOT_COLOR = "#9aa2a8";
 
 // Centers a dash (not a gap) at the midpoint of a straight run of the
 // given length — the standard SVG stroke-dashoffset centering
@@ -2462,6 +2477,26 @@ function AddModuleButton({
     () => gridCellToPixels(pageGrid, { columnStart, rowStart, columnSpan, rowSpan }),
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
+  // One dot per cell corner across the zone. Positions are relative to the
+  // button, which is the INKED box - inset by boxInsetPx inside its
+  // allocation - so the lattice begins half a gap outside it at the top and
+  // left. Those first dots fall under the button's own overflow:hidden,
+  // which is right: they belong to the neighbouring cell.
+  const dots = useMemo(() => {
+    if (rowSpan <= 0) return [];
+    const cell = gridCellToAllocation(pageGrid, {
+      columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
+    });
+    const inset = pageGrid.boxInsetPx;
+    const points: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i <= columnSpan; i++) {
+      for (let j = 0; j <= rowSpan; j++) {
+        points.push({ x: i * cell.width - inset, y: j * cell.height - inset });
+      }
+    }
+    return points;
+  }, [pageGrid, columnSpan, rowSpan]);
+
   // gridCellToPixels' own height formula (rowSpan*cellHeight +
   // (rowSpan-1)*gap) goes *negative* at rowSpan 0 — expected now that
   // the caller (NativePage) renders this permanently, clamping rowSpan
@@ -2525,9 +2560,9 @@ function AddModuleButton({
         justifyContent: "center",
         overflow: "hidden",
         border: "none",
-        backgroundColor: "rgba(120, 130, 255, 0.06)",
+        backgroundColor: "rgba(120, 130, 255, 0.03)",
         borderRadius: ADD_MODULE_RADIUS_PX,
-        color: "rgba(90, 100, 220, 0.8)",
+        color: "rgba(90, 100, 220, 0.35)",
         cursor: "pointer",
         // Permanently mounted now (see the caller's own comment) — but
         // top/height are deliberately NOT transitioned, only opacity
@@ -2557,6 +2592,16 @@ function AddModuleButton({
         transition: "opacity 0.2s ease",
       }}
     >
+      {/* The dot field, behind everything else this button draws. */}
+      <svg
+        width={rect.width}
+        height={visualHeight}
+        style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+      >
+        {dots.map((dot) => (
+          <circle key={`${dot.x}:${dot.y}`} cx={dot.x} cy={dot.y} r={DOT_RADIUS_PX} fill={DOT_COLOR} />
+        ))}
+      </svg>
       {/* The dashed edge — see this file's own header comment above
           for the four-edge-plus-solid-corners design and why.
           Absolutely positioned to exactly cover the button,
