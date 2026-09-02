@@ -18,9 +18,7 @@
 // to that container's own top-left corner, the same relationship
 // Polotno's group/children model already has.
 
-import { useEffect, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
-import { pairRectsForMorph, type MorphPairing } from "@/lib/morphPairing";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
 // — two on-screen thickness floors (strokes and fill hairlines), a
@@ -319,172 +317,6 @@ function RectLayer({
   );
 }
 
-/**
- * Everything needed to draw one rect, resolved once so the static layer
- * and the morphing layer cannot disagree about what a rect looks like.
- * Pulled out of RectLayer unchanged - the stroke inset and the hairline
- * legibility floor are both load-bearing and were only written once.
- */
-function resolveRect(
-  element: RenderedPolotnoElement,
-  originX: number,
-  originY: number,
-  scale: number
-) {
-  const left = (element.x ?? 0) - originX;
-  const top = (element.y ?? 0) - originY;
-  const width = element.width ?? 0;
-  const height = element.height ?? 0;
-  const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
-  const hasFill = !!element.fill && element.fill !== "transparent";
-  const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
-  const inset = strokeWidth / 2;
-
-  let rx = left;
-  let ry = top;
-  let rw = width;
-  let rh = height;
-  if (hasFill && !hasStroke) {
-    const needed = MIN_ONSCREEN_RECT_PX / Math.max(scale, MIN_RECT_FLOOR_SCALE);
-    if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
-      ry = top - (needed - height) / 2;
-      rh = needed;
-    } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
-      rx = left - (needed - width) / 2;
-      rw = needed;
-    }
-  }
-
-  return {
-    left, top, width, height, hasStroke, hasFill, strokeWidth,
-    x: rx + inset,
-    y: ry + inset,
-    w: Math.max(0, rw - strokeWidth),
-    h: Math.max(0, rh - strokeWidth),
-  };
-}
-
-/** See suppressOuterBorderSize's own comment: a module's own outer border
- *  sits flush against its bounds, so during an ease it would draw a second
- *  frame inside the container's animating one. */
-function isOuterBorder(
-  r: ReturnType<typeof resolveRect>,
-  size: { width: number; height: number } | null
-): boolean {
-  return (
-    !!size &&
-    r.hasStroke &&
-    Math.abs(r.left) < OUTER_BORDER_MATCH_EPSILON_PX &&
-    Math.abs(r.top) < OUTER_BORDER_MATCH_EPSILON_PX &&
-    Math.abs(r.width - size.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
-    Math.abs(r.height - size.height) < OUTER_BORDER_MATCH_EPSILON_PX
-  );
-}
-
-/**
- * The layer that runs during a resize: it draws the outgoing and incoming
- * renders together and gets from one to the other the way each mark
- * allows.
- *
- *   pairs      - the same mark in both renders. One node, animated from
- *                its old geometry to its new one.
- *   sweepOut   - leaves, and lies beyond the final bounds. Drawn at its
- *                old geometry and left for the closing box to wipe.
- *   revealIn   - arrives, and lay beyond the starting bounds. Drawn at
- *                its new geometry and uncovered as the box opens.
- *   fadeOut /
- *   fadeIn     - stranded inside the box at both ends with no
- *                counterpart. Nothing else can account for these, so they
- *                are the only marks that fade.
- *
- * The first rendered frame uses the OLD geometry and full opacity for
- * everything outgoing, which is what makes the ease start identical to
- * the frame before it; a rAF then flips to the new values and the CSS
- * transitions carry it. Setting a transition and changing the value in
- * the same commit does not animate, which is why the start frame exists
- * rather than just assigning the final values.
- */
-function MorphRectLayer({
-  morph, originX, originY, scale, easeMs, fromSize, toSize, structureKey,
-}: {
-  morph: MorphPairing<RenderedPolotnoElement>;
-  originX: number;
-  originY: number;
-  scale: number;
-  easeMs: number;
-  fromSize: { width: number; height: number } | null;
-  toSize: { width: number; height: number } | null;
-  structureKey: number;
-}) {
-  // Identifies one transition. When it changes, a new ease has begun and
-  // the layer has to show its start frame again.
-  const morphKey = `${structureKey}:${easeMs}:${morph.pairs.length}:${morph.fadeIn.length}:${morph.fadeOut.length}`;
-
-  // Reset during RENDER, not in an effect - this codebase's own pattern
-  // (compare against a value snapshotted from the previous render, set
-  // state in the render body) and what its lint rule requires. Only the
-  // rAF that ends the start frame is a real side effect, which is the
-  // same shape as NativeModule's own mount fade.
-  const [settled, setSettled] = useState(false);
-  const [lastKey, setLastKey] = useState(morphKey);
-  if (morphKey !== lastKey) {
-    setLastKey(morphKey);
-    setSettled(false);
-  }
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => setSettled(true));
-    return () => cancelAnimationFrame(raf);
-  }, [morphKey]);
-
-  const transition = [
-    rectGeometryTransition(easeMs),
-    easeMs > 0 ? `opacity ${easeMs}ms ${RESIZE_EASE_CURVE}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
-
-  const draw = (
-    element: RenderedPolotnoElement,
-    key: string,
-    size: { width: number; height: number } | null,
-    opacity: number
-  ) => {
-    const r = resolveRect(element, originX, originY, scale);
-    if (isOuterBorder(r, size)) return null;
-    return (
-      <rect
-        key={key}
-        x={r.x}
-        y={r.y}
-        width={r.w}
-        height={r.h}
-        fill={r.hasFill ? element.fill : "none"}
-        stroke={r.hasStroke ? element.stroke : undefined}
-        strokeWidth={r.hasStroke ? r.strokeWidth : undefined}
-        opacity={(element.opacity ?? 1) * opacity}
-        style={{ transition }}
-      />
-    );
-  };
-
-  return (
-    <svg
-      style={{
-        position: "absolute", left: 0, top: 0, width: "100%", height: "100%",
-        overflow: "visible", pointerEvents: "none",
-      }}
-    >
-      {morph.pairs.map((pair, i) =>
-        draw(settled ? pair.to : pair.from, `pair:${i}`, settled ? toSize : fromSize, 1)
-      )}
-      {morph.sweepOut.map((element, i) => draw(element, `sweep:${i}`, fromSize, 1))}
-      {morph.revealIn.map((element, i) => draw(element, `reveal:${i}`, toSize, 1))}
-      {morph.fadeOut.map((element, i) => draw(element, `fadeout:${i}`, fromSize, settled ? 0 : 1))}
-      {morph.fadeIn.map((element, i) => draw(element, `fadein:${i}`, toSize, settled ? 1 : 0))}
-    </svg>
-  );
-}
-
 // Groups are transparent pass-throughs at the same origin (see
 // ElementNode's own group branch), so flattening them here lets the
 // renderer split a module's elements by type without caring how deeply
@@ -631,20 +463,53 @@ export function PolotnoJsonRenderer({
   // fixed fraction of the content width stays at that fraction
   // throughout. Nothing overflows, so the clip becomes a no-op for
   // these modules rather than something to fight.
-  // Both renders, paired mark by mark - see morphPairing. The three-way
-  // decision that used to live here (animate / sweep the larger / draw
-  // the final) was per-MODULE, so a habit-tracker going wide-to-compact
-  // fell entirely to one side and every rule in it jumped. Deciding per
-  // MARK means most of them travel and only the genuine strays fade.
+  //
+  // ...and only when the box is GROWING. Direction matters, and the two
+  // reports that fixed it were opposite directions of the same crossing:
+  //
+  //   grow  (1 column -> 3): animating is right. Drawn at the final,
+  //     larger geometry and merely clipped, the day separators sat at
+  //     their end positions from the first frame and were revealed as the
+  //     box opened - reported as the lines disappearing, with a request
+  //     that they slide as a group instead.
+  //
+  //   shrink (4 units -> 3): animating is wrong. The rects arrive at the
+  //     final, NARROWER geometry immediately while the border is still
+  //     wide, so the content pulls away from the box and leaves white
+  //     space against the closing edge - reported as the right grid
+  //     section jumping to its final place ahead of the border.
+  //
+  // A shrink wants the clip window to wipe content away; a grow wants the
+  // content to travel. suppressOuterBorderSize is the size the content
+  // render was drawn at (the larger of the two) and textSizePx is the
+  // final size, so the direction is already known here.
   const textFlat = textElements ? flattenElements(textElements) : null;
-  const fromRects = flat.filter(isRect);
-  const toRects = textFlat ? textFlat.filter(isRect) : null;
-  const easing = !!toRects && textEaseMs > 0 && !!suppressOuterBorderSize && !!textSizePx;
-  const morph: MorphPairing<RenderedPolotnoElement> | null =
-    easing && toRects && suppressOuterBorderSize && textSizePx
-      ? pairRectsForMorph(fromRects, toRects, suppressOuterBorderSize, textSizePx)
-      : null;
-  const rects = fromRects;
+  const shrinking =
+    !!textSizePx &&
+    !!suppressOuterBorderSize &&
+    (textSizePx.width < suppressOuterBorderSize.width - 0.5 ||
+      textSizePx.height < suppressOuterBorderSize.height - 0.5);
+  const animateRects =
+    !!textFlat && textFlat.length === flat.length && textEaseMs > 0 && !shrinking;
+
+  // A third case, and the one the sweep cannot serve at all: the two
+  // renders are different DRAWINGS, not two sizes of one. A habit-tracker
+  // crossing into the sidebar goes from its wide layout to its compact
+  // one - 33 elements to 116 - and the larger geometry is then the wide
+  // layout, so the whole animation shows a drawing that is about to be
+  // replaced, snapping to the compact one at the end. Reported as the
+  // horizontal lines not aligning with the position they jump to.
+  //
+  // There is no larger version of the same thing to wipe away here, so
+  // draw the FINAL rects and let the box close over them. Content sits
+  // smaller than its box for the length of the shrink, which reads as a
+  // wipe; nothing moves when the ease ends, which is the part that was
+  // being noticed. Growing needs none of this - the target IS the larger
+  // geometry, so flat is already the final drawing.
+  const structureChanged = !!textFlat && textFlat.length !== flat.length;
+  const finalRects = !!textFlat && structureChanged && shrinking;
+
+  const rects = (animateRects || finalRects ? textFlat! : flat).filter(isRect);
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
@@ -665,28 +530,15 @@ export function PolotnoJsonRenderer({
   );
   return (
     <>
-      {morph ? (
-        <MorphRectLayer
-          morph={morph}
-          originX={originX}
-          originY={originY}
-          scale={scale}
-          easeMs={textEaseMs}
-          fromSize={suppressOuterBorderSize}
-          toSize={textSizePx ?? null}
-          structureKey={structureKey}
-        />
-      ) : (
-        <RectLayer
-          rects={rects}
-          originX={originX}
-          originY={originY}
-          scale={scale}
-          suppressOuterBorderSize={suppressOuterBorderSize}
-          structureKey={structureKey}
-          easeMs={0}
-        />
-      )}
+      <RectLayer
+        rects={rects}
+        originX={originX}
+        originY={originY}
+        scale={scale}
+        suppressOuterBorderSize={animateRects || finalRects ? textSizePx ?? null : suppressOuterBorderSize}
+        structureKey={structureKey}
+        easeMs={animateRects ? textEaseMs : 0}
+      />
       {rest.map((element) => (
         <ElementNode
           key={textKey(element)}
