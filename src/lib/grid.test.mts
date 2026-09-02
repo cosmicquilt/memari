@@ -25,11 +25,30 @@ import {
   pixelsToContainingCell,
   takeRowsFairly,
   followerRowsAfterGrowth,
+  resolveZone,
   type PageGrid,
   type GridRect,
 } from "./grid";
 
 let failures = 0;
+
+// Reported from an exit hook, so it always runs after every check no
+// matter where in the file that check is written.
+//
+// It used to be an if/else two thirds of the way up, assigning
+// process.exitCode and letting execution continue - so anything below it
+// could fail while npm test still exited 0. Moving it to the end fixed
+// that until the very next block of checks was appended, which put it
+// back in the middle again. An exit hook cannot be outrun by an append.
+process.on("exit", () => {
+  if (failures > 0) {
+    console.error(`
+${failures} check(s) failed.`);
+    process.exitCode = 1;
+  } else {
+    console.log("All grid.ts checks passed.");
+  }
+});
 function assert(cond: boolean, msg: string) {
   if (!cond) {
     failures++;
@@ -929,17 +948,34 @@ console.log("All takeRowsFairly checks passed.");
   assert(rows[0].rowStart === 21 && rows[0].rowSpan === 15, "a zero delta changes nothing");
 }
 console.log("All followerRowsAfterGrowth checks passed.");
-
-
-// Reported once, at the very END of the file. This used to sit two thirds
-// of the way up, where it assigned process.exitCode and then let execution
-// carry on - so any check below it could fail while the suite still exited
-// 0. Several already lived down there before today, and a deliberately
-// wrong expectation added while writing followerRowsAfterGrowth printed
-// FAIL and still passed npm test, which is how it was noticed.
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed.`);
-  process.exitCode = 1;
-} else {
-  console.log("All grid.ts checks passed.");
+// --- resolveZone -----------------------------------------------------------
+// Left page: hourly at columns 6-23, rows 0-19. Sidebar is 0-5.
+{
+  const hourly = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
+  const below = resolveZone(hourly, { columnStart: 10, rowStart: 21 }, 0);
+  assert(
+    !!below && below.isBottomZone && below.columnStart === 6 && below.columnSpan === 18,
+    `below the hours, in its columns, is the bottom zone (got ${JSON.stringify(below)})`
+  );
+  const side = resolveZone(hourly, { columnStart: 2, rowStart: 5 }, 0);
+  assert(
+    !!side && !side.isBottomZone && side.columnStart === 0 && side.columnSpan === 6,
+    `left of the hours is the sidebar, six columns wide (got ${JSON.stringify(side)})`
+  );
 }
+// The row test is the client/server difference, carried as a parameter.
+{
+  const hourly = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
+  const strict = resolveZone(hourly, { columnStart: 10, rowStart: 5 }, 0);
+  assert(!!strict && !strict.isBottomZone, "with no tolerance, above the hours is NOT the bottom zone");
+  const loose = resolveZone(hourly, { columnStart: 10, rowStart: 5 }, Number.POSITIVE_INFINITY);
+  assert(!!loose && loose.isBottomZone, "with infinite tolerance it is - the server's column-only behaviour");
+}
+// Right page: the hourly block spans the full width, so there is no sidebar.
+{
+  const full = { columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan: 20 };
+  assert(resolveZone(full, { columnStart: 3, rowStart: 5 }, 0) === null, "a full-width page has no sidebar to fall back to");
+  const below = resolveZone(full, { columnStart: 3, rowStart: 21 }, 0);
+  assert(!!below && below.isBottomZone && below.columnSpan === 24, "but it still has a bottom zone");
+}
+console.log("All resolveZone checks passed.");

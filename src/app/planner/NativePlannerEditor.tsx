@@ -103,6 +103,7 @@ import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "
 import {
   gridCellToAllocation,
   followerRowsAfterGrowth,
+  resolveZone,
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
   columnSpanToDayCount,
@@ -5226,38 +5227,14 @@ export function NativePlannerEditor({
       targetRowStart: number
     ): { columnStart: number; columnSpan: number; isBottomZone: boolean } | null => {
       if (!canCrossZones(slug)) return null;
-      if (
-        hourlyGridPlacement &&
-        targetColumnStart >= hourlyGridPlacement.columnStart &&
-        targetColumnStart < hourlyGridPlacement.columnStart + hourlyGridPlacement.columnSpan &&
-        targetRowStart >= hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE
-      ) {
-        return { columnStart: hourlyGridPlacement.columnStart, columnSpan: hourlyGridPlacement.columnSpan, isBottomZone: true };
-      }
-      // Side zone only exists on a page whose own hourly-grid-core
-      // leaves column 0 free (columnStart > 0) — the right page's own
-      // hourly-grid-core spans the full width (columnStart: 0), so it
-      // has no sidebar column at all. Checking the shape here rather
-      // than hardcoding "left page" keeps this correct without needing
-      // to know which page is which, and naturally extends to
-      // cross-page crossings (resolveDrag, below) once the caller
-      // passes a TARGET page's own hourlyGridPlacement instead of
-      // always the dragged module's own source page. Preserves the
-      // original fallback for a genuinely undefined hourlyGridPlacement
-      // (side zone still offered — matches this function's own
-      // documented "callers fall back to their own pre-existing
-      // default" contract elsewhere) — only an ACTUAL full-width
-      // hourly grid (columnStart: 0) rules the side zone out.
-      if (!hourlyGridPlacement || hourlyGridPlacement.columnStart > 0) {
-        // The sidebar is everything left of the hourly grid, not a fixed
-        // one column. That was the same number while a page was 4 columns
-        // wide; on the 24-column lattice it is 6. Falls back to 1 only
-        // when there is no hourly grid to measure against, matching this
-        // function's documented "callers fall back to their own default"
-        // contract just above.
-        return { columnStart: 0, columnSpan: hourlyGridPlacement?.columnStart ?? 1, isBottomZone: false };
-      }
-      return null;
+      // resolveZone (grid.ts) is the shared rule; the server calls it too.
+      // BOTTOM_ZONE_ROW_TOLERANCE is this side's row test - see that
+      // function on why the server passes Infinity instead.
+      return resolveZone(
+        hourlyGridPlacement ?? null,
+        { columnStart: targetColumnStart, rowStart: targetRowStart },
+        BOTTOM_ZONE_ROW_TOLERANCE
+      );
     },
     []
   );

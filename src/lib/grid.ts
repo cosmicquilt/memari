@@ -304,6 +304,61 @@ export function followerRowsAfterGrowth(
   });
 }
 
+/**
+ * Which zone of a page a target cell belongs to, and what column range a
+ * module placed there takes.
+ *
+ * A weekly page has two zones: the SIDEBAR, everything left of the hourly
+ * block, and the BOTTOM ZONE, the hourly block's own columns below it. A
+ * page whose hourly block starts at column 0 spans the full width and has
+ * no sidebar at all, which is the right-hand page.
+ *
+ * This existed in three places — resolveZoneForColumn in the editor, and
+ * the `inBottomZone` branches of addPaletteModuleAt and
+ * moveModuleAcrossZones — and they did not agree.
+ *
+ * **The client tests the row; the server does not.** The client requires
+ * the target to sit at or below the hourly block's bottom edge before
+ * calling it the bottom zone; both server copies test column containment
+ * alone. So a target inside the day columns but ABOVE the hours resolves
+ * to the sidebar on the client and to the bottom zone on the server.
+ *
+ * `bottomZoneRowTolerance` carries that difference explicitly rather than
+ * papering over it: the editor passes its own tolerance, and the server
+ * passes Infinity, which makes the row test vacuously true and preserves
+ * its behaviour exactly. One function, one visible parameter, and the
+ * disagreement is now a single number someone can decide about — rather
+ * than two implementations that have to be read side by side to notice it
+ * at all. The client's rule is almost certainly the correct one: above the
+ * hourly block, within its columns, IS the hourly block, which is locked.
+ */
+export type ZoneResolution = {
+  columnStart: number;
+  columnSpan: number;
+  isBottomZone: boolean;
+};
+
+export function resolveZone(
+  hourly: GridRect | null | undefined,
+  target: { columnStart: number; rowStart: number },
+  bottomZoneRowTolerance: number
+): ZoneResolution | null {
+  if (
+    hourly &&
+    target.columnStart >= hourly.columnStart &&
+    target.columnStart < hourly.columnStart + hourly.columnSpan &&
+    target.rowStart >= hourly.rowStart + hourly.rowSpan - bottomZoneRowTolerance
+  ) {
+    return { columnStart: hourly.columnStart, columnSpan: hourly.columnSpan, isBottomZone: true };
+  }
+  // The sidebar is everything left of the hourly block. Falls back to a
+  // single column only when there is no hourly block to measure against.
+  if (!hourly || hourly.columnStart > 0) {
+    return { columnStart: 0, columnSpan: hourly ? hourly.columnStart : 1, isBottomZone: false };
+  }
+  return null;
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its

@@ -11,6 +11,7 @@ import {
   columnSpanToDayCount,
   pixelHeightToRowSpan,
   takeRowsFairly,
+  resolveZone,
   followerRowsAfterGrowth,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
@@ -1152,8 +1153,19 @@ export async function addPaletteModuleAt(
         // every existing sidebar box has always come from), and this
         // feature only ever needed to change what happens *in* the
         // bottom zone, not touch that.
-        const inBottomZone =
-          hourlyGrid && hourlyGrid.columnStart !== null && columnStart >= hourlyGrid.columnStart && columnStart < hourlyGrid.columnStart + hourlyGrid.columnSpan;
+        // resolveZone (grid.ts) is the shared rule. Infinity for the row
+        // tolerance keeps this side's behaviour exactly as it was -
+        // column containment alone, no row test. See that function.
+        const zone =
+          hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
+            ? resolveZone(
+                { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
+                  columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
+                { columnStart, rowStart },
+                Number.POSITIVE_INFINITY
+              )
+            : null;
+        const inBottomZone = zone?.isBottomZone ?? false;
         if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
           effectiveColumnStart = hourlyGrid.columnStart;
           effectiveColumnSpan = hourlyGrid.columnSpan;
@@ -1580,11 +1592,17 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   const sourcePageGrid = pageGridFor(sourcePage);
   const targetPageGrid = pageGridFor(targetPage);
   const hourlyGrid = targetPage.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-  const inBottomZone =
-    !!hourlyGrid &&
-    hourlyGrid.columnStart !== null &&
-    columnStart >= hourlyGrid.columnStart &&
-    columnStart < hourlyGrid.columnStart + hourlyGrid.columnSpan;
+  // Same shared rule, same Infinity tolerance - see resolveZone (grid.ts).
+  const zone =
+    hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
+      ? resolveZone(
+          { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
+            columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
+          { columnStart, rowStart },
+          Number.POSITIVE_INFINITY
+        )
+      : null;
+  const inBottomZone = zone?.isBottomZone ?? false;
 
   let effectiveColumnStart: number;
   let effectiveColumnSpan: number;
