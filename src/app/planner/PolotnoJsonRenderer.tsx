@@ -463,8 +463,33 @@ export function PolotnoJsonRenderer({
   // fixed fraction of the content width stays at that fraction
   // throughout. Nothing overflows, so the clip becomes a no-op for
   // these modules rather than something to fight.
+  //
+  // ...and only when the box is GROWING. Direction matters, and the two
+  // reports that fixed it were opposite directions of the same crossing:
+  //
+  //   grow  (1 column -> 3): animating is right. Drawn at the final,
+  //     larger geometry and merely clipped, the day separators sat at
+  //     their end positions from the first frame and were revealed as the
+  //     box opened - reported as the lines disappearing, with a request
+  //     that they slide as a group instead.
+  //
+  //   shrink (4 units -> 3): animating is wrong. The rects arrive at the
+  //     final, NARROWER geometry immediately while the border is still
+  //     wide, so the content pulls away from the box and leaves white
+  //     space against the closing edge - reported as the right grid
+  //     section jumping to its final place ahead of the border.
+  //
+  // A shrink wants the clip window to wipe content away; a grow wants the
+  // content to travel. suppressOuterBorderSize is the size the content
+  // render was drawn at (the larger of the two) and textSizePx is the
+  // final size, so the direction is already known here.
   const textFlat = textElements ? flattenElements(textElements) : null;
-  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0;
+  const shrinking =
+    !!textSizePx &&
+    !!suppressOuterBorderSize &&
+    (textSizePx.width < suppressOuterBorderSize.width - 0.5 ||
+      textSizePx.height < suppressOuterBorderSize.height - 0.5);
+  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0 && !shrinking;
   const rects = (animateRects ? textFlat : flat).filter(isRect);
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
