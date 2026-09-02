@@ -99,8 +99,6 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
-import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
-import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
 import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import {
   gridCellToAllocation,
@@ -119,6 +117,7 @@ import {
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
+import { MIN_ROW_SPAN, getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -376,10 +375,6 @@ function computeDraggedTransformPagePx(
   return { x: rawDeltaPagePx.x + c.x, y: rawDeltaPagePx.y + c.y };
 }
 
-// Mirrors resizeAdjacentModules'/resizeStackFromBottom's own floor
-// server-side (actions.ts) — kept in sync by hand, this file can't
-// import a constant from a "use server" file.
-const MIN_ROW_SPAN = 2;
 
 // How far above the bottom zone's own top edge (hourly-grid-core's own
 // rowStart + rowSpan) a drag still counts as targeting it — requested
@@ -482,51 +477,6 @@ const PALETTE_ID_PREFIX = "palette:";
 // drag path now, not two.
 const PHANTOM_ID = "__palette_phantom__";
 
-// Minimum resize size for a module, in grid rows — MIN_ROW_SPAN (2) for
-// most types, matching the sidebar's own labeled-box (a single-row box
-// reads as barely more than a sliver, all header/border chrome, no real
-// writing space left). todo-checklist/habit-tracker get a genuinely
-// computed minimum instead, requested directly: "make them have a min
-// height of the title and one row below" — their own header band (with
-// day-letter columns, checkbox segments, etc.) is taller than a
-// labeled-box's, so the floor needs its own justification, not just a
-// coincidence with the sidebar's. Computed from each type's own real
-// measurements (getTodoChecklistRowMetricsPx/getHabitTrackerRowMetricsPx
-// — the same header/row-height constants their actual renderers use,
-// not a guessed row count) and converted to a grid row count the same
-// "measure two real spans, take the difference" technique every other
-// px<->row conversion in this file already uses (see ResizeHandle's own
-// rowPitchPx) rather than hand-deriving the grid's own per-row pixel
-// math a second time. Floored at MIN_ROW_SPAN regardless — verified by
-// direct computation before writing this that today's real measurements
-// already land there (both types' header+1-row target fits inside 2
-// grid rows on this app's page geometry), so this floor is a safety net
-// for if either module's own measurements ever change, not currently
-// doing any clamping of its own.
-// columnSpan: mirrors actions.ts's identical addition — needed for
-// habit-tracker only, whose compact (sidebar) layout has a differently-
-// sized nominal row than its wide layout (see getHabitTrackerRowMetricsPx's
-// own comment). todo-checklist and every other slug ignore it.
-function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: number): number {
-  let targetPx: number | null = null;
-  if (slug === "todo-checklist") {
-    const m = getTodoChecklistRowMetricsPx();
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
-  } else if (slug === "habit-tracker") {
-    const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
-    const m = getHabitTrackerRowMetricsPx(widthPx);
-    // Mirrors actions.ts's identical addition — compact placement needs
-    // room for 2 full pairs (4 grid rows), not just 1.
-    const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
-  }
-  if (targetPx === null) return MIN_ROW_SPAN;
-  const oneRow = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
-  const twoRows = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 });
-  const rowPitchPx = twoRows.height - oneRow.height;
-  const computed = targetPx <= oneRow.height ? 1 : Math.ceil((targetPx - oneRow.height) / rowPitchPx) + 1;
-  return Math.max(MIN_ROW_SPAN, computed);
-}
 
 // The stack-bottom cascade's own math (see StackBottom's type comment
 // and resizeStackFromBottom's own comment for the full reasoning) —

@@ -7,7 +7,6 @@ import {
   clampGridPlacement,
   rectsOverlap,
   moduleInstancesToRects,
-  gridCellToPixels,
   sidebarColumnSpan,
   columnSpanToDayCount,
   pixelHeightToRowSpan,
@@ -18,11 +17,10 @@ import {
   canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
+import { MIN_ROW_SPAN, getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
-import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
-import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/modules/habitTracker";
 import { getHourlyGridCoreContentHeightPx, getHourlyGridCoreOffModeMinHeightPx } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
@@ -59,41 +57,6 @@ function pageGridFor(page: {
   };
 }
 
-// Minimum resize size for a module, in grid rows — see the identical
-// client-side copy (NativePlannerEditor.tsx's getMinRowSpanForSlug) for
-// the full reasoning ("make them have a min height of the title and one
-// row below," requested directly) and why this can't just import that
-// copy across the "use server" boundary. This is the authoritative
-// version; the client's own copy is only ever a live-preview mirror of
-// it.
-const MIN_ROW_SPAN = 2;
-// columnSpan: needed for habit-tracker only — its compact (sidebar)
-// layout's own nominal row is a name row plus a day-letter square, whose
-// size depends on the actual allocated width, unlike the wide layout's
-// fixed ROW_HEIGHT_PT (see getHabitTrackerRowMetricsPx's own comment).
-// todo-checklist and every other slug ignore it — a checkbox+line row's
-// height doesn't change with how many of them sit side by side.
-function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpan: number): number {
-  let targetPx: number | null = null;
-  if (slug === "todo-checklist") {
-    const m = getTodoChecklistRowMetricsPx();
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx;
-  } else if (slug === "habit-tracker") {
-    const widthPx = gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width;
-    const m = getHabitTrackerRowMetricsPx(widthPx);
-    // Compact (sidebar) placement needs room for at least 2 full habit
-    // pairs, not just 1 — requested directly: "can the habits side
-    // module have a minimum vertical height of two habits (4 rows)."
-    // Verified by direct computation against this app's real page
-    // geometry before writing this, same as every other minimum here:
-    // header + 2 compact pairs lands at exactly 4 grid rows. The wide
-    // layout keeps its original "header + 1 row" floor.
-    const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
-    targetPx = m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
-  }
-  if (targetPx === null) return MIN_ROW_SPAN;
-  return Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, targetPx));
-}
 
 // updateModuleConfig accepts propValues straight from the client and
 // used to write it verbatim — a wrong type or an unexpected key would
