@@ -12,6 +12,7 @@ import {
   columnSpanToDayCount,
   pixelHeightToRowSpan,
   takeRowsFairly,
+  followerRowsAfterGrowth,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
   canCrossZones,
@@ -2847,28 +2848,17 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     throw new Error("Nothing to resize");
   }
 
-  // Whatever the free space could not cover has to come out of the
-  // followers' own heights.
-  let needFromFollowers = Math.max(0, clampedDelta - freeBelow);
-  for (let i = followerSpans.length - 1; i >= 0 && needFromFollowers > 0; i--) {
-    const give = Math.min(followerSpans[i] - followerFloors[i], needFromFollowers);
-    if (give > 0) {
-      followerSpans[i] -= give;
-      needFromFollowers -= give;
-    }
-  }
-
-  // Repack them below the block's new bottom, preserving the gap that was
-  // already there (the reserved one-row gutter) and keeping them
-  // contiguous, which every other path that places them already does.
-  const gapAboveFollowers =
-    followers.length > 0 ? (followers[0].rowStart as number) - stackBottomRowEnd : 0;
-  let followerCursor = stackBottomRowEnd + clampedDelta + gapAboveFollowers;
-  const followerRows = followers.map((_, i) => {
-    const rowStart = followerCursor;
-    followerCursor += followerSpans[i];
-    return { rowStart, rowSpan: followerSpans[i] };
-  });
+  // Shift into the free space, then take height once there is none left.
+  // followerRowsAfterGrowth (grid.ts) owns that rule for BOTH sides - the
+  // live preview in NativePlannerEditor calls the same function - so the
+  // drag and the drop cannot disagree. They did, and the to-do slid off
+  // the page while dragging.
+  const followerRows = followerRowsAfterGrowth(
+    followers.map((mi, i) => ({ rowSpan: followerSpans[i], minRowSpan: followerFloors[i] })),
+    clampedDelta,
+    freeBelow,
+    followers.length > 0 ? (followers[0].rowStart as number) : stackBottomRowEnd
+  );
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const [updatedInstance, ...updatedFollowers] = await prisma.$transaction([

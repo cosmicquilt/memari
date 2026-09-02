@@ -24,6 +24,7 @@ import {
   gravityRepackAfterDeparture,
   pixelsToContainingCell,
   takeRowsFairly,
+  followerRowsAfterGrowth,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -833,13 +834,6 @@ const page: PageGrid = {
   }
 }
 
-if (failures > 0) {
-  console.error(`\n${failures} check(s) failed.`);
-  process.exitCode = 1;
-} else {
-  console.log("All grid.ts checks passed.");
-}
-
 // --- pixelsToContainingCell ---
 // Containment (floor) vs pixelsToGridCell's nearest (round). The whole
 // point is that a point anywhere inside a cell reports that cell, where
@@ -906,3 +900,46 @@ if (failures > 0) {
   assert(r.spans.join(",") === "6,2" && r.unmet === 0, `the smaller one stops at its floor (got ${r.spans.join(",")})`);
 }
 console.log("All takeRowsFairly checks passed.");
+
+// --- followerRowsAfterGrowth -----------------------------------------------
+// The rule that lived twice and disagreed: shift into free space, then give
+// up height once there is none left.
+{
+  const rows = followerRowsAfterGrowth([{ rowSpan: 15, minRowSpan: 3 }], 5, 0, 21);
+  assert(
+    rows[0].rowStart === 26 && rows[0].rowSpan === 10 && rows[0].rowStart + rows[0].rowSpan === 36,
+    `with no free space it shrinks by the whole delta and stays on the page (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  const rows = followerRowsAfterGrowth([{ rowSpan: 15, minRowSpan: 3 }], 5, 5, 21);
+  assert(rows[0].rowSpan === 15, "with enough free space below it only moves");
+}
+{
+  const rows = followerRowsAfterGrowth(
+    [{ rowSpan: 6, minRowSpan: 2 }, { rowSpan: 6, minRowSpan: 2 }], 5, 0, 10
+  );
+  assert(
+    rows[0].rowSpan === 5 && rows[1].rowSpan === 2 && rows[0].rowStart === 15,
+    `shrinking cascades bottom-up: 4 from the last, then 1 from the one above (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  const rows = followerRowsAfterGrowth([{ rowSpan: 15, minRowSpan: 3 }], 0, 0, 21);
+  assert(rows[0].rowStart === 21 && rows[0].rowSpan === 15, "a zero delta changes nothing");
+}
+console.log("All followerRowsAfterGrowth checks passed.");
+
+
+// Reported once, at the very END of the file. This used to sit two thirds
+// of the way up, where it assigned process.exitCode and then let execution
+// carry on - so any check below it could fail while the suite still exited
+// 0. Several already lived down there before today, and a deliberately
+// wrong expectation added while writing followerRowsAfterGrowth printed
+// FAIL and still passed npm test, which is how it was noticed.
+if (failures > 0) {
+  console.error(`\n${failures} check(s) failed.`);
+  process.exitCode = 1;
+} else {
+  console.log("All grid.ts checks passed.");
+}

@@ -263,6 +263,47 @@ export function takeRowsFairly(
   return { spans: next, unmet: remaining };
 }
 
+/**
+ * Where a stack of "followers" ends up when the block above them grows.
+ *
+ * They shift down by the growth, and once there is no free space left
+ * below to shift into, they give up height instead - cascading from the
+ * BOTTOM one upward, each to its own floor.
+ *
+ * This existed twice: once in resizeHourlyGridCore (actions.ts, on commit)
+ * and once in displayPlacements (NativePlannerEditor, in the live
+ * preview). They disagreed - the preview only ever shifted - so a to-do
+ * slid off the bottom of the page while dragging and snapped back into
+ * place on release. That is the third bug in one evening from a rule
+ * written on the server and approximated in the preview, which is why
+ * this is the first thing pulled into one place.
+ *
+ * Pure, so both callers get the same answer by construction rather than
+ * by two people remembering the same rule.
+ */
+export function followerRowsAfterGrowth(
+  members: Array<{ rowSpan: number; minRowSpan: number }>,
+  deltaRows: number,
+  freeBelowRows: number,
+  firstRowStart: number
+): Array<{ rowStart: number; rowSpan: number }> {
+  const spans = members.map((m) => m.rowSpan);
+  let needed = Math.max(0, deltaRows - Math.max(0, freeBelowRows));
+  for (let i = spans.length - 1; i >= 0 && needed > 0; i--) {
+    const give = Math.min(spans[i] - members[i].minRowSpan, needed);
+    if (give > 0) {
+      spans[i] -= give;
+      needed -= give;
+    }
+  }
+  let cursor = firstRowStart + deltaRows;
+  return spans.map((rowSpan) => {
+    const row = { rowStart: cursor, rowSpan };
+    cursor += rowSpan;
+    return row;
+  });
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its

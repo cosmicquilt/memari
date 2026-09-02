@@ -104,6 +104,7 @@ import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/module
 import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import {
   gridCellToAllocation,
+  followerRowsAfterGrowth,
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
   columnSpanToDayCount,
@@ -3901,33 +3902,30 @@ export function NativePlannerEditor({
           .sort((a, b) => a.placement.rowStart - b.placement.rowStart);
 
         if (followers.length > 0 && followerPageGrid) {
-          // They shift by the delta, AND give up height once there is no
-          // free space left below them to shift into. Shifting alone slid
-          // the to-do off the bottom of the page as the hours block grew -
-          // reported exactly that way. resizeHourlyGridCore applies the
-          // same rule on commit, cascading from the bottom follower up to
-          // each one's own floor; this is the preview of it.
+          // One rule, one function: followerRowsAfterGrowth (grid.ts) is
+          // what resizeHourlyGridCore commits with, so this preview and
+          // that commit cannot drift. They did - the preview only shifted,
+          // so a to-do slid off the bottom of the page while dragging and
+          // snapped back on release.
           const tailRowEnd = Math.max(
             ...followers.map((f) => f.placement.rowStart + f.placement.rowSpan)
           );
-          const freeBelow = Math.max(0, followerPageGrid.gridRows - tailRowEnd);
-          let needed = Math.max(0, stackResizeDrag.deltaRows - freeBelow);
-          const spans = followers.map((f) => f.placement.rowSpan);
-          for (let i = spans.length - 1; i >= 0 && needed > 0; i--) {
-            const info = moduleLookup.get(followers[i].id);
-            const floor = info
-              ? getMinRowSpanForSlug(info.slug, followerPageGrid, followers[i].placement.columnSpan)
-              : MIN_ROW_SPAN;
-            const give = Math.min(spans[i] - floor, needed);
-            if (give > 0) {
-              spans[i] -= give;
-              needed -= give;
-            }
-          }
-          let cursor = followers[0].placement.rowStart + stackResizeDrag.deltaRows;
+          const rows = followerRowsAfterGrowth(
+            followers.map((f) => {
+              const info = moduleLookup.get(f.id);
+              return {
+                rowSpan: f.placement.rowSpan,
+                minRowSpan: info
+                  ? getMinRowSpanForSlug(info.slug, followerPageGrid, f.placement.columnSpan)
+                  : MIN_ROW_SPAN,
+              };
+            }),
+            stackResizeDrag.deltaRows,
+            Math.max(0, followerPageGrid.gridRows - tailRowEnd),
+            followers[0].placement.rowStart
+          );
           followers.forEach((follower, i) => {
-            patched[follower.id] = { ...follower.placement, rowStart: cursor, rowSpan: spans[i] };
-            cursor += spans[i];
+            patched[follower.id] = { ...follower.placement, ...rows[i] };
           });
         }
         next = patched;
