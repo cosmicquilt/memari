@@ -43,9 +43,25 @@ function rectsOf(slug: string, columnSpan: number, rowSpan: number, propValues: 
       const el = e as Record<string, unknown>;
       return el.children ? [el, ...flatten(el.children as unknown[])] : [el];
     });
-  return flatten(elements as unknown[]).filter(
+  const boxRect = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan, rowSpan });
+  return (flatten(elements as unknown[]).filter(
     (e) => e.type === "figure" && e.subType === "rect"
-  ) as Rect[];
+  ) as Array<Rect & { stroke?: string; strokeWidth?: number }>)
+    // The module's own outer border is NOT drawn during an ease - see
+    // suppressOuterBorderSize, which removes it so it does not draw a
+    // second frame inside the container's animating one. Counting it as a
+    // difference measured a mark that never appears, and inflated every
+    // row of this report by one at each end. It made the labeled-box look
+    // like it violated its endpoints when the only thing that actually
+    // differs between its two sizes is a border nobody draws.
+    .filter((r) => {
+      const isOuter =
+        !!r.stroke && r.stroke !== "none" && (r.strokeWidth ?? 0) > 0 &&
+        Math.abs((r.x ?? 0) - boxRect.x) < 0.5 && Math.abs((r.y ?? 0) - boxRect.y) < 0.5 &&
+        Math.abs((r.width ?? 0) - boxRect.width) < 0.5 &&
+        Math.abs((r.height ?? 0) - boxRect.height) < 0.5;
+      return !isOuter;
+    }) as Rect[];
 }
 
 const size = (columnSpan: number, rowSpan: number) =>
