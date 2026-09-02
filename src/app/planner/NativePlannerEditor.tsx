@@ -105,6 +105,8 @@ import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "
 import {
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
+  columnSpanToDayCount,
+  dayUnitColumns,
   pixelsToGridCell,
   pixelsToContainingCell,
   clampGridPlacement,
@@ -1674,12 +1676,13 @@ function NativePage({
                   // width put a todo's title where it would sit if four
                   // day-columns had to fit into three columns' width:
                   // slightly too far right, then correct once the ease
-                  // ended. dayCount tracks columnSpan for the dragged
-                  // module (see dayCountOverride), so the target span is
-                  // the target count.
+                  // ended. dayCount tracks the dragged module's WIDTH IN
+                  // DAY UNITS (see dayCountOverride) - it was columnSpan
+                  // itself, which was the same number only while a day was
+                  // one column wide.
                   propValues:
                     info.slug === "todo-checklist"
-                      ? { ...info.propValues, dayCount: placement.columnSpan }
+                      ? { ...info.propValues, dayCount: columnSpanToDayCount(page.pageGrid, placement.columnSpan) }
                       : info.propValues,
                   moduleType: { slug: info.slug },
                 },
@@ -2755,9 +2758,9 @@ function PaletteCard({
   // looks crazy big, two squares and big text inside". The unit is the
   // sidebar, not the cell.
   const preview = useMemo(() => {
-    const dayUnitColumns = Math.max(1, Math.round(pageGrid.gridColumns / 4));
-    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, dayUnitColumns);
-    const placement = { columnStart: 0, rowStart: 0, columnSpan: dayUnitColumns, rowSpan };
+    const previewColumns = dayUnitColumns(pageGrid);
+    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns);
+    const placement = { columnStart: 0, rowStart: 0, columnSpan: previewColumns, rowSpan };
     const rect = gridCellToPixels(pageGrid, placement);
     const elements = renderModuleInstance(
       {
@@ -5988,9 +5991,12 @@ export function NativePlannerEditor({
     // effectiveResizingIds below) needs the new dayCount too, or it
     // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
-    const dayCountOverride = draggedInfo?.slug === "todo-checklist" ? preview.effectiveColumnSpan : null;
+    const dayCountOverride =
+      draggedInfo?.slug === "todo-checklist"
+        ? columnSpanToDayCount(pages[0].pageGrid, preview.effectiveColumnSpan)
+        : null;
     return { draggedId: activeId, placementOverrides, reflowContentPlacements, dayCountOverride };
-  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview]);
+  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview, pages]);
 
 
   const liveDisplayPlacements = useMemo(
@@ -6072,13 +6078,13 @@ export function NativePlannerEditor({
     // the two sizes; otherwise it is the live crossing's own target.
     const dayCount =
       easeContent?.instanceId === draggedId
-        ? easeContent.placement.columnSpan
+        ? columnSpanToDayCount(pages[0].pageGrid, easeContent.placement.columnSpan)
         : crossingLivePreview?.dayCountOverride;
     if (dayCount == null) return moduleLookup;
     const next = new Map(moduleLookup);
     next.set(draggedId, { ...info, propValues: { ...info.propValues, dayCount } });
     return next;
-  }, [moduleLookup, crossingLivePreview, easeContent]);
+  }, [moduleLookup, crossingLivePreview, easeContent, pages]);
 
   // Everyone placementOverrides touches needs the same isResizing/
   // contentIsLive treatment an ordinary resize-handle drag already

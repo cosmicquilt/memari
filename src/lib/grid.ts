@@ -196,12 +196,35 @@ export function pixelHeightToRowSpan(page: PageGrid, heightPx: number): number {
  * grid to measure against, which is the same "one sidebar plus seven days"
  * proportion the whole layout is built on.
  */
+/**
+ * The width of one day unit, in columns. A spread is one sidebar plus
+ * seven weekdays, so each page divides into four equal units - that is the
+ * proportion the whole layout is built on, and it is what "one column"
+ * used to mean back when a page was four columns wide.
+ */
+export function dayUnitColumns(page: PageGrid): number {
+  return Math.max(1, Math.round(page.gridColumns / 4));
+}
+
+/**
+ * How many day columns a module of this width draws.
+ *
+ * This was columnSpan itself in four separate places, which was the same
+ * number while a day was one column. On the 24-column lattice a day is
+ * six, so a to-do checklist spanning the 18-column bottom zone drew
+ * EIGHTEEN day segments instead of three - reported as the live resize
+ * being "full of smaller squares".
+ */
+export function columnSpanToDayCount(page: PageGrid, columnSpan: number): number {
+  return Math.max(1, Math.round(columnSpan / dayUnitColumns(page)));
+}
+
 export function sidebarColumnSpan(
   page: PageGrid,
   hourlyColumnStart: number | null | undefined
 ): number {
   if (hourlyColumnStart != null && hourlyColumnStart > 0) return hourlyColumnStart;
-  return Math.max(1, Math.round(page.gridColumns / 4));
+  return dayUnitColumns(page);
 }
 
 // Keeps a placement fully on the grid — used after both drag-to-reposition

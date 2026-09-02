@@ -9,6 +9,7 @@ import {
   moduleInstancesToRects,
   gridCellToPixels,
   sidebarColumnSpan,
+  columnSpanToDayCount,
   pixelHeightToRowSpan,
   packStackFromTop,
   resolveModulePlacement,
@@ -1078,7 +1079,10 @@ export async function addPaletteModuleAt(
           effectiveColumnSpan = hourlyGrid.columnSpan;
           if (moduleTypeSlug === "todo-checklist") {
             const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
-            configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+            // The fallback was hourlyGrid.columnSpan, which equalled the
+            // day count only while a day was one column wide.
+            configOverrides.dayCount =
+              hourlyProps.dayCount ?? columnSpanToDayCount(pageGrid, hourlyGrid.columnSpan);
           }
 
           // This branch used to also force effectiveRowStart to the
