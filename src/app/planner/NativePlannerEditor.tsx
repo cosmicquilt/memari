@@ -118,7 +118,7 @@ import {
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
-import { MIN_ROW_SPAN, getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
+import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -5988,16 +5988,14 @@ export function NativePlannerEditor({
       // candidate's own exact column range — the same set
       // resolveModulePlacement's own isSameColumnStack test would
       // recognize as this stack's siblings anyway.
-      let minRowSpanById: Record<string, number> | undefined;
-      if (crossingZones) {
-        minRowSpanById = {};
-        for (const o of targetOthersWithReservations) {
-          if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
-          const otherInfo = moduleLookup.get(o.id);
-          if (!otherInfo) continue;
-          minRowSpanById[o.id] = getMinRowSpanForSlug(otherInfo.slug, targetPageGrid, candidate.columnSpan);
-        }
-      }
+      // Only while genuinely crossing zones - an ordinary same-zone
+      // reorder never shrinks anyone. The floors themselves come from the
+      // shared rule; this `if` is the policy about when to offer them.
+      const minRowSpanById = crossingZones
+        ? minRowSpansForStack(targetPageGrid, candidate, targetOthersWithReservations, (id) =>
+            moduleLookup.get(id)?.slug
+          )
+        : undefined;
 
       const { placement: rawResolved, reflow: targetReflow } = resolveModulePlacement(
         targetPageGrid,

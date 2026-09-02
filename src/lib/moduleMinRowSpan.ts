@@ -45,3 +45,38 @@ export function getMinRowSpanForSlug(slug: string, pageGrid: PageGrid, columnSpa
   if (targetPx === null) return MIN_ROW_SPAN;
   return Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, targetPx));
 }
+
+/**
+ * The per-sibling floors that let a stack shrink to admit an arriving
+ * module — `resolveModulePlacement`'s `minRowSpanById` argument.
+ *
+ * Only unlocked siblings sharing the candidate's exact column range can
+ * give way, which is the same set `resolveModulePlacement` recognises as
+ * that stack.
+ *
+ * This loop was written twice, byte-identical apart from how each side
+ * looked a slug up: the server searched `page.moduleInstances`, the client
+ * read its `moduleLookup`. That lookup is now the caller's to supply, and
+ * the rule is not.
+ *
+ * The two callers still differ in WHEN they build it — the editor only
+ * does so while a drag is actually crossing zones, the server always does
+ * — and that is a policy about when shrinking is offered, not a rule about
+ * how far things shrink, so it stays where it is.
+ */
+export function minRowSpansForStack(
+  pageGrid: PageGrid,
+  candidate: { columnStart: number; columnSpan: number },
+  others: Array<{ id: string; locked: boolean; columnStart: number; columnSpan: number }>,
+  slugOf: (id: string) => string | undefined
+): Record<string, number> {
+  const floors: Record<string, number> = {};
+  for (const other of others) {
+    if (other.locked) continue;
+    if (other.columnStart !== candidate.columnStart || other.columnSpan !== candidate.columnSpan) continue;
+    const slug = slugOf(other.id);
+    if (!slug) continue;
+    floors[other.id] = getMinRowSpanForSlug(slug, pageGrid, candidate.columnSpan);
+  }
+  return floors;
+}

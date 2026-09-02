@@ -11,6 +11,7 @@
 // real file (not a throwaway script) means they run again the next time
 // this file changes, instead of only being verified once and forgotten.
 
+import { minRowSpansForStack } from "./moduleMinRowSpan";
 import {
   gridCellToPixels,
   pixelsToGridCell,
@@ -979,3 +980,24 @@ console.log("All followerRowsAfterGrowth checks passed.");
   assert(!!below && below.isBottomZone && below.columnSpan === 24, "but it still has a bottom zone");
 }
 console.log("All resolveZone checks passed.");
+
+// --- minRowSpansForStack ---------------------------------------------------
+// Only unlocked siblings sharing the candidate's exact column range give way.
+{
+  const P: PageGrid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5 };
+  const candidate = { columnStart: 0, columnSpan: 6 };
+  const others = [
+    { id: "sameStack", locked: false, columnStart: 0, columnSpan: 6 },
+    { id: "lockedOne", locked: true, columnStart: 0, columnSpan: 6 },
+    { id: "otherColumn", locked: false, columnStart: 6, columnSpan: 18 },
+    { id: "otherWidth", locked: false, columnStart: 0, columnSpan: 24 },
+    { id: "noSlug", locked: false, columnStart: 0, columnSpan: 6 },
+  ];
+  const slugs: Record<string, string> = { sameStack: "todo-checklist", lockedOne: "todo-checklist",
+    otherColumn: "todo-checklist", otherWidth: "todo-checklist" };
+  const floors = minRowSpansForStack(P, candidate, others, (id) => slugs[id]);
+  const ids = Object.keys(floors).sort();
+  assert(ids.join(",") === "sameStack", `only the same-column, same-width, unlocked sibling (got ${ids.join(",")})`);
+  assert(floors.sameStack >= 2, "and it gets a real floor");
+}
+console.log("All minRowSpansForStack checks passed.");

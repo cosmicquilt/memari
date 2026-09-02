@@ -18,7 +18,7 @@ import {
   canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
-import { MIN_ROW_SPAN, getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
+import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
@@ -1677,13 +1677,9 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   }
 
   const candidate = { columnStart: effectiveColumnStart, rowStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
-  const minRowSpanById: Record<string, number> = {};
-  for (const o of targetOthers) {
-    if (o.locked || o.columnStart !== candidate.columnStart || o.columnSpan !== candidate.columnSpan) continue;
-    const otherMi = targetPage.moduleInstances.find((mi) => mi.id === o.id);
-    if (!otherMi) continue;
-    minRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, targetPageGrid, candidate.columnSpan);
-  }
+  const minRowSpanById = minRowSpansForStack(targetPageGrid, candidate, targetOthers, (id) =>
+    targetPage.moduleInstances.find((mi) => mi.id === id)?.moduleType.slug
+  );
 
   const { placement: resolved, reflow } = resolveModulePlacement(
     targetPageGrid,
