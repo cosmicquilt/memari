@@ -8004,6 +8004,24 @@ export function NativePlannerEditor({
               style={{
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
+                // A transform does not change layout, so this element's
+                // box stays the UNSCALED spread size however far it is
+                // zoomed - and the scroll container sizes itself to the
+                // box, not to the pixels. Below 100% that is harmless
+                // (the box is larger than what is drawn). Above it the
+                // drawing overflows a box that is too small, scrollLeft
+                // clamps short of where the anchor needs it, and zooming
+                // toward the right of the screen lands left instead.
+                // Reported exactly that way, including the threshold:
+                // "when you get over around 100% zoom it starts zooming
+                // you to the left instead of the right."
+                //
+                // The margins make the layout box account for the
+                // overflow. Positive above 100%, negative below - where
+                // they also stop the container scrolling into the empty
+                // space the too-large box used to leave.
+                marginRight: spreadWidthPx * (scale - 1),
+                marginBottom: pageHeightPx * (scale - 1),
                 // Same scoping reasoning as the marginLeft transition
                 // just above — see paletteZoomTransitioning's own
                 // comment.
