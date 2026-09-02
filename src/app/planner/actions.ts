@@ -1103,7 +1103,7 @@ export async function addPaletteModuleAt(
           // under the one-dot stack it formed.
           effectiveColumnSpan = sidebarColumnSpan(pageGrid, hourlyGrid?.columnStart);
           if (moduleTypeSlug === "todo-checklist") {
-            configOverrides.dayCount = 1;
+            configOverrides.dayCount = columnSpanToDayCount(pageGrid, effectiveColumnSpan);
           }
 
           // The requested row is honoured, not overridden.
@@ -1514,16 +1514,20 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
     effectiveColumnSpan = hourlyGrid.columnSpan;
     if (slug === "todo-checklist") {
       const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
-      configOverrides.dayCount = hourlyProps.dayCount ?? hourlyGrid.columnSpan;
+      configOverrides.dayCount =
+        hourlyProps.dayCount ?? columnSpanToDayCount(targetPageGrid, hourlyGrid.columnSpan);
     }
   } else {
     // Side zone. Reached by every zone-crossing type now, labeled-box
     // included — see canCrossZones (grid.ts) for why that used to throw
     // here instead, and why the asymmetry was a bug.
     effectiveColumnStart = 0;
-    effectiveColumnSpan = 1;
+    // The fourth copy of this literal. A module dragged into the sidebar
+    // landed one 1/4in dot wide, exactly as a palette drop did before
+    // addPaletteModuleAt was fixed - same bug, different entry point.
+    effectiveColumnSpan = sidebarColumnSpan(targetPageGrid, hourlyGrid?.columnStart ?? null);
     if (slug === "todo-checklist") {
-      configOverrides.dayCount = 1;
+      configOverrides.dayCount = columnSpanToDayCount(targetPageGrid, effectiveColumnSpan);
     }
   }
   const effectiveRowSpan = getMinRowSpanForSlug(slug, targetPageGrid, effectiveColumnSpan);
