@@ -3809,6 +3809,11 @@ export function NativePlannerEditor({
     return new Set([
       ...(resizeDrag ? [resizeDrag.topId, resizeDrag.bottomId] : []),
       ...(stackResizeDrag ? stackResizeDrag.memberIds : []),
+      // Followers too, now that they give up height rather than only
+      // shifting. A module whose span is changing has to re-render live or
+      // its content keeps drawing at the last-committed size inside a box
+      // that is already smaller - the double box this set exists to avoid.
+      ...(stackResizeDrag ? stackResizeDrag.followerIds : []),
     ]);
   }, [resizeDrag, stackResizeDrag]);
 
