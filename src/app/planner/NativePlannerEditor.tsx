@@ -3110,6 +3110,10 @@ function ModulePalette({
         background: "none",
         border: "none",
         padding: 0,
+        // Nudged in from the panel edge so the headers do not sit hard
+        // against it. Only the header row moves - the controls inside each
+        // group keep their own indent.
+        marginLeft: 8,
         cursor: "pointer",
         color: PANEL_TEXT,
         textAlign: "left",
