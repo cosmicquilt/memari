@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx src/lib/grid.test.mts && tsx src/lib/monthCalendar.test.mts && tsx src/lib/weekDays.test.mts",
+    "test": "tsx src/lib/grid.test.mts && tsx src/lib/monthCalendar.test.mts && tsx src/lib/weekDays.test.mts && tsx src/lib/morphPairing.test.mts",
     "test:properties": "tsx src/lib/grid.property.test.mts",
     "postinstall": "prisma generate"
   },
