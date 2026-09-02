@@ -35,9 +35,11 @@ export type PairableRect = {
 export type RectRole = "hrule" | "vrule" | "box";
 
 // A rect this much longer than it is thick reads as a rule, not a box.
-// Same ratio the renderer already uses to decide what to apply its
-// legibility floor to, so the two agree about what a hairline is.
-const HAIRLINE_ASPECT_RATIO = 0.2;
+// The same 0.15 PolotnoJsonRenderer uses to decide what gets its hairline
+// legibility floor, so the two agree about what a rule is. It was written
+// here as 0.2 with a comment claiming it matched, which is the exact
+// defect this project keeps producing - two numbers describing one idea.
+const HAIRLINE_ASPECT_RATIO = 0.15;
 
 /**
  * How far apart two rects may sit, as a fraction of the larger render's
