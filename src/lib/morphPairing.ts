@@ -40,14 +40,8 @@ export type RectRole = "hrule" | "vrule" | "box";
 const HAIRLINE_ASPECT_RATIO = 0.2;
 
 /**
- * How far apart two rects may sit, as a fraction of their own render's
- * size, and still be considered the same line moving.
- *
- * Position has to be compared RELATIVELY, not absolutely: a rule halfway
- * down a 1000px box is halfway down a 600px box after the resize, and
- * those are the same rule even though they are 200px apart. Comparing
- * absolute coordinates would refuse to morph anything on a large resize,
- * which is the opposite of what is wanted.
+ * How far apart two rects may sit, as a fraction of the larger render's
+ * size, and still be considered the same mark moving.
  */
 const MAX_RELATIVE_DISTANCE = 0.25;
 
@@ -68,26 +62,74 @@ function sameInk(a: PairableRect, b: PairableRect): boolean {
   return filled(a) === filled(b) && stroked(a) === stroked(b);
 }
 
-/** The coordinate that decides whether two rects are "the same one":
- *  a horizontal rule is identified by its height up the box, a vertical
- *  rule by its position across it, a box by both. */
-function position(rect: PairableRect, role: RectRole, size: { width: number; height: number }) {
-  const cx = (rect.x ?? 0) + (rect.width ?? 0) / 2;
-  const cy = (rect.y ?? 0) + (rect.height ?? 0) / 2;
-  return {
-    u: role === "vrule" ? cx / Math.max(size.width, 1) : cy / Math.max(size.height, 1),
-    v: role === "box" ? cx / Math.max(size.width, 1) : 0,
-  };
+/**
+ * How far apart two marks are, as a fraction of the larger box, using the
+ * measure appropriate to what the mark IS.
+ *
+ * Horizontal rules are measured ABSOLUTELY, down from the top. A ruled
+ * box has a fixed pitch: making it taller adds rules below the last one
+ * and leaves the rest where they were, so a rule 90px down is the same
+ * rule whatever the box height. Measuring those proportionally paired the
+ * old bottom rule with a new one two thirds down and slid a row that
+ * should not have moved - "if i dragged a tall todo from side bar to
+ * bottom then back it should expand and reveal rows from where they
+ * weren't".
+ *
+ * Vertical rules are measured RELATIVELY, across the width. They divide a
+ * box into day columns, so they genuinely do respread when it is resized:
+ * a habit-tracker's separators sit at fractions of the width, not at a
+ * pitch from the left.
+ *
+ * Boxes take the same treatment on each axis for the same reasons.
+ */
+function markDistance(
+  a: PairableRect,
+  b: PairableRect,
+  role: RectRole,
+  fromSize: { width: number; height: number },
+  toSize: { width: number; height: number }
+): number {
+  const centre = (r: PairableRect) => ({
+    x: (r.x ?? 0) + (r.width ?? 0) / 2,
+    y: (r.y ?? 0) + (r.height ?? 0) / 2,
+  });
+  const ca = centre(a);
+  const cb = centre(b);
+  const refWidth = Math.max(fromSize.width, toSize.width, 1);
+  const refHeight = Math.max(fromSize.height, toSize.height, 1);
+  const dyAbsolute = Math.abs(ca.y - cb.y) / refHeight;
+  const dxRelative = Math.abs(
+    ca.x / Math.max(fromSize.width, 1) - cb.x / Math.max(toSize.width, 1)
+  );
+  if (role === "hrule") return dyAbsolute;
+  if (role === "vrule") return dxRelative;
+  return Math.hypot(dxRelative, Math.abs(ca.y - cb.y) / refHeight);
 }
 
 export type MorphPairing<T> = {
   /** Present in both renders: animate from the first to the second. */
   pairs: Array<{ from: T; to: T }>;
-  /** Only in the outgoing render: fade out. */
+  /** Outgoing, and lying beyond the final bounds: the closing box wipes
+   *  it. Draw it and let the clip do the work - no fade. */
+  sweepOut: T[];
+  /** Outgoing, with no counterpart, but still inside the box at the end -
+   *  nothing removes it, so it has to fade. */
   fadeOut: T[];
-  /** Only in the incoming render: fade in. */
+  /** Incoming, and lying beyond the starting bounds: the opening box
+   *  uncovers it. Draw it and let the clip do the work - no fade. */
+  revealIn: T[];
+  /** Incoming, with no counterpart, and already inside the box at the
+   *  start - it would pop into existence, so it has to fade. */
   fadeIn: T[];
 };
+
+/** Whether a rect begins past an edge of the given bounds, so that the
+ *  clip window alone will hide or expose it. Content is anchored to the
+ *  box's top-left, so a box only ever gains or loses along its right and
+ *  bottom edges. */
+function beyond(rect: PairableRect, bounds: { width: number; height: number }): boolean {
+  return (rect.x ?? 0) >= bounds.width - 0.5 || (rect.y ?? 0) >= bounds.height - 0.5;
+}
 
 /**
  * Pairs the rects of an outgoing render with those of an incoming one.
@@ -112,17 +154,13 @@ export function pairRectsForMorph<T extends PairableRect>(
 
   from.forEach((f, fi) => {
     const role = rectRole(f);
-    const fp = position(f, role, fromSize);
     let best = -1;
     let bestDistance = Infinity;
     to.forEach((t, ti) => {
       if (takenTo.has(ti)) return;
       if (rectRole(t) !== role) return;
       if (!sameInk(f, t)) return;
-      const tp = position(t, role, toSize);
-      const du = Math.abs(fp.u - tp.u);
-      const dv = Math.abs(fp.v - tp.v);
-      const distance = role === "box" ? Math.hypot(du, dv) : du;
+      const distance = markDistance(f, t, role, fromSize, toSize);
       if (distance < bestDistance) {
         bestDistance = distance;
         best = ti;
@@ -135,9 +173,26 @@ export function pairRectsForMorph<T extends PairableRect>(
     }
   });
 
+  // Unpaired rects are NOT automatically faded. The clip window is the
+  // preferred mechanism and it already handles most of them: anything
+  // that ends up beyond the final bounds is wiped by the closing box, and
+  // anything that started beyond the old bounds is uncovered by the
+  // opening one. Requested directly - "with something like a todo bottom
+  // to sidebar it should just overflow hidden sweep everything away,
+  // there shouldn't be any fading", and "if i dragged a tall todo from
+  // side bar to bottom then back it should expand and reveal rows from
+  // where they weren't".
+  //
+  // Fading is only for what neither the pairing nor the clip can account
+  // for: a mark that is inside the box at both ends and has no
+  // counterpart, which would otherwise pop in or out.
+  const unpairedFrom = from.filter((_, fi) => !pairedFrom.has(fi));
+  const unpairedTo = to.filter((_, ti) => !takenTo.has(ti));
   return {
     pairs,
-    fadeOut: from.filter((_, fi) => !pairedFrom.has(fi)),
-    fadeIn: to.filter((_, ti) => !takenTo.has(ti)),
+    sweepOut: unpairedFrom.filter((r) => beyond(r, toSize)),
+    fadeOut: unpairedFrom.filter((r) => !beyond(r, toSize)),
+    revealIn: unpairedTo.filter((r) => beyond(r, fromSize)),
+    fadeIn: unpairedTo.filter((r) => !beyond(r, fromSize)),
   };
 }
