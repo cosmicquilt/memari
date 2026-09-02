@@ -231,25 +231,30 @@ function clampScale(scale: number): number {
 // for directly - "the shrink width animation doesn't do the sweeping
 // overflow hidden."
 //
-// HEIGHT takes the target. It used to take the larger as well, by
-// symmetry, and that was wrong for anything whose row count follows its
-// height: a shrinking to-do or ruled box kept the OLD number of rules at
-// the OLD spacing while the box closed past them, so the clip landed
-// part-way through a row and the last one looked squashed against the
-// border. Reported as the last line not lining up with the resized
-// bottom edge, correcting itself on release.
+// HEIGHT takes the larger too. This has been both ways, and the history
+// is worth keeping because the two failures look nothing alike.
 //
-// The asymmetry is not arbitrary. A ruled box's bottom rule has a
-// defined relationship to its bottom border and the eye checks it, so
-// cutting between them reads as broken. Nothing equivalent holds
-// horizontally, where a cut mid-glyph just reads as a wipe.
+// Larger (here, and originally): the content keeps its old rule count at
+// its old spacing while the box closes past them, so the clip can land
+// part-way through a row and the last rule looks squashed against the
+// border until release. Reported once, on inserting a module below a
+// to-do.
 //
-// Drawing at the target height means the content is SMALLER than the box
-// for the length of a shrink, which is the double-box shape - except
-// that suppressOuterBorderSize is handed this same geometry, so the
-// content's own border rect is recognised and dropped, and the
-// container's outline (already drawn whenever clipToBox is set) carries
-// the animating frame on its own.
+// Target: the content is drawn at its final size immediately, so it is
+// SMALLER than the box for the length of a shrink. Harmless for a modest
+// change, but a to-do's rule count follows its height, so dropping one
+// into an already-full zone halves it - and half the rules simply cease
+// to exist on the first frame, leaving the box to catch up to content
+// that was already right. Reported as every line but the first vanishing
+// before the bottom border swept over.
+//
+// Larger is the one asked for: "no animate how it was". It keeps the
+// sweep intact in both axes, which is the behaviour the clip window
+// exists to produce, and trades a rule that can sit close to the border
+// mid-animation for content that never disappears. If the squashed last
+// rule shows up again, the fix is not to flip this back - it is to ease
+// the content's own height so the rules redistribute instead of jumping,
+// which needs the renderer to interpolate between two row counts.
 function easingContentGeometry(
   target: Placement,
   from: { columnSpan: number; rowSpan: number }
@@ -257,7 +262,7 @@ function easingContentGeometry(
   return {
     ...target,
     columnSpan: Math.max(target.columnSpan, from.columnSpan),
-    rowSpan: target.rowSpan,
+    rowSpan: Math.max(target.rowSpan, from.rowSpan),
   };
 }
 
