@@ -126,7 +126,7 @@ const DOT_COLOR = "#9aa2a8";
 // with the dot field behind them these read as structure rather than as
 // content, and near-black made them the heaviest thing in an area that is
 // meant to be open. Sits between the dots and the ruled lines in weight.
-const DAY_DIVIDER_COLOR = "#7c8288";
+const DAY_DIVIDER_COLOR = "#a0a6ab";
 
 // A 1-hour row renders at double a 30-min row's own measured height by
 // default — requested directly: "make the hour increment setting be
