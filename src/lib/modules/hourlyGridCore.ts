@@ -115,6 +115,12 @@ const TIME_LABEL_BOX_WIDTH_PT = 14;
 const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
 const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
+// The dot field drawn when increments are off. Same size and grey as the
+// add-zone's field in NativePlannerEditor, so one lattice looks like one
+// lattice wherever it appears.
+const DOT_RADIUS_PX = 2.8;
+const DOT_COLOR = "#9aa2a8";
+
 // A 1-hour row renders at double a 30-min row's own measured height by
 // default — requested directly: "make the hour increment setting be
 // double the height of the 30 min [rows]." Without this, switching from
@@ -172,7 +178,12 @@ export function renderHourlyGridCore(
   geometry: { x: number; y: number; width: number; height: number },
   config: HourlyGridCoreConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  // The page's 1/4in dot lattice. Only used when increments are off, where
+  // the block becomes free space and the dots are what makes it writable -
+  // see that branch. Optional so a caller without a page grid (a preview,
+  // a test) still renders everything else.
+  lattice?: { pitchPx: number; originX: number; originY: number }
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
@@ -270,6 +281,38 @@ export function renderHourlyGridCore(
       // that extend maybe 2/3 the height." Drawn once per inter-column
       // boundary (d>0, between column d-1 and d), not per row — there
       // are no rows in this mode.
+      // A dot field over the blank area, on the page lattice. With no
+      // rules and no time labels there is nothing to write against, and
+      // this is the one place inside a module where the grid earns its
+      // keep - requested directly: "i would also like dot grid to show in
+      // the hours section when increments are turned off."
+      //
+      // Drawn once for the whole block, not per day column, so the field
+      // reads continuously across the dividers the way a bullet journal's
+      // does. Guarded on d === 0 for that reason.
+      if (d === 0 && lattice) {
+        const top = gridTop;
+        const bottom = geometry.y + geometry.height;
+        const firstCol = Math.ceil((geometry.x - lattice.originX) / lattice.pitchPx);
+        const firstRow = Math.ceil((top - lattice.originY) / lattice.pitchPx);
+        for (let cx = lattice.originX + firstCol * lattice.pitchPx; cx <= geometry.x + geometry.width; cx += lattice.pitchPx) {
+          for (let cy = lattice.originY + firstRow * lattice.pitchPx; cy <= bottom; cy += lattice.pitchPx) {
+            elements.push({
+              id: nextId(),
+              type: "figure",
+              subType: "rect",
+              x: cx - DOT_RADIUS_PX,
+              y: cy - DOT_RADIUS_PX,
+              width: DOT_RADIUS_PX * 2,
+              height: DOT_RADIUS_PX * 2,
+              fill: DOT_COLOR,
+              stroke: "none",
+              cornerRadius: DOT_RADIUS_PX,
+            });
+          }
+        }
+      }
+
       if (d > 0) {
         const blankHeight = geometry.y + geometry.height - gridTop;
         const dividerHeight = blankHeight * (2 / 3);

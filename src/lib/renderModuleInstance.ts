@@ -5,7 +5,7 @@
 // (planner/actions.ts) — both need the exact same logic, so it lives here
 // instead of being duplicated.
 
-import { gridCellToPixels, type PageGrid } from "@/lib/grid";
+import { gridCellToPixels, gridCellToAllocation, type PageGrid } from "@/lib/grid";
 import {
   renderHourlyGridCore,
   type HourlyGridCoreConfig,
@@ -82,7 +82,11 @@ function renderBySlug(
   geometry: { x: number; y: number; width: number; height: number },
   propValues: unknown,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  // The page's dot lattice, for the renderers that draw on it. Square
+  // cells, so one pitch; originX/originY are the page margin, which is
+  // where the lattice starts.
+  lattice: { pitchPx: number; originX: number; originY: number }
 ): RenderedPolotnoElement[] {
   switch (slug) {
     case "hourly-grid-core":
@@ -90,7 +94,8 @@ function renderBySlug(
         geometry,
         propValues as unknown as HourlyGridCoreConfig,
         idPrefix,
-        fontFamily
+        fontFamily,
+        lattice
       );
     case "labeled-box":
       return renderLabeledBox(geometry, propValues as unknown as LabeledBoxConfig, idPrefix, fontFamily);
@@ -164,12 +169,16 @@ export function renderModuleInstance(
     rowSpan: instance.rowSpan,
   });
 
+  const cell = gridCellToAllocation(pageGrid, {
+    columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
+  });
   const elements = renderBySlug(
     instance.moduleType.slug,
     geometry,
     instance.propValues,
     instance.id,
-    fontFamily
+    fontFamily,
+    { pitchPx: cell.width, originX: pageGrid.marginPx, originY: pageGrid.marginPx }
   );
   if (!elements.length) {
     return elements;
