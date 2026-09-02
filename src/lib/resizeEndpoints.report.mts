@@ -64,9 +64,6 @@ function rectsOf(slug: string, columnSpan: number, rowSpan: number, propValues: 
     }) as Rect[];
 }
 
-const size = (columnSpan: number, rowSpan: number) =>
-  gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan, rowSpan });
-
 /** A mark's identity for comparison: where it is and how big, rounded to a
  *  tenth of a print pixel (1/3000 inch) so float noise is not a difference. */
 const key = (r: Rect) =>
@@ -122,9 +119,7 @@ const CASES: Case[] = [
 const rows = CASES.map((c) => {
   const fromRects = rectsOf(c.slug, c.from[0], c.from[1], c.fromProps ?? {});
   const toRects = rectsOf(c.slug, c.to[0], c.to[1], c.toProps ?? c.fromProps ?? {});
-  const fromSize = size(c.from[0], c.from[1]);
-  const toSize = size(c.to[0], c.to[1]);
-  const source = easingRectSource(fromRects.length, toRects.length, fromSize, toSize);
+  const source = easingRectSource(fromRects.length, toRects.length);
   const drawn = source === "from" ? fromRects : toRects;
   return {
     name: c.name,

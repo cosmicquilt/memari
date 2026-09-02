@@ -319,36 +319,24 @@ function RectLayer({
 }
 
 /**
- * Which of the two renders is shown for the LENGTH of an ease: the
- * outgoing drawing at its old size, or the incoming one at its new size.
+ * Which of the two renders is shown for the length of an ease.
  *
- * Exported so the endpoint check can ask the real rule rather than keep a
- * second copy of it. Pure, and the renderer below is its only other
- * caller.
+ * Equal element counts mean the two renders describe the same elements,
+ * which is the condition under which a rect key survives the change and a
+ * node therefore has a previous geometry to animate FROM. So the same test
+ * decides both, and the modules that genuinely cannot animate keep the clip
+ * window they need.
  *
- * Note what it cannot do: it picks ONE render for the whole animation, so
- * whichever it picks, the other end of the animation shows a drawing that
- * is not what the module looks like there. That is a property of the
- * design, not a bug in it - and it is exactly what the endpoint check
- * measures.
+ * Deliberately has no notion of direction or of structure changing. Both
+ * were tried during one session - "animate on a grow, sweep on a shrink",
+ * then "draw the final render when the two are different drawings" - and
+ * each fixed the case it was aimed at while making the others worse.
+ * Reverted at Andrew's read: "change animations back, they looked way
+ * better at the beginning of the session." If this is revisited, measure
+ * first with npm run check:animation rather than reasoning about frames.
  */
-export function easingRectSource(
-  fromCount: number,
-  toCount: number,
-  fromSize: { width: number; height: number } | null,
-  toSize: { width: number; height: number } | null
-): "from" | "to" {
-  const shrinking =
-    !!toSize &&
-    !!fromSize &&
-    (toSize.width < fromSize.width - 0.5 || toSize.height < fromSize.height - 0.5);
-  const structureChanged = fromCount !== toCount;
-  // Same drawing, growing: animate to the final geometry.
-  if (!structureChanged && !shrinking) return "to";
-  // Different drawings, shrinking: draw the final so nothing jumps at the end.
-  if (structureChanged && shrinking) return "to";
-  // Otherwise the larger drawing, for the closing box to sweep away.
-  return "from";
+export function easingRectSource(fromCount: number, toCount: number): "from" | "to" {
+  return fromCount === toCount ? "to" : "from";
 }
 
 // Groups are transparent pass-throughs at the same origin (see
@@ -518,13 +506,9 @@ export function PolotnoJsonRenderer({
   // render was drawn at (the larger of the two) and textSizePx is the
   // final size, so the direction is already known here.
   const textFlat = textElements ? flattenElements(textElements) : null;
-  const source =
-    textFlat && textEaseMs > 0
-      ? easingRectSource(flat.length, textFlat.length, suppressOuterBorderSize, textSizePx ?? null)
-      : "from";
   // Animating is only meaningful when the two renders describe the same
   // elements; a "to" source with a changed structure is drawn, not eased.
-  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0 && source === "to";
+  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0;
 
   // A third case, and the one the sweep cannot serve at all: the two
   // renders are different DRAWINGS, not two sizes of one. A habit-tracker
@@ -540,9 +524,8 @@ export function PolotnoJsonRenderer({
   // wipe; nothing moves when the ease ends, which is the part that was
   // being noticed. Growing needs none of this - the target IS the larger
   // geometry, so flat is already the final drawing.
-  const finalRects = !!textFlat && textFlat.length !== flat.length && source === "to";
 
-  const rects = (animateRects || finalRects ? textFlat! : flat).filter(isRect);
+  const rects = (animateRects ? textFlat : flat).filter(isRect);
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
@@ -568,7 +551,7 @@ export function PolotnoJsonRenderer({
         originX={originX}
         originY={originY}
         scale={scale}
-        suppressOuterBorderSize={animateRects || finalRects ? textSizePx ?? null : suppressOuterBorderSize}
+        suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
         structureKey={structureKey}
         easeMs={animateRects ? textEaseMs : 0}
       />
