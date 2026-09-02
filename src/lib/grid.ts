@@ -181,6 +181,29 @@ export function pixelHeightToRowSpan(page: PageGrid, heightPx: number): number {
   return Math.ceil((heightPx - oneRow.height) / rowPitchPx - 1e-9) + 1;
 }
 
+/**
+ * How wide the sidebar zone is: everything to the left of the hourly grid.
+ *
+ * This was the literal 1 in at least three places, which was correct only
+ * because a page used to be 4 columns and the sidebar was one of them. On
+ * the 24-column dot lattice it is 6, and each of those literals became a
+ * separate bug - a palette drop committed a module one dot wide, the
+ * editor offered a one-dot add zone down a full sidebar, and zone
+ * resolution disagreed with both. One definition now, asked by the editor
+ * and by the server action that commits the drop.
+ *
+ * Falls back to a quarter of the page's columns when there is no hourly
+ * grid to measure against, which is the same "one sidebar plus seven days"
+ * proportion the whole layout is built on.
+ */
+export function sidebarColumnSpan(
+  page: PageGrid,
+  hourlyColumnStart: number | null | undefined
+): number {
+  if (hourlyColumnStart != null && hourlyColumnStart > 0) return hourlyColumnStart;
+  return Math.max(1, Math.round(page.gridColumns / 4));
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its

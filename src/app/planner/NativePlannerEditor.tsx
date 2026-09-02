@@ -104,6 +104,7 @@ import { getHabitTrackerRowMetricsPx, isHabitTrackerCompact } from "@/lib/module
 import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import {
   gridCellToPixels,
+  sidebarColumnSpan as sidebarColumnSpanFor,
   pixelsToGridCell,
   pixelsToContainingCell,
   clampGridPlacement,
@@ -4611,28 +4612,30 @@ export function NativePlannerEditor({
       // reaches, not row 0 — mirrors addPaletteModuleAt's own side-zone
       // shrink-to-fit reasoning for the exact same "no single locked
       // anchor, so measure whatever's actually there" situation.
-      // Everything to the left of the hourly grid. See resolveZoneFor's
-      // own note: this was 1 only because a page used to be 4 columns.
-      const sidebarColumnSpan = hourlyGridPlacement?.columnStart ?? 1;
+      // Everything to the left of the hourly grid — one definition,
+      // shared with the server action that commits a palette drop, so the
+      // preview and the commit cannot disagree about how wide the sidebar
+      // is. They did, and a habit-tracker landed one dot wide.
+      const sidebarSpan = sidebarColumnSpanFor(page.pageGrid, hourlyGridPlacement?.columnStart);
       if (
         hourlyGridPlacement &&
         hourlyGridPlacement.columnStart > 0 &&
-        !hasZone(0, sidebarColumnSpan) &&
-        previewZoneKey !== `${page.pageId}:0:${sidebarColumnSpan}`
+        !hasZone(0, sidebarSpan) &&
+        previewZoneKey !== `${page.pageId}:0:${sidebarSpan}`
       ) {
         let zoneTop = 0;
         for (const id of pageIds) {
           const info = moduleLookup.get(id);
           const placement = displayPlacements[id];
-          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== sidebarColumnSpan) continue;
+          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== sidebarSpan) continue;
           zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
         }
         zones.push({
-          key: `emptyzone:${page.pageId}:0:${sidebarColumnSpan}`,
+          key: `emptyzone:${page.pageId}:0:${sidebarSpan}`,
           pageId: page.pageId,
           bottomId: `__emptysidezone__${page.pageId}`,
           columnStart: 0,
-          columnSpan: sidebarColumnSpan,
+          columnSpan: sidebarSpan,
           members: [],
           stackTopRowStart: zoneTop,
           stackBottomRowEnd: zoneTop,

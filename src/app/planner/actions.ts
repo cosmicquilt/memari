@@ -8,6 +8,7 @@ import {
   rectsOverlap,
   moduleInstancesToRects,
   gridCellToPixels,
+  sidebarColumnSpan,
   pixelHeightToRowSpan,
   packStackFromTop,
   resolveModulePlacement,
@@ -1089,8 +1090,14 @@ export async function addPaletteModuleAt(
           // top comment for the full reasoning, including why labeled-box
           // doesn't reach this branch at all (a plain `else`, not `else if`,
           // would have). columnStart is left as the caller's own request
-          // (in practice always 0, the sidebar's one column).
-          effectiveColumnSpan = 1;
+          // (in practice always 0, the sidebar's own first column).
+          //
+          // The span was the literal 1 here, which meant "the sidebar" only
+          // while a page was 4 columns wide. On the lattice it is 6, and
+          // this committed a habit-tracker one 1/4in dot wide - its title
+          // overflowing, its day letters piled up, and an add zone offered
+          // under the one-dot stack it formed.
+          effectiveColumnSpan = sidebarColumnSpan(pageGrid, hourlyGrid?.columnStart);
           if (moduleTypeSlug === "todo-checklist") {
             configOverrides.dayCount = 1;
           }
