@@ -3146,17 +3146,18 @@ function ModulePalette({
         // Two shadows: the panel's own edge against the canvas, and the
         // header casting down onto it, so the panel reads as sitting under
         // the header rather than butting against it.
-        // Two shadows, deliberately the same one turned ninety degrees:
-        // the panel casting right onto the canvas, and the header casting
-        // down onto the panel. Same 8px offset, same 32px blur, same
-        // rgba(0,0,0,0.12), so the two edges read as the same depth.
+        // Two shadows: the panel casting right onto the canvas, and the
+        // header casting down onto the panel.
         //
-        // The header's is an inset because the header is rendered outside
-        // this component and cannot cast onto it directly. The -8px spread
-        // is what keeps an inset confined to the top edge instead of
-        // vignetting all four - the one place the two cannot be identical.
+        // They are NOT the same values, deliberately. Matched exactly, the
+        // header's read as almost nothing - an inset with a -8px spread
+        // loses most of its weight to the clipping the spread does, so the
+        // same alpha that reads clearly along a free edge nearly vanishes
+        // along a contained one. Darker (0.30) and tighter (20px blur,
+        // 10px offset) puts the two back at the same APPARENT depth, which
+        // is what was actually being asked for both times.
         boxShadow: open
-          ? "8px 0 32px rgba(0,0,0,0.12), inset 0 8px 32px -8px rgba(0,0,0,0.12)"
+          ? "8px 0 32px rgba(0,0,0,0.12), inset 0 10px 20px -8px rgba(0,0,0,0.30)"
           : "none",
         transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
