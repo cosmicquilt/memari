@@ -3219,17 +3219,16 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
   );
 }
 
-// Page Settings > Paper. Switching re-lays the template, because the two
-// trims differ by two rows and every stack is packed to fill its zone
-// exactly - there is no slack anywhere to absorb the difference. Confirms
-// first for that reason, then reloads the way the font switch does.
+// Page Settings > Paper. The swap keeps whatever the user has built - the
+// two rows of difference come off (or go onto) the bottom of each stack
+// that reaches the page bottom, which is the same thing dragging its
+// bottom edge does. No confirmation needed, since nothing is discarded.
 function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
   const [pending, error, run] = useAsyncAction();
   const current = trimKeyForWidth(pageGrid.widthPx);
 
   const handlePick = (key: PlannerTrimKey) => {
     if (key === current || pending) return;
-    if (!window.confirm("Change the paper size? This re-lays the spread from the template.")) return;
     run(async () => {
       await setPlannerTrim(key);
       window.location.reload();

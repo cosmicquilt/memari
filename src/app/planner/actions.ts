@@ -634,21 +634,89 @@ export async function setPlannerTrim(trim: PlannerTrimKey) {
   const spec = PLANNER_TRIMS[trim];
   const planner = await prisma.planner.findFirst({
     where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
-    include: { pages: { orderBy: { position: "asc" } } },
+    include: {
+      pages: {
+        orderBy: { position: "asc" },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      },
+    },
   });
   if (!planner) throw new Error("Planner not found");
 
-  await prisma.page.updateMany({
-    where: { id: { in: planner.pages.map((page) => page.id) } },
-    data: {
-      widthPx: spec.widthPx,
-      heightPx: spec.heightPx,
-      gridRows: spec.gridRows,
-      marginPx: spec.marginPx,
-    },
-  });
+  // Absorb the height difference at the BOTTOM of each stack rather than
+  // re-laying the template, so whatever the user built survives the swap.
+  //
+  // The trims differ by exactly two rows and nothing else - same 24-dot
+  // width, same square cell, same 20-dot hour block - so this is the same
+  // operation as dragging a stack's bottom edge two rows, which the editor
+  // already does. Only stacks anchored to the page bottom move: a stack
+  // that ends mid-page is not what the missing rows came out of, and
+  // growing it would open a gap the user never asked for.
+  const updates: Prisma.PrismaPromise<unknown>[] = [];
+  for (const page of planner.pages) {
+    const delta = spec.gridRows - page.gridRows;
+    if (delta === 0) continue;
+    const pageGrid = pageGridFor({ ...page, gridRows: spec.gridRows });
 
-  await resetPlannerToTemplate();
+    const byColumn = new Map<string, typeof page.moduleInstances>();
+    for (const mi of page.moduleInstances) {
+      if (mi.locked || mi.columnStart === null || mi.rowStart === null) continue;
+      const key = `${mi.columnStart}:${mi.columnSpan}`;
+      byColumn.set(key, [...(byColumn.get(key) ?? []), mi]);
+    }
+
+    for (const group of byColumn.values()) {
+      const sorted = [...group].sort((a, b) => (a.rowStart ?? 0) - (b.rowStart ?? 0));
+      const bottom = sorted[sorted.length - 1];
+      const bottomEnd = (bottom.rowStart ?? 0) + bottom.rowSpan;
+      // Only the stacks that reached the old page bottom.
+      if (bottomEnd !== page.gridRows) continue;
+
+      // Shrinking cascades upward once a member hits its own floor, the
+      // same rule the resize handle follows; growing only ever grows the
+      // last one.
+      let remaining = delta;
+      const spans = sorted.map((mi) => mi.rowSpan);
+      if (delta > 0) {
+        spans[spans.length - 1] += delta;
+        remaining = 0;
+      } else {
+        for (let i = spans.length - 1; i >= 0 && remaining < 0; i--) {
+          const floor = getMinRowSpanForSlug(sorted[i].moduleType.slug, pageGrid, sorted[i].columnSpan);
+          const give = Math.min(spans[i] - floor, -remaining);
+          spans[i] -= Math.max(0, give);
+          remaining += Math.max(0, give);
+        }
+      }
+
+      // Repack from the stack's own top so no gaps open up.
+      let cursor = sorted[0].rowStart ?? 0;
+      for (let i = 0; i < sorted.length; i++) {
+        if (sorted[i].rowStart !== cursor || sorted[i].rowSpan !== spans[i]) {
+          updates.push(
+            prisma.moduleInstance.update({
+              where: { id: sorted[i].id },
+              data: { rowStart: cursor, rowSpan: spans[i] },
+            })
+          );
+        }
+        cursor += spans[i];
+      }
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.page.updateMany({
+      where: { id: { in: planner.pages.map((page) => page.id) } },
+      data: {
+        widthPx: spec.widthPx,
+        heightPx: spec.heightPx,
+        gridRows: spec.gridRows,
+        marginPx: spec.marginPx,
+      },
+    }),
+    ...updates,
+  ]);
 }
 
 export async function resetPlannerToTemplate() {
