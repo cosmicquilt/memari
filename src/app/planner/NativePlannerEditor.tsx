@@ -104,6 +104,7 @@ import {
   gridCellToAllocation,
   followerRowsAfterGrowth,
   resolveZone,
+  packedTopEdge,
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
   columnSpanToDayCount,
@@ -6028,15 +6029,12 @@ export function NativePlannerEditor({
       // Crossings only — same-zone reorder keeps its existing behavior.
       let resolved = rawResolved;
       if (crossingZones) {
-        const movedById = new Map(targetReflow.map((m) => [m.id, m]));
-        let topEdge = 0;
-        for (const o of targetOthersWithReservations) {
-          if (o.columnStart >= candidate.columnStart + effectiveColumnSpan) continue;
-          if (o.columnStart + o.columnSpan <= candidate.columnStart) continue;
-          const moved = movedById.get(o.id);
-          const bottom = (moved?.rowStart ?? o.rowStart) + (moved?.rowSpan ?? o.rowSpan);
-          if (bottom <= rawResolved.rowStart && bottom > topEdge) topEdge = bottom;
-        }
+        const topEdge = packedTopEdge(
+          targetOthersWithReservations,
+          { columnStart: candidate.columnStart, columnSpan: effectiveColumnSpan },
+          rawResolved.rowStart,
+          new Map(targetReflow.map((m) => [m.id, m]))
+        );
         if (topEdge < rawResolved.rowStart) resolved = { ...rawResolved, rowStart: topEdge };
       }
       // Crossing leaves a gap in the SOURCE zone (the one being left) —

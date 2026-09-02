@@ -27,6 +27,7 @@ import {
   takeRowsFairly,
   followerRowsAfterGrowth,
   resolveZone,
+  packedTopEdge,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -1001,3 +1002,20 @@ console.log("All resolveZone checks passed.");
   assert(floors.sameStack >= 2, "and it gets a real floor");
 }
 console.log("All minRowSpansForStack checks passed.");
+
+// --- packedTopEdge ---------------------------------------------------------
+{
+  const cand = { columnStart: 0, columnSpan: 6 };
+  const others = [
+    { id: "above", columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 5 },
+    { id: "below", columnStart: 0, rowStart: 20, columnSpan: 6, rowSpan: 5 },
+    { id: "otherCol", columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 30 },
+  ];
+  assert(packedTopEdge(others, cand, 12) === 5, "packs to the bottom edge of what is above it");
+  assert(packedTopEdge(others, cand, 3) === 0, "nothing above means the top of the zone");
+  assert(
+    packedTopEdge(others, cand, 12, new Map([["above", { rowStart: 0, rowSpan: 9 }]])) === 9,
+    "a sibling that just moved is measured where it moved to, not where it was"
+  );
+}
+console.log("All packedTopEdge checks passed.");

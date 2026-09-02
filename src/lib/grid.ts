@@ -359,6 +359,38 @@ export function resolveZone(
   return null;
 }
 
+/**
+ * The lowest bottom edge above a row, among rects overlapping a column
+ * range — where an arriving module should sit so it packs against
+ * whatever is already there rather than leaving a hole under it.
+ *
+ * Returns 0 when nothing is above, which is the top of the zone.
+ *
+ * NOT a duplicated rule: the server deliberately honours whatever row the
+ * client sends and does no packing of its own (see addPaletteModuleAt's
+ * own comment on why forcing a row left a hole). So this has one caller
+ * today. It is pulled out anyway because it was an untested loop inside a
+ * three-hundred-line callback, and because "where does an arriving module
+ * pack to" is exactly the kind of rule that grows a second implementation
+ * the moment another path needs it.
+ */
+export function packedTopEdge(
+  others: Array<GridRect & { id: string }>,
+  candidate: { columnStart: number; columnSpan: number },
+  landingRowStart: number,
+  movedById?: Map<string, { rowStart: number; rowSpan?: number }>
+): number {
+  let topEdge = 0;
+  for (const other of others) {
+    if (other.columnStart >= candidate.columnStart + candidate.columnSpan) continue;
+    if (other.columnStart + other.columnSpan <= candidate.columnStart) continue;
+    const moved = movedById?.get(other.id);
+    const bottom = (moved?.rowStart ?? other.rowStart) + (moved?.rowSpan ?? other.rowSpan);
+    if (bottom <= landingRowStart && bottom > topEdge) topEdge = bottom;
+  }
+  return topEdge;
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its
