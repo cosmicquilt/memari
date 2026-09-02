@@ -489,8 +489,27 @@ export function PolotnoJsonRenderer({
     !!suppressOuterBorderSize &&
     (textSizePx.width < suppressOuterBorderSize.width - 0.5 ||
       textSizePx.height < suppressOuterBorderSize.height - 0.5);
-  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0 && !shrinking;
-  const rects = (animateRects ? textFlat : flat).filter(isRect);
+  const animateRects =
+    !!textFlat && textFlat.length === flat.length && textEaseMs > 0 && !shrinking;
+
+  // A third case, and the one the sweep cannot serve at all: the two
+  // renders are different DRAWINGS, not two sizes of one. A habit-tracker
+  // crossing into the sidebar goes from its wide layout to its compact
+  // one - 33 elements to 116 - and the larger geometry is then the wide
+  // layout, so the whole animation shows a drawing that is about to be
+  // replaced, snapping to the compact one at the end. Reported as the
+  // horizontal lines not aligning with the position they jump to.
+  //
+  // There is no larger version of the same thing to wipe away here, so
+  // draw the FINAL rects and let the box close over them. Content sits
+  // smaller than its box for the length of the shrink, which reads as a
+  // wipe; nothing moves when the ease ends, which is the part that was
+  // being noticed. Growing needs none of this - the target IS the larger
+  // geometry, so flat is already the final drawing.
+  const structureChanged = !!textFlat && textFlat.length !== flat.length;
+  const finalRects = !!textFlat && structureChanged && shrinking;
+
+  const rects = (animateRects || finalRects ? textFlat! : flat).filter(isRect);
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
@@ -516,7 +535,7 @@ export function PolotnoJsonRenderer({
         originX={originX}
         originY={originY}
         scale={scale}
-        suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
+        suppressOuterBorderSize={animateRects || finalRects ? textSizePx ?? null : suppressOuterBorderSize}
         structureKey={structureKey}
         easeMs={animateRects ? textEaseMs : 0}
       />
