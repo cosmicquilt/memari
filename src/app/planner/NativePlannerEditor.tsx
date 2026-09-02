@@ -157,14 +157,65 @@ const WHEEL_ZOOM_SENSITIVITY = 0.0075;
 const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
 const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the minimum top gutter centeringOffsetY reserves before adding any extra centering room — see that function's own comment
-// The header's own rendered height, MEASURED against the running app
-// (getBoundingClientRect: 64px) rather than added up from padding and an
-// assumed line box. The estimate was 41, which left the palette starting
-// 23px too high - it began underneath the header instead of below it,
-// reported as the top of the palette not lining up. The same number also
-// feeds the fit-page zoom, which was therefore over-estimating the
-// available height by the same 23px.
-const HEADER_HEIGHT_PX = 64;
+// The header's own rendered height, measured against the running app:
+// the full-width <header> is 44px.
+//
+// This has been wrong twice, in both directions, and the reason is worth
+// keeping. It was 41 - added up from padding plus an assumed line box -
+// which left the palette 3px high, overlapping the header. Measuring it
+// gave 64, but that reading came from a getBoundingClientRect on an
+// element that merely had the header's background colour and was 32px
+// WIDE; the real bar spans the viewport. Correcting to 64 opened a 20px
+// gap instead, reported immediately.
+//
+// The lesson is not "measure" - the second attempt did measure. It is to
+// check that what you measured is the thing you meant: filtering by
+// colour alone matched a decoration, and a width test would have caught
+// it. The value also feeds the fit-page zoom, so being wrong here quietly
+// mis-sizes that too.
+// Starting guess only - the real height is measured at runtime, because
+// it is not a constant at all.
+//
+// It has been wrong twice in both directions. 41 was added up from padding
+// plus an assumed line box and left the palette 3px high, overlapping the
+// header. Measuring gave 64 - but that reading came from an element that
+// merely shared the header's background colour and was 32px WIDE, not the
+// full-width bar - and correcting to it opened a 20px gap instead.
+//
+// The truth is that the header is 44px with the palette closed and 64px
+// with it open: the title wraps to two lines once the palette takes 260px
+// of width. No constant can be right for both, which is why this is now
+// only a first render's value and useHeaderHeightPx measures the rest.
+const HEADER_HEIGHT_PX = 44;
+
+/**
+ * The header's live height. It changes with the viewport and with whether
+ * the palette is open, so it has to be observed rather than assumed.
+ */
+function useHeaderHeightPx(): number {
+  const [height, setHeight] = useState(HEADER_HEIGHT_PX);
+  useEffect(() => {
+    // The WIDEST header, not the first one. There is more than one in the
+    // document and querySelector returns whichever comes first, which is
+    // the narrow one - the same element that produced the bogus 64px
+    // reading earlier and then a 20px gap. The bar this panel sits under
+    // is the one that spans the viewport.
+    const header = [...document.querySelectorAll("header")].reduce<HTMLElement | null>(
+      (widest, candidate) =>
+        !widest || candidate.getBoundingClientRect().width > widest.getBoundingClientRect().width
+          ? candidate
+          : widest,
+      null
+    );
+    if (!header) return;
+    const observer = new ResizeObserver(() => {
+      setHeight(header.getBoundingClientRect().height);
+    });
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+  return height;
+}
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -2995,6 +3046,11 @@ function ModulePalette({
   // modules could cross zones, and "Page Settings" had Font and Hours
   // as separate collapsibles for two controls, which is a click to
   // reach one field.
+  // The panel sits directly under the header, whose height changes when
+  // the panel itself opens (the title wraps once 260px of width is taken).
+  // Observed rather than passed down, so the two cannot disagree.
+  const panelHeaderHeightPx = useHeaderHeightPx();
+
   const [modulesOpen, setModulesOpen] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
 
@@ -3081,7 +3137,7 @@ function ModulePalette({
     <div
       style={{
         position: "fixed",
-        top: HEADER_HEIGHT_PX,
+        top: panelHeaderHeightPx,
         left: 0,
         bottom: 0,
         width: PALETTE_SIDEBAR_WIDTH_PX,
@@ -3090,8 +3146,17 @@ function ModulePalette({
         // Two shadows: the panel's own edge against the canvas, and the
         // header casting down onto it, so the panel reads as sitting under
         // the header rather than butting against it.
+        // Two shadows, deliberately the same one turned ninety degrees:
+        // the panel casting right onto the canvas, and the header casting
+        // down onto the panel. Same 8px offset, same 32px blur, same
+        // rgba(0,0,0,0.12), so the two edges read as the same depth.
+        //
+        // The header's is an inset because the header is rendered outside
+        // this component and cannot cast onto it directly. The -8px spread
+        // is what keeps an inset confined to the top edge instead of
+        // vignetting all four - the one place the two cannot be identical.
         boxShadow: open
-          ? "8px 0 32px rgba(0,0,0,0.12), inset 0 7px 8px -6px rgba(0,0,0,0.35)"
+          ? "8px 0 32px rgba(0,0,0,0.12), inset 0 8px 32px -8px rgba(0,0,0,0.12)"
           : "none",
         transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
@@ -4222,6 +4287,8 @@ export function NativePlannerEditor({
   const pageWidthPx = pages[0]?.pageGrid.widthPx ?? PRINT_WIDTH_PX;
   const pageHeightPx = pages[0]?.pageGrid.heightPx ?? PRINT_HEIGHT_PX;
 
+  const headerHeightPx = useHeaderHeightPx();
+
   const spreadWidthPx = pages.length * pageWidthPx + Math.max(0, pages.length - 1) * PAGE_GAP_PX;
 
   // "fit-width"/"fit-page" are pure functions of the viewport size,
@@ -4270,7 +4337,7 @@ export function NativePlannerEditor({
   const fitPageScale = clampScale(
     Math.min(
       (viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth) / spreadWidthPx,
-      (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2) / pageHeightPx
+      (viewportSize.height - headerHeightPx - VIEWPORT_PADDING_PX * 2) / pageHeightPx
     )
   );
   const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
@@ -4322,8 +4389,8 @@ export function NativePlannerEditor({
   const centeringOffsetY = useCallback(
     (atScale: number) =>
       CONTENT_TOP_OFFSET_PX +
-      Math.max(0, (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2 - pageHeightPx * atScale) / 2),
-    [viewportSize.height, pageHeightPx]
+      Math.max(0, (viewportSize.height - headerHeightPx - VIEWPORT_PADDING_PX * 2 - pageHeightPx * atScale) / 2),
+    [viewportSize.height, pageHeightPx, headerHeightPx]
   );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -5305,7 +5372,7 @@ export function NativePlannerEditor({
       // is nothing to roll back.
       if (phantomRef.current && paletteOpen) {
         const p = lastPointerRef.current;
-        if (p.x <= PALETTE_SIDEBAR_WIDTH_PX && p.y >= HEADER_HEIGHT_PX) {
+        if (p.x <= PALETTE_SIDEBAR_WIDTH_PX && p.y >= headerHeightPx) {
           removePhantom();
           confirmedCrossingRef.current = null;
           setConfirmedCrossingPreview(null);
@@ -5649,6 +5716,7 @@ export function NativePlannerEditor({
       paletteOpen,
       removePhantom,
       scale,
+      headerHeightPx,
     ]
   );
 
