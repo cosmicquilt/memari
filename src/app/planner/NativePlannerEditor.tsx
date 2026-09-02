@@ -231,38 +231,36 @@ function clampScale(scale: number): number {
 // for directly - "the shrink width animation doesn't do the sweeping
 // overflow hidden."
 //
-// HEIGHT takes the larger too. This has been both ways, and the history
-// is worth keeping because the two failures look nothing alike.
+// The two geometries a resizing module is drawn at: where it came FROM
+// and where it is going TO, each at its own size.
 //
-// Larger (here, and originally): the content keeps its old rule count at
-// its old spacing while the box closes past them, so the clip can land
-// part-way through a row and the last rule looks squashed against the
-// border until release. Reported once, on inserting a module below a
-// to-do.
+// This used to be one merged placement - the larger of the two spans -
+// on the theory that the content could be drawn once, big, and the box
+// could clip it down. That works only while the two renders are two
+// SIZES OF ONE DRAWING. It cannot satisfy both ends of an animation, and
+// this file spent a day trading them: draw the larger and the last frame
+// snaps to the final layout; draw the target and the first frame pulls
+// away from the box it is still inside. Four separate bug reports, each
+// one of the two endpoints being violated, each "fix" breaking the other.
 //
-// Target: the content is drawn at its final size immediately, so it is
-// SMALLER than the box for the length of a shrink. Harmless for a modest
-// change, but a to-do's rule count follows its height, so dropping one
-// into an already-full zone halves it - and half the rules simply cease
-// to exist on the first frame, leaving the box to catch up to content
-// that was already right. Reported as every line but the first vanishing
-// before the bottom border swept over.
+// Andrew's rule, which settles it: the first frame must look like the
+// module did before, and the last like the module after. Sweeping is
+// preferred where it can carry the change, fading where it cannot.
 //
-// Larger is the one asked for: "no animate how it was". It keeps the
-// sweep intact in both axes, which is the behaviour the clip window
-// exists to produce, and trades a rule that can sit close to the border
-// mid-animation for content that never disappears. If the squashed last
-// rule shows up again, the fix is not to flip this back - it is to ease
-// the content's own height so the rules redistribute instead of jumping,
-// which needs the renderer to interpolate between two row counts.
-function easingContentGeometry(
+// So both renders are produced and PolotnoJsonRenderer decides how to get
+// from one to the other - morph when they are the same drawing,
+// cross-fade when they are different. Both share an origin: gridCellTo-
+// Pixels' x and y depend only on columnStart/rowStart, which do not
+// differ between them.
+export type EasingGeometry = { from: Placement; to: Placement };
+
+function easingGeometries(
   target: Placement,
   from: { columnSpan: number; rowSpan: number }
-): Placement {
+): EasingGeometry {
   return {
-    ...target,
-    columnSpan: Math.max(target.columnSpan, from.columnSpan),
-    rowSpan: Math.max(target.rowSpan, from.rowSpan),
+    from: { ...target, columnSpan: from.columnSpan, rowSpan: from.rowSpan },
+    to: target,
   };
 }
 
@@ -1506,12 +1504,12 @@ function NativePage({
   // with the geometry its CONTENT should render at meanwhile - the
   // larger of the two sizes, so the easing box always has something to
   // clip. See the memo that builds it.
-  easeContent: { instanceId: string; placement: Placement } | null;
+  easeContent: { instanceId: string; geometry: EasingGeometry } | null;
   // Siblings a crossing is resizing, with the geometry their CONTENT
   // should render at - the larger of their old and new size, so their
   // own easing box has something to clip. Their box comes from
   // `placements`, which already carries the target placement for them.
-  reflowContent: Record<string, Placement> | null;
+  reflowContent: Record<string, EasingGeometry> | null;
   // See the main component's own comment on resizeFrozenSize — lets
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
@@ -1607,10 +1605,14 @@ function NativePage({
         // content drawn at the larger of the two sizes, box clipping it.
         const reflowContentPlacement = reflowContent?.[id] ?? null;
         const isEasingBox = easeContent?.instanceId === id || reflowContentPlacement !== null;
-        const contentPlacement =
-          easeContent?.instanceId === id
-            ? easeContent.placement
-            : (reflowContentPlacement ?? placement);
+        // `from` - the outgoing drawing at the size it was already being
+        // drawn at, so the first frame of the ease is identical to the
+        // frame before it. The incoming drawing comes from the module's
+        // own live placement below (textElements), and the renderer pairs
+        // the two. See easingGeometries and morphPairing.
+        const contentEasingGeometry =
+          easeContent?.instanceId === id ? easeContent.geometry : reflowContentPlacement;
+        const contentPlacement = contentEasingGeometry?.from ?? placement;
         // isEasingBox, not just resizingIds. When a crossing ENDS,
         // crossingLivePreview returns null, so this id leaves
         // effectiveResizingIds and the live re-render switches off - but
@@ -5963,7 +5965,7 @@ export function NativePlannerEditor({
     // can. It also needs the clip and the larger-of-the-two content
     // geometry for the same reason the dragged box does, or it shows
     // the double box while it grows.
-    const reflowContentPlacements: Record<string, Placement> = {};
+    const reflowContentPlacements: Record<string, EasingGeometry> = {};
     // Only siblings whose SIZE changes get a real gridRow override.
     // A position-only mover keeps its grid cell and slides via
     // transform instead (visualOffsets below) — exactly how an ordinary
@@ -5988,7 +5990,7 @@ export function NativePlannerEditor({
       // there is no animations."
       const box = { ...prev, rowStart: move.rowStart, rowSpan: move.rowSpan };
       placementOverrides[move.id] = box;
-      reflowContentPlacements[move.id] = easingContentGeometry(box, prev);
+      reflowContentPlacements[move.id] = easingGeometries(box, prev);
     }
     // todo-checklist's own renderer draws exactly propValues.dayCount
     // day-columns regardless of the box's actual pixel width, so its
@@ -6031,7 +6033,7 @@ export function NativePlannerEditor({
     if (!target) return null;
     return {
       instanceId: contentEasing.instanceId,
-      placement: easingContentGeometry(target, {
+      geometry: easingGeometries(target, {
         columnSpan: contentEasing.fromColumnSpan,
         rowSpan: contentEasing.fromRowSpan,
       }),
@@ -6048,11 +6050,11 @@ export function NativePlannerEditor({
   const reflowContentAll = useMemo(() => {
     const live = crossingLivePreview?.reflowContentPlacements ?? null;
     if (!siblingEase) return live;
-    const out: Record<string, Placement> = {};
+    const out: Record<string, EasingGeometry> = {};
     for (const [id, from] of Object.entries(siblingEase)) {
       const base = liveDisplayPlacements[id];
       if (!base) continue;
-      out[id] = easingContentGeometry(base, from);
+      out[id] = easingGeometries(base, from);
     }
     return live ? { ...out, ...live } : out;
   }, [siblingEase, liveDisplayPlacements, crossingLivePreview]);
@@ -6083,7 +6085,7 @@ export function NativePlannerEditor({
     // the two sizes; otherwise it is the live crossing's own target.
     const dayCount =
       easeContent?.instanceId === draggedId
-        ? columnSpanToDayCount(pages[0].pageGrid, easeContent.placement.columnSpan)
+        ? columnSpanToDayCount(pages[0].pageGrid, easeContent.geometry.to.columnSpan)
         : crossingLivePreview?.dayCountOverride;
     if (dayCount == null) return moduleLookup;
     const next = new Map(moduleLookup);
