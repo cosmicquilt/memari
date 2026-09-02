@@ -50,9 +50,31 @@ const RULED_LINE_SPACING_PX = 75;
 // margin (not the bare 0.525) since this is still an estimate for a
 // font (PT Serif) we don't measure directly against.
 const SAFE_CHAR_WIDTH_RATIO = 0.55;
-function headingNeedsTwoLines(heading: string, availableWidthPx: number): boolean {
-  const estimatedWidthAt8pt = heading.length * ptToPx(8) * SAFE_CHAR_WIDTH_RATIO;
-  return estimatedWidthAt8pt > availableWidthPx;
+
+/**
+ * How a heading is set: the point size it is drawn at, and whether the
+ * header band has to be the taller two-line one.
+ *
+ * The size and the wrap decision have to be made together, because the
+ * fallback to 7pt can itself remove the need to wrap. They were made
+ * separately - the wrap was decided at 8pt and the text then drawn at 7pt
+ * whenever that said "wraps" - so a heading between the two widths got a
+ * two-line band with a single 7pt line sitting at the top of it. That is
+ * the "title box is too large and the text is at the top touching" case,
+ * and it was dormant until the sidebar narrowed from 497px to 438px on
+ * the dot lattice.
+ *
+ * Measured against real PT Serif in the browser rather than reasoned
+ * about: "THINGS I'M GRATEFUL FOR" at 8pt is 421.3px against 371.3px of
+ * available width, and at 7pt is 368.6px - so it fits on one line, at the
+ * smaller size, and never needed the tall band. The 0.55 ratio itself
+ * measured true to four decimal places (0.5495), so it stays.
+ */
+function headingLayout(heading: string, availableWidthPx: number): { fontPt: 7 | 8; wraps: boolean } {
+  const fitsAt = (pt: 7 | 8) => heading.length * ptToPx(pt) * SAFE_CHAR_WIDTH_RATIO <= availableWidthPx;
+  if (fitsAt(8)) return { fontPt: 8, wraps: false };
+  if (fitsAt(7)) return { fontPt: 7, wraps: false };
+  return { fontPt: 7, wraps: true };
 }
 
 // Exposed separately from renderLabeledBox so the native editor's inline
@@ -70,7 +92,7 @@ function headingNeedsTwoLines(heading: string, availableWidthPx: number): boolea
 export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: number): number {
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
-  const wraps = headingNeedsTwoLines(heading, headingAvailableWidth);
+  const { wraps } = headingLayout(heading, headingAvailableWidth);
   return ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT);
 }
 
@@ -86,8 +108,7 @@ export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: num
 export function computeLabeledBoxHeadingFontSizePx(heading: string, boxWidthPx: number): number {
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
-  const wraps = headingNeedsTwoLines(heading, headingAvailableWidth);
-  return ptToPx(wraps ? 7 : 8);
+  return ptToPx(headingLayout(heading, headingAvailableWidth).fontPt);
 }
 
 export function renderLabeledBox(
@@ -103,7 +124,7 @@ export function renderLabeledBox(
 
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = geometry.width - headingPadding * 2;
-  const wraps = headingNeedsTwoLines(config.heading, headingAvailableWidth);
+  const { fontPt: headingFontPt, wraps } = headingLayout(config.heading, headingAvailableWidth);
   const headerHeight = ptToPx(
     wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT
   );
@@ -145,7 +166,7 @@ export function renderLabeledBox(
   // Two-line headings instead get the full (taller) header box and are
   // left to wrap+center naturally within it, since their true wrapped
   // height isn't something we can predict precisely up front.
-  const headingFontSize = ptToPx(wraps ? 7 : 8);
+  const headingFontSize = ptToPx(headingFontPt);
   if (wraps) {
     elements.push({
       id: nextId(),

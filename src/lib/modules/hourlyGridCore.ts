@@ -80,12 +80,27 @@ const LINE_COLOR = "#231F20";
 // the bug in the previous pass.
 const HEADER_HEIGHT_PT = 13.7;
 const HEADER_BORDER_WIDTH_PT = 0.5;
-// Gap between the bottom of the header box and the first ruled row,
-// derived from row-position extrapolation: row 0 sits at y≈54.5pt,
-// header bottom is at y≈31.9pt.
-const HEADER_TO_GRID_GAP_PT = 22.6;
-// Consistent step measured across 24+ consecutive row labels.
-const ROW_HEIGHT_PT = 11.3;
+// Gap between the bottom of the header box and the first ruled row.
+// Measured from the reference at 22.6pt (row 0 at y≈54.5pt, header bottom
+// at y≈31.9pt), trimmed by 0.3pt so the whole header band is exactly two
+// 1/4in dots: 13.7 + 22.3 = 36.0pt = 0.500in. Without the trim the band is
+// 36.3pt, the block rounds to 21 dots instead of 20, and a quarter inch
+// comes off the bottom zone for the sake of three tenths of a point.
+const HEADER_TO_GRID_GAP_PT = 22.3;
+// One half-hour slot. The reference measures 11.3pt across 24+ consecutive
+// row labels, but that does not divide the 1/4in dot pitch (18pt), so the
+// rules drift off the lattice down the page. 9pt is two slots per dot, and
+// it lands: 36 slots = 324pt = 18 dots exactly, plus the 2-dot header band
+// makes the block 20 dots = 5.000in.
+//
+// The type is untouched - still 5pt/5.5pt PT Serif - so this takes 1.3pt
+// of dead space out of the label box rather than shrinking anything that
+// is read. Writing height goes 3.986mm to 3.175mm. Confirmed against a
+// true-size print before it was written: see the row-height test sheet.
+//
+// It also costs nothing: the block goes 6.154in to 5.000in, so the bottom
+// zone GAINS, 3.250in to 3.750in.
+const ROW_HEIGHT_PT = 9.0;
 const ROW_LINE_WIDTH_PT = 0.3;
 // Gap between adjacent day-tab boxes: 244.7 - 240.2 = 4.5pt.
 const COLUMN_GUTTER_PT = 4.5;

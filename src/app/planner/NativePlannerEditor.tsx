@@ -4602,25 +4602,28 @@ export function NativePlannerEditor({
       // reaches, not row 0 — mirrors addPaletteModuleAt's own side-zone
       // shrink-to-fit reasoning for the exact same "no single locked
       // anchor, so measure whatever's actually there" situation.
+      // Everything to the left of the hourly grid. See resolveZoneFor's
+      // own note: this was 1 only because a page used to be 4 columns.
+      const sidebarColumnSpan = hourlyGridPlacement?.columnStart ?? 1;
       if (
         hourlyGridPlacement &&
         hourlyGridPlacement.columnStart > 0 &&
-        !hasZone(0, 1) &&
-        previewZoneKey !== `${page.pageId}:0:1`
+        !hasZone(0, sidebarColumnSpan) &&
+        previewZoneKey !== `${page.pageId}:0:${sidebarColumnSpan}`
       ) {
         let zoneTop = 0;
         for (const id of pageIds) {
           const info = moduleLookup.get(id);
           const placement = displayPlacements[id];
-          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== 1) continue;
+          if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== sidebarColumnSpan) continue;
           zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
         }
         zones.push({
-          key: `emptyzone:${page.pageId}:0:1`,
+          key: `emptyzone:${page.pageId}:0:${sidebarColumnSpan}`,
           pageId: page.pageId,
           bottomId: `__emptysidezone__${page.pageId}`,
           columnStart: 0,
-          columnSpan: 1,
+          columnSpan: sidebarColumnSpan,
           members: [],
           stackTopRowStart: zoneTop,
           stackBottomRowEnd: zoneTop,
@@ -4964,7 +4967,13 @@ export function NativePlannerEditor({
       // default" contract elsewhere) — only an ACTUAL full-width
       // hourly grid (columnStart: 0) rules the side zone out.
       if (!hourlyGridPlacement || hourlyGridPlacement.columnStart > 0) {
-        return { columnStart: 0, columnSpan: 1, isBottomZone: false };
+        // The sidebar is everything left of the hourly grid, not a fixed
+        // one column. That was the same number while a page was 4 columns
+        // wide; on the 24-column lattice it is 6. Falls back to 1 only
+        // when there is no hourly grid to measure against, matching this
+        // function's documented "callers fall back to their own default"
+        // contract just above.
+        return { columnStart: 0, columnSpan: hourlyGridPlacement?.columnStart ?? 1, isBottomZone: false };
       }
       return null;
     },
