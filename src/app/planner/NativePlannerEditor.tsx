@@ -2926,7 +2926,11 @@ function PaletteCard({
       <div
         style={{
           fontSize: 10,
-          fontWeight: 600,
+          // Normal weight, matching the Paper/Font/Hours field labels.
+          // They were 600 to separate them from those labels; the label
+          // colour already does that, so the weight was doing the job
+          // twice and reading heavier than anything else in the panel.
+          fontWeight: 400,
           letterSpacing: 0.7,
           textTransform: "uppercase",
           lineHeight: 1.2,
