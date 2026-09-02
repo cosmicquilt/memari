@@ -130,9 +130,11 @@ import {
   updateModuleConfig,
   resetPlannerToTemplate,
   updatePlannerFont,
+  setPlannerTrim,
   updateHourlySettings,
   resizeHourlyGridCore,
 } from "./actions";
+import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -3100,6 +3102,12 @@ function ModulePalette({
         <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingLeft: 14, paddingTop: 6 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Paper
+            </div>
+            <TrimToggle pageGrid={pageGrid} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Font
             </div>
             <FontToggle fontChoice={pageSettings.fontFamily} />
@@ -3205,6 +3213,60 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
         <button type="button" disabled={pending} onClick={() => handlePick("sans")} style={optionStyle("sans", FONT_SANS)}>
           Aa
         </button>
+      </div>
+      {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
+    </div>
+  );
+}
+
+// Page Settings > Paper. Switching re-lays the template, because the two
+// trims differ by two rows and every stack is packed to fill its zone
+// exactly - there is no slack anywhere to absorb the difference. Confirms
+// first for that reason, then reloads the way the font switch does.
+function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
+  const [pending, error, run] = useAsyncAction();
+  const current = trimKeyForWidth(pageGrid.widthPx);
+
+  const handlePick = (key: PlannerTrimKey) => {
+    if (key === current || pending) return;
+    if (!window.confirm("Change the paper size? This re-lays the spread from the template.")) return;
+    run(async () => {
+      await setPlannerTrim(key);
+      window.location.reload();
+    });
+  };
+
+  const optionStyle = (key: PlannerTrimKey): CSSProperties => ({
+    flex: 1,
+    padding: "7px 4px",
+    border: "none",
+    borderRadius: 8,
+    cursor: pending ? "default" : "pointer",
+    background: current === key ? PANEL_FILL_HOVER : "transparent",
+    color: current === key ? PANEL_TEXT : PANEL_FAINT,
+    opacity: pending ? 0.6 : 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    alignItems: "center",
+    lineHeight: 1.2,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 2, background: PANEL_BG, borderRadius: 10, padding: 2 }}>
+        {(Object.keys(PLANNER_TRIMS) as PlannerTrimKey[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            disabled={pending}
+            onClick={() => handlePick(key)}
+            style={optionStyle(key)}
+          >
+            <span style={{ fontSize: 11.5, fontWeight: 600 }}>{PLANNER_TRIMS[key].label}</span>
+            <span style={{ fontSize: 9.5, color: PANEL_FAINT }}>{PLANNER_TRIMS[key].hint}</span>
+          </button>
+        ))}
       </div>
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>

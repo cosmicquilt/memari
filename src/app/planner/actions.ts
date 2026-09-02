@@ -17,6 +17,7 @@ import {
   canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
+import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
@@ -224,17 +225,22 @@ function renderInstanceElements(
 // hasSidebarContent check) and resetPlannerToTemplate below (the debug
 // "put it back exactly like this" reset) so the two can't independently
 // drift on what "the original layout" actually was.
-const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
+// A function of the page's row count, because the two trims differ only in
+// height: 36 rows on 7x10, 34 on Letter. Everything above Notes is fixed -
+// week-title holds type that cannot shrink, and the other two were sized
+// against the reference - so the difference lands on Notes, the largest
+// box, where two dots are least visible. 36 -> 3/7/11/15, 34 -> 3/7/11/13.
+function weekSidebarTemplateBoxes(gridRows: number): Array<{
   heading: string;
   rowStart: number;
   rowSpan: number;
-}> = [
-  // Starts at row 2 — week-title occupies rows 0-1 at the 30-row grid
-  // resolution. Same 2:3:4 visual ratio as before.
-  { heading: "Things I'm Grateful For", rowStart: 3, rowSpan: 7 },
-  { heading: "Reminders", rowStart: 10, rowSpan: 11 },
-  { heading: "Notes", rowStart: 21, rowSpan: 15 },
-];
+}> {
+  return [
+    { heading: "Things I'm Grateful For", rowStart: 3, rowSpan: 7 },
+    { heading: "Reminders", rowStart: 10, rowSpan: 11 },
+    { heading: "Notes", rowStart: 21, rowSpan: Math.max(MIN_ROW_SPAN, gridRows - 21) },
+  ];
+}
 
 // The "TO - DO" checklist below the hourly grid, on BOTH pages of the
 // reference PDF's weekly spread — confirmed directly against
@@ -259,17 +265,24 @@ const WEEK_HOURLY_TEMPLATE = {
   right: { columnStart: 0, columnSpan: 24 },
 } as const;
 
-const WEEK_TODO_TEMPLATE: Array<{
+// Also a function of the row count. The hourly block is 20 dots and the
+// gutter below it is 1 on either trim - the hours are the same physical
+// size on Letter as on 7x10 - so the bottom zone absorbs the difference,
+// exactly as Notes does in the sidebar. 36 -> 15 rows, 34 -> 13.
+function weekTodoTemplate(gridRows: number): Array<{
   page: "left" | "right";
   columnStart: number;
   columnSpan: number;
   rowStart: number;
   rowSpan: number;
   dayCount: number;
-}> = [
-  { page: "left", columnStart: 6, columnSpan: 18, rowStart: 21, rowSpan: 15, dayCount: 3 },
-  { page: "right", columnStart: 0, columnSpan: 24, rowStart: 21, rowSpan: 15, dayCount: 4 },
-];
+}> {
+  const rowSpan = Math.max(MIN_ROW_SPAN, gridRows - 21);
+  return [
+    { page: "left", columnStart: 6, columnSpan: 18, rowStart: 21, rowSpan, dayCount: 3 },
+    { page: "right", columnStart: 0, columnSpan: 24, rowStart: 21, rowSpan, dayCount: 4 },
+  ];
+}
 
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
@@ -465,7 +478,7 @@ export async function getOrCreatePlanner() {
       where: { slug: "labeled-box" },
     });
     await prisma.moduleInstance.createMany({
-      data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
+      data: weekSidebarTemplateBoxes(leftPage.gridRows).map((box) => ({
         pageId: leftPage.id,
         moduleTypeId: boxType.id,
         placementMode: "GRID" as const,
@@ -493,7 +506,7 @@ export async function getOrCreatePlanner() {
   // seeded) independently, so moving/deleting/resizing one page's
   // checklist doesn't cause the other page's to be touched, and neither
   // gets recreated once either already has one.
-  const missingChecklistPages = WEEK_TODO_TEMPLATE.filter((todo) => {
+  const missingChecklistPages = weekTodoTemplate(leftPage.gridRows).filter((todo) => {
     const page = todo.page === "left" ? leftPage : rightPage;
     return !page.moduleInstances.some((mi) => mi.moduleType.slug === "todo-checklist");
   });
@@ -604,6 +617,40 @@ export async function getOrCreatePlanner() {
 // fresh page load. Simpler and more robust to do the database work here
 // and let the caller just reload the page afterward — same choice
 // updateWeekSettings already made, for the same reason.
+/**
+ * Switches the whole planner to a different page size.
+ *
+ * Re-lays the template afterwards rather than trying to reflow what is
+ * there: the trims differ by two rows, and every stack in the spread is
+ * packed to fill its zone exactly, so there is no slack to absorb the
+ * difference anywhere. Templates are already functions of the row count
+ * (weekSidebarTemplateBoxes, weekTodoTemplate), so the re-lay lands
+ * correctly at either size with nothing trim-specific written down.
+ */
+export async function setPlannerTrim(trim: PlannerTrimKey) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Not signed in");
+
+  const spec = PLANNER_TRIMS[trim];
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    include: { pages: { orderBy: { position: "asc" } } },
+  });
+  if (!planner) throw new Error("Planner not found");
+
+  await prisma.page.updateMany({
+    where: { id: { in: planner.pages.map((page) => page.id) } },
+    data: {
+      widthPx: spec.widthPx,
+      heightPx: spec.heightPx,
+      gridRows: spec.gridRows,
+      marginPx: spec.marginPx,
+    },
+  });
+
+  await resetPlannerToTemplate();
+}
+
 export async function resetPlannerToTemplate() {
   const { userId } = await auth();
   if (!userId) {
@@ -693,7 +740,7 @@ export async function resetPlannerToTemplate() {
       where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: boxType.id },
     }),
     prisma.moduleInstance.createMany({
-      data: WEEK_SIDEBAR_TEMPLATE_BOXES.map((box) => ({
+      data: weekSidebarTemplateBoxes(leftPage.gridRows).map((box) => ({
         pageId: leftPage.id,
         moduleTypeId: boxType.id,
         placementMode: "GRID" as const,
@@ -715,7 +762,7 @@ export async function resetPlannerToTemplate() {
       where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: habitTrackerType.id },
     }),
     prisma.moduleInstance.createMany({
-      data: WEEK_TODO_TEMPLATE.map((todo) => ({
+      data: weekTodoTemplate(leftPage.gridRows).map((todo) => ({
         pageId: pagesById[todo.page].id,
         moduleTypeId: checklistType.id,
         placementMode: "GRID" as const,
