@@ -157,7 +157,14 @@ const WHEEL_ZOOM_SENSITIVITY = 0.0075;
 const WHEEL_DELTA_CLAMP = 50;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
 const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the minimum top gutter centeringOffsetY reserves before adding any extra centering room — see that function's own comment
-const HEADER_HEIGHT_PX = 41; // header's own rendered height (8px padding * 2 + ~25px line box) — an estimate, not measured; only used to size the "fit whole page" preset, not anything print-critical
+// The header's own rendered height, MEASURED against the running app
+// (getBoundingClientRect: 64px) rather than added up from padding and an
+// assumed line box. The estimate was 41, which left the palette starting
+// 23px too high - it began underneath the header instead of below it,
+// reported as the top of the palette not lining up. The same number also
+// feeds the fit-page zoom, which was therefore over-estimating the
+// available height by the same 23px.
+const HEADER_HEIGHT_PX = 64;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -3080,12 +3087,19 @@ function ModulePalette({
         width: PALETTE_SIDEBAR_WIDTH_PX,
         background: PANEL_BG,
         borderRight: `1px solid ${PANEL_EDGE}`,
-        boxShadow: open ? "8px 0 32px rgba(0,0,0,0.12)" : "none",
+        // Two shadows: the panel's own edge against the canvas, and the
+        // header casting down onto it, so the panel reads as sitting under
+        // the header rather than butting against it.
+        boxShadow: open
+          ? "8px 0 32px rgba(0,0,0,0.12), inset 0 7px 8px -6px rgba(0,0,0,0.35)"
+          : "none",
         transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
         overflow: isDraggingPaletteCard ? "visible" : "auto",
-        padding: "14px 18px",
+        // Extra room at the top so the first group header is not tight
+        // against the header above it.
+        padding: "26px 18px 14px",
         display: "flex",
         flexDirection: "column",
         gap: 12,
@@ -3748,16 +3762,47 @@ export function NativePlannerEditor({
       // "not moving the bottom modules."
       if (stackResizeDrag.followerIds.length > 0) {
         const patched = { ...next };
-        for (const followerId of stackResizeDrag.followerIds) {
-          const follower = patched[followerId];
-          if (!follower) continue;
-          patched[followerId] = { ...follower, rowStart: follower.rowStart + stackResizeDrag.deltaRows };
+        const followerPageGrid = pageGridByPageId[stackResizeDrag.pageId];
+        const followers = stackResizeDrag.followerIds
+          .map((id) => ({ id, placement: patched[id] }))
+          .filter((entry) => !!entry.placement)
+          .sort((a, b) => a.placement.rowStart - b.placement.rowStart);
+
+        if (followers.length > 0 && followerPageGrid) {
+          // They shift by the delta, AND give up height once there is no
+          // free space left below them to shift into. Shifting alone slid
+          // the to-do off the bottom of the page as the hours block grew -
+          // reported exactly that way. resizeHourlyGridCore applies the
+          // same rule on commit, cascading from the bottom follower up to
+          // each one's own floor; this is the preview of it.
+          const tailRowEnd = Math.max(
+            ...followers.map((f) => f.placement.rowStart + f.placement.rowSpan)
+          );
+          const freeBelow = Math.max(0, followerPageGrid.gridRows - tailRowEnd);
+          let needed = Math.max(0, stackResizeDrag.deltaRows - freeBelow);
+          const spans = followers.map((f) => f.placement.rowSpan);
+          for (let i = spans.length - 1; i >= 0 && needed > 0; i--) {
+            const info = moduleLookup.get(followers[i].id);
+            const floor = info
+              ? getMinRowSpanForSlug(info.slug, followerPageGrid, followers[i].placement.columnSpan)
+              : MIN_ROW_SPAN;
+            const give = Math.min(spans[i] - floor, needed);
+            if (give > 0) {
+              spans[i] -= give;
+              needed -= give;
+            }
+          }
+          let cursor = followers[0].placement.rowStart + stackResizeDrag.deltaRows;
+          followers.forEach((follower, i) => {
+            patched[follower.id] = { ...follower.placement, rowStart: cursor, rowSpan: spans[i] };
+            cursor += spans[i];
+          });
         }
         next = patched;
       }
     }
     return next;
-  }, [placements, resizeDrag, stackResizeDrag]);
+  }, [placements, resizeDrag, stackResizeDrag, pageGridByPageId, moduleLookup]);
 
   const resizingIds = useMemo(() => {
     if (!resizeDrag && !stackResizeDrag) return null;
