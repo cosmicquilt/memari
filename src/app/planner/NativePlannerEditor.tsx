@@ -4036,7 +4036,24 @@ export function NativePlannerEditor({
         // "room left" figure; adding stackBottomRowEnd back converts it
         // into the bound-relative-to-hourly's-own-edge shape that
         // formula expects).
-        const maxGrow = boundBelowTail - tailRowEnd;
+        // Room below the followers, PLUS what the followers themselves can
+        // give up. Without the second term the block cannot grow at all on
+        // a full page, because the to-do underneath already reaches the
+        // bottom - reported as not being able to expand the increments-off
+        // hours section. resizeHourlyGridCore applies the same sum, and
+        // cascades the shrink from the bottom follower upward.
+        const followerShrinkable = followers.reduce((sum, fid) => {
+          const followerInfo = moduleLookup.get(fid);
+          const followerPlacement = displayPlacements[fid];
+          if (!followerInfo || !followerPlacement) return sum;
+          const floor = getMinRowSpanForSlug(
+            followerInfo.slug,
+            page.pageGrid,
+            followerPlacement.columnSpan
+          );
+          return sum + Math.max(0, followerPlacement.rowSpan - floor);
+        }, 0);
+        const maxGrow = boundBelowTail - tailRowEnd + followerShrinkable;
         const maxBottomBound = stackBottomRowEnd + maxGrow;
 
         entries.push({

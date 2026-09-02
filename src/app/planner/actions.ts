@@ -2763,12 +2763,54 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     if (mi.rowStart < tailRowEnd || !sameColumn) continue;
     boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
   }
-  const maxGrow = Math.max(0, boundBelowTail - tailRowEnd);
+  const freeBelow = Math.max(0, boundBelowTail - tailRowEnd);
+
+  // Growing can also take room from the followers themselves, not just
+  // from free space below them. Without this the block cannot grow at all
+  // on a full page - the to-do underneath already reaches the bottom, so
+  // freeBelow is 0 - and the handle silently only shrinks. Reported as not
+  // being able to expand the increments-off hours section.
+  //
+  // Shrinking cascades from the BOTTOM follower upward, each to its own
+  // per-slug floor, which is the same rule the ordinary stack handle and
+  // an insert-into-a-full-stack both already follow.
+  const followerSpans = followers.map((mi) => mi.rowSpan);
+  const followerFloors = followers.map((mi) =>
+    getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
+  );
+  const followerShrinkable = followerSpans.reduce(
+    (sum, span, i) => sum + Math.max(0, span - followerFloors[i]),
+    0
+  );
+  const maxGrow = freeBelow + followerShrinkable;
 
   const clampedDelta = Math.max(-(instance.rowSpan - minRowSpan), Math.min(maxGrow, deltaRows));
   if (clampedDelta === 0) {
     throw new Error("Nothing to resize");
   }
+
+  // Whatever the free space could not cover has to come out of the
+  // followers' own heights.
+  let needFromFollowers = Math.max(0, clampedDelta - freeBelow);
+  for (let i = followerSpans.length - 1; i >= 0 && needFromFollowers > 0; i--) {
+    const give = Math.min(followerSpans[i] - followerFloors[i], needFromFollowers);
+    if (give > 0) {
+      followerSpans[i] -= give;
+      needFromFollowers -= give;
+    }
+  }
+
+  // Repack them below the block's new bottom, preserving the gap that was
+  // already there (the reserved one-row gutter) and keeping them
+  // contiguous, which every other path that places them already does.
+  const gapAboveFollowers =
+    followers.length > 0 ? (followers[0].rowStart as number) - stackBottomRowEnd : 0;
+  let followerCursor = stackBottomRowEnd + clampedDelta + gapAboveFollowers;
+  const followerRows = followers.map((_, i) => {
+    const rowStart = followerCursor;
+    followerCursor += followerSpans[i];
+    return { rowStart, rowSpan: followerSpans[i] };
+  });
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const [updatedInstance, ...updatedFollowers] = await prisma.$transaction([
@@ -2776,10 +2818,10 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
       where: { id: instance.id },
       data: { rowSpan: instance.rowSpan + clampedDelta },
     }),
-    ...followers.map((mi) =>
+    ...followers.map((mi, i) =>
       prisma.moduleInstance.update({
         where: { id: mi.id },
-        data: { rowStart: (mi.rowStart as number) + clampedDelta },
+        data: { rowStart: followerRows[i].rowStart, rowSpan: followerRows[i].rowSpan },
       })
     ),
   ]);
