@@ -95,7 +95,6 @@ function markDistance(
   });
   const ca = centre(a);
   const cb = centre(b);
-  const refWidth = Math.max(fromSize.width, toSize.width, 1);
   const refHeight = Math.max(fromSize.height, toSize.height, 1);
   const dyAbsolute = Math.abs(ca.y - cb.y) / refHeight;
   const dxRelative = Math.abs(
