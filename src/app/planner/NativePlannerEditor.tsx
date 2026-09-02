@@ -2742,12 +2742,21 @@ function PaletteCard({
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `${PALETTE_ID_PREFIX}${slug}` });
   // The card shows the module as it would actually be drawn, at its
   // narrowest single-column form — the same renderModuleInstance the
-  // page itself uses, not an illustration of it. One column because
-  // that is the smallest a module ever gets, so the card promises the
-  // least and every real drop is at least this legible.
+  // page itself uses, not an illustration of it. Sized to ONE DAY UNIT -
+  // a quarter of the page's columns - because that is the narrowest a
+  // module ever really gets, so the card promises the least and every
+  // real drop is at least this legible.
+  //
+  // This used to say columnSpan: 1, which meant the same thing while a
+  // page was 4 columns wide. On the 24-column lattice a single column is
+  // one 1/4in dot, so the preview rendered a quarter-inch-wide module and
+  // then scaled it up 2.5x to fill the card - reported as "the preview
+  // looks crazy big, two squares and big text inside". The unit is the
+  // sidebar, not the cell.
   const preview = useMemo(() => {
-    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, 1);
-    const placement = { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan };
+    const dayUnitColumns = Math.max(1, Math.round(pageGrid.gridColumns / 4));
+    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, dayUnitColumns);
+    const placement = { columnStart: 0, rowStart: 0, columnSpan: dayUnitColumns, rowSpan };
     const rect = gridCellToPixels(pageGrid, placement);
     const elements = renderModuleInstance(
       {
