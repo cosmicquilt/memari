@@ -24,7 +24,6 @@ import { auth } from "@clerk/nextjs/server";
 import { getOrCreateMonthPlanner } from "../actions";
 import { PlannerEditor } from "../PlannerEditor";
 import type { PageGrid } from "@/lib/grid";
-import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
 export default async function MonthPlannerPage() {
@@ -37,8 +36,8 @@ export default async function MonthPlannerPage() {
 
   const pages = planner.pages.map((page) => {
     const pageGrid: PageGrid = {
-      widthPx: PRINT_WIDTH_PX,
-      heightPx: PRINT_HEIGHT_PX,
+      widthPx: page.widthPx,
+      heightPx: page.heightPx,
       gridColumns: page.gridColumns,
       gridRows: page.gridRows,
       boxInsetPx: page.gridGapPx / 2,

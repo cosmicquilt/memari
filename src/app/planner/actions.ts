@@ -17,7 +17,6 @@ import {
   canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
-import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { getTodoChecklistRowMetricsPx } from "@/lib/modules/todoChecklist";
@@ -41,14 +40,16 @@ type PolotnoElement = {
 // row — the same 6-field mapping was being rebuilt inline in four
 // separate places.
 function pageGridFor(page: {
+  widthPx: number;
+  heightPx: number;
   gridColumns: number;
   gridRows: number;
   gridGapPx: number;
   marginPx: number;
 }): PageGrid {
   return {
-    widthPx: PRINT_WIDTH_PX,
-    heightPx: PRINT_HEIGHT_PX,
+    widthPx: page.widthPx,
+    heightPx: page.heightPx,
     gridColumns: page.gridColumns,
     gridRows: page.gridRows,
     boxInsetPx: page.gridGapPx / 2,

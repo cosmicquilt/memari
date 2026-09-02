@@ -65,6 +65,17 @@ model Page {
   // gridGapPx is gone from the coordinate system: see PageGrid.boxInsetPx
   // in src/lib/grid.ts. The column still exists and is read as an inset of
   // half its value, which is why it is 12 rather than 6 here.
+  // The page's own pixel size at 300dpi, INCLUDING any bleed. Data, not a
+  // constant, because a planner is exported at more than one trim: 7x10
+  // bound (2175 x 3075, a 7x10 trim plus 0.125in bleed each edge) or US
+  // Letter printed at home (2550 x 3300, no bleed - nothing is trimmed).
+  //
+  // Both land 24 dots of content across, which is what keeps one design
+  // valid at either size: Letter simply spends its extra width on margin.
+  // 2550 - 24*75 = 750, so 375px = 1.25in each side; the same 375px
+  // vertically leaves (3300 - 750) / 75 = 34 whole rows.
+  widthPx         Float            @default(2175)
+  heightPx        Float            @default(3075)
   gridColumns     Int              @default(24)
   gridRows        Int              @default(36)
   gridGapPx       Float            @default(12)

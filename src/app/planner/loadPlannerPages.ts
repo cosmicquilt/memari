@@ -26,7 +26,6 @@
 
 import { getOrCreatePlanner } from "./actions";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
-import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { rotateWeekDays, type DayLabel } from "@/lib/weekDays";
@@ -108,8 +107,8 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
 
   const pages: LoadedPage[] = planner.pages.map((page, pageIndex) => {
     const pageGrid: PageGrid = {
-      widthPx: PRINT_WIDTH_PX,
-      heightPx: PRINT_HEIGHT_PX,
+      widthPx: page.widthPx,
+      heightPx: page.heightPx,
       gridColumns: page.gridColumns,
       gridRows: page.gridRows,
       // The DB still stores this as gridGapPx, a gap between boxes. It is

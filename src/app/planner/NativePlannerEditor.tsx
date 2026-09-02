@@ -1551,8 +1551,8 @@ function NativePage({
     <div
       style={{
         position: "relative",
-        width: PRINT_WIDTH_PX,
-        height: PRINT_HEIGHT_PX,
+        width: page.pageGrid.widthPx,
+        height: page.pageGrid.heightPx,
         background: "white",
         boxSizing: "border-box",
         display: "grid",
@@ -4029,7 +4029,14 @@ export function NativePlannerEditor({
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  const spreadWidthPx = pages.length * PRINT_WIDTH_PX + Math.max(0, pages.length - 1) * PAGE_GAP_PX;
+  // Every page in a planner shares a trim, so the spread reads the first
+  // page's own size rather than a module constant. That constant is the
+  // 7x10 bound trim; a Letter planner is 2550 x 3300 with no bleed, and
+  // nothing below should care which it is.
+  const pageWidthPx = pages[0]?.pageGrid.widthPx ?? PRINT_WIDTH_PX;
+  const pageHeightPx = pages[0]?.pageGrid.heightPx ?? PRINT_HEIGHT_PX;
+
+  const spreadWidthPx = pages.length * pageWidthPx + Math.max(0, pages.length - 1) * PAGE_GAP_PX;
 
   // "fit-width"/"fit-page" are pure functions of the viewport size,
   // recomputed on every render — no effect needed to "sync" scale to
@@ -4077,7 +4084,7 @@ export function NativePlannerEditor({
   const fitPageScale = clampScale(
     Math.min(
       (viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth) / spreadWidthPx,
-      (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2) / PRINT_HEIGHT_PX
+      (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2) / pageHeightPx
     )
   );
   const scale = zoomMode === "fit-width" ? fitWidthScale : zoomMode === "fit-page" ? fitPageScale : manualScale;
@@ -4106,9 +4113,9 @@ export function NativePlannerEditor({
   // side") already promised.
   //
   // centeringOffsetY mirrors this on the vertical axis using
-  // HEADER_HEIGHT_PX and PRINT_HEIGHT_PX (pages sit in a single row —
+  // HEADER_HEIGHT_PX and pageHeightPx (pages sit in a single row —
   // see the pages.map wrapper below — so content height at a given
-  // scale is always exactly PRINT_HEIGHT_PX * scale, never a function
+  // scale is always exactly pageHeightPx * scale, never a function
   // of page count the way spreadWidthPx is). Previously there was no
   // vertical centering at all — CONTENT_TOP_OFFSET_PX was used as a
   // bare constant marginTop, always pinning content to the top once it
@@ -4129,8 +4136,8 @@ export function NativePlannerEditor({
   const centeringOffsetY = useCallback(
     (atScale: number) =>
       CONTENT_TOP_OFFSET_PX +
-      Math.max(0, (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2 - PRINT_HEIGHT_PX * atScale) / 2),
-    [viewportSize.height]
+      Math.max(0, (viewportSize.height - HEADER_HEIGHT_PX - VIEWPORT_PADDING_PX * 2 - pageHeightPx * atScale) / 2),
+    [viewportSize.height, pageHeightPx]
   );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -4582,7 +4589,7 @@ export function NativePlannerEditor({
   // does (container.scrollLeft/Top, centeringOffsetX/Y, divide by scale),
   // just reused here for a drag position instead of a wheel-zoom anchor.
   // Pages sit in one horizontal row (see the pages.map wrapper below), so
-  // "which page" is just contentX divided into PRINT_WIDTH_PX-wide
+  // "which page" is just contentX divided into pageWidthPx-wide
   // (plus gap) slots — returns null once that lands outside every page's
   // own bounds (the gap between pages, or off the spread entirely), not
   // just clamped into the nearest one — a palette drag that isn't over
@@ -4725,12 +4732,12 @@ export function NativePlannerEditor({
       const containerRect = container.getBoundingClientRect();
       const contentX = (container.scrollLeft + (clientX - containerRect.left) - centeringOffsetX(scale)) / scale;
       const contentY = (container.scrollTop + (clientY - containerRect.top) - centeringOffsetY(scale)) / scale;
-      if (contentX < 0 || contentY < 0 || contentY > PRINT_HEIGHT_PX) return null;
-      const spreadUnit = PRINT_WIDTH_PX + PAGE_GAP_PX;
+      if (contentX < 0 || contentY < 0 || contentY > pageHeightPx) return null;
+      const spreadUnit = pageWidthPx + PAGE_GAP_PX;
       const pageIndex = Math.floor(contentX / spreadUnit);
       if (pageIndex < 0 || pageIndex >= pages.length) return null;
       const localX = contentX - pageIndex * spreadUnit;
-      if (localX > PRINT_WIDTH_PX) return null; // in the gap between pages
+      if (localX > pageWidthPx) return null; // in the gap between pages
       const page = pages[pageIndex];
       const pageGrid = pageGridByPageId[page.pageId];
       if (!pageGrid) return null;
@@ -4743,7 +4750,7 @@ export function NativePlannerEditor({
         pageY: contentY,
       };
     },
-    [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId]
+    [scale, centeringOffsetX, centeringOffsetY, pages, pageGridByPageId, pageWidthPx, pageHeightPx]
   );
 
   // Debounces a single-event crossingZones flip back to false — one
@@ -5518,7 +5525,7 @@ export function NativePlannerEditor({
       // and this is byte-for-byte the same computation as before this
       // feature existed.
       const sourcePageIndex = pages.findIndex((p) => p.pageId === info.pageId);
-      const spreadUnit = PRINT_WIDTH_PX + PAGE_GAP_PX;
+      const spreadUnit = pageWidthPx + PAGE_GAP_PX;
       const hoveredPageIndex =
         sourcePageIndex === -1
           ? sourcePageIndex
@@ -5914,6 +5921,7 @@ export function NativePlannerEditor({
       lastOwnColumnRow,
       pages,
       grabFraction,
+      pageWidthPx,
     ]
   );
 
@@ -6611,7 +6619,7 @@ export function NativePlannerEditor({
         const phantomPageOffset =
           phantomSourceIndex === -1 || phantomTargetIndex === -1
             ? 0
-            : (phantomTargetIndex - phantomSourceIndex) * (PRINT_WIDTH_PX + PAGE_GAP_PX);
+            : (phantomTargetIndex - phantomSourceIndex) * (pageWidthPx + PAGE_GAP_PX);
         const phantomSettle: Record<string, { x: number; y: number }> = {
           [PHANTOM_ID]: {
             x: phantomLast.x - (phantomNew.x - phantomOld.x) - phantomPageOffset,
@@ -6808,7 +6816,7 @@ export function NativePlannerEditor({
       const pageOffsetPx =
         sourcePageIndex === -1 || targetPageIndex === -1
           ? 0
-          : (targetPageIndex - sourcePageIndex) * (PRINT_WIDTH_PX + PAGE_GAP_PX);
+          : (targetPageIndex - sourcePageIndex) * (pageWidthPx + PAGE_GAP_PX);
       const settleOffsets: Record<string, { x: number; y: number }> = {
         [instanceId]: {
           x: lastOffset.x - (newPixel.x - oldPixel.x) - pageOffsetPx,
@@ -6987,6 +6995,7 @@ export function NativePlannerEditor({
       pages,
       captureGeometry,
       pageGridByPageId,
+      pageWidthPx,
     ]
   );
 
