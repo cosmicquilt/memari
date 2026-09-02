@@ -183,7 +183,7 @@ export function renderHourlyGridCore(
   // the block becomes free space and the dots are what makes it writable -
   // see that branch. Optional so a caller without a page grid (a preview,
   // a test) still renders everything else.
-  lattice?: { pitchPx: number; originX: number; originY: number }
+  lattice?: { pitchPx: number; originX: number; originY: number; insetPx: number }
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   let idCounter = 0;
@@ -203,14 +203,34 @@ export function renderHourlyGridCore(
   const gridTop = geometry.y + headerHeight + headerToGridGap;
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
 
-  const dayColumnWidth =
-    (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
+  // Each day gets an equal share of the module's ALLOCATION, not of its
+  // inked width, so the boundary between two days falls on a lattice line.
+  //
+  // It used to divide (width - gutter * (dayCount - 1)) by dayCount, which
+  // takes the gutter out of the total and leaves each day 5.78 dots wide
+  // instead of 6. The dividers then missed the dots by up to a pixel, in
+  // different directions per boundary - reported exactly that way: "between
+  // sun and mon line is to left, mon and tues line is to right... thurs and
+  // fri line aligned, fri and sat line to right." Six of one, half a dozen
+  // of the other, literally.
+  //
+  // The gutter now comes out of each day's own allocation instead, half on
+  // each side, which centres it on the shared lattice line and leaves the
+  // inked column a whole 6 dots less one gutter.
+  const allocationX = lattice ? geometry.x - lattice.insetPx : geometry.x;
+  const allocationWidth = lattice ? geometry.width + lattice.insetPx * 2 : geometry.width;
+  const dayAllocationWidth = allocationWidth / config.dayCount;
+  const dayColumnWidth = lattice
+    ? dayAllocationWidth - columnGutter
+    : (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
 
   const lineOpacity =
     config.hourLineStyle === "full" ? 1 : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
 
   for (let d = 0; d < config.dayCount; d++) {
-    const dayX = geometry.x + d * (dayColumnWidth + columnGutter);
+    const dayX = lattice
+      ? allocationX + d * dayAllocationWidth + columnGutter / 2
+      : geometry.x + d * (dayColumnWidth + columnGutter);
     const label = config.dayLabels[d];
 
     // Header tab: bordered box, day name at the left edge, date at the

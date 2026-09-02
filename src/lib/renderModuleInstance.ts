@@ -86,7 +86,7 @@ function renderBySlug(
   // The page's dot lattice, for the renderers that draw on it. Square
   // cells, so one pitch; originX/originY are the page margin, which is
   // where the lattice starts.
-  lattice: { pitchPx: number; originX: number; originY: number }
+  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number }
 ): RenderedPolotnoElement[] {
   switch (slug) {
     case "hourly-grid-core":
@@ -178,7 +178,7 @@ export function renderModuleInstance(
     instance.propValues,
     instance.id,
     fontFamily,
-    { pitchPx: cell.width, originX: pageGrid.marginPx, originY: pageGrid.marginPx }
+    { pitchPx: cell.width, originX: pageGrid.marginPx, originY: pageGrid.marginPx, insetPx: pageGrid.boxInsetPx }
   );
   if (!elements.length) {
     return elements;

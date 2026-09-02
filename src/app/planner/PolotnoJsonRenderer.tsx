@@ -305,6 +305,7 @@ function RectLayer({
             y={ry + inset}
             width={Math.max(0, rw - strokeWidth)}
             height={Math.max(0, rh - strokeWidth)}
+            rx={typeof element.cornerRadius === "number" ? element.cornerRadius : undefined}
             fill={hasFill ? element.fill : "none"}
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
