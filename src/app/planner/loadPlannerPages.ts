@@ -76,6 +76,8 @@ export type PageSettings = {
   intervalMinutes: number;
   intervalMode: "on" | "off";
   compactHourRows: boolean;
+  // One of ROW_HEIGHT_OPTIONS_PT; 9pt when unset.
+  rowHeightPt: number;
 };
 
 export type LoadedPlanner = {
@@ -221,6 +223,7 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
         intervalMinutes?: number;
         intervalMode?: "on" | "off";
         compactHourRows?: boolean;
+        rowHeightPt?: number;
       }
     | undefined;
 
@@ -235,6 +238,7 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
       intervalMinutes: hourlyProps?.intervalMinutes ?? 30,
       intervalMode: hourlyProps?.intervalMode ?? "on",
       compactHourRows: hourlyProps?.compactHourRows ?? false,
+      rowHeightPt: hourlyProps?.rowHeightPt ?? 9,
     },
   };
 }

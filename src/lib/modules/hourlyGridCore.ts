@@ -43,6 +43,8 @@ export type HourlyGridCoreConfig = {
   // nothing to make "compact" relative to). Optional/defaults to false
   // so existing stored instances keep the new doubled-height default.
   compactHourRows?: boolean;
+  // One of ROW_HEIGHT_OPTIONS_PT. Absent means the 9pt default.
+  rowHeightPt?: number;
 };
 
 export type RenderedElement = {
@@ -141,8 +143,38 @@ const DAY_DIVIDER_COLOR = "#a0a6ab";
 // have a setting to make the hour setting compact." Only 1-hour
 // intervals are affected either way; 30-min rows always render at the
 // one measured ROW_HEIGHT_PT.
-function getRowHeightPx(intervalMinutes: number, compactHourRows: boolean | undefined): number {
-  const base = ptToPx(ROW_HEIGHT_PT);
+/**
+ * The three row heights a planner can use, in points.
+ *
+ * All three land on the 1/4in dot lattice (18pt), but not in the same way,
+ * and the difference is visible:
+ *
+ *   9pt  - two slots per dot. A rule on every cell line, plus one between.
+ *          The default, and the tightest.
+ *   12pt - three slots per two dots. Roomier to write in, and still on the
+ *          lattice, but the pattern only repeats every OTHER cell line, so
+ *          odd cell lines carry no rule.
+ *   18pt - one slot per dot. A rule on every cell line and the most room,
+ *          but 36 half-hour slots at 18pt is 9.000in, the entire usable
+ *          height of a page - so it is only reachable at hour increments.
+ *
+ * A row height has to divide the pitch to put a rule on every cell line:
+ * 18, 9, 6, 4.5. 12 does not, which is why it is the exception rather than
+ * a fourth option of the same kind.
+ */
+export const ROW_HEIGHT_OPTIONS_PT = [9, 12, 18] as const;
+export type RowHeightPt = (typeof ROW_HEIGHT_OPTIONS_PT)[number];
+
+export function isRowHeightPt(value: unknown): value is RowHeightPt {
+  return typeof value === "number" && (ROW_HEIGHT_OPTIONS_PT as readonly number[]).includes(value);
+}
+
+function getRowHeightPx(
+  intervalMinutes: number,
+  compactHourRows: boolean | undefined,
+  rowHeightPt?: number
+): number {
+  const base = ptToPx(isRowHeightPt(rowHeightPt) ? rowHeightPt : ROW_HEIGHT_PT);
   return intervalMinutes === 60 && !compactHourRows ? base * 2 : base;
 }
 
@@ -156,14 +188,17 @@ function getRowHeightPx(intervalMinutes: number, compactHourRows: boolean | unde
 // rowSpan from a real requested start/end/interval, via grid.ts's
 // pixelHeightToRowSpan.
 export function getHourlyGridCoreContentHeightPx(
-  config: Pick<HourlyGridCoreConfig, "startTime" | "endTime" | "intervalMinutes" | "compactHourRows">
+  config: Pick<
+    HourlyGridCoreConfig,
+    "startTime" | "endTime" | "intervalMinutes" | "compactHourRows" | "rowHeightPt"
+  >
 ): number {
   const totalMinutes = timeToMinutes(config.endTime) - timeToMinutes(config.startTime);
   const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
   return (
     ptToPx(HEADER_HEIGHT_PT) +
     ptToPx(HEADER_TO_GRID_GAP_PT) +
-    rowCount * getRowHeightPx(config.intervalMinutes, config.compactHourRows)
+    rowCount * getRowHeightPx(config.intervalMinutes, config.compactHourRows, config.rowHeightPt)
   );
 }
 
@@ -206,7 +241,7 @@ export function renderHourlyGridCore(
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const headerToGridGap = ptToPx(HEADER_TO_GRID_GAP_PT);
-  const rowHeight = getRowHeightPx(config.intervalMinutes, config.compactHourRows);
+  const rowHeight = getRowHeightPx(config.intervalMinutes, config.compactHourRows, config.rowHeightPt);
   const gridTop = geometry.y + headerHeight + headerToGridGap;
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
 

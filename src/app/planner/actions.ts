@@ -11,7 +11,7 @@ import {
   sidebarColumnSpan,
   columnSpanToDayCount,
   pixelHeightToRowSpan,
-  packStackFromTop,
+  takeRowsFairly,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
   canCrossZones,
@@ -2492,6 +2492,9 @@ export async function updateHourlySettings(settings: {
   endTime: string; // "HH:MM"
   intervalMinutes: 30 | 60;
   intervalMode: "on" | "off";
+  // One of ROW_HEIGHT_OPTIONS_PT (hourlyGridCore.ts). Undefined keeps the
+  // 9pt default.
+  rowHeightPt?: number;
   // Only meaningful at intervalMinutes:60 — see getRowHeightPx's own
   // comment (hourlyGridCore.ts) for why 1-hour rows double their height
   // by default, and what opting into this reverts to. Harmless to send
@@ -2499,6 +2502,9 @@ export async function updateHourlySettings(settings: {
   // on it.
   compactHourRows: boolean;
   weekStartDay: number; // 0=Sun..6=Sat
+  // Set only after the editor has asked and been told yes: drop the lowest
+  // module below the hours and try again. See HOURS_DO_NOT_FIT.
+  deleteLowestBelowToFit?: boolean;
 }) {
   const { userId } = await auth();
   if (!userId) {
@@ -2530,6 +2536,9 @@ export async function updateHourlySettings(settings: {
   }
 
   const updates: ReturnType<typeof prisma.moduleInstance.update>[] = [];
+  // Deletions requested by the editor after asking the user - applied in
+  // the same transaction as the resize they make room for.
+  const deletions: Prisma.PrismaPromise<unknown>[] = [];
 
   if (settings.intervalMode === "off") {
     for (const page of planner.pages) {
@@ -2560,6 +2569,7 @@ export async function updateHourlySettings(settings: {
       endTime: settings.endTime,
       intervalMinutes: settings.intervalMinutes,
       compactHourRows: settings.compactHourRows,
+      rowHeightPt: settings.rowHeightPt,
     });
 
     // Same 1-row breathing gap convention enforced elsewhere in this
@@ -2587,7 +2597,7 @@ export async function updateHourlySettings(settings: {
       // column range — same "exact match, not just overlap" membership
       // test resizeStackFromBottom/resizeAdjacentModules already use for
       // "is this really the same stack," not a looser overlap check.
-      const belowMembers = page.moduleInstances.filter(
+      let belowMembers = page.moduleInstances.filter(
         (mi): mi is typeof mi & { rowStart: number } =>
           !mi.locked &&
           mi.rowStart !== null &&
@@ -2604,12 +2614,45 @@ export async function updateHourlySettings(settings: {
       // a full-day range needs 25 of 30 rows, leaving 4 for the below zone
       // — comfortably above the existing todo-checklist's own 2-row floor,
       // but well under its actual current 10-row size).
+      if (settings.deleteLowestBelowToFit && belowMembers.length > 0) {
+        const lowest = belowMembers[belowMembers.length - 1];
+        deletions.push(prisma.moduleInstance.delete({ where: { id: lowest.id } }));
+        belowMembers = belowMembers.slice(0, -1);
+      }
+
+      // Make room by SHRINKING what is below rather than refusing. This
+      // used to throw the moment the below-zone did not fit at its current
+      // sizes, leaving the user to go and resize something first.
+      // takeRowsFairly takes one row at a time from each module in turn, so
+      // they give way evenly instead of the bottom one flattening to its
+      // floor while the one above keeps full height.
       const belowCurrentTotal = belowMembers.reduce((sum, mi) => sum + mi.rowSpan, 0);
       const availableForBelow = pageGrid.gridRows - newRowSpan - GAP_ROWS;
+      let belowSpans = belowMembers.map((mi) => mi.rowSpan);
       if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
-        throw new Error(
-          "This time range needs more room than the page has — shrink or remove a module below the hourly grid first"
+        const floors = belowMembers.map((mi) =>
+          getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
         );
+        const result = takeRowsFairly(belowSpans, floors, belowCurrentTotal - availableForBelow);
+        if (result.unmet > 0) {
+          // Only name the modules when removing the lowest would actually
+          // close the gap. At 18pt with 30-minute increments the hours need
+          // 39 of 36 rows on their own, so deleting anything is futile -
+          // and offering it would walk someone through destroying a module
+          // for nothing. Everything below is at its floor by this point, so
+          // the lowest frees exactly its floor.
+          const deletingLowestWouldFit = floors[floors.length - 1] >= result.unmet;
+          const names = deletingLowestWouldFit
+            ? belowMembers.map(
+                (mi) => ((mi.propValues as { heading?: string } | null)?.heading ?? mi.moduleType.name)
+              )
+            : [];
+          throw new Error(`HOURS_DO_NOT_FIT:${result.unmet}:${names.join("|")}`);
+        }
+        belowSpans = result.spans;
+      }
+      if (belowMembers.length === 0 && availableForBelow < 0) {
+        throw new Error(`HOURS_DO_NOT_FIT:${-availableForBelow}:`);
       }
 
       perPage.push({
@@ -2617,7 +2660,11 @@ export async function updateHourlySettings(settings: {
         hourlyPropValues: hourly.propValues,
         hourlyRowStart: hourly.rowStart,
         newRowSpan,
-        belowMembers: belowMembers.map((mi) => ({ id: mi.id, rowStart: mi.rowStart, rowSpan: mi.rowSpan })),
+        belowMembers: belowMembers.map((mi, i) => ({
+          id: mi.id,
+          rowStart: mi.rowStart,
+          rowSpan: belowSpans[i],
+        })),
       });
     }
     if (perPage.length === 0) {
@@ -2641,15 +2688,26 @@ export async function updateHourlySettings(settings: {
           },
         })
       );
-      const newBottom = p.hourlyRowStart + p.newRowSpan + 1;
-      for (const move of packStackFromTop(newBottom, p.belowMembers)) {
-        updates.push(prisma.moduleInstance.update({ where: { id: move.id }, data: { rowStart: move.rowStart } }));
+      // rowSpan as well as rowStart: belowMembers now carries the spans
+      // takeRowsFairly settled on, which may be smaller than what is
+      // stored. packStackFromTop only reports position changes, so the
+      // heights are written straight from the members.
+      let cursor = p.hourlyRowStart + p.newRowSpan + 1;
+      for (const member of [...p.belowMembers].sort((a, b) => (a.rowStart ?? 0) - (b.rowStart ?? 0))) {
+        updates.push(
+          prisma.moduleInstance.update({
+            where: { id: member.id },
+            data: { rowStart: cursor, rowSpan: member.rowSpan },
+          })
+        );
+        cursor += member.rowSpan;
       }
     }
   }
 
   const nextTheme: PlannerTheme = { ...(planner.theme as PlannerTheme | null), weekStartDay: settings.weekStartDay };
   await prisma.$transaction([
+    ...deletions,
     ...updates,
     prisma.planner.update({ where: { id: planner.id }, data: { theme: nextTheme as Prisma.InputJsonValue } }),
   ]);

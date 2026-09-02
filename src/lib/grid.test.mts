@@ -23,6 +23,7 @@ import {
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
   pixelsToContainingCell,
+  takeRowsFairly,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -877,3 +878,31 @@ if (failures > 0) {
     "containing: clamps to the last row"
   );
 }
+
+// --- takeRowsFairly --------------------------------------------------------
+// Round-robin, not bottom-first: making room for a taller hourly grid is
+// not aimed at any one module, so they give up rows evenly.
+{
+  const r = takeRowsFairly([10, 10, 10], [2, 2, 2], 3);
+  assert(
+    r.spans.join(",") === "9,9,9" && r.unmet === 0,
+    `three rows come one from each, not three from one (got ${r.spans.join(",")})`
+  );
+}
+{
+  const r = takeRowsFairly([5, 3], [2, 2], 4);
+  assert(r.spans.join(",") === "2,2" && r.unmet === 0, `both reach their floors exactly (got ${r.spans.join(",")})`);
+}
+{
+  const r = takeRowsFairly([4, 3], [2, 2], 10);
+  assert(r.spans.join(",") === "2,2" && r.unmet === 7, `what cannot be found is reported (got unmet ${r.unmet})`);
+}
+{
+  const r = takeRowsFairly([6], [6], 2);
+  assert(r.spans.join(",") === "6" && r.unmet === 2, "a stack already at its floor gives nothing");
+}
+{
+  const r = takeRowsFairly([9, 4], [2, 2], 5);
+  assert(r.spans.join(",") === "6,2" && r.unmet === 0, `the smaller one stops at its floor (got ${r.spans.join(",")})`);
+}
+console.log("All takeRowsFairly checks passed.");

@@ -3136,6 +3136,7 @@ function ModulePalette({
               intervalMinutes={pageSettings.intervalMinutes}
               intervalMode={pageSettings.intervalMode}
               compactHourRows={pageSettings.compactHourRows}
+              rowHeightPt={pageSettings.rowHeightPt}
               weekStartDay={pageSettings.weekStartDay}
             />
           </div>
@@ -3324,6 +3325,7 @@ function roundToNearestHalfHour(time: string): string {
 // hands sizing over to its own drag handle on the canvas instead
 // (StackResizeHandle, via hourlyOffModeStackBottomsByPageId).
 function HoursForm({
+  rowHeightPt,
   startTime,
   endTime,
   intervalMinutes,
@@ -3337,7 +3339,9 @@ function HoursForm({
   intervalMode: "on" | "off";
   compactHourRows: boolean;
   weekStartDay: number;
+  rowHeightPt: number;
 }) {
+  const [draftRowHeight, setDraftRowHeight] = useState<number>(rowHeightPt);
   const [draftStart, setDraftStart] = useState(startTime);
   const [draftEnd, setDraftEnd] = useState(endTime);
   const [draftInterval, setDraftInterval] = useState<"30" | "60" | "off">(
@@ -3347,16 +3351,49 @@ function HoursForm({
   const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
 
+  const save = (deleteLowestBelowToFit?: boolean) =>
+    updateHourlySettings({
+      deleteLowestBelowToFit,
+      startTime: draftStart,
+      endTime: draftEnd,
+      intervalMinutes: draftInterval === "60" ? 60 : 30,
+      intervalMode: draftInterval === "off" ? "off" : "on",
+      compactHourRows: draftCompact,
+      weekStartDay: draftWeekStartDay,
+      rowHeightPt: draftRowHeight,
+    });
+
+  // The server shrinks what is below to make room, fairly, a row at a time
+  // from each. It only refuses when everything down there is already at its
+  // minimum and the hours STILL do not fit - and then it says by how much
+  // and what is in the way, so this can offer the one remaining option
+  // rather than just reporting a wall.
   const handleSave = () =>
     run(async () => {
-      await updateHourlySettings({
-        startTime: draftStart,
-        endTime: draftEnd,
-        intervalMinutes: draftInterval === "60" ? 60 : 30,
-        intervalMode: draftInterval === "off" ? "off" : "on",
-        compactHourRows: draftCompact,
-        weekStartDay: draftWeekStartDay,
-      });
+      try {
+        await save();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const match = /^HOURS_DO_NOT_FIT:(\d+):(.*)$/.exec(message);
+        if (!match) throw err;
+        const short = Number(match[1]);
+        const names = match[2] ? match[2].split("|") : [];
+        const rows = `${short} row${short === 1 ? "" : "s"}`;
+        if (names.length === 0) {
+          throw new Error(`These hours need ${rows} more than the page has. Try a shorter range or a smaller row height.`);
+        }
+        const lowest = names[names.length - 1];
+        const ok = window.confirm(
+          `These hours need ${rows} more than the page has, even with ${names.join(" and ")} shrunk as far as they go.
+
+` +
+            `Delete "${lowest}" to make room?`
+        );
+        if (!ok) {
+          throw new Error(`Not enough room — ${rows} short. Shorten the range, choose a smaller row height, or remove a module below the hours.`);
+        }
+        await save(true);
+      }
       window.location.reload();
     });
 
@@ -3415,6 +3452,27 @@ function HoursForm({
           <option value="off">Off</option>
         </select>
       </label>
+      {draftInterval !== "off" && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <span style={{ color: PANEL_MUTED }}>Row height</span>
+          <select
+            value={String(draftRowHeight)}
+            onChange={(event) => setDraftRowHeight(Number(event.target.value))}
+            style={fieldStyle}
+          >
+            {/* All three land on the 1/4in lattice, but only 9 and 18
+                divide the pitch, so only they put a rule on every cell
+                line. 12 repeats every two cells instead - roomier, and
+                still aligned, just not on every line. 18 at 30-minute
+                increments is 9 inches of rows, the whole usable page, so
+                the save will report that it does not fit rather than this
+                hiding the option. */}
+            <option value="9">Compact</option>
+            <option value="12">Roomy</option>
+            <option value="18">Tall</option>
+          </select>
+        </label>
+      )}
       {draftInterval === "60" && (
         <label style={{ display: "flex", alignItems: "center", gap: 6, color: PANEL_MUTED }}>
           <input type="checkbox" checked={draftCompact} onChange={(event) => setDraftCompact(event.target.checked)} />

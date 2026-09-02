@@ -227,6 +227,42 @@ export function sidebarColumnSpan(
   return dayUnitColumns(page);
 }
 
+/**
+ * Takes `needed` rows out of a stack, one at a time from each member in
+ * turn, until the need is met or every member is at its floor.
+ *
+ * Round-robin rather than draining the bottom module first, which is what
+ * the resize cascade does. The two are different situations: a resize is
+ * the user dragging one specific edge, so the module nearest that edge
+ * should give way. Making room for a taller hourly grid is not aimed at
+ * anyone in particular, and taking it all from the bottom module would
+ * flatten one box to its minimum while the one above it kept full height.
+ * Asked for directly - "distribute it cell from each below until all of
+ * minimum size."
+ *
+ * Returns the new spans and whatever could NOT be found, so the caller can
+ * tell "it fits after shrinking" from "it does not fit at all" and say so.
+ */
+export function takeRowsFairly(
+  spans: number[],
+  floors: number[],
+  needed: number
+): { spans: number[]; unmet: number } {
+  const next = [...spans];
+  let remaining = Math.max(0, needed);
+  let progressed = true;
+  while (remaining > 0 && progressed) {
+    progressed = false;
+    for (let i = 0; i < next.length && remaining > 0; i++) {
+      if (next[i] <= floors[i]) continue;
+      next[i] -= 1;
+      remaining -= 1;
+      progressed = true;
+    }
+  }
+  return { spans: next, unmet: remaining };
+}
+
 // Keeps a placement fully on the grid — used after both drag-to-reposition
 // snapping and palette drop-to-add, since either can land a module's
 // nearest cell close enough to an edge that columnStart/rowStart + its
