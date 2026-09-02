@@ -246,6 +246,16 @@ const WEEK_SIDEBAR_TEMPLATE_BOXES: Array<{
 // initial seed) and resetPlannerToTemplate (the debug reset), same
 // reasoning as WEEK_SIDEBAR_TEMPLATE_BOXES above — the two can't
 // independently drift on what "the original layout" is.
+// Where each page's locked hourly block sits. Shared by the initial seed
+// and by resetPlannerToTemplate for the same reason the two constants
+// above are shared - and this one was missing, so the reset restored the
+// block's rowSpan but never its columns, leaving it at its pre-migration
+// width on every reset.
+const WEEK_HOURLY_TEMPLATE = {
+  left: { columnStart: 6, columnSpan: 18 },
+  right: { columnStart: 0, columnSpan: 24 },
+} as const;
+
 const WEEK_TODO_TEMPLATE: Array<{
   page: "left" | "right";
   columnStart: number;
@@ -384,7 +394,7 @@ export async function getOrCreatePlanner() {
       { name: "MONDAY", date: 2 },
       { name: "TUESDAY", date: 3 },
     ],
-    { columnStart: 6, columnSpan: 18 }
+    WEEK_HOURLY_TEMPLATE.left
   );
   await ensureHourlyGridCore(
     rightPage,
@@ -394,7 +404,7 @@ export async function getOrCreatePlanner() {
       { name: "FRIDAY", date: 6 },
       { name: "SATURDAY", date: 7 },
     ],
-    { columnStart: 0, columnSpan: 24 }
+    WEEK_HOURLY_TEMPLATE.right
   );
 
   // todo-checklist and habit-tracker used to be auto-placed here as
@@ -625,13 +635,19 @@ export async function resetPlannerToTemplate() {
   // see this function's own header comment for why. Merges into each
   // instance's existing propValues (not a wholesale replace) so
   // dayLabels/dayCount/events/hourLineStyle/dayBorder survive untouched.
-  const hourlyResets = [leftPage, rightPage].flatMap((page) => {
+  const hourlyResets = [leftPage, rightPage].flatMap((page, pageIndex) => {
     const hourly = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
     if (!hourly) return [];
+    const columns = pageIndex === 0 ? WEEK_HOURLY_TEMPLATE.left : WEEK_HOURLY_TEMPLATE.right;
     return [
       prisma.moduleInstance.update({
         where: { id: hourly.id },
         data: {
+          // Columns as well as rowSpan. A "reset to template" that restores
+          // only one of a block's two dimensions is not a reset.
+          columnStart: columns.columnStart,
+          rowStart: 0,
+          columnSpan: columns.columnSpan,
           // 20 dots: 2 of header (13.7pt tab + 22.3pt gap = 36.0pt) plus
           // 36 half-hour slots at 9pt = 324pt = 18 dots. Lands exactly.
           rowSpan: 20,
@@ -648,7 +664,27 @@ export async function resetPlannerToTemplate() {
     ];
   });
 
+  // week-title was never restored at all - not its rowSpan, not its
+  // columns - so it silently kept whatever geometry it had. It only moved
+  // when the grid changed underneath it, which is exactly when a reset is
+  // most likely to be the thing someone reaches for.
+  const weekTitle = leftPage.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
+  const titleResets = weekTitle
+    ? [
+        prisma.moduleInstance.update({
+          where: { id: weekTitle.id },
+          data: {
+            columnStart: 0,
+            rowStart: 0,
+            columnSpan: weekTitle.moduleType.defaultColumnSpan,
+            rowSpan: weekTitle.moduleType.defaultRowSpan,
+          },
+        }),
+      ]
+    : [];
+
   await prisma.$transaction([
+    ...titleResets,
     ...hourlyResets,
     prisma.moduleInstance.deleteMany({
       where: { pageId: { in: [leftPage.id, rightPage.id] }, moduleTypeId: boxType.id },
