@@ -121,6 +121,13 @@ const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 const DOT_RADIUS_PX = 2.8;
 const DOT_COLOR = "#9aa2a8";
 
+// The vertical bars between day columns in increments-off mode. Greyer
+// than LINE_COLOR, the near-black used for ruled lines and box borders:
+// with the dot field behind them these read as structure rather than as
+// content, and near-black made them the heaviest thing in an area that is
+// meant to be open. Sits between the dots and the ruled lines in weight.
+const DAY_DIVIDER_COLOR = "#7c8288";
+
 // A 1-hour row renders at double a 30-min row's own measured height by
 // default — requested directly: "make the hour increment setting be
 // double the height of the 30 min [rows]." Without this, switching from
@@ -346,7 +353,7 @@ export function renderHourlyGridCore(
           y: dividerY,
           width: dividerWidth,
           height: dividerHeight,
-          fill: LINE_COLOR,
+          fill: DAY_DIVIDER_COLOR,
           stroke: "none",
         });
       }
