@@ -6233,22 +6233,9 @@ export function NativePlannerEditor({
     // effectiveResizingIds below) needs the new dayCount too, or it
     // draws the wrong number of columns for its new live width.
     const draggedInfo = moduleLookup.get(activeId);
-    // dayCount has to describe the geometry the content is actually DRAWN
-    // at, which while easing is the larger of the two spans - the same rule
-    // easingContentGeometry follows, and the same one the easeContent
-    // branch below already applies. This used the TARGET span instead, so a
-    // to-do crossing into the sidebar was drawn eighteen columns wide while
-    // being told it had one day column: its final structure, stretched
-    // across its old width, from the first frame. Reported as "interior
-    // instantly goes to final state before box sweeps in" - and it is why
-    // the crossing stopped reading as a sweep at all. The clip window was
-    // working the whole time; there was simply nothing left to sweep away,
-    // because the content had already become its destination.
-    const currentColumnSpan = displayPlacements[activeId]?.columnSpan ?? preview.effectiveColumnSpan;
-    const contentColumnSpan = Math.max(currentColumnSpan, preview.effectiveColumnSpan);
     const dayCountOverride =
       draggedInfo?.slug === "todo-checklist"
-        ? columnSpanToDayCount(pages[0].pageGrid, contentColumnSpan)
+        ? columnSpanToDayCount(pages[0].pageGrid, preview.effectiveColumnSpan)
         : null;
     return { draggedId: activeId, placementOverrides, reflowContentPlacements, dayCountOverride };
   }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview, pages]);
