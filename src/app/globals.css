@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Marks that appear rather than sweeping or moving fade in instead of
+   popping. Requested directly: "anything you pop in with the animations if
+   you could fade them in."
+
+   Applied on MOUNT, which is exactly when a mark pops: RectLayer keys its
+   rects by structureKey (the element count), so any change to a module's
+   structure remounts them, and the moment the eased render hands over to
+   the final one is a remount too. Short enough not to read as a fade of
+   its own - it takes the edge off an appearance without becoming an
+   animation the eye tracks. */
+@keyframes memari-mark-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

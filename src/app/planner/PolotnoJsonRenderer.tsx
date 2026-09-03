@@ -310,7 +310,14 @@ function RectLayer({
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
             opacity={element.opacity ?? 1}
-            style={{ transition: rectGeometryTransition(easeMs) }}
+            style={{
+              transition: rectGeometryTransition(easeMs),
+              // See memari-mark-in in globals.css. Runs on mount, which is
+              // when a mark appears - a structural change remounts every
+              // rect in the layer, and so does the handover from the eased
+              // render to the final one.
+              animation: "memari-mark-in 160ms ease-out",
+            }}
           />
         );
       })}
