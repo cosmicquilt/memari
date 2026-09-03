@@ -325,7 +325,7 @@ function easingContentGeometry(
   return {
     ...target,
     columnSpan: Math.max(target.columnSpan, from.columnSpan),
-    rowSpan: target.rowSpan,
+    rowSpan: Math.max(target.rowSpan, from.rowSpan),
   };
 }
 
