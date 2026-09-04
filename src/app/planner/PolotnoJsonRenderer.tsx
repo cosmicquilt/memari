@@ -726,7 +726,22 @@ export function PolotnoJsonRenderer({
   }>({ elements: [], originX, originY });
   if (prevRects.ids !== rectIdsNow) {
     const present = new Set(rects.map((element) => element.id));
-    const gone = prevRects.elements.filter((element) => !present.has(element.id));
+    // Only while an ease is actually running. The other time this list
+    // changes wholesale is the HANDOVER at the end of one, when the eased
+    // render is replaced by the committed one - and the eased render is
+    // drawn at the union of the two geometries, a shape neither state
+    // has: as wide as the destination and as tall as the origin. Holding
+    // that for a fade made it linger visibly after the box had already
+    // landed, in both directions. Reported as a wide version at the
+    // sidebar's height flashing at the end.
+    //
+    // A handover is a swap between two drawings of the same committed
+    // state, not something leaving the page, so there is nothing there to
+    // see out.
+    const gone =
+      textEaseMs > 0
+        ? prevRects.elements.filter((element) => !present.has(element.id))
+        : [];
     setPrevRects({ ids: rectIdsNow, elements: rects, originX, originY });
     setLeavingRects({ elements: gone, originX: prevRects.originX, originY: prevRects.originY });
   }
