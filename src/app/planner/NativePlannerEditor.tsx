@@ -636,6 +636,19 @@ type StackBottom = {
   // from needing the settings panel's HOURS_DO_NOT_FIT recovery: a height
   // there is no room for is never offered, so the drag cannot ask for one.
   rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt: number }>;
+  // Where to put the grab strip, in page pixels, when the block's own
+  // bottom edge is the wrong place for it.
+  //
+  // A handle normally straddles the edge it moves, which is the module's
+  // box bottom. The hours are the exception twice over: their content does
+  // not end at their box bottom - the box is rounded to whole cells and
+  // the template's is actually a little SHORTER than the hours it holds -
+  // and the thing being dragged is a row height rather than an edge. So
+  // the strip belongs in the band between where the hours visibly stop and
+  // where the module below starts, which is where it was asked for: "in
+  // the buffer zone between hours and bottom module". Anchored to the box
+  // bottom it sat above the hours' last row instead.
+  handleBandPx?: { top: number; height: number };
 };
 
 
@@ -2291,6 +2304,13 @@ function StackResizeHandle({
     });
     return { x: lastRow.x, y: lastRow.y + lastRow.height, width: lastRow.width };
   }, [pageGrid, stackBottom.columnStart, stackBottom.columnSpan, stackBottom.stackBottomRowEnd]);
+  // The band when one is given, otherwise the usual strip straddling the
+  // edge. Given, it fills the gap rather than centring on a line, so the
+  // whole visible space between the two modules is grabbable.
+  const band = stackBottom.handleBandPx ?? {
+    top: rect.y - RESIZE_HANDLE_HALF_HEIGHT_PX,
+    height: RESIZE_HANDLE_HALF_HEIGHT_PX * 2,
+  };
   const rowPitchPx = useMemo(() => {
     const oneRow = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 1 });
     const twoRows = gridCellToPixels(pageGrid, { columnStart: stackBottom.columnStart, rowStart: 0, columnSpan: stackBottom.columnSpan, rowSpan: 2 });
@@ -2462,9 +2482,9 @@ function StackResizeHandle({
       style={{
         position: "absolute",
         left: rect.x,
-        top: rect.y - RESIZE_HANDLE_HALF_HEIGHT_PX,
+        top: band.top,
         width: rect.width,
-        height: RESIZE_HANDLE_HALF_HEIGHT_PX * 2,
+        height: band.height,
         cursor: "ns-resize",
         touchAction: "none",
       }}
@@ -4411,6 +4431,33 @@ export function NativePlannerEditor({
         // cursor change over a dead strip.
         if (rowHeightOptions && rowHeightOptions.length < 2 && !isDragging) continue;
 
+        // The grab strip goes in the band between where the hours visibly
+        // stop and where the module below starts, not on the block's own
+        // box bottom - see handleBandPx. Those are not the same line: the
+        // box is rounded to whole cells, and the template's is a little
+        // shorter than the content it holds, so anchoring to it put the
+        // strip above the hours' last row rather than under it.
+        let handleBandPx: { top: number; height: number } | undefined;
+        if (rowHeightOptions) {
+          const box = gridCellToPixels(page.pageGrid, placement);
+          const contentBottom =
+            box.y +
+            getHourlyGridCoreContentHeightPx(config as Parameters<typeof getHourlyGridCoreContentHeightPx>[0]);
+          const belowTop = gridCellToPixels(page.pageGrid, {
+            columnStart: placement.columnStart,
+            rowStart:
+              placement.rowStart +
+              placement.rowSpan +
+              hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan),
+            columnSpan: placement.columnSpan,
+            rowSpan: 1,
+          }).y;
+          // Never a zero-height strip: a gap can be half a cell, and at a
+          // low zoom that is a few device pixels to aim at.
+          const height = Math.max(belowTop - contentBottom, RESIZE_HANDLE_HALF_HEIGHT_PX);
+          handleBandPx = { top: contentBottom, height };
+        }
+
         entries.push({
           key: `hourly-stack:${id}`,
           pageId: page.pageId,
@@ -4431,6 +4478,7 @@ export function NativePlannerEditor({
           maxBottomBound,
           followerIds: followers,
           rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt }) => ({ rowSpan, rowHeightPt })),
+          handleBandPx,
         });
       }
       byPage[page.pageId] = entries;
