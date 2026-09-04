@@ -216,16 +216,6 @@ const rows = CASES.map((c) => {
   const source = animates ? "final" : "content";
   const drawn = animates ? toRects : contentRects;
 
-  // On the animated path the drawn geometry is NOT what frame one looks
-  // like. Every mark that also existed in the outgoing render is given a
-  // transform placing it back where it was (flipTransform), and every mark
-  // that did not starts at opacity 0 and fades in. So the only marks wrong
-  // on frame one are the ones that were there and are not drawn at all:
-  // they vanish instead of being swept away.
-  //
-  // The transform ends at identity and the fade ends opaque, so the last
-  // frame is the drawn render exactly.
-  const vanishing = [...fromIds].filter((id) => !toIds.has(id)).length;
   let shared = 0;
   for (const id of fromIds) if (toIds.has(id)) shared++;
   const countsAgree = fromRects.length === toRects.length;
