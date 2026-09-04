@@ -113,7 +113,6 @@ import {
   packedTopEdge,
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
-  columnSpanToDayCount,
   cellHeightPx,
   dayUnitColumns,
   pixelsToGridCell,
@@ -1782,17 +1781,13 @@ function NativePage({
                   // DAY UNITS (see dayCountOverride) - it was columnSpan
                   // itself, which was the same number only while a day was
                   // one column wide.
-                  //
-                  // renderModuleInstance derives dayCount from the span
-                  // itself now, so the to-do branch here is belt and
-                  // braces; livePropValues is what carries the hourly
-                  // grid's previewed row height into this second render,
-                  // which otherwise draws the time labels at the old pitch
-                  // while the rects beside them use the new one.
-                  propValues:
-                    info.slug === "todo-checklist"
-                      ? { ...info.propValues, dayCount: columnSpanToDayCount(page.pageGrid, placement.columnSpan) }
-                      : livePropValues,
+                  // livePropValues carries the hourly grid's previewed row
+                  // height into this second render, which would otherwise
+                  // draw the time labels at the old pitch while the rects
+                  // beside them use the new one. A to-do needs nothing
+                  // here: renderModuleInstance derives its day count from
+                  // the span it is handed.
+                  propValues: livePropValues,
                   moduleType: { slug: info.slug },
                 },
                 page.pageGrid,
@@ -6576,18 +6571,8 @@ export function NativePlannerEditor({
       placementOverrides[move.id] = box;
       reflowContentPlacements[move.id] = easingContentGeometry(box, prev);
     }
-    // todo-checklist's own renderer draws exactly propValues.dayCount
-    // day-columns regardless of the box's actual pixel width, so its
-    // live content re-render (contentIsLive, driven by
-    // effectiveResizingIds below) needs the new dayCount too, or it
-    // draws the wrong number of columns for its new live width.
-    const draggedInfo = moduleLookup.get(activeId);
-    const dayCountOverride =
-      draggedInfo?.slug === "todo-checklist"
-        ? columnSpanToDayCount(pages[0].pageGrid, preview.effectiveColumnSpan)
-        : null;
-    return { draggedId: activeId, placementOverrides, reflowContentPlacements, dayCountOverride };
-  }, [activeId, activeDelta, resolveDrag, displayPlacements, moduleLookup, confirmedCrossingPreview, pages]);
+    return { draggedId: activeId, placementOverrides, reflowContentPlacements };
+  }, [activeId, activeDelta, resolveDrag, displayPlacements, confirmedCrossingPreview]);
 
 
   const liveDisplayPlacements = useMemo(
@@ -6642,40 +6627,6 @@ export function NativePlannerEditor({
     }
     return live ? { ...out, ...live } : out;
   }, [siblingEase, liveDisplayPlacements, crossingLivePreview]);
-
-  // Overlays the dayCount override above onto the one instance it
-  // applies to — mirrors liveDisplayPlacements' own "overlay onto the
-  // existing map, don't mutate real state" shape, for the same reason:
-  // this only needs to be true for the couple of frames a crossing drag
-  // is actually in progress, never written back to moduleLookup itself.
-  const liveModuleLookup = useMemo(() => {
-    // Keyed on the ease as well as the crossing, not the crossing
-    // alone. Returning to the zone a module is COMMITTED to is not a
-    // crossing, so crossingLivePreview is null there - but the box is
-    // still easing back to that zone's size, and the content is still
-    // being drawn at the larger of the two. Gating on the crossing left
-    // dayCount at its committed value while the geometry was the larger
-    // one, which is the same stretched-then-trimmed grid the target
-    // dayCount produced before, arriving by a different route.
-    // Reported dragging a todo 3 columns to 4 and back to 3 without
-    // releasing: the second shrink did not sweep.
-    const draggedId = crossingLivePreview?.draggedId ?? easeContent?.instanceId ?? null;
-    if (!draggedId) return moduleLookup;
-    const info = moduleLookup.get(draggedId);
-    if (!info || info.slug !== "todo-checklist") return moduleLookup;
-    // A todo-checklist draws exactly dayCount day-columns whatever pixel
-    // width it is given, so this has to describe the geometry the
-    // content is actually drawn at. While easing that is the larger of
-    // the two sizes; otherwise it is the live crossing's own target.
-    const dayCount =
-      easeContent?.instanceId === draggedId
-        ? columnSpanToDayCount(pages[0].pageGrid, easeContent.placement.columnSpan)
-        : crossingLivePreview?.dayCountOverride;
-    if (dayCount == null) return moduleLookup;
-    const next = new Map(moduleLookup);
-    next.set(draggedId, { ...info, propValues: { ...info.propValues, dayCount } });
-    return next;
-  }, [moduleLookup, crossingLivePreview, easeContent, pages]);
 
   // Everyone placementOverrides touches needs the same isResizing/
   // contentIsLive treatment an ordinary resize-handle drag already
@@ -8545,7 +8496,7 @@ export function NativePlannerEditor({
                     page={page}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
                     placements={liveDisplayPlacements}
-                    moduleLookup={liveModuleLookup}
+                    moduleLookup={moduleLookup}
                     activeId={activeId}
                     visualOffsets={visualOffsets}
                     draggedAnchorPx={draggedAnchorPx}

@@ -1183,13 +1183,12 @@ export async function addPaletteModuleAt(
         if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
           effectiveColumnStart = hourlyGrid.columnStart;
           effectiveColumnSpan = hourlyGrid.columnSpan;
-          if (moduleTypeSlug === "todo-checklist") {
-            const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
-            // The fallback was hourlyGrid.columnSpan, which equalled the
-            // day count only while a day was one column wide.
-            configOverrides.dayCount =
-              hourlyProps.dayCount ?? columnSpanToDayCount(pageGrid, hourlyGrid.columnSpan);
-          }
+          // A to-do's day count used to be written here, copied off the
+          // hourly grid it was landing under. It is derived from the span
+          // at render now (see the registry's derivedProps), so writing it
+          // stored a second description of the same width - the thing that
+          // had to be kept in step along every path that could change a
+          // span, and was not.
 
           // This branch used to also force effectiveRowStart to the
           // zone's own bottom edge, appending the new module below
@@ -1636,11 +1635,6 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
     effectiveColumnStart = hourlyGrid.columnStart;
     effectiveColumnSpan = hourlyGrid.columnSpan;
-    if (slug === "todo-checklist") {
-      const hourlyProps = hourlyGrid.propValues as { dayCount?: number };
-      configOverrides.dayCount =
-        hourlyProps.dayCount ?? columnSpanToDayCount(targetPageGrid, hourlyGrid.columnSpan);
-    }
   } else {
     // Side zone. Reached by every zone-crossing type now, labeled-box
     // included — see canCrossZones (grid.ts) for why that used to throw
