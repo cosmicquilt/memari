@@ -82,6 +82,11 @@ const OUTER_BORDER_MATCH_EPSILON_PX = 0.5;
 // for the length of every crossing.
 export const RESIZE_EASE_CURVE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
+// How long a mark takes to fade in when it appears. Applies to both rects
+// and text - anything that mounts rather than sweeping or moving. See
+// memari-mark-in in globals.css.
+const MARK_FADE_IN_MS = 230;
+
 // Text alone gets a position transition while a module's box eases.
 // Rects deliberately do not: the box clips them, so a rect is revealed
 // or cut off rather than moved, and transitioning them breaks any module
@@ -173,6 +178,11 @@ function ElementNode({
           whiteSpace: "pre",
           pointerEvents: "none",
           transition: textPositionTransition(textEaseMs),
+          // Text pops the same way rects do and gets the same fade. Text
+          // nodes are keyed by their own content, so a label that changes
+          // - a time, a day name, a heading at a new size - remounts and
+          // fades in rather than swapping in place.
+          animation: `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
         }}
       >
         {element.text}
@@ -316,7 +326,7 @@ function RectLayer({
               // when a mark appears - a structural change remounts every
               // rect in the layer, and so does the handover from the eased
               // render to the final one.
-              animation: "memari-mark-in 320ms ease-out",
+              animation: `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
             }}
           />
         );
