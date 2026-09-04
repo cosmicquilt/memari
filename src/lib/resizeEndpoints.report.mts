@@ -274,7 +274,15 @@ console.log(
   `${rows.length} cases: ${firstBad} violate the first frame, ${lastBad} violate the last, worst case ${worst} marks.`
 );
 console.log(
-  "\nOne render is shown for the whole ease, so every case with a changing\n" +
-  "drawing necessarily breaks one endpoint or the other. This says which,\n" +
-  "and by how much, so a fix can be aimed rather than guessed at."
+  "\nThis used to say that one render per ease necessarily breaks one\n" +
+  "endpoint or the other. That was true while a mark could only be drawn\n" +
+  "by the single render on screen. A mark in both renders is now\n" +
+  "transformed back to where it was, and a mark only in the outgoing one\n" +
+  "is held for a fade, so the FIRST frame is reachable - and holds in\n" +
+  "every case below.\n\n" +
+  "The LAST frame is the open one. It fails where the drawn render is the\n" +
+  "union of the two rather than the destination, because the incoming\n" +
+  "drawing is then not on screen at all until the handover - the\n" +
+  "symmetric case to the one `held` solves, and what the `content` rows\n" +
+  "have in common."
 );
