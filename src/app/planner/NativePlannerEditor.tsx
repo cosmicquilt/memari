@@ -1691,13 +1691,12 @@ function NativePage({
         // two cannot disagree about which height a span means. Absolute
         // spans, so this lookup is stable for the length of the drag even
         // though the memo behind it recomputes against the live preview.
-        const hourlyRowHeightPt =
-          info.slug === "hourly-grid-core"
-            ? hourlyResizeStackBottoms
-                .find((entry) => entry.bottomId === id)
-                ?.rowHeightSnaps?.find((option) => option.rowSpan === contentPlacement.rowSpan)
-                ?.rowHeightPt
-            : undefined;
+        const rowHeightSnaps = hourlyResizeStackBottoms.find(
+          (entry) => entry.bottomId === id
+        )?.rowHeightSnaps;
+        const hourlyRowHeightPt = rowHeightSnaps?.find(
+          (option) => option.rowSpan === contentPlacement.rowSpan
+        )?.rowHeightPt;
         // Whether a module's content has to be re-drawn as its box moves is
         // a fact about the module, so it is declared in the registry rather
         // than listed by slug here. This was four slugs written out by hand,
@@ -1712,7 +1711,15 @@ function NativePage({
         // "no" and this gesture overrides it.
         const contentIsLive =
           ((resizingIds?.has(id) ?? false) || isEasingBox) &&
-          (moduleContentIsLive(info.slug, info.propValues) || hourlyRowHeightPt !== undefined);
+          // Having a row-height handle is enough; the drag does not have to
+          // have resolved a DIFFERENT height yet. Keyed on the resolved
+          // height instead, the first frame of a drag - where the previewed
+          // span still equals the committed one, and any span outside the
+          // offered snaps - fell through to the frozen-content treatment,
+          // which is an outline drawn round the block and its contents
+          // clipped. Reported as a box appearing around the hours and the
+          // section being cut off at the start of a resize.
+          (moduleContentIsLive(info.slug, info.propValues) || !!rowHeightSnaps);
         const livePropValues =
           hourlyRowHeightPt !== undefined
             ? { ...(info.propValues as Record<string, unknown>), rowHeightPt: hourlyRowHeightPt }

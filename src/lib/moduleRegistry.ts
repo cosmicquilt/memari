@@ -54,7 +54,46 @@ export type ModuleLattice = {
   insetPx: number;
 };
 
+/**
+ * An editable prop, as the properties panel should offer it.
+ *
+ * Declared rather than hand-written per module, because the panel was a
+ * run of `slug === ...` blocks each containing its own JSX, and a hundred
+ * modules is a hundred blocks. A preset over an existing primitive should
+ * need no panel code at all - the same primitive with different labels is
+ * the same fields with different labels.
+ *
+ * `lines` is a string ARRAY edited as one per line. It is worth its own
+ * kind rather than being a text field the module splits itself, because
+ * the trim-and-drop-blanks that has to happen on save was previously
+ * written into the panel's save handler as a habit-tracker special case,
+ * and the next module with a list would have needed the same clause added
+ * beside it.
+ */
+export type ModuleField =
+  | { kind: "text"; key: string; label: string }
+  | { kind: "boolean"; key: string; label: string }
+  | { kind: "lines"; key: string; label: string; rows?: number }
+  // No input: something the panel should say about a module whose props
+  // are not editable here, in place of an empty panel.
+  | { kind: "note"; text: string };
+
 export type ModuleDefinition = {
+  /** What to call this module in the editor's own surfaces. */
+  label?: string;
+
+  /**
+   * Whether the width can be stepped in the properties panel.
+   *
+   * Off by default. A to-do or habit tracker's column span is tied to the
+   * page's day count, and letting it drift independently recreates the
+   * mismatched-checklist problem that sizing exists to avoid.
+   */
+  resizableWidth?: boolean;
+
+  /** The editable props, rendered generically. */
+  fields?: ModuleField[];
+
   /** Draws the module. The primitive; a preset is this plus propValues. */
   render: (
     geometry: ModuleGeometry,
@@ -131,6 +170,12 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "labeled-box": {
+    label: "Labeled box",
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "boolean", key: "ruled", label: "Ruled (lined) body" },
+    ],
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily),
     // Its heading drops a point size rather than wrapping when the box
@@ -146,6 +191,13 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "todo-checklist": {
+    label: "To-do checklist",
+    fields: [
+      {
+        kind: "note",
+        text: "This checklist's day columns follow whichever page it's on — nothing to edit here yet.",
+      },
+    ],
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily),
     minContentHeightPx: () => {
@@ -160,6 +212,8 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "habit-tracker": {
+    label: "Habit tracker",
+    fields: [{ kind: "lines", key: "habits", label: "Habits (one per line)", rows: 8 }],
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily),
     minContentHeightPx: (pageGrid, columnSpan) => {
@@ -222,6 +276,27 @@ export function withDerivedProps(
   if (!derive) return propValues;
   const base = (propValues ?? {}) as Record<string, unknown>;
   return { ...base, ...derive(pageGrid, placement, base) };
+}
+
+/** propValues as they should be SAVED: every `lines` field trimmed and
+ *  emptied of blanks. Blank lines are left alone while someone is typing -
+ *  fighting the cursor is worse than a stray line - so the cleanup belongs
+ *  at save, and belongs here rather than as a per-module clause in the
+ *  panel's save handler. */
+export function cleanPropsForSave(
+  slug: string,
+  propValues: Record<string, unknown>
+): Record<string, unknown> {
+  const fields = MODULE_REGISTRY[slug]?.fields;
+  if (!fields) return propValues;
+  const out = { ...propValues };
+  for (const field of fields) {
+    if (field.kind !== "lines") continue;
+    out[field.key] = ((out[field.key] as string[] | undefined) ?? [])
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  return out;
 }
 
 /** The uniform floor, for a module with no rule of its own. */
