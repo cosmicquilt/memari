@@ -99,7 +99,12 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
-import { getHourlyGridCoreOffModeMinHeightPx, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
+import {
+  getHourlyGridCoreOffModeMinHeightPx,
+  getHourlyGridCoreContentHeightPx,
+  ROW_HEIGHT_OPTIONS_PT,
+  type HourlyGridCoreConfig,
+} from "@/lib/modules/hourlyGridCore";
 import {
   gridCellToAllocation,
   followerRowsAfterGrowth,
@@ -601,13 +606,33 @@ type StackBottom = {
   maxBottomBound: number;
   // Instances that ride along with `members`' own span change instead of
   // changing their own span — only ever populated by
-  // hourlyOffModeStackBottomsByPageId (see its own comment), empty for
+  // hourlyStackBottomsByPageId (see its own comment), empty for
   // every ordinary stack. `members`' cascade handles "this stack's own
   // content changes size"; followerIds handles the separate case of
   // "something else's *position* has to follow along," which ordinary
   // stacks never need (nothing sits between a stack and its own
   // members that also has to move).
   followerIds: string[];
+  // Present only on hourly-grid-core's own handle while increments are ON,
+  // where the block's height is not a free quantity: it is rowCount times
+  // whichever row height is set, so the only heights it can actually take
+  // are the ones in ROW_HEIGHT_OPTIONS_PT. The edge therefore lands on
+  // these spans and nowhere between them, and releasing commits the row
+  // height it landed on rather than a span.
+  //
+  // ABSOLUTE spans, deliberately, not deltas from the current one. This
+  // memo recomputes against displayPlacements, which during a drag holds
+  // the live PREVIEW span - so a delta stored here shifts under the drag
+  // that is using it, and the commit then looked up a different option
+  // than the preview had shown (dragged to Roomy, saved Compact). A span
+  // is a fact about the settings and the page, not about where the
+  // pointer currently is, so it stays put. Same hazard dragRef already
+  // guards against for member spans, one level up.
+  //
+  // Only options that actually FIT are listed, which is what keeps this
+  // from needing the settings panel's HOURS_DO_NOT_FIT recovery: a height
+  // there is no room for is never offered, so the drag cannot ask for one.
+  rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt: number }>;
 };
 
 
@@ -1501,7 +1526,7 @@ function NativePage({
   resizePairs: ResizePair[];
   stackBottoms: StackBottom[];
   // hourly-grid-core instances currently in "off" mode, each as its own
-  // single-member StackBottom — see hourlyOffModeStackBottomsByPageId's
+  // single-member StackBottom — see hourlyStackBottomsByPageId's
   // own comment (main component) for why this is a separate list from
   // stackBottoms rather than folded into it.
   hourlyResizeStackBottoms: StackBottom[];
@@ -1816,8 +1841,8 @@ function NativePage({
             onResizeEnd={onStackResizeEnd}
           />
         ))}
-      {/* Same handle, same handlers — hourly-grid-core's own off-mode
-          bottom edge (see hourlyOffModeStackBottomsByPageId's own
+      {/* Same handle, same handlers — hourly-grid-core's own
+          bottom edge (see hourlyStackBottomsByPageId's own
           comment for why this is a separate list from stackBottoms
           rather than merged into it: stackBottoms is also concatenated
           with emptyZones below for AddModuleButton/SectionAddButton,
@@ -2236,13 +2261,41 @@ function StackResizeHandle({
   // delta/clamp math has to stay anchored to what they were when the
   // drag actually began, not double-count against an already-shifted
   // baseline.
-  const dragRef = useRef<{ clientY: number; memberSpans: number[]; memberMinSpans: number[]; maxGrow: number } | null>(null);
+  const dragRef = useRef<{
+    clientY: number;
+    memberSpans: number[];
+    memberMinSpans: number[];
+    maxGrow: number;
+    rowHeightSnaps?: StackBottom["rowHeightSnaps"];
+  } | null>(null);
 
   const computeClampedDeltaRows = useCallback(
     (clientY: number) => {
       const drag = dragRef.current;
       if (!drag) return 0;
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
+      // Quantized rather than clamped: with increments on there are only
+      // two or three heights this block can have, so the edge jumps
+      // between them instead of following the pointer. Nearest wins, in
+      // continuous row space, so each option gets a catchment centred on
+      // itself. None of the gap math below applies — that is about
+      // leaving room for another module underneath, and these landings
+      // are fixed points rather than a range to be bounded.
+      const snaps = drag.rowHeightSnaps;
+      if (snaps && snaps.length > 0) {
+        // Against the span frozen at pointerdown, for the same reason
+        // every other figure in this function is: the live one is the
+        // preview this drag is itself producing.
+        const baseSpan = drag.memberSpans[0] ?? 0;
+        const targetSpan = baseSpan + rawDeltaPagePx / rowPitchPx;
+        let best = snaps[0];
+        for (const snap of snaps) {
+          if (Math.abs(snap.rowSpan - targetSpan) < Math.abs(best.rowSpan - targetSpan)) {
+            best = snap;
+          }
+        }
+        return best.rowSpan - baseSpan;
+      }
       // Per-member minimum, not the uniform MIN_ROW_SPAN — see
       // getMinRowSpanForSlug's own comment on why a stack can mix module
       // types (e.g. a todo-checklist stacked with a habit-tracker), each
@@ -2304,6 +2357,9 @@ function StackResizeHandle({
         memberSpans: stackBottom.members.map((m) => m.rowSpan),
         memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         maxGrow: stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd,
+        // Frozen with the rest: the memo behind these recomputes against
+        // the live preview this drag is producing.
+        rowHeightSnaps: stackBottom.rowHeightSnaps,
       };
       onResizeStart(stackBottom);
     },
@@ -3373,7 +3429,7 @@ function roundToNearestHalfHour(time: string): string {
 // updateHourlySettings' own "off" branch, which keeps whatever height
 // hourly-grid-core currently has rather than deriving one from them) and
 // hands sizing over to its own drag handle on the canvas instead
-// (StackResizeHandle, via hourlyOffModeStackBottomsByPageId).
+// (StackResizeHandle, via hourlyStackBottomsByPageId).
 function HoursForm({
   rowHeightPt,
   startTime,
@@ -3863,7 +3919,7 @@ export function NativePlannerEditor({
       // by the same raw deltaRows — their own rowSpan never changes,
       // only their position, preserving whatever gap already existed
       // between them and the member. See StackBottom's own followerIds
-      // comment (hourlyOffModeStackBottomsByPageId) for why this exists:
+      // comment (hourlyStackBottomsByPageId) for why this exists:
       // hourly-grid-core's off-mode resize is a genuine coupled-pair
       // operation, not the usual "stack grows into free space" one,
       // requested directly after the first version shipped without this:
@@ -4087,8 +4143,9 @@ export function NativePlannerEditor({
   }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
 
   // Synthetic single-member StackBottom entries for hourly-grid-core
-  // instances currently in "off" mode (see HourlyGridCoreConfig's own
-  // intervalMode comment) — reuses StackResizeHandle wholesale rather
+  // instances, in either interval mode — off-mode drags a free height,
+  // on-mode picks a row height (see rowHeightSnaps on StackBottom).
+  // Reuses StackResizeHandle wholesale rather
   // than building a parallel component: cascadeStackSpans/
   // displayPlacements/resizingIds/resizeFrozenSize are all already
   // generic over "a list of member ids" with no locked/slug assumption
@@ -4118,7 +4175,7 @@ export function NativePlannerEditor({
   // server action (resizeHourlyGridCore) rather than resizeStackFromBottom
   // too, for the same reason — see handleStackResizeAdjacent's own
   // comment.
-  const hourlyOffModeStackBottomsByPageId = useMemo(() => {
+  const hourlyStackBottomsByPageId = useMemo(() => {
     const byPage: Record<string, StackBottom[]> = {};
     for (const page of pages) {
       const pageIds = instanceIdsByPageId[page.pageId] ?? [];
@@ -4128,9 +4185,13 @@ export function NativePlannerEditor({
         const placement = displayPlacements[id];
         if (!info || info.slug !== "hourly-grid-core" || !placement) continue;
         const config = info.propValues as unknown as HourlyGridCoreConfig;
-        if (config.intervalMode !== "off") continue;
+        // Both modes get a handle on this edge, but they mean different
+        // things by it. Off-mode has no rows to speak of, so the edge is a
+        // free height. On-mode's height is rowCount times the row height,
+        // so the edge picks a row height instead — see rowHeightSnaps.
+        const isOffMode = config.intervalMode === "off";
 
-        const minRowSpan = Math.max(
+        const offModeMinRowSpan = Math.max(
           MIN_ROW_SPAN,
           pixelHeightToRowSpan(page.pageGrid, getHourlyGridCoreOffModeMinHeightPx())
         );
@@ -4211,23 +4272,63 @@ export function NativePlannerEditor({
         const maxGrow = boundBelowTail - tailRowEnd + followerShrinkable;
         const maxBottomBound = stackBottomRowEnd + maxGrow;
 
+        // The heights this block can actually take with increments on, one
+        // per row-height option, filtered to those that fit in the room the
+        // bound above already worked out. Requested directly: a handle in
+        // the buffer zone between the hours and the module below it that
+        // switches compact/roomy/tall, rather than having to open Page
+        // Settings to change a thing whose whole effect is a height.
+        const rowHeightOptions = isOffMode
+          ? null
+          : ROW_HEIGHT_OPTIONS_PT.map((rowHeightPt) => {
+              const rowSpan = Math.max(
+                MIN_ROW_SPAN,
+                pixelHeightToRowSpan(
+                  page.pageGrid,
+                  getHourlyGridCoreContentHeightPx({
+                    startTime: pageSettings.startTime,
+                    endTime: pageSettings.endTime,
+                    intervalMinutes: pageSettings.intervalMinutes,
+                    compactHourRows: pageSettings.compactHourRows,
+                    rowHeightPt,
+                  })
+                )
+              );
+              return { rowHeightPt, rowSpan, deltaRows: rowSpan - placement.rowSpan };
+            })
+              .filter((option) => placement.rowStart + option.rowSpan <= maxBottomBound);
+
+        // One landing point is not a control. If only the current height
+        // fits, there is nothing to drag to and the handle would just be a
+        // cursor change over a dead strip.
+        if (rowHeightOptions && rowHeightOptions.length < 2) continue;
+
         entries.push({
           key: `hourly-stack:${id}`,
           pageId: page.pageId,
           bottomId: id,
           columnStart: placement.columnStart,
           columnSpan: placement.columnSpan,
-          members: [{ id, rowSpan: placement.rowSpan, minRowSpan }],
+          members: [
+            {
+              id,
+              rowSpan: placement.rowSpan,
+              minRowSpan: rowHeightOptions
+                ? Math.min(...rowHeightOptions.map((option) => option.rowSpan))
+                : offModeMinRowSpan,
+            },
+          ],
           stackTopRowStart: placement.rowStart,
           stackBottomRowEnd,
           maxBottomBound,
           followerIds: followers,
+          rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt }) => ({ rowSpan, rowHeightPt })),
         });
       }
       byPage[page.pageId] = entries;
     }
     return byPage;
-  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId]);
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, pageSettings]);
 
   // A genuinely empty zone (zero unlocked modules in it yet) has no
   // entry in stackBottomsByPageId at all — that map only ever groups
@@ -7409,7 +7510,7 @@ export function NativePlannerEditor({
   // different operation from handleResizeAdjacent above, not a variant
   // of it. Reuses resizeStackFromBottom unchanged for a normal stack;
   // branches to resizeHourlyGridCore instead for hourly-grid-core's own
-  // off-mode entry (see hourlyOffModeStackBottomsByPageId's own comment)
+  // entry (see hourlyStackBottomsByPageId's own comment)
   // — both return the same {id,rowStart,rowSpan,element}[] shape, so
   // everything below this branch applies either result identically.
   // Patches every member the server touched (which can be more than two
@@ -7501,12 +7602,38 @@ export function NativePlannerEditor({
         setStackResizeDrag(null);
         return;
       }
+      // With increments on this edge is not committing a span, it is
+      // committing a row height — the span it landed on is a consequence
+      // of that setting, and writing it directly would leave the two
+      // disagreeing the moment anything else recomputed the height. Same
+      // action and same reload the Page Settings dropdown uses, so the two
+      // routes to this setting cannot drift apart.
+      // The preview has already landed on the target span by the time the
+      // pointer comes up, so the option to commit is the one whose span
+      // matches what is on screen - no delta arithmetic to get wrong.
+      const landedSpan = stackBottom.members[0]?.rowSpan;
+      const snap = stackBottom.rowHeightSnaps?.find((option) => option.rowSpan === landedSpan);
+      if (snap) {
+        setStackResizeDrag(null);
+        updateHourlySettings({
+          startTime: pageSettings.startTime,
+          endTime: pageSettings.endTime,
+          intervalMinutes: pageSettings.intervalMinutes === 60 ? 60 : 30,
+          intervalMode: pageSettings.intervalMode,
+          compactHourRows: pageSettings.compactHourRows,
+          weekStartDay: pageSettings.weekStartDay,
+          rowHeightPt: snap.rowHeightPt,
+        })
+          .then(() => window.location.reload())
+          .catch((err) => setSaveError(err instanceof Error ? err.message : String(err)));
+        return;
+      }
       recordGeometry();
       // handleStackResizeAdjacent itself clears stackResizeDrag now — see
       // its own comment.
       handleStackResizeAdjacent(stackBottom.key, stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
-    [handleStackResizeAdjacent, recordGeometry]
+    [handleStackResizeAdjacent, recordGeometry, pageSettings, setSaveError]
   );
 
   // Hover-delete (NativeModule's own × button). Removes the module and
@@ -8124,7 +8251,7 @@ export function NativePlannerEditor({
                     justAddedIds={justAddedIds}
                     resizePairs={resizePairsByPageId[page.pageId] ?? EMPTY_RESIZE_PAIRS}
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
-                    hourlyResizeStackBottoms={hourlyOffModeStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
+                    hourlyResizeStackBottoms={hourlyStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     suppressAddZones={crossingInProgress}
                     resizingIds={effectiveResizingIds}
