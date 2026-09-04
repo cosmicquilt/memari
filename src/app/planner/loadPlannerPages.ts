@@ -25,6 +25,7 @@
 // caller must be a Server Component or another server action.
 
 import { getOrCreatePlanner } from "./actions";
+import { findSpine, findTitle } from "@/lib/moduleRegistry";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -86,8 +87,16 @@ export type LoadedPlanner = {
   pageSettings: PageSettings;
 };
 
-export async function loadPlannerPages(): Promise<LoadedPlanner> {
-  const planner = await getOrCreatePlanner();
+/**
+ * @param planner Which planner to load. Supplied by the caller rather than
+ * fetched here, so a route picks its own cadence - the week spread and the
+ * month spread are the same editor over different spine modules, not two
+ * editors. This used to call getOrCreatePlanner() itself, which is the
+ * WEEK one, and was the reason the month route could not use any of this.
+ */
+export async function loadPlannerPages(
+  planner: Awaited<ReturnType<typeof getOrCreatePlanner>>
+): Promise<LoadedPlanner> {
   const theme = planner.theme as PlannerTheme | null;
   const fontChoice: FontChoice = theme?.fontFamily === "sans" ? "sans" : "serif";
   const fontFamily = resolveFontFamily(fontChoice);
@@ -168,8 +177,12 @@ export async function loadPlannerPages(): Promise<LoadedPlanner> {
       return za - zb;
     });
 
-    const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-    const weekTitle = page.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
+    // The page's SPINE, whichever cadence this is - the hourly grid on a
+    // week, the calendar on a month. Searching for one slug by name is
+    // what left a month page with no zones at all, so no dropzones and no
+    // sidebar; see the registry's isSpine.
+    const hourlyGrid = findSpine(page.moduleInstances);
+    const weekTitle = findTitle(page.moduleInstances);
     const belowHourlyGrid =
       hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
         ? {

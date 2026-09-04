@@ -83,6 +83,24 @@ export type ModuleDefinition = {
   label?: string;
 
   /**
+   * The locked block a page is built around, which is what defines its
+   * zones: the sidebar is everything left of the spine, the bottom zone
+   * is the spine's own columns below it.
+   *
+   * A week page's spine is its hourly grid, a month page's is its
+   * calendar. That was written as `slug === "hourly-grid-core"` in the
+   * zone logic, so a month page had no zones at all - the month route's
+   * own comment records this, noting the "+" dropzone buttons simply do
+   * not appear there. Each cadence has one, which is what makes the
+   * cadences share an editor rather than each needing their own.
+   */
+  isSpine?: boolean;
+
+  /** The page's heading block, in the corner beside the spine - "WEEK
+   *  1/52" on a week, the month name on a month. Same reasoning. */
+  isTitle?: boolean;
+
+  /**
    * Whether the width can be stepped in the properties panel.
    *
    * Off by default. A to-do or habit tracker's column span is tied to the
@@ -152,6 +170,7 @@ const NEVER = () => false;
 
 export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   "hourly-grid-core": {
+    isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderHourlyGridCore(
         geometry,
@@ -185,6 +204,7 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "week-title": {
+    isTitle: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily),
     contentIsLive: NEVER,
@@ -235,12 +255,14 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "month-grid-core": {
+    isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily),
     contentIsLive: NEVER,
   },
 
   "month-title": {
+    isTitle: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderMonthTitle(geometry, propValues as MonthTitleConfig, idPrefix, fontFamily),
     contentIsLive: NEVER,
@@ -276,6 +298,21 @@ export function withDerivedProps(
   if (!derive) return propValues;
   const base = (propValues ?? {}) as Record<string, unknown>;
   return { ...base, ...derive(pageGrid, placement, base) };
+}
+
+/** The page's spine and title, whichever cadence it is. Callers used to
+ *  search for a slug by name, which meant a page of any other cadence had
+ *  neither. */
+export function findSpine<T extends { moduleType: { slug: string } }>(
+  instances: T[]
+): T | undefined {
+  return instances.find((mi) => MODULE_REGISTRY[mi.moduleType.slug]?.isSpine);
+}
+
+export function findTitle<T extends { moduleType: { slug: string } }>(
+  instances: T[]
+): T | undefined {
+  return instances.find((mi) => MODULE_REGISTRY[mi.moduleType.slug]?.isTitle);
 }
 
 /** propValues as they should be SAVED: every `lines` field trimmed and

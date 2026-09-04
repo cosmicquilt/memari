@@ -10,6 +10,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { loadPlannerPages } from "../loadPlannerPages";
+import { getOrCreatePlanner } from "../actions";
 import { NativePlannerEditor } from "../NativePlannerEditor";
 
 export default async function NativePlannerPage() {
@@ -18,7 +19,7 @@ export default async function NativePlannerPage() {
     return redirectToSignIn();
   }
 
-  const { pages, weekSettings, pageSettings } = await loadPlannerPages();
+  const { pages, weekSettings, pageSettings } = await loadPlannerPages(await getOrCreatePlanner());
 
   return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} />;
 }
