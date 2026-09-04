@@ -303,6 +303,14 @@ export function renderHabitTracker(
     // slightly deep last row rather than to a thin abandoned strip.
     const rowBottom =
       i === rowCount - 1 ? contentY + contentHeight : rowY + rowHeight;
+    // The bottom border already draws this line, and draws it better: it
+    // is 0.5pt with its outer edge flush to the box, where a row
+    // separator is a 0.35pt fill centred on its own position. Drawing
+    // both put a lighter, thinner, half-overhanging line across part of
+    // the border — reported as the bottom edge appearing to alternate
+    // thick and thin along its length, because the separator only spans
+    // each column and the gutters between them showed the border alone.
+    if (Math.abs(rowBottom - (contentY + contentHeight)) < 0.5) continue;
     elements.push({
       id: id(`row${i}`),
       type: "figure",

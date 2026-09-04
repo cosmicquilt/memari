@@ -2844,7 +2844,27 @@ function PaletteCard({
   // for the rects and rules, and the reason the label sits outside the
   // preview rather than relying on the module's own type being
   // readable at this size.
-  const scale = PALETTE_PREVIEW_WIDTH_PX / preview.rect.width;
+  //
+  // MEASURED, not assumed. PALETTE_PREVIEW_WIDTH_PX is the panel's width
+  // less its paddings, which is right until the panel grows a scrollbar -
+  // opening both Page Settings and Modules at once does exactly that. The
+  // card itself flexes and narrows; the preview kept rendering at the full
+  // 186 and had its right edge clipped off. The constant is still the
+  // starting value, so the common case is correct on the first paint and
+  // the observer only ever corrects it.
+  const previewBoxRef = useRef<HTMLDivElement | null>(null);
+  const [previewWidthPx, setPreviewWidthPx] = useState(PALETTE_PREVIEW_WIDTH_PX);
+  useEffect(() => {
+    const node = previewBoxRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width ?? 0;
+      if (measured > 0) setPreviewWidthPx(measured);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const scale = previewWidthPx / preview.rect.width;
 
   return (
     <div
@@ -2901,9 +2921,12 @@ function PaletteCard({
           it was hiding. overflow:hidden stays, for the half-pixel the
           scale transform can round outward. */}
       <div
+        ref={previewBoxRef}
         style={{
           position: "relative",
-          width: PALETTE_PREVIEW_WIDTH_PX,
+          // The card is a flex column, so this fills whatever width the
+          // card actually has rather than asserting one.
+          width: "100%",
           height: preview.rect.height * scale,
           overflow: "hidden",
           background: PANEL_BG,
