@@ -634,7 +634,7 @@ type StackBottom = {
   // Only options that actually FIT are listed, which is what keeps this
   // from needing the settings panel's HOURS_DO_NOT_FIT recovery: a height
   // there is no room for is never offered, so the drag cannot ask for one.
-  rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt: number }>;
+  rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt: number; gapRows: number }>;
   // Where to put the grab strip, in page pixels, when the block's own
   // bottom edge is the wrong place for it.
   //
@@ -3973,7 +3973,16 @@ export function NativePlannerEditor({
       memberIds: string[];
       memberMinSpans: number[];
       followerIds: string[];
+      rowHeightSnaps?: StackBottom["rowHeightSnaps"];
     }>;
+    // Present on a row-height drag. What is below the hours is then not
+    // shifted by the delta but PLACED, because the gap it should sit at is
+    // a function of the height being chosen rather than of the gap it
+    // happens to have now. Shifting preserved a stale gap through the
+    // whole preview and let the commit correct it on release - reported as
+    // the bottom section sitting a cell low during the drag and jumping to
+    // the right place afterwards.
+    rowHeightSnaps?: StackBottom["rowHeightSnaps"];
   } | null>(null);
 
   // What to actually render placements as — the live resize preview(s)
@@ -4007,6 +4016,7 @@ export function NativePlannerEditor({
           memberIds: stackResizeDrag.memberIds,
           memberMinSpans: stackResizeDrag.memberMinSpans,
           followerIds: stackResizeDrag.followerIds,
+          rowHeightSnaps: stackResizeDrag.rowHeightSnaps,
         },
         ...stackResizeDrag.mirrors,
       ];
@@ -4052,6 +4062,21 @@ export function NativePlannerEditor({
           const tailRowEnd = Math.max(
             ...followers.map((f) => f.placement.rowStart + f.placement.rowSpan)
           );
+          // Where the followers start. Normally the delta is applied to
+          // wherever they already are, which preserves the gap they have.
+          // A row-height drag is different: the gap belongs to the HEIGHT
+          // being chosen, not to what happened to be there, so the top is
+          // computed the way the commit computes it. Preserving the old
+          // gap left the section a cell low for the whole drag and let the
+          // release correct it.
+          const member = group.memberIds[0] ? next[group.memberIds[0]] : undefined;
+          const snap = group.rowHeightSnaps?.find(
+            (option) => option.rowSpan === member?.rowSpan
+          );
+          const firstRowStart =
+            snap && member
+              ? member.rowStart + member.rowSpan + snap.gapRows
+              : followers[0].placement.rowStart + stackResizeDrag.deltaRows;
           const rows = followerRowsAfterGrowth(
             followers.map((f) => {
               const info = moduleLookup.get(f.id);
@@ -4064,7 +4089,9 @@ export function NativePlannerEditor({
             }),
             stackResizeDrag.deltaRows,
             Math.max(0, followerPageGrid.gridRows - tailRowEnd),
-            followers[0].placement.rowStart
+            // followerRowsAfterGrowth adds the delta to what it is given,
+            // so hand it a top that already accounts for it.
+            firstRowStart - stackResizeDrag.deltaRows
           );
           followers.forEach((follower, i) => {
             patched[follower.id] = { ...follower.placement, ...rows[i] };
@@ -4411,7 +4438,18 @@ export function NativePlannerEditor({
                   })
                 )
               );
-              return { rowHeightPt, rowSpan, deltaRows: rowSpan - placement.rowSpan };
+              return {
+                rowHeightPt,
+                rowSpan,
+                deltaRows: rowSpan - placement.rowSpan,
+                // The gap this height implies, so the live preview can
+                // place what is below where the commit will put it.
+                gapRows: hourlyGapRows(
+                  cellHeightPx(page.pageGrid),
+                  { ...config, rowHeightPt },
+                  rowSpan
+                ),
+              };
             })
               // Which heights fit is a question about the COMMITTED page,
               // but maxBottomBound is computed from displayPlacements -
@@ -4490,7 +4528,11 @@ export function NativePlannerEditor({
           stackBottomRowEnd,
           maxBottomBound,
           followerIds: followers,
-          rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt }) => ({ rowSpan, rowHeightPt })),
+          rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt, gapRows }) => ({
+            rowSpan,
+            rowHeightPt,
+            gapRows,
+          })),
           handleBandPx,
         });
       }
@@ -7760,6 +7802,7 @@ export function NativePlannerEditor({
         memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         deltaRows: 0,
         followerIds: stackBottom.followerIds,
+        rowHeightSnaps: stackBottom.rowHeightSnaps,
         // Only the row-height drag mirrors: it commits a SETTING, and
         // updateHourlySettings applies that to every page's hourly grid.
         // An ordinary stack resize is one page's business and mirrors
@@ -7773,6 +7816,7 @@ export function NativePlannerEditor({
                   memberIds: entry.members.map((m) => m.id),
                   memberMinSpans: entry.members.map((m) => m.minRowSpan),
                   followerIds: entry.followerIds,
+                  rowHeightSnaps: entry.rowHeightSnaps,
                 }))
               )
           : [],
