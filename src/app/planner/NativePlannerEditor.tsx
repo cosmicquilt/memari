@@ -5948,6 +5948,29 @@ export function NativePlannerEditor({
       const hoveredLocalX =
         sourcePageIndex === -1 ? pointerPagePx.x : pointerPagePx.x - (hoveredPageIndex - sourcePageIndex) * spreadUnit;
       const nearestCellRaw = pixelsToGridCell(hoveredPageGrid, { x: hoveredLocalX, y: pointerPagePx.y });
+      // The row the dragged box's own TOP EDGE is over, as against the row
+      // the pointer is over. They differ by however far into the box you
+      // grabbed, and for a tall module that is most of it.
+      //
+      // The reorder rule below compares the dragged item's leading edge to
+      // a sibling's centre, which is a statement about the BOX. Feeding it
+      // the pointer's row instead puts the box it judges lower than the box
+      // on screen, by the grab offset, so the swap fires that much early -
+      // reported dragging a habit tracker back into the sidebar, where it
+      // went under its neighbour once the dragged module's own midpoint
+      // reached that neighbour's top edge. Grabbing halfway down a 13-row
+      // module misplaces the judgement by six and a half rows.
+      //
+      // The pointer stays right for everything ABOUT the pointer - which
+      // page, which zone, which column. That distinction is why the
+      // grab-anchored correction was dropped as redundant once
+      // pointerPagePx arrived: it was redundant for the column, where a
+      // wide module's edge used to enter the sidebar before the user had
+      // pointed anywhere near it, and it was never redundant for the row.
+      const draggedTopRow = pixelsToGridCell(hoveredPageGrid, {
+        x: hoveredLocalX,
+        y: draggedPixel.y,
+      }).rowStart;
       // Which cell the pointer is INSIDE, vs nearestCellRaw's "closest
       // gridline" — see pixelsToContainingCell (grid.ts). Zone/hit
       // testing wants containment so a one-column-wide sidebar is
@@ -6139,7 +6162,17 @@ export function NativePlannerEditor({
       // this and is now redundant.
       const nearestCell = clampGridPlacement(targetPageGrid, {
         columnStart: crossingZones ? targetZone!.columnStart : current.columnStart,
-        rowStart: overOwnColumn ? nearestCellRaw.rowStart : pinnedRowStart,
+        // Crossing keeps the pointer's row on purpose: the box is being
+        // resized to the target zone's shape as it goes, so its own top
+        // edge is mid-compensation (see computeDraggedSizeCompensationPagePx)
+        // and the pointer is the only stable thing to resolve against. A
+        // same-zone reorder has no such change, and there the box is what
+        // the rule is about.
+        rowStart: overOwnColumn
+          ? crossingZones
+            ? nearestCellRaw.rowStart
+            : draggedTopRow
+          : pinnedRowStart,
         columnSpan: effectiveColumnSpan,
         rowSpan: effectiveRowSpan,
       });
