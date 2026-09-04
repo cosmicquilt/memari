@@ -951,8 +951,17 @@ export async function getOrCreateMonthPlanner() {
     page: (typeof pages)[number],
     placement: { columnStart: number; columnSpan: number }
   ) => {
+    // By heading, not by row. This checked rowStart === 18 while the
+    // create below uses 23, so on any planner seeded after that row
+    // changed the check never matched and a second Notes box was added
+    // every time this ran. A guard keyed on the geometry it is guarding
+    // goes stale the moment that geometry moves; the heading is what
+    // actually identifies the box.
     const hasNotes = page.moduleInstances.some(
-      (mi) => mi.moduleType.slug === "labeled-box" && mi.rowStart === 18 && mi.columnStart === placement.columnStart
+      (mi) =>
+        mi.moduleType.slug === "labeled-box" &&
+        mi.columnStart === placement.columnStart &&
+        (mi.propValues as { heading?: string } | null)?.heading === "Notes"
     );
     if (hasNotes) return;
     const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
