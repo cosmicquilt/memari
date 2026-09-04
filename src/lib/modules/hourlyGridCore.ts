@@ -169,6 +169,58 @@ export const ROW_HEIGHT_OPTIONS_PT = [9, 12, 18] as const;
 // than writing 9 again: resetPlannerToTemplate sizes the block at 20 dots,
 // which is only correct for this height.
 export const DEFAULT_ROW_HEIGHT_PT = ROW_HEIGHT_PT;
+
+/** The hours a fresh planner starts with, and the state a reset restores. */
+export const DEFAULT_HOURLY_SETTINGS: HourlySettings = {
+  startTime: "05:30",
+  endTime: "23:30",
+  intervalMinutes: 30,
+  intervalMode: "on",
+  compactHourRows: false,
+  rowHeightPt: DEFAULT_ROW_HEIGHT_PT,
+};
+
+/** Everything about an hourly grid that is a user choice rather than a
+ *  consequence of its box. */
+export type HourlySettings = {
+  startTime: string;
+  endTime: string;
+  intervalMinutes: number;
+  intervalMode: "on" | "off";
+  compactHourRows: boolean;
+  rowHeightPt: number;
+};
+
+/**
+ * An hourly grid's stored props, rebuilt from the settings.
+ *
+ * Every site that changes these used to spell the whole set out, and the
+ * failure was always the same: one of them left a field out. rowHeightPt
+ * went missing three separate times - the settings commit, the drag
+ * commit, and the template reset - and each time something else had
+ * already been sized FROM it, so the block took a height its own contents
+ * then disagreed with. A reset restored a 20-row box built for 9pt rows
+ * and left 18pt rows inside it.
+ *
+ * Spelling the set out once means a new setting is added in one place and
+ * cannot be half-applied. Existing props are preserved for everything this
+ * does not name - dayLabels, events, hourLineStyle, dayBorder - which is
+ * why this merges rather than replaces.
+ */
+export function hourlyPropsFromSettings(
+  existing: unknown,
+  settings: HourlySettings
+): Record<string, unknown> {
+  return {
+    ...((existing ?? {}) as Record<string, unknown>),
+    startTime: settings.startTime,
+    endTime: settings.endTime,
+    intervalMinutes: settings.intervalMinutes,
+    intervalMode: settings.intervalMode,
+    compactHourRows: settings.compactHourRows,
+    rowHeightPt: settings.rowHeightPt,
+  };
+}
 export type RowHeightPt = (typeof ROW_HEIGHT_OPTIONS_PT)[number];
 
 export function isRowHeightPt(value: unknown): value is RowHeightPt {

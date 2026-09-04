@@ -25,7 +25,8 @@ import { computeMonthCalendar } from "@/lib/monthCalendar";
 import {
   getHourlyGridCoreContentHeightPx,
   getHourlyGridCoreOffModeMinHeightPx,
-  DEFAULT_ROW_HEIGHT_PT,
+  hourlyPropsFromSettings,
+  DEFAULT_HOURLY_SETTINGS,
 } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
@@ -738,21 +739,14 @@ export async function resetPlannerToTemplate() {
           // 20 dots: 2 of header (13.7pt tab + 22.3pt gap = 36.0pt) plus
           // 36 half-hour slots at 9pt = 324pt = 18 dots. Lands exactly.
           rowSpan: 20,
-          propValues: {
-            ...(hourly.propValues as object),
-            startTime: "05:30",
-            endTime: "23:30",
-            intervalMinutes: 30,
-            intervalMode: "on",
-            compactHourRows: false,
-            // The row height is what makes rowSpan 20 the right answer —
-            // see the comment on it above, which counts 36 slots at 9pt.
-            // Leaving it out reset the block's geometry to the compact
-            // shape while the setting that produces that shape kept
-            // whatever it had, so a planner reset from Tall came back
-            // drawing 18pt rows inside a box built for 9pt ones.
-            rowHeightPt: DEFAULT_ROW_HEIGHT_PT,
-          } as Prisma.InputJsonValue,
+          // rowSpan 20 above is only the right answer for these settings -
+          // it counts 36 half-hour slots at 9pt. Restoring the geometry
+          // without them is what left a planner reset from Tall drawing
+          // 18pt rows in a box built for 9pt ones.
+          propValues: hourlyPropsFromSettings(
+            hourly.propValues,
+            DEFAULT_HOURLY_SETTINGS
+          ) as Prisma.InputJsonValue,
         },
       }),
     ];
@@ -2537,18 +2531,16 @@ export async function updateHourlySettings(settings: {
         prisma.moduleInstance.update({
           where: { id: hourly.id },
           data: {
-            propValues: {
-              ...(hourly.propValues as object),
-              startTime: settings.startTime,
-              endTime: settings.endTime,
-              intervalMinutes: settings.intervalMinutes,
+            // Row height is carried through even though "off" draws no
+            // ruled rows, so the choice survives a round trip through
+            // blank mode rather than silently reverting - one of several
+            // fields it would be easy to leave out here, which is why the
+            // set is written once in hourlyPropsFromSettings.
+            propValues: hourlyPropsFromSettings(hourly.propValues, {
+              ...settings,
               intervalMode: "off",
-              compactHourRows: settings.compactHourRows,
-              // Carried through even though "off" draws no ruled rows, so
-              // the choice survives a round trip through blank mode and
-              // back rather than silently reverting to the default.
-              rowHeightPt: settings.rowHeightPt,
-            } as Prisma.InputJsonValue,
+              rowHeightPt: settings.rowHeightPt ?? DEFAULT_HOURLY_SETTINGS.rowHeightPt,
+            }) as Prisma.InputJsonValue,
           },
         })
       );
@@ -2670,22 +2662,16 @@ export async function updateHourlySettings(settings: {
           where: { id: p.hourlyId },
           data: {
             rowSpan: p.newRowSpan,
-            propValues: {
-              ...(p.hourlyPropValues as object),
-              startTime: settings.startTime,
-              endTime: settings.endTime,
-              intervalMinutes: settings.intervalMinutes,
+            // getHourlyGridCoreContentHeightPx above SIZES the block from
+            // these same settings, so anything left out here produces a box
+            // built for one thing holding another. That is exactly what
+            // happened when rowHeightPt was missing: the block grew to fit
+            // 18pt rows and drew 9pt ones.
+            propValues: hourlyPropsFromSettings(p.hourlyPropValues, {
+              ...settings,
               intervalMode: "on",
-              compactHourRows: settings.compactHourRows,
-              // The row height was being used to SIZE the block —
-              // getHourlyGridCoreContentHeightPx above takes it — and then
-              // left out of the props the renderer draws from, so it fell
-              // back to the 9pt default. The block grew to fit 12 or 18pt
-              // rows and then drew 9pt ones, which is why changing this
-              // setting pushed the modules below it down and left a band
-              // of blank space instead of changing the hours at all.
-              rowHeightPt: settings.rowHeightPt,
-            } as Prisma.InputJsonValue,
+              rowHeightPt: settings.rowHeightPt ?? DEFAULT_HOURLY_SETTINGS.rowHeightPt,
+            }) as Prisma.InputJsonValue,
           },
         })
       );
