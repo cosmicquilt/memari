@@ -18,7 +18,7 @@
 // to that container's own top-left corner, the same relationship
 // Polotno's group/children model already has.
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
@@ -112,9 +112,43 @@ function textPositionTransition(easeMs: number): string | undefined {
 //
 // Only ever applied when the two renders describe the same set of
 // elements - see animateRects.
-function rectGeometryTransition(easeMs: number): string | undefined {
-  if (easeMs <= 0) return undefined;
-  return ["x", "y", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ");
+// FLIP needs to read layout and set the compensating transform in the same
+// frame the new geometry lands, or the mark paints once at its destination
+// first. useEffect is too late for that; useLayoutEffect is not, but warns
+// if this ever renders on the server.
+const useBeforePaint = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+export type MarkGeometry = { x: number; y: number; width: number; height: number };
+
+// Maps a mark's NEW geometry back onto its OLD one, so the animation can
+// start where the mark was and end where it belongs.
+//
+// Only the transform moves. Geometry is set to its final value
+// immediately, which is the whole point: a mark's x/y/width/height used to
+// be transitioned directly, and the legibility floor below is recomputed
+// from those values on every render, so the browser walked a hairline's
+// thickness through a range of values the floor never intended it to take.
+// Rules visibly thickened and thinned mid-flight, and that artefact is
+// what sank the previous attempt at animating these.
+//
+// A hairline is scaled along its LONG axis only. Its thin dimension is not
+// geometry at all — it is the line's weight — so scaling it is exactly the
+// thing to avoid. Anything genuinely two-dimensional (a date box, a dot)
+// has two real dimensions and is scaled on both.
+export function flipTransform(from: MarkGeometry, to: MarkGeometry): string | null {
+  const dx = from.x - to.x;
+  const dy = from.y - to.y;
+  const horizontalHairline = to.height > 0 && to.height < to.width * HAIRLINE_ASPECT_RATIO;
+  const verticalHairline = to.width > 0 && to.width < to.height * HAIRLINE_ASPECT_RATIO;
+  const scaleX = verticalHairline || to.width < 0.01 ? 1 : from.width / to.width;
+  const scaleY = horizontalHairline || to.height < 0.01 ? 1 : from.height / to.height;
+  const unmoved =
+    Math.abs(dx) < 0.05 &&
+    Math.abs(dy) < 0.05 &&
+    Math.abs(scaleX - 1) < 0.0005 &&
+    Math.abs(scaleY - 1) < 0.0005;
+  if (unmoved) return null;
+  return `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
 }
 
 
@@ -234,6 +268,75 @@ function ElementNode({
 // x/y/width/height is already expressed in. overflow:visible so an outer
 // border rect sitting flush against the module bounds cannot clip its
 // own stroke.
+// Where a mark actually lands on screen: its own geometry, the stroke
+// inset, and the legibility floor. Returns null for a mark that is not
+// drawn at all.
+//
+// Lifted out of RectLayer's render pass so that every mark's geometry is
+// known BEFORE the FLIP effect runs, rather than being accumulated while
+// the tree is built. The effect needs the complete map, and accumulating
+// it during render would also describe the same geometry twice — once for
+// the animation and once for the attributes.
+function markGeometry(
+  element: RenderedPolotnoElement,
+  originX: number,
+  originY: number,
+  scale: number,
+  suppressOuterBorderSize: { width: number; height: number } | null
+): MarkGeometry | null {
+  const left = (element.x ?? 0) - originX;
+  const top = (element.y ?? 0) - originY;
+  const width = element.width ?? 0;
+  const height = element.height ?? 0;
+  const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
+  const hasFill = !!element.fill && element.fill !== "transparent";
+
+  // See suppressOuterBorderSize's own comment above.
+  if (
+    suppressOuterBorderSize &&
+    hasStroke &&
+    Math.abs(left) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs(top) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs(width - suppressOuterBorderSize.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs(height - suppressOuterBorderSize.height) < OUTER_BORDER_MATCH_EPSILON_PX
+  ) {
+    return null;
+  }
+
+  // SVG centres a stroke on the path, so the rect is inset by half the
+  // stroke width to put the stroke's OUTER edge flush with the element's
+  // own bounds — matching where the previous inset box-shadow (and the
+  // outline before it) drew its ring, so no module's geometry shifts as a
+  // result of this change.
+  const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
+  const inset = strokeWidth / 2;
+
+  // Legibility floor for fill-only rules — see MIN_ONSCREEN_RECT_PX. Grown
+  // outward from the rule's own centre so its position doesn't shift, and
+  // only ever applied to the thin axis of something already shaped like a
+  // rule.
+  let rx = left;
+  let ry = top;
+  let rw = width;
+  let rh = height;
+  if (hasFill && !hasStroke) {
+    const needed = MIN_ONSCREEN_RECT_PX / Math.max(scale, MIN_RECT_FLOOR_SCALE);
+    if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
+      ry = top - (needed - height) / 2;
+      rh = needed;
+    } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
+      rx = left - (needed - width) / 2;
+      rw = needed;
+    }
+  }
+  return {
+    x: rx + inset,
+    y: ry + inset,
+    width: Math.max(0, rw - strokeWidth),
+    height: Math.max(0, rh - strokeWidth),
+  };
+}
+
 function RectLayer({
   rects,
   originX,
@@ -253,6 +356,54 @@ function RectLayer({
   // geometry rather than clipped at their largest - see animateRects.
   easeMs: number;
 }) {
+  const nodes = useRef(new Map<string, SVGRectElement>());
+  const previous = useRef(new Map<string, MarkGeometry>());
+  const running = useRef(new Map<string, Animation>());
+  // Complete before the effect below reads it, and a fresh map each
+  // render, so the effect always sees exactly what this render drew rather
+  // than whatever a later one has since overwritten.
+  const drawn = new Map<string, MarkGeometry>();
+  for (const element of rects) {
+    const geometry = markGeometry(element, originX, originY, scale, suppressOuterBorderSize);
+    if (geometry) drawn.set(element.id, geometry);
+  }
+
+  useBeforePaint(() => {
+    if (easeMs > 0) {
+      for (const [id, to] of drawn) {
+        const node = nodes.current.get(id);
+        const from = previous.current.get(id);
+        if (!node || !from) continue;
+        const transform = flipTransform(from, to);
+        if (!transform) continue;
+        // A mark still travelling from a previous step is not restarted
+        // from where it began; cancelling first lets the new animation
+        // pick up from the geometry now in force.
+        running.current.get(id)?.cancel();
+        const animation = node.animate(
+          [{ transform }, { transform: "none" }],
+          { duration: easeMs, easing: RESIZE_EASE_CURVE }
+        );
+        running.current.set(id, animation);
+        // Rejects when cancelled, which is routine here, not an error.
+        animation.finished
+          .then(() => {
+            if (running.current.get(id) === animation) running.current.delete(id);
+          })
+          .catch(() => {});
+      }
+    }
+    previous.current = drawn;
+  });
+
+  useEffect(() => {
+    const inFlight = running.current;
+    return () => {
+      for (const animation of inFlight.values()) animation.cancel();
+      inFlight.clear();
+    };
+  }, []);
+
   return (
     <svg
       style={{
@@ -266,65 +417,34 @@ function RectLayer({
       }}
     >
       {rects.map((element) => {
-        const left = (element.x ?? 0) - originX;
-        const top = (element.y ?? 0) - originY;
-        const width = element.width ?? 0;
-        const height = element.height ?? 0;
+        const geometry = drawn.get(element.id);
+        if (!geometry) return null;
         const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
         const hasFill = !!element.fill && element.fill !== "transparent";
-
-        // See suppressOuterBorderSize's own comment above.
-        if (
-          suppressOuterBorderSize &&
-          hasStroke &&
-          Math.abs(left) < OUTER_BORDER_MATCH_EPSILON_PX &&
-          Math.abs(top) < OUTER_BORDER_MATCH_EPSILON_PX &&
-          Math.abs(width - suppressOuterBorderSize.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
-          Math.abs(height - suppressOuterBorderSize.height) < OUTER_BORDER_MATCH_EPSILON_PX
-        ) {
-          return null;
-        }
-
-        // SVG centres a stroke on the path, so the rect is inset by half
-        // the stroke width to put the stroke's OUTER edge flush with the
-        // element's own bounds — matching where the previous inset
-        // box-shadow (and the outline before it) drew its ring, so no
-        // module's geometry shifts as a result of this change.
         const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
-        const inset = strokeWidth / 2;
 
-        // Legibility floor for fill-only rules — see
-        // MIN_ONSCREEN_RECT_PX. Grown outward from the rule's own centre
-        // so its position doesn't shift, and only ever applied to the
-        // thin axis of something already shaped like a rule.
-        let rx = left;
-        let ry = top;
-        let rw = width;
-        let rh = height;
-        if (hasFill && !hasStroke) {
-          const needed = MIN_ONSCREEN_RECT_PX / Math.max(scale, MIN_RECT_FLOOR_SCALE);
-          if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
-            ry = top - (needed - height) / 2;
-            rh = needed;
-          } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
-            rx = left - (needed - width) / 2;
-            rw = needed;
-          }
-        }
         return (
           <rect
             key={element.id}
-            x={rx + inset}
-            y={ry + inset}
-            width={Math.max(0, rw - strokeWidth)}
-            height={Math.max(0, rh - strokeWidth)}
+            ref={(node) => {
+              if (node) nodes.current.set(element.id, node);
+              else nodes.current.delete(element.id);
+            }}
+            x={geometry.x}
+            y={geometry.y}
+            width={geometry.width}
+            height={geometry.height}
             rx={typeof element.cornerRadius === "number" ? element.cornerRadius : undefined}
             fill={hasFill ? element.fill : "none"}
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
             opacity={element.opacity ?? 1}
             style={{
-              transition: rectGeometryTransition(easeMs),
+              // Transforms are relative to the mark's own box, so a scale
+              // grows it from its own top-left corner rather than from the
+              // SVG origin somewhere off to the left.
+              transformBox: "fill-box",
+              transformOrigin: "0 0",
               // See memari-mark-in in globals.css. Runs on mount, which is
               // when a mark appears - a structural change remounts every
               // rect in the layer, and so does the handover from the eased
