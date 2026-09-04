@@ -316,7 +316,7 @@ function RectLayer({
               // when a mark appears - a structural change remounts every
               // rect in the layer, and so does the handover from the eased
               // render to the final one.
-              animation: "memari-mark-in 160ms ease-out",
+              animation: "memari-mark-in 320ms ease-out",
             }}
           />
         );
