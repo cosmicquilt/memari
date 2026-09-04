@@ -3922,6 +3922,24 @@ export function NativePlannerEditor({
     // of changing their own span — see StackBottom's own followerIds
     // comment. Empty for every ordinary stack resize.
     followerIds: string[];
+    // The SAME operation happening on the other pages of the spread, each
+    // with its own members and followers. Only the row-height handle fills
+    // this in, because only that drag changes a setting rather than one
+    // module: updateHourlySettings writes every page's hourly grid, so
+    // previewing just the one being dragged showed half the change and
+    // then the other half appeared on release.
+    //
+    // Carries the same deltaRows rather than its own. Every page's hourly
+    // block is sized from the same settings by the same function, so they
+    // hold the same span and move by the same amount; a page whose block
+    // had somehow diverged would be dragged to the wrong height, which is
+    // why nothing but the row-height handle uses this.
+    mirrors: Array<{
+      pageId: string;
+      memberIds: string[];
+      memberMinSpans: number[];
+      followerIds: string[];
+    }>;
   } | null>(null);
 
   // What to actually render placements as — the live resize preview(s)
@@ -3946,16 +3964,29 @@ export function NativePlannerEditor({
       }
     }
     if (stackResizeDrag && stackResizeDrag.deltaRows !== 0) {
-      const members = stackResizeDrag.memberIds.map((id) => next[id]);
+      // The dragged page first, then any page mirroring it. One body for
+      // both: a mirror is the same operation on another page's copy of the
+      // same stack, not a different kind of thing.
+      const groups = [
+        {
+          pageId: stackResizeDrag.pageId,
+          memberIds: stackResizeDrag.memberIds,
+          memberMinSpans: stackResizeDrag.memberMinSpans,
+          followerIds: stackResizeDrag.followerIds,
+        },
+        ...stackResizeDrag.mirrors,
+      ];
+      for (const group of groups) {
+      const members = group.memberIds.map((id) => next[id]);
       if (members.every((m): m is Placement => !!m)) {
         const newSpans = cascadeStackSpans(
           members.map((m) => m.rowSpan),
-          stackResizeDrag.memberMinSpans,
+          group.memberMinSpans,
           stackResizeDrag.deltaRows
         );
         const patched = { ...next };
         let cursor = members[0].rowStart;
-        stackResizeDrag.memberIds.forEach((id, i) => {
+        group.memberIds.forEach((id, i) => {
           patched[id] = { ...members[i], rowStart: cursor, rowSpan: newSpans[i] };
           cursor += newSpans[i];
         });
@@ -3970,10 +4001,10 @@ export function NativePlannerEditor({
       // operation, not the usual "stack grows into free space" one,
       // requested directly after the first version shipped without this:
       // "not moving the bottom modules."
-      if (stackResizeDrag.followerIds.length > 0) {
+      if (group.followerIds.length > 0) {
         const patched = { ...next };
-        const followerPageGrid = pageGridByPageId[stackResizeDrag.pageId];
-        const followers = stackResizeDrag.followerIds
+        const followerPageGrid = pageGridByPageId[group.pageId];
+        const followers = group.followerIds
           .map((id) => ({ id, placement: patched[id] }))
           .filter((entry) => !!entry.placement)
           .sort((a, b) => a.placement.rowStart - b.placement.rowStart);
@@ -4007,6 +4038,7 @@ export function NativePlannerEditor({
         }
         next = patched;
       }
+      }
     }
     return next;
   }, [placements, resizeDrag, stackResizeDrag, pageGridByPageId, moduleLookup]);
@@ -4021,6 +4053,10 @@ export function NativePlannerEditor({
       // its content keeps drawing at the last-committed size inside a box
       // that is already smaller - the double box this set exists to avoid.
       ...(stackResizeDrag ? stackResizeDrag.followerIds : []),
+      // The mirrored pages' blocks are changing span too, so they need the
+      // same live re-render - without this the other half of the spread
+      // moved but kept drawing its old hours inside the new box.
+      ...(stackResizeDrag ? stackResizeDrag.mirrors.flatMap((m) => [...m.memberIds, ...m.followerIds]) : []),
     ]);
   }, [resizeDrag, stackResizeDrag]);
 
@@ -7647,9 +7683,25 @@ export function NativePlannerEditor({
         memberMinSpans: stackBottom.members.map((m) => m.minRowSpan),
         deltaRows: 0,
         followerIds: stackBottom.followerIds,
+        // Only the row-height drag mirrors: it commits a SETTING, and
+        // updateHourlySettings applies that to every page's hourly grid.
+        // An ordinary stack resize is one page's business and mirrors
+        // nothing.
+        mirrors: stackBottom.rowHeightSnaps
+          ? Object.entries(hourlyStackBottomsByPageId)
+              .filter(([pageId]) => pageId !== stackBottom.pageId)
+              .flatMap(([pageId, entries]) =>
+                entries.map((entry) => ({
+                  pageId,
+                  memberIds: entry.members.map((m) => m.id),
+                  memberMinSpans: entry.members.map((m) => m.minRowSpan),
+                  followerIds: entry.followerIds,
+                }))
+              )
+          : [],
       });
     },
-    [gestureBlockedByPendingCommit]
+    [gestureBlockedByPendingCommit, hourlyStackBottomsByPageId]
   );
 
   const handleStackResizeMove = useCallback((stackBottom: StackBottom, deltaRows: number) => {
