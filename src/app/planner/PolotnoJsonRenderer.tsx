@@ -18,6 +18,7 @@
 // to that container's own top-left corner, the same relationship
 // Polotno's group/children model already has.
 
+import { useEffect, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
@@ -123,11 +124,15 @@ function rectGeometryTransition(easeMs: number): string | undefined {
 // or `isFirefox`: both existed solely to size the Firefox hairline
 // floors, which the SVG layer made unnecessary.
 function ElementNode({
+  leaving,
   element,
   originX,
   originY,
   textEaseMs,
 }: {
+  /** Rendered only so it can fade out; it is already gone from the
+   *  render this layer was handed. */
+  leaving?: boolean;
   element: RenderedPolotnoElement;
   originX: number;
   originY: number;
@@ -182,7 +187,9 @@ function ElementNode({
           // nodes are keyed by their own content, so a label that changes
           // - a time, a day name, a heading at a new size - remounts and
           // fades in rather than swapping in place.
-          animation: `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
+          animation: leaving
+            ? `memari-mark-out ${MARK_FADE_IN_MS}ms ease-out forwards`
+            : `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
         }}
       >
         {element.text}
@@ -561,6 +568,29 @@ export function PolotnoJsonRenderer({
   const rest = (textElements ? flattenElements(textElements) : flat).filter(
     (element) => !isRect(element)
   );
+  // Text that was in the previous render and is not in this one, kept for
+  // one fade. Snapshotted during render and compared against the previous
+  // snapshot - the same "adjust state during rendering" pattern
+  // NativePlannerEditor uses - rather than a useEffect, which this
+  // project's lint rules discourage for derived state.
+  const textKeysNow = rest.map((element) => textKey(element)).join("|");
+  const [prevText, setPrevText] = useState<{ keys: string; elements: RenderedPolotnoElement[] }>({
+    keys: textKeysNow,
+    elements: rest,
+  });
+  const [leavingText, setLeavingText] = useState<RenderedPolotnoElement[]>([]);
+  if (prevText.keys !== textKeysNow) {
+    const present = new Set(rest.map((element) => textKey(element)));
+    const gone = prevText.elements.filter((element) => !present.has(textKey(element)));
+    setPrevText({ keys: textKeysNow, elements: rest });
+    setLeavingText(gone);
+  }
+  useEffect(() => {
+    if (leavingText.length === 0) return;
+    const timer = setTimeout(() => setLeavingText([]), MARK_FADE_IN_MS);
+    return () => clearTimeout(timer);
+  }, [leavingText]);
+
   return (
     <>
       <RectLayer
@@ -579,6 +609,21 @@ export function PolotnoJsonRenderer({
           originX={originX}
           originY={originY}
           textEaseMs={textEaseMs}
+        />
+      ))}
+      {/* Text that has just gone, kept mounted for exactly one fade so it
+          can leave rather than vanish. React unmounts a node the instant it
+          leaves the list, so an exit animation needs the node to outlive
+          its own removal - there is no CSS-only way to animate something
+          that is no longer in the tree. */}
+      {leavingText.map((element) => (
+        <ElementNode
+          key={`leaving:${textKey(element)}`}
+          element={element}
+          originX={originX}
+          originY={originY}
+          textEaseMs={0}
+          leaving
         />
       ))}
     </>
