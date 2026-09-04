@@ -258,7 +258,9 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily),
-    contentIsLive: NEVER,
+    // Every week row shares out whatever height the block has, so all of
+    // them move when it resizes and the drawing has to follow.
+    contentIsLive: ALWAYS,
   },
 
   "month-title": {
@@ -307,6 +309,12 @@ export function findSpine<T extends { moduleType: { slug: string } }>(
   instances: T[]
 ): T | undefined {
   return instances.find((mi) => MODULE_REGISTRY[mi.moduleType.slug]?.isSpine);
+}
+
+/** Is this slug a page's spine? The by-id form, for callers holding a
+ *  slug rather than an instance. */
+export function isSpineSlug(slug: string): boolean {
+  return MODULE_REGISTRY[slug]?.isSpine ?? false;
 }
 
 export function findTitle<T extends { moduleType: { slug: string } }>(

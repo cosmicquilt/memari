@@ -126,7 +126,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
-import { moduleContentIsLive, cleanPropsForSave } from "@/lib/moduleRegistry";
+import { moduleContentIsLive, cleanPropsForSave, isSpineSlug } from "@/lib/moduleRegistry";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -634,7 +634,13 @@ type StackBottom = {
   // Only options that actually FIT are listed, which is what keeps this
   // from needing the settings panel's HOURS_DO_NOT_FIT recovery: a height
   // there is no room for is never offered, so the drag cannot ask for one.
-  rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt: number; gapRows: number }>;
+  //
+  // rowHeightPt is present only where the span is a CONSEQUENCE of a
+  // setting, as the hours' is - releasing there commits the setting and
+  // the span follows. A month grid's span is just a span: its weeks share
+  // out whatever height it has, so the snap carries no setting and the
+  // release commits the span itself.
+  rowHeightSnaps?: Array<{ rowSpan: number; rowHeightPt?: number; gapRows: number }>;
   // Where to put the grab strip, in page pixels, when the block's own
   // bottom edge is the wrong place for it.
   //
@@ -4326,13 +4332,18 @@ export function NativePlannerEditor({
       for (const id of pageIds) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
-        if (!info || info.slug !== "hourly-grid-core" || !placement) continue;
+        // Any SPINE, not the hourly grid by name: a month page is built
+        // around its calendar and its bottom edge means the same thing
+        // there - the boundary between the block a page is organised
+        // around and whatever sits under it.
+        if (!info || !isSpineSlug(info.slug) || !placement) continue;
         const config = info.propValues as unknown as HourlyGridCoreConfig;
         // Both modes get a handle on this edge, but they mean different
         // things by it. Off-mode has no rows to speak of, so the edge is a
         // free height. On-mode's height is rowCount times the row height,
         // so the edge picks a row height instead — see rowHeightSnaps.
-        const isOffMode = config.intervalMode === "off";
+        const isMonthGrid = info.slug === "month-grid-core";
+        const isOffMode = !isMonthGrid && config.intervalMode === "off";
         const isDragging = stackResizeDrag?.stackKey === `hourly-stack:${id}`;
 
         const offModeMinRowSpan = Math.max(
@@ -4422,9 +4433,36 @@ export function NativePlannerEditor({
         // the buffer zone between the hours and the module below it that
         // switches compact/roomy/tall, rather than having to open Page
         // Settings to change a thing whose whole effect is a height.
+        // A month grid's weeks divide whatever is under its header, so the
+        // spans that come out whole are 1 + weekCount * n - one cell of
+        // header, then n cells per week of which half is the date strip.
+        // Dragging it therefore steps a whole cell into every week at
+        // once, which is what "distribute it among the day rows" means
+        // when the row count is fixed by the calendar.
+        const monthOptions = isMonthGrid
+          ? (() => {
+              const weeks = Math.max(
+                1,
+                ((info.propValues as { weekCount?: number }).weekCount ?? 5) as number
+              );
+              const cell = cellHeightPx(page.pageGrid);
+              return [1, 2, 3, 4, 5].map((cellsPerWeek) => ({
+                rowHeightPt: undefined,
+                rowSpan: 1 + weeks * cellsPerWeek,
+                deltaRows: 1 + weeks * cellsPerWeek - placement.rowSpan,
+                // A whole cell clear below, the same as the template
+                // leaves. Not hourlyGapRows: that reads an hourly config,
+                // and a calendar fills its box rather than ending short of
+                // it, so there is no content height to measure from.
+                gapRows: Math.max(1, Math.round(cell / cell)),
+              }));
+            })()
+          : null;
+
         const rowHeightOptions = isOffMode
           ? null
-          : ROW_HEIGHT_OPTIONS_PT.map((rowHeightPt) => {
+          : monthOptions ??
+            ROW_HEIGHT_OPTIONS_PT.map((rowHeightPt) => {
               const rowSpan = Math.max(
                 MIN_ROW_SPAN,
                 pixelHeightToRowSpan(
@@ -4483,12 +4521,14 @@ export function NativePlannerEditor({
         let handleBandPx: { top: number; height: number } | undefined;
         {
           const box = gridCellToPixels(page.pageGrid, placement);
-          // Where the hours visibly stop. With increments on that is the
-          // computed content height, which the box is merely rounded up
-          // from. With them off the block genuinely IS its content, so it
-          // is the box's own inked bottom - but the gap below is still a
-          // gap, and the strip belongs in it either way.
-          const contentBottom = isOffMode
+          // Where the spine's content visibly stops. The hours with
+          // increments ON stop short of their box, which is rounded up from
+          // a computed content height - so that height is where they end.
+          // Everything else fills its box: the hours with increments off,
+          // and a calendar, whose weeks divide whatever height they are
+          // given rather than needing a particular one.
+          const fillsItsBox = isOffMode || isMonthGrid;
+          const contentBottom = fillsItsBox
             ? box.y + box.height
             : box.y +
               getHourlyGridCoreContentHeightPx(
@@ -4499,7 +4539,12 @@ export function NativePlannerEditor({
             rowStart:
               placement.rowStart +
               placement.rowSpan +
-              hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan),
+              // A calendar keeps a whole cell clear, the same as the
+              // template leaves. hourlyGapRows would read an hourly config
+              // it does not have.
+              (isMonthGrid
+                ? 1
+                : hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan)),
             columnSpan: placement.columnSpan,
             rowSpan: 1,
           }).y;
@@ -6115,12 +6160,15 @@ export function NativePlannerEditor({
         if (!otherInfo) continue;
         if (otherInfo.pageId === info.pageId) {
           sourceOthers.push({ ...placement, id, locked: otherInfo.locked });
-          if (otherInfo.slug === "hourly-grid-core")
+          // The page's SPINE, not the hourly grid by name - a month page
+            // is built around its calendar and has zones for the same
+            // reason a week page does.
+          if (isSpineSlug(otherInfo.slug))
             sourceHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
         }
         if (otherInfo.pageId === hoveredPageId) {
           hoveredOthers.push({ ...placement, id, locked: otherInfo.locked });
-          if (otherInfo.slug === "hourly-grid-core")
+          if (isSpineSlug(otherInfo.slug))
             hoveredHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
         }
       }
@@ -7741,7 +7789,10 @@ export function NativePlannerEditor({
       const pageGrid = pageGridByPageId[pageId];
       const bottomPlacement = placements[bottomInstanceId];
       if (!pageGrid || !bottomPlacement) return;
-      const isHourlyGridCore = moduleLookup.get(bottomInstanceId)?.slug === "hourly-grid-core";
+      // Any spine goes to the dedicated action; only an ordinary stack
+      // uses resizeStackFromBottom, which refuses locked blocks - and a
+      // spine is always locked.
+      const isHourlyGridCore = isSpineSlug(moduleLookup.get(bottomInstanceId)?.slug ?? "");
       try {
         // See serializeCommit's own comment.
         const results = await serializeCommit(() =>
@@ -7849,7 +7900,11 @@ export function NativePlannerEditor({
       // matches what is on screen - no delta arithmetic to get wrong.
       const landedSpan = stackBottom.members[0]?.rowSpan;
       const snap = stackBottom.rowHeightSnaps?.find((option) => option.rowSpan === landedSpan);
-      if (snap) {
+      // Only where the span is a consequence of a SETTING. A month grid's
+      // snap carries none, so it falls through to the ordinary span
+      // commit below - which is what a calendar resize actually is.
+      const rowHeightPt = snap?.rowHeightPt;
+      if (snap && rowHeightPt !== undefined) {
         recordGeometry();
         const nextSettings = {
           startTime: pageSettings.startTime,
@@ -7858,7 +7913,7 @@ export function NativePlannerEditor({
           intervalMode: pageSettings.intervalMode,
           compactHourRows: pageSettings.compactHourRows,
           weekStartDay: pageSettings.weekStartDay,
-          rowHeightPt: snap.rowHeightPt,
+          rowHeightPt,
         };
         // Applied in place rather than by reloading. A reload at the end of
         // a drag tears down the preview, flashes the old committed value
@@ -7868,7 +7923,7 @@ export function NativePlannerEditor({
         // replace what the preview was standing in for.
         serializeCommit(() => updateHourlySettings(nextSettings))
           .then((results) => {
-            setPageSettings((prev) => ({ ...prev, rowHeightPt: snap.rowHeightPt }));
+            setPageSettings((prev) => ({ ...prev, rowHeightPt }));
             setPlacements((prev) => {
               const next = { ...prev };
               for (const r of results) {

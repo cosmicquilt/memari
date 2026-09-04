@@ -20,6 +20,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
+import { isSpineSlug } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
@@ -2877,14 +2878,21 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
   if (!instance) {
     throw new Error("Module instance not found or not owned by this user");
   }
-  if (instance.moduleType.slug !== "hourly-grid-core") {
-    throw new Error("Not an hourly grid instance");
+  // Any SPINE. The operation is about a locked block a page is built
+  // around and the stack that follows it, which is as true of a month
+  // calendar as of an hourly grid; only the guard below is hours-specific.
+  if (!isSpineSlug(instance.moduleType.slug)) {
+    throw new Error("Not a page spine module");
   }
   if (instance.columnStart === null || instance.rowStart === null) {
     throw new Error("Module isn't grid-placed");
   }
+  // The hours are only freely resizable with increments off; with them on
+  // the height is the row count times the row height, and the handle there
+  // commits a row height instead. A calendar has no such setting - its
+  // weeks divide whatever height it is given - so it is always resizable.
   const props = instance.propValues as { intervalMode?: "on" | "off" };
-  if (props.intervalMode !== "off") {
+  if (instance.moduleType.slug === "hourly-grid-core" && props.intervalMode !== "off") {
     throw new Error("Can only drag-resize the hourly grid while increments are off");
   }
 
@@ -2895,7 +2903,10 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
   // MIN_ROW_SPAN on this app's real page geometry; still clamped
   // through the same Math.max as every other slug's own floor, in case
   // that geometry ever changes.
-  const minRowSpan = Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()));
+  const minRowSpan =
+    instance.moduleType.slug === "hourly-grid-core"
+      ? Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()))
+      : MIN_ROW_SPAN;
 
   const stackBottomRowEnd = instance.rowStart + instance.rowSpan;
   // The below-zone "followers" — every unlocked instance sharing
@@ -2987,12 +2998,25 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     ),
   ]);
 
-  const followerSlugById = new Map(followers.map((mi) => [mi.id, mi.moduleType.slug]));
+  // The spine's own slug included, not just its followers'. The fallback
+  // below used to be the literal "hourly-grid-core", which was true while
+  // this action only ever resized one - it now resizes any spine, and a
+  // calendar rendered as an hourly grid asks a month config for a start
+  // time it does not have.
+  const followerSlugById = new Map([
+    ...followers.map((mi) => [mi.id, mi.moduleType.slug] as const),
+    [instance.id, instance.moduleType.slug] as const,
+  ]);
   return [updatedInstance, ...updatedFollowers].map((row) => ({
     id: row.id,
     rowStart: row.rowStart as number,
     rowSpan: row.rowSpan,
-    elements: renderInstanceElements(row, followerSlugById.get(row.id) ?? "hourly-grid-core", pageGrid, fontFamily),
+    elements: renderInstanceElements(
+      row,
+      followerSlugById.get(row.id) ?? instance.moduleType.slug,
+      pageGrid,
+      fontFamily
+    ),
   }));
 }
 
