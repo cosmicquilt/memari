@@ -4438,11 +4438,19 @@ export function NativePlannerEditor({
         // shorter than the content it holds, so anchoring to it put the
         // strip above the hours' last row rather than under it.
         let handleBandPx: { top: number; height: number } | undefined;
-        if (rowHeightOptions) {
+        {
           const box = gridCellToPixels(page.pageGrid, placement);
-          const contentBottom =
-            box.y +
-            getHourlyGridCoreContentHeightPx(config as Parameters<typeof getHourlyGridCoreContentHeightPx>[0]);
+          // Where the hours visibly stop. With increments on that is the
+          // computed content height, which the box is merely rounded up
+          // from. With them off the block genuinely IS its content, so it
+          // is the box's own inked bottom - but the gap below is still a
+          // gap, and the strip belongs in it either way.
+          const contentBottom = isOffMode
+            ? box.y + box.height
+            : box.y +
+              getHourlyGridCoreContentHeightPx(
+                config as Parameters<typeof getHourlyGridCoreContentHeightPx>[0]
+              );
           const belowTop = gridCellToPixels(page.pageGrid, {
             columnStart: placement.columnStart,
             rowStart:
