@@ -344,6 +344,7 @@ function RectLayer({
   scale,
   suppressOuterBorderSize,
   easeMs,
+  leaving = false,
 }: {
   rects: RenderedPolotnoElement[];
   originX: number;
@@ -355,6 +356,10 @@ function RectLayer({
   // Non-zero only when these rects are being animated to their final
   // geometry rather than clipped at their largest - see animateRects.
   easeMs: number;
+  // A layer of marks that have already gone, held for one fade so they can
+  // leave rather than blink out. They animate out, not in, and they never
+  // FLIP: there is nothing for them to travel to.
+  leaving?: boolean;
 }) {
   const nodes = useRef(new Map<string, SVGRectElement>());
   const previous = useRef(new Map<string, MarkGeometry>());
@@ -369,7 +374,7 @@ function RectLayer({
   }
 
   useBeforePaint(() => {
-    if (easeMs > 0) {
+    if (easeMs > 0 && !leaving) {
       for (const [id, to] of drawn) {
         const node = nodes.current.get(id);
         const from = previous.current.get(id);
@@ -448,8 +453,12 @@ function RectLayer({
               // See memari-mark-in in globals.css. Runs on mount, which is
               // when a mark appears - a structural change remounts every
               // rect in the layer, and so does the handover from the eased
-              // render to the final one.
-              animation: `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
+              // render to the final one. A leaving layer runs the same
+              // fade backwards, and holds at zero so it cannot flash back
+              // on the frame before it unmounts.
+              animation: leaving
+                ? `memari-mark-out ${MARK_FADE_IN_MS}ms ease-out forwards`
+                : `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
             }}
           />
         );
@@ -676,6 +685,60 @@ export function PolotnoJsonRenderer({
   const rest = (textElements ? flattenElements(textElements) : flat).filter(
     (element) => !isRect(element)
   );
+  // Marks that were in the previous render and are not in this one, kept
+  // for one fade so they can leave rather than blink out. This is the
+  // habit tracker's mode switch: its wide layout and its compact one are
+  // structurally different drawings, 20 rects against 57, sharing 2 marks
+  // out of 58. Neither mechanism the renderer already had can serve that
+  // - the clip window needs a larger version of the same drawing to cut
+  // down, and a morph needs counterparts to travel to. So the outgoing
+  // marks simply stopped existing, measured as 56 of them wrong on the
+  // first frame of a sidebar-to-bottom crossing.
+  //
+  // EVERY departing mark, and the clip window still decides what is
+  // actually seen. The first version of this held only the marks that end
+  // up inside the final box, on the theory that the clip sweeps the rest -
+  // but that is only true while the drawn render is the union of the two,
+  // which is exactly what a mode switch is not. Its incoming drawing does
+  // not contain the outgoing marks either, so a mark filtered out here was
+  // drawn by nothing at all and vanished rather than being swept.
+  //
+  // This layer sits inside the same clipping box as every other, so
+  // holding everything costs nothing: marks beyond the edge are hidden by
+  // the box exactly as before, and the sweep survives. Only the ones that
+  // would otherwise be stranded in plain view spend the fade.
+  //
+  // Held at the origin they were DRAWN at, not the current one: during a
+  // zone crossing the module's origin moves, and re-anchoring the
+  // outgoing drawing to the incoming origin would slide it sideways as it
+  // faded.
+  const rectIdsNow = rects.map((element) => element.id).join("|");
+  const [prevRects, setPrevRects] = useState<{
+    ids: string;
+    elements: RenderedPolotnoElement[];
+    originX: number;
+    originY: number;
+  }>({ ids: rectIdsNow, elements: rects, originX, originY });
+  const [leavingRects, setLeavingRects] = useState<{
+    elements: RenderedPolotnoElement[];
+    originX: number;
+    originY: number;
+  }>({ elements: [], originX, originY });
+  if (prevRects.ids !== rectIdsNow) {
+    const present = new Set(rects.map((element) => element.id));
+    const gone = prevRects.elements.filter((element) => !present.has(element.id));
+    setPrevRects({ ids: rectIdsNow, elements: rects, originX, originY });
+    setLeavingRects({ elements: gone, originX: prevRects.originX, originY: prevRects.originY });
+  }
+  useEffect(() => {
+    if (leavingRects.elements.length === 0) return;
+    const timer = setTimeout(
+      () => setLeavingRects((prev) => ({ ...prev, elements: [] })),
+      MARK_FADE_IN_MS
+    );
+    return () => clearTimeout(timer);
+  }, [leavingRects]);
+
   // Text that was in the previous render and is not in this one, kept for
   // one fade. Snapshotted during render and compared against the previous
   // snapshot - the same "adjust state during rendering" pattern
@@ -709,6 +772,20 @@ export function PolotnoJsonRenderer({
         suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
         easeMs={animateRects ? textEaseMs : 0}
       />
+      {/* The outgoing drawing, for exactly one fade. Underneath the
+          incoming one in paint order so the new marks read as arriving
+          over the old rather than behind them. */}
+      {leavingRects.elements.length > 0 && (
+        <RectLayer
+          rects={leavingRects.elements}
+          originX={leavingRects.originX}
+          originY={leavingRects.originY}
+          scale={scale}
+          suppressOuterBorderSize={null}
+          easeMs={0}
+          leaving
+        />
+      )}
       {rest.map((element) => (
         <ElementNode
           key={textKey(element)}

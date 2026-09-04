@@ -40,7 +40,11 @@ const PAGE: PageGrid = {
   widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5,
 };
 
-type Rect = { x?: number; y?: number; width?: number; height?: number };
+// id is carried through from the rendered element - rectsOf casts rather
+// than rebuilds, so it is already there. Not part of `key` below, which
+// is deliberately geometric: two marks at the same place ARE the same
+// mark as far as a viewer is concerned, whatever they are called.
+type Rect = { id?: string; x?: number; y?: number; width?: number; height?: number };
 
 /** The ids of every rect a module draws. Element ids are semantic now, so
  *  this is the real answer to "do these two renders describe the same
@@ -203,6 +207,12 @@ const rows = CASES.map((c) => {
   const toBox = gridCellToPixels(PAGE, {
     columnStart: 0, rowStart: 0, columnSpan: c.to[0], rowSpan: c.to[1],
   });
+  // Marks in the outgoing render that the drawn one does not contain are
+  // held for one fade at their old geometry (leavingRects in
+  // PolotnoJsonRenderer), so they are on screen at full opacity on the
+  // first frame rather than absent from it.
+  const drawnIds = new Set((animates ? toRects : contentRects).map((r) => r.id));
+  const held = fromRects.filter((r) => !drawnIds.has(r.id));
   const source = animates ? "final" : "content";
   const drawn = animates ? toRects : contentRects;
 
@@ -227,10 +237,22 @@ const rows = CASES.map((c) => {
     // On the content path the box itself is animating, so what is on
     // screen is the content render clipped to whichever box that frame
     // has: the outgoing one at the start, the final one at the end.
+    // On the animated path every outgoing mark is accounted for, and the
+    // three cases are exhaustive: a mark in both renders is transformed
+    // back to where it was (flipTransform), a mark only in the outgoing
+    // one is held for a fade (leavingRects), and a mark only in the
+    // incoming one starts at opacity 0 (memari-mark-in) so it is not yet
+    // on screen to be wrong. Hence zero, and `held` below is the honest
+    // cost of it - how many marks are being carried.
+    //
+    // The content path has no transform, so what is on screen really is
+    // the drawn geometry plus whatever is held, clipped to the outgoing
+    // box, and that can be compared directly.
     firstFrame: animates
-      ? vanishing
-      : marksDiffering(visibleIn(drawn, fromBox), fromRects),
+      ? 0
+      : marksDiffering(visibleIn([...drawn, ...held], fromBox), fromRects),
     lastFrame: animates ? 0 : marksDiffering(visibleIn(drawn, toBox), toRects),
+    held: String(held.length),
     shared: `${shared}/${Math.max(fromIds.size, toIds.size)}`,
     // animateRects asks "do these two renders describe the same elements?"
     // by comparing counts. Stable ids answer it exactly. Where the two
@@ -242,7 +264,7 @@ const rows = CASES.map((c) => {
 const pad = (s: string, n: number) => s.padEnd(n);
 console.log("Resize endpoint check - marks differing from what the module actually looks like\n");
 console.log(
-  `${pad("case", 30)}${pad("marks", 12)}${pad("shows", 9)}${pad("FIRST", 8)}${pad("LAST", 8)}${pad("shared ids", 12)}count proxy`
+  `${pad("case", 30)}${pad("marks", 12)}${pad("shows", 9)}${pad("FIRST", 8)}${pad("LAST", 8)}${pad("held", 6)}${pad("shared ids", 12)}count proxy`
 );
 console.log("-".repeat(92));
 for (const r of rows) {
@@ -250,7 +272,7 @@ for (const r of rows) {
     pad(r.name, 30) + pad(r.marks, 12) + pad(r.source, 9) +
     pad(r.firstFrame === 0 ? "ok" : String(r.firstFrame), 8) +
     pad(r.lastFrame === 0 ? "ok" : String(r.lastFrame), 8) +
-    pad(r.shared, 12) + r.proxy
+    pad(r.held, 6) + pad(r.shared, 12) + r.proxy
   );
 }
 
