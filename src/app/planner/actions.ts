@@ -263,7 +263,14 @@ export async function getOrCreatePlanner() {
   }
 
   let planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
+    // baseType matters as soon as a user has more than one planner, and
+    // visiting the month route creates a second. Without it findFirst
+    // returns whichever the database hands back first, so a WEEK operation
+    // could read - or seed week content onto - the MONTH planner's pages.
+    // Reported as a month layout overlaying the week spread. The month
+    // seeding already filtered, and its own comment warned about exactly
+    // this; these four were the ones that had not been given the same care.
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -2379,7 +2386,14 @@ export async function updateWeekSettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
+    // baseType matters as soon as a user has more than one planner, and
+    // visiting the month route creates a second. Without it findFirst
+    // returns whichever the database hands back first, so a WEEK operation
+    // could read - or seed week content onto - the MONTH planner's pages.
+    // Reported as a month layout overlaying the week spread. The month
+    // seeding already filtered, and its own comment warned about exactly
+    // this; these four were the ones that had not been given the same care.
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -2449,7 +2463,14 @@ export async function updatePlannerFont(fontFamily: FontChoice) {
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
+    // baseType matters as soon as a user has more than one planner, and
+    // visiting the month route creates a second. Without it findFirst
+    // returns whichever the database hands back first, so a WEEK operation
+    // could read - or seed week content onto - the MONTH planner's pages.
+    // Reported as a month layout overlaying the week spread. The month
+    // seeding already filtered, and its own comment warned about exactly
+    // this; these four were the ones that had not been given the same care.
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2535,7 +2556,14 @@ export async function updateHourlySettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
+    // baseType matters as soon as a user has more than one planner, and
+    // visiting the month route creates a second. Without it findFirst
+    // returns whichever the database hands back first, so a WEEK operation
+    // could read - or seed week content onto - the MONTH planner's pages.
+    // Reported as a month layout overlaying the week spread. The month
+    // seeding already filtered, and its own comment warned about exactly
+    // this; these four were the ones that had not been given the same care.
+    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
     include: {
       pages: {
         orderBy: { position: "asc" },
