@@ -35,8 +35,10 @@ export function renderMonthTitle(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts. An id names one mark
+  // for the life of the module, so a change in element count does not
+  // renumber every mark after it.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   // Measured from the reference: 19pt, letter-spaced ("J A N U A R Y"
@@ -64,7 +66,7 @@ export function renderMonthTitle(
   const textHeight = fontSize * 1.2;
 
   elements.push({
-    id: nextId(),
+    id: id("title"),
     type: "text",
     x: geometry.x,
     y: geometry.y,

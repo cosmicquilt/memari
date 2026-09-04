@@ -118,8 +118,10 @@ export function renderLabeledBox(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts. An id names one mark
+  // for the life of the module, so a change in element count does not
+  // renumber every mark after it.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
@@ -132,7 +134,7 @@ export function renderLabeledBox(
   // Outer border — pure black, distinct from the near-black used for
   // finer lines elsewhere.
   elements.push({
-    id: nextId(),
+    id: id("border"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -149,7 +151,7 @@ export function renderLabeledBox(
   // (zero-height) shapes at the exact requested color.
   const dividerWidth = ptToPx(DIVIDER_WIDTH_PT);
   elements.push({
-    id: nextId(),
+    id: id("header-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -169,7 +171,7 @@ export function renderLabeledBox(
   const headingFontSize = ptToPx(headingFontPt);
   if (wraps) {
     elements.push({
-      id: nextId(),
+      id: id("heading"),
       type: "text",
       x: geometry.x + headingPadding,
       y: geometry.y,
@@ -184,7 +186,7 @@ export function renderLabeledBox(
   } else {
     const headingTextHeight = headingFontSize * 1.2;
     elements.push({
-      id: nextId(),
+      id: id("heading"),
       type: "text",
       x: geometry.x + headingPadding,
       y: geometry.y + (headerHeight - headingTextHeight) / 2,
@@ -207,7 +209,7 @@ export function renderLabeledBox(
     const ruledLineWidth = ptToPx(0.5);
     for (let i = 1; i <= lineCount; i++) {
       elements.push({
-        id: nextId(),
+        id: id(`rule${i}`),
         type: "figure",
         subType: "rect",
         x: geometry.x + 8,

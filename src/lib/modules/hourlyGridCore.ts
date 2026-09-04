@@ -228,8 +228,10 @@ export function renderHourlyGridCore(
   lattice?: { pitchPx: number; originX: number; originY: number; insetPx: number }
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts. Ids here name a day
+  // column, a row within it, or a lattice position, so changing the hour
+  // range or turning the dot field on does not renumber everything else.
+  const id = (name: string) => `${idPrefix}-${name}`;
   // Page Settings' font switch (Planner.theme) — aliased to the name
   // already used everywhere below rather than touching every reference.
   const FONT_FAMILY = fontFamily;
@@ -278,7 +280,7 @@ export function renderHourlyGridCore(
     // Header tab: bordered box, day name at the left edge, date at the
     // right edge — measured directly from the reference, not centered.
     elements.push({
-      id: nextId(),
+      id: id(`d${d}-header-box`),
       type: "figure",
       subType: "rect",
       x: dayX,
@@ -299,7 +301,7 @@ export function renderHourlyGridCore(
       const nameFontSize = ptToPx(8);
       const nameTextHeight = nameFontSize * 1.2;
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-name`),
         type: "text",
         x: dayX + nameLeftInset,
         y: geometry.y + (headerHeight - nameTextHeight) / 2,
@@ -318,7 +320,7 @@ export function renderHourlyGridCore(
       const dateFontSize = ptToPx(5.5);
       const dateTextHeight = dateFontSize * 1.2;
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-date`),
         type: "text",
         x: dayX + dayColumnWidth - dateWidth - dateRightInset,
         y: geometry.y + (headerHeight - dateTextHeight) / 2,
@@ -360,7 +362,12 @@ export function renderHourlyGridCore(
         for (let cx = lattice.originX + firstCol * lattice.pitchPx; cx <= geometry.x + geometry.width; cx += lattice.pitchPx) {
           for (let cy = lattice.originY + firstRow * lattice.pitchPx; cy <= bottom; cy += lattice.pitchPx) {
             elements.push({
-              id: nextId(),
+              // Named by lattice position, so the field keeps its identity
+              // when the block is resized and the loop bounds shift.
+              id: id(
+                `dot-${Math.round((cx - lattice.originX) / lattice.pitchPx)}` +
+                  `-${Math.round((cy - lattice.originY) / lattice.pitchPx)}`
+              ),
               type: "figure",
               subType: "rect",
               x: cx - DOT_RADIUS_PX,
@@ -381,7 +388,7 @@ export function renderHourlyGridCore(
         const dividerY = gridTop + (blankHeight - dividerHeight) / 2;
         const dividerWidth = ptToPx(ROW_LINE_WIDTH_PT);
         elements.push({
-          id: nextId(),
+          id: id(`d${d}-divider`),
           type: "figure",
           subType: "rect",
           x: dayX - columnGutter / 2 - dividerWidth / 2,
@@ -408,7 +415,7 @@ export function renderHourlyGridCore(
 
         if (lineOpacity > 0) {
           elements.push({
-            id: nextId(),
+            id: id(`d${d}-r${i}-label-box`),
             type: "figure",
             subType: "rect",
             x: dayX,
@@ -443,7 +450,7 @@ export function renderHourlyGridCore(
         const timeLabelTextHeight = timeLabelFontSize * 1.2;
         const timeLabelBottomGap = ptToPx(1);
         elements.push({
-          id: nextId(),
+          id: id(`d${d}-r${i}-time`),
           type: "text",
           x: dayX + 2,
           y: labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap,
@@ -463,7 +470,7 @@ export function renderHourlyGridCore(
           // the specified near-black).
           const lineWidth = ptToPx(ROW_LINE_WIDTH_PT);
           elements.push({
-            id: nextId(),
+            id: id(`d${d}-r${i}-rule`),
             type: "figure",
             subType: "rect",
             x: dayX,
@@ -487,7 +494,7 @@ export function renderHourlyGridCore(
       const bodyHeight =
         config.intervalMode === "off" ? geometry.height - headerHeight : headerToGridGap + rowCount * rowHeight;
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-border`),
         type: "figure",
         subType: "rect",
         x: dayX,
@@ -512,7 +519,7 @@ export function renderHourlyGridCore(
       const evHeight = ((evEnd - evStart) / config.intervalMinutes) * rowHeight;
 
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-ev${event.startTime}-box`),
         type: "figure",
         subType: "rect",
         x: dayX + 2,
@@ -524,7 +531,7 @@ export function renderHourlyGridCore(
         opacity: 0.8,
       });
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-ev${event.startTime}-label`),
         type: "text",
         x: dayX + 6,
         y: evY + 1,

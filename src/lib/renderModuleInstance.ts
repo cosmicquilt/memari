@@ -5,7 +5,7 @@
 // (planner/actions.ts) — both need the exact same logic, so it lives here
 // instead of being duplicated.
 
-import { gridCellToPixels, gridCellToAllocation, type PageGrid } from "@/lib/grid";
+import { gridCellToPixels, gridCellToAllocation, columnSpanToDayCount, type PageGrid } from "@/lib/grid";
 import {
   renderHourlyGridCore,
   type HourlyGridCoreConfig,
@@ -172,10 +172,30 @@ export function renderModuleInstance(
   const cell = gridCellToAllocation(pageGrid, {
     columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
   });
+
+  // A to-do's day-column count is not an independent setting: it IS its
+  // width, one column per day unit. Storing it in propValues made it a
+  // second description of the same geometry, and every caller that
+  // changed a span had to remember to change the prop to match. Several
+  // did — see NativePlannerEditor's dayCountOverride and actions.ts's
+  // configOverrides — but only along the paths someone had noticed. A
+  // resize did not, a reflowed neighbour did not, and neither did the
+  // window between releasing a drag and the server's render arriving, so
+  // a to-do dropped into the sidebar drew three squeezed day columns in a
+  // one-column box until the page came back.
+  //
+  // Deriving it here means the renderer cannot draw a column count that
+  // disagrees with the width it was handed, whoever calls it. The stored
+  // prop is left alone and simply stops being consulted.
+  const propValues =
+    instance.moduleType.slug === "todo-checklist"
+      ? { ...(instance.propValues as Record<string, unknown>), dayCount: columnSpanToDayCount(pageGrid, instance.columnSpan) }
+      : instance.propValues;
+
   const elements = renderBySlug(
     instance.moduleType.slug,
     geometry,
-    instance.propValues,
+    propValues,
     instance.id,
     fontFamily,
     { pitchPx: cell.width, originX: pageGrid.marginPx, originY: pageGrid.marginPx, insetPx: pageGrid.boxInsetPx }

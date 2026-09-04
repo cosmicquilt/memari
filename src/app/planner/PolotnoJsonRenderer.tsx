@@ -240,7 +240,6 @@ function RectLayer({
   originY,
   scale,
   suppressOuterBorderSize,
-  structureKey,
   easeMs,
 }: {
   rects: RenderedPolotnoElement[];
@@ -250,9 +249,6 @@ function RectLayer({
   // device pixels into this layer's own page-pixel coordinate space.
   scale: number;
   suppressOuterBorderSize: { width: number; height: number } | null;
-  // See PolotnoJsonRenderer's own comment: element ids are positional,
-  // so they only name the same thing within one element structure.
-  structureKey: number;
   // Non-zero only when these rects are being animated to their final
   // geometry rather than clipped at their largest - see animateRects.
   easeMs: number;
@@ -317,7 +313,7 @@ function RectLayer({
         }
         return (
           <rect
-            key={`${structureKey}:${element.id}`}
+            key={element.id}
             x={rx + inset}
             y={ry + inset}
             width={Math.max(0, rw - strokeWidth)}
@@ -428,54 +424,31 @@ export function PolotnoJsonRenderer({
   // deliberately over its own text.
   const flat = flattenElements(elements);
 
-  // Element ids are positional counters in the module renderers -
-  // `${idPrefix}-${idCounter++}` - so an id is stable across renders
-  // without naming a stable thing. Re-render a todo-checklist at a
-  // different dayCount and the counter hands the same id to a different
-  // logical element. React matches the key, reuses the DOM node, and a
-  // geometry transition then animates that node from whatever the OLD
-  // element occupied to wherever the NEW one sits. Reported as the todo
-  // animating to and from an intermediate point on the bottom right
-  // while being dragged from the side into the bottom section.
+  // Ids from the module renderers are semantic - `d2-row7`, `header-rule`,
+  // `dot-14-9` - so one id names one mark for the life of the module and
+  // is usable directly as a React key.
   //
-  // Folding the element COUNT into the key fixes that at the source
-  // rather than by suppressing the symptom: an id now only names the
-  // same thing within one structure, so a structural change produces
-  // fresh nodes, and a fresh node has no previous geometry to animate
-  // from - it simply appears, which is what it did before any of this.
-  // Modules whose element set does not depend on their size, like a
-  // labeled-box (heading, rule and border at every width), keep their
-  // keys and therefore keep the animation that was asked for.
+  // They used to be positional counters, `${idPrefix}-${idCounter++}`,
+  // which are stable across renders without naming a stable thing:
+  // re-render a todo-checklist at a different dayCount and the counter
+  // handed the same id to a different logical element, so React reused the
+  // node and animated it from what the OLD element occupied to where the
+  // NEW one sits. Reported as the todo animating to and from an
+  // intermediate point on the bottom right while being dragged.
   //
-  // The real fix is semantic ids in the module renderers, so a key
-  // names one thing for its whole life. That is a change across all of
-  // them plus the server render, and worth doing on its own.
-  const structureKey = flat.length;
-
-  // Text is keyed by what it SAYS, not by where it sits in the element
-  // list. Rects above are scoped to structureKey precisely because a
-  // positional id stops naming the same thing when the element count
-  // changes - but that scoping also remounts every node on such a
-  // change, and a remounted node has no previous position to animate
-  // from. So a todo-checklist's title jumped to its new position
-  // instead of sliding to it: its dayCount changed, so the count
-  // changed, so its key changed, so it was a new element. Reported
-  // exactly that way.
+  // That was patched here by folding the element COUNT into the key, which
+  // did stop the wrong animation but at the price of remounting every node
+  // in a module whenever its element count changed. A remounted node has
+  // no previous geometry and replays the arrival fade, so a resize
+  // flickered - everything vanishing and returning - at each snap step
+  // that added or removed a row. Reported exactly that way. Semantic ids
+  // remove the need for the scope, so the flicker goes with it.
   //
-  // Content is the stable identity text actually has. A heading is the
-  // same heading at every width, so it keeps its node and slides. A day
-  // header that exists at both sizes keeps its node too; one that only
-  // exists at the wider size is genuinely new and appears, which is
-  // correct. Duplicate strings are disambiguated by order of
-  // appearance, which is stable for anything that survives the change.
-  const textKeyCounts = new Map<string, number>();
-  const textKey = (element: RenderedPolotnoElement): string => {
-    if (element.type !== "text") return `${structureKey}:${element.id}`;
-    const base = `t:${element.text ?? ""}`;
-    const seen = textKeyCounts.get(base) ?? 0;
-    textKeyCounts.set(base, seen + 1);
-    return `${base}#${seen}`;
-  };
+  // moduleIds.test.mts checks that no module emits the same id twice, at
+  // every size any of them are drawn at: positional ids were unique for
+  // free, and semantic ones are only unique if each name carries the
+  // indices that distinguish it.
+  const textKey = (element: RenderedPolotnoElement): string => element.id;
 
   const isRect = (element: RenderedPolotnoElement) => element.type === "figure" && element.subType === "rect";
 
@@ -498,11 +471,12 @@ export function PolotnoJsonRenderer({
   // lines between the days disappearing during the resize, with a
   // request that they slide as a group instead.
   //
-  // Equal element counts is exactly the condition under which the rect
-  // keys (structureKey, below) survive the change - and a node has to
-  // survive to have a previous geometry to animate FROM. So the same
-  // test decides both, and the modules that genuinely cannot animate
-  // keep the window they need.
+  // Equal element counts is a proxy for "every mark has a counterpart",
+  // which is what a node needs in order to have a previous geometry to
+  // animate FROM. It is only a proxy - `npm run check:behaviour` measures
+  // the real thing per module and per axis - but it is the test in force
+  // today, and the modules that genuinely cannot animate keep the window
+  // they need.
   //
   // Content then tracks the box rather than being cut by it: both
   // interpolate the same easing over the same duration, and a rule at a
@@ -599,7 +573,6 @@ export function PolotnoJsonRenderer({
         originY={originY}
         scale={scale}
         suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
-        structureKey={structureKey}
         easeMs={animateRects ? textEaseMs : 0}
       />
       {rest.map((element) => (

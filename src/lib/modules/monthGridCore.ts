@@ -71,8 +71,10 @@ export function renderMonthGridCore(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts. Ids name a weekday
+  // column or a week/day cell, so a month with a different number of
+  // weeks does not renumber every mark in the grid.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
@@ -95,7 +97,7 @@ export function renderMonthGridCore(
 
   // Outer border around the whole block.
   elements.push({
-    id: nextId(),
+    id: id("border"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -117,7 +119,7 @@ export function renderMonthGridCore(
     const fontSize = ptToPx(8);
     const textHeight = fontSize * 1.2;
     elements.push({
-      id: nextId(),
+      id: id(`head-d${d}`),
       type: "text",
       x: dayX,
       y: geometry.y + (headerHeight - textHeight) / 2,
@@ -138,7 +140,7 @@ export function renderMonthGridCore(
   for (let d = 1; d < config.dayCount; d++) {
     const dividerX = geometry.x + d * dayColumnWidth;
     elements.push({
-      id: nextId(),
+      id: id(`head-d${d}-rule`),
       type: "figure",
       subType: "rect",
       x: dividerX - lineWidth / 2,
@@ -152,7 +154,7 @@ export function renderMonthGridCore(
 
   // Header/body divider.
   elements.push({
-    id: nextId(),
+    id: id("header-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -177,7 +179,7 @@ export function renderMonthGridCore(
       // the cell's date-strip, matching the reference's own structure.
       if (cell) {
         elements.push({
-          id: nextId(),
+          id: id(`w${w}-d${d}-date-box`),
           type: "figure",
           subType: "rect",
           x: cellX,
@@ -196,7 +198,7 @@ export function renderMonthGridCore(
         const dateFontSize = ptToPx(5);
         const dateTextHeight = dateFontSize * 1.2;
         elements.push({
-          id: nextId(),
+          id: id(`w${w}-d${d}-date`),
           type: "text",
           x: cellX,
           y: rowY + (dateStripHeight - dateTextHeight) / 2,
@@ -214,7 +216,7 @@ export function renderMonthGridCore(
       // covers it).
       if (d > 0) {
         elements.push({
-          id: nextId(),
+          id: id(`w${w}-d${d}-rule`),
           type: "figure",
           subType: "rect",
           x: cellX - lineWidth / 2,
@@ -231,7 +233,7 @@ export function renderMonthGridCore(
     // top of the next row) — skip the very last row's bottom line, the
     // outer border already covers it.
     elements.push({
-      id: nextId(),
+      id: id(`w${w}-strip-rule`),
       type: "figure",
       subType: "rect",
       x: geometry.x,
@@ -243,7 +245,7 @@ export function renderMonthGridCore(
     });
     if (w < config.weekCount - 1) {
       elements.push({
-        id: nextId(),
+        id: id(`w${w}-rule`),
         type: "figure",
         subType: "rect",
         x: geometry.x,

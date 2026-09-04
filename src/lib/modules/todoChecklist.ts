@@ -96,8 +96,13 @@ export function renderTodoChecklist(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional. An id names one mark for the whole life of
+  // the module, so adding a row at the bottom leaves every other mark's
+  // id untouched. Positional ids renumbered everything after the
+  // insertion point, which made the renderer treat the whole drawing as
+  // new: it remounted every node and replayed the arrival fade, so a
+  // resize flickered at each snap step as rows came and went.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   // Renders flush with its own allocated cell (contentY === geometry.y)
@@ -144,7 +149,7 @@ export function renderTodoChecklist(
   // Outer border around the whole block — reaches the full allocated
   // height exactly (see rowHeight comment above).
   elements.push({
-    id: nextId(),
+    id: id("border"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -162,7 +167,7 @@ export function renderTodoChecklist(
   const headerFontSize = ptToPx(HEADER_FONT_PT);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
-    id: nextId(),
+    id: id("heading"),
     type: "text",
     x: geometry.x,
     y: contentY + (headerHeight - headerTextHeight) / 2,
@@ -176,7 +181,7 @@ export function renderTodoChecklist(
 
   // Divider between the header band and the checklist grid.
   elements.push({
-    id: nextId(),
+    id: id("header-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -195,7 +200,7 @@ export function renderTodoChecklist(
 
     // Left edge of the checkbox column.
     elements.push({
-      id: nextId(),
+      id: id(`d${d}-checkbox-left`),
       type: "figure",
       subType: "rect",
       x: segX - rowLineWidth / 2,
@@ -211,7 +216,7 @@ export function renderTodoChecklist(
 
     // Vertical divider between checkbox and task line.
     elements.push({
-      id: nextId(),
+      id: id(`d${d}-checkbox-right`),
       type: "figure",
       subType: "rect",
       x: segX + checkboxWidth - rowLineWidth / 2,
@@ -237,7 +242,7 @@ export function renderTodoChecklist(
         i === rowCount - 1 ? gridTop + gridHeight : gridTop + (i + 1) * rowHeight;
       // Row line under both the checkbox and task-line cells.
       elements.push({
-        id: nextId(),
+        id: id(`d${d}-row${i}`),
         type: "figure",
         subType: "rect",
         x: segX,

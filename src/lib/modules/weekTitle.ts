@@ -27,8 +27,10 @@ export function renderWeekTitle(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts. An id names one mark
+  // for the life of the module, so a change in element count does not
+  // renumber every mark after it.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   // Measured from the reference PDF's embedded text metadata: "WEEK
@@ -42,7 +44,7 @@ export function renderWeekTitle(
   const topOffset = ptToPx(16.4);
 
   elements.push({
-    id: nextId(),
+    id: id("week-label"),
     type: "text",
     x: geometry.x,
     y: geometry.y + topOffset,
@@ -60,7 +62,7 @@ export function renderWeekTitle(
   // next box, since the text box itself extended right to the boundary.
   const dateRangeLineHeight = ptToPx(13) * 1.3;
   elements.push({
-    id: nextId(),
+    id: id("date-range"),
     type: "text",
     x: geometry.x,
     y: geometry.y + topOffset + smallLineHeight,

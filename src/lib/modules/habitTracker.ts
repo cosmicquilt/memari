@@ -49,10 +49,8 @@ export type RenderedElement = {
 };
 
 const NEAR_BLACK = "#231F20";
-// Corrected from an earlier 23.3 — that value was measured off the wrong
-// rect. The header row (top border to header/body divider) is actually
-// 587.02 to 604.14 in the reference, 17.12pt tall.
-// Was 17.12pt, measured from the reference. Now 15.12pt — exactly 63 print
+// The reference's header row (top border to header/body divider) measures
+// 587.02 to 604.14, i.e. 17.12pt. Now 15.12pt — exactly 63 print
 // px, which is one dot pitch (75) less the box inset at both ends (12).
 // That is the one header height leaving a whole number of dots beneath it
 // at every row span, so the rows below tile the box with nothing left
@@ -159,8 +157,10 @@ export function renderHabitTracker(
   }
 
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts for the whole story.
+  // An id names one mark for the life of the module, so adding a row does
+  // not renumber every mark after it and force a remount of the drawing.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   // Renders flush with its own allocated cell (contentY === geometry.y)
@@ -197,7 +197,7 @@ export function renderHabitTracker(
 
   // Outer border — reaches the full allocated height exactly.
   elements.push({
-    id: nextId(),
+    id: id("border"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -215,7 +215,7 @@ export function renderHabitTracker(
   const headerFontSize = ptToPx(HEADER_FONT_PT);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
-    id: nextId(),
+    id: id("heading"),
     type: "text",
     x: geometry.x,
     y: contentY + (headerHeight - headerTextHeight) / 2,
@@ -229,7 +229,7 @@ export function renderHabitTracker(
 
   // Divider between the header row and the habit-name grid.
   elements.push({
-    id: nextId(),
+    id: id("header-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -242,7 +242,7 @@ export function renderHabitTracker(
 
   // Vertical divider between name column and day-letter columns.
   elements.push({
-    id: nextId(),
+    id: id("name-col-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x + nameColumnWidth - rowLineWidth / 2,
@@ -262,7 +262,7 @@ export function renderHabitTracker(
   DAY_LETTERS.forEach((letter, i) => {
     const colX = geometry.x + nameColumnWidth + i * dayColumnWidth;
     elements.push({
-      id: nextId(),
+      id: id(`day${i}-letter`),
       type: "text",
       x: colX,
       y: contentY + (headerHeight - dayLetterTextHeight) / 2,
@@ -275,7 +275,7 @@ export function renderHabitTracker(
     });
     if (i > 0) {
       elements.push({
-        id: nextId(),
+        id: id(`day${i}-rule`),
         type: "figure",
         subType: "rect",
         x: colX - rowLineWidth / 2,
@@ -304,7 +304,7 @@ export function renderHabitTracker(
     const rowBottom =
       i === rowCount - 1 ? contentY + contentHeight : rowY + rowHeight;
     elements.push({
-      id: nextId(),
+      id: id(`row${i}`),
       type: "figure",
       subType: "rect",
       x: geometry.x,
@@ -321,7 +321,7 @@ export function renderHabitTracker(
       const nameFontSize = ptToPx(7);
       const nameTextHeight = nameFontSize * 1.2;
       elements.push({
-        id: nextId(),
+        id: id(`row${i}-name`),
         type: "text",
         x: geometry.x + 6,
         y: rowY + (rowHeight - nameTextHeight) / 2,
@@ -352,8 +352,10 @@ function renderHabitTrackerCompact(
   fontFamily: string
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
-  let idCounter = 0;
-  const nextId = () => `${idPrefix}-${idCounter++}`;
+  // Semantic, not positional — see todoChecklist.ts for the whole story.
+  // An id names one mark for the life of the module, so adding a row does
+  // not renumber every mark after it and force a remount of the drawing.
+  const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
   const contentY = geometry.y;
@@ -380,7 +382,7 @@ function renderHabitTrackerCompact(
 
   // Outer border — reaches the full allocated height exactly.
   elements.push({
-    id: nextId(),
+    id: id("border"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -397,7 +399,7 @@ function renderHabitTrackerCompact(
   const headerFontSize = ptToPx(HEADER_FONT_PT);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
-    id: nextId(),
+    id: id("heading"),
     type: "text",
     x: geometry.x,
     y: contentY + (headerHeight - headerTextHeight) / 2,
@@ -411,7 +413,7 @@ function renderHabitTrackerCompact(
 
   // Divider between the header and the first pair.
   elements.push({
-    id: nextId(),
+    id: id("header-rule"),
     type: "figure",
     subType: "rect",
     x: geometry.x,
@@ -442,7 +444,7 @@ function renderHabitTrackerCompact(
     // instead (x/width padded by 6px each side), unaffected.
     const habitName = config.habits?.[i];
     elements.push({
-      id: nextId(),
+      id: id(`pair${i}-name`),
       type: "text",
       x: habitName ? geometry.x + 6 : geometry.x,
       y: pairTop + (actualNameRowHeight - nameTextHeight) / 2,
@@ -458,7 +460,7 @@ function renderHabitTrackerCompact(
 
     // Divider between this pair's name row and its own square row.
     elements.push({
-      id: nextId(),
+      id: id(`pair${i}-name-rule`),
       type: "figure",
       subType: "rect",
       x: geometry.x,
@@ -476,7 +478,7 @@ function renderHabitTrackerCompact(
     DAY_LETTERS.forEach((letter, d) => {
       const colX = geometry.x + d * squareSize;
       elements.push({
-        id: nextId(),
+        id: id(`pair${i}-day${d}-letter`),
         type: "text",
         x: colX,
         y: squareRowTop + (squareSize - dayLetterTextHeight) / 2,
@@ -489,7 +491,7 @@ function renderHabitTrackerCompact(
       });
       if (d > 0) {
         elements.push({
-          id: nextId(),
+          id: id(`pair${i}-day${d}-rule`),
           type: "figure",
           subType: "rect",
           x: colX - rowLineWidth / 2,
@@ -508,7 +510,7 @@ function renderHabitTrackerCompact(
     // harmless overlap the wide layout's own last-row divider already
     // has).
     elements.push({
-      id: nextId(),
+      id: id(`pair${i}-rule`),
       type: "figure",
       subType: "rect",
       x: geometry.x,
