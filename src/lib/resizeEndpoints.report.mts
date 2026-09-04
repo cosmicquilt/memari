@@ -34,7 +34,7 @@
 // Run with: npm run check:animation
 import { renderModuleInstance } from "./renderModuleInstance";
 import { gridCellToPixels, type PageGrid } from "./grid";
-import { showsDestination } from "@/app/planner/PolotnoJsonRenderer";
+import { sameMarkSet } from "@/app/planner/PolotnoJsonRenderer";
 
 const PAGE: PageGrid = {
   widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5,
@@ -82,7 +82,7 @@ function flatOf(slug: string, columnSpan: number, rowSpan: number, propValues: R
       const el = e as Record<string, unknown>;
       return el.children ? [el, ...flatten(el.children as unknown[])] : [el];
     });
-  return flatten(elements as unknown[]) as unknown as Parameters<typeof showsDestination>[0];
+  return flatten(elements as unknown[]) as unknown as Parameters<typeof sameMarkSet>[0];
 }
 
 function rectsOf(slug: string, columnSpan: number, rowSpan: number, propValues: Record<string, unknown>) {
@@ -197,7 +197,7 @@ const rows = CASES.map((c) => {
   const unionRows = Math.max(c.from[1], c.to[1]);
   const finalProps = c.toProps ?? c.fromProps ?? {};
   const contentRects = rectsOf(c.slug, unionColumns, unionRows, finalProps);
-  const animates = showsDestination(
+  const animates = sameMarkSet(
     flatOf(c.slug, c.to[0], c.to[1], finalProps),
     flatOf(c.slug, unionColumns, unionRows, finalProps)
   );

@@ -492,57 +492,6 @@ function RectLayer({
  * beginning of the session." If this is revisited, measure first with
  * npm run check:animation rather than reasoning about frames.
  */
-/**
- * Below this share of marks in common, the two renders are not two sizes
- * of one drawing - they are different drawings.
- *
- * Measured rather than picked. Across every real crossing, the final
- * render's overlap with the union render is: habit tracker bottom to
- * sidebar 0.034, to-do bottom to sidebar 0.388, to-do shrink 0.571, and
- * 1.000 for everything that keeps its structure. The one genuine mode
- * switch sits eleven times below the next case up, so anything in that gap
- * separates them; a quarter is in the middle of it and says something
- * plain - fewer than one mark in four survives.
- */
-const MODE_SWITCH_MAX_OVERLAP = 0.25;
-
-/** Share of marks two renders have in common, against the larger of them. */
-function markOverlap(a: RenderedPolotnoElement[], b: RenderedPolotnoElement[]): number {
-  const ids = new Set(a.map((element) => element.id));
-  let shared = 0;
-  for (const element of b) if (ids.has(element.id)) shared++;
-  return shared / Math.max(a.length, b.length, 1);
-}
-
-/**
- * Is the DESTINATION render the one to show for the length of the ease,
- * rather than the union of the two?
- *
- * Two reasons, and they are opposites. Either the two renders describe the
- * same marks, so those marks can simply travel to their new places. Or
- * they describe such different marks that the union is a third drawing
- * neither endpoint has - as wide as the destination and as tall as the
- * origin - and showing it means showing something that was never on the
- * page and never will be. The habit tracker's two layouts are that case:
- * 4 marks in common out of 116.
- *
- * Everything between the two goes on drawing the union and letting the
- * clip window sweep it, which is the behaviour that reads best where it
- * applies and the one to disturb least.
- *
- * Exported so resizeEndpoints.report.mts can ask the renderer rather than
- * restate it. The report spent a session measuring easingRectSource, a
- * function nothing in here ever called.
- */
-export function showsDestination(
-  destination: RenderedPolotnoElement[],
-  union: RenderedPolotnoElement[]
-): boolean {
-  return (
-    sameMarkSet(destination, union) || markOverlap(destination, union) < MODE_SWITCH_MAX_OVERLAP
-  );
-}
-
 export function sameMarkSet(
   a: RenderedPolotnoElement[],
   b: RenderedPolotnoElement[]
@@ -700,7 +649,7 @@ export function PolotnoJsonRenderer({
   const textFlat = textElements ? flattenElements(textElements) : null;
   // Animating is only meaningful when the two renders describe the same
   // marks; a final render with a changed structure is drawn, not eased.
-  const animateRects = !!textFlat && textEaseMs > 0 && showsDestination(textFlat, flat);
+  const animateRects = !!textFlat && textEaseMs > 0 && sameMarkSet(textFlat, flat);
 
   // A third case, and the one the sweep cannot serve at all: the two
   // renders are different DRAWINGS, not two sizes of one. A habit-tracker
