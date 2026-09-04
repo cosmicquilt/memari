@@ -20,16 +20,66 @@
 // render for the whole ease, so it necessarily violates one endpoint or
 // the other, and the useful output is HOW MUCH per case, not a red X.
 //
+// This used to call easingRectSource(fromCount, toCount), and the comment
+// above claimed that was the renderer's own decision, imported rather than
+// restated. It was not: nothing in the renderer ever called it. The
+// renderer draws content at the UNION of the two spans
+// (easingContentGeometry takes Math.max on both axes) and swaps to the
+// final render only when the two describe the same marks. On a grow the
+// union IS the final render, so the old function had the answer backwards
+// for every growing case and this report had its two endpoint columns the
+// wrong way round for them. It now models what the renderer does, using
+// the renderer's own sameMarkSet.
+//
 // Run with: npm run check:animation
 import { renderModuleInstance } from "./renderModuleInstance";
 import { gridCellToPixels, type PageGrid } from "./grid";
-import { easingRectSource } from "@/app/planner/PolotnoJsonRenderer";
+import { sameMarkSet } from "@/app/planner/PolotnoJsonRenderer";
 
 const PAGE: PageGrid = {
   widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5,
 };
 
 type Rect = { x?: number; y?: number; width?: number; height?: number };
+
+/** The ids of every rect a module draws. Element ids are semantic now, so
+ *  this is the real answer to "do these two renders describe the same
+ *  marks?" - the question animateRects currently approximates by comparing
+ *  counts. */
+function rectIdsOf(slug: string, columnSpan: number, rowSpan: number, propValues: Record<string, unknown>) {
+  const elements = renderModuleInstance(
+    { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
+      moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
+    PAGE,
+    "PT Serif"
+  );
+  const flatten = (list: unknown[]): Record<string, unknown>[] =>
+    list.flatMap((e) => {
+      const el = e as Record<string, unknown>;
+      return el.children ? [el, ...flatten(el.children as unknown[])] : [el];
+    });
+  return new Set(
+    flatten(elements as unknown[])
+      .filter((e) => e.type === "figure" && e.subType === "rect")
+      .map((e) => String(e.id))
+  );
+}
+
+/** Every element a module draws, groups flattened away. */
+function flatOf(slug: string, columnSpan: number, rowSpan: number, propValues: Record<string, unknown>) {
+  const elements = renderModuleInstance(
+    { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
+      moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
+    PAGE,
+    "PT Serif"
+  );
+  const flatten = (list: unknown[]): Record<string, unknown>[] =>
+    list.flatMap((e) => {
+      const el = e as Record<string, unknown>;
+      return el.children ? [el, ...flatten(el.children as unknown[])] : [el];
+    });
+  return flatten(elements as unknown[]) as unknown as Parameters<typeof sameMarkSet>[0];
+}
 
 function rectsOf(slug: string, columnSpan: number, rowSpan: number, propValues: Record<string, unknown>) {
   const elements = renderModuleInstance(
@@ -86,6 +136,20 @@ function marksDiffering(a: Rect[], b: Rect[]): number {
   return onlyInA + onlyInB;
 }
 
+/** The clip window hides anything outside the module's box, so a mark that
+ *  has been swept past the edge is not a difference the viewer can see. The
+ *  content render is deliberately drawn larger than its box; without this,
+ *  every mark it holds beyond the edge counted as wrong. */
+function visibleIn(rects: Rect[], box: { x: number; y: number; width: number; height: number }): Rect[] {
+  return rects.filter(
+    (r) =>
+      (r.x ?? 0) < box.x + box.width - 0.5 &&
+      (r.x ?? 0) + (r.width ?? 0) > box.x + 0.5 &&
+      (r.y ?? 0) < box.y + box.height - 0.5 &&
+      (r.y ?? 0) + (r.height ?? 0) > box.y + 0.5
+  );
+}
+
 type Case = {
   name: string;
   slug: string;
@@ -119,28 +183,74 @@ const CASES: Case[] = [
 const rows = CASES.map((c) => {
   const fromRects = rectsOf(c.slug, c.from[0], c.from[1], c.fromProps ?? {});
   const toRects = rectsOf(c.slug, c.to[0], c.to[1], c.toProps ?? c.fromProps ?? {});
-  const source = easingRectSource(fromRects.length, toRects.length);
-  const drawn = source === "from" ? fromRects : toRects;
+  const fromIds = rectIdsOf(c.slug, c.from[0], c.from[1], c.fromProps ?? {});
+  const toIds = rectIdsOf(c.slug, c.to[0], c.to[1], c.toProps ?? c.fromProps ?? {});
+
+  // What the renderer actually draws for the length of the ease: content
+  // at the union of the two spans, unless the final render describes the
+  // same marks, in which case the final render travels instead.
+  const unionColumns = Math.max(c.from[0], c.to[0]);
+  const unionRows = Math.max(c.from[1], c.to[1]);
+  const finalProps = c.toProps ?? c.fromProps ?? {};
+  const contentRects = rectsOf(c.slug, unionColumns, unionRows, finalProps);
+  const animates = sameMarkSet(
+    flatOf(c.slug, c.to[0], c.to[1], finalProps),
+    flatOf(c.slug, unionColumns, unionRows, finalProps)
+  );
+  const fromBox = gridCellToPixels(PAGE, {
+    columnStart: 0, rowStart: 0, columnSpan: c.from[0], rowSpan: c.from[1],
+  });
+  const toBox = gridCellToPixels(PAGE, {
+    columnStart: 0, rowStart: 0, columnSpan: c.to[0], rowSpan: c.to[1],
+  });
+  const source = animates ? "final" : "content";
+  const drawn = animates ? toRects : contentRects;
+
+  // On the animated path the drawn geometry is NOT what frame one looks
+  // like. Every mark that also existed in the outgoing render is given a
+  // transform placing it back where it was (flipTransform), and every mark
+  // that did not starts at opacity 0 and fades in. So the only marks wrong
+  // on frame one are the ones that were there and are not drawn at all:
+  // they vanish instead of being swept away.
+  //
+  // The transform ends at identity and the fade ends opaque, so the last
+  // frame is the drawn render exactly.
+  const vanishing = [...fromIds].filter((id) => !toIds.has(id)).length;
+  let shared = 0;
+  for (const id of fromIds) if (toIds.has(id)) shared++;
+  const countsAgree = fromRects.length === toRects.length;
+  const idsAgree = shared === fromIds.size && shared === toIds.size;
   return {
     name: c.name,
     marks: `${fromRects.length}->${toRects.length}`,
     source,
-    firstFrame: marksDiffering(drawn, fromRects),
-    lastFrame: marksDiffering(drawn, toRects),
+    // On the content path the box itself is animating, so what is on
+    // screen is the content render clipped to whichever box that frame
+    // has: the outgoing one at the start, the final one at the end.
+    firstFrame: animates
+      ? vanishing
+      : marksDiffering(visibleIn(drawn, fromBox), fromRects),
+    lastFrame: animates ? 0 : marksDiffering(visibleIn(drawn, toBox), toRects),
+    shared: `${shared}/${Math.max(fromIds.size, toIds.size)}`,
+    // animateRects asks "do these two renders describe the same elements?"
+    // by comparing counts. Stable ids answer it exactly. Where the two
+    // disagree, the proxy is making the wrong call.
+    proxy: countsAgree === idsAgree ? "ok" : countsAgree ? "FALSE POS" : "FALSE NEG",
   };
 });
 
 const pad = (s: string, n: number) => s.padEnd(n);
 console.log("Resize endpoint check - marks differing from what the module actually looks like\n");
 console.log(
-  `${pad("case", 30)}${pad("marks", 12)}${pad("shows", 7)}${pad("FIRST frame", 13)}LAST frame`
+  `${pad("case", 30)}${pad("marks", 12)}${pad("shows", 9)}${pad("FIRST", 8)}${pad("LAST", 8)}${pad("shared ids", 12)}count proxy`
 );
-console.log("-".repeat(78));
+console.log("-".repeat(92));
 for (const r of rows) {
   console.log(
-    pad(r.name, 30) + pad(r.marks, 12) + pad(r.source, 7) +
-    pad(r.firstFrame === 0 ? "ok" : String(r.firstFrame), 13) +
-    (r.lastFrame === 0 ? "ok" : String(r.lastFrame))
+    pad(r.name, 30) + pad(r.marks, 12) + pad(r.source, 9) +
+    pad(r.firstFrame === 0 ? "ok" : String(r.firstFrame), 8) +
+    pad(r.lastFrame === 0 ? "ok" : String(r.lastFrame), 8) +
+    pad(r.shared, 12) + r.proxy
   );
 }
 

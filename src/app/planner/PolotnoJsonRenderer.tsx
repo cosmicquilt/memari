@@ -459,24 +459,38 @@ function RectLayer({
 }
 
 /**
- * Which of the two renders is shown for the length of an ease.
+ * Do these two renders describe the same marks?
  *
- * Equal element counts mean the two renders describe the same elements,
- * which is the condition under which a rect key survives the change and a
- * node therefore has a previous geometry to animate FROM. So the same test
- * decides both, and the modules that genuinely cannot animate keep the clip
- * window they need.
+ * This is the condition under which a node survives the change and
+ * therefore has a previous geometry to animate FROM. Where it holds, the
+ * final render is shown for the length of the ease and its marks travel;
+ * where it does not, the content render is shown and the clip window
+ * sweeps over it.
  *
- * Deliberately has no notion of direction or of structure changing. Both
- * were tried during one session - "animate on a grow, sweep on a shrink",
- * then "draw the final render when the two are different drawings" - and
- * each fixed the case it was aimed at while making the others worse.
- * Reverted at Andrew's read: "change animations back, they looked way
- * better at the beginning of the session." If this is revisited, measure
- * first with npm run check:animation rather than reasoning about frames.
+ * It used to be asked by comparing element COUNTS, which is a proxy: two
+ * renders can hold the same number of different marks. Ids are semantic
+ * now, so the question can simply be answered. Measured across the ten real
+ * crossings in resizeEndpoints.report.mts, the proxy happened to agree with
+ * this on every one of them - so this changes no behaviour today. It is
+ * here because the proxy is the kind of thing that is right until the
+ * geometry moves under it, which is exactly what it did once before.
+ *
+ * Deliberately has no notion of direction. Direction-aware variants were
+ * tried twice in one session - "animate on a grow, sweep on a shrink", then
+ * "draw the final render when the two are different drawings" - and each
+ * fixed the case it was aimed at while making the others worse. Reverted at
+ * Andrew's read: "change animations back, they looked way better at the
+ * beginning of the session." If this is revisited, measure first with
+ * npm run check:animation rather than reasoning about frames.
  */
-export function easingRectSource(fromCount: number, toCount: number): "from" | "to" {
-  return fromCount === toCount ? "to" : "from";
+export function sameMarkSet(
+  a: RenderedPolotnoElement[],
+  b: RenderedPolotnoElement[]
+): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((element) => element.id));
+  for (const element of b) if (!ids.has(element.id)) return false;
+  return true;
 }
 
 // Groups are transparent pass-throughs at the same origin (see
@@ -625,8 +639,8 @@ export function PolotnoJsonRenderer({
   // final size, so the direction is already known here.
   const textFlat = textElements ? flattenElements(textElements) : null;
   // Animating is only meaningful when the two renders describe the same
-  // elements; a "to" source with a changed structure is drawn, not eased.
-  const animateRects = !!textFlat && textFlat.length === flat.length && textEaseMs > 0;
+  // marks; a final render with a changed structure is drawn, not eased.
+  const animateRects = !!textFlat && textEaseMs > 0 && sameMarkSet(textFlat, flat);
 
   // A third case, and the one the sweep cannot serve at all: the two
   // renders are different DRAWINGS, not two sizes of one. A habit-tracker
