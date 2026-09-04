@@ -895,6 +895,8 @@ export async function getOrCreateMonthPlanner() {
   // January 2024 — see this function's own header comment for why a
   // fixed month rather than "the current month."
   const calendar = computeMonthCalendar(2024, 1);
+  // See ensureMonthGridCore below for why this number and not another.
+  const MONTH_GRID_ROW_SPAN = 16;
   const dayNames = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
   const ensureMonthGridCore = async (
@@ -917,7 +919,13 @@ export async function getOrCreateMonthPlanner() {
         columnStart: placement.columnStart,
         rowStart: 0,
         columnSpan: placement.columnSpan,
-        rowSpan: coreType.defaultRowSpan,
+        // 16 rows, not the module type's default. With the header at one
+        // cell less the insets, a span of 1 + weekCount * n gives every
+        // week row exactly n whole cells; at five weeks that is 6, 11, 16,
+        // 21. Sixteen is three cells a week - half of one for the date
+        // strip and two and a half to write in - and leaves a one cell gap
+        // above Notes with Notes reaching the foot of the page.
+        rowSpan: MONTH_GRID_ROW_SPAN,
         propValues: {
           dayCount,
           dayLabels: dayNames.slice(startColumn, startColumn + dayCount).map((name) => ({ name })),
@@ -971,9 +979,11 @@ export async function getOrCreateMonthPlanner() {
         moduleTypeId: boxType.id,
         placementMode: "GRID",
         columnStart: placement.columnStart,
-        rowStart: 23,
+        // One cell clear of the calendar, and down to the foot of the page
+        // rather than stopping short of it.
+        rowStart: MONTH_GRID_ROW_SPAN + 1,
         columnSpan: placement.columnSpan,
-        rowSpan: 13,
+        rowSpan: page.gridRows - (MONTH_GRID_ROW_SPAN + 1),
         propValues: { heading: "Notes", ruled: false },
       },
     });

@@ -55,13 +55,23 @@ export type RenderedElement = {
 
 const LINE_COLOR = "#231F20"; // same near-black as hourlyGridCore/todoChecklist
 
-const HEADER_HEIGHT_PT = 13.37;
+// 15.12pt is exactly 63 print px: one lattice cell less the box inset at
+// both ends. That is the header height for which everything below it is a
+// whole number of cells at every span, which is what lets a week row be a
+// whole number of cells too. Same value and same reason as
+// todoChecklist.ts and habitTracker.ts. Measured from the reference at
+// 13.37pt, so the band is 1.75pt deeper.
+const HEADER_HEIGHT_PT = 15.12;
 const HEADER_BORDER_WIDTH_PT = 0.5;
-// Fixed per row regardless of week count — see file-level comment.
-const DATE_STRIP_HEIGHT_PT = 10.8;
+// Fixed per row regardless of week count — see file-level comment. Half a
+// cell: 9pt, 37.5 print px. Measured at 10.8pt; on the lattice it becomes
+// the half-cell it was always approximating, so the writing area below it
+// is a whole number of cells less that half.
+const DATE_STRIP_HEIGHT_PT = 9;
 // The small bordered box the date number sits in, at the left edge of
-// each cell's date-strip.
-const DATE_BOX_WIDTH_PT = 9.8;
+// each cell's date-strip. Half a cell wide against a half-cell-high strip,
+// so the number sits in a square of half a cell each way.
+const DATE_BOX_WIDTH_PT = 9;
 const ROW_LINE_WIDTH_PT = 0.5;
 
 export function renderMonthGridCore(
@@ -84,10 +94,18 @@ export function renderMonthGridCore(
 
   const dayColumnWidth = geometry.width / config.dayCount;
 
-  // Stretch each row's body height so weekCount whole rows (each
-  // header-fixed date-strip + a stretched body) exactly fill the
-  // allocated height, rather than floor-rounding leaving unused space
-  // below the last row — same reasoning as todoChecklist.ts's rowHeight.
+  // Each week row takes an equal share of what is left under the header.
+  //
+  // With the header at one cell less the insets, that leftover is exactly
+  // (rowSpan - 1) cells, so a span of 1 + weekCount * n gives every week
+  // row exactly n cells - a half of which is the date strip and the rest
+  // the writing area. Those are the spans the resize handle offers, so the
+  // division below comes out whole rather than merely filling.
+  //
+  // Deliberately still a division rather than a fixed pitch: a month grid
+  // dragged to some other height should fill it rather than leave a ragged
+  // strip at the bottom, and unlike a to-do there is no row COUNT to
+  // change - the weeks in a month are what they are.
   const contentHeight = geometry.height - headerHeight;
   const bodyHeight = Math.max(
     0,

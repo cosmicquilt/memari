@@ -54,6 +54,12 @@ const GRID = [
   { columnStart: 6, columnSpan: 18 },
   { columnStart: 0, columnSpan: 24 },
 ];
+// Must match ensureMonthGridCore's own span, and for the same reason: with
+// the header at one cell less the insets, 1 + weekCount * n gives every
+// week row a whole number of cells. Notes then starts one clear cell below
+// and runs to the foot of the page.
+const GRID_ROW_SPAN = 16;
+const PAGE_ROWS = 36;
 const SIDEBAR_BOXES = [
   { heading: "Monthly Mantra", rowStart: 2, rowSpan: 4 },
   { heading: "Priorities", rowStart: 6, rowSpan: 6 },
@@ -95,11 +101,21 @@ for (const planner of planners) {
       // position it should have had.
       let target: Record<string, number> | null = null;
       if (slug === "month-grid-core") {
-        target = { columnStart: grid.columnStart, rowStart: 0, columnSpan: grid.columnSpan, rowSpan: 17 };
+        target = {
+          columnStart: grid.columnStart,
+          rowStart: 0,
+          columnSpan: grid.columnSpan,
+          rowSpan: GRID_ROW_SPAN,
+        };
       } else if (slug === "month-title") {
         target = { columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 2 };
       } else if (slug === "labeled-box" && heading === "Notes") {
-        target = { columnStart: grid.columnStart, rowStart: 23, columnSpan: grid.columnSpan, rowSpan: 13 };
+        target = {
+          columnStart: grid.columnStart,
+          rowStart: GRID_ROW_SPAN + 1,
+          columnSpan: grid.columnSpan,
+          rowSpan: PAGE_ROWS - (GRID_ROW_SPAN + 1),
+        };
       } else if (slug === "labeled-box") {
         const box = SIDEBAR_BOXES.find((b) => b.heading === heading);
         if (box) target = { columnStart: 0, rowStart: box.rowStart, columnSpan: 6, rowSpan: box.rowSpan };
