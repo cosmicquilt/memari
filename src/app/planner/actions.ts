@@ -2625,6 +2625,11 @@ export async function updateHourlySettings(settings: {
       hourlyPropValues: unknown;
       hourlyRowStart: number;
       newRowSpan: number;
+      // Carried rather than recomputed below: the room calculation and the
+      // placement have to be the same number, and when they were worked
+      // out separately they stopped agreeing - the room left space for a
+      // computed gap while the placement still added a literal 1.
+      gapRows: number;
       belowMembers: Array<{ id: string; rowStart: number; rowSpan: number }>;
     };
     const perPage: PerPage[] = [];
@@ -2710,6 +2715,7 @@ export async function updateHourlySettings(settings: {
         hourlyPropValues: hourly.propValues,
         hourlyRowStart: hourly.rowStart,
         newRowSpan,
+        gapRows,
         belowMembers: belowMembers.map((mi, i) => ({
           id: mi.id,
           rowStart: mi.rowStart,
@@ -2744,7 +2750,7 @@ export async function updateHourlySettings(settings: {
       // takeRowsFairly settled on, which may be smaller than what is
       // stored. packStackFromTop only reports position changes, so the
       // heights are written straight from the members.
-      let cursor = p.hourlyRowStart + p.newRowSpan + 1;
+      let cursor = p.hourlyRowStart + p.newRowSpan + p.gapRows;
       for (const member of [...p.belowMembers].sort((a, b) => (a.rowStart ?? 0) - (b.rowStart ?? 0))) {
         updates.push(
           prisma.moduleInstance.update({
