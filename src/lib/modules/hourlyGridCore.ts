@@ -170,6 +170,47 @@ export const ROW_HEIGHT_OPTIONS_PT = [9, 12, 18] as const;
 // which is only correct for this height.
 export const DEFAULT_ROW_HEIGHT_PT = ROW_HEIGHT_PT;
 
+/**
+ * How many whole grid rows to keep clear between the hours and whatever
+ * sits below them.
+ *
+ * Asked for as "either a half cell or a full cell depending on where the
+ * hours end", and that is what it computes. The two boxes are inset by the
+ * same amount, so the insets cancel and the visible gap is exactly
+ *
+ *   (rowsBetweenTops * cell) - contentHeight
+ *
+ * The rule is the first cell line at least half a cell below where the
+ * hours actually stop. Whole-hour ranges land the content exactly on a
+ * cell line at every row height - 20.000, 26.000, 38.000 cells - and get a
+ * full cell. A range ending on a half hour at 9pt lands on a half cell and
+ * gets half of one. Only a row height that divides the cell into thirds
+ * (12pt) with an odd range can land elsewhere, and there it gives the
+ * smallest gap that is still at least half a cell.
+ *
+ * This was a flat one row, and one row on top of a block already rounded
+ * UP to whole cells double-counted: 20 cells of content asked for a 21
+ * cell box, and the extra row made the visible gap 1.84 cells. Sizing is
+ * left alone - it is the gap that was wrong, and computing it here keeps
+ * the content comfortably inside its own box.
+ */
+export function hourlyGapRows(
+  cellHeightPx: number,
+  propValues: unknown,
+  rowSpan: number
+): number {
+  const config = (propValues ?? {}) as Partial<HourlyGridCoreConfig>;
+  const contentPx =
+    config.intervalMode === "off"
+      ? // Blank mode has no computed content: the block IS whatever height
+        // it was dragged to, so the hours "end" at its own bottom and the
+        // rule reduces to the full row it always had.
+        rowSpan * cellHeightPx
+      : getHourlyGridCoreContentHeightPx(config as HourlyGridCoreConfig);
+  const rowsToClear = Math.ceil((contentPx + cellHeightPx / 2) / cellHeightPx - 1e-6);
+  return Math.max(0, rowsToClear - rowSpan);
+}
+
 /** The hours a fresh planner starts with, and the state a reset restores. */
 export const DEFAULT_HOURLY_SETTINGS: HourlySettings = {
   startTime: "05:30",

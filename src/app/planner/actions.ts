@@ -9,6 +9,7 @@ import {
   moduleInstancesToRects,
   sidebarColumnSpan,
   columnSpanToDayCount,
+  cellHeightPx,
   pixelHeightToRowSpan,
   takeRowsFairly,
   resolveZone,
@@ -26,6 +27,7 @@ import {
   getHourlyGridCoreContentHeightPx,
   getHourlyGridCoreOffModeMinHeightPx,
   hourlyPropsFromSettings,
+  hourlyGapRows,
   DEFAULT_HOURLY_SETTINGS,
 } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -1303,14 +1305,26 @@ export async function addPaletteModuleAt(
         // same virtual-lock convention resolveDrag uses client-side
         // (__hourlygridgap__), and locked keeps it a bound rather than
         // something the reflow could try to move.
-        occupied.push({
-          id: "__hourlygridgap__",
-          locked: true,
-          columnStart: hourlyGrid.columnStart,
-          rowStart: hourlyGrid.rowStart + hourlyGrid.rowSpan,
-          columnSpan: hourlyGrid.columnSpan,
-          rowSpan: 1,
-        });
+        // Half a cell or a full one, depending on where the hours end -
+        // see hourlyGapRows. Zero rows whenever the block's own rounding
+        // up to whole cells already leaves that much slack, which is the
+        // common case; reserving a row on top of it was what made the gap
+        // nearly two cells.
+        const gapRows = hourlyGapRows(
+          cellHeightPx(pageGrid),
+          hourlyGrid.propValues,
+          hourlyGrid.rowSpan
+        );
+        if (gapRows > 0) {
+          occupied.push({
+            id: "__hourlygridgap__",
+            locked: true,
+            columnStart: hourlyGrid.columnStart,
+            rowStart: hourlyGrid.rowStart + hourlyGrid.rowSpan,
+            columnSpan: hourlyGrid.columnSpan,
+            rowSpan: gapRows,
+          });
+        }
       }
       // Resolve the way a cross-zone MOVE resolves, not by hunting for
       // a gap. findNearestFreeCell only ever finds space that is
@@ -1650,7 +1664,15 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   }
   const targetOthers: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
     [];
-  let hourlyGridRect: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number } | null = null;
+  let hourlyGridRect: {
+    columnStart: number;
+    rowStart: number;
+    columnSpan: number;
+    rowSpan: number;
+    // Carried so the breathing gap below can be computed from where the
+    // hours actually end rather than assumed to be one row.
+    propValues: unknown;
+  } | null = null;
   for (const mi of targetPage.moduleInstances) {
     if (mi.id === instance.id || mi.columnStart === null || mi.rowStart === null) continue;
     targetOthers.push({
@@ -1662,7 +1684,7 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
       rowSpan: mi.rowSpan,
     });
     if (mi.moduleType.slug === "hourly-grid-core") {
-      hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan };
+      hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan, propValues: mi.propValues };
     }
   }
   // Same synthetic 1-row breathing-gap reservation below hourly-grid-core
@@ -1671,14 +1693,21 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   // grid unreachable here too, not just on a same-zone drag. Reserved
   // against the TARGET page's own hourly grid, same as resolveDrag.
   if (hourlyGridRect) {
-    targetOthers.push({
-      id: "__hourlygridgap__",
-      locked: true,
-      columnStart: hourlyGridRect.columnStart,
-      rowStart: hourlyGridRect.rowStart + hourlyGridRect.rowSpan,
-      columnSpan: hourlyGridRect.columnSpan,
-      rowSpan: 1,
-    });
+    const gapRows = hourlyGapRows(
+      cellHeightPx(targetPageGrid),
+      hourlyGridRect.propValues,
+      hourlyGridRect.rowSpan
+    );
+    if (gapRows > 0) {
+      targetOthers.push({
+        id: "__hourlygridgap__",
+        locked: true,
+        columnStart: hourlyGridRect.columnStart,
+        rowStart: hourlyGridRect.rowStart + hourlyGridRect.rowSpan,
+        columnSpan: hourlyGridRect.columnSpan,
+        rowSpan: gapRows,
+      });
+    }
   }
 
   const candidate = { columnStart: effectiveColumnStart, rowStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
@@ -2557,11 +2586,11 @@ export async function updateHourlySettings(settings: {
       rowHeightPt: settings.rowHeightPt,
     });
 
-    // Same 1-row breathing gap convention enforced elsewhere in this
-    // file (addPaletteModuleAt's synthetic reservation rect, resolveDrag's
-    // virtual lock) — kept local rather than a shared constant, matching
-    // how every other site here just inlines the literal 1.
-    const GAP_ROWS = 1;
+    // No longer a flat row: the gap is half a cell or a full one
+    // depending on where the hours end, which hourlyGapRows works out from
+    // the same content height that sizes the block. Computed per page
+    // below, since a page whose hours land mid-cell needs a different
+    // number of rows kept clear than one whose hours land on the line.
 
     type PerPage = {
       hourlyId: string;
@@ -2612,7 +2641,15 @@ export async function updateHourlySettings(settings: {
       // they give way evenly instead of the bottom one flattening to its
       // floor while the one above keeps full height.
       const belowCurrentTotal = belowMembers.reduce((sum, mi) => sum + mi.rowSpan, 0);
-      const availableForBelow = pageGrid.gridRows - newRowSpan - GAP_ROWS;
+      // Against the settings being committed, not the stored ones: the
+      // block is being resized to fit these hours, so the gap under them
+      // has to be measured from the same place.
+      const gapRows = hourlyGapRows(
+        cellHeightPx(pageGrid),
+        { ...settings, intervalMode: "on" },
+        newRowSpan
+      );
+      const availableForBelow = pageGrid.gridRows - newRowSpan - gapRows;
       let belowSpans = belowMembers.map((mi) => mi.rowSpan);
       if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
         const floors = belowMembers.map((mi) =>

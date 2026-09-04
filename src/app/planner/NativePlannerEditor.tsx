@@ -102,6 +102,7 @@ import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } f
 import {
   getHourlyGridCoreOffModeMinHeightPx,
   getHourlyGridCoreContentHeightPx,
+  hourlyGapRows,
   ROW_HEIGHT_OPTIONS_PT,
   type HourlyGridCoreConfig,
 } from "@/lib/modules/hourlyGridCore";
@@ -113,6 +114,7 @@ import {
   gridCellToPixels,
   sidebarColumnSpan as sidebarColumnSpanFor,
   columnSpanToDayCount,
+  cellHeightPx,
   dayUnitColumns,
   pixelsToGridCell,
   pixelsToContainingCell,
@@ -5998,19 +6000,25 @@ export function NativePlannerEditor({
       // either in a way the other would need to see.
       const sourceOthers: Array<GridRect & { id: string; locked: boolean }> = [];
       const hoveredOthers: Array<GridRect & { id: string; locked: boolean }> = [];
-      let sourceHourlyGridPlacement: Placement | null = null;
-      let hoveredHourlyGridPlacement: Placement | null = null;
+      // propValues rides along so the breathing gap below the hours can be
+      // computed from where they actually end - see hourlyGapRows - rather
+      // than assumed to be one row.
+      type HourlyPlacement = Placement & { propValues: unknown };
+      let sourceHourlyGridPlacement: HourlyPlacement | null = null;
+      let hoveredHourlyGridPlacement: HourlyPlacement | null = null;
       for (const [id, placement] of Object.entries(placements)) {
         if (id === instanceId) continue;
         const otherInfo = moduleLookup.get(id);
         if (!otherInfo) continue;
         if (otherInfo.pageId === info.pageId) {
           sourceOthers.push({ ...placement, id, locked: otherInfo.locked });
-          if (otherInfo.slug === "hourly-grid-core") sourceHourlyGridPlacement = placement;
+          if (otherInfo.slug === "hourly-grid-core")
+            sourceHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
         }
         if (otherInfo.pageId === hoveredPageId) {
           hoveredOthers.push({ ...placement, id, locked: otherInfo.locked });
-          if (otherInfo.slug === "hourly-grid-core") hoveredHourlyGridPlacement = placement;
+          if (otherInfo.slug === "hourly-grid-core")
+            hoveredHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
         }
       }
 
@@ -6209,14 +6217,26 @@ export function NativePlannerEditor({
       // locked entries internally regardless), but not worth relying on.
       const targetOthersWithReservations = [...targetOthers];
       if (targetHourlyGridPlacement) {
-        targetOthersWithReservations.push({
-          id: "__hourlygridgap__",
-          locked: true,
-          columnStart: targetHourlyGridPlacement.columnStart,
-          rowStart: targetHourlyGridPlacement.rowStart + targetHourlyGridPlacement.rowSpan,
-          columnSpan: targetHourlyGridPlacement.columnSpan,
-          rowSpan: 1,
-        });
+        // Half a cell or a full one depending on where the hours end, and
+        // often zero rows: a block rounded up to whole cells already
+        // carries that much slack, and reserving a row on top of it is
+        // what made the visible gap nearly two cells. Same rule the server
+        // reserves with, so a drop lands where the preview showed it.
+        const gapRows = hourlyGapRows(
+          cellHeightPx(targetPageGrid),
+          targetHourlyGridPlacement.propValues,
+          targetHourlyGridPlacement.rowSpan
+        );
+        if (gapRows > 0) {
+          targetOthersWithReservations.push({
+            id: "__hourlygridgap__",
+            locked: true,
+            columnStart: targetHourlyGridPlacement.columnStart,
+            rowStart: targetHourlyGridPlacement.rowStart + targetHourlyGridPlacement.rowSpan,
+            columnSpan: targetHourlyGridPlacement.columnSpan,
+            rowSpan: gapRows,
+          });
+        }
       }
       // Treats each stack's own reserved "+" add-zone (see
       // AddModuleButton) as a virtual locked block for collision/reflow

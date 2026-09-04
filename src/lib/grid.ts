@@ -52,6 +52,12 @@ function usableArea(page: PageGrid) {
  * stays in phase with the grid all the way down the page. It is also the
  * right frame for "which cell is the pointer over".
  */
+/** One lattice cell, in print pixels. Square, so this is the pitch on
+ *  either axis - the figure every "half a cell" rule is measured against. */
+export function cellHeightPx(page: PageGrid): number {
+  return (page.heightPx - page.marginPx * 2) / page.gridRows;
+}
+
 export function gridCellToAllocation(
   page: PageGrid,
   placement: GridPlacement
