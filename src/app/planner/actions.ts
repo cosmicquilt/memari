@@ -22,7 +22,11 @@ import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/m
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
-import { getHourlyGridCoreContentHeightPx, getHourlyGridCoreOffModeMinHeightPx } from "@/lib/modules/hourlyGridCore";
+import {
+  getHourlyGridCoreContentHeightPx,
+  getHourlyGridCoreOffModeMinHeightPx,
+  DEFAULT_ROW_HEIGHT_PT,
+} from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
@@ -741,6 +745,13 @@ export async function resetPlannerToTemplate() {
             intervalMinutes: 30,
             intervalMode: "on",
             compactHourRows: false,
+            // The row height is what makes rowSpan 20 the right answer —
+            // see the comment on it above, which counts 36 slots at 9pt.
+            // Leaving it out reset the block's geometry to the compact
+            // shape while the setting that produces that shape kept
+            // whatever it had, so a planner reset from Tall came back
+            // drawing 18pt rows inside a box built for 9pt ones.
+            rowHeightPt: DEFAULT_ROW_HEIGHT_PT,
           } as Prisma.InputJsonValue,
         },
       }),

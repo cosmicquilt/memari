@@ -163,6 +163,12 @@ const DAY_DIVIDER_COLOR = "#a0a6ab";
  * a fourth option of the same kind.
  */
 export const ROW_HEIGHT_OPTIONS_PT = [9, 12, 18] as const;
+// What a row is when nothing has said otherwise — the same value
+// getRowHeightPx falls back to for an unset or unrecognised rowHeightPt.
+// Exported so that anything RESTORING the default references this rather
+// than writing 9 again: resetPlannerToTemplate sizes the block at 20 dots,
+// which is only correct for this height.
+export const DEFAULT_ROW_HEIGHT_PT = ROW_HEIGHT_PT;
 export type RowHeightPt = (typeof ROW_HEIGHT_OPTIONS_PT)[number];
 
 export function isRowHeightPt(value: unknown): value is RowHeightPt {
