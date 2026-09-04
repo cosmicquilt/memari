@@ -3269,7 +3269,13 @@ function ModulePalette({
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Hours
             </div>
+            {/* Re-seeded when the settings change from outside this form
+                - the row-height handle commits without a reload now, and
+                HoursForm holds its own drafts in state seeded once from
+                these props. Without this the dropdown keeps showing the
+                height you dragged away from. */}
             <HoursForm
+              key={`${pageSettings.rowHeightPt}:${pageSettings.intervalMode}:${pageSettings.intervalMinutes}`}
               startTime={pageSettings.startTime}
               endTime={pageSettings.endTime}
               intervalMinutes={pageSettings.intervalMinutes}
@@ -3793,12 +3799,19 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 
 export function NativePlannerEditor({
   pages,
-  pageSettings,
+  pageSettings: initialPageSettings,
 }: {
   pages: LoadedPage[];
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
 }) {
+  // Local, seeded from the server's copy. These used to be read straight
+  // off the prop, which was fine only because every path that changed them
+  // reloaded the page afterwards. The row-height drag handle commits
+  // without reloading, so the settings have to be able to move here too -
+  // otherwise the block redraws at its new height while the control that
+  // nominally set it still reads the old one.
+  const [pageSettings, setPageSettings] = useState(initialPageSettings);
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
   // Current grid placement per module instance — seeded from the loaded
   // snapshot, mutated by drag-to-reposition below. Deliberately separate
@@ -7664,18 +7677,72 @@ export function NativePlannerEditor({
       const landedSpan = stackBottom.members[0]?.rowSpan;
       const snap = stackBottom.rowHeightSnaps?.find((option) => option.rowSpan === landedSpan);
       if (snap) {
-        setStackResizeDrag(null);
-        updateHourlySettings({
+        recordGeometry();
+        const nextSettings = {
           startTime: pageSettings.startTime,
           endTime: pageSettings.endTime,
-          intervalMinutes: pageSettings.intervalMinutes === 60 ? 60 : 30,
+          intervalMinutes: (pageSettings.intervalMinutes === 60 ? 60 : 30) as 30 | 60,
           intervalMode: pageSettings.intervalMode,
           compactHourRows: pageSettings.compactHourRows,
           weekStartDay: pageSettings.weekStartDay,
           rowHeightPt: snap.rowHeightPt,
-        })
-          .then(() => window.location.reload())
-          .catch((err) => setSaveError(err instanceof Error ? err.message : String(err)));
+        };
+        // Applied in place rather than by reloading. A reload at the end of
+        // a drag tears down the preview, flashes the old committed value
+        // back, and then rebuilds the document - reported as it going back
+        // and then the whole page refreshing. updateHourlySettings hands
+        // back the post-change geometry and renders, so the result can just
+        // replace what the preview was standing in for.
+        serializeCommit(() => updateHourlySettings(nextSettings))
+          .then((results) => {
+            setPageSettings((prev) => ({ ...prev, rowHeightPt: snap.rowHeightPt }));
+            setPlacements((prev) => {
+              const next = { ...prev };
+              for (const r of results) {
+                const current = prev[r.id];
+                if (current) next[r.id] = { ...current, rowStart: r.rowStart, rowSpan: r.rowSpan };
+              }
+              return next;
+            });
+            setModuleLookup((prev) => {
+              const next = new Map(prev);
+              for (const r of results) {
+                const info = prev.get(r.id);
+                const current = placements[r.id];
+                if (!info || !current) continue;
+                const ownerPageId = Object.keys(instanceIdsByPageId).find((pageId) =>
+                  instanceIdsByPageId[pageId]?.includes(r.id)
+                );
+                const grid = ownerPageId ? pageGridByPageId[ownerPageId] : undefined;
+                if (!grid) continue;
+                const origin = gridCellToPixels(grid, {
+                  columnStart: current.columnStart,
+                  rowStart: r.rowStart,
+                  columnSpan: current.columnSpan,
+                  rowSpan: r.rowSpan,
+                });
+                next.set(r.id, {
+                  ...info,
+                  // Prisma hands JSON back as JsonValue, which admits
+                  // null; ModuleInfo wants an object. A module with no
+                  // props keeps the empty object rather than becoming
+                  // null, which every renderer here already assumes.
+                  propValues: (r.propValues ?? {}) as Record<string, unknown>,
+                  elements: r.elements,
+                  originX: origin.x,
+                  originY: origin.y,
+                });
+              }
+              return next;
+            });
+            // Held until the real geometry is in, so the module never
+            // falls back to its pre-drag size for a frame in between.
+            setStackResizeDrag(null);
+          })
+          .catch((err) => {
+            setStackResizeDrag(null);
+            setSaveError(err instanceof Error ? err.message : String(err));
+          });
         return;
       }
       recordGeometry();
@@ -7683,7 +7750,16 @@ export function NativePlannerEditor({
       // its own comment.
       handleStackResizeAdjacent(stackBottom.key, stackBottom.pageId, stackBottom.bottomId, deltaRows);
     },
-    [handleStackResizeAdjacent, recordGeometry, pageSettings, setSaveError]
+    [
+      handleStackResizeAdjacent,
+      recordGeometry,
+      pageSettings,
+      setSaveError,
+      placements,
+      instanceIdsByPageId,
+      pageGridByPageId,
+      serializeCommit,
+    ]
   );
 
   // Hover-delete (NativeModule's own × button). Removes the module and

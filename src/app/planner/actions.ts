@@ -2701,6 +2701,49 @@ export async function updateHourlySettings(settings: {
     ...updates,
     prisma.planner.update({ where: { id: planner.id }, data: { theme: nextTheme as Prisma.InputJsonValue } }),
   ]);
+
+  // Every surviving grid-placed instance, with its post-change geometry and
+  // a fresh render, in the same {id, rowStart, rowSpan, elements} shape
+  // resizeHourlyGridCore and resizeStackFromBottom already return. This
+  // used to return nothing and every caller answered by reloading the page,
+  // which is a hard thing to do at the end of a drag: the preview is torn
+  // down, the committed value flashes back, and then the whole document is
+  // rebuilt. With the result in hand the caller can patch its own state
+  // instead and the change simply stays where the drag left it.
+  //
+  // The whole planner rather than a tracked set of touched ids: a settings
+  // change repacks the below-zone stacks, so "what moved" is most of the
+  // page anyway, and the alternative is threading an id set through three
+  // separate update branches to save one render that the reload was doing
+  // for every module regardless.
+  //
+  // NOTE this lists what SURVIVES. deleteLowestBelowToFit can remove an
+  // instance, and a caller that passes it still has to reconcile
+  // deletions itself (the settings panel reloads, which does). The drag
+  // handle never passes it - it only offers heights that already fit.
+  const after = await prisma.planner.findFirst({
+    where: { id: planner.id },
+    include: {
+      pages: {
+        orderBy: { position: "asc" },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      },
+    },
+  });
+  if (!after) return [];
+  const fontFamily = fontFamilyFromTheme(after.theme);
+  return after.pages.flatMap((page) => {
+    const pageGrid = pageGridFor(page);
+    return page.moduleInstances
+      .filter((mi) => mi.columnStart !== null && mi.rowStart !== null)
+      .map((mi) => ({
+        id: mi.id,
+        rowStart: mi.rowStart as number,
+        rowSpan: mi.rowSpan,
+        propValues: mi.propValues,
+        elements: renderInstanceElements(mi, mi.moduleType.slug, pageGrid, fontFamily),
+      }));
+  });
 }
 
 // Drag-resize for hourly-grid-core's own bottom edge, only ever valid
