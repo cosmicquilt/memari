@@ -125,6 +125,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
+import { moduleContentIsLive } from "@/lib/moduleRegistry";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -1682,15 +1683,21 @@ function NativePage({
                 ?.rowHeightSnaps?.find((option) => option.rowSpan === contentPlacement.rowSpan)
                 ?.rowHeightPt
             : undefined;
+        // Whether a module's content has to be re-drawn as its box moves is
+        // a fact about the module, so it is declared in the registry rather
+        // than listed by slug here. This was four slugs written out by hand,
+        // and an hourly grid with increments ON was not among them - so it
+        // drew its old hours inside a box that had already changed size,
+        // which is the double box the whole content-easing rule exists to
+        // prevent. A module missing from a hand-kept list is not a compile
+        // error, which is the argument for not keeping one.
+        //
+        // The row-height drag is the editor's own addition: it changes the
+        // pitch without changing the mode, so the module's own answer is
+        // "no" and this gesture overrides it.
         const contentIsLive =
           ((resizingIds?.has(id) ?? false) || isEasingBox) &&
-          (info.slug === "todo-checklist" ||
-            info.slug === "habit-tracker" ||
-            info.slug === "labeled-box" ||
-            (info.slug === "hourly-grid-core" &&
-              ((info.propValues as { intervalMode?: string }).intervalMode === "off" ||
-                // Only once there is actually a different height to draw.
-                hourlyRowHeightPt !== undefined)));
+          (moduleContentIsLive(info.slug, info.propValues) || hourlyRowHeightPt !== undefined);
         const livePropValues =
           hourlyRowHeightPt !== undefined
             ? { ...(info.propValues as Record<string, unknown>), rowHeightPt: hourlyRowHeightPt }

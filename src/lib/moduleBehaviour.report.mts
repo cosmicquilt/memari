@@ -35,6 +35,7 @@
 //
 // Run with: npm run check:behaviour
 import { renderModuleInstance } from "./renderModuleInstance";
+import { REGISTERED_SLUGS } from "./moduleRegistry";
 import { gridCellToPixels, type PageGrid } from "./grid";
 
 const PAGE: PageGrid = {
@@ -256,7 +257,14 @@ const HOURLY = (columnSpan: number) => ({
   events: [],
 });
 
-const SWEEPS: Sweep[] = [
+// Sweeps for the modules that need particular props or particular sizes to
+// be measured meaningfully. Everything else registered gets the default
+// below, so a newly registered module is classified from the day it exists
+// rather than the day someone remembers to add it here. That is the whole
+// point: at a hundred modules nobody is going to notice one missing from a
+// hand-kept list, and a module absent from this report is a module whose
+// transition behaviour is simply unknown.
+const SWEEP_OVERRIDES: Sweep[] = [
   {
     name: "hourly grid",
     slug: "hourly-grid-core",
@@ -396,6 +404,27 @@ function verdict(steps: StepResult[]): { label: string; occlusion: boolean } {
   if (stretched > 0) return { label: "stretch", occlusion };
   return { label: "mixed", occlusion };
 }
+
+// One default sweep per registered module with no override: a spread of
+// widths across the four day units, and heights from short to most of a
+// page. Deliberately coarse - it is here to make a module VISIBLE in the
+// report, not to characterise it perfectly. A module whose behaviour turns
+// out to matter earns an override.
+const DEFAULT_SWEEP = (slug: string): Sweep => ({
+  name: slug,
+  slug,
+  columns: [6, 12, 18, 24],
+  rows: [4, 8, 12, 16],
+  atColumns: 18,
+  atRows: 12,
+  props: () => ({}),
+});
+
+const overriddenSlugs = new Set(SWEEP_OVERRIDES.map((sweep) => sweep.slug));
+const SWEEPS: Sweep[] = [
+  ...SWEEP_OVERRIDES,
+  ...REGISTERED_SLUGS.filter((slug) => !overriddenSlugs.has(slug)).map(DEFAULT_SWEEP),
+];
 
 const pad = (s: string, n: number) => s.padEnd(n);
 console.log("Module behaviour under growth - measured, one axis at a time\n");

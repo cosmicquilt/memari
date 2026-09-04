@@ -5,26 +5,8 @@
 // (planner/actions.ts) — both need the exact same logic, so it lives here
 // instead of being duplicated.
 
-import { gridCellToPixels, gridCellToAllocation, columnSpanToDayCount, type PageGrid } from "@/lib/grid";
-import {
-  renderHourlyGridCore,
-  type HourlyGridCoreConfig,
-} from "@/lib/modules/hourlyGridCore";
-import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
-import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
-import {
-  renderTodoChecklist,
-  type TodoChecklistConfig,
-} from "@/lib/modules/todoChecklist";
-import {
-  renderHabitTracker,
-  type HabitTrackerConfig,
-} from "@/lib/modules/habitTracker";
-import {
-  renderMonthGridCore,
-  type MonthGridCoreConfig,
-} from "@/lib/modules/monthGridCore";
-import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
+import { gridCellToPixels, gridCellToAllocation, type PageGrid } from "@/lib/grid";
+import { moduleDefinition, withDerivedProps } from "@/lib/moduleRegistry";
 import { FONT_SERIF } from "@/lib/theme";
 
 // A structural subset of the Prisma ModuleInstance (+ its ModuleType), not
@@ -88,46 +70,13 @@ function renderBySlug(
   // where the lattice starts.
   lattice: { pitchPx: number; originX: number; originY: number; insetPx: number }
 ): RenderedPolotnoElement[] {
-  switch (slug) {
-    case "hourly-grid-core":
-      return renderHourlyGridCore(
-        geometry,
-        propValues as unknown as HourlyGridCoreConfig,
-        idPrefix,
-        fontFamily,
-        lattice
-      );
-    case "labeled-box":
-      return renderLabeledBox(geometry, propValues as unknown as LabeledBoxConfig, idPrefix, fontFamily);
-    case "week-title":
-      return renderWeekTitle(geometry, propValues as unknown as WeekTitleConfig, idPrefix, fontFamily);
-    case "todo-checklist":
-      return renderTodoChecklist(
-        geometry,
-        propValues as unknown as TodoChecklistConfig,
-        idPrefix,
-        fontFamily
-      );
-    case "habit-tracker":
-      return renderHabitTracker(
-        geometry,
-        propValues as unknown as HabitTrackerConfig,
-        idPrefix,
-        fontFamily
-      );
-    case "month-grid-core":
-      return renderMonthGridCore(
-        geometry,
-        propValues as unknown as MonthGridCoreConfig,
-        idPrefix,
-        fontFamily
-      );
-    case "month-title":
-      return renderMonthTitle(geometry, propValues as unknown as MonthTitleConfig, idPrefix, fontFamily);
-    default:
-      // Other module types (e.g. quote-block) don't have renderers yet.
-      return [];
-  }
+  // A switch over slugs used to live here, one case per module, and it was
+  // one of nine places that had to learn a module's name. The registry is
+  // that list now; an unregistered slug draws nothing, exactly as the
+  // default case did.
+  return (
+    moduleDefinition(slug)?.render(geometry, propValues, idPrefix, fontFamily, lattice) ?? []
+  );
 }
 
 // Locked "core" blocks (hourly-grid-core, week-title, todo-checklist,
@@ -173,24 +122,16 @@ export function renderModuleInstance(
     columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
   });
 
-  // A to-do's day-column count is not an independent setting: it IS its
-  // width, one column per day unit. Storing it in propValues made it a
-  // second description of the same geometry, and every caller that
-  // changed a span had to remember to change the prop to match. Several
-  // did — see NativePlannerEditor's dayCountOverride and actions.ts's
-  // configOverrides — but only along the paths someone had noticed. A
-  // resize did not, a reflowed neighbour did not, and neither did the
-  // window between releasing a drag and the server's render arriving, so
-  // a to-do dropped into the sidebar drew three squeezed day columns in a
-  // one-column box until the page came back.
-  //
-  // Deriving it here means the renderer cannot draw a column count that
-  // disagrees with the width it was handed, whoever calls it. The stored
-  // prop is left alone and simply stops being consulted.
-  const propValues =
-    instance.moduleType.slug === "todo-checklist"
-      ? { ...(instance.propValues as Record<string, unknown>), dayCount: columnSpanToDayCount(pageGrid, instance.columnSpan) }
-      : instance.propValues;
+  // Facts that are consequences of the geometry rather than settings are
+  // recomputed here from the box about to be drawn, so no caller can hand
+  // this a prop that disagrees with the size it passed. See the registry's
+  // derivedProps for the reasoning and for which modules have any.
+  const propValues = withDerivedProps(
+    instance.moduleType.slug,
+    pageGrid,
+    { columnSpan: instance.columnSpan, rowSpan: instance.rowSpan },
+    instance.propValues
+  );
 
   const elements = renderBySlug(
     instance.moduleType.slug,

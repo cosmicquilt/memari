@@ -1,0 +1,250 @@
+// One place that knows what a module is.
+//
+// A module's behaviour used to be described by string comparison against
+// its slug, in nine separate files and seventy-five separate places: which
+// function draws it, how short it may get, whether its content re-renders
+// while its box is resizing, which of its stored props are really facts
+// about its geometry. Adding a module meant finding all of them, and
+// missing one is not a compile error - it is a module quietly absent from
+// a list it belonged in.
+//
+// That is not hypothetical. `contentIsLive` listed four slugs by name to
+// decide whose content re-renders during a resize, and an hourly grid with
+// increments on was not among them, so it drew its old hours inside a box
+// that had already changed size - the "double box" the content-easing rule
+// exists to prevent. The same shape of omission left dayCount overridden
+// on some paths and not others, and rowHeightPt written at two of the
+// three sites that needed it.
+//
+// The catalogue makes this decisive rather than merely untidy. The ~108
+// planned modules are presets over about eleven drawing primitives - a
+// water tracker, a medication log and a plant-watering chart are one
+// primitive with three label sets. So a new module should be a DATA entry
+// against an existing primitive, not a code entry repeated across nine
+// files, and that is only true if there is one entry to make.
+import type { PageGrid } from "@/lib/grid";
+import { gridCellToPixels, columnSpanToDayCount, pixelHeightToRowSpan } from "@/lib/grid";
+import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
+import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
+import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
+import {
+  renderTodoChecklist,
+  getTodoChecklistRowMetricsPx,
+  type TodoChecklistConfig,
+} from "@/lib/modules/todoChecklist";
+import {
+  renderHabitTracker,
+  getHabitTrackerRowMetricsPx,
+  isHabitTrackerCompact,
+  type HabitTrackerConfig,
+} from "@/lib/modules/habitTracker";
+import { renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
+import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
+
+/** The box a module is asked to draw itself into, in print pixels. */
+export type ModuleGeometry = { x: number; y: number; width: number; height: number };
+
+/** The page's dot lattice, for the primitives that draw on it. Square
+ *  cells, so one pitch; the origin is the page margin. */
+export type ModuleLattice = {
+  pitchPx: number;
+  originX: number;
+  originY: number;
+  insetPx: number;
+};
+
+export type ModuleDefinition = {
+  /** Draws the module. The primitive; a preset is this plus propValues. */
+  render: (
+    geometry: ModuleGeometry,
+    propValues: unknown,
+    idPrefix: string,
+    fontFamily: string,
+    lattice: ModuleLattice
+  ) => RenderedPolotnoElement[];
+
+  /**
+   * The shortest content this module can be drawn at, in print pixels, or
+   * undefined to take the uniform floor. Turned into rows by
+   * getMinRowSpanForSlug, which is where the epsilon and the page geometry
+   * live - a definition here states the module's own rule and nothing else.
+   */
+  minContentHeightPx?: (pageGrid: PageGrid, columnSpan: number) => number;
+
+  /**
+   * Props that are not settings but consequences of the module's own
+   * geometry, recomputed on every render so they cannot disagree with the
+   * box they describe.
+   *
+   * A to-do's day count is the worked example: it IS its width, one column
+   * per day unit. Storing it made it a second description of the same
+   * geometry, and every caller that changed a span had to remember to
+   * change the prop to match. Several did, along the paths someone had
+   * noticed; a resize did not, nor a reflowed neighbour, nor the window
+   * between releasing a drag and the server's answer arriving.
+   */
+  derivedProps?: (
+    pageGrid: PageGrid,
+    placement: { columnSpan: number; rowSpan: number },
+    propValues: Record<string, unknown>
+  ) => Record<string, unknown>;
+
+  /**
+   * Does this module's content have to be RE-DRAWN as its box resizes,
+   * rather than drawn once and clipped?
+   *
+   * True wherever the drawing is a function of the box rather than a
+   * picture inside it: a checklist whose row count follows its height, a
+   * tracker that switches layout below a width. False for a module whose
+   * content is fixed and merely revealed or covered, which the clip window
+   * handles on its own and more cheaply.
+   *
+   * Takes propValues because a module can be either depending on its
+   * settings - an hourly grid with increments off is a blank field that
+   * simply scales, with increments on it is ruled rows that must be
+   * recounted.
+   */
+  contentIsLive: (propValues: Record<string, unknown>) => boolean;
+};
+
+const ALWAYS = () => true;
+const NEVER = () => false;
+
+export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
+  "hourly-grid-core": {
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderHourlyGridCore(
+        geometry,
+        propValues as HourlyGridCoreConfig,
+        idPrefix,
+        fontFamily,
+        lattice
+      ),
+    // Increments off is a blank height-adjustable field, so it scales and
+    // the clip serves. Increments on draws ruled rows whose count and
+    // pitch both follow the box, so it has to be redrawn. The editor adds
+    // one more case of its own - dragging the row-height handle changes
+    // the pitch without changing the mode - which is about that gesture
+    // rather than about the module.
+    contentIsLive: (propValues) => propValues.intervalMode === "off",
+  },
+
+  "labeled-box": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily),
+    // Its heading drops a point size rather than wrapping when the box
+    // narrows, and a ruled box gains rules as it grows, so both axes
+    // change the drawing.
+    contentIsLive: ALWAYS,
+  },
+
+  "week-title": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily),
+    contentIsLive: NEVER,
+  },
+
+  "todo-checklist": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily),
+    minContentHeightPx: () => {
+      // "Title and one row below", requested in those words.
+      const m = getTodoChecklistRowMetricsPx();
+      return m.headerHeightPx + m.nominalRowHeightPx;
+    },
+    derivedProps: (pageGrid, placement) => ({
+      dayCount: columnSpanToDayCount(pageGrid, placement.columnSpan),
+    }),
+    contentIsLive: ALWAYS,
+  },
+
+  "habit-tracker": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily),
+    minContentHeightPx: (pageGrid, columnSpan) => {
+      const widthPx = gridCellToPixels(pageGrid, {
+        columnStart: 0,
+        rowStart: 0,
+        columnSpan,
+        rowSpan: 1,
+      }).width;
+      const m = getHabitTrackerRowMetricsPx(widthPx);
+      // A compact (sidebar) placement needs room for two full habit pairs,
+      // not one - asked for directly: "can the habits side module have a
+      // minimum vertical height of two habits (4 rows)." The wide layout
+      // keeps the header-plus-one-row floor.
+      const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
+      return m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
+    },
+    contentIsLive: ALWAYS,
+  },
+
+  "month-grid-core": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily),
+    contentIsLive: NEVER,
+  },
+
+  "month-title": {
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderMonthTitle(geometry, propValues as MonthTitleConfig, idPrefix, fontFamily),
+    contentIsLive: NEVER,
+  },
+};
+
+/** Every slug that can actually be drawn. The behaviour classifier sweeps
+ *  this rather than its own hand-kept list, so a module is measured from
+ *  the day it is registered instead of the day someone remembers it. */
+export const REGISTERED_SLUGS = Object.keys(MODULE_REGISTRY);
+
+export function moduleDefinition(slug: string): ModuleDefinition | undefined {
+  return MODULE_REGISTRY[slug];
+}
+
+/** Whether a module's content must be re-rendered as its box resizes. */
+export function moduleContentIsLive(slug: string, propValues: unknown): boolean {
+  const definition = MODULE_REGISTRY[slug];
+  if (!definition) return false;
+  return definition.contentIsLive((propValues ?? {}) as Record<string, unknown>);
+}
+
+/** propValues with every derived fact recomputed from the geometry it is
+ *  about to be drawn at. Returns the input untouched when a module has no
+ *  derived props, so this is free for most of the catalogue. */
+export function withDerivedProps(
+  slug: string,
+  pageGrid: PageGrid,
+  placement: { columnSpan: number; rowSpan: number },
+  propValues: unknown
+): unknown {
+  const derive = MODULE_REGISTRY[slug]?.derivedProps;
+  if (!derive) return propValues;
+  const base = (propValues ?? {}) as Record<string, unknown>;
+  return { ...base, ...derive(pageGrid, placement, base) };
+}
+
+/** The uniform floor, for a module with no rule of its own. */
+export const MIN_ROW_SPAN = 2;
+
+/**
+ * How short a module may get, in grid rows.
+ *
+ * The rule per module lives in its registry entry; turning pixels into
+ * rows lives here, once. This used to be a switch over slugs that existed
+ * twice - client and server - and the two had drifted: the server called
+ * pixelHeightToRowSpan, the client inlined the same arithmetic without its
+ * epsilon, so a height meant to land exactly on a row boundary could round
+ * up a whole row on one side and not the other. The client's floor gates
+ * the live shrink preview and the server's gates the commit, and those
+ * disagreeing is the "preview lied" family this exists to close.
+ */
+export function getMinRowSpanForSlug(
+  slug: string,
+  pageGrid: PageGrid,
+  columnSpan: number
+): number {
+  const rule = MODULE_REGISTRY[slug]?.minContentHeightPx;
+  if (!rule) return MIN_ROW_SPAN;
+  return Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, rule(pageGrid, columnSpan)));
+}
