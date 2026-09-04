@@ -1663,12 +1663,38 @@ function NativePage({
         // Keeping it live for the ease means it renders at
         // contentPlacement - the larger of the two - so the clip has
         // something to cut the whole way down.
+        // hourly-grid-core with increments ON is being dragged to a new
+        // ROW HEIGHT, not to a new height directly (see rowHeightSnaps).
+        // Its previewed span therefore names one of the row-height
+        // options, and the content has to be re-rendered at that option or
+        // the box snaps to the new size while the hours inside stay as
+        // they were - reported as the block getting a border and jumping
+        // to size without showing the new hours until it committed.
+        //
+        // Read off the same snap list the handle is snapping to, so the
+        // two cannot disagree about which height a span means. Absolute
+        // spans, so this lookup is stable for the length of the drag even
+        // though the memo behind it recomputes against the live preview.
+        const hourlyRowHeightPt =
+          info.slug === "hourly-grid-core"
+            ? hourlyResizeStackBottoms
+                .find((entry) => entry.bottomId === id)
+                ?.rowHeightSnaps?.find((option) => option.rowSpan === contentPlacement.rowSpan)
+                ?.rowHeightPt
+            : undefined;
         const contentIsLive =
           ((resizingIds?.has(id) ?? false) || isEasingBox) &&
           (info.slug === "todo-checklist" ||
             info.slug === "habit-tracker" ||
             info.slug === "labeled-box" ||
-            (info.slug === "hourly-grid-core" && (info.propValues as { intervalMode?: string }).intervalMode === "off"));
+            (info.slug === "hourly-grid-core" &&
+              ((info.propValues as { intervalMode?: string }).intervalMode === "off" ||
+                // Only once there is actually a different height to draw.
+                hourlyRowHeightPt !== undefined)));
+        const livePropValues =
+          hourlyRowHeightPt !== undefined
+            ? { ...(info.propValues as Record<string, unknown>), rowHeightPt: hourlyRowHeightPt }
+            : info.propValues;
         // The box uses `placement`; the CONTENT uses this. They differ
         // only while this module's box is easing, when the content is
         // deliberately drawn at the larger of the two sizes so the box
@@ -1683,7 +1709,7 @@ function NativePage({
                 rowStart: contentPlacement.rowStart,
                 columnSpan: contentPlacement.columnSpan,
                 rowSpan: contentPlacement.rowSpan,
-                propValues: info.propValues,
+                propValues: livePropValues,
                 moduleType: { slug: info.slug },
               },
               page.pageGrid,
@@ -1724,10 +1750,17 @@ function NativePage({
                   // DAY UNITS (see dayCountOverride) - it was columnSpan
                   // itself, which was the same number only while a day was
                   // one column wide.
+                  //
+                  // renderModuleInstance derives dayCount from the span
+                  // itself now, so the to-do branch here is belt and
+                  // braces; livePropValues is what carries the hourly
+                  // grid's previewed row height into this second render,
+                  // which otherwise draws the time labels at the old pitch
+                  // while the rects beside them use the new one.
                   propValues:
                     info.slug === "todo-checklist"
                       ? { ...info.propValues, dayCount: columnSpanToDayCount(page.pageGrid, placement.columnSpan) }
-                      : info.propValues,
+                      : livePropValues,
                   moduleType: { slug: info.slug },
                 },
                 page.pageGrid,
@@ -4190,6 +4223,7 @@ export function NativePlannerEditor({
         // free height. On-mode's height is rowCount times the row height,
         // so the edge picks a row height instead — see rowHeightSnaps.
         const isOffMode = config.intervalMode === "off";
+        const isDragging = stackResizeDrag?.stackKey === `hourly-stack:${id}`;
 
         const offModeMinRowSpan = Math.max(
           MIN_ROW_SPAN,
@@ -4296,12 +4330,28 @@ export function NativePlannerEditor({
               );
               return { rowHeightPt, rowSpan, deltaRows: rowSpan - placement.rowSpan };
             })
-              .filter((option) => placement.rowStart + option.rowSpan <= maxBottomBound);
+              // Which heights fit is a question about the COMMITTED page,
+              // but maxBottomBound is computed from displayPlacements -
+              // the live preview. Growing the block squeezes the followers
+              // below it, which shrinks their give, which shrinks the
+              // bound, which can make the very option being dragged to
+              // stop qualifying. The entry then disappeared mid-drag and
+              // took its own handle with it, so pointerup landed on
+              // nothing: the preview stayed on screen and the setting was
+              // never committed. Measured dragging Roomy -> Tall.
+              //
+              // The handle froze its own copy of this list at pointerdown,
+              // back when the filter still applied, so the landings it can
+              // actually reach are the ones that fitted then. Leaving the
+              // live list unfiltered for the length of the drag only keeps
+              // the entry alive and lets the commit find the span it
+              // landed on.
+              .filter((option) => isDragging || placement.rowStart + option.rowSpan <= maxBottomBound);
 
         // One landing point is not a control. If only the current height
         // fits, there is nothing to drag to and the handle would just be a
         // cursor change over a dead strip.
-        if (rowHeightOptions && rowHeightOptions.length < 2) continue;
+        if (rowHeightOptions && rowHeightOptions.length < 2 && !isDragging) continue;
 
         entries.push({
           key: `hourly-stack:${id}`,
@@ -4328,7 +4378,7 @@ export function NativePlannerEditor({
       byPage[page.pageId] = entries;
     }
     return byPage;
-  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, pageSettings]);
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, pageSettings, stackResizeDrag]);
 
   // A genuinely empty zone (zero unlocked modules in it yet) has no
   // entry in stackBottomsByPageId at all — that map only ever groups
