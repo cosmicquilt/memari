@@ -97,6 +97,40 @@ function rectsOf(
     .map((r) => ({ x: r.x ?? 0, y: r.y ?? 0, width: r.width ?? 0, height: r.height ?? 0 }));
 }
 
+type Run = { x: number; y: number; text: string; fontSize: number };
+
+/** Every text run a module draws. Text moves, reflows and changes point
+ *  size independently of the rects around it — a heading drops from 8pt to
+ *  7pt rather than wrap, and a day label appears only once its column
+ *  exists — so it needs measuring on its own terms rather than being
+ *  lumped in with the geometry. */
+function runsOf(
+  slug: string,
+  columnSpan: number,
+  rowSpan: number,
+  propValues: Record<string, unknown>
+): Run[] {
+  const elements = renderModuleInstance(
+    { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
+      moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
+    PAGE,
+    "PT Serif"
+  );
+  const flatten = (list: unknown[]): Record<string, unknown>[] =>
+    list.flatMap((e) => {
+      const el = e as Record<string, unknown>;
+      return el.children ? [el, ...flatten(el.children as unknown[])] : [el];
+    });
+  return flatten(elements as unknown[])
+    .filter((e) => e.type === "text")
+    .map((e) => ({
+      x: Number(e.x ?? 0),
+      y: Number(e.y ?? 0),
+      text: String(e.text ?? ""),
+      fontSize: Number(e.fontSize ?? 0),
+    }));
+}
+
 /** A tenth of a print pixel is 1/3000 inch - far below anything a printer
  *  or a screen resolves, so rounding there makes float noise stop counting
  *  as a difference without ever merging two marks a reader could tell
@@ -269,6 +303,19 @@ const SWEEPS: Sweep[] = [
     props: () => ({ heading: "Notes", ruled: false }),
   },
   {
+    // A heading long enough to hit labeledBox's own font-size ladder:
+    // headingLayout tries 8pt, then 7pt, then wraps. "Notes" clears 8pt at
+    // every width and so never exercises it — the real page uses headings
+    // like this one, which do.
+    name: "labeled box (long head)",
+    slug: "labeled-box",
+    columns: [6, 12, 18, 24],
+    rows: [4, 8, 12, 16],
+    atColumns: 6,
+    atRows: 12,
+    props: () => ({ heading: "Things I'm Grateful For", ruled: true }),
+  },
+  {
     name: "week title",
     slug: "week-title",
     columns: [12, 18, 24],
@@ -317,11 +364,12 @@ function runAxis(sweep: Sweep, axis: Axis): { steps: StepResult[]; error?: strin
 function verdict(steps: StepResult[]): { label: string; occlusion: boolean } {
   if (steps.length === 0) return { label: "no data", occlusion: false };
   const sum = (f: (s: StepResult) => number) => steps.reduce((a, s) => a + f(s), 0);
-  // A module that draws no rects at any size has not passed the property,
-  // it has escaped it. Text-only modules (the titles) need their own
-  // measurement and must not sit in the table looking compliant.
+  // A module that draws no rects at any size has not passed this property,
+  // it has escaped it — occlusion monotonicity is a statement about marks,
+  // and there are none. It is not a failure either; the text table below
+  // is where these modules are actually measured.
   if (sum((s) => s.n0) === 0 && sum((s) => s.n1) === 0)
-    return { label: "text only - unmeasured", occlusion: false };
+    return { label: "no rects - see text", occlusion: false };
   const dropped = sum((s) => s.dropped);
   const stretched = sum((s) => s.stretched);
   const moved = sum((s) => s.moved);
@@ -352,7 +400,7 @@ function verdict(steps: StepResult[]): { label: string; occlusion: boolean } {
 const pad = (s: string, n: number) => s.padEnd(n);
 console.log("Module behaviour under growth - measured, one axis at a time\n");
 console.log(
-  pad("module", 22) +
+  pad("module", 24) +
     pad("axis", 8) +
     pad("verdict", 26) +
     pad("occl?", 7) +
@@ -371,7 +419,7 @@ for (const sweep of SWEEPS) {
   for (const axis of ["x", "y"] as Axis[]) {
     const { steps, error } = runAxis(sweep, axis);
     if (error) {
-      console.log(pad(sweep.name, 22) + pad(axis === "x" ? "width" : "height", 8) + "render failed: " + error);
+      console.log(pad(sweep.name, 24) + pad(axis === "x" ? "width" : "height", 8) + "render failed: " + error);
       continue;
     }
     const sum = (f: (s: StepResult) => number) => steps.reduce((a, s) => a + f(s), 0);
@@ -379,7 +427,7 @@ for (const sweep of SWEEPS) {
     if (!v.occlusion) violations++;
     rows.push({ name: sweep.name, axis, steps, label: v.label });
     console.log(
-      pad(sweep.name, 22) +
+      pad(sweep.name, 24) +
         pad(axis === "x" ? "width" : "height", 8) +
         pad(v.label, 26) +
         pad(v.occlusion ? "yes" : "NO", 7) +
@@ -412,7 +460,7 @@ for (const r of rows) {
 const split = [...byModule.entries()].filter(([, labels]) => new Set(labels).size > 1);
 if (split.length > 0) {
   console.log("Modules whose axes disagree - these cannot take one holistic mode:");
-  for (const [name, labels] of split) console.log(`  ${pad(name, 22)} width: ${labels[0]}, height: ${labels[1]}`);
+  for (const [name, labels] of split) console.log(`  ${pad(name, 24)} width: ${labels[0]}, height: ${labels[1]}`);
   console.log("");
 }
 
@@ -421,4 +469,123 @@ console.log(
     "morph is needed. Where it is NO, the columns say why: stretched and moved\n" +
     "marks need a morph, dropped marks and a MODE SWITCH need a swap, and any\n" +
     "count under +inside is a mark occlusion provably cannot account for."
+);
+
+
+// ---------------------------------------------------------------------------
+// Text runs
+//
+// The rect table above says nothing about text, so the two title modules
+// sat in it reporting "text only - unmeasured" — honest, but it meant the
+// classifier was blind to a whole category of change. A heading that drops
+// a point size, or a day label that only exists once its column does, is a
+// transition the engine has to handle, and until it is measured it cannot
+// be routed.
+//
+// Runs are paired by CONTENT, in order of appearance for duplicates. Text
+// has a stable identity its geometry does not: "Notes" is the same heading
+// at every width, and pairing it that way is what distinguishes a heading
+// that slid from one that was replaced.
+
+type TextStep = {
+  kept: number;
+  moved: number;
+  rescaled: number;
+  dropped: number;
+  beyond: number;
+  inside: number;
+};
+
+function compareRuns(small: Run[], large: Run[], axis: Axis, bound: number): TextStep {
+  const pos = POS[axis];
+  const byText = new Map<string, Run[]>();
+  for (const r of large) {
+    const list = byText.get(r.text);
+    if (list) list.push(r);
+    else byText.set(r.text, [r]);
+  }
+  const claimed = new Set<Run>();
+  let kept = 0, moved = 0, rescaled = 0, dropped = 0;
+  for (const r of small) {
+    const list = byText.get(r.text);
+    const hit = list && list.length > 0 ? list.shift() ?? null : null;
+    if (!hit) {
+      dropped++;
+      continue;
+    }
+    claimed.add(hit);
+    const samePlace = q(hit.x) === q(r.x) && q(hit.y) === q(r.y);
+    const sameSize = q(hit.fontSize) === q(r.fontSize);
+    // Point size first: a run that both moved and changed size is a
+    // reflow, and reflow is the harder case, so it should not be
+    // reported as the gentler one.
+    if (!sameSize) rescaled++;
+    else if (!samePlace) moved++;
+    else kept++;
+  }
+  let beyond = 0, inside = 0;
+  for (const r of large) {
+    if (claimed.has(r)) continue;
+    if (r[pos] >= bound - 0.5) beyond++;
+    else inside++;
+  }
+  return { kept, moved, rescaled, dropped, beyond, inside };
+}
+
+function textVerdict(t: TextStep, total: number): string {
+  if (total === 0) return "no text";
+  if (t.rescaled > 0) return "reflows";
+  if (t.dropped > 0 || t.inside > 0) return "swaps";
+  if (t.moved > 0) return "moves";
+  return t.beyond > 0 ? "stable + gains" : "stable";
+}
+
+console.log("\n\nText runs under growth — paired by content\n");
+console.log(
+  pad("module", 24) + pad("axis", 8) + pad("verdict", 16) +
+  pad("kept", 6) + pad("moved", 7) + pad("rescaled", 10) + pad("drop", 6) +
+  pad("+beyond", 9) + "+inside"
+);
+console.log("-".repeat(96));
+
+for (const sweep of SWEEPS) {
+  for (const axis of ["x", "y"] as Axis[]) {
+    const sizes = axis === "x" ? sweep.columns : sweep.rows;
+    const total: TextStep = { kept: 0, moved: 0, rescaled: 0, dropped: 0, beyond: 0, inside: 0 };
+    let runCount = 0;
+    let failed = false;
+    for (let i = 0; i + 1 < sizes.length; i++) {
+      const dims = (span: number): [number, number] =>
+        axis === "x" ? [span, sweep.atRows] : [sweep.atColumns, span];
+      const [sc, sr] = dims(sizes[i]);
+      const [lc, lr] = dims(sizes[i + 1]);
+      try {
+        const small = runsOf(sweep.slug, sc, sr, sweep.props(sc, sr));
+        const large = runsOf(sweep.slug, lc, lr, sweep.props(lc, lr));
+        runCount += small.length;
+        const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan: sc, rowSpan: sr });
+        const bound = axis === "x" ? box.x + box.width : box.y + box.height;
+        const step = compareRuns(small, large, axis, bound);
+        total.kept += step.kept; total.moved += step.moved; total.rescaled += step.rescaled;
+        total.dropped += step.dropped; total.beyond += step.beyond; total.inside += step.inside;
+      } catch {
+        failed = true;
+      }
+    }
+    if (failed) continue;
+    console.log(
+      pad(sweep.name, 24) + pad(axis === "x" ? "width" : "height", 8) +
+      pad(textVerdict(total, runCount), 16) +
+      pad(String(total.kept), 6) + pad(String(total.moved), 7) +
+      pad(String(total.rescaled), 10) + pad(String(total.dropped), 6) +
+      pad(String(total.beyond), 9) + String(total.inside)
+    );
+  }
+}
+console.log("-".repeat(96));
+console.log(
+  "A rescaled run is the case occlusion and morphing both handle badly: the\n" +
+    "same string at a different point size is neither revealed by a clip nor\n" +
+    "interpolable without the glyphs changing shape mid-flight. Those are the\n" +
+    "runs that will have to cross-fade."
 );
