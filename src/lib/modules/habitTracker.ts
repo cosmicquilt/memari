@@ -52,20 +52,38 @@ const NEAR_BLACK = "#231F20";
 // Corrected from an earlier 23.3 — that value was measured off the wrong
 // rect. The header row (top border to header/body divider) is actually
 // 587.02 to 604.14 in the reference, 17.12pt tall.
-const HEADER_HEIGHT_PT = 17.1;
+// Was 17.12pt, measured from the reference. Now 15.12pt — exactly 63 print
+// px, which is one dot pitch (75) less the box inset at both ends (12).
+// That is the one header height leaving a whole number of dots beneath it
+// at every row span, so the rows below tile the box with nothing left
+// over. Same value and same reason as todoChecklist.ts, which also means
+// the two headers finally match each other when stacked.
+const HEADER_HEIGHT_PT = 15.12;
 const HEADER_FONT_PT = 12;
 // Bumped from the reference's measured ~6.7pt (bbox-height-derived) for
 // legibility — PT Serif renders a hair smaller than the reference's
 // MinionPro at the same nominal size.
 const DAY_LETTER_FONT_PT = 8;
 const BORDER_WIDTH_PT = 0.5;
-const ROW_HEIGHT_PT = 13.45;
+// One row is one dot: 18pt, 75 print px, a quarter inch. Measured at
+// 13.45pt, but that pitch does not divide the cell, so it always left a
+// remainder that had to be stretched away — see the rowHeight comment
+// below. Rows are a third taller as a result and a given box holds
+// correspondingly fewer of them.
+const ROW_HEIGHT_PT = 18;
 const ROW_LINE_WIDTH_PT = 0.35;
-// Fixed, not derived from leftover width — matches HEADER_HEIGHT_PT
-// closely by design (17.3 vs 17.1), which is what makes the header row's
-// day-letter cells square. The name column absorbs whatever width is
-// left over instead (see below).
-const DAY_COLUMN_WIDTH_PT = 17.3;
+// One dot wide, matching ROW_HEIGHT_PT, so every checkable cell in the
+// body grid is exactly one lattice cell square. Fixed rather than derived
+// from leftover width — the name column absorbs the remainder instead (see
+// below), which is what stops the day cells stretching into rectangles in
+// a wider allocation.
+//
+// This used to track HEADER_HEIGHT_PT so the HEADER row's day-letter cells
+// were square. It cannot do both: the header has to be 63px for the rows
+// below it to tile the box exactly, while the body cells have to be 75px
+// to be one cell. The body grid wins, so the seven letter cells in the
+// header band are now slightly wide (75 x 63) rather than square.
+const DAY_COLUMN_WIDTH_PT = 18;
 // Sun/Mon/Tue/Wed/Thu/Fri/Sat — 7 entries. Reported directly: "missing
 // a t for thursday" — this had dropped straight to Friday, only 6
 // columns wide, off by exactly one weekday. Every downstream layout
@@ -168,12 +186,14 @@ export function renderHabitTracker(
     0,
     Math.floor((contentHeight - headerHeight) / nominalRowHeight)
   );
-  // Stretched a hair beyond the nominal measured row height so rowCount
-  // whole rows exactly fill the allocated box, matching labeledBox.ts's
-  // Notes box (which always renders at its full allocated height with no
-  // rounding gap) instead of leaving unused space below the last row.
-  const rowHeight =
-    rowCount > 0 ? (contentHeight - headerHeight) / rowCount : nominalRowHeight;
+  // The pitch is fixed, and since it divides the remaining height exactly
+  // there is no remainder to stretch away. This used to divide the box by
+  // rowCount instead, which made the row height a function of the box
+  // height — so a short habit tracker and a tall one on the same page had
+  // visibly different rows, and growing one moved every line in it rather
+  // than adding lines at the bottom. `npm run check:behaviour` measured
+  // that as 39 marks moving against 3 staying put.
+  const rowHeight = nominalRowHeight;
 
   // Outer border — reaches the full allocated height exactly.
   elements.push({
@@ -228,7 +248,10 @@ export function renderHabitTracker(
     x: geometry.x + nameColumnWidth - rowLineWidth / 2,
     y: contentY,
     width: rowLineWidth,
-    height: headerHeight + rowCount * rowHeight,
+    // Down to the border. With a fixed pitch the last row line and the
+    // bottom edge are no longer necessarily the same place, and a divider
+    // stopping at the former would hang short of the frame.
+    height: contentHeight,
     fill: NEAR_BLACK,
     stroke: "none",
   });
@@ -258,7 +281,10 @@ export function renderHabitTracker(
         x: colX - rowLineWidth / 2,
         y: contentY,
         width: rowLineWidth,
-        height: headerHeight + rowCount * rowHeight,
+        // Down to the border. With a fixed pitch the last row line and the
+    // bottom edge are no longer necessarily the same place, and a divider
+    // stopping at the former would hang short of the frame.
+    height: contentHeight,
         fill: NEAR_BLACK,
         stroke: "none",
         opacity: 0.6,
@@ -271,12 +297,18 @@ export function renderHabitTracker(
   // Habit-name rows + optional pre-filled names.
   for (let i = 0; i < rowCount; i++) {
     const rowY = gridTop + i * rowHeight;
+    // Pinned to the bottom border on the last row. Under the current
+    // geometry that is exactly where the pitch puts it anyway; it is here
+    // so a future change to the header, inset or cell pitch degrades to a
+    // slightly deep last row rather than to a thin abandoned strip.
+    const rowBottom =
+      i === rowCount - 1 ? contentY + contentHeight : rowY + rowHeight;
     elements.push({
       id: nextId(),
       type: "figure",
       subType: "rect",
       x: geometry.x,
-      y: rowY + rowHeight - rowLineWidth / 2,
+      y: rowBottom - rowLineWidth / 2,
       width: geometry.width,
       height: rowLineWidth,
       fill: NEAR_BLACK,

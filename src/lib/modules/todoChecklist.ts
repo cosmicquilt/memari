@@ -35,24 +35,48 @@ export type RenderedElement = {
 };
 
 const NEAR_BLACK = "#231F20";
-const HEADER_HEIGHT_PT = 16.7;
+// 15.12pt is exactly 63 print px: one dot pitch (75) less the box inset at
+// both ends (12). That is the one header height for which the space left
+// under it is a whole number of dots at EVERY row span — see ROW_HEIGHT_PT.
+// Measured from the reference at 16.7pt, so this is 1.6pt shorter and the
+// heading band sits a little tighter around its 12pt line.
+const HEADER_HEIGHT_PT = 15.12;
 const HEADER_FONT_PT = 12;
 const HEADER_BORDER_WIDTH_PT = 0.5;
-const ROW_HEIGHT_PT = 13.45;
+// One row is one dot: 18pt, 75 print px, a quarter inch. With the header
+// above taking a dot less the two insets, the height left over is exactly
+// (rowSpan - 1) dots, so rows tile the box perfectly at every size with
+// nothing left over — which is the whole point.
+//
+// Two earlier attempts both failed on the leftover rather than the pitch.
+// Stretching the pitch to swallow it made row height depend on box height
+// (71.7px in a short box against 56.7px in a tall one, so two to-dos on
+// one page did not match). Fixing the pitch at the measured 13.45pt left a
+// remainder that had to go somewhere: below the last line it drew a thin
+// abandoned strip, and inside the last row it made that row up to twice
+// the others. Neither is acceptable, and neither is fixable while the
+// pitch fails to divide the cell — 56.25px simply does not go into 75.
+//
+// The cost is density. The reference measures 13.45pt, so rows are now a
+// third taller and a full-height to-do holds 14 rows where it held 18.
+const ROW_HEIGHT_PT = 18;
 const ROW_LINE_WIDTH_PT = 0.35;
-const CHECKBOX_WIDTH_PT = 14.1; // same as hourlyGridCore's time-label box
+// One dot wide, which makes each checkbox exactly square now that a row is
+// one dot tall. Was 14.1pt, borrowed from hourlyGridCore's time-label box
+// back when a row was 13.45pt and the two were near enough to each other
+// that the difference did not read; at an 18pt row it would have drawn a
+// visibly wide rectangle instead.
+const CHECKBOX_WIDTH_PT = 18;
 const COLUMN_GUTTER_PT = 4.5; // same convention as hourlyGridCore
 
 // Exposes just the height constants NativePlannerEditor.tsx needs to
 // compute this module type's own minimum resize height ("title and one
 // row below," requested directly) without a server round trip — same
 // constants the real renderer above already uses, not a guessed row
-// count. Deliberately just the nominal row height, not the render
-// function's own stretch-to-fit adjustment (rowHeight in
-// renderTodoChecklist, which nudges rowCount whole rows to exactly fill
-// the final committed height) — that adjustment is a sub-pixel
-// correction against one specific, known final height, not something a
-// minimum-size check needs to reproduce exactly.
+// count. There used to be a caveat here that this was only the nominal
+// height and the renderer stretched it to fill the box exactly. That
+// stretch is gone — the pitch is fixed — so this is now the real row
+// height the renderer uses, and the two can no longer disagree.
 export function getTodoChecklistRowMetricsPx(): {
   headerHeightPx: number;
   nominalRowHeightPx: number;
@@ -96,20 +120,26 @@ export function renderTodoChecklist(
   const segmentWidth =
     (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
 
-  const rowCount = Math.max(
-    0,
-    Math.floor((contentHeight - headerHeight) / nominalRowHeight)
-  );
-  // Stretch the actual row height a hair beyond the nominal measured
-  // value so rowCount whole rows exactly fill the allocated box, rather
-  // than floor-rounding leaving unused space below the last row. This is
-  // what makes this block's bottom edge land exactly on
-  // geometry.y + geometry.height — matching labeledBox.ts's Notes box,
-  // which always renders its border at the full allocated height with no
-  // equivalent rounding gap. The stretch is sub-pixel in practice (a
-  // rounding remainder spread across ~10 rows).
-  const rowHeight =
-    rowCount > 0 ? (contentHeight - headerHeight) / rowCount : nominalRowHeight;
+  const gridHeight = contentHeight - headerHeight;
+  // A hair of slack before flooring, so a height that divides exactly
+  // yields the row it has room for rather than losing it to a float
+  // remainder — same reason pixelsToGridCell rounds the way it does.
+  const rowCount = Math.max(0, Math.floor(gridHeight / nominalRowHeight + 1e-6));
+
+  // The pitch is fixed, and because it divides the available height
+  // exactly there is no remainder to place anywhere. Growing the box
+  // therefore leaves every existing row line precisely where it was and
+  // adds new ones below the old bottom edge, where the clip window can
+  // simply uncover them without any of them having to move.
+  //
+  // This used to stretch the pitch instead — rowHeight = gridHeight /
+  // rowCount — and the comment here claimed that was a sub-pixel
+  // correction. It was not. The remainder was spread across every row, so
+  // row i shifted by i/rowCount of it and the lowest rows moved by most of
+  // a row height. `npm run check:behaviour` measured a vertical resize
+  // moving 102 marks and keeping 3, which is why the animation had nothing
+  // stable to hold on to.
+  const rowHeight = nominalRowHeight;
 
   // Outer border around the whole block — reaches the full allocated
   // height exactly (see rowHeight comment above).
@@ -171,7 +201,10 @@ export function renderTodoChecklist(
       x: segX - rowLineWidth / 2,
       y: gridTop,
       width: rowLineWidth,
-      height: rowCount * rowHeight,
+      // Down to the border, not just to the last row line: with a fixed
+      // pitch those are no longer the same place, and stopping short would
+      // leave the checkbox column hanging above the bottom edge.
+      height: gridHeight,
       fill: NEAR_BLACK,
       stroke: "none",
     });
@@ -184,20 +217,31 @@ export function renderTodoChecklist(
       x: segX + checkboxWidth - rowLineWidth / 2,
       y: gridTop,
       width: rowLineWidth,
-      height: rowCount * rowHeight,
+      // Down to the border, not just to the last row line: with a fixed
+      // pitch those are no longer the same place, and stopping short would
+      // leave the checkbox column hanging above the bottom edge.
+      height: gridHeight,
       fill: NEAR_BLACK,
       stroke: "none",
     });
 
     for (let i = 0; i < rowCount; i++) {
-      const rowY = gridTop + i * rowHeight;
+      // The last row is pinned to the bottom border rather than computed
+      // from the pitch. Under the current geometry these are the same
+      // place — the pitch divides gridHeight exactly — so this changes
+      // nothing today. It is here so that if the header height, the box
+      // inset or the cell pitch is ever changed such that they no longer
+      // divide, the block still fills its box instead of quietly growing a
+      // thin abandoned strip under the last line.
+      const rowBottom =
+        i === rowCount - 1 ? gridTop + gridHeight : gridTop + (i + 1) * rowHeight;
       // Row line under both the checkbox and task-line cells.
       elements.push({
         id: nextId(),
         type: "figure",
         subType: "rect",
         x: segX,
-        y: rowY + rowHeight - rowLineWidth / 2,
+        y: rowBottom - rowLineWidth / 2,
         width: segmentWidth,
         height: rowLineWidth,
         fill: NEAR_BLACK,
