@@ -127,7 +127,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
-import { moduleContentIsLive } from "@/lib/moduleRegistry";
+import { moduleContentIsLive, cleanPropsForSave } from "@/lib/moduleRegistry";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -975,14 +975,17 @@ function NativeModule({
   const commitHabits = useCallback(
     (value: string) => {
       setIsEditingHabits(false);
-      // Cleaned only at commit time, not on every keystroke — matches
-      // the old Polotno-editor PropertiesPanel's own save-time cleanup
-      // (see PropertiesPanel.tsx), so a blank line mid-list doesn't get
-      // yanked out from under the cursor while still typing.
-      const cleaned = value
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      // Cleaned only at commit time, not on every keystroke, so a blank
+      // line mid-list is not yanked out from under the cursor while
+      // someone is still typing.
+      //
+      // Through the registry rather than inline: this was the third copy
+      // of the rule, alongside the old properties panel and that panel's
+      // own save handler, and "matches PropertiesPanel's own cleanup"
+      // was written in a comment here because nothing made it true.
+      const cleaned = (cleanPropsForSave("habit-tracker", {
+        habits: value.split("\n"),
+      }).habits ?? []) as string[];
       const current = habits ?? [];
       const changed = cleaned.length !== current.length || cleaned.some((h, i) => h !== current[i]);
       if (changed) onUpdateHabits(instanceId, cleaned);

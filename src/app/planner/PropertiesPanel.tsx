@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAsyncAction } from "./useAsyncAction";
+import { moduleDefinition, cleanPropsForSave, type ModuleField } from "@/lib/moduleRegistry";
 
 // Content editing for whichever non-locked module is currently selected
 // on the canvas — heading text, ruled/blank, habit names, resizing, etc.
@@ -91,16 +92,11 @@ function PropertiesForm({
       // Trim/drop blank lines only at save time, not on every keystroke —
       // letting the textarea hold blank lines while the user is still
       // typing is friendlier than fighting their cursor position.
-      const cleaned =
-        selected.slug === "habit-tracker"
-          ? {
-              ...draft,
-              habits: ((draft.habits as string[] | undefined) ?? [])
-                .map((s) => s.trim())
-                .filter(Boolean),
-            }
-          : draft;
-      await onSave(selected.id, cleaned);
+      // Which props need cleaning is a fact about the module's fields, so
+      // the registry does it. This was a habit-tracker clause written into
+      // this handler, and the next module with a list would have needed
+      // another one beside it.
+      await onSave(selected.id, cleanPropsForSave(selected.slug, draft));
     });
 
   // Resize applies immediately on click rather than accumulating into a
@@ -119,60 +115,57 @@ function PropertiesForm({
       })
     );
 
-  const label: Record<string, string> = {
-    "labeled-box": "Labeled box",
-    "habit-tracker": "Habit tracker",
-    "todo-checklist": "To-do checklist",
-  };
-
-  const allowColumnResize = selected.slug === "labeled-box";
+  // Everything this panel needs to know about the module comes from its
+  // registry entry. It used to be a name map plus a run of `slug === ...`
+  // blocks each holding its own JSX, which is three modules' worth of code
+  // for three modules and a hundred modules' worth for a hundred - and the
+  // catalogue is presets over a handful of primitives, so a preset should
+  // need no panel code at all.
+  const definition = moduleDefinition(selected.slug);
+  const allowColumnResize = definition?.resizableWidth ?? false;
 
   return (
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-      <strong style={{ fontSize: 13, color: "#555" }}>{label[selected.slug] ?? selected.slug}</strong>
+      <strong style={{ fontSize: 13, color: "#555" }}>{definition?.label ?? selected.slug}</strong>
 
-      {selected.slug === "labeled-box" && (
-        <>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            Heading
-            <input
-              type="text"
-              value={(draft.heading as string) ?? ""}
-              onChange={(e) => setDraft((d) => ({ ...d, heading: e.target.value }))}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {(definition?.fields ?? []).map((field: ModuleField, i) =>
+        field.kind === "note" ? (
+          <span key={i} style={{ color: "#999" }}>
+            {field.text}
+          </span>
+        ) : field.kind === "boolean" ? (
+          <label key={field.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input
               type="checkbox"
-              checked={Boolean(draft.ruled)}
-              onChange={(e) => setDraft((d) => ({ ...d, ruled: e.target.checked }))}
+              checked={Boolean(draft[field.key])}
+              onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.checked }))}
             />
-            Ruled (lined) body
+            {field.label}
           </label>
-        </>
-      )}
-
-      {selected.slug === "habit-tracker" && (
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          Habits (one per line)
-          <textarea
-            rows={8}
-            value={((draft.habits as string[] | undefined) ?? []).join("\n")}
-            onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                habits: e.target.value.split("\n"),
-              }))
-            }
-          />
-        </label>
-      )}
-
-      {selected.slug === "todo-checklist" && (
-        <span style={{ color: "#999" }}>
-          This checklist&apos;s day columns follow whichever page it&apos;s on —
-          nothing to edit here yet.
-        </span>
+        ) : field.kind === "lines" ? (
+          <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {field.label}
+            <textarea
+              rows={field.rows ?? 6}
+              // Split on every keystroke and cleaned only at save, so a
+              // blank line someone is still typing around survives instead
+              // of the cursor being fought - see cleanPropsForSave.
+              value={((draft[field.key] as string[] | undefined) ?? []).join("\n")}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, [field.key]: e.target.value.split("\n") }))
+              }
+            />
+          </label>
+        ) : (
+          <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {field.label}
+            <input
+              type="text"
+              value={(draft[field.key] as string) ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
+            />
+          </label>
+        )
       )}
 
       <button onClick={handleSave} disabled={saving}>
