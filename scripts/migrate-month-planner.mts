@@ -64,7 +64,9 @@ const SIDEBAR_BOXES = [
   { heading: "Monthly Mantra", rowStart: 2, rowSpan: 4 },
   { heading: "Priorities", rowStart: 6, rowSpan: 6 },
   { heading: "Reminders", rowStart: 12, rowSpan: 7 },
-  { heading: "Tentative Dates", rowStart: 19, rowSpan: 11 },
+  // To the foot of the page - see the seed, which computes the same thing
+  // from the page rather than restating 17 here.
+  { heading: "Tentative Dates", rowStart: 19, rowSpan: PAGE_ROWS - 19 },
 ];
 
 const planners = await prisma.planner.findMany({

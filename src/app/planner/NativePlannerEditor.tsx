@@ -6151,7 +6151,11 @@ export function NativePlannerEditor({
       // propValues rides along so the breathing gap below the hours can be
       // computed from where they actually end - see hourlyGapRows - rather
       // than assumed to be one row.
-      type HourlyPlacement = Placement & { propValues: unknown };
+      // The slug travels with it. This holds the page's SPINE now, which
+      // on a month page is a calendar, and the gap rule below reads an
+      // hourly config - so whatever consumes this has to be able to tell
+      // which kind of spine it got.
+      type HourlyPlacement = Placement & { propValues: unknown; slug: string };
       let sourceHourlyGridPlacement: HourlyPlacement | null = null;
       let hoveredHourlyGridPlacement: HourlyPlacement | null = null;
       for (const [id, placement] of Object.entries(placements)) {
@@ -6164,12 +6168,12 @@ export function NativePlannerEditor({
             // is built around its calendar and has zones for the same
             // reason a week page does.
           if (isSpineSlug(otherInfo.slug))
-            sourceHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
+            sourceHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues, slug: otherInfo.slug };
         }
         if (otherInfo.pageId === hoveredPageId) {
           hoveredOthers.push({ ...placement, id, locked: otherInfo.locked });
           if (isSpineSlug(otherInfo.slug))
-            hoveredHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues };
+            hoveredHourlyGridPlacement = { ...placement, propValues: otherInfo.propValues, slug: otherInfo.slug };
         }
       }
 
@@ -6373,11 +6377,18 @@ export function NativePlannerEditor({
         // carries that much slack, and reserving a row on top of it is
         // what made the visible gap nearly two cells. Same rule the server
         // reserves with, so a drop lands where the preview showed it.
-        const gapRows = hourlyGapRows(
-          cellHeightPx(targetPageGrid),
-          targetHourlyGridPlacement.propValues,
-          targetHourlyGridPlacement.rowSpan
-        );
+        // Only the hours have a content height that stops short of their
+        // box, which is what that rule measures from. A calendar fills its
+        // box and simply keeps a whole cell clear, the same as its template
+        // leaves and the same as its own resize handle offers.
+        const gapRows =
+          targetHourlyGridPlacement.slug === "hourly-grid-core"
+            ? hourlyGapRows(
+                cellHeightPx(targetPageGrid),
+                targetHourlyGridPlacement.propValues,
+                targetHourlyGridPlacement.rowSpan
+              )
+            : 1;
         if (gapRows > 0) {
           targetOthersWithReservations.push({
             id: "__hourlygridgap__",

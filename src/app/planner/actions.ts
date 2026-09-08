@@ -1029,7 +1029,11 @@ export async function getOrCreateMonthPlanner() {
       { heading: "Monthly Mantra", rowStart: 2, rowSpan: 4 },
       { heading: "Priorities", rowStart: 6, rowSpan: 6 },
       { heading: "Reminders", rowStart: 12, rowSpan: 7 },
-      { heading: "Tentative Dates", rowStart: 19, rowSpan: 11 },
+      // Runs to the foot of the page rather than to a fixed span. These
+      // rows were laid out when a page was 30 of them; on 36 the last box
+      // stopped six short and left a band of nothing under it, the same
+      // way Notes did before it was given the rest of its column.
+      { heading: "Tentative Dates", rowStart: 19, rowSpan: leftPage.gridRows - 19 },
     ];
     await prisma.moduleInstance.createMany({
       data: defaultBoxes.map((box) => ({
