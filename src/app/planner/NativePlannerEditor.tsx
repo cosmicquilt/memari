@@ -7822,10 +7822,19 @@ export function NativePlannerEditor({
           for (const r of results) {
             const info = prev.get(r.id);
             if (!info) continue;
-            const origin = gridCellToPixels(pageGrid, {
-              columnStart: bottomPlacement.columnStart,
+            // Each row against its OWN columns and its own page, not the
+            // dragged module's. Those were the same thing while this only
+            // ever received one page's stack, which all shares a column
+            // range; a spine resize now answers for every page, and the
+            // right-hand calendar came back drawn at the left one's
+            // columns - shifted across the spread and overlapping it.
+            const own = prev.get(r.id);
+            const ownPlacement = placements[r.id] ?? bottomPlacement;
+            const ownGrid = own?.pageId ? pageGridByPageId[own.pageId] ?? pageGrid : pageGrid;
+            const origin = gridCellToPixels(ownGrid, {
+              columnStart: ownPlacement.columnStart,
               rowStart: r.rowStart,
-              columnSpan: bottomPlacement.columnSpan,
+              columnSpan: ownPlacement.columnSpan,
               rowSpan: r.rowSpan,
             });
             next.set(r.id, { ...info, elements: r.elements, originX: origin.x, originY: origin.y });
