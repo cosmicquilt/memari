@@ -2900,125 +2900,158 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     throw new Error("Can only drag-resize the hourly grid while increments are off");
   }
 
-  const pageGrid = pageGridFor(instance.page);
-  // "around the same minimum size as modules," requested directly —
-  // getHourlyGridCoreOffModeMinHeightPx's own comment explains why
-  // header+gap alone (no extra row) already lands at exactly
-  // MIN_ROW_SPAN on this app's real page geometry; still clamped
-  // through the same Math.max as every other slug's own floor, in case
-  // that geometry ever changes.
-  const minRowSpan =
-    instance.moduleType.slug === "hourly-grid-core"
-      ? Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()))
-      : MIN_ROW_SPAN;
-
-  const stackBottomRowEnd = instance.rowStart + instance.rowSpan;
-  // The below-zone "followers" — every unlocked instance sharing
-  // hourly-grid-core's own exact column range, sitting at or below its
-  // current bottom, sorted top to bottom. All of them move together,
-  // preserving their own relative spacing (they're already gravity-
-  // packed by every other path that places/moves them).
-  const followers = instance.page.moduleInstances
-    .filter(
-      (mi) =>
-        !mi.locked &&
-        mi.id !== instance.id &&
-        mi.columnStart === instance.columnStart &&
-        mi.columnSpan === instance.columnSpan &&
-        mi.rowStart !== null &&
-        mi.rowStart >= stackBottomRowEnd
-    )
-    .sort((a, b) => (a.rowStart as number) - (b.rowStart as number));
-
-  // Growing is bounded by whatever's beyond the *followers'* own
-  // combined extent (they move as a rigid block, so their own tail is
-  // what actually risks running into something) — checked against
-  // everything below them, locked or not: hourly-grid-core is never
-  // itself a member of the below-zone's own stack, so an unlocked
-  // sibling further down would already be part of `followers` above
-  // (same test, over the whole page), not something a locked-only check
-  // would still need to catch separately.
-  const tailRowEnd =
-    followers.length > 0
-      ? Math.max(...followers.map((mi) => (mi.rowStart as number) + mi.rowSpan))
-      : stackBottomRowEnd;
-  const followerIds = new Set(followers.map((mi) => mi.id));
-  let boundBelowTail = pageGrid.gridRows;
-  for (const mi of instance.page.moduleInstances) {
-    if (mi.id === instance.id || followerIds.has(mi.id) || mi.rowStart === null) continue;
-    const sameColumn = mi.columnStart === instance.columnStart && mi.columnSpan === instance.columnSpan;
-    if (mi.rowStart < tailRowEnd || !sameColumn) continue;
-    boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
-  }
-  const freeBelow = Math.max(0, boundBelowTail - tailRowEnd);
-
-  // Growing can also take room from the followers themselves, not just
-  // from free space below them. Without this the block cannot grow at all
-  // on a full page - the to-do underneath already reaches the bottom, so
-  // freeBelow is 0 - and the handle silently only shrinks. Reported as not
-  // being able to expand the increments-off hours section.
+  // Every page's spine moves together, to the SAME span.
   //
-  // Shrinking cascades from the BOTTOM follower upward, each to its own
-  // per-slug floor, which is the same rule the ordinary stack handle and
-  // an insert-into-a-full-stack both already follow.
-  const followerSpans = followers.map((mi) => mi.rowSpan);
-  const followerFloors = followers.map((mi) =>
-    getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
-  );
-  const followerShrinkable = followerSpans.reduce(
-    (sum, span, i) => sum + Math.max(0, span - followerFloors[i]),
-    0
-  );
-  const maxGrow = freeBelow + followerShrinkable;
+  // A spread is one sheet: a left calendar three cells to a week beside a
+  // right one at four is not a thing anyone wants, and the live preview
+  // already mirrors the drag across both pages. Only the commit did not,
+  // so the two drifted apart every time one was dragged - found at six
+  // rows against sixteen. Resizing to a common TARGET rather than by a
+  // common delta also repairs a spread that has already diverged, which
+  // one built out of deltas never could.
+  const pages = await prisma.page.findMany({
+    where: { plannerId: instance.page.plannerId },
+    orderBy: { position: "asc" },
+    include: { moduleInstances: { include: { moduleType: true } } },
+  });
 
-  const clampedDelta = Math.max(-(instance.rowSpan - minRowSpan), Math.min(maxGrow, deltaRows));
-  if (clampedDelta === 0) {
+  /** What one page's spine can do, and what its followers would have to
+   *  give up for it. Everything here is per-page: each has its own
+   *  followers, its own free space and its own floors. */
+  const analyse = (page: (typeof pages)[number]) => {
+    const spine = page.moduleInstances.find(
+      (mi) => mi.moduleType.slug === instance.moduleType.slug && mi.rowStart !== null && mi.columnStart !== null
+    );
+    if (!spine || spine.rowStart === null) return null;
+    const pageGrid = pageGridFor(page);
+    // "around the same minimum size as modules," requested directly.
+    // getHourlyGridCoreOffModeMinHeightPx's own comment explains why
+    // header+gap alone already lands at exactly MIN_ROW_SPAN on this app's
+    // real geometry; still clamped through the same Math.max as every
+    // other floor, in case that geometry changes.
+    const minRowSpan =
+      spine.moduleType.slug === "hourly-grid-core"
+        ? Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()))
+        : MIN_ROW_SPAN;
+    const stackBottomRowEnd = spine.rowStart + spine.rowSpan;
+    // The below-zone followers: every unlocked instance sharing the
+    // spine's exact column range at or below its bottom, top to bottom.
+    // They move together, keeping their own relative spacing.
+    const followers = page.moduleInstances
+      .filter(
+        (mi) =>
+          !mi.locked &&
+          mi.id !== spine.id &&
+          mi.columnStart === spine.columnStart &&
+          mi.columnSpan === spine.columnSpan &&
+          mi.rowStart !== null &&
+          mi.rowStart >= stackBottomRowEnd
+      )
+      .sort((a, b) => (a.rowStart as number) - (b.rowStart as number));
+    const tailRowEnd =
+      followers.length > 0
+        ? Math.max(...followers.map((mi) => (mi.rowStart as number) + mi.rowSpan))
+        : stackBottomRowEnd;
+    const followerIds = new Set(followers.map((mi) => mi.id));
+    let boundBelowTail = pageGrid.gridRows;
+    for (const mi of page.moduleInstances) {
+      if (mi.id === spine.id || followerIds.has(mi.id) || mi.rowStart === null) continue;
+      const sameColumn = mi.columnStart === spine.columnStart && mi.columnSpan === spine.columnSpan;
+      if (mi.rowStart < tailRowEnd || !sameColumn) continue;
+      boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
+    }
+    const freeBelow = Math.max(0, boundBelowTail - tailRowEnd);
+    const followerSpans = followers.map((mi) => mi.rowSpan);
+    const followerFloors = followers.map((mi) =>
+      getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
+    );
+    // Growing can take room from the followers as well as from free space
+    // below them. Without the second term the block cannot grow at all on
+    // a full page, and the handle silently only shrinks.
+    const followerShrinkable = followerSpans.reduce(
+      (sum, span, i) => sum + Math.max(0, span - followerFloors[i]),
+      0
+    );
+    return {
+      page,
+      spine,
+      pageGrid,
+      minRowSpan,
+      followers,
+      followerSpans,
+      followerFloors,
+      freeBelow,
+      stackBottomRowEnd,
+      maxSpan: spine.rowSpan + freeBelow + followerShrinkable,
+    };
+  };
+
+  const analyses = pages.map(analyse).filter((a): a is NonNullable<typeof a> => a !== null);
+  const dragged = analyses.find((a) => a.spine.id === instance.id);
+  if (!dragged) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+
+  // Clamped against EVERY page, not just the dragged one: a target one
+  // page cannot reach would put the spread back out of step, which is the
+  // fault this exists to fix.
+  const target = Math.max(
+    ...analyses.map((a) => a.minRowSpan),
+    Math.min(...analyses.map((a) => a.maxSpan), instance.rowSpan + deltaRows)
+  );
+  if (analyses.every((a) => a.spine.rowSpan === target)) {
     throw new Error("Nothing to resize");
   }
 
-  // Shift into the free space, then take height once there is none left.
-  // followerRowsAfterGrowth (grid.ts) owns that rule for BOTH sides - the
-  // live preview in NativePlannerEditor calls the same function - so the
-  // drag and the drop cannot disagree. They did, and the to-do slid off
-  // the page while dragging.
-  const followerRows = followerRowsAfterGrowth(
-    followers.map((mi, i) => ({ rowSpan: followerSpans[i], minRowSpan: followerFloors[i] })),
-    clampedDelta,
-    freeBelow,
-    followers.length > 0 ? (followers[0].rowStart as number) : stackBottomRowEnd
-  );
+  const writes = analyses.flatMap((a) => {
+    const delta = target - a.spine.rowSpan;
+    // Shift into the free space, then take height once there is none left.
+    // followerRowsAfterGrowth owns that rule for both sides - the live
+    // preview calls the same function - so drag and drop cannot disagree.
+    const rows = followerRowsAfterGrowth(
+      a.followers.map((mi, i) => ({ rowSpan: a.followerSpans[i], minRowSpan: a.followerFloors[i] })),
+      delta,
+      a.freeBelow,
+      a.followers.length > 0 ? (a.followers[0].rowStart as number) : a.stackBottomRowEnd
+    );
+    return [
+      prisma.moduleInstance.update({ where: { id: a.spine.id }, data: { rowSpan: target } }),
+      ...a.followers.map((mi, i) =>
+        prisma.moduleInstance.update({
+          where: { id: mi.id },
+          data: { rowStart: rows[i].rowStart, rowSpan: rows[i].rowSpan },
+        })
+      ),
+    ];
+  });
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
-  const [updatedInstance, ...updatedFollowers] = await prisma.$transaction([
-    prisma.moduleInstance.update({
-      where: { id: instance.id },
-      data: { rowSpan: instance.rowSpan + clampedDelta },
-    }),
-    ...followers.map((mi, i) =>
-      prisma.moduleInstance.update({
-        where: { id: mi.id },
-        data: { rowStart: followerRows[i].rowStart, rowSpan: followerRows[i].rowSpan },
-      })
-    ),
-  ]);
+  const updated = await prisma.$transaction(writes);
 
-  // The spine's own slug included, not just its followers'. The fallback
-  // below used to be the literal "hourly-grid-core", which was true while
-  // this action only ever resized one - it now resizes any spine, and a
-  // calendar rendered as an hourly grid asks a month config for a start
-  // time it does not have.
-  const followerSlugById = new Map([
-    ...followers.map((mi) => [mi.id, mi.moduleType.slug] as const),
-    [instance.id, instance.moduleType.slug] as const,
-  ]);
-  return [updatedInstance, ...updatedFollowers].map((row) => ({
+  // Each row rendered as what it actually is. The fallback slug here used
+  // to be the literal "hourly-grid-core", which was true while this only
+  // ever resized one - it drew a calendar as an hourly grid the moment it
+  // resized another, asking a month config for a start time.
+  const slugById = new Map(
+    analyses.flatMap((a) => [
+      [a.spine.id, a.spine.moduleType.slug] as const,
+      ...a.followers.map((mi) => [mi.id, mi.moduleType.slug] as const),
+    ])
+  );
+  const gridById = new Map(
+    analyses.flatMap((a) => [
+      [a.spine.id, a.pageGrid] as const,
+      ...a.followers.map((mi) => [mi.id, a.pageGrid] as const),
+    ])
+  );
+  return updated.map((row) => ({
     id: row.id,
     rowStart: row.rowStart as number,
     rowSpan: row.rowSpan,
     elements: renderInstanceElements(
       row,
-      followerSlugById.get(row.id) ?? instance.moduleType.slug,
-      pageGrid,
+      slugById.get(row.id) ?? instance.moduleType.slug,
+      gridById.get(row.id) ?? dragged.pageGrid,
       fontFamily
     ),
   }));
