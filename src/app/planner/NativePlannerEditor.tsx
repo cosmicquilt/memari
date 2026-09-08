@@ -4445,17 +4445,43 @@ export function NativePlannerEditor({
                 1,
                 ((info.propValues as { weekCount?: number }).weekCount ?? 5) as number
               );
-              const cell = cellHeightPx(page.pageGrid);
-              return [1, 2, 3, 4, 5].map((cellsPerWeek) => ({
-                rowHeightPt: undefined,
-                rowSpan: 1 + weeks * cellsPerWeek,
-                deltaRows: 1 + weeks * cellsPerWeek - placement.rowSpan,
-                // A whole cell clear below, the same as the template
-                // leaves. Not hourlyGapRows: that reads an hourly config,
-                // and a calendar fills its box rather than ending short of
-                // it, so there is no content height to measure from.
-                gapRows: Math.max(1, Math.round(cell / cell)),
-              }));
+              // Every whole cell, not every whole cell PER WEEK.
+              //
+              // The first version offered 1 + weeks * n, so each step gave
+              // every week another whole cell and the total jumped five at
+              // a time on a five-week month - too coarse to place the
+              // calendar against anything below it. Stepping the total by
+              // one cell instead means a week gains a fifth of one, so the
+              // rows no longer all land on the lattice; the DATE STRIP
+              // still does, since it is a fixed half cell, and so does the
+              // square the number sits in. The old spans are still in this
+              // list - they are the ones where the rows realign - so
+              // nothing is lost by offering the sizes between them.
+              //
+              // The floor gives every week a full cell to write in on top
+              // of its half-cell date strip. Below that the writing area
+              // was thinner than the strip above it, which is the "too
+              // small" end of the old range.
+              const minSpan = Math.ceil(1 + weeks * 1.5);
+              const options: Array<{
+                rowHeightPt: undefined;
+                rowSpan: number;
+                deltaRows: number;
+                gapRows: number;
+              }> = [];
+              for (let rowSpan = minSpan; rowSpan <= page.pageGrid.gridRows; rowSpan++) {
+                options.push({
+                  rowHeightPt: undefined,
+                  rowSpan,
+                  deltaRows: rowSpan - placement.rowSpan,
+                  // A whole cell clear below, the same as the template
+                  // leaves. Not hourlyGapRows: that reads an hourly config,
+                  // and a calendar fills its box rather than ending short
+                  // of it, so there is no content height to measure from.
+                  gapRows: 1,
+                });
+              }
+              return options;
             })()
           : null;
 
