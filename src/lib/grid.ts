@@ -302,6 +302,23 @@ export function followerRowsAfterGrowth(
       needed -= give;
     }
   }
+  // Shrinking gives the height back to the LAST follower, so the stack's
+  // own bottom edge stays where it was.
+  //
+  // Without this a follower only ever moved: shrinking the block above it
+  // slid the whole stack up and left the freed rows as dead space at the
+  // foot of the column. On the month page that is Notes pulling away from
+  // the bottom of the page every time the calendar is made shorter, which
+  // is the reverse of what growing does - grow takes height from the
+  // followers, so shrink should give it back.
+  //
+  // Only the last one, and only by what was freed: the others keep their
+  // heights, so a stack of several does not silently redistribute itself,
+  // and a gap that was already there stays there.
+  if (deltaRows < 0 && spans.length > 0) {
+    spans[spans.length - 1] += -deltaRows;
+  }
+
   let cursor = firstRowStart + deltaRows;
   return spans.map((rowSpan) => {
     const row = { rowStart: cursor, rowSpan };
