@@ -78,6 +78,16 @@ export type ModuleField =
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
 
+/** A ModuleType row, as prisma/seed.mts upserts it. */
+export type ModuleTypeRow = {
+  name: string;
+  configSchema: Record<string, unknown>;
+  defaultWidth: number;
+  defaultHeight: number;
+  defaultColumnSpan: number;
+  defaultRowSpan: number;
+};
+
 export type ModuleDefinition = {
   /** What to call this module in the editor's own surfaces. */
   label?: string;
@@ -134,8 +144,27 @@ export type ModuleDefinition = {
   paletteName?: string;
   previewProps?: Record<string, unknown>;
 
-  /** Draws the module. The primitive; a preset is this plus propValues. */
-  render: (
+  /**
+   * The row this module needs in the database: its name, its fallback
+   * sizes, and the JSON Schema its propValues are validated and defaulted
+   * against. prisma/seed.mts upserts one of these per registered module.
+   *
+   * Here rather than in the seed because it was the last thing that made
+   * adding a module two entries instead of one, and the two could disagree
+   * - the palette's own copy of these spans had already drifted a whole
+   * grid generation behind before it was deleted.
+   */
+  db: ModuleTypeRow;
+
+  /**
+   * Draws the module. The primitive; a preset is this plus propValues.
+   *
+   * Optional: a type can exist in the database before it can be drawn.
+   * quote-block is registered and seeded with no renderer yet, and
+   * freeform-element is drawn by renderModuleInstance itself rather than
+   * by a primitive. Both used to reach the old switch's default case.
+   */
+  render?: (
     geometry: ModuleGeometry,
     propValues: unknown,
     idPrefix: string,
@@ -184,7 +213,7 @@ export type ModuleDefinition = {
    * simply scales, with increments on it is ruled rows that must be
    * recounted.
    */
-  contentIsLive: (propValues: Record<string, unknown>) => boolean;
+  contentIsLive?: (propValues: Record<string, unknown>) => boolean;
 };
 
 const ALWAYS = () => true;
@@ -192,6 +221,85 @@ const NEVER = () => false;
 
 export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   "hourly-grid-core": {
+    db: {
+      "name": "Hourly Grid (Core)",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "dayCount": {
+            "type": "integer",
+            "enum": [
+              3,
+              4
+            ],
+            "default": 3
+          },
+          "dayLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "integer"
+                }
+              }
+            },
+            "default": []
+          },
+          "startTime": {
+            "type": "string",
+            "default": "05:30"
+          },
+          "endTime": {
+            "type": "string",
+            "default": "23:30"
+          },
+          "intervalMinutes": {
+            "type": "integer",
+            "default": 30
+          },
+          "hourLineStyle": {
+            "type": "string",
+            "enum": [
+              "full",
+              "low-transparency",
+              "gone"
+            ],
+            "default": "full"
+          },
+          "dayBorder": {
+            "type": "boolean",
+            "default": false
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "default": []
+          },
+          "intervalMode": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ],
+            "default": "on"
+          },
+          "compactHourRows": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "defaultWidth": 1560,
+      "defaultHeight": 1850,
+      "defaultColumnSpan": 18,
+      "defaultRowSpan": 20
+    },
     isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderHourlyGridCore(
@@ -211,6 +319,30 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "labeled-box": {
+    db: {
+      "name": "Labeled Box",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": "Notes"
+          },
+          "ruled": {
+            "type": "boolean",
+            "default": false
+          },
+          "templateHeading": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "defaultWidth": 300,
+      "defaultHeight": 200,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 3
+    },
     label: "Labeled box",
     inPalette: true,
     paletteName: "Note Box",
@@ -229,6 +361,30 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "week-title": {
+    db: {
+      "name": "Week Title (Core)",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "weekNumber": {
+            "type": "integer",
+            "default": 1
+          },
+          "weekTotal": {
+            "type": "integer",
+            "default": 52
+          },
+          "dateRangeLabel": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "defaultWidth": 300,
+      "defaultHeight": 170,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 3
+    },
     isTitle: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily),
@@ -236,6 +392,27 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "todo-checklist": {
+    db: {
+      "name": "To-Do Checklist",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "dayCount": {
+            "type": "integer",
+            "enum": [
+              1,
+              3,
+              4
+            ],
+            "default": 3
+          }
+        }
+      },
+      "defaultWidth": 1560,
+      "defaultHeight": 964,
+      "defaultColumnSpan": 18,
+      "defaultRowSpan": 13
+    },
     label: "To-do checklist",
     inPalette: true,
     paletteName: "To-Do",
@@ -260,6 +437,25 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "habit-tracker": {
+    db: {
+      "name": "Habit Tracker",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "habits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        }
+      },
+      "defaultWidth": 1560,
+      "defaultHeight": 964,
+      "defaultColumnSpan": 24,
+      "defaultRowSpan": 13
+    },
     label: "Habit tracker",
     inPalette: true,
     paletteName: "Habits",
@@ -286,6 +482,54 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "month-grid-core": {
+    db: {
+      "name": "Month Grid (Core)",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "dayCount": {
+            "type": "integer",
+            "enum": [
+              3,
+              4
+            ],
+            "default": 3
+          },
+          "dayLabels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              }
+            },
+            "default": []
+          },
+          "weekCount": {
+            "type": "integer",
+            "enum": [
+              4,
+              5,
+              6
+            ],
+            "default": 5
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "array"
+            },
+            "default": []
+          }
+        }
+      },
+      "defaultWidth": 1560,
+      "defaultHeight": 1652,
+      "defaultColumnSpan": 18,
+      "defaultRowSpan": 22
+    },
     isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily),
@@ -295,12 +539,87 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   },
 
   "month-title": {
+    db: {
+      "name": "Month Title (Core)",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "monthName": {
+            "type": "string",
+            "default": "JANUARY"
+          }
+        }
+      },
+      "defaultWidth": 300,
+      "defaultHeight": 170,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 3
+    },
     isTitle: true,
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderMonthTitle(geometry, propValues as MonthTitleConfig, idPrefix, fontFamily),
     contentIsLive: NEVER,
   },
+
+  // Registered without a renderer: seeded and placeable, drawn by nothing
+  // yet. This is where a catalogue module starts life.
+  "quote-block": {
+    db: {
+      "name": "Quote / Inspiration Block",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "default": ""
+          },
+          "attribution": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "defaultWidth": 1400,
+      "defaultHeight": 400,
+      "defaultColumnSpan": 24,
+      "defaultRowSpan": 1
+    },
+  },
+
+  // Drawn by renderModuleInstance directly rather than by a primitive - it
+  // carries its own Polotno element in propValues, which is what makes it
+  // freeform.
+  "freeform-element": {
+    db: {
+      "name": "Freeform Canvas Element",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "polotnoElement": {
+            "type": "object"
+          }
+        }
+      },
+      "defaultWidth": 200,
+      "defaultHeight": 200,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 1
+    },
+  },
 };
+
+/**
+ * The ModuleType rows prisma/seed.mts upserts, one per registered module.
+ *
+ * Derived from the registry rather than kept beside it, so a module cannot
+ * be registered and left unseeded - which would mean no ModuleType row, no
+ * id to reference, and a module that exists in the editor and cannot be
+ * placed.
+ */
+export const MODULE_TYPE_SEED = Object.entries(MODULE_REGISTRY).map(([slug, definition]) => ({
+  slug,
+  ...definition.db,
+}));
 
 /** The palette's cards, in registration order. Derived rather than kept
  *  beside the registry, so a module cannot be registered and then quietly
@@ -324,9 +643,10 @@ export function moduleDefinition(slug: string): ModuleDefinition | undefined {
 
 /** Whether a module's content must be re-rendered as its box resizes. */
 export function moduleContentIsLive(slug: string, propValues: unknown): boolean {
-  const definition = MODULE_REGISTRY[slug];
-  if (!definition) return false;
-  return definition.contentIsLive((propValues ?? {}) as Record<string, unknown>);
+  // A module with no renderer has nothing to re-draw, so the default is no.
+  const contentIsLive = MODULE_REGISTRY[slug]?.contentIsLive;
+  if (!contentIsLive) return false;
+  return contentIsLive((propValues ?? {}) as Record<string, unknown>);
 }
 
 /** propValues with every derived fact recomputed from the geometry it is

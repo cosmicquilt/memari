@@ -75,7 +75,7 @@ function renderBySlug(
   // that list now; an unregistered slug draws nothing, exactly as the
   // default case did.
   return (
-    moduleDefinition(slug)?.render(geometry, propValues, idPrefix, fontFamily, lattice) ?? []
+    moduleDefinition(slug)?.render?.(geometry, propValues, idPrefix, fontFamily, lattice) ?? []
   );
 }
 
