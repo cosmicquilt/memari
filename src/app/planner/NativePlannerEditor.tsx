@@ -4413,6 +4413,28 @@ export function NativePlannerEditor({
         // bottom - reported as not being able to expand the increments-off
         // hours section. resizeHourlyGridCore applies the same sum, and
         // cascades the shrink from the bottom follower upward.
+        // The furthest the spine's own bottom edge can ever reach: every
+        // follower squeezed to its floor, with whatever gap belongs under
+        // the spine still clear.
+        //
+        // Computed from FLOORS, so it does not move while the drag does.
+        // maxBottomBound below is worked out from the followers' current
+        // spans, which the preview is busy changing - so the option being
+        // dragged towards could stop qualifying mid-drag, which is why the
+        // filter used to be suspended for the length of a drag. Suspending
+        // it offered spans that do not fit at all: the calendar reached
+        // the foot of the page and pushed Notes past it, leaving its title
+        // stranded below the sheet. A bound that holds still needs no
+        // suspending.
+        const followerFloorTotal = followers.reduce((sum, fid) => {
+          const followerInfo = moduleLookup.get(fid);
+          const followerPlacement = displayPlacements[fid];
+          if (!followerInfo || !followerPlacement) return sum;
+          return (
+            sum + getMinRowSpanForSlug(followerInfo.slug, page.pageGrid, followerPlacement.columnSpan)
+          );
+        }, 0);
+
         const followerShrinkable = followers.reduce((sum, fid) => {
           const followerInfo = moduleLookup.get(fid);
           const followerPlacement = displayPlacements[fid];
@@ -4485,7 +4507,13 @@ export function NativePlannerEditor({
             })()
           : null;
 
-        const rowHeightOptions = isOffMode
+        // The fit filter applies to BOTH lists. It used to sit on the end
+        // of the hourly chain, so `monthOptions ?? ROW_HEIGHT_OPTIONS_PT
+        // .map(...).filter(...)` filtered only the fallback - a calendar
+        // was offered every span up to the page and could push Notes off
+        // the bottom of it, title and all. Written as one expression now,
+        // so a list cannot be added past the filter again.
+        const spanOptions = isOffMode
           ? null
           : monthOptions ??
             ROW_HEIGHT_OPTIONS_PT.map((rowHeightPt) => {
@@ -4514,24 +4542,16 @@ export function NativePlannerEditor({
                   rowSpan
                 ),
               };
-            })
-              // Which heights fit is a question about the COMMITTED page,
-              // but maxBottomBound is computed from displayPlacements -
-              // the live preview. Growing the block squeezes the followers
-              // below it, which shrinks their give, which shrinks the
-              // bound, which can make the very option being dragged to
-              // stop qualifying. The entry then disappeared mid-drag and
-              // took its own handle with it, so pointerup landed on
-              // nothing: the preview stayed on screen and the setting was
-              // never committed. Measured dragging Roomy -> Tall.
-              //
-              // The handle froze its own copy of this list at pointerdown,
-              // back when the filter still applied, so the landings it can
-              // actually reach are the ones that fitted then. Leaving the
-              // live list unfiltered for the length of the drag only keeps
-              // the entry alive and lets the commit find the span it
-              // landed on.
-              .filter((option) => isDragging || placement.rowStart + option.rowSpan <= maxBottomBound);
+            });
+
+        // Against the floor-based bound, which holds still for the length
+        // of the drag - see followerFloorTotal.
+        const rowHeightOptions =
+          spanOptions?.filter(
+            (option) =>
+              placement.rowStart + option.rowSpan + option.gapRows + followerFloorTotal <=
+              boundBelowTail
+          ) ?? null;
 
         // One landing point is not a control. If only the current height
         // fits, there is nothing to drag to and the handle would just be a
