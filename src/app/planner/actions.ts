@@ -257,6 +257,28 @@ function weekTodoTemplate(gridRows: number): Array<{
   ];
 }
 
+/**
+ * The clear rows a spine keeps beneath it.
+ *
+ * Only the hours have a content height that stops short of their box, and
+ * hourlyGapRows measures from it - handed a calendar's props it looks for
+ * a start time that is not there and throws. Everything else fills its box
+ * and simply keeps a whole cell clear, which is what the month template
+ * leaves and what its resize handle offers.
+ *
+ * One function because there are three call sites and they have to agree:
+ * a drop reserves this, a cross-zone move reserves it, and the editor's
+ * own preview reserves it. Mirrors the same branch in resolveDrag.
+ */
+function spineGapRows(
+  slug: string,
+  cellPx: number,
+  propValues: unknown,
+  rowSpan: number
+): number {
+  return slug === "hourly-grid-core" ? hourlyGapRows(cellPx, propValues, rowSpan) : 1;
+}
+
 export async function getOrCreatePlanner() {
   const { userId } = await auth();
   if (!userId) {
@@ -1344,7 +1366,8 @@ export async function addPaletteModuleAt(
         // up to whole cells already leaves that much slack, which is the
         // common case; reserving a row on top of it was what made the gap
         // nearly two cells.
-        const gapRows = hourlyGapRows(
+        const gapRows = spineGapRows(
+          hourlyGrid.moduleType.slug,
           cellHeightPx(pageGrid),
           hourlyGrid.propValues,
           hourlyGrid.rowSpan
@@ -1699,8 +1722,11 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
     columnSpan: number;
     rowSpan: number;
     // Carried so the breathing gap below can be computed from where the
-    // hours actually end rather than assumed to be one row.
+    // hours actually end rather than assumed to be one row - and the slug
+    // with it, because only the hours have an end that is not their own
+    // bottom edge. See spineGapRows.
     propValues: unknown;
+    slug: string;
   } | null = null;
   for (const mi of targetPage.moduleInstances) {
     if (mi.id === instance.id || mi.columnStart === null || mi.rowStart === null) continue;
@@ -1713,7 +1739,9 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
       rowSpan: mi.rowSpan,
     });
     if (isSpineSlug(mi.moduleType.slug)) {
-      hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan, propValues: mi.propValues };
+      // The slug travels with it: this is whichever spine the page has,
+      // and the gap rule below has to know which kind it got.
+      hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan, propValues: mi.propValues, slug: mi.moduleType.slug };
     }
   }
   // Same synthetic 1-row breathing-gap reservation below hourly-grid-core
@@ -1722,7 +1750,8 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   // grid unreachable here too, not just on a same-zone drag. Reserved
   // against the TARGET page's own hourly grid, same as resolveDrag.
   if (hourlyGridRect) {
-    const gapRows = hourlyGapRows(
+    const gapRows = spineGapRows(
+      hourlyGridRect.slug,
       cellHeightPx(targetPageGrid),
       hourlyGridRect.propValues,
       hourlyGridRect.rowSpan
