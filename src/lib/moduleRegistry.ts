@@ -219,7 +219,7 @@ export type ModuleDefinition = {
 const ALWAYS = () => true;
 const NEVER = () => false;
 
-export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
+const PRIMITIVES = {
   "hourly-grid-core": {
     db: {
       "name": "Hourly Grid (Core)",
@@ -606,6 +606,57 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
       "defaultRowSpan": 1
     },
   },
+} satisfies Record<string, ModuleDefinition>;
+
+/**
+ * A module that IS another module with different data.
+ *
+ * The catalogue is mostly this. A water tracker, a medication log, a salah
+ * tracker and a plant-watering chart are one row-by-column primitive with
+ * four label sets - so a preset inherits everything about how its
+ * primitive behaves (what draws it, how short it may get, whether its
+ * content is live, what its properties panel offers) and states only what
+ * makes it a different module: its name, its defaults, its card.
+ *
+ * db merges rather than replaces, since a preset usually changes the name
+ * and the schema's defaults while keeping the primitive's sizes.
+ *
+ * The point of the helper is that a preset cannot accidentally diverge
+ * from its primitive by copying its behaviour and then falling behind it.
+ */
+function preset(
+  of: keyof typeof PRIMITIVES,
+  over: Partial<Omit<ModuleDefinition, "db">> & { db: Partial<ModuleTypeRow> }
+): ModuleDefinition {
+  const base = PRIMITIVES[of] as ModuleDefinition;
+  return { ...base, ...over, db: { ...base.db, ...over.db } };
+}
+
+export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
+  ...(PRIMITIVES as Record<string, ModuleDefinition>),
+
+  // Eight glasses against the week - the row-by-column tracker with a
+  // different label set and nothing else. The first preset, and the test
+  // of the claim: adding it is this entry and no code anywhere.
+  "water-tracker": preset("habit-tracker", {
+    db: {
+      name: "Water Tracker",
+      configSchema: {
+        type: "object",
+        properties: {
+          habits: {
+            type: "array",
+            items: { type: "string" },
+            default: ["Glass 1", "Glass 2", "Glass 3", "Glass 4", "Glass 5", "Glass 6"],
+          },
+        },
+      },
+    },
+    label: "Water tracker",
+    paletteName: "Water",
+    previewProps: { habits: ["Glass 1", "Glass 2", "Glass 3"] },
+    fields: [{ kind: "lines", key: "habits", label: "Glasses (one per line)", rows: 8 }],
+  }),
 };
 
 /**
