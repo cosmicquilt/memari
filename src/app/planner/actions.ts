@@ -2962,9 +2962,15 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
     }
     const freeBelow = Math.max(0, boundBelowTail - tailRowEnd);
     const followerSpans = followers.map((mi) => mi.rowSpan);
-    const followerFloors = followers.map((mi) =>
-      getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
-    );
+    // Zero, not each module's own floor. A spine growing to fill the page
+    // has to be able to take the last of what is under it, and the module
+    // is kept at zero rather than deleted so shrinking hands it straight
+    // back - followerRowsAfterGrowth gives freed height to the last
+    // follower, so it returns at the size the spine gave up. Only the
+    // spine may do this; a follower's own handle still stops at its floor,
+    // since a module dragged to nothing by its own edge would leave
+    // nothing to grab. Mirrors SPINE_FOLLOWER_FLOOR on the client.
+    const followerFloors = followers.map(() => 0);
     // Growing can take room from the followers as well as from free space
     // below them. Without the second term the block cannot grow at all on
     // a full page, and the handle silently only shrinks.

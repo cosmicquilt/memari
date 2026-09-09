@@ -1632,6 +1632,12 @@ function NativePage({
         // here would keep showing stale pre-resize content forever.
         const info = moduleLookup.get(id);
         if (!placement || !info) return null;
+        // A module squeezed to nothing by the block above it is kept, not
+        // deleted, so it comes back when that block is made shorter again
+        // - see SPINE_FOLLOWER_FLOOR. It draws nothing while it is there:
+        // CSS Grid has no `span 0`, and a renderer handed a box of
+        // negative height draws its border inside out.
+        if (placement.rowSpan <= 0) return null;
         // todo-checklist/habit-tracker get a genuine live re-render
         // while resizing, not the frozen last-committed content every
         // other module type still gets (see NativeModule's own
@@ -2063,6 +2069,21 @@ function NativePage({
 // StackResizeHandle (the strip at a stack's own bottom edge, which the
 // off-mode handle also reuses) so every hit zone in the app stays the
 // same size as every other.
+/**
+ * How short a page's SPINE may squeeze the stack beneath it.
+ *
+ * Zero, not MIN_ROW_SPAN. Growing the calendar to fill the page has to be
+ * able to take the last of Notes' height, and the module is kept at zero
+ * rather than deleted so that shrinking the calendar hands it straight
+ * back - the last follower absorbs whatever is freed, so it returns at the
+ * size the calendar gave up.
+ *
+ * Only the spine may do this. A follower's OWN resize handle still stops
+ * at MIN_ROW_SPAN, because a module dragged to nothing by its own edge
+ * would leave nothing to grab to bring it back.
+ */
+const SPINE_FOLLOWER_FLOOR = 0;
+
 const RESIZE_HANDLE_HALF_HEIGHT_PX = 32;
 
 // A thin hover strip straddling the shared boundary between two
@@ -4084,15 +4105,12 @@ export function NativePlannerEditor({
               ? member.rowStart + member.rowSpan + snap.gapRows
               : followers[0].placement.rowStart + stackResizeDrag.deltaRows;
           const rows = followerRowsAfterGrowth(
-            followers.map((f) => {
-              const info = moduleLookup.get(f.id);
-              return {
-                rowSpan: f.placement.rowSpan,
-                minRowSpan: info
-                  ? getMinRowSpanForSlug(info.slug, followerPageGrid, f.placement.columnSpan)
-                  : MIN_ROW_SPAN,
-              };
-            }),
+            // Squeezed by the block above, so the floor is zero - see
+            // SPINE_FOLLOWER_FLOOR.
+            followers.map((f) => ({
+              rowSpan: f.placement.rowSpan,
+              minRowSpan: SPINE_FOLLOWER_FLOOR,
+            })),
             stackResizeDrag.deltaRows,
             Math.max(0, followerPageGrid.gridRows - tailRowEnd),
             // followerRowsAfterGrowth adds the delta to what it is given,
@@ -4108,7 +4126,7 @@ export function NativePlannerEditor({
       }
     }
     return next;
-  }, [placements, resizeDrag, stackResizeDrag, pageGridByPageId, moduleLookup]);
+  }, [placements, resizeDrag, stackResizeDrag, pageGridByPageId]);
 
   const resizingIds = useMemo(() => {
     if (!resizeDrag && !stackResizeDrag) return null;
@@ -4417,6 +4435,12 @@ export function NativePlannerEditor({
         // follower squeezed to its floor, with whatever gap belongs under
         // the spine still clear.
         //
+        // That floor is ZERO when the pressure comes from the spine - see
+        // SPINE_FOLLOWER_FLOOR. A follower's own handle still stops at
+        // MIN_ROW_SPAN; it is only the block above pushing that can take
+        // the last of its height, and only because it gives it back on the
+        // way down.
+        //
         // Computed from FLOORS, so it does not move while the drag does.
         // maxBottomBound below is worked out from the followers' current
         // spans, which the preview is busy changing - so the option being
@@ -4426,25 +4450,12 @@ export function NativePlannerEditor({
         // the foot of the page and pushed Notes past it, leaving its title
         // stranded below the sheet. A bound that holds still needs no
         // suspending.
-        const followerFloorTotal = followers.reduce((sum, fid) => {
-          const followerInfo = moduleLookup.get(fid);
-          const followerPlacement = displayPlacements[fid];
-          if (!followerInfo || !followerPlacement) return sum;
-          return (
-            sum + getMinRowSpanForSlug(followerInfo.slug, page.pageGrid, followerPlacement.columnSpan)
-          );
-        }, 0);
+        const followerFloorTotal = followers.length * SPINE_FOLLOWER_FLOOR;
 
         const followerShrinkable = followers.reduce((sum, fid) => {
-          const followerInfo = moduleLookup.get(fid);
           const followerPlacement = displayPlacements[fid];
-          if (!followerInfo || !followerPlacement) return sum;
-          const floor = getMinRowSpanForSlug(
-            followerInfo.slug,
-            page.pageGrid,
-            followerPlacement.columnSpan
-          );
-          return sum + Math.max(0, followerPlacement.rowSpan - floor);
+          if (!followerPlacement) return sum;
+          return sum + Math.max(0, followerPlacement.rowSpan - SPINE_FOLLOWER_FLOOR);
         }, 0);
         const maxGrow = boundBelowTail - tailRowEnd + followerShrinkable;
         const maxBottomBound = stackBottomRowEnd + maxGrow;
@@ -4549,7 +4560,14 @@ export function NativePlannerEditor({
         const rowHeightOptions =
           spanOptions?.filter(
             (option) =>
-              placement.rowStart + option.rowSpan + option.gapRows + followerFloorTotal <=
+              // No gap is reserved under a stack that has been squeezed to
+              // nothing: a clear row between the block and something with
+              // no height is just a row nobody can use, and it is what
+              // stopped the calendar one short of filling the page.
+              placement.rowStart +
+                option.rowSpan +
+                (followerFloorTotal > 0 ? option.gapRows : 0) +
+                followerFloorTotal <=
               boundBelowTail
           ) ?? null;
 
