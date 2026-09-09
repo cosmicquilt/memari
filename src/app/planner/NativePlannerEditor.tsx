@@ -5272,7 +5272,7 @@ export function NativePlannerEditor({
         existing.some((sb) => sb.columnStart === columnStart && sb.columnSpan === columnSpan);
       const zones: StackBottom[] = [];
 
-      const hourlyGridId = pageIds.find((id) => moduleLookup.get(id)?.slug === "hourly-grid-core");
+      const hourlyGridId = pageIds.find((id) => isSpineSlug(moduleLookup.get(id)?.slug ?? ""));
       const hourlyGridPlacement = hourlyGridId ? displayPlacements[hourlyGridId] : undefined;
 
       // A zone the live drag is currently previewing a module INTO is
@@ -5994,7 +5994,7 @@ export function NativePlannerEditor({
       // crossing into it from elsewhere would - which is the behaviour
       // being asked for.
       const phantomHourlyId = (instanceIdsByPageId[target.pageId] ?? []).find(
-        (instId) => moduleLookup.get(instId)?.slug === "hourly-grid-core"
+        (instId) => isSpineSlug(moduleLookup.get(instId)?.slug ?? "")
       );
       const phantomZone = resolveZoneForColumn(
         phantomHourlyId ? placements[phantomHourlyId] : undefined,

@@ -20,7 +20,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
-import { isSpineSlug } from "@/lib/moduleRegistry";
+import { isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
@@ -1132,7 +1132,11 @@ export async function addPaletteModuleAt(
       // page would also still only draw 3 day segments (the schema
       // default), out of step with the hourly grid it's sitting under.
       const pageGrid = pageGridFor(page);
-      const hourlyGrid = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+      // The page's SPINE, whichever cadence it is. A module dropped on a
+      // month page should take its columns from the calendar for the same
+      // reason one dropped on a week page takes them from the hours: the
+      // spine is what the zones are measured from.
+      const hourlyGrid = findSpine(page.moduleInstances);
 
       let effectiveColumnStart = columnStart;
       let effectiveColumnSpan = moduleType.defaultColumnSpan;
@@ -1640,7 +1644,7 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
 
   const sourcePageGrid = pageGridFor(sourcePage);
   const targetPageGrid = pageGridFor(targetPage);
-  const hourlyGrid = targetPage.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const hourlyGrid = findSpine(targetPage.moduleInstances);
   // Same shared rule, same Infinity tolerance - see resolveZone (grid.ts).
   const zone =
     hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
@@ -1708,7 +1712,7 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
       columnSpan: mi.columnSpan,
       rowSpan: mi.rowSpan,
     });
-    if (mi.moduleType.slug === "hourly-grid-core") {
+    if (isSpineSlug(mi.moduleType.slug)) {
       hourlyGridRect = { columnStart: mi.columnStart, rowStart: mi.rowStart, columnSpan: mi.columnSpan, rowSpan: mi.rowSpan, propValues: mi.propValues };
     }
   }
@@ -2054,7 +2058,7 @@ export async function updateModuleSize(
   // columns from the hourly grid it sits under.
   let requestedColumnSpan = size.columnSpan;
   if (instance.moduleType.slug === "todo-checklist" || instance.moduleType.slug === "habit-tracker") {
-    const hourlyGrid = instance.page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    const hourlyGrid = findSpine(instance.page.moduleInstances);
     if (hourlyGrid) {
       requestedColumnSpan = hourlyGrid.columnSpan;
     }
