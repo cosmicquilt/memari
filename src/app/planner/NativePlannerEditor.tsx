@@ -126,7 +126,12 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
-import { moduleContentIsLive, cleanPropsForSave, isSpineSlug } from "@/lib/moduleRegistry";
+import {
+  moduleContentIsLive,
+  cleanPropsForSave,
+  isSpineSlug,
+  PALETTE_MODULES,
+} from "@/lib/moduleRegistry";
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
@@ -427,43 +432,14 @@ const BOTTOM_ZONE_ROW_TOLERANCE = 2;
 // zone, and the palette was still telling the user otherwise. One list
 // now.
 //
-// previewProps are the schema defaults from prisma/seed.mts's own
-// configSchema entries, hand-synced the same way defaultColumnSpan/
-// defaultRowSpan already are (the "use server" boundary MIN_ROW_SPAN's
-// comment explains) — the real defaults live in the database and the
-// client cannot read them. They exist only to draw the card preview;
-// a real drop still gets its values from the schema, server-side.
-// dayCount is 1 rather than the schema's 3 because the preview renders
-// each module at its narrowest single-column form.
-const PALETTE_MODULE_TYPES: Array<{
-  slug: string;
-  label: string;
-  defaultColumnSpan: number;
-  defaultRowSpan: number;
-  previewProps: Record<string, unknown>;
-}> = [
-  {
-    slug: "labeled-box",
-    label: "Note Box",
-    defaultColumnSpan: 1,
-    defaultRowSpan: 2,
-    previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
-  },
-  {
-    slug: "todo-checklist",
-    label: "To-Do",
-    defaultColumnSpan: 3,
-    defaultRowSpan: 10,
-    previewProps: { dayCount: 1 },
-  },
-  {
-    slug: "habit-tracker",
-    label: "Habits",
-    defaultColumnSpan: 4,
-    defaultRowSpan: 10,
-    previewProps: { dayCount: 1 },
-  },
-];
+// The palette's cards come from the registry - see PALETTE_MODULES. They
+// were a hand-written array here, carrying a label, preview props, and a
+// defaultColumnSpan and defaultRowSpan that nothing read: a real drop
+// takes its spans from the database, server-side. Dead, but they still
+// said 1, 3 and 4 columns - values from before the 24-column lattice -
+// and they read as authoritative. A module registered but forgotten here
+// simply would not appear, which is not a mistake a hundred of them can
+// afford.
 
 // The palette is a light panel on a dark app chrome — requested
 // directly. Tokens rather than scattered hex so the panel and the
@@ -3364,7 +3340,7 @@ function ModulePalette({
             transition: "background 0.4s ease",
           }}
         >
-          {PALETTE_MODULE_TYPES.map((m) => (
+          {PALETTE_MODULES.map((m) => (
             <PaletteCard
               key={m.slug}
               slug={m.slug}
@@ -5967,7 +5943,7 @@ export function NativePlannerEditor({
       // room. A palette drop consequently behaved nothing like dragging
       // the same module once it was on the page. All of it is gone.
       const slug = rawId.slice(PALETTE_ID_PREFIX.length);
-      const meta = PALETTE_MODULE_TYPES.find((m) => m.slug === slug);
+      const meta = PALETTE_MODULES.find((m) => m.slug === slug);
       if (!meta) return;
       const clientPointer = lastPointerRef.current;
       const target = screenPointToPageCell(clientPointer.x, clientPointer.y);
@@ -6898,7 +6874,7 @@ export function NativePlannerEditor({
 
   // Adds a fresh module of the given type near a specific cell — called
   // by a palette drag-drop (handleDragEnd below, any of
-  // PALETTE_MODULE_TYPES) once the user has actually picked and
+  // PALETTE_MODULES) once the user has actually picked and
   // dragged a card. Not called by the "+" button anymore (see
   // AddModuleButton's own comment on why: it opens ModulePalette to
   // the matching section instead of adding a fixed module type

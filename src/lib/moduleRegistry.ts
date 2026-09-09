@@ -112,6 +112,28 @@ export type ModuleDefinition = {
   /** The editable props, rendered generically. */
   fields?: ModuleField[];
 
+  /**
+   * Offered in the palette, as a card the user can drag onto a page.
+   *
+   * Off by default: a spine, a title and the month calendar are placed by
+   * the template and are not the user's to add.
+   *
+   * `paletteName` is the card's caption and `previewProps` the values its
+   * preview is drawn with - the module at its narrowest single-day form,
+   * which is why a to-do previews at one day rather than the three it will
+   * take once dropped.
+   *
+   * These lived in a PALETTE_MODULE_TYPES array in the editor, alongside a
+   * defaultColumnSpan and defaultRowSpan nothing read: a real drop takes
+   * its spans from the database, server-side. Dead, but not harmlessly so -
+   * they still said 1, 3 and 4 columns, values from before the 24-column
+   * lattice, and they looked authoritative. A preset over an existing
+   * primitive should add a line here and nothing else.
+   */
+  inPalette?: boolean;
+  paletteName?: string;
+  previewProps?: Record<string, unknown>;
+
   /** Draws the module. The primitive; a preset is this plus propValues. */
   render: (
     geometry: ModuleGeometry,
@@ -190,6 +212,9 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
 
   "labeled-box": {
     label: "Labeled box",
+    inPalette: true,
+    paletteName: "Note Box",
+    previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
@@ -212,6 +237,9 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
 
   "todo-checklist": {
     label: "To-do checklist",
+    inPalette: true,
+    paletteName: "To-Do",
+    previewProps: { dayCount: 1 },
     fields: [
       {
         kind: "note",
@@ -233,6 +261,9 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
 
   "habit-tracker": {
     label: "Habit tracker",
+    inPalette: true,
+    paletteName: "Habits",
+    previewProps: { dayCount: 1 },
     fields: [{ kind: "lines", key: "habits", label: "Habits (one per line)", rows: 8 }],
     render: (geometry, propValues, idPrefix, fontFamily) =>
       renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily),
@@ -270,6 +301,17 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     contentIsLive: NEVER,
   },
 };
+
+/** The palette's cards, in registration order. Derived rather than kept
+ *  beside the registry, so a module cannot be registered and then quietly
+ *  left out of the palette - or listed there under stale values. */
+export const PALETTE_MODULES = Object.entries(MODULE_REGISTRY)
+  .filter(([, definition]) => definition.inPalette)
+  .map(([slug, definition]) => ({
+    slug,
+    label: definition.paletteName ?? definition.label ?? slug,
+    previewProps: definition.previewProps ?? {},
+  }));
 
 /** Every slug that can actually be drawn. The behaviour classifier sweeps
  *  this rather than its own hand-kept list, so a module is measured from
