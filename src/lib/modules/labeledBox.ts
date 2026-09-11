@@ -36,10 +36,10 @@ const HEADER_HEIGHT_TWO_LINE_PT = 24.7;
 // measured from the reference: "THINGS I'M GRATEFUL" bbox sits 8.0pt
 // inside the box's left edge, 8.1pt inside the right.
 const HEADING_HORIZONTAL_PADDING_PT = 8;
-// ~0.25in at 300 DPI — not directly isolated from the PDF's vector data
-// (its ruled-line paths are bundled in a way this extraction couldn't
-// cleanly separate), kept as a reasonable notebook-line spacing.
-const RULED_LINE_SPACING_PX = 75;
+// The ruled-line spacing is the lattice cell itself now - see the ruled
+// body below. It was written as 75 here, "~0.25in at 300 DPI... kept as a
+// reasonable notebook-line spacing", which is the right number arrived at
+// independently; taking it from the lattice means it cannot drift from it.
 
 // The average character advance for this planner's serif, and the story
 // of how it was measured, now live in textFit.ts - a fact about a
@@ -47,6 +47,7 @@ const RULED_LINE_SPACING_PX = 75;
 // need it: nothing here can measure a string, so every module that has to
 // keep a label inside a box works from this same number.
 import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
+import { contentTopAtLeastPx, rowHeightPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 
 /**
  * How a heading is set: the point size it is drawn at, and whether the
@@ -90,7 +91,16 @@ export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: num
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
   const { wraps } = headingLayout(heading ?? "", headingAvailableWidth);
-  return ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT);
+  // Must agree with renderLabeledBox's own band to the pixel - this is what
+  // the editor's inline heading-edit overlay sizes itself to, and a
+  // mismatch was reported live as "the header gets taller". Same snap,
+  // via the same helper.
+  return (
+    contentTopAtLeastPx(
+      { x: 0, y: 0, width: boxWidthPx, height: 0 },
+      ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT)
+    ) - 0
+  );
 }
 
 // Same reasoning and same duplicated wrap-check as the height function
@@ -112,7 +122,8 @@ export function renderLabeledBox(
   geometry: { x: number; y: number; width: number; height: number },
   config: LabeledBoxConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional — see todoChecklist.ts. An id names one mark
@@ -131,9 +142,18 @@ export function renderLabeledBox(
   // renders every registered module with no props.
   const heading = config.heading ?? "";
   const { fontPt: headingFontPt, wraps } = headingLayout(heading, headingAvailableWidth);
-  const headerHeight = ptToPx(
-    wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT
-  );
+  // The measured band, rounded UP to the lattice so its divider lands on a
+  // dot row - one cell for a single-line heading, two for a wrapped one.
+  // The reference's own 13.7pt/24.7pt are what the TEXT needs; the lattice
+  // decides where the rule may sit. Reported as "lined notes also not
+  // aligned with dots", which was the body rules, and this is the same
+  // rule one band higher.
+  const headerHeight =
+    contentTopAtLeastPx(
+      geometry,
+      ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT),
+      lattice
+    ) - geometry.y;
 
   // Outer border — pure black, distinct from the near-black used for
   // finer lines elsewhere.
@@ -207,17 +227,37 @@ export function renderLabeledBox(
   // horizontal lines inside the box (matches the reference: the sidebar
   // boxes are blank writing space, not a ruled notebook).
   if (config.ruled) {
+    // Ruled ON the dot lattice, not at a fixed offset below the heading.
+    //
+    // The lines used to start one spacing below the header band, and the
+    // band is 13.7pt or 24.7pt depending on whether the heading wraps -
+    // neither a lattice quantity - so the rules landed 11.9px above the
+    // dots, and moved when the heading got longer. Reported as "lined
+    // notes also not aligned with dots".
+    //
+    // Anchored to the lattice instead: the first rule is the first dot row
+    // clear of the header, and every one after it is a whole cell down. A
+    // heading that wraps now changes where the rules START and never where
+    // they SIT, and two ruled boxes side by side line up with each other
+    // whatever their headings say.
+    const pitch = rowHeightPx(lattice);
     const bodyTop = geometry.y + headerHeight;
-    const bodyHeight = geometry.height - headerHeight;
-    const lineCount = Math.floor(bodyHeight / RULED_LINE_SPACING_PX);
+    const origin = lattice ? geometry.y - lattice.insetPx : geometry.y;
+    const first = origin + Math.ceil((bodyTop - origin) / pitch) * pitch;
     const ruledLineWidth = ptToPx(0.5);
-    for (let i = 1; i <= lineCount; i++) {
+    const bottom = geometry.y + geometry.height;
+    // Numbered by which lattice row it is, not by which line it happens to
+    // be - see this file's own note on semantic ids. A box whose heading
+    // grows keeps the ids of the rules that did not move.
+    for (let row = 0; ; row++) {
+      const y = first + row * pitch;
+      if (y > bottom - pitch / 4) break;
       elements.push({
-        id: id(`rule${i}`),
+        id: id(`rule${Math.round((y - origin) / pitch)}`),
         type: "figure",
         subType: "rect",
         x: geometry.x + 8,
-        y: bodyTop + i * RULED_LINE_SPACING_PX - ruledLineWidth / 2,
+        y: y - ruledLineWidth / 2,
         width: geometry.width - 16,
         height: ruledLineWidth,
         fill: NEAR_BLACK,

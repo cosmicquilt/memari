@@ -406,8 +406,8 @@ const PRIMITIVES = {
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "boolean", key: "ruled", label: "Ruled (lined) body" },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily, lattice),
     // Its heading drops a point size rather than wrapping when the box
     // narrows, and a ruled box gains rules as it grows, so both axes
     // change the drawing.
@@ -477,8 +477,8 @@ const PRIMITIVES = {
         text: "This checklist's day columns follow whichever page it's on — nothing to edit here yet.",
       },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: () => {
       // "Title and one row below", requested in those words.
       const m = getTodoChecklistRowMetricsPx();
@@ -515,8 +515,8 @@ const PRIMITIVES = {
     paletteName: "Habits",
     previewProps: { dayCount: 1 },
     fields: [{ kind: "lines", key: "habits", label: "Habits (one per line)", rows: 8 }],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: (pageGrid, columnSpan) => {
       const widthPx = gridCellToPixels(pageGrid, {
         columnStart: 0,

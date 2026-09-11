@@ -33,7 +33,7 @@
 // regardless of which zone a given instance ends up in.
 
 import { ptToPx } from "@/lib/print-spec";
-import { HEADING_SIZES_PT } from "@/lib/modules/moduleFrame";
+import { HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type HabitTrackerConfig = {
   habits?: string[]; // pre-filled habit names, optional
@@ -163,7 +163,8 @@ export function renderHabitTracker(
   geometry: { x: number; y: number; width: number; height: number },
   config: HabitTrackerConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   if (isHabitTrackerCompact(geometry.width)) {
     return renderHabitTrackerCompact(geometry, config, idPrefix, fontFamily);
@@ -185,7 +186,10 @@ export function renderHabitTracker(
   const contentY = geometry.y;
   const contentHeight = geometry.height;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  // The header band ends on the first LATTICE line - same change, same
+  // reason, and the same cost as the to-do's: see contentTopPx, and
+  // todoChecklist.ts for the report that prompted it.
+  const headerHeight = contentTopPx({ ...geometry, y: contentY }, lattice) - contentY;
   const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   // Day-letter columns are fixed-width (square against the header
@@ -370,7 +374,8 @@ function renderHabitTrackerCompact(
   geometry: { x: number; y: number; width: number; height: number },
   config: HabitTrackerConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional — see todoChecklist.ts for the whole story.
@@ -381,7 +386,10 @@ function renderHabitTrackerCompact(
 
   const contentY = geometry.y;
   const contentHeight = geometry.height;
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  // The header band ends on the first LATTICE line - same change, same
+  // reason, and the same cost as the to-do's: see contentTopPx, and
+  // todoChecklist.ts for the report that prompted it.
+  const headerHeight = contentTopPx({ ...geometry, y: contentY }, lattice) - contentY;
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   const nameRowHeight = ptToPx(NAME_ROW_HEIGHT_PT);
   // Each day square's own width doubles as its own height (a real square,

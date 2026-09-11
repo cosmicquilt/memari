@@ -19,7 +19,7 @@
 // grid's own day columns and reusing its exact 14.1pt checkbox width.
 
 import { ptToPx } from "@/lib/print-spec";
-import { HEADING_SIZES_PT } from "@/lib/modules/moduleFrame";
+import { HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -106,7 +106,8 @@ export function renderTodoChecklist(
   geometry: { x: number; y: number; width: number; height: number },
   config: TodoChecklistConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional. An id names one mark for the whole life of
@@ -129,8 +130,19 @@ export function renderTodoChecklist(
   // same as every other freely-placed module.
   const contentY = geometry.y;
   const contentHeight = geometry.height;
+  // The header band ends on the first LATTICE line, not one cell less the
+  // box inset at both ends.
+  //
+  // 63px tiled the rest of the box perfectly - uniform rows, last rule
+  // exactly on the border - at the cost of starting the content 6px above
+  // a dot row, so every row line in the module sat 6px off the dots.
+  // Reported as "todo on proof also not aligned", after the same thing was
+  // fixed in the new modules. See moduleFrame's contentTopPx for the full
+  // trade: the 6px moves to the LAST band, which comes out 69px against
+  // 75, and the to-do holds one row fewer at each height as a result.
+  const headerBottom = contentTopPx({ ...geometry, y: contentY }, lattice);
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const headerHeight = headerBottom - contentY;
   const nominalRowHeight = ptToPx(ROW_HEIGHT_PT);
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   const checkboxWidth = ptToPx(CHECKBOX_WIDTH_PT);

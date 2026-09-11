@@ -120,6 +120,29 @@ export function contentTopPx(geometry: FrameGeometry, lattice?: FrameLattice): n
   return geometry.y - lattice.insetPx + lattice.pitchPx;
 }
 
+/**
+ * Like contentTopPx, but for a header band that needs a stated minimum -
+ * a two-line heading, say. Snaps UP to the next lattice line rather than
+ * taking the first one, so the band is always deep enough AND its rule
+ * still lands on a dot.
+ *
+ * labeled-box is the case: its heading drops to 7pt and wraps rather than
+ * being cut, and a wrapped one needs about 103px where a single line needs
+ * 57. One cell (69px) holds the first, two cells (144px) the second, and
+ * both put the divider on the lattice.
+ */
+export function contentTopAtLeastPx(
+  geometry: FrameGeometry,
+  minBandPx: number,
+  lattice?: FrameLattice
+): number {
+  const pitch = lattice?.pitchPx ?? ptToPx(18);
+  const inset = lattice?.insetPx ?? pitch - ptToPx(HEADER_HEIGHT_PT);
+  const origin = geometry.y - inset;
+  const cells = Math.max(1, Math.ceil((minBandPx + inset) / pitch));
+  return origin + cells * pitch;
+}
+
 /** A module's row height: one lattice cell. */
 export function rowHeightPx(lattice?: FrameLattice): number {
   return lattice?.pitchPx ?? ptToPx(18);

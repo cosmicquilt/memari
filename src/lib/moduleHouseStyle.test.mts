@@ -60,18 +60,50 @@ const HOUSE_HEADING_MAX_PT_PX = ptToPx(8);
  *
  * Listed rather than skipped, and listed with the measured number, so the
  * debt is visible and a NEW module cannot join it by accident - adding a
- * slug here is a deliberate act with a number attached. Converting these
- * costs the to-do a row at every height, which is a content change to the
- * flagship module and wants its own decision.
+ * slug here is a deliberate act with a number attached.
+ *
+ * It held to-do, habit-tracker, water-tracker and labeled-box too, at -6
+ * and -11.9. They came off it when Andrew asked: "lined notes also not
+ * aligned with dots", then "todo on proof also not aligned". The to-do
+ * holds one row fewer at each height as a result, which is what made it
+ * worth asking about rather than assuming.
  */
 const LATTICE_DEBT: Record<string, number> = {
-  "todo-checklist": -6,
-  "habit-tracker": -6,
-  "water-tracker": -6,
-  "labeled-box": -11.9,
+  // The two spines. They are not user-placed and their internal geometry
+  // is a function of their own content (hour rows, week rows) rather than
+  // of the frame, so converting them is a separate piece of work with a
+  // different shape - not the one-line origin change the boxed modules
+  // took.
   "hourly-grid-core": -6,
   "month-grid-core": -6,
 };
+
+/**
+ * Modules whose vertical rules divide the box by WEIGHT or by a day count,
+ * not by the lattice.
+ *
+ * A column table's columns take a share of the width so a "Date" column
+ * and an "Item" column are not the same size; a day column is one seventh
+ * or one third of the box. Neither can land on a lattice column, and
+ * neither should - nothing is written across those rules, so there is no
+ * dot for them to miss.
+ *
+ * What is NOT exempt is a rule that divides the box in half, like the
+ * matrix's cross: that one reads directly against the dots and was
+ * reported doing so - "vertical line in eisenhower not aligned" - after
+ * only the horizontal arm had been snapped.
+ */
+const WEIGHTED_COLUMNS = new Set([
+  "column-table",
+  "todo-checklist",
+  "habit-tracker",
+  "water-tracker",
+  "rating-strip",
+  "hourly-grid-core",
+  "month-grid-core",
+  "mini-month",
+  "progress-meter",
+]);
 
 /** Modules whose heading is drawn by something other than the frame, and
  *  is a page title rather than a module heading - a different thing, set
@@ -253,6 +285,28 @@ for (const slug of REGISTERED_SLUGS) {
           const k = Math.round((centre - PAGE.marginPx) / PITCH);
           return { id: String(e.id), off: centre - (PAGE.marginPx + k * PITCH) };
         });
+      // Rule 2, the other way up: a vertical rule that divides the box
+      // rather than portioning it must land on a lattice COLUMN.
+      if (!WEIGHTED_COLUMNS.has(slug)) {
+        const verticals = elements
+          .filter((e) => e.type === "figure" && e.subType === "rect" && e !== box)
+          .filter((e) => (e.width ?? 0) < (e.height ?? 0) / 4)
+          .filter((e) => (e.height ?? 0) > (box.height ?? 0) * 0.5)
+          .map((e) => {
+            const centre = (e.x ?? 0) + (e.width ?? 0) / 2;
+            const k = Math.round((centre - PAGE.marginPx) / PITCH);
+            return { id: String(e.id), off: centre - (PAGE.marginPx + k * PITCH) };
+          });
+        for (const { id, off } of verticals) {
+          if (Math.abs(off) > 0.5) {
+            fail(
+              `${where}: vertical rule ${id} sits ${off.toFixed(1)}px from the ` +
+                `nearest lattice column - see WEIGHTED_COLUMNS`
+            );
+          }
+        }
+      }
+
       for (const { id, off } of offsets) {
         const expected = debt ?? 0;
         if (Math.abs(off - expected) > 0.5) {

@@ -194,8 +194,21 @@ export function renderAxisMatrix(
   // down axis and nothing else.
   const plotLeft = geometry.x + gutter;
   const plotWidth = geometry.x + geometry.width - plotLeft;
-  const halfWidth = plotWidth / 2;
-  const midX = plotLeft + halfWidth;
+  // BOTH arms of the cross go on the lattice, not just the horizontal one.
+  //
+  // Only midY was snapped at first, on the reasoning that the horizontal
+  // rule is the one that reads against the dot ROWS. It reads against the
+  // columns just as plainly the other way up - reported as "vertical line
+  // in eisenhower not aligned".
+  const exactMidX = plotLeft + plotWidth / 2;
+  const midX = lattice
+    ? lattice.originX +
+      Math.round((exactMidX - lattice.originX) / lattice.pitchPx) * lattice.pitchPx
+    : exactMidX;
+  // Measured from the snapped cross, so a label centres on the half it
+  // actually has rather than on a nominal one - the same correction the
+  // vertical halves already needed.
+  const halfWidth = Math.min(midX - plotLeft, plotLeft + plotWidth - midX);
   // The cross goes on the nearest LATTICE line to the middle, not on the
   // exact middle.
   //
