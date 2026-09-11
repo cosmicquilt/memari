@@ -37,20 +37,19 @@ const PAGE = {
 };
 const PITCH = cellHeightPx(PAGE);
 /** See moduleHouseStyle.test.mts - the two spines still sit 6px off. */
-const LATTICE_DEBT = new Set(["hourly-grid-core", "month-grid-core"]);
+const LATTICE_DEBT = new Set(["month-grid-core"]);
 /** Modules that lay their columns out in the allocation frame so the
  *  boundaries land on the lattice - see the mark-escape check below. */
 const ALLOCATION_FRAME = new Set(["hourly-grid-core", "month-grid-core", "todo-checklist"]);
 /**
  * Overhang a module is already known to have, in print px, measured.
  *
- * hourly-grid-core's last hour row runs 12.6px past its own bottom edge.
- * That is long-standing - nothing in the 2026-09-11 geometry work touched
- * its layout - and it is invisible in practice, because the row below it
- * is the one-cell gap the spine always reserves. Recorded rather than
- * waved through, so a WORSE overhang still fails.
+ * Empty, and worth keeping that way. It held hourly-grid-core at 12.6px -
+ * its last hour row running past its own bottom edge - until that turned
+ * out to be one line: the block is designed in allocation terms and only
+ * the render measured from the ink box. Fixed rather than recorded.
  */
-const KNOWN_OVERHANG: Record<string, number> = { "hourly-grid-core": 12.6 };
+const KNOWN_OVERHANG: Record<string, number> = {};
 
 type El = {
   id: string;

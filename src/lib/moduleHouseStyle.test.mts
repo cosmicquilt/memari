@@ -69,12 +69,14 @@ const HOUSE_HEADING_MAX_PT_PX = ptToPx(8);
  * worth asking about rather than assuming.
  */
 const LATTICE_DEBT: Record<string, number> = {
-  // The two spines. They are not user-placed and their internal geometry
-  // is a function of their own content (hour rows, week rows) rather than
-  // of the frame, so converting them is a separate piece of work with a
-  // different shape - not the one-line origin change the boxed modules
-  // took.
-  "hourly-grid-core": -6,
+  // hourly-grid-core came off this list when its rows were laid out from
+  // the ALLOCATION rather than the ink box - one line, and all 108 hour
+  // rules landed on the pitch. Everything about that block was designed in
+  // allocation terms already; only the render disagreed.
+  //
+  // month-grid-core is the last one. Same shape of fix, but its week rows
+  // are derived from a week count rather than a fixed slot height, so it
+  // wants measuring on its own.
   "month-grid-core": -6,
 };
 

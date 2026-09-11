@@ -345,7 +345,29 @@ export function renderHourlyGridCore(
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const headerToGridGap = ptToPx(HEADER_TO_GRID_GAP_PT);
   const rowHeight = getRowHeightPx(config.intervalMinutes, config.compactHourRows, config.rowHeightPt);
-  const gridTop = geometry.y + headerHeight + headerToGridGap;
+  // The header band is measured from the ALLOCATION's top, not the ink
+  // box's - the same frame the day columns already use, one line below.
+  //
+  // Everything about this block is designed in allocation terms: the
+  // header band is 36pt so it is exactly two dots, 36 slots at 9pt are
+  // exactly eighteen more, and the whole thing is "20 dots = 5.000in" -
+  // which is what getHourlyGridCoreContentHeightPx returns, and what
+  // pixelHeightToRowSpan turns into rowSpan 20. Only the render measured
+  // from geometry.y, and geometry.y is 6px inside that.
+  //
+  // Two faults came out of the one line. The rows sat 6px off the dots all
+  // the way down (hourly-grid-core has been carrying that in
+  // moduleHouseStyle's LATTICE_DEBT). And 150 + 1350 drawn from the ink
+  // top runs to 1500 where the ink box is 1488, so the last hour row hung
+  // 12.6px past the bottom edge - found by check:page, which renders the
+  // real planner rather than a synthetic size.
+  //
+  // From the allocation both go: the first rule lands on a dot line, and
+  // the last lands on the allocation's own bottom edge - 6px below the ink
+  // box, which is the same overhang the day columns have at the sides and
+  // is what "works in the allocation frame" means.
+  const gridTop =
+    (lattice ? geometry.y - lattice.insetPx : geometry.y) + headerHeight + headerToGridGap;
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
 
   // Each day gets an equal share of the module's ALLOCATION, not of its
@@ -592,8 +614,14 @@ export function renderHourlyGridCore(
     // from — see the intervalMode branch above), matching how "on" mode's
     // own body height is content-derived rather than geometry-derived.
     if (config.dayBorder) {
+      // Measured to where the rows actually END, which is no longer
+      // headerToGridGap + rows from the header box: the grid starts from
+      // the allocation now, so the gap under the header box is that much
+      // wider than the constant.
       const bodyHeight =
-        config.intervalMode === "off" ? geometry.height - headerHeight : headerToGridGap + rowCount * rowHeight;
+        config.intervalMode === "off"
+          ? geometry.height - headerHeight
+          : gridTop + rowCount * rowHeight - (geometry.y + headerHeight);
       elements.push({
         id: id(`d${d}-border`),
         type: "figure",
