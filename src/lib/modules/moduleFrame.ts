@@ -28,7 +28,30 @@ export type FrameElement = {
 
 export const NEAR_BLACK = "#231F20";
 export const BORDER_WIDTH_PT = 0.5;
-export const RULE_WIDTH_PT = 0.35;
+/**
+ * THE interior rule weight, for every rule inside a module's border.
+ *
+ * 0.5 is a border. Everything drawn inside one is this. The two were
+ * drifting: 0.35 here and in the to-do and habit tracker, 0.3 for the
+ * hourly grid's hour rules, and a bare inline 0.5 for a labeled box's
+ * ruled body - so the lines a user writes on were heavier in a Notes box
+ * than in the hours beside it, at border weight, for no reason anyone had
+ * decided.
+ *
+ * 0.3 now, asked for as "can you make all interior lines even a bit
+ * thinner" - which is also the weight the hourly grid has always used, so
+ * this settles on the one that has been looked at longest rather than
+ * inventing a number.
+ *
+ * Do not take it much below this: 0.3pt is 0.106mm, and 0.25pt (0.088mm)
+ * is about where a hairline starts dropping out on press. Thinner is a
+ * decision about printing, not about drawing.
+ *
+ * Judging it on screen is misleading - see markGeometry's own floor, which
+ * clamps any fill-only hairline to a minimum device width, so below
+ * roughly 45% zoom every weight here looks identical.
+ */
+export const RULE_WIDTH_PT = 0.3;
 
 /**
  * The heading sizes, largest first - labeled-box's own ladder.

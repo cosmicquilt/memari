@@ -11,6 +11,7 @@
 // PDF), not an eyeballed guess — see the comments on each one.
 
 import { ptToPx } from "@/lib/print-spec";
+import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
@@ -103,7 +104,8 @@ const HEADER_TO_GRID_GAP_PT = 22.3;
 // It also costs nothing: the block goes 6.154in to 5.000in, so the bottom
 // zone GAINS, 3.250in to 3.750in.
 const ROW_HEIGHT_PT = 9.0;
-const ROW_LINE_WIDTH_PT = 0.3;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 // Gap between adjacent day-tab boxes: 244.7 - 240.2 = 4.5pt.
 const COLUMN_GUTTER_PT = 4.5;
 // Day-tab text insets from the box border: "SUNDAY" bbox starts 4.4pt

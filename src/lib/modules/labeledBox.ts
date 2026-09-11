@@ -28,7 +28,10 @@ import { ptToPx } from "@/lib/print-spec";
 
 const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
-const DIVIDER_WIDTH_PT = 0.5;
+// The header divider is a rule INSIDE the box, so it takes the house
+// interior weight like every other one - it was 0.5, the weight of the
+// border right above it. See moduleFrame's RULE_WIDTH_PT.
+const DIVIDER_WIDTH_PT = RULE_WIDTH_PT;
 const HEADER_HEIGHT_SINGLE_LINE_PT = 13.7;
 // Extra room for a wrapped second line at 7pt.
 const HEADER_HEIGHT_TWO_LINE_PT = 24.7;
@@ -47,7 +50,12 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // need it: nothing here can measure a string, so every module that has to
 // keep a label inside a box works from this same number.
 import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
-import { contentTopAtLeastPx, rowHeightPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+import {
+  RULE_WIDTH_PT,
+  contentTopAtLeastPx,
+  rowHeightPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 /**
  * How a heading is set: the point size it is drawn at, and whether the
@@ -244,7 +252,12 @@ export function renderLabeledBox(
     const bodyTop = geometry.y + headerHeight;
     const origin = lattice ? geometry.y - lattice.insetPx : geometry.y;
     const first = origin + Math.ceil((bodyTop - origin) / pitch) * pitch;
-    const ruledLineWidth = ptToPx(0.5);
+    // The lines a user actually writes on, and they were the heaviest
+    // interior marks in the planner: a bare 0.5 written inline here, the
+    // same weight as the box's own border, where the hours beside them are
+    // 0.3. Nobody decided that; it was never stated anywhere to disagree
+    // with. See moduleFrame's RULE_WIDTH_PT.
+    const ruledLineWidth = ptToPx(RULE_WIDTH_PT);
     const bottom = geometry.y + geometry.height;
     // Numbered by which lattice row it is, not by which line it happens to
     // be - see this file's own note on semantic ids. A box whose heading

@@ -31,6 +31,7 @@
 //   fixed one-per-column.
 
 import { ptToPx } from "@/lib/print-spec";
+import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 
 export type MonthGridCoreConfig = {
@@ -72,7 +73,8 @@ const DATE_STRIP_HEIGHT_PT = 9;
 // each cell's date-strip. Half a cell wide against a half-cell-high strip,
 // so the number sits in a square of half a cell each way.
 const DATE_BOX_WIDTH_PT = 9;
-const ROW_LINE_WIDTH_PT = 0.5;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 
 export function renderMonthGridCore(
   geometry: { x: number; y: number; width: number; height: number },

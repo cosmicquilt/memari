@@ -24,6 +24,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import {
+  RULE_WIDTH_PT,
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
   borderElement,
@@ -54,9 +55,12 @@ export type RenderedElement = {
 
 /** Half a cell each way. */
 const SEGMENT_PT = 9;
-const SEGMENT_STROKE_PT = 0.35;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const SEGMENT_STROKE_PT = RULE_WIDTH_PT;
 /** The rule that marks a milestone, against the segment's own hairline. */
-const MILESTONE_STROKE_PT = 0.7;
+// Twice the interior rule, so a milestone reads as heavier than the
+// segments it divides however the house weight moves.
+const MILESTONE_STROKE_PT = RULE_WIDTH_PT * 2;
 // Small enough to read as an index in the corner of a square rather than
 // as something written in it: at 5.5pt the digits nearly filled the
 // half-cell segment and the block read as clutter.

@@ -33,7 +33,8 @@
 // regardless of which zone a given instance ends up in.
 
 import { ptToPx } from "@/lib/print-spec";
-import { HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+import {
+  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type HabitTrackerConfig = {
   habits?: string[]; // pre-filled habit names, optional
@@ -82,7 +83,8 @@ const BORDER_WIDTH_PT = 0.5;
 // below. Rows are a third taller as a result and a given box holds
 // correspondingly fewer of them.
 const ROW_HEIGHT_PT = 18;
-const ROW_LINE_WIDTH_PT = 0.35;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 // One dot wide, matching ROW_HEIGHT_PT, so every checkable cell in the
 // body grid is exactly one lattice cell square. Fixed rather than derived
 // from leftover width — the name column absorbs the remainder instead (see

@@ -69,7 +69,8 @@ const SCALE_HEAD_FONT_PT = 6.5;
 const ITEM_FONT_PT = 8;
 /** Half a cell each way, centred in its row. */
 const GLYPH_PT = 9;
-const GLYPH_STROKE_PT = 0.35;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const GLYPH_STROKE_PT = RULE_WIDTH_PT;
 const HORIZONTAL_PADDING_PT = 5;
 /**
  * The item names take this share of the width and the scale the rest.

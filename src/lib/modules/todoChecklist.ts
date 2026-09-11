@@ -19,7 +19,8 @@
 // grid's own day columns and reusing its exact 14.1pt checkbox width.
 
 import { ptToPx } from "@/lib/print-spec";
-import { HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+import {
+  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -73,7 +74,8 @@ const HEADER_BORDER_WIDTH_PT = 0.5;
 // The cost is density. The reference measures 13.45pt, so rows are now a
 // third taller and a full-height to-do holds 14 rows where it held 18.
 const ROW_HEIGHT_PT = 18;
-const ROW_LINE_WIDTH_PT = 0.35;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 // One dot wide, which makes each checkbox exactly square now that a row is
 // one dot tall. Was 14.1pt, borrowed from hourlyGridCore's time-label box
 // back when a row was 13.45pt and the two were near enough to each other

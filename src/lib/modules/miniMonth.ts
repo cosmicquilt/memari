@@ -28,6 +28,7 @@
 import { ptToPx } from "@/lib/print-spec";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import {
+  RULE_WIDTH_PT,
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
   borderElement,
@@ -68,7 +69,8 @@ const MARKABLE_ROW_HEIGHT_PT = 18;
 const DATE_FONT_PT = 7;
 /** Half a cell each way, matching monthGridCore's own date box. */
 const MARK_BOX_PT = 9;
-const MARK_BOX_STROKE_PT = 0.35;
+// The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
+const MARK_BOX_STROKE_PT = RULE_WIDTH_PT;
 
 const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_NAMES = [
