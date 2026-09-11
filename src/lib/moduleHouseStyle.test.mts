@@ -1,0 +1,278 @@
+// The house style, as a test rather than as advice.
+//
+// Seven modules were written at once and every one of them repeated the
+// same four mistakes, because the rules existed only as comments in the
+// modules that already followed them. A comment cannot be followed by a
+// module that has not been written yet. So each rule below is one the
+// project has actually been bitten by, and each is now checked against
+// every registered module at every size it can be drawn at:
+//
+//   1. NOTHING LEAVES ITS BOX. The renderer sets white-space:pre and never
+//      clips, so a label wider than its column prints over the module
+//      beside it. Reported as "text gets cut of in headers such as log"
+//      and, before that, an "Amount" column head running out of a sidebar.
+//
+//   2. RULES LAND ON THE LATTICE. Measured, every full-width rule in every
+//      module sat exactly 6px above a dot row. Reported as "the lines dont
+//      align with the dots... in log and reflection, and eisenhower and
+//      spending, actually most of them".
+//
+//   3. HEADINGS ARE UPPERCASE AT THE HOUSE SIZE. Reported as "the title
+//      text looks a bit large" and "the module headers are not all caps
+//      like the current modules".
+//
+//   4. NO letterSpacing. monthTitle.ts measured the reference's wide
+//      tracking, reproduced it, and had to take it back out: the legacy
+//      Polotno route's width-constrained text box under-measures its own
+//      width when letterSpacing is set and wraps to about one character
+//      per line. Re-added by hand while matching the house style, which is
+//      exactly the kind of thing a comment in a different file does not
+//      prevent.
+//
+//   5. RENDERERS ARE TOTAL. Four of the seven threw on empty propValues,
+//      which takes down a whole PAGE rather than one module.
+//
+// Row pitch has its own file, modulePitch.test.mts, because it needs to
+// measure gaps rather than individual marks.
+import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
+import { REGISTERED_SLUGS, moduleDefinition } from "./moduleRegistry";
+import { HEADING_SIZES_PT } from "./modules/moduleFrame";
+import { ptToPx } from "./print-spec";
+import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
+import { isHabitTrackerCompact } from "./modules/habitTracker";
+
+const PAGE: PageGrid = {
+  widthPx: 2175,
+  heightPx: 3075,
+  gridColumns: 24,
+  gridRows: 36,
+  boxInsetPx: 6,
+  marginPx: 187.5,
+};
+const PITCH = cellHeightPx(PAGE);
+/** The house maximum heading size, stated rather than imported - see the
+ *  heading check for why that distinction is the whole point. */
+const HOUSE_HEADING_MAX_PT_PX = ptToPx(8);
+
+/**
+ * Modules written before the frame existed, with the offset each one's
+ * rules actually sit at.
+ *
+ * Listed rather than skipped, and listed with the measured number, so the
+ * debt is visible and a NEW module cannot join it by accident - adding a
+ * slug here is a deliberate act with a number attached. Converting these
+ * costs the to-do a row at every height, which is a content change to the
+ * flagship module and wants its own decision.
+ */
+const LATTICE_DEBT: Record<string, number> = {
+  "todo-checklist": -6,
+  "habit-tracker": -6,
+  "water-tracker": -6,
+  "labeled-box": -11.9,
+  "hourly-grid-core": -6,
+  "month-grid-core": -6,
+};
+
+/** Modules whose heading is drawn by something other than the frame, and
+ *  is a page title rather than a module heading - a different thing, set
+ *  differently on purpose. */
+const NOT_MODULE_HEADINGS = new Set(["week-title", "month-title", "hourly-grid-core"]);
+
+/**
+ * The habit tracker's COMPACT layout sizes a row as a name row plus
+ * `width / 7`, so its seven day cells come out square. Seven does not
+ * divide the 24-column lattice, so those rules cannot land on it and the
+ * module knowingly trades pitch for square cells - see
+ * getHabitTrackerRowMetricsPx. Skipped per WIDTH, not per module: its wide
+ * layout is checked like everything else.
+ */
+function isCompactException(slug: string, widthPx: number): boolean {
+  const compactable = slug === "habit-tracker" || slug === "water-tracker";
+  return compactable && isHabitTrackerCompact(widthPx);
+}
+
+/**
+ * Modules a user can never place or edit: a spine, a page title, the
+ * freeform wrapper. They are created by the template with complete props
+ * and cannot arrive from the palette half-filled, so the totality rule is
+ * not aimed at them - and hourly-grid-core genuinely cannot draw itself
+ * from nothing, since its whole geometry is a function of its times.
+ *
+ * Derived from the registry rather than listed, so a new module is covered
+ * by default and has to be deliberately placed outside the palette to
+ * escape.
+ */
+function mustBeTotal(slug: string): boolean {
+  const definition = moduleDefinition(slug);
+  return !!definition?.inPalette;
+}
+
+function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
+  return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
+}
+
+function render(
+  slug: string,
+  columnSpan: number,
+  rowSpan: number,
+  propValues: unknown
+): RenderedPolotnoElement[] {
+  return flatten(
+    renderModuleInstance(
+      {
+        id: "t",
+        locked: true,
+        columnStart: 0,
+        rowStart: 2,
+        columnSpan,
+        rowSpan,
+        propValues,
+        moduleType: { slug },
+      },
+      PAGE
+    )
+  );
+}
+
+let failures = 0;
+const fail = (message: string) => {
+  console.error(`  ${message}`);
+  failures++;
+};
+
+let checked = 0;
+
+for (const slug of REGISTERED_SLUGS) {
+  const definition = moduleDefinition(slug);
+  if (!definition?.render) continue;
+  const preview = definition.previewProps ?? {};
+
+  // Rule 5, and it comes first: every other rule below needs the module to
+  // render at all. `{}` is not a hypothetical - it is what a row written
+  // before its schema gained a key holds.
+  if (mustBeTotal(slug)) {
+    for (const props of [preview, {}]) {
+      try {
+        render(slug, 12, 10, props);
+      } catch (error) {
+        fail(`${slug}: threw on ${props === preview ? "preview" : "empty"} props - ${error}`);
+      }
+    }
+  }
+
+  for (const columnSpan of [6, 12, 18, 24]) {
+    for (const rowSpan of [4, 8, 13, 20]) {
+      let elements: RenderedPolotnoElement[];
+      try {
+        elements = render(slug, columnSpan, rowSpan, preview);
+      } catch {
+        continue; // already reported above
+      }
+      const box = elements.find((e) => e.type === "figure" && (e.strokeWidth ?? 0) > 0);
+      if (!box) continue;
+      checked++;
+
+      const where = `${slug} ${columnSpan}x${rowSpan}`;
+      const left = box.x ?? 0;
+      const right = left + (box.width ?? 0);
+      const top = box.y ?? 0;
+      const bottom = top + (box.height ?? 0);
+
+      for (const element of elements) {
+        // Rule 4.
+        if (element.letterSpacing !== undefined) {
+          fail(`${where}: ${element.id} sets letterSpacing - see this file's header`);
+        }
+
+        if (element.type !== "text") continue;
+        const x = element.x ?? 0;
+        const width = element.width ?? 0;
+        const y = element.y ?? 0;
+        const height = element.height ?? 0;
+
+        // Rule 1. The BOX is what a text element may not leave; its
+        // declared width is the width it was laid out against, and the
+        // renderer draws the string at that position whether or not the
+        // string is that wide - so this catches the layout, and the
+        // shrink-then-truncate in textFit.ts is what keeps the string
+        // itself inside that layout.
+        if (x < left - 1 || x + width > right + 1) {
+          fail(
+            `${where}: ${element.id} spans ${x.toFixed(0)}..${(x + width).toFixed(0)} ` +
+              `outside the box ${left.toFixed(0)}..${right.toFixed(0)}`
+          );
+        }
+        if (y < top - 1 || y + height > bottom + 1) {
+          fail(
+            `${where}: ${element.id} runs ${y.toFixed(0)}..${(y + height).toFixed(0)} ` +
+              `outside the box ${top.toFixed(0)}..${bottom.toFixed(0)}`
+          );
+        }
+
+        // Rule 3, for the module's own heading only.
+        if (String(element.id).endsWith("-heading") && !NOT_MODULE_HEADINGS.has(slug)) {
+          const text = String(element.text ?? "");
+          if (text !== text.toUpperCase()) {
+            fail(`${where}: heading "${text}" is not uppercase`);
+          }
+          // Against 8pt WRITTEN HERE, not against HEADING_SIZES_PT.
+          //
+          // Checking membership of the ladder made this a mirror: put 12pt
+          // back at the top of the ladder and the test still passed,
+          // because the ladder is what it was asking. A test has to state
+          // the expected value or it only checks that the code equals
+          // itself. 8pt is labeled-box's top rung and the house maximum.
+          const fontSize = element.fontSize ?? 0;
+          if (fontSize > HOUSE_HEADING_MAX_PT_PX + 0.5) {
+            fail(
+              `${where}: heading is ${((fontSize * 72) / 300).toFixed(1)}pt, ` +
+                `over the house maximum of 8pt`
+            );
+          }
+          if (!HEADING_SIZES_PT.map(ptToPx).some((size) => Math.abs(size - fontSize) < 0.5)) {
+            fail(
+              `${where}: heading is ${((fontSize * 72) / 300).toFixed(1)}pt, ` +
+                `not a rung of the ladder (${HEADING_SIZES_PT.join("/")}pt)`
+            );
+          }
+        }
+      }
+
+      // Rule 2.
+      const widthPx = gridCellToPixels(PAGE, {
+        columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1,
+      }).width;
+      if (isCompactException(slug, widthPx)) continue;
+      const debt = LATTICE_DEBT[slug];
+      const offsets = elements
+        .filter((e) => e.type === "figure" && e.subType === "rect" && e !== box)
+        .filter((e) => (e.height ?? 0) < (e.width ?? 0) / 4)
+        .filter((e) => Math.abs((e.x ?? 0) - left) < 1 && Math.abs((e.width ?? 0) - (box.width ?? 0)) < 1)
+        .map((e) => {
+          const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
+          const k = Math.round((centre - PAGE.marginPx) / PITCH);
+          return { id: String(e.id), off: centre - (PAGE.marginPx + k * PITCH) };
+        });
+      for (const { id, off } of offsets) {
+        const expected = debt ?? 0;
+        if (Math.abs(off - expected) > 0.5) {
+          fail(
+            `${where}: rule ${id} sits ${off.toFixed(1)}px from the nearest dot row` +
+              (debt === undefined
+                ? " - rules must land on the lattice (see moduleFrame's contentTopPx)"
+                : `, but ${slug} is recorded in LATTICE_DEBT at ${expected}px`)
+          );
+        }
+      }
+    }
+  }
+}
+
+if (failures > 0) {
+  console.error(`\nHouse style violated in ${failures} case(s).`);
+  process.exit(1);
+}
+console.log(
+  `All house style checks passed (${checked} module/size combinations; ` +
+    `${Object.keys(LATTICE_DEBT).length} modules on the pre-frame lattice offset).`
+);

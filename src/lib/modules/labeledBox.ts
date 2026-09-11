@@ -89,7 +89,7 @@ function headingLayout(heading: string, availableWidthPx: number): { fontPt: 7 |
 export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: number): number {
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
-  const { wraps } = headingLayout(heading, headingAvailableWidth);
+  const { wraps } = headingLayout(heading ?? "", headingAvailableWidth);
   return ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT);
 }
 
@@ -123,7 +123,14 @@ export function renderLabeledBox(
 
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = geometry.width - headingPadding * 2;
-  const { fontPt: headingFontPt, wraps } = headingLayout(config.heading, headingAvailableWidth);
+  // Total in its config: a ModuleInstance whose propValues lost its
+  // heading - a row written before the schema had one, a preset that
+  // forgot it - drew nothing at all here, because `undefined.length`
+  // inside headingLayout throws and a throw inside a render takes down the
+  // whole PAGE, not one module. Found by moduleHouseStyle.test.mts, which
+  // renders every registered module with no props.
+  const heading = config.heading ?? "";
+  const { fontPt: headingFontPt, wraps } = headingLayout(heading, headingAvailableWidth);
   const headerHeight = ptToPx(
     wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT
   );
@@ -174,7 +181,7 @@ export function renderLabeledBox(
       y: geometry.y,
       width: headingAvailableWidth,
       height: headerHeight,
-      text: config.heading.toUpperCase(),
+      text: heading.toUpperCase(),
       fontSize: headingFontSize,
       fontFamily: FONT_FAMILY,
       align: "center",
@@ -189,7 +196,7 @@ export function renderLabeledBox(
       y: geometry.y + (headerHeight - headingTextHeight) / 2,
       width: headingAvailableWidth,
       height: headingTextHeight,
-      text: config.heading.toUpperCase(),
+      text: heading.toUpperCase(),
       fontSize: headingFontSize,
       fontFamily: FONT_FAMILY,
       align: "center",

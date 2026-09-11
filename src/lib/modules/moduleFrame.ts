@@ -79,10 +79,19 @@ export const HEADING_SIZES_PT = [8, 7, 6];
  * dot alignment on every rule in the module. modulePitch.test.mts knows
  * about this band by name and still rejects anything else.
  *
- * Flip LATTICE_ALIGNED_CONTENT to false to go back to uniform rows 6px off
- * the dots; it is one constant precisely so the trade can be re-taken.
+ * To re-take the trade, change the LATTICE BRANCH of contentTopPx below to
+ * `geometry.y + ptToPx(15.12)` - 63px, one cell less the inset at both
+ * ends. Every real caller supplies a lattice, so that branch is the one
+ * that runs and HEADER_HEIGHT_PT is only the fallback beside it.
+ *
+ * Two wrong versions of this note preceded it, both worth keeping as a
+ * warning. First a LATTICE_ALIGNED_CONTENT flag advertised as the switch,
+ * whose "off" branch fell back to HEADER_HEIGHT_PT - which is now 16.56,
+ * so both branches produced the same 69px and the switch could not switch.
+ * Then HEADER_HEIGHT_PT itself, which only moves the fallback. Both were
+ * caught the same way: by making the change and watching
+ * moduleHouseStyle.test.mts pass anyway.
  */
-export const LATTICE_ALIGNED_CONTENT = true;
 
 /**
  * The header band: 69 print px, one cell less the box's TOP inset.
@@ -103,7 +112,9 @@ export const HEADER_HEIGHT_PT = 16.56;
  * harnesses and any caller that does not have one.
  */
 export function contentTopPx(geometry: FrameGeometry, lattice?: FrameLattice): number {
-  if (!lattice || !LATTICE_ALIGNED_CONTENT) return geometry.y + ptToPx(HEADER_HEIGHT_PT);
+  // The fallback is the SAME 69px, not a different rule - a module drawn
+  // without a lattice must not land somewhere else. See HEADER_HEIGHT_PT.
+  if (!lattice) return geometry.y + ptToPx(HEADER_HEIGHT_PT);
   // geometry.y - insetPx is the allocation's own top edge, which is a
   // lattice line by construction; one pitch down is the next one.
   return geometry.y - lattice.insetPx + lattice.pitchPx;

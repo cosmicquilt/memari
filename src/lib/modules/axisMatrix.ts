@@ -96,8 +96,25 @@ const AXIS_FONT_PT = 6.5;
  */
 const AXIS_GUTTER_WIDTH_PT = 9;
 const AXIS_LETTER_FONT_PT = 6;
-/** Letters of a stacked label, as a multiple of their own size. */
-const AXIS_LETTER_PITCH = 1.15;
+/**
+ * Letters of a stacked label, as a multiple of their own size.
+ *
+ * 1.2, which is exactly the line height a text element is given - so the
+ * advance a letter takes and the box it draws in are the same number. At
+ * 1.15 they were not, and the last letter of a stack poked 3px below the
+ * module's own border: a stack that fit by its advance did not fit by its
+ * ink. Found by moduleHouseStyle.test.mts's "nothing leaves its box".
+ */
+const AXIS_LETTER_PITCH = 1.2;
+/**
+ * The advance the longest DEFAULT down-axis label needs, in letter slots.
+ *
+ * "Below the line" - twelve letters and two spaces, and a space takes half
+ * a slot. Stated here rather than measured off the schema because the
+ * minimum-height rule may not read propValues (see getMinRowSpanForSlug's
+ * comment on why), so it has to size for the module a fresh drop creates.
+ */
+const AXIS_LABEL_DEFAULT_UNITS = 13;
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;
@@ -126,7 +143,24 @@ export function getAxisMatrixMinHeightPx(): number {
   const quadrant = m.quadrantLabelHeightPx + rowHeightPx();
   // One axis band, not two: the down axis moved to a gutter at the side,
   // which costs width rather than height.
-  return m.headerHeightPx + m.axisBandHeightPx + quadrant * 2;
+  const boxes = m.headerHeightPx + m.axisBandHeightPx + quadrant * 2;
+
+  // ...but the four boxes are not the binding constraint. The down axis is
+  // set one letter per line down half the plot, so a long label needs
+  // height the quadrants do not. At the old minimum the default labels
+  // came out at about 3pt, and before the floor was removed they came out
+  // chopped: reported as "not important gets cut off in eisenhower".
+  //
+  // Sized for the SCHEMA DEFAULT label, which is the one a fresh module
+  // gets, at the nominal letter size. A user who types a longer one still
+  // gets all of it - it simply sets smaller.
+  const units = AXIS_LABEL_DEFAULT_UNITS;
+  const halfNeeded = units * ptToPx(AXIS_LETTER_FONT_PT) * AXIS_LETTER_PITCH;
+  // Both halves, plus the cell the lattice snap can take off the smaller
+  // of them - sizing for the nominal half alone leaves the snapped one a
+  // size short.
+  const plotNeeded = halfNeeded * 2 + rowHeightPx();
+  return Math.max(boxes, m.headerHeightPx + m.axisBandHeightPx + plotNeeded);
 }
 
 export function renderAxisMatrix(
@@ -212,36 +246,70 @@ export function renderAxisMatrix(
   // to stack them, since the renderer draws a text node as one unbroken
   // line - and each is named by its label and its position in it, so a
   // reworded axis replaces only the letters that actually changed.
-  const halfHeight = (gridBottom - gridTop) / 2;
-  const downEnds: Array<[string, string, number]> = [
-    ["y-top", config.yTop ?? "", gridTop],
-    ["y-bottom", config.yBottom ?? "", midY],
+  // Each half's REAL extent, not one nominal half-height for both.
+  //
+  // The cross is snapped to the nearest lattice line, so the two halves
+  // are not the same height - and using one figure for both let the lower
+  // label's last letter run past the module's own border. Found by
+  // moduleHouseStyle.test.mts's "nothing leaves its box".
+  const downEnds: Array<[string, string, number, number]> = [
+    ["y-top", config.yTop ?? "", gridTop, midY - gridTop],
+    ["y-bottom", config.yBottom ?? "", midY, gridBottom - midY],
   ];
-  for (const [name, text, top] of downEnds) {
+  // Sized to FIT, not picked off a ladder.
+  //
+  // A ladder of three sizes bottomed out before "NOT IMPORTANT" fit, and
+  // the overflow was then silently sliced off the end - reported as "not
+  // important gets cut off in eisenhower". A stack is one letter per line,
+  // so the size it needs is simple arithmetic; there is no reason to guess
+  // at it and then truncate.
+  //
+  // Both ends take the SAME size, worked out from the longer of them, or
+  // an axis reads as two different labels rather than two ends of one.
+  const advanceUnits = (text: string) =>
+    // A space is a word gap, not a letter: half a slot. It also buys back
+    // the room that made the longest real label not fit.
+    [...text].reduce((sum, ch) => sum + (ch === " " ? 0.5 : 1), 0);
+  // One size for both ends - an axis labelled at two sizes reads as two
+  // labels. Taken from the end that has the least room for what it says,
+  // so whichever is tightest is the one that fits.
+  const tightest = Math.min(
+    ...downEnds.map(([, text, , height]) =>
+      text ? height / Math.max(1, advanceUnits(text)) : Number.POSITIVE_INFINITY
+    )
+  );
+  // NO lower clamp, deliberately. A floor means a label that still does
+  // not fit has to lose characters off the end, and a missing letter is
+  // invisible as a defect - "NOT IMPORTANT" printed as "NOT IMPORTAN"
+  // reads as a label, just a wrong one. Type that is too small reads as
+  // too small, which is a thing the user can see and fix by growing the
+  // box. So the label always fits whole, and the MINIMUM height is what
+  // keeps it readable - see getAxisMatrixMinHeightPx.
+  const nominal = ptToPx(AXIS_LETTER_FONT_PT);
+  const letterSize = Math.min(nominal, tightest / AXIS_LETTER_PITCH);
+  const pitch = letterSize * AXIS_LETTER_PITCH;
+
+  for (const [name, text, top, height] of downEnds) {
     if (!text) continue;
     const letters = [...text];
-    // Shrink until the stack fits its half, then cut - the same
-    // shrink-then-truncate order as every other label here, just measured
-    // down the page instead of across it.
-    let letterSize = ptToPx(AXIS_LETTER_FONT_PT);
-    for (const candidate of [ptToPx(AXIS_LETTER_FONT_PT), ptToPx(5), ptToPx(4.5)]) {
-      letterSize = candidate;
-      if (letters.length * candidate * AXIS_LETTER_PITCH <= halfHeight - padding * 2) break;
-    }
-    const pitch = letterSize * AXIS_LETTER_PITCH;
-    const room = Math.max(0, Math.floor((halfHeight - padding * 2) / pitch));
-    const shown = letters.slice(0, room);
-    const stackTop = top + (halfHeight - shown.length * pitch) / 2;
+    const units = advanceUnits(text);
+    // Centred on its own half, measured in the advance it actually uses.
+    let cursor = top + Math.max(0, (height - units * pitch) / 2);
 
-    shown.forEach((letter, i) => {
-      // A space still advances the stack - it is the word break - but
-      // there is nothing to draw for it.
+    letters.forEach((letter, i) => {
+      const advance = letter === " " ? pitch * 0.5 : pitch;
+      // Past the bottom of its half: stop rather than run into the other
+      // label. Only reachable when even the floor size is too big.
+      if (cursor + advance > top + height + 0.5) return;
+      const at = cursor;
+      cursor += advance;
+      // A space advances the stack and draws nothing.
       if (letter === " ") return;
       elements.push({
         id: id(`${name}-l${i}`),
         type: "text",
         x: geometry.x,
-        y: stackTop + pitch * i,
+        y: at,
         width: gutter,
         height: letterSize * 1.2,
         text: letter,
