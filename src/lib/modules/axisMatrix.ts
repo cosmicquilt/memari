@@ -277,76 +277,47 @@ export function renderAxisMatrix(
   elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bandTop));
 
   const axisFontSize = ptToPx(AXIS_FONT_PT);
-  // A SQUARE PLOT, SITTING ON THE BOTTOM BORDER, WITH ITS CENTRE ON THE
-  // LATTICE - all three at once, which takes choosing the side rather
-  // than taking whatever is available.
+  // THE PLOT FILLS ITS BOX, with the cross exactly centred and on the
+  // half-cell pitch. It comes out SQUARE at the module's minimum size and
+  // rectangular as the box grows, which is what was asked for: "make it
+  // fill the box again with the cross centered. i just wanted it to be
+  // default square on small one."
   //
-  // Those three pull against each other. A square plot centred in a tall
-  // box leaves the vertical arm stopping short of the border ("vertical
-  // line in matrix doesn't reach bottom"), and snapping the cross to the
-  // nearest lattice line after the fact pushes it up to half a cell off
-  // the plot's own centre, so the four quadrants come out unequal -
-  // measured at 293/331 across and 330/294 down, which is what "still
-  // doesn't look like cross is square" was seeing. Squaring the PLOT was
-  // never enough on its own; the CROSS has to land in the middle of it.
+  // The version before this chose a square side off a quantised sequence
+  // and centred it, which squared every size at the cost of margin - up to
+  // 130px a side at 12 x 10 - and that margin is what read worse on the
+  // proof than the rectangle it replaced.
   //
-  // The construction: the box's bottom edge is 6px above a lattice line
-  // (that is the box inset), so a square whose bottom sits on that edge
-  // has its centre ON the half-cell pitch exactly when its side is
-  // 75k - 12 for a whole k. Pick the largest such side that fits, put its
-  // bottom on the border and its centre on that pitch, and everything
-  // follows - equal quadrants, a square plot, an arm reaching the bottom,
-  // and both arms on the pitch, with no snapping anywhere.
+  // Two things make the cross land exactly in the middle AND on the pitch
+  // without any snapping:
   //
-  // HALF cells, not whole ones. Requiring the centre on a whole cell
-  // means side = 150m - 12, which is one step in every 150px, and at a
-  // sidebar's 387px of width the largest that fits is 288 - a quarter of
-  // the module thrown away, with the slack piling up as a gap under the
-  // axis words. Reported against the palette card, which draws the module
-  // at its minimum and so shows this at its worst: "gap below 'less'
-  // 'more' is very large".
+  //   ACROSS: the gutter is reserved on BOTH sides, so the plot is centred
+  //   in the box and its middle is the box's own middle - which is always
+  //   alloc + 37.5 * columnSpan, a multiple of the half cell, whatever the
+  //   span. Only the left gutter carries a label; the right one is margin,
+  //   and it is what buys a centre on the pitch.
   //
-  // A half cell is still on the pitch - it divides the cell, which is the
-  // rule the whole lattice is built on - and this project has already
-  // settled that a rule must be ON a dot or CLEARLY BETWEEN two, never a
-  // near-miss. Halving the step to 75px takes that sidebar case from 288
-  // to 363 of the 387 available.
+  //   DOWN: the bottom is the border, so the top is chosen instead - the
+  //   first position at or below the axis band that puts the midpoint on
+  //   the half-cell pitch. That costs a little air under the axis words
+  //   (36px at most) and nothing else.
   const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
   const pitch = lattice?.pitchPx ?? ptToPx(18);
-  const availableTop = bandTop + axisBand;
-  const boxBottom = geometry.y + geometry.height;
-  const boxRight = geometry.x + geometry.width;
-  // The lattice column nearest the box's middle. For the even column
-  // spans a page actually uses this IS the middle; for an odd one the
-  // plot sits a fraction off-centre in the box, which is invisible, and
-  // the quadrants stay equal either way because both halves are side/2.
-  const midX = lattice
-    ? lattice.originX +
-      Math.round((geometry.x + geometry.width / 2 - lattice.originX) / pitch) * pitch
-    : geometry.x + geometry.width / 2;
+  const half = pitch / 2;
+  const originY = lattice?.originY ?? geometry.y;
+  const bandBottom = bandTop + axisBand;
+  const gridBottom = geometry.y + geometry.height;
+  const plotLeft = geometry.x + gutter;
+  const plotWidth = geometry.width - gutter * 2;
+  const midX = plotLeft + plotWidth / 2;
 
-  let side = 0;
-  for (let k = Math.ceil((boxBottom - availableTop + 12) / pitch); k >= 1; k--) {
-    const candidate = pitch * k - 12;
-    if (candidate > boxBottom - availableTop) continue;
-    if (midX - candidate / 2 < geometry.x + gutter) continue;
-    if (midX + candidate / 2 > boxRight) continue;
-    side = candidate;
-    break;
-  }
-  // Nothing in the sequence fits - only reachable below the module's own
-  // minimum. Fall back to filling what there is rather than drawing
-  // nothing.
-  const squared = side > 0;
-  const plotWidth = squared ? side : boxRight - (geometry.x + gutter);
-  const plotHeight = squared ? side : boxBottom - availableTop;
-  const plotLeft = squared ? midX - side / 2 : geometry.x + gutter;
-  const gridTop = boxBottom - plotHeight;
-  const gridBottom = boxBottom;
-  const midY = gridTop + plotHeight / 2;
+  const steps = Math.ceil((bandBottom + gridBottom - 2 * originY) / (2 * half));
+  const midY = originY + steps * half;
+  const gridTop = Math.max(bandBottom, 2 * midY - gridBottom);
+  const plotHeight = gridBottom - gridTop;
 
-  // Both halves are side/2 by construction, so this is exact rather than
-  // a correction for a snapped cross.
+  // Exact by construction - the plot is centred on midX, so both halves
+  // are plotWidth / 2.
   const halfWidth = Math.min(midX - plotLeft, plotLeft + plotWidth - midX);
   // The across axis: its two ends over the two halves they name.
   const acrossEnds: Array<[string, string, number]> = [
