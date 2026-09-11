@@ -12,7 +12,8 @@
     "check:animation": "tsx src/lib/resizeEndpoints.report.mts",
     "postinstall": "prisma generate",
     "check:behaviour": "tsx src/lib/moduleBehaviour.report.mts",
-    "check:proof": "tsx src/lib/primitiveProof.mts"
+    "check:proof": "tsx src/lib/primitiveProof.mts",
+    "check:page": "tsx scripts/check-week-page.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.0",
