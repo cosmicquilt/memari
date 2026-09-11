@@ -69,15 +69,17 @@ const HOUSE_HEADING_MAX_PT_PX = ptToPx(8);
  * worth asking about rather than assuming.
  */
 const LATTICE_DEBT: Record<string, number> = {
-  // hourly-grid-core came off this list when its rows were laid out from
-  // the ALLOCATION rather than the ink box - one line, and all 108 hour
-  // rules landed on the pitch. Everything about that block was designed in
-  // allocation terms already; only the render disagreed.
+  // EMPTY, and that is the point of having kept it.
   //
-  // month-grid-core is the last one. Same shape of fix, but its week rows
-  // are derived from a week count rather than a fixed slot height, so it
-  // wants measuring on its own.
-  "month-grid-core": -6,
+  // It held to-do, habit-tracker, water-tracker and labeled-box at -6 and
+  // -11.9, then the two spines. Every one of them came off by the same
+  // move: lay the content out from the ALLOCATION rather than from the ink
+  // box, which is 6px inside it. Keeping the list - with each module's
+  // MEASURED offset rather than a skip - is what kept that visible long
+  // enough to notice it was one fault wearing six hats.
+  //
+  // A new module cannot join it by accident: adding a slug here is a
+  // deliberate act with a number attached.
 };
 
 /**

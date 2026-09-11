@@ -37,7 +37,7 @@ const PAGE = {
 };
 const PITCH = cellHeightPx(PAGE);
 /** See moduleHouseStyle.test.mts - the two spines still sit 6px off. */
-const LATTICE_DEBT = new Set(["month-grid-core"]);
+const LATTICE_DEBT = new Set<string>();
 /** Modules that lay their columns out in the allocation frame so the
  *  boundaries land on the lattice - see the mark-escape check below. */
 const ALLOCATION_FRAME = new Set(["hourly-grid-core", "month-grid-core", "todo-checklist"]);

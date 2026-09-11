@@ -585,8 +585,8 @@ const PRIMITIVES = {
       "defaultRowSpan": 22
     },
     isSpine: true,
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily, lattice),
     // Every week row shares out whatever height the block has, so all of
     // them move when it resizes and the drawing has to follow.
     contentIsLive: ALWAYS,

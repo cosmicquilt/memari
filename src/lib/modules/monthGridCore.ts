@@ -31,7 +31,7 @@
 //   fixed one-per-column.
 
 import { ptToPx } from "@/lib/print-spec";
-import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
+import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 
 export type MonthGridCoreConfig = {
@@ -80,7 +80,8 @@ export function renderMonthGridCore(
   geometry: { x: number; y: number; width: number; height: number },
   config: MonthGridCoreConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional — see todoChecklist.ts. Ids name a weekday
@@ -108,7 +109,25 @@ export function renderMonthGridCore(
   // dragged to some other height should fill it rather than leave a ragged
   // strip at the bottom, and unlike a to-do there is no row COUNT to
   // change - the weeks in a month are what they are.
-  const contentHeight = geometry.height - headerHeight;
+  // Measured from the ALLOCATION, like hourly-grid-core's rows and
+  // todoChecklist's day columns - the last module still laying itself out
+  // from the ink box.
+  //
+  // The height does not change: the content ran from the ink top plus a
+  // 63px header (one cell less the inset at BOTH ends) to the ink bottom,
+  // which is 75 x (rowSpan - 1); it now runs from the first lattice line
+  // to the allocation's bottom edge, which is the same 75 x (rowSpan - 1).
+  // Only the ORIGIN moves, by the 6px inset - and that is the whole
+  // difference between every week rule sitting 6px off the dots and every
+  // week rule sitting on them. It is what month-grid-core has been
+  // carrying in moduleHouseStyle's LATTICE_DEBT.
+  //
+  // Nothing is drawn at the very bottom of the last week (the separator
+  // loop stops at weekCount - 1, the border closes it instead), so running
+  // to the allocation edge costs no mark outside the box.
+  const contentTop = contentTopPx(geometry, lattice);
+  const contentBottom = geometry.y + geometry.height + (lattice?.insetPx ?? 0);
+  const contentHeight = contentBottom - contentTop;
   const bodyHeight = Math.max(
     0,
     (contentHeight - config.weekCount * dateStripHeight) / config.weekCount
@@ -178,14 +197,14 @@ export function renderMonthGridCore(
     type: "figure",
     subType: "rect",
     x: geometry.x,
-    y: geometry.y + headerHeight - lineWidth / 2,
+    y: contentTop - lineWidth / 2,
     width: geometry.width,
     height: lineWidth,
     fill: LINE_COLOR,
     stroke: "none",
   });
 
-  const gridTop = geometry.y + headerHeight;
+  const gridTop = contentTop;
 
   for (let w = 0; w < config.weekCount; w++) {
     const rowY = gridTop + w * rowHeight;
@@ -242,7 +261,15 @@ export function renderMonthGridCore(
           x: cellX - lineWidth / 2,
           y: rowY,
           width: lineWidth,
-          height: rowHeight,
+          // Stopped at the border, not run to the end of the row.
+          //
+          // The rows reach the ALLOCATION's bottom edge so their rules
+          // land on the dots, and that edge is 6px below the ink box - so
+          // the last week's dividers used to carry on through the bottom
+          // border and out the other side. The hourly grid can run to its
+          // allocation because it draws nothing down there; this block has
+          // a border to respect.
+          height: Math.min(rowHeight, geometry.y + geometry.height - rowY),
           fill: LINE_COLOR,
           stroke: "none",
         });
