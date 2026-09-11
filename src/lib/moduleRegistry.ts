@@ -932,11 +932,11 @@ const PRIMITIVES = {
           },
           "yTop": {
             "type": "string",
-            "default": "High"
+            "default": "Above"
           },
           "yBottom": {
             "type": "string",
-            "default": "Low"
+            "default": "Below"
           },
           "quadrants": {
             "type": "array",
@@ -957,8 +957,8 @@ const PRIMITIVES = {
       heading: "Matrix",
       xLeft: "Less",
       xRight: "More",
-      yTop: "High",
-      yBottom: "Low",
+      yTop: "Above",
+      yBottom: "Below",
       quadrants: ["", "", "", ""],
     },
     resizableWidth: true,

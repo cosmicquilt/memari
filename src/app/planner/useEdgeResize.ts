@@ -3,6 +3,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { createStore } from "polotno/model/store";
 import { gridCellToPixels, type PageGrid } from "@/lib/grid";
+import { moduleDefinition } from "@/lib/moduleRegistry";
 import { gatherLiveTrackedRects, type PolotnoNode } from "./polotnoTree";
 
 const EDGE_THRESHOLD_PX = 20; // screen px - deliberately zoom-independent (bumped from 8: too easy to miss)
@@ -134,7 +135,12 @@ export function useEdgeResize({
         return;
       }
       const slug = moduleConfig[selectedModuleId]?.slug;
-      const allowColumnResize = slug === "labeled-box";
+      // From the registry, not from a slug. `resizableWidth` is the same
+      // fact the properties panel's own width stepper reads, and the two
+      // saying it separately meant the panel offered a width control for
+      // the new modules while dragging their side edge did nothing - one
+      // module, two answers. Same shape of defect as canCrossZones.
+      const allowColumnResize = moduleDefinition(slug ?? "")?.resizableWidth ?? false;
       const rect = getModuleScreenRect(selectedModuleId);
       if (!rect) return;
 

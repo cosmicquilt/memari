@@ -123,10 +123,13 @@ const AXIS_LETTER_PITCH = 1.2;
  *
  * Sizing a module for its LABEL was the mistake. The label shrinks to fit
  * and never truncates now, so the minimum only has to keep the four
- * quadrants writable and the label legible at a short default. Four slots
- * takes the minimum to 8 rows.
+ * quadrants writable and the label legible at a short default.
+ *
+ * Five slots: "Above" / "Below", which Andrew asked for over the first
+ * shortening to "High" / "Low" - it names the axis the way a quadrant
+ * chart usually does, and costs one row over four slots.
  */
-const AXIS_LABEL_DEFAULT_UNITS = 4;
+const AXIS_LABEL_DEFAULT_UNITS = 5;
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;
