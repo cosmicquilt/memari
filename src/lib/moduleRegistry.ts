@@ -161,6 +161,24 @@ export type ModuleDefinition = {
   isTitle?: boolean;
 
   /**
+   * A Page Settings form edits THIS module, so the form is only shown on
+   * a cadence whose spine is this module.
+   *
+   * "Hours" is the only one: start, end, increments, row height. They
+   * were shown on every cadence, so a month page offered a full set of
+   * hourly controls with no hourly grid to apply them to - inert at best,
+   * and this project has already had three separate crashes from hourly
+   * config reaching a month page. Reported while checking the month page
+   * for regressions.
+   *
+   * Stated on the module rather than tested as `baseType === "WEEK"`,
+   * for the reason every other list of slugs here has had to be undone:
+   * a cadence added later gets the right answer without anyone
+   * remembering this.
+   */
+  pageSettingsForm?: "hours";
+
+  /**
    * Whether the width can be stepped in the properties panel.
    *
    * Off by default. A to-do or habit tracker's column span is tied to the
@@ -275,6 +293,7 @@ const NEVER = () => false;
 
 const PRIMITIVES = {
   "hourly-grid-core": {
+    pageSettingsForm: "hours",
     db: {
       "name": "Hourly Grid (Core)",
       "configSchema": {
@@ -1233,6 +1252,19 @@ export function findSpine<T extends { moduleType: { slug: string } }>(
 
 /** Is this slug a page's spine? The by-id form, for callers holding a
  *  slug rather than an instance. */
+/**
+ * Does this page's spine own a Page Settings form, and which one?
+ *
+ * Undefined for a cadence whose spine has none - a month page, today -
+ * which is the signal to leave that section out entirely.
+ */
+export function spinePageSettingsForm<T extends { moduleType: { slug: string } }>(
+  instances: T[]
+): ModuleDefinition["pageSettingsForm"] {
+  const spine = findSpine(instances);
+  return spine ? MODULE_REGISTRY[spine.moduleType.slug]?.pageSettingsForm : undefined;
+}
+
 export function isSpineSlug(slug: string): boolean {
   return MODULE_REGISTRY[slug]?.isSpine ?? false;
 }

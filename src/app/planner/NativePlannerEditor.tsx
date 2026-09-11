@@ -126,6 +126,7 @@ import {
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import {
+  moduleDefinition,
   canCrossZones,
   moduleContentIsLive,
   cleanPropsForSave,
@@ -3122,6 +3123,7 @@ function ModulePalette({
   pageSettings,
   pageGrid,
   fontFamily,
+  showHours,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
@@ -3144,6 +3146,10 @@ function ModulePalette({
   // than illustrating it. Any page's grid will do - they share config.
   pageGrid: PageGrid;
   fontFamily: string;
+  // Whether this cadence's spine is the one the Hours form edits. A month
+  // page's is not, so it does not get the section at all - see the
+  // registry's pageSettingsForm.
+  showHours: boolean;
 }) {
   // Two top-level groups, each independently collapsible, both default
   // collapsed so the panel opens to two header rows rather than every
@@ -3302,6 +3308,7 @@ function ModulePalette({
             </div>
             <FontToggle fontChoice={pageSettings.fontFamily} />
           </div>
+          {showHours && (
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Hours
@@ -3322,6 +3329,7 @@ function ModulePalette({
               weekStartDay={pageSettings.weekStartDay}
             />
           </div>
+          )}
         </div>
       </PaletteCollapse>
 
@@ -3850,6 +3858,20 @@ export function NativePlannerEditor({
   // nominally set it still reads the old one.
   const [pageSettings, setPageSettings] = useState(initialPageSettings);
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
+  // Does this cadence's spine own the Hours form? A month page's does not,
+  // and it was being offered a full set of hourly controls with no hourly
+  // grid to apply them to. Asked from the registry rather than tested as
+  // `baseType === "WEEK"`, so a cadence added later gets the right answer
+  // without anyone remembering this - see pageSettingsForm.
+  const showHoursSettings = useMemo(
+    () =>
+      pages.some((page) =>
+        page.moduleInstances.some(
+          (m) => moduleDefinition(m.slug)?.pageSettingsForm === "hours"
+        )
+      ),
+    [pages]
+  );
   // Current grid placement per module instance — seeded from the loaded
   // snapshot, mutated by drag-to-reposition below. Deliberately separate
   // from each instance's static elements/origin (see file-level
@@ -8700,6 +8722,7 @@ export function NativePlannerEditor({
               pageSettings={pageSettings}
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
+              showHours={showHoursSettings}
             />
           </DndContext>
         </div>
