@@ -139,6 +139,27 @@ function mustBeTotal(slug: string): boolean {
   return !!definition?.inPalette;
 }
 
+/**
+ * Is this offset from the nearest lattice line an ACCEPTABLE one?
+ *
+ * On the line, or exactly half a cell off it. A half cell divides the
+ * cell, which is the rule the whole lattice rests on, and this project
+ * settled some time ago that a rule must sit ON a dot or CLEARLY BETWEEN
+ * two - never a near-miss. The matrix's cross is the case that needs the
+ * half: sizing its square plot to land on whole cells only threw away a
+ * quarter of a sidebar module.
+ *
+ * This still catches everything it was written for. The defect was a -6px
+ * offset in every module at once, and -6 is neither 0 nor 37.5.
+ */
+function onPitch(off: number, expected: number): boolean {
+  const half = PITCH / 2;
+  return (
+    Math.abs(off - expected) < 0.5 ||
+    Math.abs(Math.abs(off - expected) - half) < 0.5
+  );
+}
+
 function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
   return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
 }
@@ -279,7 +300,13 @@ for (const slug of REGISTERED_SLUGS) {
       const offsets = elements
         .filter((e) => e.type === "figure" && e.subType === "rect" && e !== box)
         .filter((e) => (e.height ?? 0) < (e.width ?? 0) / 4)
-        .filter((e) => Math.abs((e.x ?? 0) - left) < 1 && Math.abs((e.width ?? 0) - (box.width ?? 0)) < 1)
+        // Half the box's width, not all of it. This asked for full width,
+        // which quietly stopped checking the matrix's horizontal arm the
+        // moment its plot became square and narrower than its box - the
+        // rule was still written down and was measuring nothing. A to-do's
+        // per-column segments stay out at a third of the width; they are
+        // covered by modulePitch instead.
+        .filter((e) => (e.width ?? 0) > (box.width ?? 0) * 0.5)
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
           const k = Math.round((centre - PAGE.marginPx) / PITCH);
@@ -298,7 +325,8 @@ for (const slug of REGISTERED_SLUGS) {
             return { id: String(e.id), off: centre - (PAGE.marginPx + k * PITCH) };
           });
         for (const { id, off } of verticals) {
-          if (Math.abs(off) > 0.5) {
+          if (onPitch(off, 0)) continue;
+          {
             fail(
               `${where}: vertical rule ${id} sits ${off.toFixed(1)}px from the ` +
                 `nearest lattice column - see WEIGHTED_COLUMNS`
@@ -309,7 +337,8 @@ for (const slug of REGISTERED_SLUGS) {
 
       for (const { id, off } of offsets) {
         const expected = debt ?? 0;
-        if (Math.abs(off - expected) > 0.5) {
+        if (onPitch(off, expected)) continue;
+        {
           fail(
             `${where}: rule ${id} sits ${off.toFixed(1)}px from the nearest dot row` +
               (debt === undefined

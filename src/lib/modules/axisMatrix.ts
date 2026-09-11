@@ -138,6 +138,17 @@ const AXIS_LETTER_FONT_PT = 6;
  */
 const AXIS_LETTER_PITCH = 1.2;
 /**
+ * Air each end of a stacked label, so the two of them cannot meet.
+ *
+ * Each stack is centred in its own half, and the halves share an edge at
+ * the cross - so a label long enough to fill its half runs right up to the
+ * horizontal arm, and the last letter of one sits directly above the first
+ * letter of the other. Reported as "'above' and 'below' also overlap",
+ * then corrected to "almost overlap", which is exactly the case: they
+ * touch rather than collide, and touching reads as one word.
+ */
+const AXIS_STACK_PADDING_PT = 4;
+/**
  * The advance the longest DEFAULT down-axis label needs, in letter slots.
  *
  * Stated here rather than measured off the schema because the
@@ -169,9 +180,17 @@ const AXIS_LABEL_DEFAULT_UNITS = 5;
 // moduleFrame, retired for the same reason. To un-square this, the change
 // is in the renderer: take plotWidth/plotHeight from the available area
 // instead of from `side`.
-/** Half a cell for a quadrant's own name, at the top of its box. */
+/**
+ * Half a cell, counted into the module's MINIMUM height as the room a
+ * quadrant's name needs.
+ *
+ * No longer a band the name is drawn in - the name is centred in its
+ * quadrant now - but a quadrant still has to be tall enough to hold one
+ * without crowding whatever is written around it, and that is what this
+ * reserves. See getAxisMatrixMinHeightPx.
+ */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
-const QUADRANT_FONT_PT = 7;
+const QUADRANT_FONT_PT = 11;
 /**
  * The cross is an INTERIOR RULE, at the interior rule weight.
  *
@@ -251,7 +270,6 @@ export function renderAxisMatrix(
 
   const bandTop = contentTopPx(geometry, lattice);
   const axisBand = ptToPx(AXIS_BAND_HEIGHT_PT);
-  const labelBand = ptToPx(QUADRANT_LABEL_HEIGHT_PT);
   const crossWidth = ptToPx(CROSS_WIDTH_PT);
   const padding = ptToPx(PADDING_PT);
 
@@ -274,17 +292,25 @@ export function renderAxisMatrix(
   //
   // The construction: the box's bottom edge is 6px above a lattice line
   // (that is the box inset), so a square whose bottom sits on that edge
-  // has its centre on a lattice line exactly when its side is 150m - 12
-  // for a whole m. Pick the largest such side that fits, put its bottom
-  // on the border and its centre on the lattice, and everything follows -
-  // equal quadrants, a square plot, an arm reaching the bottom, and both
-  // arms on the dots, with no snapping anywhere.
+  // has its centre ON the half-cell pitch exactly when its side is
+  // 75k - 12 for a whole k. Pick the largest such side that fits, put its
+  // bottom on the border and its centre on that pitch, and everything
+  // follows - equal quadrants, a square plot, an arm reaching the bottom,
+  // and both arms on the pitch, with no snapping anywhere.
   //
-  // What it costs is a little size: the side is quantised to that
-  // sequence (138, 288, 438, 588, 738...), so up to a cell and a half of
-  // the available square goes unused, and the slack sits above the plot
-  // as air under the axis words. At 12 x 10 that is 588 against 624
-  // available - six per cent.
+  // HALF cells, not whole ones. Requiring the centre on a whole cell
+  // means side = 150m - 12, which is one step in every 150px, and at a
+  // sidebar's 387px of width the largest that fits is 288 - a quarter of
+  // the module thrown away, with the slack piling up as a gap under the
+  // axis words. Reported against the palette card, which draws the module
+  // at its minimum and so shows this at its worst: "gap below 'less'
+  // 'more' is very large".
+  //
+  // A half cell is still on the pitch - it divides the cell, which is the
+  // rule the whole lattice is built on - and this project has already
+  // settled that a rule must be ON a dot or CLEARLY BETWEEN two, never a
+  // near-miss. Halving the step to 75px takes that sidebar case from 288
+  // to 363 of the 387 available.
   const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
   const pitch = lattice?.pitchPx ?? ptToPx(18);
   const availableTop = bandTop + axisBand;
@@ -300,8 +326,8 @@ export function renderAxisMatrix(
     : geometry.x + geometry.width / 2;
 
   let side = 0;
-  for (let m = Math.ceil((boxBottom - availableTop + 12) / 150); m >= 1; m--) {
-    const candidate = 150 * m - 12;
+  for (let k = Math.ceil((boxBottom - availableTop + 12) / pitch); k >= 1; k--) {
+    const candidate = pitch * k - 12;
     if (candidate > boxBottom - availableTop) continue;
     if (midX - candidate / 2 < geometry.x + gutter) continue;
     if (midX + candidate / 2 > boxRight) continue;
@@ -385,9 +411,12 @@ export function renderAxisMatrix(
   // One size for both ends - an axis labelled at two sizes reads as two
   // labels. Taken from the end that has the least room for what it says,
   // so whichever is tightest is the one that fits.
+  const stackPadding = ptToPx(AXIS_STACK_PADDING_PT);
   const tightest = Math.min(
     ...downEnds.map(([, text, , height]) =>
-      text ? height / Math.max(1, advanceUnits(text)) : Number.POSITIVE_INFINITY
+      text
+        ? Math.max(0, height - stackPadding * 2) / Math.max(1, advanceUnits(text))
+        : Number.POSITIVE_INFINITY
     )
   );
   // NO lower clamp, deliberately. A floor means a label that still does
@@ -406,13 +435,13 @@ export function renderAxisMatrix(
     const letters = [...text];
     const units = advanceUnits(text);
     // Centred on its own half, measured in the advance it actually uses.
-    let cursor = top + Math.max(0, (height - units * letterPitch) / 2);
+    let cursor = top + Math.max(stackPadding, (height - units * letterPitch) / 2);
 
     letters.forEach((letter, i) => {
       const advance = letter === " " ? letterPitch * 0.5 : letterPitch;
       // Past the bottom of its half: stop rather than run into the other
       // label. Only reachable when even the floor size is too big.
-      if (cursor + advance > top + height + 0.5) return;
+      if (cursor + advance > top + height - stackPadding + 0.5) return;
       const at = cursor;
       cursor += advance;
       // A space advances the stack and draws nothing.
@@ -461,8 +490,16 @@ export function renderAxisMatrix(
     stroke: "none",
   });
 
+  // Centred in the quadrant, large and pale - a name for the box rather
+  // than a label on its corner.
+  //
+  // They sat top-left at 7pt in full black, which reads as a heading the
+  // writing has to start under. Asked for as "schedule do delete delegate
+  // to be centered within quadrant larger font light gray": pale enough to
+  // write straight over, which is what a quadrant's own name is for.
   const quadrantFontSize = ptToPx(QUADRANT_FONT_PT);
   const quadrants = config.quadrants ?? ["", "", "", ""];
+  const halfHeightPlot = plotHeight / 2;
   const corners: Array<[string, number, number]> = [
     ["tl", plotLeft, gridTop],
     ["tr", midX, gridTop],
@@ -472,23 +509,30 @@ export function renderAxisMatrix(
   // All four names at one size - see fitLabelSet.
   const quadrantLabels = fitLabelSet(
     corners.map((_, q) => ({ text: quadrants[q] ?? "", widthPx: halfWidth - padding * 2 })),
-    [quadrantFontSize, ptToPx(6), ptToPx(5)]
+    [quadrantFontSize, ptToPx(9), ptToPx(8), ptToPx(7)]
   );
   corners.forEach(([name, x, y], q) => {
     if (!quadrants[q]) return;
     const fitted = { text: quadrantLabels.texts[q], fontSizePx: quadrantLabels.fontSizePx };
+    const textHeight = fitted.fontSizePx * 1.2;
     elements.push({
       id: id(`q-${name}`),
       type: "text",
       x: x + padding,
-      y: y + (labelBand - fitted.fontSizePx * 1.2) / 2,
+      // Centred both ways in the quadrant it names.
+      y: y + (halfHeightPlot - textHeight) / 2,
       width: halfWidth - padding * 2,
-      height: fitted.fontSizePx * 1.2,
+      height: textHeight,
       text: fitted.text,
       fontSize: fitted.fontSizePx,
       fontFamily,
       fill: NEAR_BLACK,
-      align: "left",
+      align: "center",
+      // Pale. The same near-black at low opacity rather than a second
+      // grey, so it stays one ink - see habitTracker's PLACEHOLDER_OPACITY
+      // for the established treatment of "printed, but meant to be written
+      // over".
+      opacity: 0.38,
     });
   });
 
