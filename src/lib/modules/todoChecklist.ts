@@ -149,8 +149,25 @@ export function renderTodoChecklist(
   const rowLineWidth = ptToPx(ROW_LINE_WIDTH_PT);
   const checkboxWidth = ptToPx(CHECKBOX_WIDTH_PT);
   const columnGutter = ptToPx(COLUMN_GUTTER_PT);
-  const segmentWidth =
-    (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
+  // Day columns measured from the ALLOCATION, not from the ink box - the
+  // same move hourlyGridCore makes, and for the same reason.
+  //
+  // Dividing the ink box by the day count put every vertical line off the
+  // lattice and drifting: measured at 6.0, 8.3 and 10.5px from the nearest
+  // dot column across three days, because the box is inset 6px inside its
+  // allocation and its width is not a whole number of cells. Reported as
+  // "the vertical lines within the todo dont line up with the dots".
+  //
+  // The allocation IS a whole number of cells, so a day is too: 18 columns
+  // over 3 days is 450px, exactly 6 cells. Every day boundary then lands
+  // on a dot column, and so does every checkbox divider, since a checkbox
+  // is one cell wide.
+  const allocationX = lattice ? geometry.x - lattice.insetPx : geometry.x;
+  const allocationWidth = lattice ? geometry.width + lattice.insetPx * 2 : geometry.width;
+  const dayAllocationWidth = allocationWidth / config.dayCount;
+  const segmentWidth = lattice
+    ? dayAllocationWidth - columnGutter
+    : (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
 
   const gridHeight = contentHeight - headerHeight;
   // A hair of slack before flooring, so a height that divides exactly
@@ -223,10 +240,27 @@ export function renderTodoChecklist(
 
   // Per-day-column checkbox+line segments, repeated for each row.
   for (let d = 0; d < config.dayCount; d++) {
-    const segX = geometry.x + d * (segmentWidth + columnGutter);
+    // On the dot column itself. hourlyGridCore centres its GUTTER on the
+    // shared line instead, because there a day boundary is a gap; here it
+    // is a drawn rule, and a drawn rule belongs on the dot.
+    const segX = lattice
+      ? allocationX + d * dayAllocationWidth
+      : geometry.x + d * (segmentWidth + columnGutter);
+    // The first day's boundary is the ALLOCATION's left edge, 6px outside
+    // the ink box, so anything drawn across the segment has to start at
+    // the border instead or it hangs off the side of the module. Only the
+    // rules that span the segment need this; the checkbox divider is a
+    // whole cell in and always lands inside.
+    const inkX = Math.max(segX, geometry.x);
+    const inkWidth = segmentWidth - (inkX - segX);
 
-    // Left edge of the checkbox column.
-    elements.push({
+    // Left edge of the checkbox column - for every day but the FIRST,
+    // whose left edge is the box's own border. The border is on the ink
+    // box and the day boundary is on the allocation, 6px apart, so drawing
+    // both put a second line just outside the border. (It was measured
+    // 0.7px outside the box even before this change, when the two were
+    // drawn at the same place.)
+    if (d > 0 || !lattice) elements.push({
       id: id(`d${d}-checkbox-left`),
       type: "figure",
       subType: "rect",
@@ -289,9 +323,9 @@ export function renderTodoChecklist(
         id: id(`d${d}-row${i}`),
         type: "figure",
         subType: "rect",
-        x: segX,
+        x: inkX,
         y: rowBottom - rowLineWidth / 2,
-        width: segmentWidth,
+        width: inkWidth,
         height: rowLineWidth,
         fill: NEAR_BLACK,
         stroke: "none",
