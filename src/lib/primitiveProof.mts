@@ -176,11 +176,16 @@ LAYOUT.forEach((placement, i) => {
 // Regions worth a closer look than a whole page at a glance gives - the
 // places where a defect has actually turned up. Each is a viewBox over
 // the same drawing, so a crop can never disagree with the page.
-const DETAILS: Array<[string, number, number, number, number]> = [
+// [caption, x, y, w, h, magnification]. Most crops are shrunk to fit
+// several on a screen; a line-weight crop has to be magnified instead -
+// an 0.3pt rule is 1.25 print px, which at the 0.62 the others use is
+// under a device pixel and tells you nothing about its weight.
+const DETAILS: Array<[string, number, number, number, number, number?]> = [
   ["labeled-box (control) vs column-table - heading size, case, dot alignment", 187.5, 187.5, 900, 750],
   ["to-do (control) vs axis-matrix", 187.5, 937.5, 1800, 760],
   ["prompted-lines + rating-strip", 1087.5, 187.5, 900, 750],
-  ["progress-meter + column-table with a totals row", 187.5, 2287.5, 1800, 620],];
+  ["progress-meter + column-table with a totals row", 187.5, 2287.5, 1800, 620],
+  ["axis-matrix cross at 1:1 - interior rule weight against the border", 1450, 1300, 420, 300, 2],];
 
 const symbol =
   `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0">` +
@@ -208,9 +213,12 @@ const html =
   `viewBox="0 0 ${PAGE.widthPx} ${PAGE.heightPx}">` +
   `<use href="#page" x="0" y="0" width="${PAGE.widthPx}" height="${PAGE.heightPx}" /></svg></figure>` +
   DETAILS.map(
-    ([title, x, y, w, h]) =>
+    ([title, x, y, w, h, magnification]) =>
       `<figure><figcaption>${escapeXml(title)}</figcaption>` +
-      view(w * 0.62, h * 0.62, x, y, w, h).replace("<svg ", '<svg class="sheet" ') +
+      view(w * (magnification ?? 0.62), h * (magnification ?? 0.62), x, y, w, h).replace(
+        "<svg ",
+        '<svg class="sheet" '
+      ) +
       `</figure>`
   ).join("");
 
