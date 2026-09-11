@@ -87,13 +87,17 @@ const AXIS_FONT_PT = 6.5;
 /**
  * The air above and below the across-axis words.
  *
- * Matched to what the heading band gives its own heading - about 14 print
- * px each side - which is what "similar to the space for the matrix"
- * asked for. The band was a full cell, which left 21px: half again the
- * heading's, on smaller type, so the axis read as the loosest thing in
- * the module.
+ * Tight - about 6 print px each side.
+ *
+ * This went 21px (a full cell band) -> 14px (matched to the heading, asked
+ * for as "similar to the space for the matrix") -> 6px, asked for again as
+ * "'more' 'less' can have less above and below padding". The axis words
+ * are a caption on the plot rather than a heading of their own, so they
+ * can sit closer to it than the module's title sits to its rule; and every
+ * pixel taken out of this band goes to the plot, which is what makes the
+ * quadrants squarer.
  */
-const AXIS_BAND_PADDING_PT = 3.4;
+const AXIS_BAND_PADDING_PT = 1.5;
 /**
  * ...and so the band is the type plus that air, rather than a round
  * fraction of a cell.
@@ -157,6 +161,9 @@ const AXIS_LETTER_PITCH = 1.2;
  * chart usually does, and costs one row over four slots.
  */
 const AXIS_LABEL_DEFAULT_UNITS = 5;
+/** See the plot geometry in the renderer - flip to false to let the plot
+ *  fill its box again, at the cost of unequal axes. */
+const SQUARE_PLOT = true;
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;
@@ -248,12 +255,37 @@ export function renderAxisMatrix(
 
   const axisFontSize = ptToPx(AXIS_FONT_PT);
   const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
-  const gridTop = bandTop + axisBand;
-  const gridBottom = geometry.y + geometry.height;
-  // The plot area starts after the gutter; the gutter itself carries the
-  // down axis and nothing else.
-  const plotLeft = geometry.x + gutter;
-  const plotWidth = geometry.x + geometry.width - plotLeft;
+  // THE PLOT IS SQUARE, centred in whatever the box leaves it.
+  //
+  // It used to take all the room there was, so at 12 columns by 10 rows
+  // the four quadrants came out 425 x 304 - a chart about two axes drawn
+  // as though one of them mattered more. Asked for as "make matrix cross
+  // more square".
+  //
+  // Square costs space: a box wider than it is tall now leaves margin at
+  // the sides, and a taller one leaves it above and below. That is the
+  // trade, and it is the right way round for this module - a quadrant
+  // chart is read by where a thing sits between two axes, and that
+  // reading is distorted by a plot whose axes are at different scales.
+  // SQUARE_PLOT is the one constant to flip if the writing room turns out
+  // to matter more than the proportion.
+  //
+  // The gutter is taken off the left first: it carries the down axis and
+  // is not part of the plot.
+  const availableWidth = geometry.width - gutter;
+  const availableTop = bandTop + axisBand;
+  const availableHeight = geometry.y + geometry.height - availableTop;
+  const plotWidth = SQUARE_PLOT ? Math.min(availableWidth, availableHeight) : availableWidth;
+  const plotHeight = SQUARE_PLOT ? plotWidth : availableHeight;
+  // The GUTTER AND PLOT are centred together, not the plot alone.
+  //
+  // Centring the plot inside what is left after the gutter puts the
+  // gutter outside the centred thing, so the drawing sits left of middle
+  // by the width of the gutter - and the right margin ends up bare while
+  // the left one carries a label.
+  const plotLeft = geometry.x + (geometry.width - gutter - plotWidth) / 2 + gutter;
+  const gridTop = availableTop + (availableHeight - plotHeight) / 2;
+  const gridBottom = gridTop + plotHeight;
   // BOTH arms of the cross go on the lattice, not just the horizontal one.
   //
   // Only midY was snapped at first, on the reasoning that the horizontal
@@ -381,7 +413,11 @@ export function renderAxisMatrix(
       elements.push({
         id: id(`${name}-l${i}`),
         type: "text",
-        x: geometry.x,
+        // Immediately left of the PLOT, not at the module's own edge.
+        // Now that the plot is centred, those are different places, and a
+        // label stranded against the border reads as belonging to the box
+        // rather than to the axis.
+        x: plotLeft - gutter,
         y: at,
         width: gutter,
         height: letterSize * 1.2,
