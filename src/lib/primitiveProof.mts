@@ -27,52 +27,65 @@ const PAGE: PageGrid = {
   marginPx: 187.5,
 };
 
-/** The seven primitives this sheet exists to check, at the placements
- *  they are actually likely to take: a sidebar column is 6 wide, the
- *  bottom zone 12 or 18. */
+/**
+ * What to draw, and where.
+ *
+ * Two of these are CONTROLS - a labeled-box and a to-do, the modules that
+ * already existed. They are here so the new ones can be judged against
+ * what is already on the page rather than against nothing, which is how
+ * seven modules ended up with 12pt sentence-case headings while the rest
+ * of the planner used 8pt uppercase.
+ *
+ * Placements are the ones these modules actually take: a sidebar column is
+ * 6 wide, the bottom zone 12 or 18.
+ */
 const LAYOUT: Array<{ slug: string; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> = [
-  { slug: "column-table", columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 9 },
-  { slug: "prompted-lines", columnStart: 6, rowStart: 0, columnSpan: 6, rowSpan: 9 },
-  { slug: "rating-strip", columnStart: 12, rowStart: 0, columnSpan: 6, rowSpan: 9 },
-  { slug: "mini-month", columnStart: 18, rowStart: 0, columnSpan: 6, rowSpan: 5 },
-  { slug: "mini-month", columnStart: 18, rowStart: 5, columnSpan: 6, rowSpan: 9 },
-  { slug: "text-block", columnStart: 0, rowStart: 9, columnSpan: 12, rowSpan: 6 },
-  { slug: "progress-meter", columnStart: 12, rowStart: 14, columnSpan: 12, rowSpan: 5 },
-  { slug: "axis-matrix", columnStart: 0, rowStart: 15, columnSpan: 12, rowSpan: 12 },
-  { slug: "column-table", columnStart: 12, rowStart: 19, columnSpan: 12, rowSpan: 8 },
-  { slug: "prompted-lines", columnStart: 0, rowStart: 27, columnSpan: 24, rowSpan: 9 },
+  { slug: "labeled-box", columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 10 },
+  { slug: "column-table", columnStart: 6, rowStart: 0, columnSpan: 6, rowSpan: 10 },
+  { slug: "prompted-lines", columnStart: 12, rowStart: 0, columnSpan: 6, rowSpan: 10 },
+  { slug: "rating-strip", columnStart: 18, rowStart: 0, columnSpan: 6, rowSpan: 10 },
+
+  { slug: "todo-checklist", columnStart: 0, rowStart: 10, columnSpan: 12, rowSpan: 10 },
+  { slug: "axis-matrix", columnStart: 12, rowStart: 10, columnSpan: 12, rowSpan: 10 },
+
+  { slug: "mini-month", columnStart: 0, rowStart: 20, columnSpan: 6, rowSpan: 8 },
+  { slug: "mini-month", columnStart: 6, rowStart: 20, columnSpan: 6, rowSpan: 5 },
+  { slug: "text-block", columnStart: 12, rowStart: 20, columnSpan: 12, rowSpan: 7 },
+
+  { slug: "progress-meter", columnStart: 0, rowStart: 28, columnSpan: 12, rowSpan: 5 },
+  { slug: "column-table", columnStart: 12, rowStart: 28, columnSpan: 12, rowSpan: 8 },
 ];
 
 /** Props that differ from the module's own preview values, where the
  *  point is to see a case the defaults do not cover. */
 const OVERRIDES: Record<number, Record<string, unknown>> = {
-  4: { year: 2026, month: 2, heading: "FEBRUARY", markable: true },
-  5: {
-    heading: "",
-    body: "God, grant me the serenity to accept the things I cannot change,\ncourage to change the things I can,\nand wisdom to know the difference.",
+  0: { heading: "Notes", ruled: true, templateHeading: "" },
+  4: { dayCount: 3 },
+  6: { year: 2026, month: 2, heading: "", markable: true },
+  8: {
+    heading: "Serenity",
+    body:
+      "God, grant me the serenity to accept the things I cannot change,\n" +
+      "courage to change the things I can,\n" +
+      "and wisdom to know the difference.",
     attribution: "Reinhold Niebuhr",
     align: "center",
   },
-  6: { heading: "DAYS", total: 90, milestoneEvery: 10, numbered: true },
-  7: {
-    heading: "EISENHOWER",
+  9: { heading: "Days", total: 90, milestoneEvery: 10, numbered: true },
+  5: {
+    heading: "Eisenhower",
     xLeft: "NOT URGENT",
     xRight: "URGENT",
     yTop: "IMPORTANT",
     yBottom: "NOT IMPORTANT",
     quadrants: ["Schedule", "Do", "Delete", "Delegate"],
   },
-  8: {
-    heading: "SPENDING",
+  10: {
+    heading: "Spending",
     columns: ["Date", "Item", "Category", "Amount"],
-    weights: [1, 3, 2, 1.2],
+    weights: [1, 2.4, 1.6, 1.2],
     totalsRow: true,
-    totalsLabel: "TOTAL",
-  },
-  9: {
-    heading: "EVENING REVIEW",
-    prompts: ["What did I do badly?", "What did I do well?", "What did I leave undone?"],
-    linesPerPrompt: 2,
+    totalsLabel: "Total",
   },
 };
 
@@ -94,7 +107,7 @@ function toSvg(element: RenderedPolotnoElement): string {
         : element.x ?? 0;
     return (
       `<text x="${x}" y="${(element.y ?? 0) + size}" font-size="${size}" ` +
-      `font-family="Georgia, 'PT Serif', serif" fill="${element.fill ?? "#000"}" ` +
+      `font-family="PT Serif, Georgia, serif" fill="${element.fill ?? "#000"}" ` +
       `text-anchor="${anchor}" opacity="${element.opacity ?? 1}"` +
       (element.letterSpacing ? ` letter-spacing="${element.letterSpacing}"` : "") +
       `>${escapeXml(String(element.text ?? ""))}</text>`
@@ -164,11 +177,10 @@ LAYOUT.forEach((placement, i) => {
 // places where a defect has actually turned up. Each is a viewBox over
 // the same drawing, so a crop can never disagree with the page.
 const DETAILS: Array<[string, number, number, number, number]> = [
-  ["column-table, 6 columns wide - row pitch, head truncation", 187.5, 187.5, 450, 675],
-  ["axis-matrix - the down axis in its gutter", 187.5, 1312.5, 900, 900],
-  ["progress-meter + column-table with a totals row", 1087.5, 1237.5, 900, 800],
-  ["mini-month, markable", 1537.5, 562.5, 460, 700],
-];
+  ["labeled-box (control) vs column-table - heading size, case, dot alignment", 187.5, 187.5, 900, 750],
+  ["to-do (control) vs axis-matrix", 187.5, 937.5, 900, 750],
+  ["prompted-lines + rating-strip", 1087.5, 187.5, 900, 750],
+  ["progress-meter + column-table with a totals row", 187.5, 2287.5, 1800, 620],];
 
 const symbol =
   `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0">` +
@@ -183,6 +195,9 @@ const view = (w: number, h: number, x: number, y: number, cw: number, ch: number
 
 const html =
   `<!doctype html><meta charset="utf-8"><title>Primitive proof sheet</title>` +
+  // The app's own face. Without it the sheet proves how the modules look
+  // in Georgia, which is not a question anyone asked.
+  `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap">` +
   `<style>body{margin:0;background:#2b2b2b;color:#ddd;` +
   `font:12px ui-monospace,monospace;padding:12px;display:flex;flex-wrap:wrap;` +
   `gap:14px;align-items:flex-start}` +

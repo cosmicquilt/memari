@@ -20,6 +20,16 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabel } from "@/lib/modules/textFit";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  RULE_WIDTH_PT,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  rowHeightPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type PromptedLinesConfig = {
   heading: string;
@@ -39,22 +49,22 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// 15.12pt is exactly 63 print px: one cell less the box inset at both
-// ends, which is the header height that leaves a whole number of cells
-// beneath it at every span. Same value and same reason as
-// todoChecklist.ts and habitTracker.ts.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
-// Half a cell. The prompt is printed rather than written on, so it needs
-// room for a line of type and not for handwriting.
-const PROMPT_HEIGHT_PT = 9;
+/**
+ * ONE CELL for the printed question, not the half cell it needs for type.
+ *
+ * Half a cell is enough room to SET the question and too little to read
+ * it: at half a cell the prompt sits hard against the rule above it, which
+ * is the "text too close to above neighbor in reflection" report. It also
+ * made a block (half a cell plus N) land on a half cell, so alternate
+ * blocks fell off the lattice - measured at +31.5px against -6.0px for the
+ * ones that did not, two different offsets inside one module.
+ *
+ * A full cell fixes both at once: the question gets air, and a block is
+ * (1 + linesPerPrompt) whole cells, so every answer rule lands on a dot
+ * wherever its block starts. It costs one prompt at some heights.
+ */
+const PROMPT_HEIGHT_PT = 18;
 const PROMPT_FONT_PT = 8;
-// One cell, the same as a to-do row: a quarter inch is comfortable to
-// write a sentence on.
-const ANSWER_LINE_HEIGHT_PT = 18;
-const RULE_WIDTH_PT = 0.35;
 // Matches labeledBox's own heading inset, measured from the reference.
 const HORIZONTAL_PADDING_PT = 8;
 
@@ -62,7 +72,7 @@ export function getPromptedLinesRowMetricsPx() {
   return {
     headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
     promptHeightPx: ptToPx(PROMPT_HEIGHT_PT),
-    answerLineHeightPx: ptToPx(ANSWER_LINE_HEIGHT_PT),
+    answerLineHeightPx: rowHeightPx(),
   };
 }
 
@@ -81,7 +91,8 @@ export function renderPromptedLines(
   geometry: { x: number; y: number; width: number; height: number },
   config: PromptedLinesConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional - see todoChecklist.ts. An id names a prompt
@@ -89,58 +100,18 @@ export function renderPromptedLines(
   // belonging to the ones above it.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const bodyTop = contentTopPx(geometry, lattice);
   const promptHeight = ptToPx(PROMPT_HEIGHT_PT);
-  const answerLineHeight = ptToPx(ANSWER_LINE_HEIGHT_PT);
+  const answerLineHeight = rowHeightPx(lattice);
   const ruleWidth = ptToPx(RULE_WIDTH_PT);
   const padding = ptToPx(HORIZONTAL_PADDING_PT);
   // Total in its config - see columnTable.ts for why.
   const linesPerPrompt = Math.max(1, Math.round(config.linesPerPrompt) || 1);
   const prompts = config.prompts ?? [];
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bodyTop));
 
-  if (config.heading) {
-    const headerFontSize = ptToPx(HEADER_FONT_PT);
-    const headerTextHeight = headerFontSize * 1.2;
-    elements.push({
-      id: id("heading"),
-      type: "text",
-      x: geometry.x,
-      y: geometry.y + (headerHeight - headerTextHeight) / 2,
-      width: geometry.width,
-      height: headerTextHeight,
-      text: config.heading,
-      fontSize: headerFontSize,
-      fontFamily,
-      fill: NEAR_BLACK,
-      align: "center",
-    });
-    elements.push({
-      id: id("header-rule"),
-      type: "figure",
-      subType: "rect",
-      x: geometry.x,
-      y: geometry.y + headerHeight - ruleWidth / 2,
-      width: geometry.width,
-      height: ruleWidth,
-      fill: NEAR_BLACK,
-      stroke: "none",
-    });
-  }
-
-  const bodyTop = geometry.y + (config.heading ? headerHeight : 0);
   const bodyBottom = geometry.y + geometry.height;
   const blockHeight = promptHeight + answerLineHeight * linesPerPrompt;
 

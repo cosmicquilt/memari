@@ -27,6 +27,14 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type MiniMonthConfig = {
   year: number;
@@ -49,12 +57,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts for why this number and not another.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 11;
 /** Half a cell, for the S M T W T F S strip. */
 const WEEKDAY_STRIP_HEIGHT_PT = 9;
 const WEEKDAY_FONT_PT = 6;
@@ -102,7 +104,8 @@ export function renderMiniMonth(
   geometry: { x: number; y: number; width: number; height: number },
   config: MiniMonthConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic ids: a date names its week and weekday, so a month with five
@@ -121,42 +124,25 @@ export function renderMiniMonth(
   const drawable = year >= 1900 && year <= 2100 && month >= 1 && month <= 12;
   const calendar = drawable ? computeMonthCalendar(year, month) : null;
   const markable = config.markable === true;
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const stripTop = contentTopPx(geometry, lattice);
   const stripHeight = ptToPx(WEEKDAY_STRIP_HEIGHT_PT);
   const dateBandHeight = ptToPx(DATE_ROW_HEIGHT_PT);
   const rowHeight = ptToPx(markable ? MARKABLE_ROW_HEIGHT_PT : DATE_ROW_HEIGHT_PT);
   const columnWidth = geometry.width / 7;
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(
+    ...headerElements(
+      geometry,
+      // Blank heading prints the month's own name - the module knows it,
+      // so the user should not have to type it.
+      config.heading || MONTH_NAMES[month - 1] || "",
+      id,
+      fontFamily,
+      stripTop
+    )
+  );
 
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
-  elements.push({
-    id: id("heading"),
-    type: "text",
-    x: geometry.x,
-    y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-    width: geometry.width,
-    height: headerFontSize * 1.2,
-    text: config.heading || MONTH_NAMES[month - 1] || "",
-    fontSize: headerFontSize,
-    fontFamily,
-    fill: NEAR_BLACK,
-    align: "center",
-    letterSpacing: headerFontSize * 0.08,
-  });
-
-  const stripTop = geometry.y + headerHeight;
   const gridTop = stripTop + stripHeight;
   const weekdayFontSize = ptToPx(WEEKDAY_FONT_PT);
   WEEKDAY_INITIALS.forEach((initial, c) => {

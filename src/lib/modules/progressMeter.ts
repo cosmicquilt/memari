@@ -23,6 +23,14 @@
 // days, every hundred pages, every four weeks.
 
 import { ptToPx } from "@/lib/print-spec";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type ProgressMeterConfig = {
   heading: string;
@@ -44,12 +52,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
 /** Half a cell each way. */
 const SEGMENT_PT = 9;
 const SEGMENT_STROKE_PT = 0.35;
@@ -94,7 +96,8 @@ export function renderProgressMeter(
   geometry: { x: number; y: number; width: number; height: number },
   config: ProgressMeterConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic: a segment is named by its own number in the count, not by
@@ -103,42 +106,16 @@ export function renderProgressMeter(
   // the box resizes instead of being remounted. See todoChecklist.ts.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const bodyTop = contentTopPx(geometry, lattice);
   const segment = ptToPx(SEGMENT_PT);
   // Total in its config - see columnTable.ts for why.
   const total = Math.max(1, Math.floor(config.total) || 1);
   const milestone = Math.max(0, Math.floor(config.milestoneEvery ?? 0));
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
-
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
-  elements.push({
-    id: id("heading"),
-    type: "text",
-    x: geometry.x,
-    y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-    width: geometry.width,
-    height: headerFontSize * 1.2,
-    text: config.heading ?? "",
-    fontSize: headerFontSize,
-    fontFamily,
-    fill: NEAR_BLACK,
-    align: "center",
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bodyTop));
 
   const columns = progressMeterColumns(geometry.width);
-  const bodyTop = geometry.y + headerHeight;
   const bodyBottom = geometry.y + geometry.height;
   // Centred in whatever the width leaves over, so a short final row and a
   // full one share the same left edge and the block reads as a block.

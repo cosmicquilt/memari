@@ -30,6 +30,14 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type TextBlockConfig = {
   /** Optional - an affirmation card often has none. */
@@ -51,12 +59,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
 /** Half a cell: the line pitch of the passage. */
 const LINE_HEIGHT_PT = 9;
 const BODY_FONT_PT = 8;
@@ -140,7 +142,8 @@ export function renderTextBlock(
   geometry: { x: number; y: number; width: number; height: number },
   config: TextBlockConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, and here that means by CONTENT rather than by index: the
@@ -152,45 +155,25 @@ export function renderTextBlock(
   // another. See PolotnoJsonRenderer's textKey.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = config.heading ? ptToPx(HEADER_HEIGHT_PT) : 0;
+  // A passage with no heading still starts on the lattice line - the band
+  // is simply blank, so a text block and a ruled module beside it agree
+  // about where their content begins.
+  const contentTop = contentTopPx(geometry, lattice);
   const lineHeight = ptToPx(LINE_HEIGHT_PT);
   const padding = ptToPx(HORIZONTAL_PADDING_PT);
   const bodyFontSize = ptToPx(BODY_FONT_PT);
   const align = config.align ?? "left";
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
-
-  if (config.heading) {
-    const headerFontSize = ptToPx(HEADER_FONT_PT);
-    elements.push({
-      id: id("heading"),
-      type: "text",
-      x: geometry.x,
-      y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-      width: geometry.width,
-      height: headerFontSize * 1.2,
-      text: config.heading,
-      fontSize: headerFontSize,
-      fontFamily,
-      fill: NEAR_BLACK,
-      align: "center",
-    });
-  }
+  elements.push(borderElement(geometry, id));
+  elements.push(
+    ...headerElements(geometry, config.heading ?? "", id, fontFamily, contentTop, {
+      rule: !!config.heading,
+    })
+  );
 
   const usableWidth = geometry.width - padding * 2;
   const lines = wrapTextBlock(config.body ?? "", usableWidth, bodyFontSize);
-  const bodyTop = geometry.y + headerHeight + ptToPx(BODY_TOP_PADDING_PT);
+  const bodyTop = contentTop + ptToPx(BODY_TOP_PADDING_PT);
   const bodyBottom = geometry.y + geometry.height;
 
   let drawn = 0;

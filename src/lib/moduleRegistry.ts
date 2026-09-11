@@ -636,7 +636,7 @@ const PRIMITIVES = {
           "weights": {
             "type": "array",
             "items": { "type": "number" },
-            "default": [1, 3, 1]
+            "default": [1, 1.6, 1]
           },
           "totalsRow": {
             "type": "boolean",
@@ -659,7 +659,11 @@ const PRIMITIVES = {
     previewProps: {
       heading: "Log",
       columns: ["Date", "Item", "Amount"],
-      weights: [1, 3, 1],
+      // 1:3:1 gave "Amount" a fifth of a narrow sidebar box, which is less
+      // room than the word needs at any size the head ladder offers - so
+      // it truncated to "Amo...". The weights are the fix, not a smaller
+      // font: a column has to be wide enough for its own name.
+      weights: [1, 1.6, 1],
       totalsRow: false,
     },
     resizableWidth: true,
@@ -669,8 +673,8 @@ const PRIMITIVES = {
       { kind: "boolean", key: "totalsRow", label: "Totals row" },
       { kind: "text", key: "totalsLabel", label: "Totals label" },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderColumnTable(geometry, propValues as ColumnTableConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderColumnTable(geometry, propValues as ColumnTableConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: () => getColumnTableMinHeightPx(),
     // Rows follow the height and the column dividers follow the width, so
     // both axes redraw it.
@@ -721,8 +725,8 @@ const PRIMITIVES = {
       { kind: "lines", key: "prompts", label: "Prompts (one per line)", rows: 6 },
       { kind: "number", key: "linesPerPrompt", label: "Lines per prompt", min: 1, max: 8 },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderPromptedLines(geometry, propValues as PromptedLinesConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderPromptedLines(geometry, propValues as PromptedLinesConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
       getPromptedLinesMinHeightPx(Number(propValues.linesPerPrompt ?? 2)),
     contentIsLive: ALWAYS,
@@ -770,8 +774,8 @@ const PRIMITIVES = {
       { kind: "number", key: "month", label: "Month (1-12)", min: 1, max: 12 },
       { kind: "boolean", key: "markable", label: "Box under each date" },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderMiniMonth(geometry, propValues as MiniMonthConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderMiniMonth(geometry, propValues as MiniMonthConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
       getMiniMonthMinHeightPx(propValues.markable === true),
     // Seven columns of a fixed grid: the drawing is the same marks at
@@ -822,8 +826,8 @@ const PRIMITIVES = {
       { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
       { kind: "boolean", key: "numbered", label: "Number the milestones" },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderProgressMeter(geometry, propValues as ProgressMeterConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderProgressMeter(geometry, propValues as ProgressMeterConfig, idPrefix, fontFamily, lattice),
     // How many rows a count needs depends on how many segments fit across
     // the box, so this one genuinely needs the width - which is why the
     // rule takes the page grid rather than a constant.
@@ -900,8 +904,8 @@ const PRIMITIVES = {
         ],
       },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: () => getRatingStripMinHeightPx(),
     contentIsLive: ALWAYS,
   },
@@ -966,8 +970,8 @@ const PRIMITIVES = {
       { kind: "text", key: "yBottom", label: "Down: lower half" },
       { kind: "lines", key: "quadrants", label: "Box names (4, clockwise from top-left)", rows: 4 },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderAxisMatrix(geometry, propValues as AxisMatrixConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderAxisMatrix(geometry, propValues as AxisMatrixConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: () => getAxisMatrixMinHeightPx(),
     // The cross sits at the middle of the body, so it moves with every
     // change of height and width both.
@@ -1030,8 +1034,8 @@ const PRIMITIVES = {
         ],
       },
     ],
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderTextBlock(geometry, propValues as TextBlockConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderTextBlock(geometry, propValues as TextBlockConfig, idPrefix, fontFamily, lattice),
     // How many lines a passage takes is a function of the width it is
     // wrapped to, so the floor needs the box - the same reasoning as the
     // progress meter's.

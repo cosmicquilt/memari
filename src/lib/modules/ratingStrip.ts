@@ -17,6 +17,16 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabelSet } from "@/lib/modules/textFit";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  RULE_WIDTH_PT,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  rowHeightPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type RatingStripConfig = {
   heading: string;
@@ -39,12 +49,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
 /**
  * ONE CELL, not the half cell a printed head visually wants.
  *
@@ -62,13 +66,10 @@ const HEADER_FONT_PT = 12;
  */
 const SCALE_HEAD_HEIGHT_PT = 18;
 const SCALE_HEAD_FONT_PT = 6.5;
-/** One cell, the same as a to-do row. */
-const ROW_HEIGHT_PT = 18;
 const ITEM_FONT_PT = 8;
 /** Half a cell each way, centred in its row. */
 const GLYPH_PT = 9;
 const GLYPH_STROKE_PT = 0.35;
-const RULE_WIDTH_PT = 0.35;
 const HORIZONTAL_PADDING_PT = 5;
 /**
  * The item names take this share of the width and the scale the rest.
@@ -83,7 +84,7 @@ export function getRatingStripRowMetricsPx() {
   return {
     headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
     scaleHeadHeightPx: ptToPx(SCALE_HEAD_HEIGHT_PT),
-    rowHeightPx: ptToPx(ROW_HEIGHT_PT),
+    rowHeightPx: rowHeightPx(),
   };
 }
 
@@ -97,7 +98,8 @@ export function renderRatingStrip(
   geometry: { x: number; y: number; width: number; height: number },
   config: RatingStripConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic: a glyph names its item and its scale VALUE, so widening the
@@ -105,9 +107,9 @@ export function renderRatingStrip(
   // todoChecklist.ts.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const headTop = contentTopPx(geometry, lattice);
   const scaleHeadHeight = ptToPx(SCALE_HEAD_HEIGHT_PT);
-  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const rowHeight = rowHeightPx(lattice);
   const glyph = ptToPx(GLYPH_PT);
   const ruleWidth = ptToPx(RULE_WIDTH_PT);
   const padding = ptToPx(HORIZONTAL_PADDING_PT);
@@ -121,35 +123,9 @@ export function renderRatingStrip(
   // the strip is still a strip.
   const points = Math.max(2, max - min + 1);
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, headTop));
 
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
-  elements.push({
-    id: id("heading"),
-    type: "text",
-    x: geometry.x,
-    y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-    width: geometry.width,
-    height: headerFontSize * 1.2,
-    text: config.heading ?? "",
-    fontSize: headerFontSize,
-    fontFamily,
-    fill: NEAR_BLACK,
-    align: "center",
-  });
-
-  const headTop = geometry.y + headerHeight;
   const bodyTop = headTop + scaleHeadHeight;
   const bodyBottom = geometry.y + geometry.height;
   const scaleLeft = geometry.x + geometry.width * LABEL_SHARE;

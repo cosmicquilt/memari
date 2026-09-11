@@ -24,6 +24,16 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabel, fitLabelSet } from "@/lib/modules/textFit";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  RULE_WIDTH_PT,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  rowHeightPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type ColumnTableConfig = {
   heading: string;
@@ -55,12 +65,9 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts for why this particular number and not another.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
+// The header band, the column-head band and the row height all come from
+// moduleFrame now, so every module agrees about them - see that file's
+// contentTopPx for the lattice-alignment trade-off they encode.
 /**
  * ONE CELL, not the half cell a printed head visually wants.
  *
@@ -78,16 +85,13 @@ const HEADER_FONT_PT = 12;
  */
 const COLUMN_HEAD_HEIGHT_PT = 18;
 const COLUMN_HEAD_FONT_PT = 7;
-/** One cell. A quarter inch, the same as a to-do row. */
-const ROW_HEIGHT_PT = 18;
-const RULE_WIDTH_PT = 0.35;
 const CELL_PADDING_PT = 4;
 
 export function getColumnTableRowMetricsPx() {
   return {
     headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
     columnHeadHeightPx: ptToPx(COLUMN_HEAD_HEIGHT_PT),
-    rowHeightPx: ptToPx(ROW_HEIGHT_PT),
+    rowHeightPx: rowHeightPx(),
   };
 }
 
@@ -101,16 +105,17 @@ export function renderColumnTable(
   geometry: { x: number; y: number; width: number; height: number },
   config: ColumnTableConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic: a mark names its column and its row, so adding a row does
   // not renumber the columns' own dividers. See todoChecklist.ts.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const headsTop = contentTopPx(geometry, lattice);
   const columnHeadHeight = ptToPx(COLUMN_HEAD_HEIGHT_PT);
-  const rowHeight = ptToPx(ROW_HEIGHT_PT);
+  const rowHeight = rowHeightPx(lattice);
   const ruleWidth = ptToPx(RULE_WIDTH_PT);
   const padding = ptToPx(CELL_PADDING_PT);
   // Every renderer here is total in its config: a ModuleInstance whose
@@ -122,35 +127,9 @@ export function renderColumnTable(
   const heading = config.heading ?? "";
   const columns = (config.columns ?? []).length > 0 ? config.columns : [""];
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(...headerElements(geometry, heading, id, fontFamily, headsTop));
 
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
-  elements.push({
-    id: id("heading"),
-    type: "text",
-    x: geometry.x,
-    y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-    width: geometry.width,
-    height: headerFontSize * 1.2,
-    text: heading,
-    fontSize: headerFontSize,
-    fontFamily,
-    fill: NEAR_BLACK,
-    align: "center",
-  });
-
-  const headsTop = geometry.y + headerHeight;
   const bodyTop = headsTop + columnHeadHeight;
   const bodyBottom = geometry.y + geometry.height;
 

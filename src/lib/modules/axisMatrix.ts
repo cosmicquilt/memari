@@ -27,6 +27,15 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabelSet } from "@/lib/modules/textFit";
+import {
+  HEADER_HEIGHT_PT,
+  NEAR_BLACK,
+  borderElement,
+  contentTopPx,
+  headerElements,
+  rowHeightPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export type AxisMatrixConfig = {
   heading: string;
@@ -54,12 +63,6 @@ export type RenderedElement = {
   [key: string]: unknown;
 };
 
-const NEAR_BLACK = "#231F20";
-const BORDER_WIDTH_PT = 0.5;
-// One cell less the box inset at both ends - 63 print px. See
-// todoChecklist.ts.
-const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
 /**
  * ONE CELL, not the half cell a printed head visually wants.
  *
@@ -120,7 +123,7 @@ export function getAxisMatrixRowMetricsPx() {
  */
 export function getAxisMatrixMinHeightPx(): number {
   const m = getAxisMatrixRowMetricsPx();
-  const quadrant = m.quadrantLabelHeightPx + ptToPx(18);
+  const quadrant = m.quadrantLabelHeightPx + rowHeightPx();
   // One axis band, not two: the down axis moved to a gutter at the side,
   // which costs width rather than height.
   return m.headerHeightPx + m.axisBandHeightPx + quadrant * 2;
@@ -130,7 +133,8 @@ export function renderAxisMatrix(
   geometry: { x: number; y: number; width: number; height: number },
   config: AxisMatrixConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic: marks are named by which axis or which quadrant they belong
@@ -139,44 +143,17 @@ export function renderAxisMatrix(
   // todoChecklist.ts.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const headerHeight = ptToPx(HEADER_HEIGHT_PT);
+  const bandTop = contentTopPx(geometry, lattice);
   const axisBand = ptToPx(AXIS_BAND_HEIGHT_PT);
   const labelBand = ptToPx(QUADRANT_LABEL_HEIGHT_PT);
   const crossWidth = ptToPx(CROSS_WIDTH_PT);
   const padding = ptToPx(PADDING_PT);
 
-  elements.push({
-    id: id("border"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y,
-    width: geometry.width,
-    height: geometry.height,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(BORDER_WIDTH_PT),
-  });
-
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
-  elements.push({
-    id: id("heading"),
-    type: "text",
-    x: geometry.x,
-    y: geometry.y + (headerHeight - headerFontSize * 1.2) / 2,
-    width: geometry.width,
-    height: headerFontSize * 1.2,
-    // Total in its config - see columnTable.ts for why.
-    text: config.heading ?? "",
-    fontSize: headerFontSize,
-    fontFamily,
-    fill: NEAR_BLACK,
-    align: "center",
-  });
+  elements.push(borderElement(geometry, id));
+  elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bandTop));
 
   const axisFontSize = ptToPx(AXIS_FONT_PT);
   const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
-  const bandTop = geometry.y + headerHeight;
   const gridTop = bandTop + axisBand;
   const gridBottom = geometry.y + geometry.height;
   // The plot area starts after the gutter; the gutter itself carries the
@@ -185,7 +162,19 @@ export function renderAxisMatrix(
   const plotWidth = geometry.x + geometry.width - plotLeft;
   const halfWidth = plotWidth / 2;
   const midX = plotLeft + halfWidth;
-  const midY = gridTop + (gridBottom - gridTop) / 2;
+  // The cross goes on the nearest LATTICE line to the middle, not on the
+  // exact middle.
+  //
+  // The plotted area is a whole number of cells less the box's bottom
+  // inset, so its true midpoint lands on a half cell minus 3px - measured
+  // at -3.0 from the nearest dot row, which is the same near-miss that
+  // made every other rule here look wrong. Being up to 3px off centre in a
+  // box hundreds of pixels tall is invisible; being 3px off a dot is not.
+  const exactMid = gridTop + (gridBottom - gridTop) / 2;
+  const midY = lattice
+    ? lattice.originY +
+      Math.round((exactMid - lattice.originY) / lattice.pitchPx) * lattice.pitchPx
+    : exactMid;
 
   // The across axis: its two ends over the two halves they name.
   const acrossEnds: Array<[string, string, number]> = [

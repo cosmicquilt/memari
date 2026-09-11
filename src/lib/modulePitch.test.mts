@@ -160,15 +160,36 @@ for (const slug of RULED) {
       // passed on the very defect it was written for. Checked by putting
       // the bad constant back, which is the only way to know a test of
       // this kind works at all.
+      // The final band is deliberately short (see below), so it must not be
+      // allowed to vote on what the pitch IS - with only two gaps it wins
+      // the tie-break and every real row then reads as 1.09 of it.
+      const pitchSource = bodyGaps.length > 1 ? bodyGaps.slice(0, -1) : bodyGaps;
       const tally = new Map<number, number>();
-      for (const gap of bodyGaps) {
+      for (const gap of pitchSource) {
         const key = Math.round(gap * 100) / 100;
         tally.set(key, (tally.get(key) ?? 0) + 1);
       }
       const pitch = [...tally.entries()].sort(
         (a, b) => b[1] - a[1] || a[0] - b[0]
       )[0][0];
-      const offGrid = bodyGaps.filter((g) => Math.abs(g / pitch - Math.round(g / pitch)) > 0.01);
+      // The LAST band may be short by exactly the box's bottom inset, and
+      // only the last.
+      //
+      // Content now starts on a lattice line so every rule lands on a dot
+      // (see moduleFrame's contentTopPx). The box bottom is inset 6px
+      // inside its allocation, so the space below the final rule comes out
+      // 69px against 75px. The 6px has to be somewhere: it was previously
+      // spread as a 6px offset on EVERY rule in the module, which is what
+      // was reported. One band 8% short is the better half of that trade.
+      const isLast = (i: number) => i === bodyGaps.length - 1;
+      const offGrid = bodyGaps.filter((g, i) => {
+        const rows = g / pitch;
+        if (Math.abs(rows - Math.round(rows)) <= 0.01) return false;
+        if (isLast(i) && Math.abs(g - (Math.ceil(rows) * pitch - PAGE.boxInsetPx)) < 0.5) {
+          return false;
+        }
+        return true;
+      });
       if (offGrid.length > 0) {
         console.error(
           `  ${slug} ${columnSpan}x${rowSpan}: row pitch is ${pitch.toFixed(1)}px but ` +
