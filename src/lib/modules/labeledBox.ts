@@ -41,15 +41,12 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // cleanly separate), kept as a reasonable notebook-line spacing.
 const RULED_LINE_SPACING_PX = 75;
 
-// The "0.525 still wrapped" data point that motivated bumping this to
-// 0.68 turned out to be a red herring — that measurement was taken on
-// the old 6x9in page's narrower sidebar column. Now that the page is
-// 7x10in (wider sidebar), 0.525 correctly predicts a one-line fit and
-// 0.68 was overcorrecting, forcing the taller 2-line box on headings
-// that actually fit fine. Back to the measured value, with a small
-// margin (not the bare 0.525) since this is still an estimate for a
-// font (PT Serif) we don't measure directly against.
-const SAFE_CHAR_WIDTH_RATIO = 0.55;
+// The average character advance for this planner's serif, and the story
+// of how it was measured, now live in textFit.ts - a fact about a
+// typeface belongs somewhere the other modules can reach it, and they
+// need it: nothing here can measure a string, so every module that has to
+// keep a label inside a box works from this same number.
+import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
 
 /**
  * How a heading is set: the point size it is drawn at, and whether the

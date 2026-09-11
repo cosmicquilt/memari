@@ -35,7 +35,7 @@
 //
 // Run with: npm run check:behaviour
 import { renderModuleInstance } from "./renderModuleInstance";
-import { REGISTERED_SLUGS } from "./moduleRegistry";
+import { REGISTERED_SLUGS, moduleDefinition } from "./moduleRegistry";
 import { gridCellToPixels, type PageGrid } from "./grid";
 
 const PAGE: PageGrid = {
@@ -410,15 +410,31 @@ function verdict(steps: StepResult[]): { label: string; occlusion: boolean } {
 // page. Deliberately coarse - it is here to make a module VISIBLE in the
 // report, not to characterise it perfectly. A module whose behaviour turns
 // out to matter earns an override.
-const DEFAULT_SWEEP = (slug: string): Sweep => ({
-  name: slug,
-  slug,
-  columns: [6, 12, 18, 24],
-  rows: [4, 8, 12, 16],
-  atColumns: 18,
-  atRows: 12,
-  props: () => ({}),
-});
+//
+// Props come from the module's own previewProps - the values its palette
+// card is drawn with, which is exactly what this needs too: a
+// representative instance of the module.
+//
+// They used to be `{}`, which was fine while every module drew something
+// recognisable from nothing, and stopped being fine the moment modules
+// arrived whose drawing IS their content. A column table with no columns,
+// a rating strip with no rows and a mini month with no month rendered as
+// empty boxes or threw outright, and the report dutifully measured that -
+// four rows of "render failed" and three of "no rects", none of which said
+// anything about the modules. Reading previewProps also means a module
+// registered tomorrow is measured properly without touching this file.
+const DEFAULT_SWEEP = (slug: string): Sweep => {
+  const preview = moduleDefinition(slug)?.previewProps ?? {};
+  return {
+    name: slug,
+    slug,
+    columns: [6, 12, 18, 24],
+    rows: [4, 8, 12, 16],
+    atColumns: 18,
+    atRows: 12,
+    props: () => preview,
+  };
+};
 
 const overriddenSlugs = new Set(SWEEP_OVERRIDES.map((sweep) => sweep.slug));
 const SWEEPS: Sweep[] = [

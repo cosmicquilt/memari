@@ -142,6 +142,58 @@ function PropertiesForm({
             />
             {field.label}
           </label>
+        ) : field.kind === "number" ? (
+          <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {field.label}
+            <input
+              type="number"
+              min={field.min}
+              max={field.max}
+              // Stored as a NUMBER, not as the string the input hands
+              // back. A schema default of 5 meeting a saved "5" is the
+              // same class of bug as any other pair of descriptions of one
+              // fact - see the field kind's own comment in the registry.
+              // An empty box is left as an empty string rather than
+              // coerced to 0, so clearing it to retype does not first
+              // redraw the module at zero.
+              value={
+                typeof draft[field.key] === "number" ? (draft[field.key] as number) : ""
+              }
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  [field.key]: e.target.value === "" ? "" : Number(e.target.value),
+                }))
+              }
+            />
+          </label>
+        ) : field.kind === "select" ? (
+          <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {field.label}
+            <select
+              value={(draft[field.key] as string) ?? field.options[0]?.value ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
+            >
+              {field.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : field.kind === "paragraph" ? (
+          <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {field.label}
+            <textarea
+              rows={field.rows ?? 6}
+              // One string, newlines included - the difference from
+              // `lines`, which splits into an array. A passage keeps its
+              // own line structure because that structure is part of the
+              // passage.
+              value={(draft[field.key] as string) ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
+            />
+          </label>
         ) : field.kind === "lines" ? (
           <label key={field.key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {field.label}

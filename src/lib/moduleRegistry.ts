@@ -41,6 +41,41 @@ import {
 } from "@/lib/modules/habitTracker";
 import { renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
 import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
+import {
+  renderColumnTable,
+  getColumnTableMinHeightPx,
+  type ColumnTableConfig,
+} from "@/lib/modules/columnTable";
+import {
+  renderPromptedLines,
+  getPromptedLinesMinHeightPx,
+  type PromptedLinesConfig,
+} from "@/lib/modules/promptedLines";
+import {
+  renderMiniMonth,
+  getMiniMonthMinHeightPx,
+  type MiniMonthConfig,
+} from "@/lib/modules/miniMonth";
+import {
+  renderProgressMeter,
+  getProgressMeterMinHeightPx,
+  type ProgressMeterConfig,
+} from "@/lib/modules/progressMeter";
+import {
+  renderRatingStrip,
+  getRatingStripMinHeightPx,
+  type RatingStripConfig,
+} from "@/lib/modules/ratingStrip";
+import {
+  renderAxisMatrix,
+  getAxisMatrixMinHeightPx,
+  type AxisMatrixConfig,
+} from "@/lib/modules/axisMatrix";
+import {
+  renderTextBlock,
+  getTextBlockMinHeightPx,
+  type TextBlockConfig,
+} from "@/lib/modules/textBlock";
 
 /** The box a module is asked to draw itself into, in print pixels. */
 export type ModuleGeometry = { x: number; y: number; width: number; height: number };
@@ -74,6 +109,21 @@ export type ModuleField =
   | { kind: "text"; key: string; label: string }
   | { kind: "boolean"; key: string; label: string }
   | { kind: "lines"; key: string; label: string; rows?: number }
+  // A count, not a measurement: how many segments a meter has, how many
+  // lines follow a prompt, where a rating scale starts and stops. Kept
+  // apart from `text` because a number arriving from an <input type="text">
+  // is a string, and a schema default of 5 then meets a saved value of
+  // "5" - the two-descriptions-of-one-fact problem in miniature.
+  | { kind: "number"; key: string; label: string; min?: number; max?: number }
+  // A closed set, where free text would just be a way to misspell one of
+  // the options.
+  | { kind: "select"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // Multi-line text kept as ONE string, newlines and all - a passage,
+  // where `lines` would turn a prayer into an array of its lines and lose
+  // the fact that it is a single piece of writing. The two look identical
+  // in the panel and store different things, which is the whole
+  // distinction.
+  | { kind: "paragraph"; key: string; label: string; rows?: number }
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
@@ -178,7 +228,11 @@ export type ModuleDefinition = {
    * getMinRowSpanForSlug, which is where the epsilon and the page geometry
    * live - a definition here states the module's own rule and nothing else.
    */
-  minContentHeightPx?: (pageGrid: PageGrid, columnSpan: number) => number;
+  minContentHeightPx?: (
+    pageGrid: PageGrid,
+    columnSpan: number,
+    propValues: Record<string, unknown>
+  ) => number;
 
   /**
    * Props that are not settings but consequences of the module's own
@@ -561,29 +615,434 @@ const PRIMITIVES = {
     contentIsLive: NEVER,
   },
 
-  // Registered without a renderer: seeded and placeable, drawn by nothing
-  // yet. This is where a catalogue module starts life.
-  "quote-block": {
+  // Named columns with ruled rows. The catalogue's workhorse: a spending
+  // log, a workout log, a reading list, a Step 4 inventory and twenty-odd
+  // more are this drawing with a different set of column heads.
+  "column-table": {
     db: {
-      "name": "Quote / Inspiration Block",
+      "name": "Column Table",
       "configSchema": {
         "type": "object",
         "properties": {
-          "text": {
+          "heading": {
+            "type": "string",
+            "default": "Log"
+          },
+          "columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["Date", "Item", "Amount"]
+          },
+          "weights": {
+            "type": "array",
+            "items": { "type": "number" },
+            "default": [1, 3, 1]
+          },
+          "totalsRow": {
+            "type": "boolean",
+            "default": false
+          },
+          "totalsLabel": {
+            "type": "string",
+            "default": "Total"
+          }
+        }
+      },
+      "defaultWidth": 600,
+      "defaultHeight": 560,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 8
+    },
+    label: "Column table",
+    inPalette: true,
+    paletteName: "Table",
+    previewProps: {
+      heading: "Log",
+      columns: ["Date", "Item", "Amount"],
+      weights: [1, 3, 1],
+      totalsRow: false,
+    },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5 },
+      { kind: "boolean", key: "totalsRow", label: "Totals row" },
+      { kind: "text", key: "totalsLabel", label: "Totals label" },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderColumnTable(geometry, propValues as ColumnTableConfig, idPrefix, fontFamily),
+    minContentHeightPx: () => getColumnTableMinHeightPx(),
+    // Rows follow the height and the column dividers follow the width, so
+    // both axes redraw it.
+    contentIsLive: ALWAYS,
+  },
+
+  // A printed question with ruled space under it, repeated. Sixteen
+  // catalogue modules, most of them with wording fixed by tradition -
+  // which is the case a preset serves best: the geometry is one thing and
+  // the words are data.
+  "prompted-lines": {
+    db: {
+      "name": "Prompted Lines",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": "Reflection"
+          },
+          "prompts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["What went well?", "What would I change?"]
+          },
+          "linesPerPrompt": {
+            "type": "integer",
+            "default": 2
+          }
+        }
+      },
+      "defaultWidth": 600,
+      "defaultHeight": 560,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 8
+    },
+    label: "Prompted lines",
+    inPalette: true,
+    paletteName: "Prompts",
+    previewProps: {
+      heading: "Reflection",
+      prompts: ["What went well?", "What would I change?"],
+      linesPerPrompt: 2,
+    },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "lines", key: "prompts", label: "Prompts (one per line)", rows: 6 },
+      { kind: "number", key: "linesPerPrompt", label: "Lines per prompt", min: 1, max: 8 },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderPromptedLines(geometry, propValues as PromptedLinesConfig, idPrefix, fontFamily),
+    minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
+      getPromptedLinesMinHeightPx(Number(propValues.linesPerPrompt ?? 2)),
+    contentIsLive: ALWAYS,
+  },
+
+  // A month's dates printed small, to look at rather than write in - and,
+  // with markable on, the dot calendars.
+  "mini-month": {
+    db: {
+      "name": "Mini Month",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "default": 2026
+          },
+          "month": {
+            "type": "integer",
+            "default": 1
+          },
+          "heading": {
+            "type": "string",
+            "default": ""
+          },
+          "markable": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "defaultWidth": 600,
+      "defaultHeight": 370,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 5
+    },
+    label: "Mini month",
+    inPalette: true,
+    paletteName: "Mini Month",
+    previewProps: { year: 2026, month: 1, heading: "", markable: false },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading (blank for the month name)" },
+      { kind: "number", key: "year", label: "Year", min: 1900, max: 2100 },
+      { kind: "number", key: "month", label: "Month (1-12)", min: 1, max: 12 },
+      { kind: "boolean", key: "markable", label: "Box under each date" },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderMiniMonth(geometry, propValues as MiniMonthConfig, idPrefix, fontFamily),
+    minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
+      getMiniMonthMinHeightPx(propValues.markable === true),
+    // Seven columns of a fixed grid: the drawing is the same marks at
+    // every size, only further apart, so nothing has to be recounted.
+    // The clip window serves it more cheaply than a redraw.
+    contentIsLive: NEVER,
+  },
+
+  // One long count wrapped across rows: days sober, pages read, dollars
+  // saved, sessions done.
+  "progress-meter": {
+    db: {
+      "name": "Progress Meter",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": "Progress"
+          },
+          "total": {
+            "type": "integer",
+            "default": 30
+          },
+          "milestoneEvery": {
+            "type": "integer",
+            "default": 10
+          },
+          "numbered": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "defaultWidth": 1200,
+      "defaultHeight": 260,
+      "defaultColumnSpan": 12,
+      "defaultRowSpan": 4
+    },
+    label: "Progress meter",
+    inPalette: true,
+    paletteName: "Meter",
+    previewProps: { heading: "Progress", total: 30, milestoneEvery: 10, numbered: true },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "number", key: "total", label: "Segments", min: 1, max: 400 },
+      { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
+      { kind: "boolean", key: "numbered", label: "Number the milestones" },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderProgressMeter(geometry, propValues as ProgressMeterConfig, idPrefix, fontFamily),
+    // How many rows a count needs depends on how many segments fit across
+    // the box, so this one genuinely needs the width - which is why the
+    // rule takes the page grid rather than a constant.
+    minContentHeightPx: (pageGrid, columnSpan, propValues) =>
+      getProgressMeterMinHeightPx(
+        Number(propValues.total ?? 30),
+        gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width
+      ),
+    // Widening it moves every segment to a different row. Nothing about
+    // this drawing survives a resize unchanged.
+    contentIsLive: ALWAYS,
+  },
+
+  // A list of things rated on one shared scale - mood, energy, pain,
+  // sleep, focus, craving, satisfaction.
+  "rating-strip": {
+    db: {
+      "name": "Rating Strip",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": "Ratings"
+          },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["Mood", "Energy", "Sleep", "Focus"]
+          },
+          "scaleMin": {
+            "type": "integer",
+            "default": 1
+          },
+          "scaleMax": {
+            "type": "integer",
+            "default": 5
+          },
+          "shape": {
+            "type": "string",
+            "enum": ["circle", "square"],
+            "default": "circle"
+          }
+        }
+      },
+      "defaultWidth": 600,
+      "defaultHeight": 560,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 8
+    },
+    label: "Rating strip",
+    inPalette: true,
+    paletteName: "Ratings",
+    previewProps: {
+      heading: "Ratings",
+      items: ["Mood", "Energy", "Sleep"],
+      scaleMin: 1,
+      scaleMax: 5,
+      shape: "circle",
+    },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "lines", key: "items", label: "Rows (one per line)", rows: 6 },
+      { kind: "number", key: "scaleMin", label: "Scale from", min: 0, max: 10 },
+      { kind: "number", key: "scaleMax", label: "Scale to", min: 1, max: 20 },
+      {
+        kind: "select",
+        key: "shape",
+        label: "Mark",
+        options: [
+          { value: "circle", label: "Circles" },
+          { value: "square", label: "Squares" },
+        ],
+      },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily),
+    minContentHeightPx: () => getRatingStripMinHeightPx(),
+    contentIsLive: ALWAYS,
+  },
+
+  // Two axes crossed, four boxes to write in: Eisenhower, SWOT,
+  // start/stop/continue, effort against impact.
+  "axis-matrix": {
+    db: {
+      "name": "Two-Axis Matrix",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": "Matrix"
+          },
+          "xLeft": {
+            "type": "string",
+            "default": "Less"
+          },
+          "xRight": {
+            "type": "string",
+            "default": "More"
+          },
+          "yTop": {
+            "type": "string",
+            "default": "Above the line"
+          },
+          "yBottom": {
+            "type": "string",
+            "default": "Below the line"
+          },
+          "quadrants": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["", "", "", ""]
+          }
+        }
+      },
+      "defaultWidth": 1200,
+      "defaultHeight": 740,
+      "defaultColumnSpan": 12,
+      "defaultRowSpan": 10
+    },
+    label: "Two-axis matrix",
+    inPalette: true,
+    paletteName: "Matrix",
+    previewProps: {
+      heading: "Matrix",
+      xLeft: "Less",
+      xRight: "More",
+      yTop: "Above the line",
+      yBottom: "Below the line",
+      quadrants: ["", "", "", ""],
+    },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "xLeft", label: "Across: left end" },
+      { kind: "text", key: "xRight", label: "Across: right end" },
+      { kind: "text", key: "yTop", label: "Down: upper half" },
+      { kind: "text", key: "yBottom", label: "Down: lower half" },
+      { kind: "lines", key: "quadrants", label: "Box names (4, clockwise from top-left)", rows: 4 },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderAxisMatrix(geometry, propValues as AxisMatrixConfig, idPrefix, fontFamily),
+    minContentHeightPx: () => getAxisMatrixMinHeightPx(),
+    // The cross sits at the middle of the body, so it moves with every
+    // change of height and width both.
+    contentIsLive: ALWAYS,
+  },
+
+  // Set text, printed rather than written on: a prayer, a creed, an
+  // affirmation, the steps of a method.
+  "text-block": {
+    db: {
+      "name": "Text Block",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": {
+            "type": "string",
+            "default": ""
+          },
+          "body": {
             "type": "string",
             "default": ""
           },
           "attribution": {
             "type": "string",
             "default": ""
+          },
+          "align": {
+            "type": "string",
+            "enum": ["left", "center"],
+            "default": "left"
           }
         }
       },
-      "defaultWidth": 1400,
-      "defaultHeight": 400,
-      "defaultColumnSpan": 24,
-      "defaultRowSpan": 1
+      "defaultWidth": 600,
+      "defaultHeight": 370,
+      "defaultColumnSpan": 6,
+      "defaultRowSpan": 5
     },
+    label: "Text block",
+    inPalette: true,
+    paletteName: "Text",
+    previewProps: {
+      heading: "",
+      body: "Set text goes here, wrapped to the width of the box.",
+      attribution: "",
+      align: "left",
+    },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading (optional)" },
+      { kind: "paragraph", key: "body", label: "Text", rows: 8 },
+      { kind: "text", key: "attribution", label: "Attribution (optional)" },
+      {
+        kind: "select",
+        key: "align",
+        label: "Alignment",
+        options: [
+          { value: "left", label: "Left" },
+          { value: "center", label: "Centred" },
+        ],
+      },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily) =>
+      renderTextBlock(geometry, propValues as TextBlockConfig, idPrefix, fontFamily),
+    // How many lines a passage takes is a function of the width it is
+    // wrapped to, so the floor needs the box - the same reasoning as the
+    // progress meter's.
+    minContentHeightPx: (pageGrid, columnSpan, propValues) =>
+      getTextBlockMinHeightPx(
+        propValues as unknown as TextBlockConfig,
+        gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width
+      ),
+    // Narrowing it rewraps every line. Height alone only reveals or hides
+    // lines already placed, but the two cannot be separated here.
+    contentIsLive: ALWAYS,
   },
 
   // Drawn by renderModuleInstance directly rather than by a primitive - it
@@ -634,6 +1093,47 @@ function preset(
 
 export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   ...(PRIMITIVES as Record<string, ModuleDefinition>),
+
+  // Was a primitive registered with no renderer - the placeholder this
+  // file used to point at as "where a catalogue module starts life". It
+  // has a renderer now, and the renderer turned out to be a general one:
+  // a quote is set text with an attribution, which is what text-block is.
+  // So it stops being its own drawing and becomes what it always was, a
+  // preset.
+  //
+  // Its stored prop was `text` where text-block's is `body`. Renaming a
+  // saved key would normally blank existing modules, and does not here:
+  // quote-block has never been in the palette and has never had a
+  // renderer, so nothing has ever placed one.
+  "quote-block": preset("text-block", {
+    db: {
+      name: "Quote / Inspiration Block",
+      // A preset that changes the words has to change the SCHEMA defaults,
+      // not just previewProps: previewProps draw the palette card, and the
+      // schema is what a freshly placed instance is filled with. Setting
+      // one and not the other gives a card that shows a quote and a module
+      // that arrives blank.
+      configSchema: {
+        type: "object",
+        properties: {
+          heading: { type: "string", default: "" },
+          body: { type: "string", default: "The obstacle is the way." },
+          attribution: { type: "string", default: "Marcus Aurelius" },
+          align: { type: "string", enum: ["left", "center"], default: "center" },
+        },
+      },
+      defaultColumnSpan: 24,
+      defaultRowSpan: 4,
+    },
+    label: "Quote",
+    paletteName: "Quote",
+    previewProps: {
+      heading: "",
+      body: "The obstacle is the way.",
+      attribution: "Marcus Aurelius",
+      align: "center",
+    },
+  }),
 
   // Eight glasses against the week - the row-by-column tracker with a
   // different label set and nothing else. The first preset, and the test
@@ -775,9 +1275,29 @@ export const MIN_ROW_SPAN = 2;
 export function getMinRowSpanForSlug(
   slug: string,
   pageGrid: PageGrid,
-  columnSpan: number
+  columnSpan: number,
+  // Optional, and NOT yet threaded by any caller.
+  //
+  // Some modules' floors are a function of their content rather than of
+  // their box: a progress meter of a hundred segments needs more rows than
+  // one of thirty, and a set passage needs as many lines as it wraps to.
+  // Those rules can be stated now, and they fall back to the module's own
+  // schema defaults when nothing is passed - which is exactly right for a
+  // fresh drop from the palette, since a fresh module IS its defaults.
+  //
+  // Deliberately not threaded at some call sites and not others. The
+  // client's floor gates the live shrink preview and the server's gates
+  // the commit; if one of them learned a module's real content and the
+  // other did not, they would disagree about how short it may get, which
+  // is precisely the "preview lied" family this function's own comment
+  // above exists to close. Both sides pass nothing today, so both sides
+  // agree. Threading it is one change to both callers, together.
+  propValues: Record<string, unknown> = {}
 ): number {
   const rule = MODULE_REGISTRY[slug]?.minContentHeightPx;
   if (!rule) return MIN_ROW_SPAN;
-  return Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, rule(pageGrid, columnSpan)));
+  return Math.max(
+    MIN_ROW_SPAN,
+    pixelHeightToRowSpan(pageGrid, rule(pageGrid, columnSpan, propValues))
+  );
 }
