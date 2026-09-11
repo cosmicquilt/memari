@@ -30,6 +30,7 @@ import { fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
+  RULE_WIDTH_PT,
   borderElement,
   contentTopPx,
   headerElements,
@@ -159,7 +160,25 @@ const AXIS_LABEL_DEFAULT_UNITS = 5;
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;
-const CROSS_WIDTH_PT = 0.5;
+/**
+ * The cross is an INTERIOR RULE, at the interior rule weight.
+ *
+ * It was 0.5pt, which is the weight of a box BORDER - and the codebase is
+ * consistent about the difference: 0.5 for an outer edge, 0.35 for a rule
+ * inside it (todoChecklist, habitTracker and moduleFrame all say so). A
+ * module whose only interior lines are the cross had nothing next to it to
+ * make the mismatch obvious, so it read simply as heavy. Reported as "the
+ * interior crossed lines within the matrix look too thick".
+ *
+ * Taken from moduleFrame rather than written as 0.35 here, so there is one
+ * description of what an interior rule weighs.
+ *
+ * Worth knowing when judging this on screen: the renderer grows any
+ * fill-only hairline to MIN_ONSCREEN_RECT_PX device pixels, so below about
+ * 45% zoom this and a 0.5pt rule are clamped to the same width and look
+ * identical. The difference is real at higher zoom and in print.
+ */
+const CROSS_WIDTH_PT = RULE_WIDTH_PT;
 const PADDING_PT = 4;
 
 export function getAxisMatrixRowMetricsPx() {
