@@ -398,6 +398,47 @@ function RectLayer({
           .catch(() => {});
       }
     }
+    // A mark that appears BEYOND the previous render's extent is being
+    // REVEALED, not arriving, so it must not play the arrival fade.
+    //
+    // Growing a to-do adds one row line per snap step. Each is a new id,
+    // so each mounts and runs memari-mark-in - 230ms from transparent.
+    // Drag through four steps in a second and four lines sit at four
+    // different opacities at once, which reads as the lines being
+    // different weights. Reported as "when expanding todo the new rows
+    // horizontal lines range in thickness it seems or something like its
+    // animating it".
+    //
+    // Measured before changing anything: at every adjacent pair of sizes
+    // the to-do emits rects of identical height (1.458px), none of them
+    // move, and exactly one is added. The geometry was never the problem.
+    //
+    // The clip window already reveals these - that is the whole point of
+    // drawing content at the larger size and letting the box open over it
+    // - so fading them as well animates one event twice. A mark landing
+    // INSIDE the old extent is a different thing: a mode switch putting
+    // down a drawing that was not there before, and it still fades.
+    //
+    // Cancelled HERE rather than by withholding the animation in the JSX,
+    // for two reasons. The style prop has to stay one stable string - a
+    // re-render writing a different value cancels whatever is running, and
+    // a drag re-renders every frame, so computing it per render would cut
+    // every genuine fade short after one frame. And this hook runs before
+    // paint, so a fade cancelled here never shows a frame.
+    if (previous.current.size > 0) {
+      let right = -Infinity;
+      let bottom = -Infinity;
+      for (const mark of previous.current.values()) {
+        right = Math.max(right, mark.x + mark.width);
+        bottom = Math.max(bottom, mark.y + mark.height);
+      }
+      for (const [id, mark] of drawn) {
+        if (previous.current.has(id)) continue;
+        if (mark.y < bottom - 0.5 && mark.x < right - 0.5) continue;
+        const node = nodes.current.get(id);
+        if (node) node.style.animation = "none";
+      }
+    }
     previous.current = drawn;
   });
 
