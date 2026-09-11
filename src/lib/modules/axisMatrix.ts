@@ -64,22 +64,48 @@ export type RenderedElement = {
 };
 
 /**
- * ONE CELL, not the half cell a printed head visually wants.
+ * HALF a cell for the across-axis words, not the full cell a head band
+ * normally takes.
  *
- * The header above is one cell less the box inset at both ends, so what
- * remains is exactly (rowSpan - 1) whole cells. Anything this band takes
- * out of that has to be a whole cell too, or the plotted area below is a
- * whole number of cells plus a remainder - and the remainder shows up as a
- * last row half again as tall as the others, with no rule under it because
- * the border is still half a cell away.
+ * The full-cell rule exists so that a band between the header and a
+ * module's ROWS leaves a whole number of cells beneath it - otherwise the
+ * remainder shows up as a last row half again as tall as the others (see
+ * columnTable.ts, where that is spelled out, and the two reports behind
+ * it). This module has no rows. Nothing below this band is measured in
+ * cells: the cross is snapped to the nearest lattice line explicitly, and
+ * the quadrant labels hang off the cross.
  *
- * That is not a hypothetical: it is the defect reported twice on the
- * to-do, first as "instead of one row, there a little bit of a second row"
- * and then as "with more rows it still looks messed up, the last row is
- * large". A half-cell band reintroduces it exactly.
+ * So the band can be the size the type actually needs, and at a full cell
+ * it was not - 6.5pt type in 75px left about 21px of air above and below,
+ * half again what the heading above it gets. Reported as "there can be
+ * less vertical above and below padding for the 'less' 'more' in the
+ * matrix". Half a cell brings it in line, and matches the quadrant label
+ * band, which is already half a cell.
  */
-const AXIS_BAND_HEIGHT_PT = 18;
 const AXIS_FONT_PT = 6.5;
+/**
+ * The air above and below the across-axis words.
+ *
+ * Matched to what the heading band gives its own heading - about 14 print
+ * px each side - which is what "similar to the space for the matrix"
+ * asked for. The band was a full cell, which left 21px: half again the
+ * heading's, on smaller type, so the axis read as the loosest thing in
+ * the module.
+ */
+const AXIS_BAND_PADDING_PT = 3.4;
+/**
+ * ...and so the band is the type plus that air, rather than a round
+ * fraction of a cell.
+ *
+ * Bands elsewhere are whole cells because a whole number of cells has to
+ * remain BELOW them for the rows to tile (see columnTable.ts, and the two
+ * reports behind it). This module has no rows: the cross is snapped to
+ * the nearest lattice line explicitly and the quadrant labels hang off
+ * the cross, so nothing under this band is measured in cells and the band
+ * is free to be the size the type needs. Derived from AXIS_FONT_PT so the
+ * two cannot drift - changing the point size moves the band with it.
+ */
+const AXIS_BAND_HEIGHT_PT = AXIS_FONT_PT * 1.2 + AXIS_BAND_PADDING_PT * 2;
 /**
  * Half a cell of gutter down the left, for the down axis.
  *

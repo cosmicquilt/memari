@@ -178,7 +178,7 @@ LAYOUT.forEach((placement, i) => {
 // the same drawing, so a crop can never disagree with the page.
 const DETAILS: Array<[string, number, number, number, number]> = [
   ["labeled-box (control) vs column-table - heading size, case, dot alignment", 187.5, 187.5, 900, 750],
-  ["to-do (control) vs axis-matrix", 187.5, 937.5, 900, 750],
+  ["to-do (control) vs axis-matrix", 187.5, 937.5, 1800, 760],
   ["prompted-lines + rating-strip", 1087.5, 187.5, 900, 750],
   ["progress-meter + column-table with a totals row", 187.5, 2287.5, 1800, 620],];
 
