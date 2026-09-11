@@ -161,9 +161,14 @@ const AXIS_LETTER_PITCH = 1.2;
  * chart usually does, and costs one row over four slots.
  */
 const AXIS_LABEL_DEFAULT_UNITS = 5;
-/** See the plot geometry in the renderer - flip to false to let the plot
- *  fill its box again, at the cost of unequal axes. */
-const SQUARE_PLOT = true;
+// There was a SQUARE_PLOT flag here, advertised as the way to let the plot
+// fill its box again. The construction that followed made it dead - the
+// plot is now sized from the lattice rather than from a branch - and a
+// switch that cannot switch is worse than no switch, because it gets
+// believed. Same mistake as the LATTICE_ALIGNED_CONTENT flag in
+// moduleFrame, retired for the same reason. To un-square this, the change
+// is in the renderer: take plotWidth/plotHeight from the available area
+// instead of from `side`.
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;
@@ -254,67 +259,69 @@ export function renderAxisMatrix(
   elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bandTop));
 
   const axisFontSize = ptToPx(AXIS_FONT_PT);
+  // A SQUARE PLOT, SITTING ON THE BOTTOM BORDER, WITH ITS CENTRE ON THE
+  // LATTICE - all three at once, which takes choosing the side rather
+  // than taking whatever is available.
+  //
+  // Those three pull against each other. A square plot centred in a tall
+  // box leaves the vertical arm stopping short of the border ("vertical
+  // line in matrix doesn't reach bottom"), and snapping the cross to the
+  // nearest lattice line after the fact pushes it up to half a cell off
+  // the plot's own centre, so the four quadrants come out unequal -
+  // measured at 293/331 across and 330/294 down, which is what "still
+  // doesn't look like cross is square" was seeing. Squaring the PLOT was
+  // never enough on its own; the CROSS has to land in the middle of it.
+  //
+  // The construction: the box's bottom edge is 6px above a lattice line
+  // (that is the box inset), so a square whose bottom sits on that edge
+  // has its centre on a lattice line exactly when its side is 150m - 12
+  // for a whole m. Pick the largest such side that fits, put its bottom
+  // on the border and its centre on the lattice, and everything follows -
+  // equal quadrants, a square plot, an arm reaching the bottom, and both
+  // arms on the dots, with no snapping anywhere.
+  //
+  // What it costs is a little size: the side is quantised to that
+  // sequence (138, 288, 438, 588, 738...), so up to a cell and a half of
+  // the available square goes unused, and the slack sits above the plot
+  // as air under the axis words. At 12 x 10 that is 588 against 624
+  // available - six per cent.
   const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
-  // THE PLOT IS SQUARE, centred in whatever the box leaves it.
-  //
-  // It used to take all the room there was, so at 12 columns by 10 rows
-  // the four quadrants came out 425 x 304 - a chart about two axes drawn
-  // as though one of them mattered more. Asked for as "make matrix cross
-  // more square".
-  //
-  // Square costs space: a box wider than it is tall now leaves margin at
-  // the sides, and a taller one leaves it above and below. That is the
-  // trade, and it is the right way round for this module - a quadrant
-  // chart is read by where a thing sits between two axes, and that
-  // reading is distorted by a plot whose axes are at different scales.
-  // SQUARE_PLOT is the one constant to flip if the writing room turns out
-  // to matter more than the proportion.
-  //
-  // The gutter is taken off the left first: it carries the down axis and
-  // is not part of the plot.
-  const availableWidth = geometry.width - gutter;
+  const pitch = lattice?.pitchPx ?? ptToPx(18);
   const availableTop = bandTop + axisBand;
-  const availableHeight = geometry.y + geometry.height - availableTop;
-  const plotWidth = SQUARE_PLOT ? Math.min(availableWidth, availableHeight) : availableWidth;
-  const plotHeight = SQUARE_PLOT ? plotWidth : availableHeight;
-  // The GUTTER AND PLOT are centred together, not the plot alone.
-  //
-  // Centring the plot inside what is left after the gutter puts the
-  // gutter outside the centred thing, so the drawing sits left of middle
-  // by the width of the gutter - and the right margin ends up bare while
-  // the left one carries a label.
-  const plotLeft = geometry.x + (geometry.width - gutter - plotWidth) / 2 + gutter;
-  const gridTop = availableTop + (availableHeight - plotHeight) / 2;
-  const gridBottom = gridTop + plotHeight;
-  // BOTH arms of the cross go on the lattice, not just the horizontal one.
-  //
-  // Only midY was snapped at first, on the reasoning that the horizontal
-  // rule is the one that reads against the dot ROWS. It reads against the
-  // columns just as plainly the other way up - reported as "vertical line
-  // in eisenhower not aligned".
-  const exactMidX = plotLeft + plotWidth / 2;
+  const boxBottom = geometry.y + geometry.height;
+  const boxRight = geometry.x + geometry.width;
+  // The lattice column nearest the box's middle. For the even column
+  // spans a page actually uses this IS the middle; for an odd one the
+  // plot sits a fraction off-centre in the box, which is invisible, and
+  // the quadrants stay equal either way because both halves are side/2.
   const midX = lattice
     ? lattice.originX +
-      Math.round((exactMidX - lattice.originX) / lattice.pitchPx) * lattice.pitchPx
-    : exactMidX;
-  // Measured from the snapped cross, so a label centres on the half it
-  // actually has rather than on a nominal one - the same correction the
-  // vertical halves already needed.
-  const halfWidth = Math.min(midX - plotLeft, plotLeft + plotWidth - midX);
-  // The cross goes on the nearest LATTICE line to the middle, not on the
-  // exact middle.
-  //
-  // The plotted area is a whole number of cells less the box's bottom
-  // inset, so its true midpoint lands on a half cell minus 3px - measured
-  // at -3.0 from the nearest dot row, which is the same near-miss that
-  // made every other rule here look wrong. Being up to 3px off centre in a
-  // box hundreds of pixels tall is invisible; being 3px off a dot is not.
-  const exactMid = gridTop + (gridBottom - gridTop) / 2;
-  const midY = lattice
-    ? lattice.originY +
-      Math.round((exactMid - lattice.originY) / lattice.pitchPx) * lattice.pitchPx
-    : exactMid;
+      Math.round((geometry.x + geometry.width / 2 - lattice.originX) / pitch) * pitch
+    : geometry.x + geometry.width / 2;
 
+  let side = 0;
+  for (let m = Math.ceil((boxBottom - availableTop + 12) / 150); m >= 1; m--) {
+    const candidate = 150 * m - 12;
+    if (candidate > boxBottom - availableTop) continue;
+    if (midX - candidate / 2 < geometry.x + gutter) continue;
+    if (midX + candidate / 2 > boxRight) continue;
+    side = candidate;
+    break;
+  }
+  // Nothing in the sequence fits - only reachable below the module's own
+  // minimum. Fall back to filling what there is rather than drawing
+  // nothing.
+  const squared = side > 0;
+  const plotWidth = squared ? side : boxRight - (geometry.x + gutter);
+  const plotHeight = squared ? side : boxBottom - availableTop;
+  const plotLeft = squared ? midX - side / 2 : geometry.x + gutter;
+  const gridTop = boxBottom - plotHeight;
+  const gridBottom = boxBottom;
+  const midY = gridTop + plotHeight / 2;
+
+  // Both halves are side/2 by construction, so this is exact rather than
+  // a correction for a snapped cross.
+  const halfWidth = Math.min(midX - plotLeft, plotLeft + plotWidth - midX);
   // The across axis: its two ends over the two halves they name.
   const acrossEnds: Array<[string, string, number]> = [
     ["x-left", config.xLeft ?? "", plotLeft],
@@ -392,17 +399,17 @@ export function renderAxisMatrix(
   // keeps it readable - see getAxisMatrixMinHeightPx.
   const nominal = ptToPx(AXIS_LETTER_FONT_PT);
   const letterSize = Math.min(nominal, tightest / AXIS_LETTER_PITCH);
-  const pitch = letterSize * AXIS_LETTER_PITCH;
+  const letterPitch = letterSize * AXIS_LETTER_PITCH;
 
   for (const [name, text, top, height] of downEnds) {
     if (!text) continue;
     const letters = [...text];
     const units = advanceUnits(text);
     // Centred on its own half, measured in the advance it actually uses.
-    let cursor = top + Math.max(0, (height - units * pitch) / 2);
+    let cursor = top + Math.max(0, (height - units * letterPitch) / 2);
 
     letters.forEach((letter, i) => {
-      const advance = letter === " " ? pitch * 0.5 : pitch;
+      const advance = letter === " " ? letterPitch * 0.5 : letterPitch;
       // Past the bottom of its half: stop rather than run into the other
       // label. Only reachable when even the floor size is too big.
       if (cursor + advance > top + height + 0.5) return;
