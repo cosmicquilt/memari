@@ -19,6 +19,7 @@
 // grid's own day columns and reusing its exact 14.1pt checkbox width.
 
 import { ptToPx } from "@/lib/print-spec";
+import { HEADING_SIZES_PT } from "@/lib/modules/moduleFrame";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -41,7 +42,19 @@ const NEAR_BLACK = "#231F20";
 // Measured from the reference at 16.7pt, so this is 1.6pt shorter and the
 // heading band sits a little tighter around its 12pt line.
 const HEADER_HEIGHT_PT = 15.12;
-const HEADER_FONT_PT = 12;
+// The house heading size, from moduleFrame - the same 8pt labeled-box and
+// the seven drawing primitives use.
+//
+// This was 12pt, and it was the last thing on a page still saying a
+// module heading is 12pt: "the module headers are not all caps like the
+// current modules" was about the NEW modules, and fixing those left the
+// to-do and the habit tracker as the visible outliers instead. Asked for
+// directly - "make the to-do and habit headers 8pt too".
+//
+// Taken from the frame rather than written as 8 here, so there is one
+// description of the house heading and not three. Only the size changes:
+// the header BAND stays 15.12pt, so no row count moves.
+const HEADER_FONT_PT = HEADING_SIZES_PT[0];
 const HEADER_BORDER_WIDTH_PT = 0.5;
 // One row is one dot: 18pt, 75 print px, a quarter inch. With the header
 // above taking a dot less the two insets, the height left over is exactly

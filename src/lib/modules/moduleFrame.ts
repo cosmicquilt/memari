@@ -170,7 +170,13 @@ export function headerElements(
       fontFamily,
       fill: NEAR_BLACK,
       align: "center",
-      letterSpacing: fontSize * 0.04,
+      // NO letterSpacing, deliberately, however much a short uppercase
+      // heading wants it. monthTitle.ts measured the reference at a wide
+      // tracking, tried to reproduce it, and had to take it back out: with
+      // letterSpacing set, the legacy Polotno route's width-constrained
+      // text box badly under-measures its own available width and wraps to
+      // about one character per line - the "displays vertically" bug. The
+      // native renderer handles it fine; these elements go to both.
     });
   }
 

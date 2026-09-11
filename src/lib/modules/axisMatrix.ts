@@ -202,7 +202,8 @@ export function renderAxisMatrix(
       fill: NEAR_BLACK,
       align: "center",
       opacity: 0.75,
-      letterSpacing: fitted.fontSizePx * 0.06,
+      // No letterSpacing - see moduleFrame's headerElements, and
+      // monthTitle.ts for the measurement behind it.
     });
   });
 
