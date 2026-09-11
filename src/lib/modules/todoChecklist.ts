@@ -256,15 +256,24 @@ export function renderTodoChecklist(
     });
 
     for (let i = 0; i < rowCount; i++) {
-      // The last row is pinned to the bottom border rather than computed
-      // from the pitch. Under the current geometry these are the same
-      // place — the pitch divides gridHeight exactly — so this changes
-      // nothing today. It is here so that if the header height, the box
-      // inset or the cell pitch is ever changed such that they no longer
-      // divide, the block still fills its box instead of quietly growing a
-      // thin abandoned strip under the last line.
-      const rowBottom =
-        i === rowCount - 1 ? gridTop + gridHeight : gridTop + (i + 1) * rowHeight;
+      // Every row is exactly one pitch. The last one is NOT pinned to the
+      // bottom border.
+      //
+      // It used to be, as a safeguard, and the comment here said so: "under
+      // the current geometry these are the same place - the pitch divides
+      // gridHeight exactly - so this changes nothing today. It is here so
+      // that if the header height, the box inset or the cell pitch is ever
+      // changed such that they no longer divide, the block still fills its
+      // box." The header height then changed, exactly as anticipated, and
+      // the safeguard turned out to be the failure mode rather than the
+      // protection: the last row absorbed the whole 69px remainder on top
+      // of its own 75, coming out at 144 - nearly twice its neighbours.
+      // Reported as "the bottom rows of the todos are too tall", which is
+      // the same defect, in the same words, as the two before it.
+      //
+      // A short final band is the trade the lattice alignment buys (see
+      // moduleFrame's contentTopPx); a DOUBLE final row is nobody's trade.
+      const rowBottom = gridTop + (i + 1) * rowHeight;
       // The bottom border already draws this line, and draws it better: it
       // is 0.5pt with its outer edge flush to the box, where a row
       // separator is a 0.35pt fill centred on its own position. Drawing

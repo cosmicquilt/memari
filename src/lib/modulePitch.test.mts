@@ -60,19 +60,32 @@ function isDeliberatelyOffPitch(slug: string, widthPx: number): boolean {
   return compactable && isHabitTrackerCompact(widthPx);
 }
 
+/** Modules that rule one line per ITEM rather than filling their body, so
+ *  the space under the last item is however many empty rows remain. */
+const ITEM_DRIVEN = new Set(["rating-strip"]);
+
 function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
   return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
 }
 
 /**
- * The y of every full-width horizontal rule, including the box's own top
- * and bottom edges.
+ * The y of every horizontal row separator, including the box's own top and
+ * bottom edges.
  *
- * Full-width is what makes a rule a ROW separator rather than part of some
- * other mark - a checkbox, a day divider, a milestone tick. The border is
- * included deliberately: the gap between the last rule and the bottom edge
- * is exactly where this defect shows itself, and a test that stopped at
- * the last rule would have passed on every version of the bug.
+ * A separator does NOT have to span the whole box. This asked for
+ * full-width at first, on the reasoning that full-width is what makes a
+ * rule a row separator rather than part of some other mark - and the
+ * to-do's separators are drawn per day COLUMN, one segment each, so it saw
+ * exactly one rule in the whole module (its header) and checked nothing.
+ * The to-do is the module this test was written for.
+ *
+ * So: any horizontal hairline wider than a fifth of the box counts, and
+ * segments sharing a y count once. That still excludes checkboxes (too
+ * tall to be hairlines) and milestone ticks (too narrow).
+ *
+ * The border is included deliberately: the gap between the last rule and
+ * the bottom edge is exactly where this defect shows itself, and a test
+ * that stopped at the last rule would have passed on every version of it.
  */
 function rowRuleYs(slug: string, columnSpan: number, rowSpan: number): number[] {
   const propValues = moduleDefinition(slug)?.previewProps ?? {};
@@ -93,7 +106,6 @@ function rowRuleYs(slug: string, columnSpan: number, rowSpan: number): number[] 
   );
   const box = elements.find((e) => e.type === "figure" && (e.strokeWidth ?? 0) > 0);
   if (!box) return [];
-  const left = box.x ?? 0;
   const width = box.width ?? 0;
 
   const ys = new Set<number>([box.y ?? 0, (box.y ?? 0) + (box.height ?? 0)]);
@@ -101,9 +113,12 @@ function rowRuleYs(slug: string, columnSpan: number, rowSpan: number): number[] 
     if (element.type !== "figure" || element.subType !== "rect") continue;
     if (element === box) continue;
     const isHairline = (element.height ?? 0) < (element.width ?? 0) / 4;
-    const spansBox =
-      Math.abs((element.x ?? 0) - left) < 1 && Math.abs((element.width ?? 0) - width) < 1;
-    if (isHairline && spansBox) ys.add((element.y ?? 0) + (element.height ?? 0) / 2);
+    const wideEnough = (element.width ?? 0) > width / 5;
+    // Rounded so segments of one separator, drawn per column, land on the
+    // same key instead of counting as several boundaries a hair apart.
+    if (isHairline && wideEnough) {
+      ys.add(Math.round(((element.y ?? 0) + (element.height ?? 0) / 2) * 10) / 10);
+    }
   }
   return [...ys].sort((a, b) => a - b);
 }
@@ -138,63 +153,53 @@ for (const slug of RULED) {
       const gaps = ys.slice(1).map((y, i) => y - ys[i]);
       const bodyGaps = gaps.slice(1);
 
-      // Every body gap must be a WHOLE number of row pitches.
+      // Every gap but the last is exactly one pitch. The last is the only
+      // one allowed to differ, and only in the two ways that mean
+      // something.
       //
-      // Not "every gap is equal", which was the first version of this and
-      // was wrong: a rating strip rules a line under each ITEM, so the
-      // space between the last item and the bottom border is however many
-      // empty rows are left. That is blank body, not a misshapen row, and
-      // it is correct for four of the five modules here.
-      //
-      // A whole multiple is the real invariant, and it still catches the
-      // defect exactly: the half-cell head band left a final gap of 1.5
-      // pitches, which is what "the last row is large" looks like in
-      // numbers.
-      // The pitch is the gap that occurs MOST OFTEN, tie-broken by the
-      // smaller - not the smallest gap.
-      //
-      // Taking the smallest was the first version and it was silently
-      // toothless: with the half-cell band in place the gaps came out as
-      // seven rows of 75 and a final orphan of 37.5, and 37.5 is the
-      // smallest, so every 75 read as "exactly two pitches" and the test
-      // passed on the very defect it was written for. Checked by putting
-      // the bad constant back, which is the only way to know a test of
-      // this kind works at all.
-      // The final band is deliberately short (see below), so it must not be
-      // allowed to vote on what the pitch IS - with only two gaps it wins
-      // the tie-break and every real row then reads as 1.09 of it.
+      // This asked for "a whole number of pitches" at first, which is
+      // weaker than it sounds: it let the to-do's last row come out at 144
+      // - a full row PLUS the 69px remainder, nearly double its
+      // neighbours - because 144 is two pitches less the box inset, and
+      // the rule could not tell that from four empty rows of slack.
+      // Reported as "the bottom rows of the todos are too tall", the third
+      // time this defect has been reported in the same words.
       const pitchSource = bodyGaps.length > 1 ? bodyGaps.slice(0, -1) : bodyGaps;
       const tally = new Map<number, number>();
       for (const gap of pitchSource) {
         const key = Math.round(gap * 100) / 100;
         tally.set(key, (tally.get(key) ?? 0) + 1);
       }
-      const pitch = [...tally.entries()].sort(
-        (a, b) => b[1] - a[1] || a[0] - b[0]
-      )[0][0];
-      // The LAST band may be short by exactly the box's bottom inset, and
-      // only the last.
-      //
-      // Content now starts on a lattice line so every rule lands on a dot
-      // (see moduleFrame's contentTopPx). The box bottom is inset 6px
-      // inside its allocation, so the space below the final rule comes out
-      // 69px against 75px. The 6px has to be somewhere: it was previously
-      // spread as a 6px offset on EVERY rule in the module, which is what
-      // was reported. One band 8% short is the better half of that trade.
-      const isLast = (i: number) => i === bodyGaps.length - 1;
-      const offGrid = bodyGaps.filter((g, i) => {
-        const rows = g / pitch;
-        if (Math.abs(rows - Math.round(rows)) <= 0.01) return false;
-        if (isLast(i) && Math.abs(g - (Math.ceil(rows) * pitch - PAGE.boxInsetPx)) < 0.5) {
-          return false;
+      const pitch = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+
+      const offGrid: string[] = [];
+      bodyGaps.forEach((gap, i) => {
+        const last = i === bodyGaps.length - 1;
+        if (!last) {
+          if (Math.abs(gap - pitch) > 0.5) {
+            offGrid.push(`${gap.toFixed(1)} (row ${i + 1}, expected ${pitch.toFixed(1)})`);
+          }
+          return;
         }
-        return true;
+        // The final band is one pitch less the box's bottom inset - the
+        // 6px that lattice-aligned content trades away. See moduleFrame's
+        // contentTopPx.
+        if (Math.abs(gap - (pitch - PAGE.boxInsetPx)) < 0.5) return;
+        if (Math.abs(gap - pitch) < 0.5) return;
+        // ...or, for a module that rules one line per ITEM rather than
+        // filling its body, whatever empty rows are left under the last
+        // item. That is blank space, not a misshapen row.
+        if (ITEM_DRIVEN.has(slug)) {
+          const rows = (gap + PAGE.boxInsetPx) / pitch;
+          if (Math.abs(rows - Math.round(rows)) < 0.02) return;
+        }
+        offGrid.push(`${gap.toFixed(1)} (final band, expected ${(pitch - PAGE.boxInsetPx).toFixed(1)})`);
       });
+
       if (offGrid.length > 0) {
         console.error(
           `  ${slug} ${columnSpan}x${rowSpan}: row pitch is ${pitch.toFixed(1)}px but ` +
-            `${offGrid.length} of ${bodyGaps.length} gap(s) are not a whole ` +
-            `multiple of it (${offGrid.map((g) => `${g.toFixed(1)} = ${(g / pitch).toFixed(2)} rows`).join(", ")})`
+            `${offGrid.length} of ${bodyGaps.length} gap(s) disagree: ${offGrid.join("; ")}`
         );
         failures++;
       }

@@ -129,7 +129,16 @@ export function renderRatingStrip(
   const bodyTop = headTop + scaleHeadHeight;
   const bodyBottom = geometry.y + geometry.height;
   const scaleLeft = geometry.x + geometry.width * LABEL_SHARE;
-  const scaleWidth = geometry.x + geometry.width - scaleLeft;
+  // The scale keeps the SAME padding off the right border that the item
+  // names keep off the left. It used to run to the border itself, which
+  // put the last glyph's edge about 6px short of it - the numbers and the
+  // circles under them both crowding the frame. Reported as "distance from
+  // 5 and the circles below are too close to the right border".
+  //
+  // The glyphs are centred in equal divisions of what is left, so padding
+  // the region moves every one of them, not just the last.
+  const scaleRight = geometry.x + geometry.width - padding;
+  const scaleWidth = scaleRight - scaleLeft;
   const step = scaleWidth / points;
   const centreOf = (value: number) => scaleLeft + step * (value - min) + step / 2;
 

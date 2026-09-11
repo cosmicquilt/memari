@@ -319,7 +319,7 @@ export function renderHabitTracker(
     // so a future change to the header, inset or cell pitch degrades to a
     // slightly deep last row rather than to a thin abandoned strip.
     const rowBottom =
-      i === rowCount - 1 ? contentY + contentHeight : rowY + rowHeight;
+rowY + rowHeight;
     // The bottom border already draws this line, and draws it better: it
     // is 0.5pt with its outer edge flush to the box, where a row
     // separator is a 0.35pt fill centred on its own position. Drawing
