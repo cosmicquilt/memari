@@ -109,12 +109,24 @@ const AXIS_LETTER_PITCH = 1.2;
 /**
  * The advance the longest DEFAULT down-axis label needs, in letter slots.
  *
- * "Below the line" - twelve letters and two spaces, and a space takes half
- * a slot. Stated here rather than measured off the schema because the
+ * Stated here rather than measured off the schema because the
  * minimum-height rule may not read propValues (see getMinRowSpanForSlug's
  * comment on why), so it has to size for the module a fresh drop creates.
+ *
+ * The defaults were "Above the line" / "Below the line" - fourteen
+ * characters, thirteen slots - and sizing the module to print that
+ * vertically at the nominal size put its MINIMUM at 13 rows. That is a
+ * third of a page for an empty module, and it showed: the palette card
+ * renders at the minimum, so the matrix card came out 451px tall against
+ * 96-197 for everything else, and a sidebar with 13 free rows is a rare
+ * thing to find. Reported as the matrix not dropping at all.
+ *
+ * Sizing a module for its LABEL was the mistake. The label shrinks to fit
+ * and never truncates now, so the minimum only has to keep the four
+ * quadrants writable and the label legible at a short default. Four slots
+ * takes the minimum to 8 rows.
  */
-const AXIS_LABEL_DEFAULT_UNITS = 13;
+const AXIS_LABEL_DEFAULT_UNITS = 4;
 /** Half a cell for a quadrant's own name, at the top of its box. */
 const QUADRANT_LABEL_HEIGHT_PT = 9;
 const QUADRANT_FONT_PT = 7;

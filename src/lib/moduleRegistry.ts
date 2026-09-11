@@ -932,11 +932,11 @@ const PRIMITIVES = {
           },
           "yTop": {
             "type": "string",
-            "default": "Above the line"
+            "default": "High"
           },
           "yBottom": {
             "type": "string",
-            "default": "Below the line"
+            "default": "Low"
           },
           "quadrants": {
             "type": "array",
@@ -957,8 +957,8 @@ const PRIMITIVES = {
       heading: "Matrix",
       xLeft: "Less",
       xRight: "More",
-      yTop: "Above the line",
-      yBottom: "Below the line",
+      yTop: "High",
+      yBottom: "Low",
       quadrants: ["", "", "", ""],
     },
     resizableWidth: true,
@@ -966,8 +966,11 @@ const PRIMITIVES = {
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "text", key: "xLeft", label: "Across: left end" },
       { kind: "text", key: "xRight", label: "Across: right end" },
-      { kind: "text", key: "yTop", label: "Down: upper half" },
-      { kind: "text", key: "yBottom", label: "Down: lower half" },
+      // The down axis is set one letter per line in a gutter, so a long
+      // word costs height that a wide one does not - see
+      // AXIS_LABEL_DEFAULT_UNITS.
+      { kind: "text", key: "yTop", label: "Down: upper half (short)" },
+      { kind: "text", key: "yBottom", label: "Down: lower half (short)" },
       { kind: "lines", key: "quadrants", label: "Box names (4, clockwise from top-left)", rows: 4 },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
@@ -1259,6 +1262,31 @@ export function cleanPropsForSave(
       .filter(Boolean);
   }
   return out;
+}
+
+/**
+ * Can this module be dragged between a page's zones - sidebar to bottom
+ * and back - and dropped into one from the palette?
+ *
+ * Everything the user can place. Which is every registered module except
+ * the ones that are not the user's to move: a spine, a page title, and
+ * freeform-element, which is not grid-placed at all.
+ *
+ * This was a hardcoded list of three slugs in grid.ts, written when three
+ * modules existed. Every module added after it silently could not be
+ * dragged OR dropped - the client asks this before it will show a phantom
+ * over the canvas, so the drag produced no preview and no module, with no
+ * error anywhere. Reported as the matrix not dropping, then "other new
+ * modules dont work either".
+ *
+ * Derived rather than listed, so a module registered tomorrow is
+ * placeable by default and has to opt OUT by being a spine or a title.
+ */
+export function canCrossZones(slug: string): boolean {
+  const definition = MODULE_REGISTRY[slug];
+  if (!definition) return false;
+  if (definition.isSpine || definition.isTitle) return false;
+  return slug !== "freeform-element";
 }
 
 /** The uniform floor, for a module with no rule of its own. */

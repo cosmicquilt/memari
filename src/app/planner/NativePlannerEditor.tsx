@@ -121,12 +121,12 @@ import {
   resolveModulePlacement,
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
-  canCrossZones,
   type GridRect,
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import {
+  canCrossZones,
   moduleContentIsLive,
   cleanPropsForSave,
   isSpineSlug,

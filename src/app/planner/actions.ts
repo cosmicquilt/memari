@@ -16,11 +16,11 @@ import {
   followerRowsAfterGrowth,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
-  canCrossZones,
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
-import { isSpineSlug, findSpine } from "@/lib/moduleRegistry";
+import {
+  canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
@@ -1167,7 +1167,30 @@ export async function addPaletteModuleAt(
       // reassigns this any more - see the sidebar branch below.
       const effectiveRowStart = rowStart;
       const configOverrides: Record<string, unknown> = {};
-      if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker" || moduleTypeSlug === "labeled-box") {
+      // EVERY module takes its width from the zone it lands in. This used
+      // to be gated on three slugs by name - todo-checklist,
+      // habit-tracker, labeled-box - and everything else fell through to
+      // `moduleType.defaultColumnSpan`.
+      //
+      // That is why none of the new modules could be dropped. A matrix or
+      // a progress meter defaults to 12 columns, so dropping one in a
+      // 6-column sidebar asked for a box twice the sidebar's width: it
+      // overlapped the hourly grid, could not be placed, and the drop did
+      // nothing at all. Reported as the matrix drag not working, then
+      // "other new modules dont work either".
+      //
+      // It also broke the reflow for the ones that DID fit, because
+      // siblings are only allowed to shrink when their column range
+      // matches the arrival's exactly (see paletteMinRowSpanById below) -
+      // so a module arriving at anything other than the zone's own width
+      // could never ask for room.
+      //
+      // Nothing here was ever really per-module: the rule is "an arriving
+      // module fills its zone", which is the same rule
+      // moveModuleAcrossZones applies to one crossing into that zone. The
+      // slug list was just the set of modules that existed when it was
+      // written - the pattern the registry exists to retire.
+      {
         // todo-checklist and habit-tracker size *and position* themselves
         // to match whichever page they land on — 3 day-columns wide,
         // starting at column 1 on the left (3-day) page (column 0 is the
@@ -1244,7 +1267,7 @@ export async function addPaletteModuleAt(
           // zone's own bottom edge, appending the new module below
           // everything already there and ignoring the requested row.
           // See the sidebar branch below for why that is gone.
-        } else if (moduleTypeSlug === "todo-checklist" || moduleTypeSlug === "habit-tracker") {
+        } else {
           // Sidebar (side-zone) compact placement — see this block's own
           // top comment for the full reasoning, including why labeled-box
           // doesn't reach this branch at all (a plain `else`, not `else if`,
@@ -1257,9 +1280,10 @@ export async function addPaletteModuleAt(
           // overflowing, its day letters piled up, and an add zone offered
           // under the one-dot stack it formed.
           effectiveColumnSpan = sidebarColumnSpan(pageGrid, hourlyGrid?.columnStart);
-          if (moduleTypeSlug === "todo-checklist") {
-            configOverrides.dayCount = columnSpanToDayCount(pageGrid, effectiveColumnSpan);
-          }
+          // A to-do's dayCount used to be written here too. It is derived
+          // from the span at render (see the registry's derivedProps), so
+          // storing it was a second description of the same width - the
+          // bug the bottom-zone branch above already stopped doing.
 
           // The requested row is honoured, not overridden.
           //

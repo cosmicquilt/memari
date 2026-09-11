@@ -898,13 +898,16 @@ export function resolveModulePlacement(
 // when dragged back to the side zone." The asymmetry was a bug, not a
 // policy.
 //
-// Lives here rather than in either caller because grid.ts is already the
-// shared module both the client editor and the "use server" actions
-// import from — the same reason the placement algorithms sit here
-// instead of being hand-synced copies.
-export function canCrossZones(slug: string): boolean {
-  return slug === "todo-checklist" || slug === "habit-tracker" || slug === "labeled-box";
-}
+// Moved to moduleRegistry.ts, which is where "what a module is" lives -
+// grid.ts cannot import it back without a cycle, so this is a pointer
+// rather than a re-export.
+//
+// It was a list of three slugs, and that list was the whole bug behind
+// the new modules being undraggable. The client asks this before it will
+// even show a phantom over the canvas, so a matrix or a column table
+// returned false, the phantom bailed out, and the drag showed nothing and
+// dropped nothing. Reported as the matrix drag not working, then "other
+// new modules dont work either".
 
 export function gravityRepackAfterDeparture(
   departing: { id: string; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number },
