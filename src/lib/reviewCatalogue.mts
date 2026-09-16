@@ -42,11 +42,17 @@ let markCount = 0;
 function sizeWords(columnSpan: number, rowSpan: number): string {
   const w = (columnSpan * CELL_IN).toFixed(2).replace(/\.?0+$/, "");
   const h = (rowSpan * CELL_IN).toFixed(2).replace(/\.?0+$/, "");
+  // Where it sits, then exactly how wide in the page's own columns.
+  //
+  // The PAGE's 24 columns, not sidebar columns: only 92 of the 122 modules
+  // are a whole number of sidebars wide, so the other 30 would have to read
+  // 1.67 or 2.33. The word beside it is what makes a bare column count
+  // mean something.
   const share =
     columnSpan >= PAGE.gridColumns ? "full width" :
     columnSpan >= PAGE.gridColumns * 0.7 ? "most of the page" :
     columnSpan <= PAGE.gridColumns / 4 ? "sidebar" : "part width";
-  return `${share} · ${w}″ × ${h}″`;
+  return `${share} (${columnSpan} columns) · ${w}″ × ${h}″`;
 }
 
 /** One module at the size it arrives at, drawn on paper. */
