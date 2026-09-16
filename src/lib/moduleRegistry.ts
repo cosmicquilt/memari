@@ -1404,21 +1404,28 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
         type: "object",
         properties: {
           heading: { type: "string", default: "" },
-          // TWO RULES FOR ANY DEFAULT QUOTE, both learned from the one this
+          // THE RULE FOR ANY DEFAULT QUOTE, learned from the one this
           // replaces. It shipped "The obstacle is the way." over the name
           // Marcus Aurelius; that sentence is Ryan Holiday's, the title of
           // his 2014 book glossing Meditations 5.20, and Marcus did not
-          // write it in any translation. So: the words must be VERBATIM
-          // from a source old enough to be public domain, and the name must
-          // be whoever actually wrote THOSE words rather than whoever the
-          // sentiment is associated with. A planner prints its quote a
-          // thousand times; a misattribution is printed a thousand times
-          // too, and unlike a bug nobody can patch the copies.
+          // write it in any translation. A planner prints its quote a
+          // thousand times, and unlike a bug nobody can patch the copies.
           //
-          // This one is Socrates at his trial, Plato's Apology 38a, in the
-          // wording that comes down from Jowett's 1871 translation.
-          body: { type: "string", default: "The unexamined life is not worth living." },
-          attribution: { type: "string", default: "Socrates" },
+          // Copyright is barely the question on a line this short - a
+          // single sentence sits below the threshold of originality. The
+          // question is whether the credit is TRUE. So either quote a
+          // public-domain translation word for word and name its author, or
+          // paraphrase freely and say that you have.
+          //
+          // This is the second: the familiar English rendering of Tao Te
+          // Ching 64, which is nobody's translation in particular. "After"
+          // is the ordinary way of saying the thought is his and the words
+          // are not - the distinction the Marcus Aurelius line collapsed.
+          body: {
+            type: "string",
+            default: "A journey of a thousand miles begins with a single step.",
+          },
+          attribution: { type: "string", default: "after Lao Tzu" },
           align: { type: "string", enum: ["left", "center"], default: "center" },
         },
       },
@@ -1429,8 +1436,8 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     paletteName: "Quote",
     previewProps: {
       heading: "",
-      body: "The unexamined life is not worth living.",
-      attribution: "Socrates",
+      body: "A journey of a thousand miles begins with a single step.",
+      attribution: "after Lao Tzu",
       align: "center",
     },
   }),
