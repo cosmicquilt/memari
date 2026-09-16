@@ -151,38 +151,23 @@ border-radius:20px;padding:8px 14px}
 .faces button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .faces button:last-of-type{font-family:Newsreader,Georgia,serif;font-size:15px}
 :root{--paper:#fbfbfa;--card:#fff;--ink:#231f20;--muted:#6b6f72;--rule:#e2dfd8;
---dot:#d7d3c9;
 --accent:#3f5a6c;--accent-soft:#eef2f5;--shadow:0 1px 2px rgba(35,31,32,.05),0 8px 24px rgba(35,31,32,.06)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
 --paper:#1a1b1c;--card:#fff;--ink:#e9e6e0;--muted:#9aa0a4;--rule:#37393b;
---dot:#3a3d40;
 --accent:#8fb4cc;--accent-soft:#252c31;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3)}}
 :root[data-theme="dark"]{--paper:#1a1b1c;--card:#fff;--ink:#e9e6e0;--muted:#9aa0a4;
---rule:#37393b;--dot:#3a3d40;
---accent:#8fb4cc;--accent-soft:#252c31;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3)}
+--rule:#37393b;--accent:#8fb4cc;--accent-soft:#252c31;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);
 font:16px/1.55 Newsreader,Georgia,serif;padding-block:36px;padding-left:20px;padding-right:20px}
-/* THE PLANNER'S OWN DOT LATTICE, at a whisper.
-   The one ornament on this page that comes from its subject rather than
-   from a stylesheet: the product is a quarter-inch dotted grid, so the
-   page the drawings are laid out on is one too. Its own token per theme,
-   because a grey that reads as a whisper on paper is invisible on a dark
-   ground and vice versa.
-   It stops just past the content rather than bleeding to the window edge,
-   so the page reads as a sheet the cards are resting on instead of as a
-   patterned background. The padding IS that overhang - the content stays
-   1100px and the field extends 24px either side of it. */
-.wrap{max-width:1148px;margin:0 auto;padding-inline:24px;padding-block:20px;
-background-image:radial-gradient(var(--dot) 1px,transparent 1px);
-background-size:24px 24px}
+.wrap{max-width:1100px;margin:0 auto}
 .eyebrow{font:600 11px/1 "Hanken Grotesk",system-ui,sans-serif;letter-spacing:.14em;
 text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 h1{font-size:36px;font-weight:500;margin:0 0 12px;line-height:1.1;text-wrap:balance}
 .lede{margin:0 0 6px;color:var(--muted);max-width:62ch}
 .lede strong{color:var(--ink);font-weight:500}
-nav{display:flex;flex-wrap:wrap;gap:7px;margin:24px -24px 8px;position:sticky;top:0;
-background:var(--paper);padding:10px 24px;z-index:5;border-bottom:1px solid var(--rule)}
+nav{display:flex;flex-wrap:wrap;gap:7px;margin:24px 0 8px;position:sticky;top:0;
+background:var(--paper);padding:10px 0;z-index:5;border-bottom:1px solid var(--rule)}
 nav a{font:500 12px/1 "Hanken Grotesk",system-ui,sans-serif;text-decoration:none;
 color:var(--ink);border:1px solid var(--rule);border-radius:20px;padding:7px 12px;
 display:flex;gap:6px;align-items:center;background:var(--card)}
