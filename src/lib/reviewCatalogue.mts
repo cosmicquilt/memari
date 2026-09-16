@@ -42,17 +42,33 @@ let markCount = 0;
 function sizeWords(columnSpan: number, rowSpan: number): string {
   const w = (columnSpan * CELL_IN).toFixed(2).replace(/\.?0+$/, "");
   const h = (rowSpan * CELL_IN).toFixed(2).replace(/\.?0+$/, "");
-  // Where it sits, then exactly how wide in the page's own columns.
-  //
-  // The PAGE's 24 columns, not sidebar columns: only 92 of the 122 modules
-  // are a whole number of sidebars wide, so the other 30 would have to read
-  // 1.67 or 2.33. The word beside it is what makes a bare column count
-  // mean something.
   const share =
     columnSpan >= PAGE.gridColumns ? "full width" :
     columnSpan >= PAGE.gridColumns * 0.7 ? "most of the page" :
     columnSpan <= PAGE.gridColumns / 4 ? "sidebar" : "part width";
-  return `${share} (${columnSpan} columns) · ${w}″ × ${h}″`;
+  return `${share} (${columnWords(columnSpan)}) · ${w}″ × ${h}″`;
+}
+
+/**
+ * How many COLUMNS wide, in the sense the page is built on: four to a side,
+ * the width of one day on the week spread. Six of the twenty-four grid
+ * cells make one.
+ *
+ * Rounded to the nearest half, and said to be approximate when it is. Only
+ * 92 of the 122 modules are a whole number of columns wide - a table can be
+ * ten cells, which is two thirds of the way into a second column - and
+ * "1.67 columns" tells a reader nothing they wanted to know. The exact size
+ * is the measurement beside it; this is the shape of the thing.
+ */
+function columnWords(columnSpan: number): string {
+  const perColumn = PAGE.gridColumns / 4;
+  const exact = columnSpan / perColumn;
+  const halves = Math.round(exact * 2) / 2;
+  const whole = Math.floor(halves);
+  const half = halves % 1 !== 0;
+  const label = whole === 0 ? "½" : `${whole}${half ? "½" : ""}`;
+  const about = Math.abs(exact - halves) > 1e-9 ? "about " : "";
+  return `${about}${label} ${halves === 1 ? "column" : "columns"}`;
 }
 
 /** One module at the size it arrives at, drawn on paper. */
