@@ -18,7 +18,7 @@ function svgFor(slug: string, columnSpan: number, rowSpan: number, props: Record
   const els = renderModuleInstance(
     { id: "p", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan,
       propValues: props, moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
-    PAGE, "PT Serif"
+    PAGE, "Newsreader"
   );
   const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan, rowSpan });
   const flat = (list: unknown[]): Record<string, unknown>[] =>

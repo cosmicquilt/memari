@@ -14,18 +14,23 @@
 //
 //   npm run check:proof    # writes public/primitive-proof.html
 import { writeFileSync } from "node:fs";
-import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
+import { renderModuleInstance } from "./renderModuleInstance";
 import { moduleDefinition } from "./moduleRegistry";
-import { gridCellToAllocation, cellHeightPx, type PageGrid } from "./grid";
-
-const PAGE: PageGrid = {
-  widthPx: 2175,
-  heightPx: 3075,
-  gridColumns: 24,
-  gridRows: 36,
-  boxInsetPx: 6,
-  marginPx: 187.5,
-};
+import { gridCellToAllocation } from "./grid";
+// Shared with catalogueProof.mts. Two copies of "how a mark becomes SVG"
+// would have drifted, and a proof that draws something other than what the
+// editor draws is worse than none, because it is believed.
+import {
+  PROOF_PAGE as PAGE,
+  escapeXml,
+  toSvg,
+  flatten,
+  latticeDots,
+  latticePattern,
+  PROOF_FONT_LINK,
+  PROOF_FONT_STYLE,
+  PROOF_FONT_SWITCH,
+} from "./proofSvg";
 
 /**
  * What to draw, and where.
@@ -53,7 +58,12 @@ const LAYOUT: Array<{ slug: string; columnStart: number; rowStart: number; colum
   { slug: "text-block", columnStart: 12, rowStart: 20, columnSpan: 12, rowSpan: 7 },
 
   { slug: "progress-meter", columnStart: 0, rowStart: 28, columnSpan: 12, rowSpan: 5 },
-  { slug: "column-table", columnStart: 12, rowStart: 28, columnSpan: 12, rowSpan: 8 },
+  { slug: "column-table", columnStart: 12, rowStart: 28, columnSpan: 12, rowSpan: 5 },
+
+  // Full width, because that is what it is for: one group of marks per day
+  // across the week. Three cells means three strips, and a strip is one
+  // cell - see iconStrip.ts.
+  { slug: "icon-strip", columnStart: 0, rowStart: 33, columnSpan: 24, rowSpan: 3 },
 ];
 
 /** Props that differ from the module's own preview values, where the
@@ -80,6 +90,7 @@ const OVERRIDES: Record<number, Record<string, unknown>> = {
     yBottom: "NOT IMPORTANT",
     quadrants: ["Schedule", "Do", "Delete", "Delegate"],
   },
+  11: { heading: "Water", icon: "droplet", count: 8, groups: 7 },
   10: {
     heading: "Spending",
     columns: ["Date", "Item", "Category", "Amount"],
@@ -89,59 +100,11 @@ const OVERRIDES: Record<number, Record<string, unknown>> = {
   },
 };
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string));
-}
-
-/** One rendered element as SVG. Only the two shapes the app's own renderer
- *  understands, so what this draws is what the editor draws. */
-function toSvg(element: RenderedPolotnoElement): string {
-  if (element.type === "text") {
-    const size = element.fontSize ?? 12;
-    const anchor = element.align === "center" ? "middle" : element.align === "right" ? "end" : "start";
-    const x =
-      anchor === "middle"
-        ? (element.x ?? 0) + (element.width ?? 0) / 2
-        : anchor === "end"
-        ? (element.x ?? 0) + (element.width ?? 0)
-        : element.x ?? 0;
-    return (
-      `<text x="${x}" y="${(element.y ?? 0) + size}" font-size="${size}" ` +
-      `font-family="PT Serif, Georgia, serif" fill="${element.fill ?? "#000"}" ` +
-      `text-anchor="${anchor}" opacity="${element.opacity ?? 1}"` +
-      (element.letterSpacing ? ` letter-spacing="${element.letterSpacing}"` : "") +
-      `>${escapeXml(String(element.text ?? ""))}</text>`
-    );
-  }
-  if (element.type !== "figure") return "";
-  const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
-  const hasFill = !!element.fill && element.fill !== "transparent";
-  const radius = typeof element.cornerRadius === "number" && element.cornerRadius > 0
-    ? ` rx="${element.cornerRadius}"` : "";
-  return (
-    `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}"${radius} ` +
-    `fill="${hasFill ? element.fill : "none"}" ` +
-    (hasStroke ? `stroke="${element.stroke}" stroke-width="${element.strokeWidth}" ` : "") +
-    `opacity="${element.opacity ?? 1}" />`
-  );
-}
-
-function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
-  return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
-}
-
 const parts: string[] = [];
 
 // The lattice itself, under everything. A rule that misses these dots is
 // a rule off the pitch, and there is no way to argue with the picture.
-const pitch = cellHeightPx(PAGE);
-for (let c = 0; c <= PAGE.gridColumns; c++) {
-  for (let r = 0; r <= PAGE.gridRows; r++) {
-    parts.push(
-      `<circle cx="${PAGE.marginPx + c * pitch}" cy="${PAGE.marginPx + r * pitch}" r="2.2" fill="#b9b2a6" />`
-    );
-  }
-}
+parts.push(latticeDots(PAGE));
 
 const missing: string[] = [];
 LAYOUT.forEach((placement, i) => {
@@ -185,10 +148,13 @@ const DETAILS: Array<[string, number, number, number, number, number?]> = [
   ["to-do (control) vs axis-matrix", 187.5, 937.5, 1800, 760],
   ["prompted-lines + rating-strip", 1087.5, 187.5, 900, 750],
   ["progress-meter + column-table with a totals row", 187.5, 2287.5, 1800, 620],
-  ["axis-matrix cross at 1:1 - interior rule weight against the border", 1450, 1300, 420, 300, 2],];
+  ["axis-matrix cross at 1:1 - interior rule weight against the border", 1450, 1300, 420, 300, 2],
+  ["icon-strip - three strips, a cell each, label and glyphs together", 187.5, 2640, 1800, 260, 0.9],
+];
 
 const symbol =
   `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0">` +
+  `<defs>${latticePattern(PAGE)}</defs>` +
   `<symbol id="page" viewBox="0 0 ${PAGE.widthPx} ${PAGE.heightPx}">` +
   `<rect width="${PAGE.widthPx}" height="${PAGE.heightPx}" fill="#fdfcf9" />` +
   parts.join("") +
@@ -202,11 +168,14 @@ const html =
   `<!doctype html><meta charset="utf-8"><title>Primitive proof sheet</title>` +
   // The app's own face. Without it the sheet proves how the modules look
   // in Georgia, which is not a question anyone asked.
-  `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap">` +
-  `<style>body{margin:0;background:#2b2b2b;color:#ddd;` +
+  PROOF_FONT_LINK +
+  `<style>` +
+  PROOF_FONT_STYLE +
+  `body{margin:0;background:#2b2b2b;color:#ddd;` +
   `font:12px ui-monospace,monospace;padding:12px;display:flex;flex-wrap:wrap;` +
   `gap:14px;align-items:flex-start}` +
   `figure{margin:0}figcaption{padding:3px 0}svg.sheet{background:#fdfcf9}</style>` +
+  PROOF_FONT_SWITCH +
   symbol +
   `<figure><figcaption>whole page, 24 x 36 cells</figcaption>` +
   `<svg class="sheet" width="${PAGE.widthPx * 0.31}" height="${PAGE.heightPx * 0.31}" ` +

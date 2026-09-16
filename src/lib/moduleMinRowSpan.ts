@@ -37,20 +37,31 @@ export { MIN_ROW_SPAN, getMinRowSpanForSlug };
  * does so while a drag is actually crossing zones, the server always does
  * — and that is a policy about when shrinking is offered, not a rule about
  * how far things shrink, so it stays where it is.
+ *
+ * `moduleOf` returns the slug AND the stored propValues, because a floor
+ * depends on content: shrinking a sibling to admit an arriving module must
+ * not shrink it past its own rows. Returning both together is deliberate -
+ * a resolver that handed back only a slug is how these floors came to
+ * ignore content in the first place.
  */
 export function minRowSpansForStack(
   pageGrid: PageGrid,
   candidate: { columnStart: number; columnSpan: number },
   others: Array<{ id: string; locked: boolean; columnStart: number; columnSpan: number }>,
-  slugOf: (id: string) => string | undefined
+  moduleOf: (id: string) => { slug: string; propValues: Record<string, unknown> } | undefined
 ): Record<string, number> {
   const floors: Record<string, number> = {};
   for (const other of others) {
     if (other.locked) continue;
     if (other.columnStart !== candidate.columnStart || other.columnSpan !== candidate.columnSpan) continue;
-    const slug = slugOf(other.id);
-    if (!slug) continue;
-    floors[other.id] = getMinRowSpanForSlug(slug, pageGrid, candidate.columnSpan);
+    const sibling = moduleOf(other.id);
+    if (!sibling) continue;
+    floors[other.id] = getMinRowSpanForSlug(
+      sibling.slug,
+      pageGrid,
+      candidate.columnSpan,
+      sibling.propValues
+    );
   }
   return floors;
 }

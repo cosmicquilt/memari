@@ -469,6 +469,39 @@ function RectLayer({
         const hasFill = !!element.fill && element.fill !== "transparent";
         const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
 
+        // A glyph with a real shape - a droplet, a heart - carries its
+        // path alongside the box it is inscribed in. Drawn as a <path>
+        // here and as a plain rect by anything that has not heard of
+        // pathD, which is why it is an extra field rather than a new
+        // subType: see glyphs.ts.
+        //
+        // It keeps the same ref, key and arrival animation as every other
+        // mark, so it is a first-class member of the rect layer and the
+        // resize machinery does not have to know it is curved. What it
+        // does NOT get is geometry interpolation - `d` is baked at the
+        // size it was built for, so a path mark is redrawn rather than
+        // slid. Glyphs are small and a strip rescales as a whole, which is
+        // a cross-fade case anyway; see check:behaviour.
+        const pathD = typeof element.pathD === "string" ? element.pathD : undefined;
+        if (pathD) {
+          return (
+            <path
+              key={element.id}
+              d={pathD}
+              fill={hasFill ? element.fill : "none"}
+              stroke={hasStroke ? element.stroke : undefined}
+              strokeWidth={hasStroke ? strokeWidth : undefined}
+              strokeLinejoin="round"
+              opacity={element.opacity ?? 1}
+              style={{
+                animation: leaving
+                  ? `memari-mark-out ${MARK_FADE_IN_MS}ms ease-out forwards`
+                  : `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
+              }}
+            />
+          );
+        }
+
         return (
           <rect
             key={element.id}

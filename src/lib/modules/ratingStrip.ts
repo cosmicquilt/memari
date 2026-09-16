@@ -16,6 +16,7 @@
 // and moduleRegistry.ts for the classifier that checks it.
 
 import { ptToPx } from "@/lib/print-spec";
+import { glyphElement } from "@/lib/modules/glyphs";
 import { fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
@@ -70,7 +71,7 @@ const ITEM_FONT_PT = 8;
 /** Half a cell each way, centred in its row. */
 const GLYPH_PT = 9;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
-const GLYPH_STROKE_PT = RULE_WIDTH_PT;
+
 const HORIZONTAL_PADDING_PT = 5;
 /**
  * The item names take this share of the width and the scale the rest.
@@ -143,7 +144,25 @@ export function renderRatingStrip(
   const step = scaleWidth / points;
   const centreOf = (value: number) => scaleLeft + step * (value - min) + step / 2;
 
-  const scaleFontSize = ptToPx(SCALE_HEAD_FONT_PT);
+  // Sized to the step, not fixed.
+  //
+  // A scale number had the head font whatever the box was, and "10" is two
+  // glyphs in a cell measured for one: on a 1-to-10 scale in a sidebar it
+  // came out 130% of its own step and ran into its neighbour. Measured in a
+  // browser across the whole catalogue, it was the ONLY label of 898 that
+  // did not fit - and it did not fit in either face, so it was the module
+  // and never the typeface.
+  //
+  // One size for all of them, the way the row names beside them are done:
+  // a scale whose 9 is bigger than its 10 reads as a mistake.
+  const scaleNumbers = fitLabelSet(
+    Array.from({ length: points }, (_, i) => ({
+      text: String(min + i),
+      widthPx: step - ptToPx(1),
+    })),
+    [ptToPx(SCALE_HEAD_FONT_PT), ptToPx(6), ptToPx(5), ptToPx(4.5)]
+  );
+  const scaleFontSize = scaleNumbers.fontSizePx;
   for (let value = min; value <= min + points - 1; value++) {
     elements.push({
       // By VALUE, not by index: the "7" is the same mark whatever else
@@ -211,23 +230,17 @@ export function renderRatingStrip(
     });
 
     for (let value = min; value <= min + points - 1; value++) {
-      elements.push({
-        id: id(`i${i}-v${value}`),
-        type: "figure",
-        subType: "rect",
-        x: centreOf(value) - glyph / 2,
-        y: rowTop + (rowHeight - glyph) / 2,
-        width: glyph,
-        height: glyph,
-        fill: "transparent",
-        stroke: NEAR_BLACK,
-        strokeWidth: ptToPx(GLYPH_STROKE_PT),
-        // A square with its corner radius at half its side IS a circle -
-        // the renderer draws every figure as an SVG rect, so this is how a
-        // ring is spelled here rather than a shape it cannot draw.
-        cornerRadius: circular ? glyph / 2 : 0,
-        opacity: 0.8,
-      });
+      // See glyphs.ts - a circle is a rect with its corner radius at half
+      // its side, because the renderer has no circle to draw.
+      elements.push(
+        glyphElement({
+          id: id(`i${i}-v${value}`),
+          x: centreOf(value) - glyph / 2,
+          y: rowTop + (rowHeight - glyph) / 2,
+          sizePx: glyph,
+          shape: circular ? "circle" : "square",
+        })
+      );
     }
 
     // The separator BELOW each row, skipped where it would land on the

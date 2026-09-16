@@ -55,7 +55,7 @@ function rectIdsOf(slug: string, columnSpan: number, rowSpan: number, propValues
     { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
       moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
     PAGE,
-    "PT Serif"
+    "Newsreader"
   );
   const flatten = (list: unknown[]): Record<string, unknown>[] =>
     list.flatMap((e) => {
@@ -75,7 +75,7 @@ function flatOf(slug: string, columnSpan: number, rowSpan: number, propValues: R
     { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
       moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
     PAGE,
-    "PT Serif"
+    "Newsreader"
   );
   const flatten = (list: unknown[]): Record<string, unknown>[] =>
     list.flatMap((e) => {
@@ -90,7 +90,7 @@ function rectsOf(slug: string, columnSpan: number, rowSpan: number, propValues: 
     { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
       moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
     PAGE,
-    "PT Serif"
+    "Newsreader"
   );
   const flatten = (list: unknown[]): Record<string, unknown>[] =>
     list.flatMap((e) => {

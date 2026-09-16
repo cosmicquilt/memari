@@ -70,7 +70,7 @@ import {
  * and it was dormant until the sidebar narrowed from 497px to 438px on
  * the dot lattice.
  *
- * Measured against real PT Serif in the browser rather than reasoned
+ * Measured against real Newsreader in the browser rather than reasoned
  * about: "THINGS I'M GRATEFUL FOR" at 8pt is 421.3px against 371.3px of
  * available width, and at 7pt is 368.6px - so it fits on one line, at the
  * smaller size, and never needed the tall band. The 0.55 ratio itself

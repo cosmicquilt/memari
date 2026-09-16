@@ -19,7 +19,7 @@
 // starts.
 
 import { ptToPx } from "@/lib/print-spec";
-import { fitLabel } from "@/lib/modules/textFit";
+import { fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -116,6 +116,18 @@ export function renderPromptedLines(
   const blockHeight = promptHeight + answerLineHeight * linesPerPrompt;
 
   const promptSizes = [ptToPx(PROMPT_FONT_PT), ptToPx(7), ptToPx(6), ptToPx(5.5)];
+  // ONE size for all the prompts in a module, chosen so the longest fits.
+  //
+  // Fitted individually, each prompt picked its own size, and an Examen or
+  // a stoic evening review came out with its short questions a couple of
+  // points larger than its long ones - three questions in one box in three
+  // sizes, which reads as a mistake because it is one. This is precisely
+  // the case fitLabelSet was written for, in columnTable, and this file
+  // was still calling fitLabel in a loop.
+  const fitted = fitLabelSet(
+    prompts.map((text) => ({ text: text ?? "", widthPx: geometry.width - padding * 2 })),
+    promptSizes
+  );
   let cursor = bodyTop;
   for (let p = 0; p < prompts.length; p++) {
     // A block that would not fit whole is not drawn at all. A prompt
@@ -128,7 +140,7 @@ export function renderPromptedLines(
     // box - see textFit.ts. Traditional wordings are long ("What did I do
     // badly? What did I do well? What have I left undone?"), so this is
     // the ordinary case here, not the edge one.
-    const prompt = fitLabel(prompts[p] ?? "", geometry.width - padding * 2, promptSizes);
+    const prompt = { text: fitted.texts[p] ?? "", fontSizePx: fitted.fontSizePx };
     elements.push({
       id: id(`p${p}-prompt`),
       type: "text",

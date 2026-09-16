@@ -151,9 +151,9 @@ const AXIS_STACK_PADDING_PT = 4;
 /**
  * The advance the longest DEFAULT down-axis label needs, in letter slots.
  *
- * Stated here rather than measured off the schema because the
- * minimum-height rule may not read propValues (see getMinRowSpanForSlug's
- * comment on why), so it has to size for the module a fresh drop creates.
+ * Stated here rather than measured off the schema. The minimum-height
+ * rule may read propValues now, but this module's floor deliberately does
+ * not: see below for what sizing to the real labels did to it.
  *
  * The defaults were "Above the line" / "Below the line" - fourteen
  * characters, thirteen slots - and sizing the module to print that
@@ -469,7 +469,15 @@ export function renderAxisMatrix(
   // to be centered within quadrant larger font light gray": pale enough to
   // write straight over, which is what a quadrant's own name is for.
   const quadrantFontSize = ptToPx(QUADRANT_FONT_PT);
-  const quadrants = config.quadrants ?? ["", "", "", ""];
+  // UPPERCASE, like every other name a module prints for itself - the
+  // module heading, a column head, a habit row. A quadrant name set in
+  // sentence case ("Resentful", "Afraid") read as writing already in the
+  // box rather than as the box's own label, which is the opposite of what
+  // a pale centred name is for. Cased here, before the fit, so what is
+  // measured is what is drawn.
+  const quadrants = (config.quadrants ?? ["", "", "", ""]).map((name) =>
+    (name ?? "").toUpperCase()
+  );
   const halfHeightPlot = plotHeight / 2;
   const corners: Array<[string, number, number]> = [
     ["tl", plotLeft, gridTop],
@@ -480,7 +488,12 @@ export function renderAxisMatrix(
   // All four names at one size - see fitLabelSet.
   const quadrantLabels = fitLabelSet(
     corners.map((_, q) => ({ text: quadrants[q] ?? "", widthPx: halfWidth - padding * 2 })),
-    [quadrantFontSize, ptToPx(9), ptToPx(8), ptToPx(7)]
+    // Down to 5pt. The ladder stopped at 7 and a quadrant name was cut
+    // instead - "SCHEDU…", "RESENT…" - in a matrix one sidebar column
+    // wide, where a quadrant is about an inch and a half across. A name
+    // small enough to read whole beats a name at a comfortable size with
+    // its end missing, which is the same order the column heads use.
+    [quadrantFontSize, ptToPx(9), ptToPx(8), ptToPx(7), ptToPx(6), ptToPx(5)]
   );
   corners.forEach(([name, x, y], q) => {
     if (!quadrants[q]) return;

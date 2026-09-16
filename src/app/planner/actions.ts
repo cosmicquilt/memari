@@ -19,11 +19,27 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
+import { resolvePairResize } from "@/lib/stackResize";
+
+/** A stored propValues column, as the floor rules want it. Prisma types it
+ *  as JsonValue, and a row written before a prop existed simply has no key -
+ *  getMinRowSpanForSlug layers whatever it gets over the schema defaults. */
+const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
+  (mi.propValues as Record<string, unknown> | null) ?? {};
 import {
   canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
-import { computeMonthCalendar } from "@/lib/monthCalendar";
+import {
+  weekLayout,
+  monthLayout,
+  missingPlacements,
+  weekSidebarBoxes,
+  weekTodoPlacements,
+  weekHourlyPlacements,
+  type PageLayout,
+  type ExistingInstance,
+} from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
   getHourlyGridCoreOffModeMinHeightPx,
@@ -203,58 +219,85 @@ function renderInstanceElements(
 // week-title holds type that cannot shrink, and the other two were sized
 // against the reference - so the difference lands on Notes, the largest
 // box, where two dots are least visible. 36 -> 3/7/11/15, 34 -> 3/7/11/13.
-function weekSidebarTemplateBoxes(gridRows: number): Array<{
-  heading: string;
-  rowStart: number;
-  rowSpan: number;
-}> {
-  return [
-    { heading: "Things I'm Grateful For", rowStart: 3, rowSpan: 7 },
-    { heading: "Reminders", rowStart: 10, rowSpan: 11 },
-    { heading: "Notes", rowStart: 21, rowSpan: Math.max(MIN_ROW_SPAN, gridRows - 21) },
-  ];
-}
+// These three now READ the layout rather than restating it - see
+// src/lib/pageLayouts.ts. They kept their shapes because
+// resetPlannerToTemplate below consumes them in this form; what changed is
+// that the numbers have exactly one home. The comments that used to live
+// here, explaining why Notes absorbs the trim difference and why the to-do
+// starts at row 21, moved there with them.
+const weekSidebarTemplateBoxes = weekSidebarBoxes;
+const weekTodoTemplate = weekTodoPlacements;
+const WEEK_HOURLY_TEMPLATE = weekHourlyPlacements();
 
-// The "TO - DO" checklist below the hourly grid, on BOTH pages of the
-// reference PDF's weekly spread — confirmed directly against
-// hourlyjournal.pdf's own extracted text (pymupdf), which has this
-// exact label as the last text block on both page 3 (left) and page 4
-// (right) of week 1, right after the hourly grid's own time labels.
-// columnStart/columnSpan mirror each page's own hourly-grid-core exactly
-// (see ensureHourlyGridCore's own call sites). rowStart 20 leaves row 19
-// — the row directly below hourly-grid-core's own rowSpan of 19 — empty
-// as a 1-row gap, requested directly; rowSpan 10 fills the rest of the
-// 30-row grid from there. Shared between getOrCreatePlanner (the
-// initial seed) and resetPlannerToTemplate (the debug reset), same
-// reasoning as WEEK_SIDEBAR_TEMPLATE_BOXES above — the two can't
-// independently drift on what "the original layout" is.
-// Where each page's locked hourly block sits. Shared by the initial seed
-// and by resetPlannerToTemplate for the same reason the two constants
-// above are shared - and this one was missing, so the reset restored the
-// block's rowSpan but never its columns, leaving it at its pre-migration
-// width on every reset.
-const WEEK_HOURLY_TEMPLATE = {
-  left: { columnStart: 6, columnSpan: 18 },
-  right: { columnStart: 0, columnSpan: 24 },
-} as const;
+/**
+ * Create whatever a spread is MISSING from its layout, and nothing it
+ * already has.
+ *
+ * This replaced a run of bespoke `ensureX` helpers - one per module in the
+ * arrangement, each repeating the same "is it here? no? create it" shape
+ * with its coordinates inlined. They worked, and they were the reason
+ * there could only ever be one layout per cadence: a second one meant a
+ * second set of them. The arrangement is data now (src/lib/pageLayouts.ts)
+ * and this is the only code that applies it, so a new layout is an entry.
+ *
+ * Runs on EVERY load, not just the first, so "missing" has to be decided
+ * by something that does not go stale - see PresenceRule, and the month
+ * Notes box that was guarded by a row number its own create had moved off.
+ */
+async function applyLayout(
+  layout: PageLayout,
+  pages: Array<{
+    id: string;
+    moduleInstances: Array<{
+      moduleType: { slug: string };
+      columnStart: number | null;
+      propValues: unknown;
+    }>;
+  }>
+): Promise<boolean> {
+  const existing = pages.map((page) =>
+    page.moduleInstances.map(
+      (mi): ExistingInstance => ({
+        slug: mi.moduleType.slug,
+        columnStart: mi.columnStart,
+        heading: (mi.propValues as { heading?: string } | null)?.heading,
+      })
+    )
+  ) as [ExistingInstance[], ExistingInstance[]];
 
-// Also a function of the row count. The hourly block is 20 dots and the
-// gutter below it is 1 on either trim - the hours are the same physical
-// size on Letter as on 7x10 - so the bottom zone absorbs the difference,
-// exactly as Notes does in the sidebar. 36 -> 15 rows, 34 -> 13.
-function weekTodoTemplate(gridRows: number): Array<{
-  page: "left" | "right";
-  columnStart: number;
-  columnSpan: number;
-  rowStart: number;
-  rowSpan: number;
-  dayCount: number;
-}> {
-  const rowSpan = Math.max(MIN_ROW_SPAN, gridRows - 21);
-  return [
-    { page: "left", columnStart: 6, columnSpan: 18, rowStart: 21, rowSpan, dayCount: 3 },
-    { page: "right", columnStart: 0, columnSpan: 24, rowStart: 21, rowSpan, dayCount: 4 },
-  ];
+  const missing = missingPlacements(layout, existing);
+  if (missing.length === 0) return false;
+
+  const types = await prisma.moduleType.findMany({
+    where: { slug: { in: [...new Set(missing.map((m) => m.slug))] } },
+  });
+  const bySlug = new Map(types.map((t) => [t.slug, t]));
+
+  await prisma.moduleInstance.createMany({
+    data: missing.map((placement) => {
+      const type = bySlug.get(placement.slug);
+      if (!type) {
+        // A layout naming a module that is not registered is a bug in the
+        // layout, and a silent skip would leave a hole in the page that
+        // nobody could explain.
+        throw new Error(
+          `${layout.key} places "${placement.slug}", which is not a registered module type`
+        );
+      }
+      return {
+        pageId: pages[placement.page].id,
+        moduleTypeId: type.id,
+        placementMode: "GRID" as const,
+        locked: placement.locked,
+        columnStart: placement.columnStart,
+        rowStart: placement.rowStart,
+        columnSpan: placement.columnSpan ?? type.defaultColumnSpan,
+        rowSpan: placement.rowSpan ?? type.defaultRowSpan,
+        propValues: placement.propValues as Prisma.InputJsonValue,
+      };
+    }),
+  });
+  return true;
 }
 
 /**
@@ -357,177 +400,8 @@ export async function getOrCreatePlanner() {
   const pages = planner.pages;
   const [leftPage, rightPage] = pages;
 
-  const ensureHourlyGridCore = async (
-    page: (typeof pages)[number],
-    dayLabels: Array<{ name: string; date: number }>,
-    placement: { columnStart: number; columnSpan: number },
-    events: Array<{
-      day: number;
-      startTime: string;
-      endTime: string;
-      label: string;
-      source: "manual" | "google-calendar";
-    }> = []
-  ) => {
-    const hasCore = page.moduleInstances.some(
-      (mi) => mi.moduleType.slug === "hourly-grid-core"
-    );
-    if (hasCore) return;
-    const coreType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "hourly-grid-core" },
-    });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: page.id,
-        moduleTypeId: coreType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: placement.columnStart,
-        rowStart: 0,
-        columnSpan: placement.columnSpan,
-        rowSpan: coreType.defaultRowSpan,
-        propValues: {
-          dayCount: dayLabels.length,
-          dayLabels,
-          startTime: "05:30",
-          endTime: "23:30",
-          intervalMinutes: 30,
-          hourLineStyle: "full",
-          dayBorder: false,
-          events,
-        },
-      },
-    });
-    needsRefetch = true;
-  };
-
-  // Left page reserves column 0 for the sidebar (Gratitude/Reminders/
-  // Notes). Right page has no sidebar content yet (To-Do/Habits don't
-  // have renderers), so its 4 day-columns take the full width instead
-  // of leaving a matching gap for a sidebar that isn't there.
-  await ensureHourlyGridCore(
-    leftPage,
-    [
-      { name: "SUNDAY", date: 1 },
-      { name: "MONDAY", date: 2 },
-      { name: "TUESDAY", date: 3 },
-    ],
-    WEEK_HOURLY_TEMPLATE.left
-  );
-  await ensureHourlyGridCore(
-    rightPage,
-    [
-      { name: "WEDNESDAY", date: 4 },
-      { name: "THURSDAY", date: 5 },
-      { name: "FRIDAY", date: 6 },
-      { name: "SATURDAY", date: 7 },
-    ],
-    WEEK_HOURLY_TEMPLATE.right
-  );
-
-  // todo-checklist and habit-tracker used to be auto-placed here as
-  // locked singletons; both were changed to regular, draggable/deletable
-  // user-placed modules instead (addable via the palette like
-  // labeled-box — see PlannerEditorCanvas.tsx's PALETTE_MODULES and
-  // addPaletteModuleAt below), with no auto-heal step for either. That's
-  // still true for habit-tracker. todo-checklist gets its own auto-heal
-  // again below, further down (WEEK_TODO_TEMPLATE) — non-locked, still
-  // fully editable/deletable same as before, just seeded by default now
-  // to match what hourlyjournal.pdf's own weekly spread actually shows
-  // on both pages (a "TO - DO" checklist below the hourly grid), the
-  // same content resetPlannerToTemplate puts back on a reset.
-
-  // week-title and the sidebar boxes only exist on the left page — the
-  // reference's right page has no week-title (it only appears once per
-  // spread), and its column 0 is part of the same full-width hourly-grid-
-  // core/habit-tracker columns rather than a separate sidebar.
-  const hasWeekTitle = leftPage.moduleInstances.some(
-    (mi) => mi.moduleType.slug === "week-title"
-  );
-  if (!hasWeekTitle) {
-    const titleType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "week-title" },
-    });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: leftPage.id,
-        moduleTypeId: titleType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: 0,
-        rowStart: 0,
-        columnSpan: titleType.defaultColumnSpan,
-        rowSpan: titleType.defaultRowSpan,
-        propValues: {
-          weekNumber: 1,
-          weekTotal: 52,
-          dateRangeLabel: "DEC 31 - JAN 6",
-        },
-      },
-    });
-    needsRefetch = true;
-  }
-
-  // Default sidebar content: the 3 labeled boxes from the reference PDF,
-  // sized in the same rough proportions (Notes gets the most room). Only
-  // seeded once — if the sidebar already has any labeled-box instances,
-  // leave it alone rather than fighting with content the user's added.
-  const hasSidebarContent = leftPage.moduleInstances.some(
-    (mi) => mi.moduleType.slug === "labeled-box" && mi.columnStart === 0
-  );
-  if (!hasSidebarContent) {
-    const boxType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "labeled-box" },
-    });
-    await prisma.moduleInstance.createMany({
-      data: weekSidebarTemplateBoxes(leftPage.gridRows).map((box) => ({
-        pageId: leftPage.id,
-        moduleTypeId: boxType.id,
-        placementMode: "GRID" as const,
-        columnStart: 0,
-        rowStart: box.rowStart,
-        columnSpan: boxType.defaultColumnSpan,
-        rowSpan: box.rowSpan,
-        // templateHeading: the "full reset" target (see NativeModule's
-        // own reset-button comment) — captured here, at the one point
-        // this instance's heading is ever set to something meaningful
-        // by the app itself rather than by a user typing into it, and
-        // never touched again afterward (updateModuleConfig's callers
-        // always carry it through unchanged in the propValues they
-        // send — see handleUpdateHeading's own comment).
-        propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
-      })),
-    });
-    needsRefetch = true;
-  }
-
-  // TO-DO checklist below the hourly grid, on both pages — matches
-  // hourlyjournal.pdf's own weekly spread (see WEEK_TODO_TEMPLATE's own
-  // comment for the exact PDF evidence). Same "seed once, don't fight
-  // user content" rule as the sidebar above: each page is checked (and
-  // seeded) independently, so moving/deleting/resizing one page's
-  // checklist doesn't cause the other page's to be touched, and neither
-  // gets recreated once either already has one.
-  const missingChecklistPages = weekTodoTemplate(leftPage.gridRows).filter((todo) => {
-    const page = todo.page === "left" ? leftPage : rightPage;
-    return !page.moduleInstances.some((mi) => mi.moduleType.slug === "todo-checklist");
-  });
-  if (missingChecklistPages.length > 0) {
-    const checklistType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "todo-checklist" },
-    });
-    await prisma.moduleInstance.createMany({
-      data: missingChecklistPages.map((todo) => ({
-        pageId: (todo.page === "left" ? leftPage : rightPage).id,
-        moduleTypeId: checklistType.id,
-        placementMode: "GRID" as const,
-        columnStart: todo.columnStart,
-        rowStart: todo.rowStart,
-        columnSpan: todo.columnSpan,
-        rowSpan: todo.rowSpan,
-        propValues: { dayCount: todo.dayCount },
-      })),
-    });
+  // The whole arrangement, from src/lib/pageLayouts.ts.
+  if (await applyLayout(weekLayout(leftPage.gridRows), [leftPage, rightPage])) {
     needsRefetch = true;
   }
 
@@ -684,7 +558,12 @@ export async function setPlannerTrim(trim: PlannerTrimKey) {
         remaining = 0;
       } else {
         for (let i = spans.length - 1; i >= 0 && remaining < 0; i--) {
-          const floor = getMinRowSpanForSlug(sorted[i].moduleType.slug, pageGrid, sorted[i].columnSpan);
+          const floor = getMinRowSpanForSlug(
+            sorted[i].moduleType.slug,
+            pageGrid,
+            sorted[i].columnSpan,
+            configOf(sorted[i])
+          );
           const give = Math.min(spans[i] - floor, -remaining);
           spans[i] -= Math.max(0, give);
           remaining += Math.max(0, give);
@@ -915,161 +794,11 @@ export async function getOrCreateMonthPlanner() {
   const pages = planner.pages;
   const [leftPage, rightPage] = pages;
 
-  // January 2024 — see this function's own header comment for why a
-  // fixed month rather than "the current month."
-  const calendar = computeMonthCalendar(2024, 1);
-  // See ensureMonthGridCore below for why this number and not another.
-  const MONTH_GRID_ROW_SPAN = 16;
-  const dayNames = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+  // The fixed January 2024 calendar, the 16-row grid span and the day
+  // names all moved into monthLayout() with the placements that used them.
 
-  const ensureMonthGridCore = async (
-    page: (typeof pages)[number],
-    startColumn: number,
-    dayCount: number,
-    placement: { columnStart: number; columnSpan: number }
-  ) => {
-    const hasCore = page.moduleInstances.some((mi) => mi.moduleType.slug === "month-grid-core");
-    if (hasCore) return;
-    const coreType = await prisma.moduleType.findUniqueOrThrow({
-      where: { slug: "month-grid-core" },
-    });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: page.id,
-        moduleTypeId: coreType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: placement.columnStart,
-        rowStart: 0,
-        columnSpan: placement.columnSpan,
-        // 16 rows, not the module type's default. With the header at one
-        // cell less the insets, a span of 1 + weekCount * n gives every
-        // week row exactly n whole cells; at five weeks that is 6, 11, 16,
-        // 21. Sixteen is three cells a week - half of one for the date
-        // strip and two and a half to write in - and leaves a one cell gap
-        // above Notes with Notes reaching the foot of the page.
-        rowSpan: MONTH_GRID_ROW_SPAN,
-        propValues: {
-          dayCount,
-          dayLabels: dayNames.slice(startColumn, startColumn + dayCount).map((name) => ({ name })),
-          weekCount: calendar.weekCount,
-          cells: calendar.weeks.map((week) => week.slice(startColumn, startColumn + dayCount)),
-        },
-      },
-    });
-    needsRefetch = true;
-  };
-
-  // Same column convention as hourly-grid-core: left page reserves
-  // column 0 for the sidebar, right page's day columns take the full
-  // width since it has no sidebar.
-  await ensureMonthGridCore(leftPage, 0, 3, { columnStart: 6, columnSpan: 18 });
-  await ensureMonthGridCore(rightPage, 3, 4, { columnStart: 0, columnSpan: 24 });
-
-  // NOTES sits below month-grid-core on *both* pages (unlike the weekly
-  // layout's todo-checklist/habit-tracker, which only occupy whichever
-  // page needs them) — confirmed directly against the reference: both
-  // page 2 and page 3 have their own NOTES box under the calendar grid,
-  // sized to that page's own day-column width. Same rows-below-the-core
-  // convention as the weekly layout's below-hourly-grid zone, including
-  // the explicit 1-row gap (month-grid-core's own rowSpan is 17, Notes
-  // starts at 18, not flush against it) — the weekly layout's
-  // hourly-grid-core/todo-checklist gap was requested and fixed the same
-  // way (see the corresponding data fix for the already-seeded weekly
-  // planner; this seed just gets a fresh monthly planner right from the
-  // start instead of needing the same fix after the fact).
-  const ensureNotesBox = async (
-    page: (typeof pages)[number],
-    placement: { columnStart: number; columnSpan: number }
-  ) => {
-    // By heading, not by row. This checked rowStart === 18 while the
-    // create below uses 23, so on any planner seeded after that row
-    // changed the check never matched and a second Notes box was added
-    // every time this ran. A guard keyed on the geometry it is guarding
-    // goes stale the moment that geometry moves; the heading is what
-    // actually identifies the box.
-    const hasNotes = page.moduleInstances.some(
-      (mi) =>
-        mi.moduleType.slug === "labeled-box" &&
-        mi.columnStart === placement.columnStart &&
-        (mi.propValues as { heading?: string } | null)?.heading === "Notes"
-    );
-    if (hasNotes) return;
-    const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: page.id,
-        moduleTypeId: boxType.id,
-        placementMode: "GRID",
-        columnStart: placement.columnStart,
-        // One cell clear of the calendar, and down to the foot of the page
-        // rather than stopping short of it.
-        rowStart: MONTH_GRID_ROW_SPAN + 1,
-        columnSpan: placement.columnSpan,
-        rowSpan: page.gridRows - (MONTH_GRID_ROW_SPAN + 1),
-        propValues: { heading: "Notes", ruled: false },
-      },
-    });
-    needsRefetch = true;
-  };
-  await ensureNotesBox(leftPage, { columnStart: 6, columnSpan: 18 });
-  await ensureNotesBox(rightPage, { columnStart: 0, columnSpan: 24 });
-
-  const hasMonthTitle = leftPage.moduleInstances.some((mi) => mi.moduleType.slug === "month-title");
-  if (!hasMonthTitle) {
-    const titleType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "month-title" } });
-    await prisma.moduleInstance.create({
-      data: {
-        pageId: leftPage.id,
-        moduleTypeId: titleType.id,
-        placementMode: "GRID",
-        locked: true,
-        columnStart: 0,
-        rowStart: 0,
-        columnSpan: titleType.defaultColumnSpan,
-        rowSpan: titleType.defaultRowSpan,
-        propValues: { monthName: "JANUARY" },
-      },
-    });
-    needsRefetch = true;
-  }
-
-  // Default sidebar content: the 4 labeled boxes from the reference
-  // PDF's monthly layout, proportioned the same way as their measured
-  // heights in the reference (Tentative Dates gets the most room, same
-  // "measure, don't guess" discipline as the weekly sidebar's own
-  // rowSpans). Only seeded once, same "don't fight user content" rule as
-  // the weekly sidebar.
-  const hasSidebarContent = leftPage.moduleInstances.some(
-    (mi) => mi.moduleType.slug === "labeled-box" && mi.columnStart === 0
-  );
-  if (!hasSidebarContent) {
-    const boxType = await prisma.moduleType.findUniqueOrThrow({ where: { slug: "labeled-box" } });
-    const defaultBoxes: Array<{ heading: string; rowStart: number; rowSpan: number }> = [
-      // Starts at row 2 — month-title occupies rows 0-1, same convention
-      // as week-title.
-      { heading: "Monthly Mantra", rowStart: 2, rowSpan: 4 },
-      { heading: "Priorities", rowStart: 6, rowSpan: 6 },
-      { heading: "Reminders", rowStart: 12, rowSpan: 7 },
-      // Runs to the foot of the page rather than to a fixed span. These
-      // rows were laid out when a page was 30 of them; on 36 the last box
-      // stopped six short and left a band of nothing under it, the same
-      // way Notes did before it was given the rest of its column.
-      { heading: "Tentative Dates", rowStart: 19, rowSpan: leftPage.gridRows - 19 },
-    ];
-    await prisma.moduleInstance.createMany({
-      data: defaultBoxes.map((box) => ({
-        pageId: leftPage.id,
-        moduleTypeId: boxType.id,
-        placementMode: "GRID" as const,
-        columnStart: 0,
-        rowStart: box.rowStart,
-        columnSpan: boxType.defaultColumnSpan,
-        rowSpan: box.rowSpan,
-        // See getOrCreatePlanner's identical field for why.
-        propValues: { heading: box.heading, ruled: false, templateHeading: box.heading },
-      })),
-    });
+  // The whole arrangement, from src/lib/pageLayouts.ts.
+  if (await applyLayout(monthLayout(leftPage.gridRows), [leftPage, rightPage])) {
     needsRefetch = true;
   }
 
@@ -1333,7 +1062,14 @@ export async function addPaletteModuleAt(
       //
       // Applied last, after every branch above has settled
       // effectiveColumnSpan, because the minimum depends on the width.
-      effectiveRowSpan = getMinRowSpanForSlug(moduleTypeSlug, pageGrid, effectiveColumnSpan);
+      effectiveRowSpan = getMinRowSpanForSlug(
+        moduleTypeSlug,
+        pageGrid,
+        effectiveColumnSpan,
+        // A module that does not exist yet has no stored props - only
+        // whatever this drop overrides. The rest comes from the schema.
+        configOverrides
+      );
       const candidate = clampGridPlacement(pageGrid, {
         columnStart: effectiveColumnStart,
         rowStart: effectiveRowStart,
@@ -1428,7 +1164,12 @@ export async function addPaletteModuleAt(
         if (o.columnStart !== effectiveColumnStart || o.columnSpan !== effectiveColumnSpan) continue;
         const otherMi = page.moduleInstances.find((mi) => mi.id === o.id);
         if (!otherMi) continue;
-        paletteMinRowSpanById[o.id] = getMinRowSpanForSlug(otherMi.moduleType.slug, pageGrid, effectiveColumnSpan);
+        paletteMinRowSpanById[o.id] = getMinRowSpanForSlug(
+          otherMi.moduleType.slug,
+          pageGrid,
+          effectiveColumnSpan,
+          configOf(otherMi)
+        );
       }
       const { placement: resolvedPlacement, reflow: paletteReflow } = resolveModulePlacement(
         pageGrid,
@@ -1723,7 +1464,12 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
       configOverrides.dayCount = columnSpanToDayCount(targetPageGrid, effectiveColumnSpan);
     }
   }
-  const effectiveRowSpan = getMinRowSpanForSlug(slug, targetPageGrid, effectiveColumnSpan);
+  const effectiveRowSpan = getMinRowSpanForSlug(slug, targetPageGrid, effectiveColumnSpan, {
+    // Its own stored props, plus anything this move overrides (a to-do's
+    // dayCount changes with the zone). Content travels with the module.
+    ...configOf(instance),
+    ...configOverrides,
+  });
 
   const sourceOthers: Array<{ id: string; locked: boolean; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }> =
     [];
@@ -1793,9 +1539,10 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   }
 
   const candidate = { columnStart: effectiveColumnStart, rowStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
-  const minRowSpanById = minRowSpansForStack(targetPageGrid, candidate, targetOthers, (id) =>
-    targetPage.moduleInstances.find((mi) => mi.id === id)?.moduleType.slug
-  );
+  const minRowSpanById = minRowSpansForStack(targetPageGrid, candidate, targetOthers, (id) => {
+    const mi = targetPage.moduleInstances.find((m) => m.id === id);
+    return mi ? { slug: mi.moduleType.slug, propValues: configOf(mi) } : undefined;
+  });
 
   const { placement: resolved, reflow } = resolveModulePlacement(
     targetPageGrid,
@@ -2177,7 +1924,19 @@ export async function resizeAdjacentModules(
   const [top, bottom] = await Promise.all([
     prisma.moduleInstance.findFirst({
       where: { id: topInstanceId, page: { planner: { ownerId: userId } } },
-      include: { page: { include: { planner: { select: { theme: true } } } }, moduleType: true },
+      include: {
+        page: {
+          include: {
+            planner: { select: { theme: true } },
+            // The rest of the column, which this used to do without: the
+            // boundary can now slide the stack down into free space when
+            // the module below has no rows to give, and that needs to know
+            // what is below and where the page runs out. See stackResize.ts.
+            moduleInstances: { include: { moduleType: true } },
+          },
+        },
+        moduleType: true,
+      },
     }),
     prisma.moduleInstance.findFirst({
       where: { id: bottomInstanceId, page: { planner: { ownerId: userId } } },
@@ -2223,19 +1982,74 @@ export async function resizeAdjacentModules(
   // per-slug minimums client-side so a drag never visually promises a
   // size the server would then further clamp.
   const pageGrid = pageGridFor(top.page);
-  const topMinRowSpan = getMinRowSpanForSlug(top.moduleType.slug, pageGrid, top.columnSpan);
-  const bottomMinRowSpan = getMinRowSpanForSlug(bottom.moduleType.slug, pageGrid, bottom.columnSpan);
-  const clampedDelta = Math.max(
-    -(top.rowSpan - topMinRowSpan),
-    Math.min(bottom.rowSpan - bottomMinRowSpan, deltaRows)
+  const topMinRowSpan = getMinRowSpanForSlug(top.moduleType.slug, pageGrid, top.columnSpan, configOf(top));
+  const bottomMinRowSpan = getMinRowSpanForSlug(
+    bottom.moduleType.slug,
+    pageGrid,
+    bottom.columnSpan,
+    configOf(bottom)
   );
-  if (clampedDelta === 0) {
+  // Everything in this exact column, at or below the boundary. A stack is
+  // gravity-packed, so these are contiguous and the only free rows are
+  // under all of them.
+  const inColumn = top.page.moduleInstances.filter(
+    (mi) =>
+      mi.columnStart === top.columnStart &&
+      mi.columnSpan === top.columnSpan &&
+      mi.rowStart !== null &&
+      mi.rowStart >= bottom.rowStart!
+  );
+  const stackBottomEnd = inColumn.reduce(
+    (lowest, mi) => Math.max(lowest, (mi.rowStart ?? 0) + mi.rowSpan),
+    bottom.rowStart + bottom.rowSpan
+  );
+  // Whatever bounds the stack from below - a locked block sharing this
+  // column range, or the page itself. Same overlap test resizeStackFromBottom
+  // uses, so the two handles agree about where the page runs out.
+  const columnsOverlap = (mi: { columnStart: number | null; columnSpan: number }) =>
+    mi.columnStart !== null &&
+    mi.columnStart < top.columnStart! + top.columnSpan &&
+    mi.columnStart + mi.columnSpan > top.columnStart!;
+  // ANY module below that overlaps this column range bounds the slide, not
+  // only a locked one - resizeStackFromBottom counts only locked blocks, and
+  // that is safe for it because it grows a module inside its own column.
+  // This operation MOVES modules downward, so an unlocked full-width block
+  // sitting under a sidebar stack is just as solid an obstacle; treating it
+  // as free space slides the stack straight through it.
+  const inStack = new Set(inColumn.map((mi) => mi.id));
+  const bound = top.page.moduleInstances.reduce(
+    (lowest, mi) =>
+      !inStack.has(mi.id) &&
+      mi.rowStart !== null &&
+      mi.rowStart >= stackBottomEnd &&
+      columnsOverlap(mi)
+        ? Math.min(lowest, mi.rowStart)
+        : lowest,
+    pageGrid.gridRows
+  );
+
+  const { topDelta, pushDown } = resolvePairResize({
+    requestedDelta: deltaRows,
+    topRowSpan: top.rowSpan,
+    topMinRowSpan,
+    bottomRowSpan: bottom.rowSpan,
+    bottomMinRowSpan,
+    spaceBelow: Math.max(0, bound - stackBottomEnd),
+  });
+  if (topDelta === 0) {
     throw new Error("Nothing to resize");
   }
 
-  const newTopRowSpan = top.rowSpan + clampedDelta;
-  const newBottomRowStart = bottom.rowStart + clampedDelta;
-  const newBottomRowSpan = bottom.rowSpan - clampedDelta;
+  const newTopRowSpan = top.rowSpan + topDelta;
+  const newBottomRowStart = bottom.rowStart + topDelta;
+  // The bottom SHRINKS by whatever was not found in the space below, so a
+  // pure slide leaves it the size it was - see PairResize.
+  const newBottomRowSpan = bottom.rowSpan - (topDelta - pushDown);
+
+  // Anything under the bottom module slides by the same amount it did.
+  const moved = pushDown > 0
+    ? inColumn.filter((mi) => mi.id !== bottom.id)
+    : [];
 
   const [updatedTop, updatedBottom] = await prisma.$transaction([
     prisma.moduleInstance.update({
@@ -2246,6 +2060,12 @@ export async function resizeAdjacentModules(
       where: { id: bottom.id },
       data: { rowStart: newBottomRowStart, rowSpan: newBottomRowSpan },
     }),
+    ...moved.map((mi) =>
+      prisma.moduleInstance.update({
+        where: { id: mi.id },
+        data: { rowStart: (mi.rowStart ?? 0) + pushDown },
+      })
+    ),
   ]);
 
   const fontFamily = fontFamilyFromTheme(top.page.planner.theme);
@@ -2259,6 +2079,10 @@ export async function resizeAdjacentModules(
       rowStart: updatedBottom.rowStart,
       rowSpan: updatedBottom.rowSpan,
     },
+    // Only ever non-empty when the boundary slid the stack rather than
+    // shrinking the module below it. Their content is unchanged - only
+    // where they sit - so no re-render is returned with them.
+    moved: moved.map((mi) => ({ id: mi.id, rowStart: (mi.rowStart ?? 0) + pushDown })),
   };
 }
 
@@ -2339,13 +2163,35 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   // keeping Prisma's full include shape — `bottom` and a `siblings` entry
   // are structurally different types (only `bottom`'s own query included
   // its `page`), which a shared array can't hold as-is.
-  type StackMember = { id: string; rowStart: number; rowSpan: number; slug: string };
-  const stack: StackMember[] = [{ id: bottom.id, rowStart: bottomRowStart, rowSpan: bottom.rowSpan, slug: bottom.moduleType.slug }];
+  type StackMember = {
+    id: string;
+    rowStart: number;
+    rowSpan: number;
+    slug: string;
+    // Carried alongside the slug because the floor depends on it - a
+    // tracker may not be shrunk past its own named rows.
+    propValues: Record<string, unknown>;
+  };
+  const stack: StackMember[] = [
+    {
+      id: bottom.id,
+      rowStart: bottomRowStart,
+      rowSpan: bottom.rowSpan,
+      slug: bottom.moduleType.slug,
+      propValues: configOf(bottom),
+    },
+  ];
   let topCursor = bottomRowStart;
   for (;;) {
     const above = siblings.find((mi) => mi.rowStart + mi.rowSpan === topCursor);
     if (!above) break;
-    stack.unshift({ id: above.id, rowStart: above.rowStart, rowSpan: above.rowSpan, slug: above.moduleType.slug });
+    stack.unshift({
+      id: above.id,
+      rowStart: above.rowStart,
+      rowSpan: above.rowSpan,
+      slug: above.moduleType.slug,
+      propValues: configOf(above),
+    });
     topCursor = above.rowStart;
   }
 
@@ -2359,7 +2205,9 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   // siblings filter just above already requires every stack member to
   // share bottom's own columnSpan (mi.columnSpan === bottom.columnSpan),
   // so they're guaranteed identical anyway.
-  const minSpans = stack.map((mi) => getMinRowSpanForSlug(mi.slug, pageGrid, bottom.columnSpan));
+  const minSpans = stack.map((mi) =>
+    getMinRowSpanForSlug(mi.slug, pageGrid, bottom.columnSpan, mi.propValues)
+  );
   const totalShrinkable = originalSpans.reduce((sum, span, i) => sum + (span - minSpans[i]), 0);
 
   const stackBottom = bottomRowStart + bottom.rowSpan;
@@ -2761,7 +2609,7 @@ export async function updateHourlySettings(settings: {
       let belowSpans = belowMembers.map((mi) => mi.rowSpan);
       if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
         const floors = belowMembers.map((mi) =>
-          getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan)
+          getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan, configOf(mi))
         );
         const result = takeRowsFairly(belowSpans, floors, belowCurrentTotal - availableForBelow);
         if (result.unmet > 0) {

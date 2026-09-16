@@ -23,7 +23,7 @@
 // none of the ones above.
 
 import { ptToPx } from "@/lib/print-spec";
-import { fitLabel, fitLabelSet } from "@/lib/modules/textFit";
+import { columnWidthsForLabels, fitLabel, fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -137,23 +137,58 @@ export function renderColumnTable(
   // column to nothing and lose its divider, so every column gets at least
   // a nominal share.
   const weights = columns.map((_, c) => Math.max(0.0001, config.weights?.[c] ?? 1));
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+  // The widths come from the WORDS as well as the weights: a column is
+  // never narrower than its own head, and only what is left over is
+  // divided in proportion. See columnWidthsForLabels - previously this
+  // divided strictly by weight and the head had to shrink and then be cut
+  // to fit whatever it was given, while the column beside it had room to
+  // spare.
+  //
+  // The first column also has to hold the totals label, which is a
+  // different and often longer word than its head ("Date" against
+  // "Total"), and sizing it for the head alone is what printed "Tot…".
+  const headSizes = [ptToPx(COLUMN_HEAD_FONT_PT), ptToPx(6), ptToPx(5)];
+  const claims = columns.map((name, c) =>
+    c === 0 && config.totalsRow && config.totalsLabel
+      ? (name.length >= config.totalsLabel.length ? name : config.totalsLabel)
+      : name
+  );
+  const layout = columnWidthsForLabels({
+    labels: claims,
+    weights,
+    totalWidthPx: geometry.width,
+    paddingPx: padding,
+    sizesPx: headSizes,
+  });
   let x = geometry.x;
-  const bounds = weights.map((w) => {
+  const bounds = layout.widths.map((width) => {
     const start = x;
-    x += (geometry.width * w) / totalWeight;
+    x += width;
     return { start, end: x };
   });
 
-  // One size across every head: see fitLabelSet. Sized before the loop so
-  // no column can pick its own.
-  const headSizes = [ptToPx(COLUMN_HEAD_FONT_PT), ptToPx(6), ptToPx(5)];
+  // One size across every head: see fitLabelSet. The size is already
+  // settled by the width allocation above; this is the last-resort cut for
+  // a box too narrow to hold its own words at any size.
+  // The inset the heads were MEASURED against, which is the one they have
+  // to be drawn at - see columnWidthsForLabels, which tightens it rather
+  // than cut a word. Body cells keep the full padding; only the head row
+  // and the totals label move.
+  const headPadding = layout.paddingPx;
+  // Measured against the ALLOCATED width, not against `end - start`.
+  //
+  // A column the allocator had to widen is given exactly what its head
+  // needs, so the comparison is an equality - and `bounds` is a running
+  // sum, so `end - start` comes back a fraction of a float short and the
+  // head is cut by a millionth of a pixel. That is how "Category" became
+  // "Catego…" in a table that had been sized precisely to hold it.
   const heads = fitLabelSet(
     columns.map((name, c) => ({
       text: name,
-      widthPx: bounds[c].end - bounds[c].start - padding * 2,
+      widthPx: layout.widths[c] - headPadding * 2,
     })),
-    headSizes
+    [layout.fontSizePx]
   );
 
   columns.forEach((name, c) => {
@@ -167,9 +202,9 @@ export function renderColumnTable(
       elements.push({
         id: id(`c${c}-head`),
         type: "text",
-        x: start + padding,
+        x: start + headPadding,
         y: headsTop + (columnHeadHeight - headFontSize * 1.2) / 2,
-        width: end - start - padding * 2,
+        width: end - start - headPadding * 2,
         height: headFontSize * 1.2,
         text: heads.texts[c],
         fontSize: headFontSize,
@@ -219,37 +254,56 @@ export function renderColumnTable(
     // alternate thick and thin.
     if (Math.abs(lineBottom - bodyBottom) < 0.5) continue;
 
-    const isTotalsRule = config.totalsRow && r === rowCount - 2;
+    // The heavy rule goes above the LAST band, because that is where the
+    // totals row is. It read `rowCount - 2`, which put the sum in the
+    // second-to-last row and left a 69px strip of empty table underneath
+    // it - a total that is not the bottom line of its own table. rowCount
+    // is a floor, so there is always a short final band after the last
+    // whole row (the 6px inset debt, see moduleFrame's contentTopPx); that
+    // band is the totals row.
+    const isTotalsRule = config.totalsRow && r === rowCount - 1;
+    // A totals row is ruled OFF from the body rather than merely ruled:
+    // the line above it is the full-weight one, which is how a sum reads as
+    // separate from what it sums.
+    const thickness = isTotalsRule ? ruleWidth * 2 : ruleWidth;
     elements.push({
       id: id(`row${r}-rule`),
       type: "figure",
       subType: "rect",
       x: geometry.x,
-      y: lineBottom - ruleWidth / 2,
-      // A totals row is ruled OFF from the body rather than merely ruled:
-      // the line above it is the full-weight one, which is how a sum reads
-      // as separate from what it sums.
+      // Centred on the row line, from ITS OWN thickness. This read
+      // `lineBottom - ruleWidth / 2` while the height doubled beside it, so
+      // the heavier rule grew downward from where a thin one would start
+      // and its centre sat half a hairline - 0.6px - below the lattice.
+      // Small enough to look like nothing and be a misprint, and the pitch
+      // test caught it as 240 uneven gaps.
+      y: lineBottom - thickness / 2,
       width: geometry.width,
-      height: isTotalsRule ? ruleWidth * 2 : ruleWidth,
+      height: thickness,
       fill: NEAR_BLACK,
       stroke: "none",
       opacity: isTotalsRule ? 1 : 0.6,
     });
   }
 
-  if (config.totalsRow && rowCount >= 2 && config.totalsLabel) {
+  if (config.totalsRow && rowCount >= 1 && config.totalsLabel) {
+    const totalsTop = bodyTop + rowHeight * rowCount;
+    const totalsHeight = bodyBottom - totalsTop;
+    // At the size the heads settled on - the first column was widened to
+    // hold this word, so it fits, and a totals row set larger or smaller
+    // than the heads above it reads as a different table.
     const totals = fitLabel(
       config.totalsLabel,
-      bounds[0].end - bounds[0].start - padding * 2,
-      [ptToPx(COLUMN_HEAD_FONT_PT), ptToPx(6), ptToPx(5)]
+      layout.widths[0] - headPadding * 2,
+      [layout.fontSizePx]
     );
     const labelFontSize = totals.fontSizePx;
     elements.push({
       id: id("totals-label"),
       type: "text",
-      x: geometry.x + padding,
-      y: bodyTop + rowHeight * (rowCount - 1) + (rowHeight - labelFontSize * 1.2) / 2,
-      width: bounds[0].end - bounds[0].start - padding * 2,
+      x: geometry.x + headPadding,
+      y: totalsTop + (totalsHeight - labelFontSize * 1.2) / 2,
+      width: bounds[0].end - bounds[0].start - headPadding * 2,
       height: labelFontSize * 1.2,
       text: totals.text,
       fontSize: labelFontSize,

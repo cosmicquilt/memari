@@ -1,6 +1,18 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, Prisma } from "../src/generated/prisma/client";
 import { MODULE_TYPE_SEED } from "../src/lib/moduleRegistry";
+import { readFileSync } from "node:fs";
+
+// `prisma db seed` loads .env for us; `npx tsx prisma/seed.mts` does not,
+// and this file read process.env.DATABASE_URL either way - so running it
+// directly failed with ECONNREFUSED against an undefined connection
+// string, which reads as "the database is down" rather than "no one told
+// me where it is". Same four lines scripts/check-week-page.mts uses, and
+// safe under both: an already-set variable wins.
+for (const line of readFileSync(new URL("../.env", import.meta.url), "utf8").split(/\r?\n/)) {
+  const match = /^\s*([A-Z_]+)\s*=\s*"?([^"\r\n]*)"?\s*$/.exec(line);
+  if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });

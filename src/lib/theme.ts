@@ -2,9 +2,9 @@
 // next/font/google in src/app/layout.tsx — literal-string fontFamily
 // values in rendered element data resolve against those registered
 // @font-face rules regardless of which component rendered the element
-// (confirmed against the same mechanism PT Serif already relied on).
+// (confirmed against the same mechanism Newsreader already relied on).
 
-export const FONT_SERIF = "PT Serif";
+export const FONT_SERIF = "Newsreader";
 export const FONT_SANS = "Hanken Grotesk";
 
 export type FontChoice = "serif" | "sans";

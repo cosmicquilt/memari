@@ -32,12 +32,26 @@
 // tsx/actions.ts's getMinRowSpanForSlug) stay correct automatically
 // regardless of which zone a given instance ends up in.
 
+import { estimateTextWidthPx, fitLabel, fitLabelSet } from "./textFit";
 import { ptToPx } from "@/lib/print-spec";
 import {
-  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
+  HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
+  type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type HabitTrackerConfig = {
   habits?: string[]; // pre-filled habit names, optional
+  /** Printed in the header band. Defaults to "HABITS". */
+  heading?: string;
+  /**
+   * The column headings across the top. Defaults to a week.
+   *
+   * This is what makes the module a row-BY-COLUMN tracker rather than a
+   * habit-by-week one: a chore chart's columns are people, a bill
+   * tracker's are months, a salah tracker's are the five prayers. The
+   * geometry is identical - named rows down the left, marks in the grid.
+   */
+  columns?: string[];
 };
 
 export type RenderedElement = {
@@ -51,14 +65,21 @@ export type RenderedElement = {
 };
 
 const NEAR_BLACK = "#231F20";
-// The reference's header row (top border to header/body divider) measures
-// 587.02 to 604.14, i.e. 17.12pt. Now 15.12pt — exactly 63 print
-// px, which is one dot pitch (75) less the box inset at both ends (12).
-// That is the one header height leaving a whole number of dots beneath it
-// at every row span, so the rows below tile the box with nothing left
-// over. Same value and same reason as todoChecklist.ts, which also means
-// the two headers finally match each other when stacked.
-const HEADER_HEIGHT_PT = 15.12;
+// The header band the renderer actually draws.
+//
+// Taken from moduleFrame rather than restated, because the renderers here
+// do not use a constant at all - they call contentTopPx, which lands the
+// band on the next lattice line down (pitch 75 less the box inset 6 = 69)
+// and falls back to exactly this constant when there is no lattice.
+//
+// This file used to keep its own 15.12pt, i.e. 63px, described as "one dot
+// pitch less the box inset at BOTH ends". That double-counted the inset:
+// the band starts at the ink box's own top, which is already inset once.
+// The number was six pixels short of the drawing and only ever reached the
+// minimum-height rule, where six pixels is a whole row - so every named
+// tracker's floor came out one row below what its rows actually need, and
+// the last row was silently dropped at the minimum. See
+// minRowSpanFloors.test.mts.
 // The house heading size, from moduleFrame - the same 8pt labeled-box and
 // the seven drawing primitives use.
 //
@@ -73,7 +94,7 @@ const HEADER_HEIGHT_PT = 15.12;
 // the header BAND stays 15.12pt, so no row count moves.
 const HEADER_FONT_PT = HEADING_SIZES_PT[0];
 // Bumped from the reference's measured ~6.7pt (bbox-height-derived) for
-// legibility — PT Serif renders a hair smaller than the reference's
+// legibility — Newsreader renders a hair smaller than the reference's
 // MinionPro at the same nominal size.
 const DAY_LETTER_FONT_PT = 8;
 const BORDER_WIDTH_PT = 0.5;
@@ -91,11 +112,11 @@ const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 // below), which is what stops the day cells stretching into rectangles in
 // a wider allocation.
 //
-// This used to track HEADER_HEIGHT_PT so the HEADER row's day-letter cells
-// were square. It cannot do both: the header has to be 63px for the rows
-// below it to tile the box exactly, while the body cells have to be 75px
-// to be one cell. The body grid wins, so the seven letter cells in the
-// header band are now slightly wide (75 x 63) rather than square.
+// This used to track the header height so the HEADER row's day-letter
+// cells were square. It cannot do both: the header is the frame's own band
+// (69px, one lattice line down) while the body cells have to be 75px to be
+// one cell. The body grid wins, so the seven letter cells in the header
+// band are slightly wide (75 x 69) rather than square.
 const DAY_COLUMN_WIDTH_PT = 18;
 // Sun/Mon/Tue/Wed/Thu/Fri/Sat — 7 entries. Reported directly: "missing
 // a t for thursday" — this had dropped straight to Friday, only 6
@@ -107,6 +128,16 @@ const DAY_COLUMN_WIDTH_PT = 18;
 // (including a live-resized one — see renderHabitTracker's own
 // contentIsLive caller, NativePlannerEditor.tsx, which calls this
 // exact function during a resize preview too).
+/**
+ * The columns a tracker shows when its config does not name any.
+ *
+ * A week, which is what this module was built for. The catalogue needs
+ * other sets against the same geometry - people for a chore chart, months
+ * for a bill tracker, five prayers for a salah tracker - so the columns
+ * are configurable and these are only the default. The primitive is a
+ * row-by-column tracker; it was a week-by-habit one by accident of being
+ * written once.
+ */
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 // Below this allocated width, renderHabitTracker switches to the compact
@@ -128,7 +159,16 @@ export function isHabitTrackerCompact(widthPx: number): boolean {
 // this row holds one short line of text and nothing else, so it only
 // needs to comfortably fit that text.
 const NAME_ROW_HEIGHT_PT = 12;
-// Compact layout only: opacity for the "HABIT" placeholder label a row
+// Opacity for a row's NAME, placeholder or real.
+//
+// It began as the compact layout's "HABIT" placeholder only. Asked to
+// extend to real names too - "for things that are drawn by habit tracker
+// use the format for the text where 'habit' is grey and all caps" - so a
+// prefilled row now reads the same way the empty one does: a pale
+// uppercase label for the row, not writing already in it. Used by both
+// layouts.
+//
+// Originally: opacity for the "HABIT" placeholder label a row
 // shows when no real name has been filled in for it — a side-placed
 // habit tracker has nowhere else to indicate what each row is for, since
 // the compact layout has no separate name column left to leave blank.
@@ -145,17 +185,29 @@ const PLACEHOLDER_OPACITY = 0.45;
 // since the compact layout's own nominal row (a name row + a square,
 // whose size depends on the allocated width) is a different height than
 // the wide layout's fixed ROW_HEIGHT_PT.
-export function getHabitTrackerRowMetricsPx(widthPx?: number): {
+export function getHabitTrackerRowMetricsPx(
+  widthPx?: number,
+  // How many columns this tracker actually has. The compact row is a name
+  // row plus ONE SQUARE CELL, and a cell is width/columns, so a tracker of
+  // twelve months has a shorter row than a tracker of seven days. This
+  // divided by DAY_LETTERS.length unconditionally, from back when a
+  // tracker was always a week - which over-stated the floor for a bill
+  // tracker (harmless) and UNDER-stated it for a five-prayer one, letting
+  // it be placed too short for the two pairs the floor is meant to
+  // guarantee. The floor rule passes the real count now; the default is
+  // for a tracker that names no columns, which is a week.
+  columnCount: number = DAY_LETTERS.length
+): {
   headerHeightPx: number;
   nominalRowHeightPx: number;
   rowLineWidthPx: number;
 } {
   const isCompact = widthPx !== undefined && isHabitTrackerCompact(widthPx);
   const nominalRowHeightPx = isCompact
-    ? ptToPx(NAME_ROW_HEIGHT_PT) + widthPx! / DAY_LETTERS.length
+    ? ptToPx(NAME_ROW_HEIGHT_PT) + widthPx! / Math.max(1, columnCount)
     : ptToPx(ROW_HEIGHT_PT);
   return {
-    headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
+    headerHeightPx: ptToPx(FRAME_HEADER_HEIGHT_PT),
     nominalRowHeightPx,
     rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
   };
@@ -186,6 +238,8 @@ export function renderHabitTracker(
   // directly beneath one; now that it's freely user-placed, that
   // assumption doesn't hold everywhere else it might land.
   const contentY = geometry.y;
+  // The columns this tracker actually has - its own, or a week.
+  const columns = (config.columns ?? []).length > 0 ? config.columns! : DAY_LETTERS;
   const contentHeight = geometry.height;
 
   // The header band ends on the first LATTICE line - same change, same
@@ -198,8 +252,28 @@ export function renderHabitTracker(
   // height); the name column takes whatever's left, growing to fill a
   // wider allocation rather than the day-letter columns stretching to
   // fill it (which was making them wide rectangles, not squares).
-  const dayColumnWidth = ptToPx(DAY_COLUMN_WIDTH_PT);
-  const nameColumnWidth = geometry.width - dayColumnWidth * DAY_LETTERS.length;
+  // A column is DAY_COLUMN_WIDTH_PT wide - a checkable cell, sized for one
+  // letter - unless its own label needs more than that.
+  //
+  // Fixed at 18pt it was right for the week this primitive was written
+  // for and wrong for every catalogue set that is not initials: a salah
+  // tracker printed "Magh…" for Maghrib and a future log "Even…" for
+  // Events, both at full page width, with a name column taking half the
+  // box beside them. Growing the column instead leaves a week exactly
+  // where it was - one letter at 8pt is about 34px against the 75px cell -
+  // and takes the space from the name column, which is the one holding
+  // slack it does not need.
+  //
+  // Capped so the labels can never squeeze the names out entirely; past
+  // that cap fitLabelSet shrinks and, in the last resort, truncates.
+  const labelWidthNeeded = Math.max(
+    ...columns.map((label) => estimateTextWidthPx(label, ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(4))
+  );
+  const dayColumnWidth = Math.min(
+    Math.max(ptToPx(DAY_COLUMN_WIDTH_PT), labelWidthNeeded),
+    (geometry.width * 0.72) / columns.length
+  );
+  const nameColumnWidth = geometry.width - dayColumnWidth * columns.length;
 
   const rowCount = Math.max(
     0,
@@ -240,7 +314,7 @@ export function renderHabitTracker(
     y: contentY + (headerHeight - headerTextHeight) / 2,
     width: nameColumnWidth,
     height: headerTextHeight,
-    text: "HABITS",
+    text: (config.heading ?? "HABITS").toUpperCase(),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
@@ -276,9 +350,20 @@ export function renderHabitTracker(
   });
 
   // Day-letter headers + their column dividers.
-  const dayLetterFontSize = ptToPx(DAY_LETTER_FONT_PT);
+  //
+  // Fitted rather than fixed at 8pt: a column label is "S" for a week but
+  // the catalogue also hands this primitive "Rent", "Fajr" and twelve
+  // month initials, and nothing clips a text node - a label wider than its
+  // column prints straight over the next one. One size for the whole set,
+  // for the reason fitLabelSet exists.
+  const dayLetters = fitLabelSet(
+    columns.map((text) => ({ text, widthPx: dayColumnWidth - ptToPx(2) })),
+    [ptToPx(DAY_LETTER_FONT_PT), ptToPx(7), ptToPx(6), ptToPx(5)]
+  );
+  const dayLetterFontSize = dayLetters.fontSizePx;
   const dayLetterTextHeight = dayLetterFontSize * 1.2;
-  DAY_LETTERS.forEach((letter, i) => {
+  columns.forEach((_letter, i) => {
+    const letter = dayLetters.texts[i];
     const colX = geometry.x + nameColumnWidth + i * dayColumnWidth;
     elements.push({
       id: id(`day${i}-letter`),
@@ -345,7 +430,15 @@ rowY + rowHeight;
 
     const habitName = config.habits?.[i];
     if (habitName) {
-      const nameFontSize = ptToPx(7);
+      // Shrunk and, in the last resort, cut - nothing in the renderer
+      // clips a text node, so a long row name in a narrow name column
+      // prints out of the module and over its neighbour.
+      const fitted = fitLabel(habitName.toUpperCase(), nameColumnWidth - 12, [
+        ptToPx(7),
+        ptToPx(6),
+        ptToPx(5),
+      ]);
+      const nameFontSize = fitted.fontSizePx;
       const nameTextHeight = nameFontSize * 1.2;
       elements.push({
         id: id(`row${i}-name`),
@@ -354,10 +447,11 @@ rowY + rowHeight;
         y: rowY + (rowHeight - nameTextHeight) / 2,
         width: nameColumnWidth - 12,
         height: nameTextHeight,
-        text: habitName,
+        text: fitted.text,
         fontSize: nameFontSize,
         fontFamily: FONT_FAMILY,
-        fill: "#333333",
+        fill: NEAR_BLACK,
+        opacity: PLACEHOLDER_OPACITY,
         align: "left",
       });
     }
@@ -387,6 +481,8 @@ function renderHabitTrackerCompact(
   const FONT_FAMILY = fontFamily;
 
   const contentY = geometry.y;
+  // The columns this tracker actually has - its own, or a week.
+  const columns = (config.columns ?? []).length > 0 ? config.columns! : DAY_LETTERS;
   const contentHeight = geometry.height;
   // The header band ends on the first LATTICE line - same change, same
   // reason, and the same cost as the to-do's: see contentTopPx, and
@@ -399,7 +495,7 @@ function renderHabitTrackerCompact(
   // from the actual allocated width rather than pinned to
   // DAY_COLUMN_WIDTH_PT, since a sidebar column's real width depends on
   // this page's own grid config, not one fixed measurement.
-  const squareSize = geometry.width / DAY_LETTERS.length;
+  const squareSize = geometry.width / columns.length;
   const nominalPairHeight = nameRowHeight + squareSize;
 
   const pairCount = Math.max(0, Math.floor((contentHeight - headerHeight) / nominalPairHeight));
@@ -436,7 +532,7 @@ function renderHabitTrackerCompact(
     y: contentY + (headerHeight - headerTextHeight) / 2,
     width: geometry.width,
     height: headerTextHeight,
-    text: "HABITS",
+    text: (config.heading ?? "HABITS").toUpperCase(),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
@@ -455,7 +551,18 @@ function renderHabitTrackerCompact(
     stroke: "none",
   });
 
-  const dayLetterFontSize = ptToPx(DAY_LETTER_FONT_PT);
+  // The letter has to fit the SQUARE it sits in, which here is a measured
+  // quantity rather than a chosen one: squareSize is width/columns, so a
+  // sidebar week gets a roomy cell and a twelve-month bill tracker gets
+  // 36.5px - against a 40px line box at 8pt, which put the last row's
+  // letters through the bottom border. Height first (the binding
+  // constraint), then width through the usual set fit.
+  const letterCapPx = Math.min(ptToPx(DAY_LETTER_FONT_PT), squareSize / 1.2);
+  const dayLetters = fitLabelSet(
+    columns.map((text) => ({ text, widthPx: squareSize - ptToPx(1) })),
+    [letterCapPx, letterCapPx * 0.85, letterCapPx * 0.7]
+  );
+  const dayLetterFontSize = dayLetters.fontSizePx;
   const dayLetterTextHeight = dayLetterFontSize * 1.2;
   const nameFontSize = ptToPx(7); // same size the wide layout's own prefilled habit names use
   const nameTextHeight = nameFontSize * 1.2;
@@ -473,20 +580,43 @@ function renderHabitTrackerCompact(
     // header above it — requested directly. A real, filled-in name
     // keeps the wide layout's own inset-from-the-left convention
     // instead (x/width padded by 6px each side), unaffected.
-    const habitName = config.habits?.[i];
+    // The placeholder is for a tracker with NO names at all - the blank
+    // sidebar one, where every row needs a hint about what it is for. Once
+    // some rows are named the pattern is established, and a catalogue
+    // preset with three named rows printed a fourth reading "HABIT": wrong
+    // in a bill tracker, wrong in a rest-day tracker, and wrong anywhere
+    // the word is not the module's own. A spare row is left blank instead.
+    const named = (config.habits ?? []).some((name) => (name ?? "").trim().length > 0);
+    const habitName = config.habits?.[i] ?? (named ? "" : undefined);
+    const rowName = fitLabel(
+      (habitName ?? "HABIT").toUpperCase(),
+      geometry.width - 12,
+      [nameFontSize, ptToPx(6), ptToPx(5)]
+    );
     elements.push({
       id: id(`pair${i}-name`),
       type: "text",
-      x: habitName ? geometry.x + 6 : geometry.x,
+      x: geometry.x + 6,
       y: pairTop + (actualNameRowHeight - nameTextHeight) / 2,
-      width: habitName ? geometry.width - 12 : geometry.width,
+      width: geometry.width - 12,
       height: nameTextHeight,
-      text: habitName ?? "HABIT",
-      fontSize: nameFontSize,
+      text: rowName.text,
+      fontSize: rowName.fontSizePx,
       fontFamily: FONT_FAMILY,
-      fill: habitName ? "#333333" : NEAR_BLACK,
-      opacity: habitName ? 1 : PLACEHOLDER_OPACITY,
-      align: habitName ? "left" : "center",
+      // Exactly the placeholder's treatment now, alignment included: pale,
+      // uppercase and CENTRED.
+      //
+      // A named row was left-inset and only the empty one centred, so a
+      // tracker with some rows filled had its labels stepping between two
+      // alignments down the same column. This layout has no separate name
+      // column - the name row spans the whole module, with the day cells
+      // under it - so there is no left edge for a label to belong to, and
+      // centred is what the row's own width asks for. The WIDE layout
+      // keeps its names left: there the name really is a column, and a
+      // column of labels reads down its left edge.
+      fill: NEAR_BLACK,
+      opacity: PLACEHOLDER_OPACITY,
+      align: "center",
     });
 
     // Divider between this pair's name row and its own square row.
@@ -506,7 +636,8 @@ function renderHabitTrackerCompact(
     // 7 day-letter squares, plus the vertical dividers between them (the
     // outer border above already closes off the leftmost and rightmost
     // edges).
-    DAY_LETTERS.forEach((letter, d) => {
+    columns.forEach((_letter, d) => {
+      const letter = dayLetters.texts[d];
       const colX = geometry.x + d * squareSize;
       elements.push({
         id: id(`pair${i}-day${d}-letter`),

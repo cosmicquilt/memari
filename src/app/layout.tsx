@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, PT_Serif, Hanken_Grotesk } from "next/font/google";
+import { Geist, Geist_Mono, Newsreader, Hanken_Grotesk } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 
 // Every module renderer (todoChecklist.ts, habitTracker.ts,
 // labeledBox.ts, weekTitle.ts, monthTitle.ts, monthGridCore.ts,
-// hourlyGridCore.ts) already references `fontFamily: "PT Serif"`
+// hourlyGridCore.ts) already references `fontFamily: "Newsreader"`
 // directly in its own rendered element data — that was never actually
-// wrong, just incomplete: nothing in the app had ever loaded PT Serif
+// wrong, just incomplete: nothing in the app had ever loaded Newsreader
 // itself, so every one of those references silently fell back to
 // whatever generic serif/sans the browser defaults to instead.
 // Reported directly: "can you use pt serif it doesn't look like it
@@ -27,13 +27,13 @@ const geistMono = Geist_Mono({
 // single root cause (the font was never registered at all), not a
 // per-module inconsistency. Loading it here, the same way
 // geistSans/geistMono already are, registers the real @font-face for
-// the whole app — every renderer's own existing "PT Serif" reference
+// the whole app — every renderer's own existing "Newsreader" reference
 // then resolves correctly with no changes needed in any of them.
 // weight: ["400"] only — grepped every module renderer for fontWeight
 // first (none set one; everything renders at the family's own default
 // weight), so there's no unused heavier weight to load.
-const ptSerif = PT_Serif({
-  variable: "--font-pt-serif",
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
   subsets: ["latin"],
   weight: ["400"],
 });
@@ -59,7 +59,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <ClerkProvider>
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} ${ptSerif.variable} ${hankenGrotesk.variable} h-full antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} h-full antialiased`}
       >
         <body className="min-h-full flex flex-col">{children}</body>
       </html>

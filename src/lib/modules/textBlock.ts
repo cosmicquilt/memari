@@ -20,7 +20,7 @@
 // labeledBox uses, and each line is emitted as its own text element.
 //
 // The ratio is an estimate (0.55 of the point size, measured against real
-// PT Serif in the browser - see textFit.ts for the measurement and for the
+// Newsreader in the browser - see textFit.ts for the measurement and for the
 // shrink-then-truncate helpers the single-line modules use). It is
 // imported rather than restated because two copies of one number is the
 // defect this codebase keeps meeting.

@@ -25,6 +25,7 @@
 import type { PageGrid } from "@/lib/grid";
 import { gridCellToPixels, columnSpanToDayCount, pixelHeightToRowSpan } from "@/lib/grid";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { CATALOGUE } from "@/lib/moduleCatalogue";
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
 import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
@@ -61,6 +62,11 @@ import {
   getProgressMeterMinHeightPx,
   type ProgressMeterConfig,
 } from "@/lib/modules/progressMeter";
+import {
+  renderIconStrip,
+  getIconStripMinHeightPx,
+  type IconStripConfig,
+} from "@/lib/modules/iconStrip";
 import {
   renderRatingStrip,
   getRatingStripMinHeightPx,
@@ -128,6 +134,33 @@ export type ModuleField =
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
 
+/**
+ * The palette's sections, in the order they are shown.
+ *
+ * "General" first - the primitives, blank - then the catalogue, roughly by
+ * how many people want it. Philosophy & faith is large and is the niche
+ * this project set out to serve, but it sits where it does because a
+ * stranger opening the palette is looking for a to-do list.
+ */
+export const CATEGORIES = [
+  "General",
+  "Core planning",
+  "Health & body",
+  "Food",
+  "Fitness",
+  "Money",
+  "Home & family",
+  "Philosophy & faith",
+  "Self-help & growth",
+  "Creative & leisure",
+  "Recovery",
+  "Travel",
+] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+/** The four page sets - see the cadence field. */
+export type Cadence = "journal" | "month" | "week" | "day";
+
 /** A ModuleType row, as prisma/seed.mts upserts it. */
 export type ModuleTypeRow = {
   name: string;
@@ -141,6 +174,38 @@ export type ModuleTypeRow = {
 export type ModuleDefinition = {
   /** What to call this module in the editor's own surfaces. */
   label?: string;
+
+  /**
+   * Which primitive DRAWS this module. A primitive names itself.
+   *
+   * A preset is its primitive in every respect that matters to a renderer,
+   * so nothing could tell afterwards which one it was - and the tests kept
+   * needing to. "Every module ruled into rows" and "every module whose
+   * columns are weighted rather than on the lattice" are properties of the
+   * PRIMITIVE, and writing them as lists of slugs is the mistake this file
+   * has had to undo four times.
+   */
+  primitive?: string;
+
+  /**
+   * Which palette section this module appears under.
+   *
+   * "General" is the primitives themselves - a blank table, a blank set of
+   * prompts - for someone who wants to configure one from scratch. Every
+   * other section is a slice of the catalogue, where a module is the same
+   * primitive with its words already filled in.
+   */
+  category?: Category;
+
+  /**
+   * Which page set this module belongs to - the rhythm it repeats on.
+   *
+   * Not read by anything yet. It is recorded now because it is the fact
+   * the catalogue was sorted by and it would be lost otherwise: a module
+   * printed once per journal costs one sheet, one printed per day costs
+   * ninety-one in a quarterly book. See the page-levels work.
+   */
+  cadence?: Cadence;
 
   /**
    * The locked block a page is built around, which is what defines its
@@ -228,9 +293,10 @@ export type ModuleDefinition = {
    * Draws the module. The primitive; a preset is this plus propValues.
    *
    * Optional: a type can exist in the database before it can be drawn.
-   * quote-block is registered and seeded with no renderer yet, and
-   * freeform-element is drawn by renderModuleInstance itself rather than
-   * by a primitive. Both used to reach the old switch's default case.
+   * freeform-element is drawn by renderModuleInstance itself rather than by
+   * a primitive, and used to reach the old switch's default case - as did
+   * quote-block, which was the standing example here until it turned out to
+   * be a text-block preset and got that primitive's renderer with it.
    */
   render?: (
     geometry: ModuleGeometry,
@@ -414,10 +480,11 @@ const PRIMITIVES = {
       "defaultWidth": 300,
       "defaultHeight": 200,
       "defaultColumnSpan": 6,
-      "defaultRowSpan": 3
+      "defaultRowSpan": 8
     },
     label: "Labeled box",
     inPalette: true,
+    category: "General",
     paletteName: "Note Box",
     previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
     resizableWidth: true,
@@ -478,6 +545,10 @@ const PRIMITIVES = {
               4
             ],
             "default": 3
+          },
+          "heading": {
+            "type": "string",
+            "default": "To - Do"
           }
         }
       },
@@ -488,12 +559,14 @@ const PRIMITIVES = {
     },
     label: "To-do checklist",
     inPalette: true,
+    category: "General",
     paletteName: "To-Do",
     previewProps: { dayCount: 1 },
     fields: [
+      { kind: "text", key: "heading", label: "Heading" },
       {
         kind: "note",
-        text: "This checklist's day columns follow whichever page it's on — nothing to edit here yet.",
+        text: "The day columns follow whichever page this is on.",
       },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
@@ -521,6 +594,17 @@ const PRIMITIVES = {
               "type": "string"
             },
             "default": []
+          },
+          "heading": {
+            "type": "string",
+            "default": "Habits"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
           }
         }
       },
@@ -531,25 +615,57 @@ const PRIMITIVES = {
     },
     label: "Habit tracker",
     inPalette: true,
+    category: "General",
     paletteName: "Habits",
-    previewProps: { dayCount: 1 },
-    fields: [{ kind: "lines", key: "habits", label: "Habits (one per line)", rows: 8 }],
+    previewProps: { heading: "Habits" },
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "lines", key: "habits", label: "Rows (one per line)", rows: 8 },
+      { kind: "lines", key: "columns", label: "Columns (one per line, blank for a week)", rows: 4 },
+    ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily, lattice),
-    minContentHeightPx: (pageGrid, columnSpan) => {
+    minContentHeightPx: (pageGrid, columnSpan, propValues) => {
       const widthPx = gridCellToPixels(pageGrid, {
         columnStart: 0,
         rowStart: 0,
         columnSpan,
         rowSpan: 1,
       }).width;
-      const m = getHabitTrackerRowMetricsPx(widthPx);
+      // A tracker's rows are its CONTENT, so they set its floor.
+      //
+      // This rule used to read only the box, and the result was that all
+      // 24 named trackers in the catalogue could be dragged to two rows
+      // and would then print none of their own row names - a medication
+      // log with no Morning/Midday/Evening, a salah tracker with none of
+      // the five prayers. Nothing errored; the module just came out a
+      // grid with a heading, which is the same drawing every other
+      // tracker collapses to, so you could not tell which one it was.
+      //
+      // Blank rows do not count. A tracker can be placed with `habits`
+      // empty on purpose - that is the bare primitive, ruled space to
+      // write your own - and it has no content to protect.
+      const named = ((propValues.habits as unknown[]) ?? []).filter(
+        (name) => typeof name === "string" && name.trim().length > 0
+      ).length;
+      // Its own columns, not a week. Feeding the real count is the other
+      // half of this fix: the compact row is a name row plus ONE SQUARE
+      // CELL and the cell is width/columns, so assuming seven understated
+      // the row height for a five-prayer tracker and overstated it for a
+      // twelve-month one. getHabitTrackerRowMetricsPx has taken this
+      // argument all along and had no way to be given it.
+      const columns = (propValues.columns as unknown[]) ?? [];
+      const m = getHabitTrackerRowMetricsPx(
+        widthPx,
+        columns.length > 0 ? columns.length : undefined
+      );
       // A compact (sidebar) placement needs room for two full habit pairs,
       // not one - asked for directly: "can the habits side module have a
       // minimum vertical height of two habits (4 rows)." The wide layout
-      // keeps the header-plus-one-row floor.
+      // keeps the header-plus-one-row floor. That is the floor for a
+      // tracker with nothing named; a named one needs all of its rows.
       const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
-      return m.headerHeightPx + m.nominalRowHeightPx * pairsNeeded;
+      return m.headerHeightPx + m.nominalRowHeightPx * Math.max(pairsNeeded, named);
     },
     contentIsLive: ALWAYS,
   },
@@ -669,11 +785,12 @@ const PRIMITIVES = {
       },
       "defaultWidth": 600,
       "defaultHeight": 560,
-      "defaultColumnSpan": 6,
+      "defaultColumnSpan": 10,
       "defaultRowSpan": 8
     },
     label: "Column table",
     inPalette: true,
+    category: "General",
     paletteName: "Table",
     previewProps: {
       heading: "Log",
@@ -732,6 +849,7 @@ const PRIMITIVES = {
     },
     label: "Prompted lines",
     inPalette: true,
+    category: "General",
     paletteName: "Prompts",
     previewProps: {
       heading: "Reflection",
@@ -784,6 +902,7 @@ const PRIMITIVES = {
     },
     label: "Mini month",
     inPalette: true,
+    category: "General",
     paletteName: "Mini Month",
     previewProps: { year: 2026, month: 1, heading: "", markable: false },
     resizableWidth: true,
@@ -836,6 +955,7 @@ const PRIMITIVES = {
     },
     label: "Progress meter",
     inPalette: true,
+    category: "General",
     paletteName: "Meter",
     previewProps: { heading: "Progress", total: 30, milestoneEvery: 10, numbered: true },
     resizableWidth: true,
@@ -862,6 +982,65 @@ const PRIMITIVES = {
 
   // A list of things rated on one shared scale - mood, energy, pain,
   // sleep, focus, craving, satisfaction.
+  "icon-strip": {
+    db: {
+      "name": "Icon Strip",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": { "type": "string", "default": "Water" },
+          "icon": {
+            "type": "string",
+            "enum": [
+              "circle", "square", "rounded",
+              "droplet", "heart", "star", "moon", "flame", "leaf", "plant"
+            ],
+            "default": "circle"
+          },
+          "count": { "type": "integer", "default": 8 },
+          "groups": { "type": "integer", "default": 0 },
+          "border": { "type": "boolean", "default": false }
+        }
+      },
+      "defaultWidth": 1560,
+      "defaultHeight": 150,
+      "defaultColumnSpan": 24,
+      "defaultRowSpan": 2
+    },
+    label: "Icon strip",
+    inPalette: true,
+    category: "General",
+    paletteName: "Icon Strip",
+    previewProps: { heading: "Water", icon: "droplet", count: 8 },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      {
+        kind: "select",
+        key: "icon",
+        label: "Icon",
+        options: [
+          { value: "circle", label: "Circles" },
+          { value: "square", label: "Squares" },
+          { value: "rounded", label: "Rounded squares" },
+          { value: "droplet", label: "Droplets" },
+          { value: "heart", label: "Hearts" },
+          { value: "star", label: "Stars" },
+          { value: "moon", label: "Moons" },
+          { value: "flame", label: "Flames" },
+          { value: "leaf", label: "Leaves" },
+          { value: "plant", label: "Potted plants" },
+        ],
+      },
+      { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24 },
+      { kind: "number", key: "groups", label: "Groups across (0 = one per column)", min: 0, max: 12 },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderIconStrip(geometry, propValues as IconStripConfig, idPrefix, fontFamily, lattice),
+    minContentHeightPx: () => getIconStripMinHeightPx(),
+    contentIsLive: ALWAYS,
+  },
+
   "rating-strip": {
     db: {
       "name": "Rating Strip",
@@ -899,6 +1078,7 @@ const PRIMITIVES = {
     },
     label: "Rating strip",
     inPalette: true,
+    category: "General",
     paletteName: "Ratings",
     previewProps: {
       heading: "Ratings",
@@ -971,6 +1151,7 @@ const PRIMITIVES = {
     },
     label: "Two-axis matrix",
     inPalette: true,
+    category: "General",
     paletteName: "Matrix",
     previewProps: {
       heading: "Matrix",
@@ -1034,6 +1215,7 @@ const PRIMITIVES = {
     },
     label: "Text block",
     inPalette: true,
+    category: "General",
     paletteName: "Text",
     previewProps: {
       heading: "",
@@ -1114,11 +1296,85 @@ function preset(
   over: Partial<Omit<ModuleDefinition, "db">> & { db: Partial<ModuleTypeRow> }
 ): ModuleDefinition {
   const base = PRIMITIVES[of] as ModuleDefinition;
-  return { ...base, ...over, db: { ...base.db, ...over.db } };
+  return { ...base, ...over, primitive: of, db: { ...base.db, ...over.db } };
+}
+
+/**
+ * A CATALOGUE MODULE: a primitive, a place in the palette, and its words.
+ *
+ * This is `preset` with the boilerplate removed, because the catalogue is
+ * a hundred of them and the boilerplate was most of each one. A catalogue
+ * entry states what makes it a different module - its name, its section,
+ * the rhythm it repeats on, and the content - and inherits absolutely
+ * everything about how it is DRAWN.
+ *
+ * `props` does double duty on purpose. They become the schema defaults, so
+ * a freshly dropped instance arrives filled in, AND the preview props, so
+ * the palette card shows the same thing the drop will produce. Setting
+ * those separately is how the quote preset ended up with a card showing a
+ * quote and a module that arrived blank.
+ *
+ * The schema is DEEP-merged into the primitive's, one default at a time,
+ * rather than replaced - replacing it wholesale drops the primitive's own
+ * property types and validation along with them.
+ */
+function catalogue(
+  of: keyof typeof PRIMITIVES,
+  spec: {
+    name: string;
+    category: Category;
+    cadence: Cadence;
+    props: Record<string, unknown>;
+    /** The palette card's caption. Defaults to the module's own name. */
+    paletteName?: string;
+    /** Rows or columns the module wants beyond the primitive's default. */
+    rowSpan?: number;
+    columnSpan?: number;
+    /** False to keep it registered and drawable but off the palette - see
+     *  CatalogueEntry.inPalette. */
+    inPalette?: boolean;
+  }
+): ModuleDefinition {
+  const base = PRIMITIVES[of] as ModuleDefinition;
+  const schema = base.db.configSchema as {
+    type?: string;
+    properties?: Record<string, Record<string, unknown>>;
+  };
+  const properties = { ...(schema.properties ?? {}) };
+  for (const [key, value] of Object.entries(spec.props)) {
+    properties[key] = { ...(properties[key] ?? {}), default: value };
+  }
+  return {
+    ...base,
+    primitive: of,
+    label: spec.name,
+    category: spec.category,
+    cadence: spec.cadence,
+    // Default true: a catalogue entry exists to be offered. The opt-out is
+    // for a module that has been superseded and must stay registered so the
+    // planners already using it keep drawing.
+    inPalette: spec.inPalette ?? true,
+    paletteName: spec.paletteName ?? spec.name,
+    previewProps: spec.props,
+    db: {
+      ...base.db,
+      name: spec.name,
+      configSchema: { ...schema, properties },
+      defaultRowSpan: spec.rowSpan ?? base.db.defaultRowSpan,
+      defaultColumnSpan: spec.columnSpan ?? base.db.defaultColumnSpan,
+    },
+  };
 }
 
 export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
-  ...(PRIMITIVES as Record<string, ModuleDefinition>),
+  // A primitive is its own primitive, stated here rather than on each
+  // entry so no one has to remember to repeat their own name.
+  ...Object.fromEntries(
+    Object.entries(PRIMITIVES).map(([slug, definition]) => [
+      slug,
+      { ...(definition as ModuleDefinition), primitive: slug },
+    ])
+  ),
 
   // Was a primitive registered with no renderer - the placeholder this
   // file used to point at as "where a catalogue module starts life". It
@@ -1143,8 +1399,21 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
         type: "object",
         properties: {
           heading: { type: "string", default: "" },
-          body: { type: "string", default: "The obstacle is the way." },
-          attribution: { type: "string", default: "Marcus Aurelius" },
+          // TWO RULES FOR ANY DEFAULT QUOTE, both learned from the one this
+          // replaces. It shipped "The obstacle is the way." over the name
+          // Marcus Aurelius; that sentence is Ryan Holiday's, the title of
+          // his 2014 book glossing Meditations 5.20, and Marcus did not
+          // write it in any translation. So: the words must be VERBATIM
+          // from a source old enough to be public domain, and the name must
+          // be whoever actually wrote THOSE words rather than whoever the
+          // sentiment is associated with. A planner prints its quote a
+          // thousand times; a misattribution is printed a thousand times
+          // too, and unlike a bug nobody can patch the copies.
+          //
+          // This one is Socrates at his trial, Plato's Apology 38a, in the
+          // wording that comes down from Jowett's 1871 translation.
+          body: { type: "string", default: "The unexamined life is not worth living." },
+          attribution: { type: "string", default: "Socrates" },
           align: { type: "string", enum: ["left", "center"], default: "center" },
         },
       },
@@ -1155,34 +1424,12 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     paletteName: "Quote",
     previewProps: {
       heading: "",
-      body: "The obstacle is the way.",
-      attribution: "Marcus Aurelius",
+      body: "The unexamined life is not worth living.",
+      attribution: "Socrates",
       align: "center",
     },
   }),
 
-  // Eight glasses against the week - the row-by-column tracker with a
-  // different label set and nothing else. The first preset, and the test
-  // of the claim: adding it is this entry and no code anywhere.
-  "water-tracker": preset("habit-tracker", {
-    db: {
-      name: "Water Tracker",
-      configSchema: {
-        type: "object",
-        properties: {
-          habits: {
-            type: "array",
-            items: { type: "string" },
-            default: ["Glass 1", "Glass 2", "Glass 3", "Glass 4", "Glass 5", "Glass 6"],
-          },
-        },
-      },
-    },
-    label: "Water tracker",
-    paletteName: "Water",
-    previewProps: { habits: ["Glass 1", "Glass 2", "Glass 3"] },
-    fields: [{ kind: "lines", key: "habits", label: "Glasses (one per line)", rows: 8 }],
-  }),
 };
 
 /**
@@ -1193,6 +1440,18 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
  * id to reference, and a module that exists in the editor and cannot be
  * placed.
  */
+// The catalogue, folded in. Each entry is a primitive plus its words -
+// see moduleCatalogue.ts, and `catalogue()` above for what it expands to.
+for (const entry of CATALOGUE) {
+  if (!(entry.primitive in PRIMITIVES)) {
+    throw new Error(`Catalogue entry "${entry.slug}" names no primitive: ${entry.primitive}`);
+  }
+  if (MODULE_REGISTRY[entry.slug]) {
+    throw new Error(`Catalogue entry "${entry.slug}" collides with an existing module`);
+  }
+  MODULE_REGISTRY[entry.slug] = catalogue(entry.primitive as keyof typeof PRIMITIVES, entry);
+}
+
 export const MODULE_TYPE_SEED = Object.entries(MODULE_REGISTRY).map(([slug, definition]) => ({
   slug,
   ...definition.db,
@@ -1207,12 +1466,29 @@ export const PALETTE_MODULES = Object.entries(MODULE_REGISTRY)
     slug,
     label: definition.paletteName ?? definition.label ?? slug,
     previewProps: definition.previewProps ?? {},
+    category: definition.category ?? "General",
   }));
+
+/** The palette's cards grouped into its sections, sections in CATEGORIES
+ *  order and empty ones left out. */
+export const PALETTE_SECTIONS = CATEGORIES.map((category) => ({
+  category,
+  modules: PALETTE_MODULES.filter((m) => m.category === category),
+})).filter((section) => section.modules.length > 0);
 
 /** Every slug that can actually be drawn. The behaviour classifier sweeps
  *  this rather than its own hand-kept list, so a module is measured from
  *  the day it is registered instead of the day someone remembers it. */
 export const REGISTERED_SLUGS = Object.keys(MODULE_REGISTRY);
+
+/** Every registered module drawn by this primitive, the primitive itself
+ *  included - the question the geometry tests actually want to ask. */
+export function slugsDrawnBy(...primitives: string[]): string[] {
+  const wanted = new Set(primitives);
+  return Object.entries(MODULE_REGISTRY)
+    .filter(([, definition]) => wanted.has(definition.primitive ?? ""))
+    .map(([slug]) => slug);
+}
 
 export function moduleDefinition(slug: string): ModuleDefinition | undefined {
   return MODULE_REGISTRY[slug];
@@ -1345,23 +1621,69 @@ export function getMinRowSpanForSlug(
   // Some modules' floors are a function of their content rather than of
   // their box: a progress meter of a hundred segments needs more rows than
   // one of thirty, and a set passage needs as many lines as it wraps to.
-  // Those rules can be stated now, and they fall back to the module's own
-  // schema defaults when nothing is passed - which is exactly right for a
-  // fresh drop from the palette, since a fresh module IS its defaults.
   //
-  // Deliberately not threaded at some call sites and not others. The
-  // client's floor gates the live shrink preview and the server's gates
-  // the commit; if one of them learned a module's real content and the
-  // other did not, they would disagree about how short it may get, which
-  // is precisely the "preview lied" family this function's own comment
-  // above exists to close. Both sides pass nothing today, so both sides
-  // agree. Threading it is one change to both callers, together.
+  // NOW THREADED, at every call site on both sides at once - which is the
+  // only way it could be done. The client's floor gates the live shrink
+  // preview and the server's gates the commit; teaching one of them a
+  // module's real content and not the other would make them disagree about
+  // how short it may get, which is precisely the "preview lied" family
+  // this function exists to close. So the two went together, and
+  // minRowSpanFloors.test.mts fails if a floor is ever reachable without
+  // content.
+  //
+  // What is passed is an instance's STORED propValues, which need not be
+  // complete: a row saved before a prop existed simply lacks the key. So
+  // whatever arrives is layered over the module's own schema defaults
+  // below rather than used raw - see moduleSchemaDefaults. A caller with
+  // nothing to pass (a palette preview of a module not yet placed) then
+  // still gets the right answer, because a fresh module IS its defaults.
   propValues: Record<string, unknown> = {}
 ): number {
   const rule = MODULE_REGISTRY[slug]?.minContentHeightPx;
   if (!rule) return MIN_ROW_SPAN;
+  const content = { ...moduleSchemaDefaults(slug), ...propValues };
   return Math.max(
     MIN_ROW_SPAN,
-    pixelHeightToRowSpan(pageGrid, rule(pageGrid, columnSpan, propValues))
+    // Never taller than the page itself. A rule states what the content
+    // needs, and for a 31-row tracker squeezed into a sidebar that can
+    // come out larger than any box on the page - a floor nothing can
+    // satisfy, which would make the module undroppable rather than short.
+    // Clamping keeps "too big for this page" behaving as it does today
+    // (it is placed full height and draws what fits) instead of turning
+    // into a new failure.
+    Math.min(
+      pageGrid.gridRows,
+      pixelHeightToRowSpan(pageGrid, rule(pageGrid, columnSpan, content))
+    )
   );
+}
+
+/**
+ * A module's own schema defaults, as a propValues object.
+ *
+ * The floor rules read content - how many rows a tracker names, how many
+ * lines a prompt gets - and the thing they are handed is whatever a
+ * ModuleInstance has stored, which may be missing keys or, for a module
+ * that has not been placed at all, be nothing. Reading the defaults out of
+ * the schema is what the seeder and the renderer already do with the same
+ * values, so a floor computed here matches the drawing that will appear.
+ *
+ * Cached: this runs inside drag handlers, once per sibling per frame.
+ */
+const SCHEMA_DEFAULTS_CACHE = new Map<string, Record<string, unknown>>();
+
+export function moduleSchemaDefaults(slug: string): Record<string, unknown> {
+  const hit = SCHEMA_DEFAULTS_CACHE.get(slug);
+  if (hit) return hit;
+  const properties = (
+    MODULE_REGISTRY[slug]?.db.configSchema as
+      | { properties?: Record<string, { default?: unknown }> }
+      | undefined
+  )?.properties;
+  const defaults: Record<string, unknown> = {};
+  for (const [key, spec] of Object.entries(properties ?? {})) {
+    if (spec && "default" in spec) defaults[key] = spec.default;
+  }
+  SCHEMA_DEFAULTS_CACHE.set(slug, defaults);
+  return defaults;
 }

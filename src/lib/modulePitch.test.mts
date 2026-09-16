@@ -23,8 +23,8 @@
 // is the point - the constants were right in isolation every time, and it
 // was their sum that was wrong.
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { moduleDefinition } from "./moduleRegistry";
-import { gridCellToPixels, type PageGrid } from "./grid";
+import { moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
+import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
 
 const PAGE: PageGrid = {
@@ -38,7 +38,7 @@ const PAGE: PageGrid = {
 
 /** Modules that rule their body into rows to write on. A module without
  *  rows - a mini month, a text block, a matrix - has no pitch to check. */
-const RULED = ["todo-checklist", "column-table", "rating-strip", "habit-tracker", "water-tracker"];
+const RULED = slugsDrawnBy("todo-checklist", "column-table", "rating-strip", "habit-tracker");
 
 /**
  * The one deliberate exception, and it is worth stating rather than
@@ -55,14 +55,16 @@ const RULED = ["todo-checklist", "column-table", "rating-strip", "habit-tracker"
  * is checked normally. So the exception is per-WIDTH, not per-module,
  * which is also the narrowest form it can take.
  */
+const COMPACTABLE = new Set(slugsDrawnBy("habit-tracker"));
+
 function isDeliberatelyOffPitch(slug: string, widthPx: number): boolean {
-  const compactable = slug === "habit-tracker" || slug === "water-tracker";
+  const compactable = COMPACTABLE.has(slug);
   return compactable && isHabitTrackerCompact(widthPx);
 }
 
 /** Modules that rule one line per ITEM rather than filling their body, so
  *  the space under the last item is however many empty rows remain. */
-const ITEM_DRIVEN = new Set(["rating-strip"]);
+const ITEM_DRIVEN = new Set(slugsDrawnBy("rating-strip"));
 
 function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
   return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
@@ -200,6 +202,83 @@ for (const slug of RULED) {
         console.error(
           `  ${slug} ${columnSpan}x${rowSpan}: row pitch is ${pitch.toFixed(1)}px but ` +
             `${offGrid.length} of ${bodyGaps.length} gap(s) disagree: ${offGrid.join("; ")}`
+        );
+        failures++;
+      }
+    }
+  }
+}
+
+
+// ---------------------------------------------------------------------
+// STRIP MODULES: a repeated strip must tile the lattice exactly.
+//
+// icon-strip has no rules at all - it draws glyphs and a label - so
+// everything above and every check in moduleHouseStyle.test.mts passes it
+// whatever it does vertically. Measuring its strips from the ink box
+// instead of the allocation puts all of them 6px off the dots, which is
+// the defect moduleFrame's contentTopPx exists to describe, and it was
+// invisible: the module was changed to do exactly that and the whole suite
+// stayed green.
+//
+// The observable is the strip label. Its offset from the nearest lattice
+// line must be the SAME in every strip (the strips tile at the pitch) and
+// must be the stated value below (they start on a lattice line, plus the
+// air the design puts above the label).
+//
+// STRIP_LABEL_OFFSET_PX is written here rather than imported, for the
+// reason the heading-ladder check carries in the other file: a test that
+// asks the code what it does only proves the code equals itself. Moving
+// the air above a strip label is a real decision about where every label
+// in the module sits relative to the dots, and it should cost one
+// deliberate edit here.
+const STRIP_LABEL_OFFSET_PX = 3;
+const STRIPPED = slugsDrawnBy("icon-strip");
+const PITCH_PX = cellHeightPx(PAGE);
+
+for (const slug of STRIPPED) {
+  for (const columnSpan of [6, 12, 24]) {
+    for (const rowSpan of [2, 3, 5]) {
+      const propValues = moduleDefinition(slug)?.previewProps ?? {};
+      const elements = flatten(
+        renderModuleInstance(
+          {
+            id: "t",
+            locked: true,
+            columnStart: 0,
+            rowStart: 2,
+            columnSpan,
+            rowSpan,
+            propValues,
+            moduleType: { slug },
+          },
+          PAGE
+        )
+      );
+      const labels = elements
+        .filter((e) => e.type === "text" && String(e.id).endsWith("-heading"))
+        .map((e) => e.y ?? 0)
+        .sort((a, b) => a - b);
+      if (labels.length === 0) continue;
+      checked++;
+
+      if (labels.length !== rowSpan) {
+        console.error(
+          `  ${slug} ${columnSpan}x${rowSpan}: ${labels.length} strip(s) in a ${rowSpan}-cell box - ` +
+            `a strip is one cell, so there should be ${rowSpan}`
+        );
+        failures++;
+        continue;
+      }
+
+      const offsets = labels.map((y) => {
+        const off = (((y - PAGE.marginPx) % PITCH_PX) + PITCH_PX) % PITCH_PX;
+        return Math.round(off * 10) / 10;
+      });
+      if (offsets.some((off) => Math.abs(off - STRIP_LABEL_OFFSET_PX) > 0.5)) {
+        console.error(
+          `  ${slug} ${columnSpan}x${rowSpan}: strip label sits ${offsets.join(", ")}px below the ` +
+            `lattice, expected ${STRIP_LABEL_OFFSET_PX}px in every strip`
         );
         failures++;
       }

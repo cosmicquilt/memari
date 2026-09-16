@@ -63,6 +63,34 @@ function timeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
+/**
+ * The hours to draw, with anything missing filled in.
+ *
+ * Every renderer in this codebase is total in its config - a propValues
+ * that lost a key draws something plain rather than throwing, because a
+ * throw inside a render takes the whole PAGE down. This module was the one
+ * exception: `timeToMinutes(undefined)` threw, and it is the spine every
+ * week page is built on. Measured across the registry, 126 of 127 renderers
+ * already coped.
+ *
+ * Gaps are filled from DEFAULT_HOURLY_SETTINGS rather than from literals.
+ * Those same times are already written twice - here and in the registry's
+ * own schema defaults - and a third copy is how they begin to disagree.
+ */
+function hoursOrDefaults(config: Partial<HourlyGridCoreConfig>): {
+  startMinutes: number;
+  endMinutes: number;
+  intervalMinutes: number;
+} {
+  return {
+    startMinutes: timeToMinutes(config.startTime ?? DEFAULT_HOURLY_SETTINGS.startTime),
+    endMinutes: timeToMinutes(config.endTime ?? DEFAULT_HOURLY_SETTINGS.endTime),
+    // `||` not `??`: a stored zero is not an interval, it is a division by
+    // zero dressed as a setting.
+    intervalMinutes: config.intervalMinutes || DEFAULT_HOURLY_SETTINGS.intervalMinutes,
+  };
+}
+
 // 12-hour label with no AM/PM, matching the reference design — position
 // in the day (before/after the 12:00 row) carries that meaning instead.
 function formatHour12NoMeridiem(minutesSinceMidnight: number): string {
@@ -96,7 +124,7 @@ const HEADER_TO_GRID_GAP_PT = 22.3;
 // it lands: 36 slots = 324pt = 18 dots exactly, plus the 2-dot header band
 // makes the block 20 dots = 5.000in.
 //
-// The type is untouched - still 5pt/5.5pt PT Serif - so this takes 1.3pt
+// The type is untouched - still 5pt/5.5pt Newsreader - so this takes 1.3pt
 // of dead space out of the label box rather than shrinking anything that
 // is read. Writing height goes 3.986mm to 3.175mm. Confirmed against a
 // true-size print before it was written: see the row-height test sheet.
@@ -294,12 +322,13 @@ export function getHourlyGridCoreContentHeightPx(
     "startTime" | "endTime" | "intervalMinutes" | "compactHourRows" | "rowHeightPt"
   >
 ): number {
-  const totalMinutes = timeToMinutes(config.endTime) - timeToMinutes(config.startTime);
-  const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
+  const hours = hoursOrDefaults(config);
+  const totalMinutes = hours.endMinutes - hours.startMinutes;
+  const rowCount = Math.max(1, Math.round(totalMinutes / hours.intervalMinutes));
   return (
     ptToPx(HEADER_HEIGHT_PT) +
     ptToPx(HEADER_TO_GRID_GAP_PT) +
-    rowCount * getRowHeightPx(config.intervalMinutes, config.compactHourRows, config.rowHeightPt)
+    rowCount * getRowHeightPx(hours.intervalMinutes, config.compactHourRows, config.rowHeightPt)
   );
 }
 
@@ -337,14 +366,15 @@ export function renderHourlyGridCore(
   // already used everywhere below rather than touching every reference.
   const FONT_FAMILY = fontFamily;
 
-  const startMinutes = timeToMinutes(config.startTime);
-  const endMinutes = timeToMinutes(config.endTime);
+  // See hoursOrDefaults: this renderer is total in its config like every
+  // other one here, which it had not been.
+  const { startMinutes, endMinutes, intervalMinutes } = hoursOrDefaults(config);
   const totalMinutes = endMinutes - startMinutes;
-  const rowCount = Math.max(1, Math.round(totalMinutes / config.intervalMinutes));
+  const rowCount = Math.max(1, Math.round(totalMinutes / intervalMinutes));
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
   const headerToGridGap = ptToPx(HEADER_TO_GRID_GAP_PT);
-  const rowHeight = getRowHeightPx(config.intervalMinutes, config.compactHourRows, config.rowHeightPt);
+  const rowHeight = getRowHeightPx(intervalMinutes, config.compactHourRows, config.rowHeightPt);
   // The header band is measured from the ALLOCATION's top, not the ink
   // box's - the same frame the day columns already use, one line below.
   //
@@ -532,7 +562,7 @@ export function renderHourlyGridCore(
       const labelBoxHeight = ptToPx(TIME_LABEL_BOX_HEIGHT_PT);
       for (let i = 0; i < rowCount; i++) {
         const rowY = gridTop + i * rowHeight;
-        const rowMinutes = startMinutes + i * config.intervalMinutes;
+        const rowMinutes = startMinutes + i * intervalMinutes;
         const lineY = rowY + rowHeight;
         const labelBoxTop = lineY - labelBoxHeight;
 
@@ -644,8 +674,8 @@ export function renderHourlyGridCore(
     for (const event of config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d)) {
       const evStart = timeToMinutes(event.startTime);
       const evEnd = timeToMinutes(event.endTime);
-      const evY = gridTop + ((evStart - startMinutes) / config.intervalMinutes) * rowHeight;
-      const evHeight = ((evEnd - evStart) / config.intervalMinutes) * rowHeight;
+      const evY = gridTop + ((evStart - startMinutes) / intervalMinutes) * rowHeight;
+      const evHeight = ((evEnd - evStart) / intervalMinutes) * rowHeight;
 
       elements.push({
         id: id(`d${d}-ev${event.startTime}-box`),

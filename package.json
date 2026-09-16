@@ -7,13 +7,18 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx src/lib/grid.test.mts && tsx src/lib/monthCalendar.test.mts && tsx src/lib/weekDays.test.mts && tsx src/lib/morphPairing.test.mts && tsx src/lib/moduleIds.test.mts && tsx src/lib/modulePitch.test.mts && tsx src/lib/moduleHouseStyle.test.mts && tsx src/lib/flipTransform.test.mts",
+    "test": "tsx src/lib/grid.test.mts && tsx src/lib/monthCalendar.test.mts && tsx src/lib/weekDays.test.mts && tsx src/lib/morphPairing.test.mts && tsx src/lib/moduleIds.test.mts && tsx src/lib/modulePitch.test.mts && tsx src/lib/moduleHouseStyle.test.mts && tsx src/lib/moduleCatalogue.test.mts && tsx src/lib/pageLayouts.test.mts && tsx src/lib/minRowSpanFloors.test.mts && tsx src/lib/pdfDocument.test.mts && tsx src/lib/pdfPlacement.test.mts && tsx src/lib/moduleRegistryIntegrity.test.mts && tsx src/lib/stackResize.test.mts && tsx src/lib/flipTransform.test.mts",
     "test:properties": "tsx src/lib/grid.property.test.mts",
     "check:animation": "tsx src/lib/resizeEndpoints.report.mts",
     "postinstall": "prisma generate",
     "check:behaviour": "tsx src/lib/moduleBehaviour.report.mts",
     "check:proof": "tsx src/lib/primitiveProof.mts",
-    "check:page": "tsx scripts/check-week-page.mts"
+    "check:catalogue": "tsx src/lib/catalogueProof.mts",
+    "check:review": "tsx src/lib/reviewCatalogue.mts",
+    "check:pdf": "tsx scripts/check-pdf.mts",
+    "check:page": "tsx scripts/check-week-page.mts",
+    "check:layout": "tsx scripts/check-layout.mts",
+    "check:gaps": "tsx scripts/check-gaps.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.0",

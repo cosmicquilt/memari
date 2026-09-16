@@ -81,7 +81,7 @@ function idsOf(slug: string, columnSpan: number, rowSpan: number, propValues: Re
     { id: "probe", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues,
       moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
     PAGE,
-    "PT Serif"
+    "Newsreader"
   );
   // The group wrapper carries the instance id itself and is not a mark;
   // only the leaves it wraps are checked.

@@ -125,6 +125,7 @@ import {
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
+import { resolvePairResize, pairResizeRange } from "@/lib/stackResize";
 import {
   moduleDefinition,
   canCrossZones,
@@ -132,6 +133,7 @@ import {
   cleanPropsForSave,
   isSpineSlug,
   PALETTE_MODULES,
+  PALETTE_SECTIONS,
 } from "@/lib/moduleRegistry";
 import {
   updateModulePlacement,
@@ -555,6 +557,13 @@ type ResizePair = {
   // maxBottomBound's own reasoning on StackBottom below.
   topMinRowSpan: number;
   bottomMinRowSpan: number;
+  // Free rows under the LOWEST module of this column stack - a locked
+  // block's own top edge, or the page. The boundary can slide the stack
+  // down into these when the module below it has no rows to give, which is
+  // the only way a drag can grow the top past a neighbour that is already
+  // at its floor. See stackResize.ts, and maxBottomBound on StackBottom
+  // below, which is the same quantity for the other handle.
+  spaceBelow: number;
 };
 
 // The bottom-most unlocked module of a same-column stack, with nothing
@@ -891,7 +900,7 @@ function NativeModule({
   // Page Settings' current font choice — used only by the two inline
   // edit overlays below (heading text input, habit-names textarea), so
   // the live edit cursor matches whatever the surrounding canvas is
-  // actually rendering in (previously hardcoded to "Georgia, 'PT Serif',
+  // actually rendering in (previously hardcoded to "Georgia, 'Newsreader',
   // serif" regardless of the real committed font).
   fontFamily: string;
 }) {
@@ -1557,7 +1566,7 @@ function NativePage({
   // outer-border element.
   resizeFrozenSize: Record<string, { width: number; height: number }> | null;
   onResizeStart: (pair: ResizePair) => void;
-  onResizeMove: (pair: ResizePair, deltaRows: number) => void;
+  onResizeMove: (pair: ResizePair, deltaRows: number, pushDown: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
   onStackResizeStart: (stackBottom: StackBottom) => void;
   onStackResizeMove: (stackBottom: StackBottom, deltaRows: number) => void;
@@ -2136,7 +2145,7 @@ function ResizeHandle({
   pageGrid: PageGrid;
   scale: number;
   onResizeStart: (pair: ResizePair) => void;
-  onResizeMove: (pair: ResizePair, deltaRows: number) => void;
+  onResizeMove: (pair: ResizePair, deltaRows: number, pushDown: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
 }) {
   const boundaryRow = pair.topRowStart + pair.topRowSpan;
@@ -2169,24 +2178,31 @@ function ResizeHandle({
     bottomRowSpan: number;
     topMinRowSpan: number;
     bottomMinRowSpan: number;
+    spaceBelow: number;
   } | null>(null);
 
   const computeClampedDeltaRows = useCallback(
     (clientY: number) => {
       const drag = dragRef.current;
-      if (!drag) return 0;
+      if (!drag) return { topDelta: 0, pushDown: 0 };
       const rawDeltaPagePx = (clientY - drag.clientY) / scale;
       const rawDeltaRows = Math.round(rawDeltaPagePx / rowPitchPx);
-      // Same clamp resizeAdjacentModules applies server-side, mirrored
-      // here so the live preview can never show a boundary position the
-      // eventual commit wouldn't actually land on. Per-side minimum, not
-      // the uniform MIN_ROW_SPAN — see getMinRowSpanForSlug's own
-      // comment on why a pair can have two different floors (e.g. a
-      // todo-checklist paired with a habit-tracker).
-      return Math.max(
-        -(drag.topRowSpan - drag.topMinRowSpan),
-        Math.min(drag.bottomRowSpan - drag.bottomMinRowSpan, rawDeltaRows)
-      );
+      // The SAME rule resizeAdjacentModules commits, imported rather than
+      // mirrored. It was written out here by hand and again server-side,
+      // and the two agreeing was down to someone remembering - which is the
+      // "preview lied" family this whole refactor exists to close. See
+      // stackResize.ts, which also explains why growing can now slide the
+      // stack down instead of refusing when the module below is at its
+      // floor.
+      const range = pairResizeRange(drag);
+      const requestedDelta = Math.max(range.min, Math.min(range.max, rawDeltaRows));
+      // Resolved from the SAME frozen snapshot the range came from. The
+      // first version clamped against drag-start values but split the
+      // result against the live, mid-drag pair - whose spaceBelow shrinks
+      // as the preview slides the stack - so the two disagreed, and the
+      // difference came out of the module below as a shrink nobody asked
+      // for.
+      return resolvePairResize({ ...drag, requestedDelta });
     },
     [scale, rowPitchPx]
   );
@@ -2204,6 +2220,7 @@ function ResizeHandle({
         bottomRowSpan: pair.bottomRowSpan,
         topMinRowSpan: pair.topMinRowSpan,
         bottomMinRowSpan: pair.bottomMinRowSpan,
+        spaceBelow: pair.spaceBelow,
       };
       onResizeStart(pair);
     },
@@ -2213,7 +2230,8 @@ function ResizeHandle({
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!dragRef.current) return;
-      onResizeMove(pair, computeClampedDeltaRows(event.clientY));
+      const { topDelta, pushDown } = computeClampedDeltaRows(event.clientY);
+      onResizeMove(pair, topDelta, pushDown);
     },
     [computeClampedDeltaRows, pair, onResizeMove]
   );
@@ -2221,7 +2239,7 @@ function ResizeHandle({
   const handlePointerUp = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!dragRef.current) return;
-      const deltaRows = computeClampedDeltaRows(event.clientY);
+      const { topDelta: deltaRows } = computeClampedDeltaRows(event.clientY);
       dragRef.current = null;
       unlockCursor();
       onResizeEnd(pair, deltaRows);
@@ -2949,7 +2967,7 @@ function PaletteCard({
   // sidebar, not the cell.
   const preview = useMemo(() => {
     const previewColumns = dayUnitColumns(pageGrid);
-    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns);
+    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns, previewProps);
     const placement = { columnStart: 0, rowStart: 0, columnSpan: previewColumns, rowSpan };
     const rect = gridCellToPixels(pageGrid, placement);
     const elements = renderModuleInstance(
@@ -3166,6 +3184,21 @@ function ModulePalette({
   const [modulesOpen, setModulesOpen] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
 
+  // Which category sections inside Modules are expanded.
+  //
+  // General starts open and the rest closed. General holds the eleven
+  // modules that WERE the whole palette before the catalogue, so the
+  // panel opens onto what it has always opened onto, with the other
+  // hundred behind headers rather than in front of them.
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
+    General: true,
+  });
+  // A hundred and fifteen cards is more than anyone scrolls. Typing here
+  // searches every section at once and opens the ones that match, so the
+  // categories are how you BROWSE and this is how you FETCH - a palette
+  // that has only the first is a filing cabinet.
+  const [moduleFilter, setModuleFilter] = useState("");
+
   // A "+" zone asking to highlight the module list is also asking to
   // see it - force the group open, or the thing being pointed at stays
   // hidden behind a collapsed header. React's "adjust state during
@@ -3203,6 +3236,22 @@ function ModulePalette({
   // stuck scrolling to the side within the side nav." The panel only
   // needs to scroll while nothing is being dragged out of it.
   const isDraggingPaletteCard = paletteGestureActive || (activeId?.startsWith(PALETTE_ID_PREFIX) ?? false);
+
+  // The sections to draw: every one of them, or only what matches the
+  // filter. Matching on the slug as well as the label because the slug is
+  // what an error message or a URL names, and it is often the only handle
+  // anyone has on a module they are trying to find.
+  const moduleQuery = moduleFilter.trim().toLowerCase();
+  const paletteSections = moduleQuery
+    ? PALETTE_SECTIONS.map((section) => ({
+        ...section,
+        modules: section.modules.filter(
+          (m) =>
+            m.label.toLowerCase().includes(moduleQuery) ||
+            m.slug.includes(moduleQuery.replace(/\s+/g, "-"))
+        ),
+      })).filter((section) => section.modules.length > 0)
+    : PALETTE_SECTIONS;
 
   // The group header is the same kind of label as the "Font" and "Hours"
   // labels inside the groups, one step up: same uppercase-and-tracked
@@ -3246,6 +3295,44 @@ function ModulePalette({
       >
         {label}
       </span>
+    </button>
+  );
+
+  // One step DOWN from groupButton, the way groupButton is one step down
+  // from the panel title: same uppercase treatment, smaller and lighter,
+  // with the module count sitting where it can be read without opening
+  // the section.
+  const sectionButton = (label: string, count: number, isOpen: boolean, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        width: "100%",
+        background: "none",
+        border: "none",
+        padding: "2px 0",
+        cursor: "pointer",
+        color: PANEL_TEXT,
+        textAlign: "left",
+      }}
+    >
+      <PaletteChevron open={isOpen} />
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 0.7,
+          textTransform: "uppercase",
+          color: isOpen ? PANEL_TEXT : PANEL_MUTED,
+          transition: "color 0.18s ease",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ marginLeft: "auto", fontSize: 10, color: PANEL_FAINT }}>{count}</span>
     </button>
   );
 
@@ -3348,18 +3435,69 @@ function ModulePalette({
             transition: "background 0.4s ease",
           }}
         >
-          {PALETTE_MODULES.map((m) => (
-            <PaletteCard
-              key={m.slug}
-              slug={m.slug}
-              label={m.label}
-              previewProps={m.previewProps}
-              pageGrid={pageGrid}
-              fontFamily={fontFamily}
-              isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-              dragOffset={activeDelta}
-            />
-          ))}
+          <input
+            type="search"
+            value={moduleFilter}
+            onChange={(event) => setModuleFilter(event.target.value)}
+            placeholder="Search modules"
+            style={{
+              width: "calc(100% - 14px)",
+              boxSizing: "border-box",
+              padding: "6px 8px",
+              marginBottom: 2,
+              fontSize: 12,
+              color: PANEL_TEXT,
+              background: PANEL_FILL,
+              border: `1px solid ${PANEL_EDGE}`,
+              borderRadius: 8,
+              outline: "none",
+            }}
+          />
+          {paletteSections.map((section) => {
+            // A search result is already the answer to "which ones" - it
+            // opens regardless of how the section was left, so a match
+            // never hides behind a header the user last closed.
+            const isOpen = moduleQuery.length > 0 || openCategories[section.category] === true;
+            return (
+              <div key={section.category} style={{ display: "flex", flexDirection: "column" }}>
+                {sectionButton(section.category, section.modules.length, isOpen, () =>
+                  setOpenCategories((open) => ({
+                    ...open,
+                    [section.category]: !open[section.category],
+                  }))
+                )}
+                <PaletteCollapse open={isOpen} allowOverflow={isDraggingPaletteCard}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      paddingTop: 4,
+                      paddingBottom: 4,
+                    }}
+                  >
+                    {section.modules.map((m) => (
+                      <PaletteCard
+                        key={m.slug}
+                        slug={m.slug}
+                        label={m.label}
+                        previewProps={m.previewProps}
+                        pageGrid={pageGrid}
+                        fontFamily={fontFamily}
+                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                        dragOffset={activeDelta}
+                      />
+                    ))}
+                  </div>
+                </PaletteCollapse>
+              </div>
+            );
+          })}
+          {paletteSections.length === 0 && (
+            <div style={{ fontSize: 12, color: PANEL_FAINT, padding: "4px 0 8px" }}>
+              No modules match “{moduleFilter.trim()}”.
+            </div>
+          )}
         </div>
       </PaletteCollapse>
     </div>
@@ -3957,6 +4095,11 @@ export function NativePlannerEditor({
     topId: string;
     bottomId: string;
     deltaRows: number;
+    // How many of those rows came from sliding the stack down rather than
+    // from shrinking the module below - see stackResize.ts. Frozen at
+    // drag-start like every other floor in this file, so the preview stays
+    // anchored to what was true when the gesture began.
+    pushDown: number;
   } | null>(null);
 
   // Same shape of state as resizeDrag above, for a StackResizeHandle drag
@@ -4024,11 +4167,31 @@ export function NativePlannerEditor({
       const top = next[resizeDrag.topId];
       const bottom = next[resizeDrag.bottomId];
       if (top && bottom) {
+        const push = resizeDrag.pushDown;
         next = {
           ...next,
           [resizeDrag.topId]: { ...top, rowSpan: top.rowSpan + resizeDrag.deltaRows },
-          [resizeDrag.bottomId]: { ...bottom, rowStart: bottom.rowStart + resizeDrag.deltaRows, rowSpan: bottom.rowSpan - resizeDrag.deltaRows },
+          // It always MOVES by the full delta and SHRINKS by whatever was
+          // not found in the space below, so a pure slide leaves it exactly
+          // the size it was.
+          [resizeDrag.bottomId]: {
+            ...bottom,
+            rowStart: bottom.rowStart + resizeDrag.deltaRows,
+            rowSpan: bottom.rowSpan - (resizeDrag.deltaRows - push),
+          },
         };
+        // Everything under the bottom module rides along with it. Without
+        // this the preview would show the stack overlapping itself and then
+        // snap straight on release - the commit moves them either way.
+        if (push > 0) {
+          for (const [id, placement] of Object.entries(next)) {
+            if (id === resizeDrag.topId || id === resizeDrag.bottomId) continue;
+            if (placement.columnStart !== bottom.columnStart) continue;
+            if (placement.columnSpan !== bottom.columnSpan) continue;
+            if (placement.rowStart < bottom.rowStart) continue;
+            next[id] = { ...placement, rowStart: placement.rowStart + push };
+          }
+        }
       }
     }
     if (stackResizeDrag && stackResizeDrag.deltaRows !== 0) {
@@ -4214,20 +4377,57 @@ export function NativePlannerEditor({
   const resizePairsByPageId = useMemo(() => {
     const byPage: Record<string, ResizePair[]> = {};
     for (const page of pages) {
-      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number; slug: string }>>();
+      const byColumn = new Map<
+        string,
+        Array<{ id: string; rowStart: number; rowSpan: number; slug: string; propValues: Record<string, unknown> }>
+      >();
       for (const id of instanceIdsByPageId[page.pageId] ?? []) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
-        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan, slug: info.slug });
+        group.push({
+          id,
+          rowStart: placement.rowStart,
+          rowSpan: placement.rowSpan,
+          slug: info.slug,
+          // Its floor depends on its content, not only its type.
+          propValues: info.propValues,
+        });
         byColumn.set(columnKey, group);
       }
       const pairs: ResizePair[] = [];
       for (const [columnKey, group] of byColumn) {
         const [columnStart, columnSpan] = columnKey.split(":").map(Number);
         const sorted = [...group].sort((a, b) => a.rowStart - b.rowStart);
+        // How far this whole column stack could slide down. Measured from
+        // the lowest member, because a stack is gravity-packed and the only
+        // free rows are under all of them. Same overlap test and same bound
+        // stackBottomsByPageId uses, so both handles agree about where the
+        // page runs out.
+        const stackBottomRowEnd = sorted.reduce(
+          (lowest, m) => Math.max(lowest, m.rowStart + m.rowSpan),
+          0
+        );
+        const overlapsColumn = (o: { columnStart: number; columnSpan: number }) =>
+          o.columnStart < columnStart + columnSpan && o.columnStart + o.columnSpan > columnStart;
+        // ANY module below that overlaps this column range bounds the
+        // slide, not only a locked one. The other handle counts only locked
+        // blocks, and that is safe for it because it grows a module inside
+        // its own column; this operation MOVES modules downward, so an
+        // unlocked full-width block under a sidebar stack is just as solid
+        // an obstacle - treating it as free space slides the stack straight
+        // through it.
+        let bound = page.pageGrid.gridRows;
+        for (const otherId of instanceIdsByPageId[page.pageId] ?? []) {
+          const otherPlacement = displayPlacements[otherId];
+          if (!otherPlacement) continue;
+          if (sorted.some((m) => m.id === otherId)) continue;
+          if (otherPlacement.rowStart < stackBottomRowEnd || !overlapsColumn(otherPlacement)) continue;
+          bound = Math.min(bound, otherPlacement.rowStart);
+        }
+        const spaceBelow = Math.max(0, bound - stackBottomRowEnd);
         for (let i = 0; i < sorted.length - 1; i++) {
           const top = sorted[i];
           const bottom = sorted[i + 1];
@@ -4242,8 +4442,14 @@ export function NativePlannerEditor({
             topRowStart: top.rowStart,
             topRowSpan: top.rowSpan,
             bottomRowSpan: bottom.rowSpan,
-            topMinRowSpan: getMinRowSpanForSlug(top.slug, page.pageGrid, columnSpan),
-            bottomMinRowSpan: getMinRowSpanForSlug(bottom.slug, page.pageGrid, columnSpan),
+            topMinRowSpan: getMinRowSpanForSlug(top.slug, page.pageGrid, columnSpan, top.propValues),
+            bottomMinRowSpan: getMinRowSpanForSlug(
+              bottom.slug,
+              page.pageGrid,
+              columnSpan,
+              bottom.propValues
+            ),
+            spaceBelow,
           });
         }
       }
@@ -4259,14 +4465,24 @@ export function NativePlannerEditor({
     const byPage: Record<string, StackBottom[]> = {};
     for (const page of pages) {
       const pageIds = instanceIdsByPageId[page.pageId] ?? [];
-      const byColumn = new Map<string, Array<{ id: string; rowStart: number; rowSpan: number; slug: string }>>();
+      const byColumn = new Map<
+        string,
+        Array<{ id: string; rowStart: number; rowSpan: number; slug: string; propValues: Record<string, unknown> }>
+      >();
       for (const id of pageIds) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
         if (!info || info.locked || !placement) continue;
         const columnKey = `${placement.columnStart}:${placement.columnSpan}`;
         const group = byColumn.get(columnKey) ?? [];
-        group.push({ id, rowStart: placement.rowStart, rowSpan: placement.rowSpan, slug: info.slug });
+        group.push({
+          id,
+          rowStart: placement.rowStart,
+          rowSpan: placement.rowSpan,
+          slug: info.slug,
+          // Its floor depends on its content, not only its type.
+          propValues: info.propValues,
+        });
         byColumn.set(columnKey, group);
       }
       const stackBottoms: StackBottom[] = [];
@@ -4295,7 +4511,11 @@ export function NativePlannerEditor({
           bottomId: bottomMember.id,
           columnStart,
           columnSpan,
-          members: sorted.map((m) => ({ id: m.id, rowSpan: m.rowSpan, minRowSpan: getMinRowSpanForSlug(m.slug, page.pageGrid, columnSpan) })),
+          members: sorted.map((m) => ({
+            id: m.id,
+            rowSpan: m.rowSpan,
+            minRowSpan: getMinRowSpanForSlug(m.slug, page.pageGrid, columnSpan, m.propValues),
+          })),
           stackTopRowStart: sorted[0].rowStart,
           stackBottomRowEnd,
           maxBottomBound,
@@ -6002,7 +6222,14 @@ export function NativePlannerEditor({
       );
       if (!phantomZone) return;
       const phantomColumnSpan = phantomZone.columnSpan;
-      const phantomRowSpan = getMinRowSpanForSlug(slug, phantomPageGrid, phantomColumnSpan);
+      const phantomRowSpan = getMinRowSpanForSlug(
+        slug,
+        phantomPageGrid,
+        phantomColumnSpan,
+        // Not placed yet, so its content is the palette's preview props -
+        // the same ones the phantom is rendered with just below.
+        meta.previewProps as Record<string, unknown>
+      );
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
           columnStart: phantomZone.columnStart,
@@ -6306,7 +6533,7 @@ export function NativePlannerEditor({
 
       const effectiveColumnSpan = crossingZones ? targetZone!.columnSpan : current.columnSpan;
       const effectiveRowSpan = crossingZones
-        ? getMinRowSpanForSlug(info.slug, targetPageGrid, effectiveColumnSpan)
+        ? getMinRowSpanForSlug(info.slug, targetPageGrid, effectiveColumnSpan, info.propValues)
         : current.rowSpan;
 
       // Pinned at the module's own CURRENT column whenever not
@@ -6500,9 +6727,10 @@ export function NativePlannerEditor({
       // reorder never shrinks anyone. The floors themselves come from the
       // shared rule; this `if` is the policy about when to offer them.
       const minRowSpanById = crossingZones
-        ? minRowSpansForStack(targetPageGrid, candidate, targetOthersWithReservations, (id) =>
-            moduleLookup.get(id)?.slug
-          )
+        ? minRowSpansForStack(targetPageGrid, candidate, targetOthersWithReservations, (id) => {
+            const other = moduleLookup.get(id);
+            return other ? { slug: other.slug, propValues: other.propValues } : undefined;
+          })
         : undefined;
 
       const { placement: rawResolved, reflow: targetReflow } = resolveModulePlacement(
@@ -7740,6 +7968,17 @@ export function NativePlannerEditor({
           const bottom = prev[bottomId];
           if (top) next[topId] = { ...top, rowSpan: result.top.rowSpan };
           if (bottom) next[bottomId] = { ...bottom, rowStart: bottomRowStart, rowSpan: result.bottom.rowSpan };
+          // Modules the boundary slid down rather than shrank into - only
+          // ever present when the drag reached into free space below the
+          // stack (see stackResize.ts). Their CONTENT is untouched, so
+          // there is no re-render to apply and moduleLookup is left alone;
+          // only where they sit has changed.
+          for (const m of result.moved ?? []) {
+            const placement = prev[m.id];
+            if (placement && m.rowStart !== null) {
+              next[m.id] = { ...placement, rowStart: m.rowStart };
+            }
+          }
           return next;
         });
         setModuleLookup((prev) => {
@@ -7809,18 +8048,33 @@ export function NativePlannerEditor({
       // comment) — clears any in-progress one the same way starting a new
       // module drag already clears settling.
       setStackResizeDrag(null);
-      setResizeDrag({ pairKey: pair.key, pageId: pair.pageId, topId: pair.topId, bottomId: pair.bottomId, deltaRows: 0 });
+      setResizeDrag({
+        pairKey: pair.key,
+        pageId: pair.pageId,
+        topId: pair.topId,
+        bottomId: pair.bottomId,
+        deltaRows: 0,
+        pushDown: 0,
+      });
     },
     [gestureBlockedByPendingCommit]
   );
 
-  const handleResizeMove = useCallback((pair: ResizePair, deltaRows: number) => {
+  const handleResizeMove = useCallback((pair: ResizePair, deltaRows: number, pushDown: number) => {
     // Guards against a second resize drag having started (and overwritten
     // the ref) before this one's own stream of move events has fully
     // stopped — extremely unlikely on a single pointer, but cheap to rule
     // out rather than assume away.
     if (activeResizePairKeyRef.current !== pair.key) return;
-    setResizeDrag((prev) => (prev && prev.deltaRows !== deltaRows ? { ...prev, deltaRows } : prev));
+    // Both numbers arrive resolved together from the handle's own frozen
+    // drag state — see computeClampedDeltaRows. Re-deriving either of them
+    // here against the live pair is what made the module below shrink while
+    // the stack was also sliding.
+    setResizeDrag((prev) =>
+      prev && (prev.deltaRows !== deltaRows || prev.pushDown !== pushDown)
+        ? { ...prev, deltaRows, pushDown }
+        : prev
+    );
   }, []);
 
   const handleResizeEnd = useCallback(

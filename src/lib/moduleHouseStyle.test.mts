@@ -35,7 +35,7 @@
 // Row pitch has its own file, modulePitch.test.mts, because it needs to
 // measure gaps rather than individual marks.
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { REGISTERED_SLUGS, moduleDefinition } from "./moduleRegistry";
+import { REGISTERED_SLUGS, moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
 import { HEADING_SIZES_PT } from "./modules/moduleFrame";
 import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
@@ -98,21 +98,55 @@ const LATTICE_DEBT: Record<string, number> = {
  * only the horizontal arm had been snapped.
  */
 const WEIGHTED_COLUMNS = new Set([
-  "column-table",
-  "todo-checklist",
-  "habit-tracker",
-  "water-tracker",
-  "rating-strip",
+  ...slugsDrawnBy(
+    "column-table",
+    "todo-checklist",
+    "habit-tracker",
+    "rating-strip",
+    "mini-month",
+    "progress-meter"
+  ),
   "hourly-grid-core",
   "month-grid-core",
-  "mini-month",
-  "progress-meter",
 ]);
 
 /** Modules whose heading is drawn by something other than the frame, and
  *  is a page title rather than a module heading - a different thing, set
  *  differently on purpose. */
 const NOT_MODULE_HEADINGS = new Set(["week-title", "month-title", "hourly-grid-core"]);
+
+/**
+ * Modules that lay their content out in the ALLOCATION frame rather than
+ * the ink box, so their own edges sit one box inset outside it.
+ *
+ * Derived from the primitive, not listed by slug - a hand-kept list of
+ * slugs is the defect this file has already had to undo four times.
+ */
+const ALLOCATION_FRAME = new Set([
+  ...slugsDrawnBy("todo-checklist", "icon-strip"),
+  "hourly-grid-core",
+  "month-grid-core",
+]);
+
+/**
+ * Primitives whose "-heading" is a STRIP LABEL, not a band heading, and
+ * may therefore be set at the smallest legible size.
+ *
+ * The 8/7/6 ladder is about a heading sitting in its own header band,
+ * where there is room for it. icon-strip has no band: its label and its
+ * glyphs together are one lattice cell, which is what makes the module the
+ * thing it is, and 5pt is what that budget leaves - asked for as "the text
+ * above the icons in a header at the smallest legible such that the total
+ * height is 1 cell". A 7pt label would take 35px of the 75 and the glyphs
+ * would be down to 31px, which reads as a row of dots.
+ *
+ * The allowance is exactly one rung and nothing else: the uppercase rule
+ * and the 8pt house maximum still apply to these modules, and renaming the
+ * element to dodge the check outright would have been the toothless
+ * version of this.
+ */
+const SMALL_LABEL_HEADINGS = new Set(slugsDrawnBy("icon-strip"));
+const SMALLEST_LEGIBLE_PT = 5;
 
 /**
  * The habit tracker's COMPACT layout sizes a row as a name row plus
@@ -122,9 +156,10 @@ const NOT_MODULE_HEADINGS = new Set(["week-title", "month-title", "hourly-grid-c
  * getHabitTrackerRowMetricsPx. Skipped per WIDTH, not per module: its wide
  * layout is checked like everything else.
  */
+const COMPACTABLE = new Set(slugsDrawnBy("habit-tracker"));
+
 function isCompactException(slug: string, widthPx: number): boolean {
-  const compactable = slug === "habit-tracker" || slug === "water-tracker";
-  return compactable && isHabitTrackerCompact(widthPx);
+  return COMPACTABLE.has(slug) && isHabitTrackerCompact(widthPx);
 }
 
 /**
@@ -168,6 +203,15 @@ function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
   return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
 }
 
+/**
+ * Where the test places a module. Stated once because the render and the
+ * box it is judged against have to agree about it - computing the box at
+ * rowStart 0 while rendering at rowStart 2 reported every mark in several
+ * modules as escaping, which is this codebase's favourite bug wearing a
+ * test's clothes.
+ */
+const PLACEMENT_ROW_START = 2;
+
 function render(
   slug: string,
   columnSpan: number,
@@ -180,7 +224,7 @@ function render(
         id: "t",
         locked: true,
         columnStart: 0,
-        rowStart: 2,
+        rowStart: PLACEMENT_ROW_START,
         columnSpan,
         rowSpan,
         propValues,
@@ -225,15 +269,33 @@ for (const slug of REGISTERED_SLUGS) {
       } catch {
         continue; // already reported above
       }
-      const box = elements.find((e) => e.type === "figure" && (e.strokeWidth ?? 0) > 0);
-      if (!box) continue;
+      // The module's INK BOX, from the GRID - not "the first stroked
+      // figure I can find", which is what this said and which is wrong for
+      // exactly the modules it matters most for. A module with no outer
+      // border has no such figure: icon-strip draws a row of stroked
+      // glyphs and this picked the first GLYPH as the box, then reported
+      // every label in the module as escaping a 25px box. scripts/
+      // check-week-page.mts made the same mistake first, on hourly-grid-
+      // core, and carries the same note.
+      const box = gridCellToPixels(PAGE, {
+        columnStart: 0,
+        rowStart: PLACEMENT_ROW_START,
+        columnSpan,
+        rowSpan,
+      });
       checked++;
 
       const where = `${slug} ${columnSpan}x${rowSpan}`;
-      const left = box.x ?? 0;
-      const right = left + (box.width ?? 0);
-      const top = box.y ?? 0;
-      const bottom = top + (box.height ?? 0);
+      // Modules that lay out in the ALLOCATION frame so their boundaries
+      // land on the lattice are entitled to the box inset on every side -
+      // the allocation IS the ink box grown by that inset, so a mark on
+      // the module's own edge sits exactly `inset` outside it. That is the
+      // technique working, not a mark escaping.
+      const slack = ALLOCATION_FRAME.has(slug) ? PAGE.boxInsetPx + 1 : 1;
+      const left = box.x;
+      const right = left + box.width;
+      const top = box.y;
+      const bottom = top + box.height;
 
       for (const element of elements) {
         // Rule 4.
@@ -253,13 +315,13 @@ for (const slug of REGISTERED_SLUGS) {
         // string is that wide - so this catches the layout, and the
         // shrink-then-truncate in textFit.ts is what keeps the string
         // itself inside that layout.
-        if (x < left - 1 || x + width > right + 1) {
+        if (x < left - slack || x + width > right + slack) {
           fail(
             `${where}: ${element.id} spans ${x.toFixed(0)}..${(x + width).toFixed(0)} ` +
               `outside the box ${left.toFixed(0)}..${right.toFixed(0)}`
           );
         }
-        if (y < top - 1 || y + height > bottom + 1) {
+        if (y < top - slack || y + height > bottom + slack) {
           fail(
             `${where}: ${element.id} runs ${y.toFixed(0)}..${(y + height).toFixed(0)} ` +
               `outside the box ${top.toFixed(0)}..${bottom.toFixed(0)}`
@@ -286,10 +348,13 @@ for (const slug of REGISTERED_SLUGS) {
                 `over the house maximum of 8pt`
             );
           }
-          if (!HEADING_SIZES_PT.map(ptToPx).some((size) => Math.abs(size - fontSize) < 0.5)) {
+          const ladder = SMALL_LABEL_HEADINGS.has(slug)
+            ? [...HEADING_SIZES_PT, SMALLEST_LEGIBLE_PT]
+            : HEADING_SIZES_PT;
+          if (!ladder.map(ptToPx).some((size) => Math.abs(size - fontSize) < 0.5)) {
             fail(
               `${where}: heading is ${((fontSize * 72) / 300).toFixed(1)}pt, ` +
-                `not a rung of the ladder (${HEADING_SIZES_PT.join("/")}pt)`
+                `not a rung of the ladder (${ladder.join("/")}pt)`
             );
           }
         }

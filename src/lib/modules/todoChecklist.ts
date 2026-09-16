@@ -20,10 +20,21 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import {
-  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
+  HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
+  type FrameLattice } from "@/lib/modules/moduleFrame";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
+  /**
+   * Printed in the header band. Defaults to "TO - DO".
+   *
+   * It was that string, fixed, which was fine while this drew one module.
+   * Fourteen catalogue modules are a checklist with different words above
+   * it - a grocery list, a packing list, a prayer list, Ivy Lee's six -
+   * and a preset that cannot change its own name is not a preset.
+   */
+  heading?: string;
 };
 
 export type RenderedElement = {
@@ -37,12 +48,21 @@ export type RenderedElement = {
 };
 
 const NEAR_BLACK = "#231F20";
-// 15.12pt is exactly 63 print px: one dot pitch (75) less the box inset at
-// both ends (12). That is the one header height for which the space left
-// under it is a whole number of dots at EVERY row span — see ROW_HEIGHT_PT.
-// Measured from the reference at 16.7pt, so this is 1.6pt shorter and the
-// heading band sits a little tighter around its 12pt line.
-const HEADER_HEIGHT_PT = 15.12;
+// The header band the renderer actually draws.
+//
+// Taken from moduleFrame rather than restated, because the renderers here
+// do not use a constant at all - they call contentTopPx, which lands the
+// band on the next lattice line down (pitch 75 less the box inset 6 = 69)
+// and falls back to exactly this constant when there is no lattice.
+//
+// This file used to keep its own 15.12pt, i.e. 63px, described as "one dot
+// pitch less the box inset at BOTH ends". That double-counted the inset:
+// the band starts at the ink box's own top, which is already inset once.
+// The number was six pixels short of the drawing and only ever reached the
+// minimum-height rule, where six pixels is a whole row - so every named
+// tracker's floor came out one row below what its rows actually need, and
+// the last row was silently dropped at the minimum. See
+// minRowSpanFloors.test.mts.
 // The house heading size, from moduleFrame - the same 8pt labeled-box and
 // the seven drawing primitives use.
 //
@@ -98,7 +118,7 @@ export function getTodoChecklistRowMetricsPx(): {
   rowLineWidthPx: number;
 } {
   return {
-    headerHeightPx: ptToPx(HEADER_HEIGHT_PT),
+    headerHeightPx: ptToPx(FRAME_HEADER_HEIGHT_PT),
     nominalRowHeightPx: ptToPx(ROW_HEIGHT_PT),
     rowLineWidthPx: ptToPx(ROW_LINE_WIDTH_PT),
   };
@@ -217,7 +237,7 @@ export function renderTodoChecklist(
     y: contentY + (headerHeight - headerTextHeight) / 2,
     width: geometry.width,
     height: headerTextHeight,
-    text: "TO - DO",
+    text: (config.heading ?? "TO - DO").toUpperCase(),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",

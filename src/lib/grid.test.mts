@@ -996,10 +996,29 @@ console.log("All resolveZone checks passed.");
   ];
   const slugs: Record<string, string> = { sameStack: "todo-checklist", lockedOne: "todo-checklist",
     otherColumn: "todo-checklist", otherWidth: "todo-checklist" };
-  const floors = minRowSpansForStack(P, candidate, others, (id) => slugs[id]);
+  const moduleOf = (id: string) =>
+    slugs[id] ? { slug: slugs[id], propValues: {} } : undefined;
+  const floors = minRowSpansForStack(P, candidate, others, moduleOf);
   const ids = Object.keys(floors).sort();
   assert(ids.join(",") === "sameStack", `only the same-column, same-width, unlocked sibling (got ${ids.join(",")})`);
   assert(floors.sameStack >= 2, "and it gets a real floor");
+
+  // The floor follows the CONTENT, not just the type. A sibling shrinking
+  // to admit an arriving module must not be shrunk past its own rows, and
+  // before this the resolver handed back a slug alone and could not have
+  // known. Two identical habit trackers, one naming six rows:
+  const named = minRowSpansForStack(P, candidate, others, (id) =>
+    id === "sameStack"
+      ? { slug: "habit-tracker", propValues: { habits: ["a", "b", "c", "d", "e", "f"], columns: [] } }
+      : undefined
+  );
+  const blank = minRowSpansForStack(P, candidate, others, (id) =>
+    id === "sameStack" ? { slug: "habit-tracker", propValues: { habits: [], columns: [] } } : undefined
+  );
+  assert(
+    named.sameStack > blank.sameStack,
+    `a tracker naming six rows needs a taller floor than a blank one (named ${named.sameStack}, blank ${blank.sameStack})`
+  );
 }
 console.log("All minRowSpansForStack checks passed.");
 
