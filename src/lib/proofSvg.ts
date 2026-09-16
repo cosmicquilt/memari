@@ -31,8 +31,33 @@ export function escapeXml(s: string): string {
   );
 }
 
+/**
+ * How a rule thinner than this many print px should be drawn.
+ *
+ * A rule is a 1.25px filled rect - 0.3pt on paper, which is right. Shrink
+ * the page to fit a card and that becomes a FIFTH of a screen pixel, and a
+ * sub-pixel rect does not reliably survive rasterising: some land on a
+ * device-pixel boundary and draw, their neighbours fall between two and
+ * vanish. Reported as missing dividers "between s and m and between m and
+ * t" - not missing at all, just the ones whose edges happened to land
+ * badly.
+ *
+ * Given as `hairlinePx` by a caller that is being LOOKED AT rather than
+ * measured. Such a rule is then stroked as well as filled, with
+ * non-scaling-stroke so the stroke stays one device pixel however far the
+ * drawing is scaled down. Position and length are untouched; only the
+ * weight stops being to scale, which is the honest trade - a hairline at
+ * one sixth size is genuinely invisible, and showing it invisibly tells a
+ * reviewer the line is not there.
+ *
+ * The proof sheets deliberately do NOT pass this: their question is whether
+ * a rule lands on the lattice, and a rule fattened for legibility is a rule
+ * that no longer shows where its edges are.
+ */
+export type SvgOptions = { hairlinePx?: number };
+
 /** One rendered element as SVG. */
-export function toSvg(element: RenderedPolotnoElement): string {
+export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {}): string {
   if (element.type === "text") {
     const size = element.fontSize ?? 12;
     const anchor =
@@ -72,10 +97,21 @@ export function toSvg(element: RenderedPolotnoElement): string {
     typeof element.cornerRadius === "number" && element.cornerRadius > 0
       ? ` rx="${element.cornerRadius}"`
       : "";
+  // A filled rule too thin to survive being scaled down - see SvgOptions.
+  // Only a FILLED one: a stroked box is already drawn as a stroke and
+  // scales as one.
+  const hairline =
+    !!options.hairlinePx &&
+    hasFill &&
+    !hasStroke &&
+    Math.min(Number(element.width ?? 0), Number(element.height ?? 0)) < options.hairlinePx;
   return (
     `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}"${radius} ` +
     `fill="${hasFill ? element.fill : "none"}" ` +
     (hasStroke ? `stroke="${element.stroke}" stroke-width="${element.strokeWidth}" ` : "") +
+    (hairline
+      ? `stroke="${element.fill}" stroke-width="1" vector-effect="non-scaling-stroke" `
+      : "") +
     `opacity="${element.opacity ?? 1}" />`
   );
 }

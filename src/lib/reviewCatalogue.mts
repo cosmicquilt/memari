@@ -76,7 +76,9 @@ function card(slug: string, label: string, index: number): string {
       ) as never
     );
     markCount += elements.length;
-    for (const element of elements) parts.push(toSvg(element));
+    // Drawn to be looked at on a screen at about a sixth of true size,
+    // so a 1.25px rule needs help to survive - see SvgOptions.
+    for (const element of elements) parts.push(toSvg(element, { hairlinePx: 4 }));
   } catch (error) {
     threw.push(`${slug}: ${error}`);
   }
@@ -186,7 +188,16 @@ color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:4px 
 font-variant-numeric:tabular-nums}
 .nm{font-weight:500}
 .sz{font:400 12px/1.3 "Hanken Grotesk",system-ui,sans-serif;color:var(--muted)}
-@media (max-width:520px){h1{font-size:28px}.grid{grid-template-columns:1fr}}
+@media (max-width:640px){h1{font-size:28px}.grid{grid-template-columns:1fr}
+/* ONE ROW, scrolled sideways, on a phone. Twelve chips wrap to ten rows on
+   a 375px screen - a third of the viewport, permanently stuck to the top,
+   with the drawing it is meant to help you reach hidden behind it. The
+   sideways scroll is contained to the nav; the page itself never moves. */
+nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+scrollbar-width:none;gap:6px}
+nav::-webkit-scrollbar{display:none}
+nav a{flex:0 0 auto}
+section{scroll-margin-top:58px}}
 `;
 
 const html =
