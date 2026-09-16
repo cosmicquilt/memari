@@ -61,6 +61,12 @@ function card(slug: string, label: string, index: number): string {
   );
   const placement = { columnStart: 0, rowStart: 0, columnSpan, rowSpan };
 
+  const box0 = gridCellToAllocation(PAGE, placement);
+  // How far down this card shows the page, which is what turns a print
+  // thickness into a screen one - see SvgOptions.
+  const wide = columnSpan / rowSpan >= 6;
+  const hairlineScale = (wide ? FULL_ROW_WIDTH_PX : CARD_WIDTH_PX) / box0.width;
+
   const parts: string[] = [];
   try {
     const elements = flatten(
@@ -76,22 +82,12 @@ function card(slug: string, label: string, index: number): string {
       ) as never
     );
     markCount += elements.length;
-    // Drawn exactly as toSvg emits it, with no help for the thin rules.
-    //
-    // At about a sixth of true size a 1.25px rule is a fifth of a screen
-    // pixel, and some of them do not survive rasterising - the ones whose
-    // edges fall badly on the device grid drop out while their neighbours
-    // draw. Two attempts at fixing that (a 1px non-scaling stroke, then a
-    // 0.5px one) both read as too heavy against the rules that were already
-    // rendering correctly. Asked for directly: leave it alone, missing
-    // lines and all. Faithful scale beats a legibility aid that changes
-    // what the drawing looks like.
-    for (const element of elements) parts.push(toSvg(element));
+    for (const element of elements) parts.push(toSvg(element, { hairlineScale }));
   } catch (error) {
     threw.push(`${slug}: ${error}`);
   }
 
-  const box = gridCellToAllocation(PAGE, placement);
+  const box = box0;
   // A WIDE, SHORT module gets the whole row.
   //
   // Scaled to an ordinary card an icon strip came out 25px tall - six
@@ -99,7 +95,6 @@ function card(slug: string, label: string, index: number): string {
   // unreviewable. There is no scale at which such a shape is both readable
   // and card-sized, because the shape itself is wide; so it gets a wide
   // card, which is also how it reads on the page it lives on.
-  const wide = columnSpan / rowSpan >= 6;
   const width = wide ? FULL_ROW_WIDTH_PX : CARD_WIDTH_PX;
   const height = (width * box.height) / box.width;
   drawn++;
@@ -224,6 +219,26 @@ const html =
   sections.join("") +
   `</div>` +
   `<script>(function(){` +
+  // ONE DEVICE PIXEL, INKED TO MATCH - see SvgOptions in proofSvg.ts. Each
+  // hairline carries the width it would truly have on screen, in CSS px, as
+  // --t. Below one device pixel it cannot be drawn at that width at all, so
+  // it is drawn at exactly one device pixel and its ink is dropped in the
+  // same proportion: a fifth of a pixel of ink becomes a whole pixel at a
+  // fifth strength. Uniform, because every one of them gets the identical
+  // treatment regardless of where it falls; and still light, because the
+  // ink is not invented. Above one device pixel nothing is clamped.
+  `function hair(){` +
+  `var d=window.devicePixelRatio||1, floor=1/d;` +
+  `document.querySelectorAll("line.hair").forEach(function(l){` +
+  `var t=parseFloat(getComputedStyle(l).getPropertyValue("--t"))||floor;` +
+  `l.setAttribute("stroke-width",String(Math.max(t,floor)));` +
+  `l.setAttribute("stroke-opacity",String(Math.min(1,t/floor)));});}` +
+  `hair();` +
+  // devicePixelRatio changes when the page is zoomed or moved to another
+  // screen, and the floor moves with it.
+  `if(window.matchMedia){var mq=matchMedia("(resolution:"+(window.devicePixelRatio||1)+"dppx)");` +
+  `if(mq.addEventListener)mq.addEventListener("change",hair);}` +
+  `window.addEventListener("resize",hair);` +
   `var KEY="memari-catalogue-face";` +
   `var buttons=document.querySelectorAll(".faces button");` +
   `function apply(face){` +

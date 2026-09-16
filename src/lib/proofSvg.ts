@@ -31,8 +31,49 @@ export function escapeXml(s: string): string {
   );
 }
 
+/**
+ * Drawing a rule that is thinner than the screen can draw.
+ *
+ * A rule is a 1.25px filled rect - 0.3pt on paper, correct there. Shown at
+ * a sixth of size it is a FIFTH of a device pixel, and below one device
+ * pixel a rasteriser cannot draw a line: it can only tint pixels. How much
+ * of which pixel it tints depends on where the rule's edges fall on the
+ * grid, so identical rules on a regular pitch each land at a different
+ * sub-pixel phase and come out different - some crisp, some split across
+ * two rows so faintly that sRGB's gamma curve washes them out completely.
+ * That is the reported "some lines show and adjacent ones vanish", and it
+ * is a beat between the line pitch and the pixel grid, not a fault in the
+ * geometry.
+ *
+ * ONE DEVICE PIXEL IS THE FLOOR. You cannot light a fraction of a pixel.
+ * Every serious vector tool concedes this and does the same thing instead:
+ * PostScript and PDF reserve width 0 to mean "thinnest the device can
+ * draw"; Figma pins a hairline to one physical pixel however far you zoom
+ * out. The trick that keeps it looking thin is that they drop the OPACITY
+ * to match - one pixel at 40% ink reads as a hairline, where one pixel at
+ * full ink reads as a heavy line. Two earlier attempts here clamped the
+ * width and kept the ink, and both were rightly called too thick.
+ *
+ * So a hairline is emitted as a <line> down the rect's centre rather than
+ * as the rect: stroking a rect draws its OUTLINE, which for something a
+ * fifth of a pixel tall is two lines nearly on top of each other, doubling
+ * the ink. Skia and WebRender also route strokes through hairline-specific
+ * paths that preserve continuity, where a sliver-thin filled polygon is a
+ * candidate for culling.
+ *
+ * `scale` is how far down the drawing will be shown, which is what turns a
+ * print thickness into a screen one. The width and opacity themselves are
+ * finished in the page, where devicePixelRatio is known - see the script
+ * reviewCatalogue writes.
+ */
+export type SvgOptions = {
+  /** Set by a caller drawing for a screen. Rules thinner than one device
+   *  pixel at this scale get the hairline treatment. */
+  hairlineScale?: number;
+};
+
 /** One rendered element as SVG. */
-export function toSvg(element: RenderedPolotnoElement): string {
+export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {}): string {
   if (element.type === "text") {
     const size = element.fontSize ?? 12;
     const anchor =
@@ -68,6 +109,28 @@ export function toSvg(element: RenderedPolotnoElement): string {
   }
   const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
   const hasFill = !!element.fill && element.fill !== "transparent";
+
+  // A fill-only sliver, drawn as a centred line - see SvgOptions. Only
+  // fill-only: a stroked box is already a stroke and scales as one.
+  const scale = options.hairlineScale;
+  const w = Number(element.width ?? 0);
+  const h = Number(element.height ?? 0);
+  if (scale && hasFill && !hasStroke && Math.min(w, h) * scale < 1) {
+    const horizontal = h <= w;
+    const cx = Number(element.x ?? 0) + (horizontal ? 0 : w / 2);
+    const cy = Number(element.y ?? 0) + (horizontal ? h / 2 : 0);
+    // What this rule WOULD be on screen, in CSS px. The page turns it into
+    // a width and an ink level once it knows the pixel ratio.
+    const trueCssPx = Math.min(w, h) * scale;
+    return (
+      `<line class="hair" style="--t:${trueCssPx.toFixed(4)}" ` +
+      `x1="${cx}" y1="${cy}" ` +
+      `x2="${horizontal ? cx + w : cx}" y2="${horizontal ? cy : cy + h}" ` +
+      `stroke="${element.fill}" vector-effect="non-scaling-stroke" ` +
+      `opacity="${element.opacity ?? 1}" />`
+    );
+  }
+
   const radius =
     typeof element.cornerRadius === "number" && element.cornerRadius > 0
       ? ` rx="${element.cornerRadius}"`
