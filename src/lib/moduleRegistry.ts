@@ -1389,9 +1389,16 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
   // preset.
   //
   // Its stored prop was `text` where text-block's is `body`. Renaming a
-  // saved key would normally blank existing modules, and does not here:
-  // quote-block has never been in the palette and has never had a
-  // renderer, so nothing has ever placed one.
+  // saved key would normally blank existing modules, and did not here
+  // because nothing had ever placed one - it had no renderer at the time.
+  //
+  // That sentence used to end "and has never been in the palette", which
+  // stopped being true the moment it became a preset: `preset` spreads the
+  // base definition first, so it inherited text-block's own
+  // `inPalette: true` and General category in the same stroke that gave it
+  // a renderer. Both are stated explicitly below now - not to change
+  // anything, but so this is a fact about quote-block rather than a
+  // consequence of a line in text-block that someone may later move.
   "quote-block": preset("text-block", {
     db: {
       name: "Quote / Inspiration Block",
@@ -1434,6 +1441,15 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     },
     label: "Quote",
     paletteName: "Quote",
+    // Both INHERITED from text-block already - see above. Restated here so
+    // the palette placement belongs to this module.
+    //
+    // GENERAL, beside text-block, rather than Philosophy & faith: what
+    // makes it its own module is its FORM - a line with a credit under it -
+    // not its subject. A quote block is as much at home over a training log
+    // as over an examen.
+    inPalette: true,
+    category: "General",
     previewProps: {
       heading: "",
       body: "A journey of a thousand miles begins with a single step.",
