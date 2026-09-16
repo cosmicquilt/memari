@@ -31,46 +31,8 @@ export function escapeXml(s: string): string {
   );
 }
 
-/**
- * How a rule thinner than this many print px should be drawn.
- *
- * A rule is a 1.25px filled rect - 0.3pt on paper, which is right. Shrink
- * the page to fit a card and that becomes a FIFTH of a screen pixel, and a
- * sub-pixel rect does not reliably survive rasterising: some land on a
- * device-pixel boundary and draw, their neighbours fall between two and
- * vanish. Reported as missing dividers "between s and m and between m and
- * t" - not missing at all, just the ones whose edges happened to land
- * badly.
- *
- * THE POINT IS UNIFORMITY, NOT WEIGHT. The first attempt at this stroked
- * every thin rule at a full pixel, which did make them all appear - and
- * made them all look heavy, when the ones that were surviving already
- * looked right. "I would like the missing lines show and look like its
- * adjacent lines, not make all of them thick." The fault was never that
- * the lines were too faint; it was that IDENTICAL rules were rendering
- * differently from one another depending on where each one's edges happened
- * to fall on the device grid.
- *
- * A non-scaling stroke fixes that because it is measured in device space:
- * every rule that gets one is drawn at exactly the same width no matter its
- * position or the scale it sits at. Kept BELOW a whole pixel so the result
- * is the light hairline the good ones already were - at the 2x of a phone
- * screen, half a CSS pixel is one crisp device pixel.
- *
- * The proof sheets deliberately do NOT pass this: their question is whether
- * a rule lands on the lattice, and a rule redrawn for legibility is a rule
- * that no longer shows where its edges are.
- */
-export type SvgOptions = {
-  /** Rules thinner than this many print px get the treatment. */
-  hairlinePx?: number;
-  /** How wide to draw them, in CSS px, held constant by non-scaling-stroke.
-   *  Under 1 on purpose - see above. */
-  hairlineStrokePx?: number;
-};
-
 /** One rendered element as SVG. */
-export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {}): string {
+export function toSvg(element: RenderedPolotnoElement): string {
   if (element.type === "text") {
     const size = element.fontSize ?? 12;
     const anchor =
@@ -110,22 +72,10 @@ export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {})
     typeof element.cornerRadius === "number" && element.cornerRadius > 0
       ? ` rx="${element.cornerRadius}"`
       : "";
-  // A filled rule too thin to survive being scaled down - see SvgOptions.
-  // Only a FILLED one: a stroked box is already drawn as a stroke and
-  // scales as one.
-  const hairline =
-    !!options.hairlinePx &&
-    hasFill &&
-    !hasStroke &&
-    Math.min(Number(element.width ?? 0), Number(element.height ?? 0)) < options.hairlinePx;
   return (
     `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}"${radius} ` +
     `fill="${hasFill ? element.fill : "none"}" ` +
     (hasStroke ? `stroke="${element.stroke}" stroke-width="${element.strokeWidth}" ` : "") +
-    (hairline
-      ? `stroke="${element.fill}" stroke-width="${options.hairlineStrokePx ?? 0.5}" ` +
-        `vector-effect="non-scaling-stroke" `
-      : "") +
     `opacity="${element.opacity ?? 1}" />`
   );
 }
