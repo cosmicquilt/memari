@@ -42,19 +42,32 @@ export function escapeXml(s: string): string {
  * t" - not missing at all, just the ones whose edges happened to land
  * badly.
  *
- * Given as `hairlinePx` by a caller that is being LOOKED AT rather than
- * measured. Such a rule is then stroked as well as filled, with
- * non-scaling-stroke so the stroke stays one device pixel however far the
- * drawing is scaled down. Position and length are untouched; only the
- * weight stops being to scale, which is the honest trade - a hairline at
- * one sixth size is genuinely invisible, and showing it invisibly tells a
- * reviewer the line is not there.
+ * THE POINT IS UNIFORMITY, NOT WEIGHT. The first attempt at this stroked
+ * every thin rule at a full pixel, which did make them all appear - and
+ * made them all look heavy, when the ones that were surviving already
+ * looked right. "I would like the missing lines show and look like its
+ * adjacent lines, not make all of them thick." The fault was never that
+ * the lines were too faint; it was that IDENTICAL rules were rendering
+ * differently from one another depending on where each one's edges happened
+ * to fall on the device grid.
+ *
+ * A non-scaling stroke fixes that because it is measured in device space:
+ * every rule that gets one is drawn at exactly the same width no matter its
+ * position or the scale it sits at. Kept BELOW a whole pixel so the result
+ * is the light hairline the good ones already were - at the 2x of a phone
+ * screen, half a CSS pixel is one crisp device pixel.
  *
  * The proof sheets deliberately do NOT pass this: their question is whether
- * a rule lands on the lattice, and a rule fattened for legibility is a rule
+ * a rule lands on the lattice, and a rule redrawn for legibility is a rule
  * that no longer shows where its edges are.
  */
-export type SvgOptions = { hairlinePx?: number };
+export type SvgOptions = {
+  /** Rules thinner than this many print px get the treatment. */
+  hairlinePx?: number;
+  /** How wide to draw them, in CSS px, held constant by non-scaling-stroke.
+   *  Under 1 on purpose - see above. */
+  hairlineStrokePx?: number;
+};
 
 /** One rendered element as SVG. */
 export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {}): string {
@@ -110,7 +123,8 @@ export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {})
     `fill="${hasFill ? element.fill : "none"}" ` +
     (hasStroke ? `stroke="${element.stroke}" stroke-width="${element.strokeWidth}" ` : "") +
     (hairline
-      ? `stroke="${element.fill}" stroke-width="1" vector-effect="non-scaling-stroke" `
+      ? `stroke="${element.fill}" stroke-width="${options.hairlineStrokePx ?? 0.5}" ` +
+        `vector-effect="non-scaling-stroke" `
       : "") +
     `opacity="${element.opacity ?? 1}" />`
   );

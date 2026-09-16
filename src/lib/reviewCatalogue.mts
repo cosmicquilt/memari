@@ -78,7 +78,13 @@ function card(slug: string, label: string, index: number): string {
     markCount += elements.length;
     // Drawn to be looked at on a screen at about a sixth of true size,
     // so a 1.25px rule needs help to survive - see SvgOptions.
-    for (const element of elements) parts.push(toSvg(element, { hairlinePx: 4 }));
+    // Every thin rule drawn at ONE width regardless of where it falls, so
+    // identical rules stop rendering differently from one another. Half a
+    // CSS pixel: one device pixel on a phone, and light rather than heavy
+    // on a desktop - see SvgOptions.
+    for (const element of elements) {
+      parts.push(toSvg(element, { hairlinePx: 4, hairlineStrokePx: 0.5 }));
+    }
   } catch (error) {
     threw.push(`${slug}: ${error}`);
   }
