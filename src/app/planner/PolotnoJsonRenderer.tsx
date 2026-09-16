@@ -44,14 +44,29 @@ import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 // disapearing sooner at around <37%," which sits inside the default
 // fit-width view (~0.28-0.43 for a two-page spread).
 //
-// The divisor is clamped so the floor stops growing once zoomed out past
-// MIN_RECT_FLOOR_SCALE. Without that clamp a fixed device-pixel floor
-// inflates without bound as you zoom out (at 15% a 2px rule would be
-// forced to 4x its design weight), which read as heavy lines — the
-// earlier "some lines are too thick" report. Clamped, lines hold their
-// weight through the working range and fade gracefully below it.
+// THE FLOOR BELONGS ON THE INK, NOT ON THE WIDTH. This used to clamp the
+// divisor so the floor stopped growing below 30% zoom, because without
+// that a rule inflated without bound as you zoomed out - at 15% a 2px rule
+// forced to 4x its design weight - and read as heavy. But clamping the
+// WIDTH is what let lines start vanishing again below 30%, which is the
+// "horizontal lines start disapearing sooner at around <37%" report and
+// the same thing seen in Firefox.
+//
+// Both complaints come from doing half the job. Forcing a hairline to a
+// whole pixel and leaving it at full strength makes it heavy; that is what
+// the clamp was really compensating for. PostScript and PDF reserve width
+// 0 to mean "thinnest the device can draw" and Figma pins a hairline to
+// one physical pixel however far you zoom out - and both drop the OPACITY
+// in proportion, which is what keeps it reading as a hairline. A rule
+// forced to 4x its weight at a quarter of the ink is not heavy; it is the
+// same amount of ink, spread thin enough for the screen to show it.
+//
+// So the width grows without limit now, and the ink falls to match. What
+// is clamped instead is how faint that ink may get: coverage below about a
+// third washes out against white through the sRGB gamma curve, which is
+// the very disappearance this exists to stop.
 const MIN_ONSCREEN_RECT_PX = 1.0;
-const MIN_RECT_FLOOR_SCALE = 0.3;
+const MIN_ONSCREEN_INK = 0.35;
 // A rect this much thinner than it is long (either axis) is treated as a
 // rule, not a small filled shape — comfortably below any checkbox or
 // date-box aspect ratio in this app's modules (all closer to square).
@@ -118,7 +133,16 @@ function textPositionTransition(easeMs: number): string | undefined {
 // if this ever renders on the server.
 const useBeforePaint = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-export type MarkGeometry = { x: number; y: number; width: number; height: number };
+export type MarkGeometry = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** How much of its own ink a rule keeps after being widened to stay
+   *  visible - see MIN_ONSCREEN_RECT_PX. 1 for everything not widened, and
+   *  absent on geometry built for animation pairing, which does not care. */
+  ink?: number;
+};
 
 // Maps a mark's NEW geometry back onto its OLD one, so the animation can
 // start where the mark was and end where it belongs.
@@ -319,14 +343,17 @@ function markGeometry(
   let ry = top;
   let rw = width;
   let rh = height;
-  if (hasFill && !hasStroke) {
-    const needed = MIN_ONSCREEN_RECT_PX / Math.max(scale, MIN_RECT_FLOOR_SCALE);
+  let ink = 1;
+  if (hasFill && !hasStroke && scale > 0) {
+    const needed = MIN_ONSCREEN_RECT_PX / scale;
     if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
       ry = top - (needed - height) / 2;
       rh = needed;
+      ink = Math.max(MIN_ONSCREEN_INK, height / needed);
     } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
       rx = left - (needed - width) / 2;
       rw = needed;
+      ink = Math.max(MIN_ONSCREEN_INK, width / needed);
     }
   }
   return {
@@ -334,6 +361,7 @@ function markGeometry(
     y: ry + inset,
     width: Math.max(0, rw - strokeWidth),
     height: Math.max(0, rh - strokeWidth),
+    ink,
   };
 }
 
@@ -517,7 +545,9 @@ function RectLayer({
             fill={hasFill ? element.fill : "none"}
             stroke={hasStroke ? element.stroke : undefined}
             strokeWidth={hasStroke ? strokeWidth : undefined}
-            opacity={element.opacity ?? 1}
+            // Its own opacity, times whatever it gave up to be widened
+            // enough to see - see MIN_ONSCREEN_RECT_PX.
+            opacity={(element.opacity ?? 1) * (geometry.ink ?? 1)}
             style={{
               // Transforms are relative to the mark's own box, so a scale
               // grows it from its own top-left corner rather than from the
