@@ -1171,7 +1171,12 @@ const PRIMITIVES = {
       // AXIS_LABEL_DEFAULT_UNITS.
       { kind: "text", key: "yTop", label: "Down: upper half (short)" },
       { kind: "text", key: "yBottom", label: "Down: lower half (short)" },
-      { kind: "lines", key: "quadrants", label: "Box names (4, clockwise from top-left)", rows: 4 },
+      // READING ORDER, not clockwise, which is what this said and what the
+      // renderer has never done: corners run tl, tr, bl, br. Clockwise
+      // would swap the bottom two, which on the Eisenhower matrix puts
+      // Delete under "urgent" and Delegate under "not urgent" - the two
+      // most consequential boxes, exactly reversed.
+      { kind: "lines", key: "quadrants", label: "Box names (4: top-left, top-right, bottom-left, bottom-right)", rows: 4 },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderAxisMatrix(geometry, propValues as AxisMatrixConfig, idPrefix, fontFamily, lattice),

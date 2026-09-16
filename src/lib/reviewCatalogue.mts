@@ -186,9 +186,6 @@ color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:4px 
 font-variant-numeric:tabular-nums}
 .nm{font-weight:500}
 .sz{font:400 12px/1.3 "Hanken Grotesk",system-ui,sans-serif;color:var(--muted)}
-footer{margin:48px 0 0;padding-top:18px;border-top:1px solid var(--rule);
-color:var(--muted);font-size:15px}
-footer p{max-width:64ch}
 @media (max-width:520px){h1{font-size:28px}.grid{grid-template-columns:1fr}}
 `;
 
@@ -206,9 +203,7 @@ const html =
   `<button type="button" data-face="serif" aria-pressed="false">Serif</button></div>` +
   `<nav>${nav.join("")}</nav>` +
   sections.join("") +
-  `<footer><p>Drawn from the planner's own renderer, so nothing here is a mock-up. What is missing on ` +
-  `purpose: the dotted grid you see in the editor is a guide for placing things and is not printed.</p>` +
-  `</footer></div>` +
+  `</div>` +
   `<script>(function(){` +
   `var KEY="memari-catalogue-face";` +
   `var buttons=document.querySelectorAll(".faces button");` +

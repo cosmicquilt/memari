@@ -485,9 +485,27 @@ export function renderAxisMatrix(
     ["bl", plotLeft, midY],
     ["br", midX, midY],
   ];
+  // What an UNNAMED quadrant prints instead of nothing.
+  //
+  // An empty matrix drew four blank boxes and a cross, which says nothing
+  // about how to read it: the whole point of the shape is that position
+  // carries meaning, and with no names there was no clue that the corners
+  // differ from one another at all.
+  //
+  // Numbered the way COORDINATE quadrants are - anticlockwise from the top
+  // right, so Q1 is the corner where both axes are positive - because that
+  // is the convention anyone who has met a pair of axes already holds, and
+  // this module is a pair of axes. It is NOT reading order, which would put
+  // Q1 top-left, and not the clockwise order the properties panel used to
+  // claim. Listed here against `corners` above, which runs tl, tr, bl, br.
+  const PLACEHOLDERS = ["Q2", "Q1", "Q3", "Q4"];
+  // A real name wins; the placeholder only fills a gap. Substituted BEFORE
+  // the fit so what is measured is what is drawn - the same reason the
+  // uppercasing happens above it.
+  const names = corners.map((_, q) => quadrants[q] || PLACEHOLDERS[q]);
   // All four names at one size - see fitLabelSet.
   const quadrantLabels = fitLabelSet(
-    corners.map((_, q) => ({ text: quadrants[q] ?? "", widthPx: halfWidth - padding * 2 })),
+    names.map((text) => ({ text, widthPx: halfWidth - padding * 2 })),
     // Down to 5pt. The ladder stopped at 7 and a quadrant name was cut
     // instead - "SCHEDU…", "RESENT…" - in a matrix one sidebar column
     // wide, where a quadrant is about an inch and a half across. A name
@@ -496,7 +514,6 @@ export function renderAxisMatrix(
     [quadrantFontSize, ptToPx(9), ptToPx(8), ptToPx(7), ptToPx(6), ptToPx(5)]
   );
   corners.forEach(([name, x, y], q) => {
-    if (!quadrants[q]) return;
     const fitted = { text: quadrantLabels.texts[q], fontSizePx: quadrantLabels.fontSizePx };
     const textHeight = fitted.fontSizePx * 1.2;
     elements.push({
