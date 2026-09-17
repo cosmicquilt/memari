@@ -3,6 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import { PageLevel } from "@/generated/prisma/enums";
 import {
   clampGridPlacement,
   rectsOverlap,
@@ -358,8 +359,12 @@ export async function getOrCreatePlanner() {
         // defaultColumnSpan/RowSpan in prisma/seed.mts) apply.
         // Two pages: a week spread is a 2-page spread when the book is
         // open flat (position 0 = left/Sun-Tue, position 1 = right/Wed-Sat).
+        // Position is position WITHIN the level - see Page.level.
         pages: {
-          create: [{ position: 0 }, { position: 1 }],
+          create: [
+            { position: 0, level: PageLevel.WEEKLY },
+            { position: 1, level: PageLevel.WEEKLY },
+          ],
         },
       },
       include: {
@@ -379,7 +384,7 @@ export async function getOrCreatePlanner() {
   // one. Add it rather than requiring a fresh planner.
   if (planner.pages.length < 2) {
     await prisma.page.create({
-      data: { plannerId: planner.id, position: 1 },
+      data: { plannerId: planner.id, position: 1, level: PageLevel.WEEKLY },
     });
     needsRefetch = true;
     planner = await prisma.planner.findUniqueOrThrow({
@@ -764,7 +769,12 @@ export async function getOrCreateMonthPlanner() {
         // Two pages, same "book open flat" convention as the WEEK
         // planner: position 0 = left (Sun/Mon/Tue columns), position 1 =
         // right (Wed/Thu/Fri/Sat columns).
-        pages: { create: [{ position: 0 }, { position: 1 }] },
+        pages: {
+          create: [
+            { position: 0, level: PageLevel.MONTHLY },
+            { position: 1, level: PageLevel.MONTHLY },
+          ],
+        },
       },
       include: {
         pages: {
@@ -778,7 +788,9 @@ export async function getOrCreateMonthPlanner() {
   let needsRefetch = false;
 
   if (planner.pages.length < 2) {
-    await prisma.page.create({ data: { plannerId: planner.id, position: 1 } });
+    await prisma.page.create({
+      data: { plannerId: planner.id, position: 1, level: PageLevel.MONTHLY },
+    });
     needsRefetch = true;
     planner = await prisma.planner.findUniqueOrThrow({
       where: { id: planner.id },

@@ -26,6 +26,7 @@
 
 import { getOrCreatePlanner } from "./actions";
 import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
+import type { PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -56,6 +57,12 @@ export type LoadedModuleInstance = {
 
 export type LoadedPage = {
   pageId: string;
+  // Which repeating set this page belongs to, and where in it. The timeline
+  // groups by the first and orders by the second; nothing else reads them
+  // yet. Carried here rather than re-queried because loadPlannerPages is
+  // already the one place that turns a planner row into pages.
+  level: PageLevel;
+  position: number;
   pageGrid: PageGrid;
   moduleInstances: LoadedModuleInstance[];
   interactiveZones: { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
@@ -85,6 +92,9 @@ export type PageSettings = {
 
 export type LoadedPlanner = {
   pages: LoadedPage[];
+  /** What term this book covers, if it has one yet. Sequence generation
+   *  walks it; nothing else reads it. */
+  term: { start: Date | null; end: Date | null };
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
 };
@@ -223,6 +233,8 @@ export async function loadPlannerPages(
 
     return {
       pageId: page.id,
+      level: page.level,
+      position: page.position,
       pageGrid,
       moduleInstances,
       interactiveZones: { sidebar, belowHourlyGrid },
@@ -261,6 +273,10 @@ export async function loadPlannerPages(
 
   return {
     pages,
+    term: {
+      start: (planner as { startDate?: Date | null }).startDate ?? null,
+      end: (planner as { endDate?: Date | null }).endDate ?? null,
+    },
     weekSettings,
     pageSettings: {
       fontFamily: fontChoice,

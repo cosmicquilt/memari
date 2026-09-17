@@ -25,6 +25,29 @@ enum BaseType {
   YEAR
 }
 
+// How often a page REPEATS in the finished book.
+//
+// You design each level once and the book is stamped out from it: a WEEKLY
+// page is printed for every week in the planner's date range, a DAILY one
+// for every day. Front and back matter are printed once. That is the whole
+// of sequence generation, and it is also the price dial - a per-day module
+// prints ~90 times in a quarter where a per-month one prints 3.
+//
+// DECLARATION ORDER IS BINDING ORDER. Postgres sorts an enum by the order
+// its values were declared, so `ORDER BY level` is the order the pages are
+// bound in, and the timeline reads left to right off the same query.
+//
+// FRONT_MATTER / BACK_MATTER rather than BEGINNING / ENDING: those are the
+// names on screen and Andrew has said they may change. A display label is a
+// string in one file; an enum value is a migration.
+enum PageLevel {
+  FRONT_MATTER
+  MONTHLY
+  WEEKLY
+  DAILY
+  BACK_MATTER
+}
+
 // A planner a user is building. `isTemplate` marks the small set of
 // prebuilt starter planners (weekly/monthly/quarterly/yearly "bases")
 // that get cloned into a new owned Planner when a user starts fresh.
@@ -45,6 +68,13 @@ model Planner {
   // dated one, and a default that silently blanked them would be a migration
   // that deleted content.
   dated      Boolean  @default(true)
+  // What term this book covers. Sequence generation turns the templates
+  // into pages by walking this range - so many weeks, so many days.
+  // Nullable: every planner that existed before this was a single spread
+  // with no term at all, and a made-up range would be a lie about what
+  // somebody built.
+  startDate  DateTime?
+  endDate    DateTime?
   isTemplate Boolean  @default(false)
   theme      Json?
   pages      Page[]
@@ -61,6 +91,16 @@ model Page {
   id              String           @id @default(cuid())
   plannerId       String
   planner         Planner          @relation(fields: [plannerId], references: [id], onDelete: Cascade)
+  // Which repeating set this page belongs to, and its order WITHIN that
+  // set - so position 0 is the first page of the weeklies, not the first
+  // page of the book. A spread is two consecutive positions.
+  //
+  // No default, deliberately. There is no sensible universal answer to
+  // "what level is a page whose level nobody stated", and a default of
+  // WEEKLY would silently swallow a daily page created without one. The
+  // migration adds the column with a default, backfills, and drops the
+  // default again, so every writer has to say.
+  level           PageLevel
   position        Int
   // 24 columns x 36 rows of exactly 75 x 75 print px - one cell is one
   // 1/4in dot at 300dpi, and the cell is square. The margin follows from
@@ -92,7 +132,9 @@ model Page {
   marginPx        Float            @default(187.5)
   moduleInstances ModuleInstance[]
 
-  @@unique([plannerId, position])
+  // Position is now position WITHIN A LEVEL, so two levels of one book can
+  // both have a first page.
+  @@unique([plannerId, level, position])
 }
 
 // The "class" of a draggable block: weekly-grid, habit-tracker, etc.

@@ -124,7 +124,15 @@ for (const baseType of ["WEEK", "MONTH"] as const) {
       ownerId: THROWAWAY_OWNER,
       title: `layout check ${baseType}`,
       baseType,
-      pages: { create: [{ position: 0 }, { position: 1 }] },
+      // The level this cadence's pages belong to. A throwaway planner, but
+      // it still has to be a real one - a layout checked at the wrong level
+      // is not the layout anybody ships.
+      pages: {
+        create: [
+          { position: 0, level: baseType === "WEEK" ? "WEEKLY" : "MONTHLY" },
+          { position: 1, level: baseType === "WEEK" ? "WEEKLY" : "MONTHLY" },
+        ],
+      },
     },
     include: { pages: { orderBy: { position: "asc" } } },
   });
