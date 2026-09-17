@@ -24,6 +24,7 @@
     "check:book": "tsx scripts/check-book.mts",
     "check:print": "tsx scripts/check-print.mts",
     "check:contrast": "tsx scripts/check-contrast.mts",
+    "check:preview": "tsx scripts/check-preview.mts",
     "fold:books": "tsx scripts/fold-books.mts"
   },
   "dependencies": {

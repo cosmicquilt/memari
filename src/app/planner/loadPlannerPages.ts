@@ -26,7 +26,8 @@
 
 import { getOrCreateBook } from "./actions";
 import { findSpine, findTitle, withDates, withoutDates } from "@/lib/moduleRegistry";
-import { toSvg, flatten } from "@/lib/proofSvg";
+import { flatten } from "@/lib/proofSvg";
+import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import {
   LEVELS_IN_BINDING_ORDER,
   occurrences,
@@ -103,12 +104,17 @@ export type PageSettings = {
  * "every page in the planner is reachable from the timeline", which it
  * cannot be if the pages of the other levels were never loaded.
  *
- * The preview is a real SVG of the real drawing, serialised HERE rather than
- * on the client. Two reasons: the elements are already shaped on this side,
- * so shipping them to the browser to be re-serialised would send more bytes
- * to do the same work; and a preview built any other way would be a picture
- * of a page rather than the page, which is the mistake the proof sheets
- * exist to avoid. See proofSvg.
+ * The preview is the REAL DRAWING - the same elements the PDF exporter
+ * reads, reduced HERE to the few fields a thumbnail can draw. A preview
+ * built any other way would be a picture of a page rather than the page,
+ * which is the mistake the proof sheets exist to avoid.
+ *
+ * It used to be an <svg> string, serialised on this side for the same
+ * reason. The marks replaced it when the previews moved to canvas, which
+ * they did because resizing ten pages of SVG live costs 7.32ms a frame
+ * against a 16.7ms budget - see drawPreview. The bytes went down on the way
+ * past: a mark carries five or six numbers where the SVG carried the same
+ * numbers plus angle brackets.
  */
 export type TimelinePage = {
   pageId: string;
@@ -117,8 +123,16 @@ export type TimelinePage = {
    *  that has none of its own. A key like "2026-02" is February's alone. */
   variantKey: string | null;
   position: number;
-  /** `<svg>` markup at the page's own aspect ratio, ready to size with CSS. */
-  previewSvg: string;
+  /** Every drawable mark on the page, in PRINT px. The painter scales; a
+   *  mark that had been pre-scaled would have to be re-sent on every frame
+   *  of a drag, which is the cost this whole change exists to remove. */
+  previewMarks: PreviewMark[];
+  /** The page's own size in print px - the marks' coordinate space, and what
+   *  the canvas fits them into. Carried per page rather than assumed from a
+   *  constant: every page in a book shares a trim today, and the drawing
+   *  would silently stretch on the day one does not. */
+  pageWidthPx: number;
+  pageHeightPx: number;
   moduleCount: number;
 };
 
@@ -354,31 +368,32 @@ export async function loadPlannerPages(
         boxInsetPx: page.gridGapPx / 2,
         marginPx: page.marginPx,
       };
-      const marks: string[] = [];
+      const elements = [];
       for (const instance of page.moduleInstances) {
         if (instance.moduleType.slug === "freeform-element") continue;
         if (instance.columnStart === null || instance.rowStart === null) continue;
         const props = dated
           ? instance.propValues
           : withoutDates(instance.moduleType.slug, instance.propValues);
-        for (const element of flatten(
-          renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)
-        )) {
-          marks.push(toSvg(element));
-        }
+        elements.push(
+          ...flatten(
+            renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)
+          )
+        );
       }
+      // `skipped` is deliberately dropped here and fatal in check:preview. A
+      // book holding one mark this vocabulary has not met should still show
+      // its other pages; the place to find out is the check, not a blank
+      // thumbnail in front of somebody.
+      const { marks } = toPreviewMarks(elements);
       return {
         pageId: page.id,
         level: page.level,
         variantKey: page.variantKey,
         position: page.position,
-        // No width or height: the drawer sizes it in CSS and the viewBox
-        // keeps the page's own proportions whatever size it is drawn at.
-        previewSvg:
-          `<svg viewBox="0 0 ${page.widthPx} ${page.heightPx}" ` +
-          `xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">` +
-          marks.join("") +
-          `</svg>`,
+        previewMarks: marks,
+        pageWidthPx: page.widthPx,
+        pageHeightPx: page.heightPx,
         moduleCount: page.moduleInstances.length,
       };
     });
