@@ -92,7 +92,16 @@ function assert(cond: boolean, msg: string) {
       }
       // Every day 1..daysInMonth must appear exactly once, flagged in-month.
       const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      const inMonthDates = cal.weeks.flat().filter((c) => c.inCurrentMonth).map((c) => c.date);
+      // `date` is optional on the cell now, because an UNDATED planner has
+      // cells with no number in them. computeMonthCalendar is the dated
+      // path and must still produce one for every in-month cell - which
+      // the length check below is what actually enforces, since a dropped
+      // date now falls out of this filter and shortens the list.
+      const inMonthDates = cal.weeks
+        .flat()
+        .filter((c) => c.inCurrentMonth)
+        .map((c) => c.date)
+        .filter((d): d is number => typeof d === "number");
       assert(
         inMonthDates.length === daysInMonth,
         `${year}-${month}: exactly ${daysInMonth} in-month cells (got ${inMonthDates.length})`

@@ -25,7 +25,7 @@
 // caller must be a Server Component or another server action.
 
 import { getOrCreatePlanner } from "./actions";
-import { findSpine, findTitle } from "@/lib/moduleRegistry";
+import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -71,6 +71,8 @@ export type LoadedPage = {
 // either would do.
 export type PageSettings = {
   fontFamily: FontChoice;
+  /** False on a planner you write the dates into yourself. */
+  dated: boolean;
   weekStartDay: number; // 0=Sun..6=Sat
   startTime: string;
   endTime: string;
@@ -98,6 +100,10 @@ export async function loadPlannerPages(
   planner: Awaited<ReturnType<typeof getOrCreatePlanner>>
 ): Promise<LoadedPlanner> {
   const theme = planner.theme as PlannerTheme | null;
+  // Not from the theme blob: `dated` is a real column, because it is
+  // structural rather than presentational - it says what kind of planner
+  // this is, and sequence generation will need to query on it.
+  const dated = (planner as { dated?: boolean }).dated !== false;
   const fontChoice: FontChoice = theme?.fontFamily === "sans" ? "sans" : "serif";
   const fontFamily = resolveFontFamily(fontChoice);
   const weekStartDay = theme?.weekStartDay ?? 0;
@@ -152,6 +158,19 @@ export async function loadPlannerPages(
         instance.moduleType.slug === "hourly-grid-core"
           ? { ...instance, propValues: { ...(instance.propValues as object), dayLabels: rotatedForThisPage } }
           : instance;
+      // UNDATED, applied here and only here. Same read-time substitution as
+      // the rotated day labels right above, and for the same reason: what is
+      // STORED keeps its dates, so turning them back on restores what was
+      // entered instead of re-seeding. Every instance is offered to
+      // withoutDates, not a list of the date-bearing ones - each module
+      // declares its own answer in the registry, so a module added tomorrow
+      // with a date in it is covered without this line changing.
+      const datedInstance = dated
+        ? renderInstance
+        : {
+            ...renderInstance,
+            propValues: withoutDates(instance.moduleType.slug, renderInstance.propValues),
+          };
       moduleInstances.push({
         id: instance.id,
         slug: instance.moduleType.slug,
@@ -163,7 +182,7 @@ export async function loadPlannerPages(
         propValues: instance.propValues,
         originX: origin.x,
         originY: origin.y,
-        elements: renderModuleInstance(renderInstance, pageGrid, fontFamily),
+        elements: renderModuleInstance(datedInstance, pageGrid, fontFamily),
       });
     }
     // Sorted so DOM order matches z-index intent (later = painted on
@@ -245,6 +264,7 @@ export async function loadPlannerPages(
     weekSettings,
     pageSettings: {
       fontFamily: fontChoice,
+      dated,
       weekStartDay,
       startTime: hourlyProps?.startTime ?? "05:30",
       endTime: hourlyProps?.endTime ?? "23:30",

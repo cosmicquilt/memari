@@ -35,6 +35,16 @@ model Planner {
   ownerId    String
   title      String
   baseType   BaseType
+  // Does this planner carry DATES, or is it a template you write them into?
+  // The free tier is the undated one (see the business model: the book is
+  // derived from templates, and a template has no dates). Undated is applied
+  // at read time - loadPlannerPages strips the date values out of what it
+  // renders - so the stored propValues keep whatever dates were entered and
+  // turning this back on restores them rather than re-seeding.
+  // Defaults true: every planner that existed before this column did was a
+  // dated one, and a default that silently blanked them would be a migration
+  // that deleted content.
+  dated      Boolean  @default(true)
   isTemplate Boolean  @default(false)
   theme      Json?
   pages      Page[]

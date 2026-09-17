@@ -25,6 +25,11 @@
 // nothing needs to land on a dot, and there are no horizontal rules to
 // misalign either.
 
+/** Rows an undated mini month draws, having no month to count. Five is
+ *  the count that covers most months; six is the exception and would leave
+ *  a visibly empty row on a page that is never dated at all. */
+const UNDATED_WEEK_COUNT = 5;
+
 import { ptToPx } from "@/lib/print-spec";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import {
@@ -40,12 +45,18 @@ import {
 export type MiniMonthConfig = {
   year: number;
   /** 1-12, matching computeMonthCalendar and the dayLabels-style config
-   *  used elsewhere rather than JS's own 0-indexed months. */
-  month: number;
+   *  used elsewhere rather than JS's own 0-indexed months. NULL on an
+   *  undated planner, which draws the grid with no numbers in it - see
+   *  weekTitle.ts on why undated is the absence of the value. */
+  month: number | null;
   /** Printed above the grid. Empty prints the month's own name. */
   heading?: string;
   /** Give every date a square to tick - the dot-calendar trackers. */
   markable?: boolean;
+  /** Keep real dates even when the planner itself is undated. Read by the
+   *  registry's `undated` hook, not by this renderer, which only ever sees
+   *  the month it was given. */
+  keepDates?: boolean;
 };
 
 export type RenderedElement = {
@@ -122,9 +133,15 @@ export function renderMiniMonth(
   // a module whose propValues lost a key must draw an empty box, not take
   // the page down with it.
   const year = Number.isFinite(config.year) ? Math.round(config.year) : 0;
-  const month = Number.isFinite(config.month) ? Math.round(config.month) : 0;
+  const month = Number.isFinite(config.month) ? Math.round(config.month as number) : 0;
   const drawable = year >= 1900 && year <= 2100 && month >= 1 && month <= 12;
   const calendar = drawable ? computeMonthCalendar(year, month) : null;
+  // No month, so no dates - the undated planner, where you write them in.
+  // FIVE rows, because five is the count that covers most months and the
+  // grid has to commit to one without a month to ask. The weekday strip
+  // above still says which column is which, so a written-in month lands in
+  // the right place.
+  const blankWeeks = calendar ? 0 : UNDATED_WEEK_COUNT;
   const markable = config.markable === true;
   const stripTop = contentTopPx(geometry, lattice);
   const stripHeight = ptToPx(WEEKDAY_STRIP_HEIGHT_PT);
@@ -170,7 +187,7 @@ export function renderMiniMonth(
   const markBox = ptToPx(MARK_BOX_PT);
   const bodyBottom = geometry.y + geometry.height;
 
-  for (let w = 0; calendar && w < calendar.weekCount; w++) {
+  for (let w = 0; w < (calendar ? calendar.weekCount : blankWeeks); w++) {
     const rowTop = gridTop + rowHeight * w;
     // A week with nowhere to print itself is not printed. The box should
     // never be this short - getMiniMonthMinHeightPx sizes for six weeks -
@@ -179,27 +196,29 @@ export function renderMiniMonth(
     if (rowTop + rowHeight > bodyBottom + 0.5) break;
 
     for (let c = 0; c < 7; c++) {
-      const cell = calendar.weeks[w][c];
+      const cell = calendar?.weeks[w][c];
       // Days belonging to the neighbouring months are drawn faintly rather
       // than left blank: the shape of the grid is what makes a calendar
       // readable at a glance, and a gap at either end breaks it.
-      const opacity = cell.inCurrentMonth ? 1 : 0.3;
+      const opacity = !cell || cell.inCurrentMonth ? 1 : 0.3;
       const columnX = geometry.x + columnWidth * c;
 
-      elements.push({
-        id: id(`w${w}-d${c}-date`),
-        type: "text",
-        x: columnX,
-        y: rowTop + (dateBandHeight - dateFontSize * 1.2) / 2,
-        width: columnWidth,
-        height: dateFontSize * 1.2,
-        text: String(cell.date),
-        fontSize: dateFontSize,
-        fontFamily,
-        fill: NEAR_BLACK,
-        align: "center",
-        opacity,
-      });
+      if (typeof cell?.date === "number") {
+        elements.push({
+          id: id(`w${w}-d${c}-date`),
+          type: "text",
+          x: columnX,
+          y: rowTop + (dateBandHeight - dateFontSize * 1.2) / 2,
+          width: columnWidth,
+          height: dateFontSize * 1.2,
+          text: String(cell.date),
+          fontSize: dateFontSize,
+          fontFamily,
+          fill: NEAR_BLACK,
+          align: "center",
+          opacity,
+        });
+      }
 
       if (markable) {
         elements.push({

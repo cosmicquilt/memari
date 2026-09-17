@@ -26,7 +26,11 @@
 // eventually need it.
 
 export type MonthCalendarCell = {
-  date: number; // day-of-month number to display, 1-31
+  /** Day-of-month number to display, 1-31. ABSENT on an undated planner -
+   *  see weekTitle.ts on why undated is the absence of the value rather
+   *  than a flag. The cell's own date box is drawn either way, so the
+   *  space to write one in is already there. */
+  date?: number | null;
   inCurrentMonth: boolean;
 };
 

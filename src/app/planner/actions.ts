@@ -2406,6 +2406,36 @@ export async function updatePlannerFont(fontFamily: FontChoice) {
   });
 }
 
+/**
+ * Page Settings > Dates. Does this planner carry dates at all?
+ *
+ * ONE COLUMN, and nothing else is written. Undated is applied at READ time
+ * (loadPlannerPages calls the registry's per-module `undated` hook), so the
+ * stored propValues keep whatever dates were entered and this toggle round
+ * trips without losing them. The alternative - blanking the values in the
+ * database - makes turning dates back on a re-seed, which throws away a date
+ * range somebody typed by hand.
+ *
+ * Takes the baseType rather than assuming WEEK. updatePlannerFont above does
+ * assume it, which is why the month spread cannot change its own font; this
+ * is not going to repeat that.
+ */
+export async function setPlannerDated(dated: boolean, baseType: "WEEK" | "MONTH") {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false, baseType },
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+
+  await prisma.planner.update({ where: { id: planner.id }, data: { dated } });
+}
+
 // Validates a client-submitted "HH:MM" string strictly (unlike
 // hourlyGridCore.ts's own private timeToMinutes, which trusts
 // already-persisted data and would silently propagate NaN through its

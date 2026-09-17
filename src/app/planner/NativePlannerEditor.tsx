@@ -148,6 +148,7 @@ import {
   resetPlannerToTemplate,
   updatePlannerFont,
   setPlannerTrim,
+  setPlannerDated,
   updateHourlySettings,
   resizeHourlyGridCore,
 } from "./actions";
@@ -3142,6 +3143,7 @@ function ModulePalette({
   pageGrid,
   fontFamily,
   showHours,
+  baseType,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
@@ -3168,6 +3170,10 @@ function ModulePalette({
   // page's is not, so it does not get the section at all - see the
   // registry's pageSettingsForm.
   showHours: boolean;
+  // Which planner the Dates toggle should act on. Same reason the editor
+  // itself takes it - see NativePlannerEditor's own prop comment: nothing
+  // about the rendered pages says which planner row they came from.
+  baseType: "WEEK" | "MONTH";
 }) {
   // Two top-level groups, each independently collapsible, both default
   // collapsed so the panel opens to two header rows rather than every
@@ -3391,6 +3397,12 @@ function ModulePalette({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Dates
+            </div>
+            <DatesToggle dated={pageSettings.dated} baseType={baseType} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Font
             </div>
             <FontToggle fontChoice={pageSettings.fontFamily} />
@@ -3555,6 +3567,60 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
         </button>
         <button type="button" disabled={pending} onClick={() => handlePick("sans")} style={optionStyle("sans", FONT_SANS)}>
           Aa
+        </button>
+      </div>
+      {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
+    </div>
+  );
+}
+
+// Page Settings > Dates. Does this planner carry them, or do you write them
+// in yourself?
+//
+// The undated planner is the free tier (see the business model: the book is
+// derived from templates, and a template has no dates). Undated is applied
+// at READ time, so this toggle loses nothing - the dates stay in the
+// database and come back exactly as they were. That is why it needs no
+// confirmation, unlike a control that would blank what you typed.
+//
+// A reload rather than a local state update, same as FontToggle: it changes
+// what every page draws, and the pages are shaped on the server.
+function DatesToggle({ dated, baseType }: { dated: boolean; baseType: "WEEK" | "MONTH" }) {
+  const [pending, error, run] = useAsyncAction();
+
+  const handlePick = (next: boolean) => {
+    if (next === dated || pending) return;
+    run(async () => {
+      await setPlannerDated(next, baseType);
+      window.location.reload();
+    });
+  };
+
+  const optionStyle = (value: boolean): CSSProperties => ({
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 1,
+    padding: "6px 0",
+    border: "none",
+    borderRadius: 8,
+    cursor: pending ? "default" : "pointer",
+    background: dated === value ? PANEL_FILL_HOVER : "transparent",
+    color: dated === value ? PANEL_TEXT : PANEL_FAINT,
+    opacity: pending ? 0.6 : 1,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 2, background: PANEL_BG, borderRadius: 10, padding: 2 }}>
+        <button type="button" disabled={pending} onClick={() => handlePick(true)} style={optionStyle(true)}>
+          <span style={{ fontSize: 11.5, fontWeight: 600 }}>Dated</span>
+          <span style={{ fontSize: 9.5, color: PANEL_FAINT }}>printed in</span>
+        </button>
+        <button type="button" disabled={pending} onClick={() => handlePick(false)} style={optionStyle(false)}>
+          <span style={{ fontSize: 11.5, fontWeight: 600 }}>Undated</span>
+          <span style={{ fontSize: 9.5, color: PANEL_FAINT }}>you write them</span>
         </button>
       </div>
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
@@ -9147,6 +9213,7 @@ export function NativePlannerEditor({
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
               showHours={showHoursSettings}
+              baseType={baseType}
             />
           </DndContext>
         </div>

@@ -13,7 +13,10 @@
 // week-title vs. hourly-grid-core.
 
 export type MonthTitleConfig = {
-  monthName: string; // e.g. "JANUARY" — display text, already formatted/uppercased by the caller
+  /** e.g. "JANUARY" - display text, already formatted/uppercased by the
+   *  caller. EMPTY on an undated planner: see weekTitle.ts on why undated
+   *  is the absence of the value rather than a flag threaded down here. */
+  monthName: string;
 };
 
 export type RenderedElement = {
@@ -27,12 +30,19 @@ export type RenderedElement = {
 };
 
 import { ptToPx } from "@/lib/print-spec";
+import {
+  NEAR_BLACK,
+  RULE_WIDTH_PT,
+  nearestLatticeYPx,
+  type FrameLattice,
+} from "@/lib/modules/moduleFrame";
 
 export function renderMonthTitle(
   geometry: { x: number; y: number; width: number; height: number },
   config: MonthTitleConfig,
   idPrefix: string,
-  fontFamily: string
+  fontFamily: string,
+  lattice?: FrameLattice
 ): RenderedElement[] {
   const elements: RenderedElement[] = [];
   // Semantic, not positional — see todoChecklist.ts. An id names one mark
@@ -65,17 +75,42 @@ export function renderMonthTitle(
   const fontSize = ptToPx(19);
   const textHeight = fontSize * 1.2;
 
+  // Undated: the month name gives way to a rule, exactly as week-title's
+  // date range does. See that file for why a rule and not underscores.
+  //
+  // `?? ""`, not `config.monthName.trim()`: a renderer must be TOTAL in its
+  // config - see the registry's integrity check, which is what caught this.
+  // An undated planner reaches here with the key absent, not merely empty.
+  const dated = (config.monthName ?? "").trim().length > 0;
+
+  if (dated) {
+    elements.push({
+      id: id("title"),
+      type: "text",
+      x: geometry.x,
+      y: geometry.y,
+      width: geometry.width,
+      height: textHeight,
+      text: config.monthName,
+      fontSize,
+      fontFamily: FONT_FAMILY,
+      align: "left",
+    });
+    return elements;
+  }
+
+  const ruleWidth = ptToPx(RULE_WIDTH_PT);
+  // On the lattice, not on the month name's own baseline - see weekTitle.
+  const ruleY = nearestLatticeYPx(geometry, geometry.y + fontSize, lattice);
   elements.push({
-    id: id("title"),
-    type: "text",
+    id: id("title-rule"),
+    type: "figure",
+    subType: "rect",
     x: geometry.x,
-    y: geometry.y,
+    y: ruleY - ruleWidth / 2,
     width: geometry.width,
-    height: textHeight,
-    text: config.monthName,
-    fontSize,
-    fontFamily: FONT_FAMILY,
-    align: "left",
+    height: ruleWidth,
+    fill: NEAR_BLACK,
   });
 
   return elements;

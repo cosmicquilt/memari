@@ -236,7 +236,9 @@ export function renderMonthGridCore(
         // visibly off to one side of the box instead of centered in it.
         const dateFontSize = ptToPx(5);
         const dateTextHeight = dateFontSize * 1.2;
-        elements.push({
+        // Undated: the box above stays, the number does not. A month grid
+        // you write the dates into is exactly what an undated monthly is.
+        if (typeof cell.date === "number") elements.push({
           id: id(`w${w}-d${d}-date`),
           type: "text",
           x: cellX,

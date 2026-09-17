@@ -337,6 +337,29 @@ export type ModuleDefinition = {
   ) => Record<string, unknown>;
 
   /**
+   * This module's props with every DATE taken out of them.
+   *
+   * An undated planner is one you write the dates into yourself, or that a
+   * generated sequence fills in later - see the business model, where the
+   * book is derived from templates and a template has no dates. Undated is
+   * expressed as the ABSENCE of the values, not as a flag threaded down to
+   * every renderer: a renderer draws what it is given, and needs no second
+   * description of what "undated" means.
+   *
+   * It lives HERE, beside the module it belongs to, and not as a list of
+   * date-bearing slugs inside loadPlannerPages. That list is the
+   * hardcoded-slug-list defect class this codebase has undone in the zone
+   * logic, in renderBySlug's old switch, and in the edit affordance. A
+   * module added tomorrow with a date in it declares its own answer.
+   *
+   * Applied at RENDER time only. The stored propValues keep their dates, so
+   * turning dates back on restores what was there rather than re-seeding -
+   * the same read-time substitution loadPlannerPages already does for
+   * rotated day labels, and for the same reason.
+   */
+  undated?: (propValues: Record<string, unknown>) => Record<string, unknown>;
+
+  /**
    * Does this module's content have to be RE-DRAWN as its box resizes,
    * rather than drawn once and clipped?
    *
@@ -448,6 +471,16 @@ const PRIMITIVES = {
         fontFamily,
         lattice
       ),
+    // The day NAMES stay - Sunday is Sunday in any year. Only the number
+    // in the corner of each tab goes, and the tab's own border still
+    // encloses the space it sat in, so there is somewhere to write one.
+    undated: (props) => ({
+      ...props,
+      dayLabels: ((props.dayLabels as Array<Record<string, unknown>>) ?? []).map((d) => ({
+        ...d,
+        date: null,
+      })),
+    }),
     // Increments off is a blank height-adjustable field, so it scales and
     // the clip serves. Increments on draws ruled rows whose count and
     // pitch both follow the box, so it has to be redrawn. The editor adds
@@ -526,8 +559,11 @@ const PRIMITIVES = {
       "defaultRowSpan": 3
     },
     isTitle: true,
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily, lattice),
+    // Both halves go: "WEEK 1/52" is as much a date as "DEC 31 - JAN 6",
+    // and a template that is week 1 of 52 is not undated.
+    undated: (props) => ({ ...props, weekNumber: null, weekTotal: null, dateRangeLabel: "" }),
     contentIsLive: NEVER,
   },
 
@@ -722,6 +758,15 @@ const PRIMITIVES = {
     isSpine: true,
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily, lattice),
+    // The grid keeps every cell and every date box; only the numbers go.
+    // inCurrentMonth is kept as it is - it decides the shape of the grid,
+    // not what it says, and dropping it would change the row count.
+    undated: (props) => ({
+      ...props,
+      cells: ((props.cells as Array<Array<Record<string, unknown>>>) ?? []).map((week) =>
+        week.map((cell) => ({ ...cell, date: null }))
+      ),
+    }),
     // Every week row shares out whatever height the block has, so all of
     // them move when it resizes and the drawing has to follow.
     contentIsLive: ALWAYS,
@@ -745,8 +790,11 @@ const PRIMITIVES = {
       "defaultRowSpan": 3
     },
     isTitle: true,
-    render: (geometry, propValues, idPrefix, fontFamily) =>
-      renderMonthTitle(geometry, propValues as MonthTitleConfig, idPrefix, fontFamily),
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderMonthTitle(geometry, propValues as MonthTitleConfig, idPrefix, fontFamily, lattice),
+    // A month NAME is a date. "JANUARY" pins the page to a month as surely
+    // as a day number pins it to a day.
+    undated: (props) => ({ ...props, monthName: "" }),
     contentIsLive: NEVER,
   },
 
@@ -892,6 +940,10 @@ const PRIMITIVES = {
           "markable": {
             "type": "boolean",
             "default": false
+          },
+          "keepDates": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -904,16 +956,29 @@ const PRIMITIVES = {
     inPalette: true,
     category: "General",
     paletteName: "Mini Month",
-    previewProps: { year: 2026, month: 1, heading: "", markable: false },
+    previewProps: { year: 2026, month: 1, heading: "", markable: false, keepDates: false },
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading (blank for the month name)" },
       { kind: "number", key: "year", label: "Year", min: 1900, max: 2100 },
       { kind: "number", key: "month", label: "Month (1-12)", min: 1, max: 12 },
       { kind: "boolean", key: "markable", label: "Box under each date" },
+      {
+        kind: "boolean",
+        key: "keepDates",
+        label: "Keep real dates on an undated planner",
+      },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderMiniMonth(geometry, propValues as MiniMonthConfig, idPrefix, fontFamily, lattice),
+    // The one module with an OPT-OUT, asked for directly - "the option for
+    // either 1 or 2". A mini month with no numbers is a seven-column grid
+    // you date yourself, which is a real thing (it is the dot calendar,
+    // with `markable` on); a mini month that keeps its dates is a reference
+    // calendar beside an undated page, which is also a real thing. Neither
+    // is wrong, so the instance says which it is.
+    undated: (props) =>
+      props.keepDates === true ? props : { ...props, month: null },
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
       getMiniMonthMinHeightPx(propValues.markable === true),
     // Seven columns of a fixed grid: the drawing is the same marks at
@@ -1543,6 +1608,19 @@ export function withDerivedProps(
   if (!derive) return propValues;
   const base = (propValues ?? {}) as Record<string, unknown>;
   return { ...base, ...derive(pageGrid, placement, base) };
+}
+
+/**
+ * One instance's props as an UNDATED planner should draw them.
+ *
+ * Returns the props untouched for a module that has no dates in it, which
+ * is all but a handful - so a caller can apply this to every instance
+ * without knowing or caring which ones are affected.
+ */
+export function withoutDates(slug: string, propValues: unknown): unknown {
+  const strip = MODULE_REGISTRY[slug]?.undated;
+  if (!strip) return propValues;
+  return strip((propValues ?? {}) as Record<string, unknown>);
 }
 
 /** The page's spine and title, whichever cadence it is. Callers used to

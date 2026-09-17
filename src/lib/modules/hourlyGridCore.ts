@@ -23,7 +23,11 @@ export type HourlyGridEvent = {
 
 export type HourlyGridCoreConfig = {
   dayCount: number; // 3 or 4, matching which half of the spread
-  dayLabels: Array<{ name: string; date: number }>; // length === dayCount
+  // length === dayCount. `date` is ABSENT on an undated planner - see
+  // weekTitle.ts: undated is the absence of the value, not a flag. The tab
+  // keeps its bordered box either way, so the space to write one in is
+  // already drawn.
+  dayLabels: Array<{ name: string; date?: number | null }>;
   startTime: string; // "05:30"
   endTime: string; // "23:30"
   intervalMinutes: number; // 30
@@ -472,7 +476,12 @@ export function renderHourlyGridCore(
       // own DAY_LETTER_FONT_PT (see its comment).
       const dateFontSize = ptToPx(5.5);
       const dateTextHeight = dateFontSize * 1.2;
-      elements.push({
+      // No date on an undated planner. Nothing is drawn in its place: the
+      // tab's own border already encloses the space, and a rule inside a
+      // box is a second edge, not a writing line. Note the date's own
+      // width is still reserved above (the name's box stops short of it),
+      // so turning dates on later does not re-wrap the day name.
+      if (typeof label.date === "number") elements.push({
         id: id(`d${d}-date`),
         type: "text",
         x: dayX + dayColumnWidth - dateWidth - dateRightInset,

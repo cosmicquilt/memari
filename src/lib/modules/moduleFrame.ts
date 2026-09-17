@@ -144,6 +144,31 @@ export function contentTopPx(geometry: FrameGeometry, lattice?: FrameLattice): n
 }
 
 /**
+ * The lattice line nearest a given y.
+ *
+ * For a mark that WANTS to sit somewhere the lattice does not have a line -
+ * an undated title's write-on rule, which would naturally fall on the
+ * baseline the printed date sat on. The house rule is that a rule lands on
+ * a dot (moduleHouseStyle.test.mts enforces it, and it caught exactly this
+ * when the rule was first placed at the baseline), because a rule off the
+ * pitch reads wrong against the dots and moves when the box resizes. So the
+ * mark gives way, not the lattice: this returns the closest line to where
+ * it wanted to be.
+ *
+ * Nearest rather than next-below: half a cell either way is the worst case,
+ * and pushing every such mark downwards would drift a stack of them.
+ */
+export function nearestLatticeYPx(
+  geometry: FrameGeometry,
+  y: number,
+  lattice?: FrameLattice
+): number {
+  const pitch = lattice?.pitchPx ?? ptToPx(18);
+  const origin = geometry.y - (lattice?.insetPx ?? 0);
+  return origin + Math.round((y - origin) / pitch) * pitch;
+}
+
+/**
  * Like contentTopPx, but for a header band that needs a stated minimum -
  * a two-line heading, say. Snaps UP to the next lattice line rather than
  * taking the first one, so the band is always deep enough AND its rule

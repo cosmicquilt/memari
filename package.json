@@ -15,6 +15,7 @@
     "check:proof": "tsx src/lib/primitiveProof.mts",
     "check:catalogue": "tsx src/lib/catalogueProof.mts",
     "check:review": "tsx src/lib/reviewCatalogue.mts",
+    "check:undated": "tsx src/lib/undatedProof.mts",
     "check:pdf": "tsx scripts/check-pdf.mts",
     "check:page": "tsx scripts/check-week-page.mts",
     "check:layout": "tsx scripts/check-layout.mts",
