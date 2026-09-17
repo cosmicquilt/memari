@@ -140,6 +140,16 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     summary.push({ level, occurrences: list.length, pages });
   });
 
+  // An occurrence that BEGINS BEFORE THE TERM sorts as if it began on the
+  // first day. The week containing 1 January begins on 28 December, and
+  // sorting it by that date opened the book with a week page and put
+  // January's own page after January's first week. Clamping puts the
+  // coarsest thing first - the month, then the week that runs into it, then
+  // its days - and changes nothing else, since every other occurrence starts
+  // inside the term already.
+  const termStart = planner.startDate ? planner.startDate.getTime() : -Infinity;
+  const sortDate = (at: OccurrenceContext) => Math.max(at.start.getTime(), termStart);
+
   slots.sort((a, b) => {
     // Front matter opens the book and back matter closes it, whatever dates
     // they happen to carry - they are not dated at all, and sorting them by
@@ -149,7 +159,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     const ends = bookend(a) - bookend(b);
     if (ends !== 0) return ends;
     if (!repeats(a.at.level) && !repeats(b.at.level)) return a.rank - b.rank;
-    const byDate = a.at.start.getTime() - b.at.start.getTime();
+    const byDate = sortDate(a.at) - sortDate(b.at);
     if (byDate !== 0) return byDate;
     // Same day: the COARSER level first. A month's own page belongs before
     // the first week inside it, and that week before its first day.

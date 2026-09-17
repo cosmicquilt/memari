@@ -513,12 +513,21 @@ const PRIMITIVES = {
         date: null,
       })),
     }),
-    // Each column already NAMES its weekday, so which date it is follows
-    // from the week this page is being printed for - the module does not
-    // have to be told which half of the spread it is on.
+    // On a WEEKLY page each column already NAMES its weekday, so which date
+    // it is follows from the week being printed - the module does not have
+    // to be told which half of the spread it is on.
+    //
+    // On a DAILY page the name itself has to change: the template says
+    // MONDAY because a template has to say something, and this copy might be
+    // a Thursday. So a daily takes consecutive days from the occurrence's
+    // own start and renames as well as dates them.
     dated: (props, at) => ({
       ...props,
-      dayLabels: ((props.dayLabels as Array<Record<string, unknown>>) ?? []).map((d) => {
+      dayLabels: ((props.dayLabels as Array<Record<string, unknown>>) ?? []).map((d, index) => {
+        if (at.level === "DAILY") {
+          const day = new Date(at.start.getTime() + index * 86_400_000);
+          return { ...d, name: WEEKDAY_NAMES[day.getUTCDay()], date: day.getUTCDate() };
+        }
         const day = dayNamed(at.start, d.name);
         return { ...d, date: day ? day.getUTCDate() : null };
       }),

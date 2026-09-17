@@ -283,6 +283,96 @@ export function weekLayout(gridRows: number): PageLayout {
 }
 
 /**
+ * The daily page.
+ *
+ * ONE page, not a spread. A week and a month are each a thing you look at
+ * whole, so they open flat; a day is a day, and ninety of them as spreads is
+ * a book twice the size for no more content. Two consecutive days end up
+ * facing each other in the bound book anyway, which is what a day-per-page
+ * planner looks like.
+ *
+ * Built from the same modules as the weekly spread with the hours narrowed
+ * to a single column, rather than from a new "daily" primitive. The hours
+ * ALREADY carry the date - the day tab is the page's title - so a day-title
+ * module would be a second place for the same fact.
+ *
+ * The day's own name and date are filled in at generation time: the template
+ * says MONDAY because a template has to say something, and hourly-grid-core's
+ * `dated` hook replaces it with whichever day this copy is for. See the
+ * registry.
+ */
+export function dayLayout(gridRows: number): PageLayout {
+  const belowGrid = Math.max(MIN_ROW_SPAN, gridRows - 21);
+  return {
+    key: "day-default",
+    level: "DAILY",
+    title: "Daily page",
+    groups: [
+      {
+        name: "the day's hours",
+        present: { by: "slug" },
+        placements: [
+          {
+            slug: "hourly-grid-core",
+            page: 0,
+            // Column 6 onward, leaving the sidebar its usual six columns -
+            // a daily page keeps the spread's proportions so the two read
+            // as one book rather than two designs.
+            columnStart: 6,
+            rowStart: 0,
+            columnSpan: 18,
+            rowSpan: null,
+            locked: true,
+            propValues: {
+              dayCount: 1,
+              dayLabels: [{ name: "MONDAY", date: 1 }],
+              ...HOUR_DEFAULTS,
+              events: [],
+            },
+          },
+        ],
+      },
+      {
+        name: "sidebar boxes",
+        present: { by: "labeled-box-column", columnStart: 0 },
+        placements: (
+          [
+            ["Today's Focus", 0, 10],
+            ["Notes", 10, 11],
+            ["Tomorrow", 21, belowGrid],
+          ] as Array<[string, number, number]>
+        ).map(([heading, rowStart, rowSpan]) => ({
+          slug: "labeled-box",
+          page: 0 as const,
+          columnStart: 0,
+          rowStart,
+          columnSpan: null,
+          rowSpan,
+          locked: false,
+          propValues: { heading, ruled: false, templateHeading: heading },
+        })),
+      },
+      {
+        name: "to-do below the hours",
+        present: { by: "slug" },
+        placements: [
+          {
+            slug: "todo-checklist",
+            page: 0,
+            columnStart: 6,
+            rowStart: 21,
+            columnSpan: 18,
+            rowSpan: belowGrid,
+            locked: false,
+            propValues: { dayCount: 3 },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/**
  * The monthly spread.
  *
  * The grid is 16 rows, not the module type's default. With the header at

@@ -120,6 +120,19 @@ check(
 const firstFebWeek = shape.indexOf("WEEKLY:Week of 1 Feb");
 check(february < firstFebWeek, "February's page precedes February's first week");
 
+// A TERM THAT DOES NOT START ON A WEEK BOUNDARY. The week containing 1
+// January begins on 28 December, so sorting strictly by start date opened
+// the book with a week page and put January's own page AFTER January's first
+// week. Occurrences beginning before the term sort as if they began on its
+// first day, which puts the coarsest thing first.
+const midWeek = generateBook(
+  book({ startDate: utc(2026, 1, 1), endDate: utc(2026, 2, 28) }),
+  FONT
+).pages.map((p) => `${p.level}:${p.occurrenceLabel}`);
+eq(midWeek[0], "FRONT_MATTER:Once", "front matter still opens it");
+eq(midWeek[1], "MONTHLY:January 2026", "the month opens the dated pages");
+eq(midWeek[2], "WEEKLY:Week of 28 Dec", "then the week that runs into it");
+
 // --- which layout -----------------------------------------------------
 
 const customised = generateBook(

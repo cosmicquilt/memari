@@ -90,6 +90,11 @@ const CHROME_HEIGHT = GRABBER_BAND + 10 + 4 + SUB_LABEL_HEIGHT + 8 + 14 + 14;
  *  changing a card changes the drawer and the canvas padding together. */
 export const DRAWER_RESTING_HEIGHT = CHROME_HEIGHT + CARD_HEIGHT;
 
+/** Closed: the grabber band and nothing else. Not zero - the lip IS the way
+ *  back, and a panel that disappears entirely needs some other control
+ *  invented to reopen it. */
+export const DRAWER_CLOSED_HEIGHT = GRABBER_BAND;
+
 /**
  * How big a card is at a given drawer height.
  *
@@ -127,6 +132,7 @@ export function TimelineDrawer({
   activeVariantKey,
   term,
   onOpen,
+  onHeightChange,
 }: {
   /** Every page of the book, already in binding order. */
   pages: TimelinePage[];
@@ -139,8 +145,21 @@ export function TimelineDrawer({
   term: { start: string | null; end: string | null };
   /** Bring a spread onto the canvas. */
   onOpen: (level: PageLevel, variantKey: string | null) => void;
+  /** How much room the canvas should leave below itself. Called when the
+   *  drawer SETTLES, not while it is being dragged. */
+  onHeightChange?: (height: number) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // THREE detents, not two: closed, resting, expanded. Closed leaves the
+  // grabber band and nothing else - a thin lip you can pull back up, rather
+  // than a panel that vanishes and needs some other control to bring back.
+  // Asked for directly: "I want to be able to close bottom timeline
+  // seamlessly in the design."
+  const [detent, setDetent] = useState<"closed" | "resting" | "expanded">("resting");
+  // Which open detent a close should return to. A grabber that both drags
+  // and toggles has to mean ONE thing when clicked, and "close / reopen" is
+  // what it is for - the middle detent is reached by dragging, and clicking
+  // back open should land where you left it rather than always at resting.
+  const lastOpenRef = useRef<"resting" | "expanded">("resting");
   // Honoured for the drawer's own settle. Read once and kept live, because a
   // person can turn Reduce Motion on without reloading the page.
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -172,7 +191,12 @@ export function TimelineDrawer({
 
   const expandedHeight = () =>
     Math.max(DRAWER_RESTING_HEIGHT, Math.round(window.innerHeight * 0.5));
-  const settledHeight = expanded ? undefined : DRAWER_RESTING_HEIGHT;
+  const heightOf = (which: typeof detent) =>
+    which === "closed"
+      ? DRAWER_CLOSED_HEIGHT
+      : which === "resting"
+      ? DRAWER_RESTING_HEIGHT
+      : expandedHeight();
 
   const onGrabberPointerDown = (event: React.PointerEvent) => {
     // Capture so the drag survives the pointer leaving this 22px band -
@@ -189,7 +213,7 @@ export function TimelineDrawer({
     movedRef.current = false;
     dragRef.current = {
       startY: event.clientY,
-      startHeight: expanded ? expandedHeight() : DRAWER_RESTING_HEIGHT,
+      startHeight: heightOf(detent),
     };
   };
   const onGrabberPointerMove = (event: React.PointerEvent) => {
@@ -209,7 +233,9 @@ export function TimelineDrawer({
       const over = wanted - max;
       setDragHeight(max + (1 - 1 / ((over * 0.55) / max + 1)) * max);
     } else {
-      setDragHeight(Math.max(GRABBER_BAND * 2, wanted));
+      // The floor is the CLOSED height, not zero: the grabber band is what
+      // you grab to bring it back, so it can never be dragged away.
+      setDragHeight(Math.max(DRAWER_CLOSED_HEIGHT, wanted));
     }
   };
   const onGrabberPointerUp = () => {
@@ -217,13 +243,46 @@ export function TimelineDrawer({
     dragRef.current = null;
     setDragHeight(null);
     if (height === null) return;
-    // Snap to whichever detent is nearer. Two detents, not free resize: a
-    // panel that can rest anywhere has no shape you can learn.
-    const midpoint = (DRAWER_RESTING_HEIGHT + expandedHeight()) / 2;
-    setExpanded(height > midpoint);
+    // Snap to whichever detent is nearest. Detents, not free resize: a panel
+    // that can rest anywhere has no shape you can learn.
+    const candidates = ["closed", "resting", "expanded"] as const;
+    let nearest: typeof detent = "resting";
+    let best = Infinity;
+    for (const candidate of candidates) {
+      const distance = Math.abs(heightOf(candidate) - height);
+      if (distance < best) {
+        best = distance;
+        nearest = candidate;
+      }
+    }
+    setDetent(nearest);
+    if (nearest !== "closed") lastOpenRef.current = nearest;
   };
 
-  const height = dragHeight ?? settledHeight ?? expandedHeight();
+  const toggleOpen = () => {
+    setDetent((current) => {
+      if (current === "closed") return lastOpenRef.current;
+      lastOpenRef.current = current;
+      return "closed";
+    });
+  };
+
+  const height = dragHeight ?? heightOf(detent);
+
+  // The canvas reserves room for the drawer with a permanent margin rather
+  // than being resized by it - see this file's header. Reported on SETTLE
+  // only, never mid-drag: telling it every frame is exactly the layout
+  // thrashing the overlay exists to avoid.
+  useEffect(() => {
+    onHeightChange?.(heightOf(detent));
+    // heightOf reads window.innerHeight for the expanded detent, so this has
+    // to run again when the window changes size as well as when the detent
+    // does.
+    const resync = () => onHeightChange?.(heightOf(detent));
+    window.addEventListener("resize", resync);
+    return () => window.removeEventListener("resize", resync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detent, onHeightChange]);
   const card = cardSize(height);
 
   const start = term.start ? new Date(`${term.start}T00:00:00.000Z`) : null;
@@ -260,7 +319,7 @@ export function TimelineDrawer({
           toggle between the detents. */}
       <div
         role="separator"
-        aria-label={expanded ? "Collapse the timeline" : "Expand the timeline"}
+        aria-label={detent === "closed" ? "Open the timeline" : "Close the timeline"}
         aria-orientation="horizontal"
         tabIndex={0}
         onPointerDown={onGrabberPointerDown}
@@ -274,12 +333,12 @@ export function TimelineDrawer({
             movedRef.current = false;
             return;
           }
-          setExpanded((v) => !v);
+          toggleOpen();
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            setExpanded((v) => !v);
+            toggleOpen();
           }
         }}
         style={{
@@ -317,6 +376,12 @@ export function TimelineDrawer({
           padding: "10px 20px 14px",
           overflowX: "auto",
           overflowY: "hidden",
+          // Hidden rather than clipped when closed: 22px of card tops
+          // showing above the lip reads as a rendering fault, not as a
+          // closed panel.
+          opacity: height <= DRAWER_CLOSED_HEIGHT + 4 ? 0 : 1,
+          pointerEvents: height <= DRAWER_CLOSED_HEIGHT + 4 ? "none" : undefined,
+          transition: reduceMotion ? "none" : "opacity 150ms ease-out",
         }}
       >
         {groups.map((group) => (

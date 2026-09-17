@@ -4320,6 +4320,12 @@ export function NativePlannerEditor({
   // otherwise the block redraws at its new height while the control that
   // nominally set it still reads the old one.
   const [pageSettings, setPageSettings] = useState(initialPageSettings);
+  // How much room the canvas leaves below itself for the timeline. It starts
+  // at the resting height and follows the drawer's SETTLED height - so
+  // closing the drawer gives the page back its room - but never tracks a
+  // drag, which would re-scale the spread on every frame. See
+  // TimelineDrawer's header on why it overlays rather than pushes.
+  const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
   // Does this cadence's spine own the Hours form? A month page's does not,
   // and it was being offered a full set of hourly controls with no hourly
@@ -9167,9 +9173,9 @@ export function NativePlannerEditor({
             marginLeft: centeringOffsetX(scale),
             marginTop: centeringOffsetY(scale),
             // The drawer OVERLAYS the canvas, so the canvas reserves room
-            // for it here once instead of being re-scaled every frame of a
-            // drag. See TimelineDrawer's header.
-            marginBottom: VIEWPORT_PADDING_PX + DRAWER_RESTING_HEIGHT,
+            // for it here rather than being re-scaled every frame of a drag.
+            // See TimelineDrawer's header.
+            marginBottom: VIEWPORT_PADDING_PX + drawerHeight,
             // See paletteZoomTransitioning's own comment (main
             // component) for why this is scoped to a flag instead of
             // an unconditional transition — wheel-zoom/manual-zoom
@@ -9333,6 +9339,7 @@ export function NativePlannerEditor({
         activeLevel={level}
         activeVariantKey={variantKey}
         term={term}
+        onHeightChange={setDrawerHeight}
         onOpen={(next, nextVariant) => {
           if (next === level && nextVariant === variantKey) return;
           // A LEVEL, not a page: the editor draws a whole spread, so the two
@@ -9343,7 +9350,17 @@ export function NativePlannerEditor({
           // heavy documents is exactly the case Apple says must NOT animate
           // - a fade on every page change is latency you have to sit through
           // every single time.
-          const route = next === "MONTHLY" ? "/planner/month" : "/planner/next";
+          // A level maps to the route that edits it. A map rather than a
+          // chain of ifs, and PARTIAL on purpose: front and back matter have
+          // no route yet, and the drawer must not offer to open something
+          // that would 404.
+          const ROUTES: Partial<Record<PageLevel, string>> = {
+            WEEKLY: "/planner/next",
+            MONTHLY: "/planner/month",
+            DAILY: "/planner/day",
+          };
+          const route = ROUTES[next];
+          if (!route) return;
           window.location.assign(nextVariant ? `${route}?variant=${encodeURIComponent(nextVariant)}` : route);
         }}
       />

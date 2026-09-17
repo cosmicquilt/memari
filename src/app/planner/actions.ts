@@ -33,6 +33,7 @@ import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import {
   weekLayout,
+  dayLayout,
   monthLayout,
   missingPlacements,
   weekSidebarBoxes,
@@ -356,6 +357,23 @@ const WITH_PAGES = {
 const LEVEL_LAYOUT: Partial<Record<PageLevel, (gridRows: number) => PageLayout>> = {
   WEEKLY: weekLayout,
   MONTHLY: monthLayout,
+  DAILY: dayLayout,
+};
+
+/**
+ * How many pages a level's set is.
+ *
+ * A week and a month are each a thing you look at whole, so they open flat -
+ * two pages, the book laid open. A DAY is a day: one page, and ninety of them
+ * as spreads is a book twice the size for no more content. Two consecutive
+ * days face each other in the bound book anyway.
+ */
+const LEVEL_PAGE_COUNT: Record<PageLevel, number> = {
+  FRONT_MATTER: 1,
+  MONTHLY: 2,
+  WEEKLY: 2,
+  DAILY: 1,
+  BACK_MATTER: 1,
 };
 
 export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
@@ -380,7 +398,12 @@ export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
         title: "My First Planner",
         // gridColumns/gridRows/gridGapPx are left unset here - Page's
         // schema defaults (24x36 lattice) apply.
-        pages: { create: [{ position: 0, level }, { position: 1, level }] },
+        pages: {
+          create: Array.from({ length: LEVEL_PAGE_COUNT[level] }, (_, position) => ({
+            position,
+            level,
+          })),
+        },
       },
       include: WITH_PAGES,
     });
@@ -388,12 +411,13 @@ export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
 
   let needsRefetch = false;
 
-  // This level's own spread. A spread is two pages - the book open flat,
-  // position 0 on the left and 1 on the right - and positions are per level,
-  // so the weeklies and the monthlies each have their own 0 and 1.
+  // This level's own set. A spread is two pages - the book open flat,
+  // position 0 on the left and 1 on the right - and a daily is one. Positions
+  // are per level, so each level has its own 0.
+  const wanted = LEVEL_PAGE_COUNT[level];
   const atLevel = (p: NonNullable<typeof planner>) =>
     p.pages.filter((page) => page.level === level);
-  for (let position = atLevel(planner).length; position < 2; position++) {
+  for (let position = atLevel(planner).length; position < wanted; position++) {
     await prisma.page.create({ data: { plannerId: planner.id, position, level } });
     needsRefetch = true;
     planner = await prisma.planner.findUniqueOrThrow({
@@ -402,9 +426,12 @@ export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
     });
   }
 
-  const [leftPage, rightPage] = atLevel(planner);
+  // applyLayout takes the pages a placement's `page` index refers to, so a
+  // one-page level hands it a one-page list rather than a spread with a hole
+  // in it.
+  const levelPages = atLevel(planner).sort((a, b) => a.position - b.position);
   const layout = LEVEL_LAYOUT[level];
-  if (layout && (await applyLayout(layout(leftPage.gridRows), [leftPage, rightPage]))) {
+  if (layout && (await applyLayout(layout(levelPages[0].gridRows), levelPages))) {
     needsRefetch = true;
   }
 
