@@ -2512,6 +2512,127 @@ export async function createLevelVariant(level: PageLevel, variantKey: string) {
 }
 
 /**
+ * Add a page to a level's set.
+ *
+ * A LEVEL IS A STACK OF PAGES, not one spread - Andrew's own framing: people
+ * should be able to "add extra pages, either empty/ruled or full of modules
+ * that cant fit on spread at each level that repeats". Every week in the book
+ * then gets all of them.
+ *
+ * BLANK, deliberately. The level's template arrangement belongs to the pages
+ * it seeded; a fourth weekly page is somewhere to put whatever did not fit on
+ * the spread, and seeding it with a copy of the spread would be the opposite
+ * of that. It has no locked spine either, so the whole page is free - the
+ * same kind of page as the front matter.
+ *
+ * Appended, never inserted: position is the order pages are bound in, and the
+ * new one goes after the ones that exist.
+ */
+export async function addPageToLevel(level: PageLevel, variantKey: string | null) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
+    include: { pages: true },
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+
+  const siblings = planner.pages.filter(
+    (page) => page.level === level && (page.variantKey ?? null) === variantKey
+  );
+  // The page's own size comes from a sibling rather than from the schema
+  // defaults: a planner switched to Letter has 2550px pages, and a new one
+  // at 2175 would be a different size from the rest of its own book.
+  const model = siblings[0] ?? planner.pages[0];
+  const page = await prisma.page.create({
+    data: {
+      plannerId: planner.id,
+      level,
+      variantKey,
+      position: siblings.length,
+      ...(model
+        ? {
+            widthPx: model.widthPx,
+            heightPx: model.heightPx,
+            gridColumns: model.gridColumns,
+            gridRows: model.gridRows,
+            gridGapPx: model.gridGapPx,
+            marginPx: model.marginPx,
+          }
+        : {}),
+    },
+  });
+  return page.id;
+}
+
+/**
+ * Remove a page from a level's set.
+ *
+ * ONLY A BLANK ONE, and only when it is not the last. Adding a page has to be
+ * undoable or it is a one-way door - the first thing that happened after the
+ * add button existed was two pages created by a stray click with no way back.
+ *
+ * Refusing to delete a page with anything on it is what makes this safe
+ * enough to sit in a toolbar with no confirmation dialog: the only pages it
+ * can remove are ones nobody has put anything on. Emptying a page first is
+ * the path for the other case, and it is deliberate rather than accidental.
+ *
+ * The rest of the set is renumbered, because positions within a level and
+ * variant are an ORDER and must stay 0..n-1 - check:levels enforces that.
+ */
+export async function deletePageFromLevel(pageId: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    include: { planner: true, moduleInstances: { select: { id: true } } },
+  });
+  if (!page || page.planner.ownerId !== userId) {
+    throw new Error("Page not found");
+  }
+  if (page.moduleInstances.length > 0) {
+    throw new Error("Only a blank page can be removed. Delete what is on it first.");
+  }
+
+  const siblings = await prisma.page.findMany({
+    where: {
+      plannerId: page.plannerId,
+      level: page.level,
+      variantKey: page.variantKey,
+    },
+    orderBy: { position: "asc" },
+  });
+  if (siblings.length <= 1) {
+    throw new Error("A level needs at least one page.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.page.delete({ where: { id: page.id } });
+    // Renumbered in one pass, and to a range that cannot collide with the
+    // rows still there: shifting 2 down to 1 while 1 still exists trips the
+    // unique index. Negative positions are free.
+    const rest = siblings.filter((s) => s.id !== page.id);
+    for (const [index, sibling] of rest.entries()) {
+      if (sibling.position !== index) {
+        await tx.page.update({ where: { id: sibling.id }, data: { position: -1 - index } });
+      }
+    }
+    for (const [index, sibling] of rest.entries()) {
+      if (sibling.position !== index) {
+        await tx.page.update({ where: { id: sibling.id }, data: { position: index } });
+      }
+    }
+  });
+}
+
+/**
  * Put one occurrence back on the default layout.
  *
  * Deletes its own pages, so whatever was changed on them is gone - which is

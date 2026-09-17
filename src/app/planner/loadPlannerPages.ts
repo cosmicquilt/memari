@@ -25,9 +25,14 @@
 // caller must be a Server Component or another server action.
 
 import { getOrCreateBook } from "./actions";
-import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
+import { findSpine, findTitle, withDates, withoutDates } from "@/lib/moduleRegistry";
 import { toSvg, flatten } from "@/lib/proofSvg";
-import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
+import {
+  LEVELS_IN_BINDING_ORDER,
+  occurrences,
+  type OccurrenceContext,
+  type PageLevel,
+} from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -168,6 +173,7 @@ export async function loadPlannerPages(
   // the truth rather than an error.
   const resolvedVariantKey = variantKey !== null && at(variantKey).length === 0 ? null : variantKey;
   const levelPages = at(resolvedVariantKey);
+
   const theme = planner.theme as PlannerTheme | null;
   // Not from the theme blob: `dated` is a real column, because it is
   // structural rather than presentational - it says what kind of planner
@@ -176,6 +182,23 @@ export async function loadPlannerPages(
   const fontChoice: FontChoice = theme?.fontFamily === "sans" ? "sans" : "serif";
   const fontFamily = resolveFontFamily(fontChoice);
   const weekStartDay = theme?.weekStartDay ?? 0;
+
+  // Which occurrence this page is being edited AS.
+  //
+  // A variant's own occurrence when one is open, and the FIRST otherwise -
+  // the default layout prints for every occurrence, and the first is the one
+  // a person can check against a calendar. Null when the book has no term,
+  // in which case there is nothing to fill in and the stored values stand.
+  const start = (planner as { startDate?: Date | null }).startDate ?? null;
+  const end = (planner as { endDate?: Date | null }).endDate ?? null;
+  const list = occurrences(level, start, end, weekStartDay);
+  const index = resolvedVariantKey
+    ? (list ?? []).findIndex((o) => o.key === resolvedVariantKey)
+    : 0;
+  const previewOccurrence: OccurrenceContext | null =
+    list && list.length > 0 && index >= 0
+      ? { ...list[index], level, index, total: list.length }
+      : null;
 
   // Computed once, up front, from both pages together — rotateWeekDays
   // needs the full canonical 7-day list (left's 3 + right's 4) to rotate
@@ -227,19 +250,31 @@ export async function loadPlannerPages(
         instance.moduleType.slug === "hourly-grid-core"
           ? { ...instance, propValues: { ...(instance.propValues as object), dayLabels: rotatedForThisPage } }
           : instance;
-      // UNDATED, applied here and only here. Same read-time substitution as
-      // the rotated day labels right above, and for the same reason: what is
-      // STORED keeps its dates, so turning them back on restores what was
-      // entered instead of re-seeding. Every instance is offered to
-      // withoutDates, not a list of the date-bearing ones - each module
-      // declares its own answer in the registry, so a module added tomorrow
-      // with a date in it is covered without this line changing.
-      const datedInstance = dated
-        ? renderInstance
-        : {
-            ...renderInstance,
-            propValues: withoutDates(instance.moduleType.slug, renderInstance.propValues),
-          };
+      // WHAT THIS PAGE WILL ACTUALLY PRINT AS, applied here and only here.
+      //
+      // Undated: the values are taken out, so the editor shows the blanks and
+      // the rules you will write on.
+      //
+      // Dated: the values are filled in FOR THE OCCURRENCE BEING EDITED - so
+      // February's own layout says FEBRUARY rather than the JANUARY it was
+      // copied from, and the default weekly spread shows the book's first
+      // week rather than whatever fiction was seeded into it. The editor is
+      // a preview of a printed page; showing a month name that belongs to a
+      // different month is the one thing it must not do.
+      //
+      // ONLY THE RENDER. `propValues` below is the RAW stored value, so
+      // nothing the editor saves can bake a date into a template.
+      //
+      // Every instance is offered to the hook, not a list of the date-bearing
+      // ones - each module declares its own answer in the registry, so a
+      // module added tomorrow with a date in it is covered without this line
+      // changing.
+      const renderProps = !dated
+        ? withoutDates(instance.moduleType.slug, renderInstance.propValues)
+        : previewOccurrence
+        ? withDates(instance.moduleType.slug, renderInstance.propValues, previewOccurrence)
+        : renderInstance.propValues;
+      const datedInstance = { ...renderInstance, propValues: renderProps };
       moduleInstances.push({
         id: instance.id,
         slug: instance.moduleType.slug,

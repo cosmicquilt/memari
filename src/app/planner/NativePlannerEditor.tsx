@@ -9062,12 +9062,19 @@ export function NativePlannerEditor({
             useful setting and not just the bottom of the range: it is
             how the resize behaved before any of this, and the fastest
             way to tell an animation bug from a layout one. */}
+        {/* SHRINKS rather than holding its width. This is the widest thing
+            in a nowrap header, and holding 110px of slider is what pushed
+            the header 25px over its own width below about 700px - the row
+            had nothing left to give. It is also the least important control
+            here: a debug slider yields before a title or a button does. */}
         <label
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
-            flexShrink: 0,
+            flexShrink: 1,
+            minWidth: 0,
+            overflow: "hidden",
             whiteSpace: "nowrap",
             fontSize: 12,
             color: "#bbb",
@@ -9082,9 +9089,18 @@ export function NativePlannerEditor({
             step={50}
             value={easeMs}
             onChange={(event) => setEaseMs(Number(event.target.value))}
-            style={{ width: 110, cursor: "pointer" }}
+            style={{ width: 110, minWidth: 40, flexShrink: 1, cursor: "pointer" }}
           />
-          <span style={{ minWidth: 46, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#ddd" }}>
+          <span
+            style={{
+              minWidth: 0,
+              flexShrink: 1,
+              overflow: "hidden",
+              textAlign: "right",
+              fontVariantNumeric: "tabular-nums",
+              color: "#ddd",
+            }}
+          >
             {easeMs}ms
           </span>
         </label>

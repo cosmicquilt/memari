@@ -48,7 +48,12 @@ import {
   type PageLevel,
 } from "@/lib/pageLevels";
 import type { TimelinePage } from "./loadPlannerPages";
-import { createLevelVariant, deleteLevelVariant } from "./actions";
+import {
+  addPageToLevel,
+  createLevelVariant,
+  deletePageFromLevel,
+  deleteLevelVariant,
+} from "./actions";
 import { useAsyncAction } from "./useAsyncAction";
 
 // --- geometry, from the spec -----------------------------------------
@@ -484,6 +489,10 @@ function LevelGroup({
                   page={page}
                   selected={level === activeLevel && activeVariantKey === null}
                   card={card}
+                  // Removable only when it is BLANK and not the last one -
+                  // the server refuses anything else, and offering a control
+                  // that will be refused is worse than not offering it.
+                  removable={defaults.length > 1 && page.moduleCount === 0}
                   highContrast={highContrast}
                   reduceMotion={reduceMotion}
                   onOpen={() => onOpen(level, null)}
@@ -495,6 +504,15 @@ function LevelGroup({
               default needs no caption - it is the only thing there. */}
           {subLabel(variants.length > 0 ? `every ${LEVEL_NOUN[level]}` : "")}
         </div>
+        {/* ADD A PAGE to this level's set. A level is a stack of pages, not
+            one spread: "add extra pages, either empty/ruled or full of
+            modules that cant fit on spread at each level that repeats", and
+            every occurrence of the level then gets all of them.
+
+            At the end of the DEFAULT column only. A variant's set is a copy
+            of the default's, and offering to grow one of them out of step
+            with the other is a question nobody asked. */}
+        <AddPageCard card={card} level={level} variantKey={null} reduceMotion={reduceMotion} />
         {/* An occurrence with its own layout sits BESIDE the default, not on
             top of it. This is exactly where the design originally had cards
             overlap like a Dock stack - see this file's header for why a
@@ -775,6 +793,7 @@ function PageCard({
   page,
   selected,
   card,
+  removable = false,
   highContrast,
   reduceMotion,
   onOpen,
@@ -782,6 +801,9 @@ function PageCard({
   page: TimelinePage;
   selected: boolean;
   card: { width: number; height: number };
+  /** Show the remove control. Only ever true for a blank page that is not
+   *  the last of its set - see deletePageFromLevel. */
+  removable?: boolean;
   highContrast: boolean;
   reduceMotion: boolean;
   onOpen: () => void;
@@ -792,7 +814,7 @@ function PageCard({
   const style: CSSProperties = {
     width: card.width,
     height: card.height,
-    flexShrink: 0,
+    display: "block",
     padding: 0,
     border: highContrast && !selected ? "1px solid #777777" : "none",
     borderRadius: 3,
@@ -808,6 +830,8 @@ function PageCard({
     transition: reduceMotion ? "none" : "opacity 150ms ease-out",
   };
   return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      {removable && <RemovePageButton pageId={page.pageId} reduceMotion={reduceMotion} />}
     <button
       type="button"
       onClick={onOpen}
@@ -823,6 +847,135 @@ function PageCard({
         dangerouslySetInnerHTML={{ __html: page.previewSvg }}
       />
     </button>
+    </div>
+  );
+}
+
+/**
+ * Remove a blank page from a level's set.
+ *
+ * Sits over the card's top-right corner. Quiet until the pointer is near -
+ * but PRESENT, not hover-created, so it is in the accessibility tree and a
+ * keyboard can reach it. Only rendered for a page the server will actually
+ * agree to delete, so it never offers something that fails.
+ */
+function RemovePageButton({
+  pageId,
+  reduceMotion,
+}: {
+  pageId: string;
+  reduceMotion: boolean;
+}) {
+  const [pending, error, run] = useAsyncAction();
+  const [lit, setLit] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onPointerEnter={() => setLit(true)}
+      onPointerLeave={() => setLit(false)}
+      onFocus={() => setLit(true)}
+      onBlur={() => setLit(false)}
+      onClick={(event) => {
+        event.stopPropagation();
+        run(async () => {
+          await deletePageFromLevel(pageId);
+          window.location.reload();
+        });
+      }}
+      aria-label="Remove this blank page"
+      title={error ?? "Remove this blank page"}
+      style={{
+        position: "absolute",
+        top: -7,
+        right: -7,
+        zIndex: 2,
+        width: 18,
+        height: 18,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        borderRadius: 9,
+        border: "none",
+        background: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255,255,255,0.35)",
+        color: "#1c1c1e",
+        cursor: pending ? "default" : "pointer",
+        opacity: pending ? 0.5 : 1,
+        transition: reduceMotion ? "none" : "background 150ms ease-out",
+      }}
+    >
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
+/**
+ * The card that adds a page to a level.
+ *
+ * A dashed outline the size of a page with a plus in it - the shape of the
+ * thing it makes, so what will happen is legible before you click. Quiet
+ * until hovered, like everything else in this row that is not content.
+ */
+function AddPageCard({
+  card,
+  level,
+  variantKey,
+  reduceMotion,
+}: {
+  card: { width: number; height: number };
+  level: PageLevel;
+  variantKey: string | null;
+  reduceMotion: boolean;
+}) {
+  const [pending, error, run] = useAsyncAction();
+  const [lit, setLit] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onPointerEnter={() => setLit(true)}
+      onPointerLeave={() => setLit(false)}
+      onFocus={() => setLit(true)}
+      onBlur={() => setLit(false)}
+      onClick={() =>
+        run(async () => {
+          await addPageToLevel(level, variantKey);
+          // The server shapes the pages; re-deriving the drawer, the canvas
+          // and the routes here would be a second description of what it
+          // just did.
+          window.location.reload();
+        })
+      }
+      aria-label={`Add a page to ${LEVEL_LABELS[level].toLowerCase()}`}
+      title={
+        error ??
+        `Add a page to ${LEVEL_LABELS[level].toLowerCase()} - a blank one, ` +
+          `printed ${LEVEL_NOUN[level] === "book" ? "once" : `every ${LEVEL_NOUN[level]}`} alongside the others`
+      }
+      style={{
+        width: card.width,
+        height: card.height,
+        flexShrink: 0,
+        padding: 0,
+        borderRadius: 3,
+        border: `2px dashed ${error ? "#ff8f5c" : lit ? "rgba(255,255,255,0.5)" : "rgba(255, 255, 255, 0.2)"}`,
+        background: "transparent",
+        color: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255, 255, 255, 0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: pending ? "default" : "pointer",
+        opacity: pending ? 0.5 : 1,
+        transition: reduceMotion ? "none" : "color 150ms ease-out, border-color 150ms ease-out",
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -834,9 +987,9 @@ function PageCard({
  * reader nothing. A dashed card holds the row's shape and says what is
  * missing.
  *
- * Not yet a button: adding a page here would create one no route can open,
- * which breaks the very rule this drawer exists to keep. It becomes the
- * "add" affordance when a level can be opened on the canvas.
+ * Reached only if a level's pages are all deleted - every level seeds one
+ * now. The card beside it adds a page; this one says why there is nothing to
+ * add it after.
  */
 function EmptyLevel({ card }: { card: { width: number; height: number } }) {
   return (
