@@ -68,12 +68,17 @@ const loaded = await loadPlannerPages(
   level
 );
 
-const built = buildPlannerPdf(loaded.pages);
+const built = buildPlannerPdf(
+  loaded.pages.map((page) => ({
+    pageGrid: page.pageGrid,
+    elements: page.moduleInstances.flatMap((instance) => instance.elements),
+  }))
+);
 const report = built.report;
 
 built.pages.forEach((page, index) => {
   console.log(
-    `  page ${index + 1}: ${page.modules} modules, ${page.elements} marks ` +
+    `  page ${index + 1}: ${page.elements} marks ` +
       `(${page.text} text, ${page.rects} rects, ${page.paths} paths)`
   );
 });

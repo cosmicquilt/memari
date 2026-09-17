@@ -26,6 +26,14 @@ import type { PageGrid } from "@/lib/grid";
 import { gridCellToPixels, columnSpanToDayCount, pixelHeightToRowSpan } from "@/lib/grid";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { CATALOGUE } from "@/lib/moduleCatalogue";
+import { computeMonthCalendar } from "@/lib/monthCalendar";
+import {
+  MONTH_NAMES,
+  WEEKDAY_NAMES,
+  dateRangeLabel,
+  dayNamed,
+  type OccurrenceContext,
+} from "@/lib/pageLevels";
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
 import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
@@ -360,6 +368,30 @@ export type ModuleDefinition = {
   undated?: (propValues: Record<string, unknown>) => Record<string, unknown>;
 
   /**
+   * This module's props, FILLED IN for one occurrence of its level.
+   *
+   * The exact inverse of `undated`, and the other half of sequence
+   * generation: a template carries no dates, and printing it for the week of
+   * 12 January is a matter of putting that week's dates into it. The week
+   * title learns it is week 3 of 13, the hourly grid learns which dates its
+   * day columns are, the month grid gets that month's own calendar.
+   *
+   * DERIVED, NEVER STORED. The generated book is not written to the database
+   * - see generateBook. A module says here how to date itself, and the same
+   * template prints as every week of the term without 52 copies of it
+   * existing anywhere.
+   *
+   * It lives beside the module for the same reason `undated` does: the
+   * alternative is a list of date-bearing slugs inside the generator, which
+   * is the hardcoded-slug-list defect class this codebase has undone in the
+   * zone logic, in renderBySlug's old switch and in the edit affordance.
+   */
+  dated?: (
+    propValues: Record<string, unknown>,
+    at: OccurrenceContext
+  ) => Record<string, unknown>;
+
+  /**
    * Does this module's content have to be RE-DRAWN as its box resizes,
    * rather than drawn once and clipped?
    *
@@ -481,6 +513,16 @@ const PRIMITIVES = {
         date: null,
       })),
     }),
+    // Each column already NAMES its weekday, so which date it is follows
+    // from the week this page is being printed for - the module does not
+    // have to be told which half of the spread it is on.
+    dated: (props, at) => ({
+      ...props,
+      dayLabels: ((props.dayLabels as Array<Record<string, unknown>>) ?? []).map((d) => {
+        const day = dayNamed(at.start, d.name);
+        return { ...d, date: day ? day.getUTCDate() : null };
+      }),
+    }),
     // Increments off is a blank height-adjustable field, so it scales and
     // the clip serves. Increments on draws ruled rows whose count and
     // pitch both follow the box, so it has to be redrawn. The editor adds
@@ -564,6 +606,16 @@ const PRIMITIVES = {
     // Both halves go: "WEEK 1/52" is as much a date as "DEC 31 - JAN 6",
     // and a template that is week 1 of 52 is not undated.
     undated: (props) => ({ ...props, weekNumber: null, weekTotal: null, dateRangeLabel: "" }),
+    // "WEEK 3/13" and the range it covers. The week runs seven days from the
+    // occurrence's own first day, which is not necessarily a Sunday - see
+    // occurrences(), where a book beginning on a Wednesday has its first
+    // week begin that Wednesday.
+    dated: (props, at) => ({
+      ...props,
+      weekNumber: at.index + 1,
+      weekTotal: at.total,
+      dateRangeLabel: dateRangeLabel(at.start, new Date(at.start.getTime() + 6 * 86_400_000)),
+    }),
     contentIsLive: NEVER,
   },
 
@@ -767,6 +819,25 @@ const PRIMITIVES = {
         week.map((cell) => ({ ...cell, date: null }))
       ),
     }),
+    // This month's real calendar, sliced to the weekday columns this page
+    // shows - the same slice pageLayouts makes when it seeds the template,
+    // and derived from the same day names rather than from which page it is.
+    dated: (props, at) => {
+      const names = ((props.dayLabels as Array<{ name?: unknown }>) ?? []).map((d) =>
+        String(d.name ?? "").trim().toUpperCase()
+      );
+      const first = WEEKDAY_NAMES.indexOf(names[0] ?? "");
+      if (first < 0) return props;
+      const calendar = computeMonthCalendar(
+        at.start.getUTCFullYear(),
+        at.start.getUTCMonth() + 1
+      );
+      return {
+        ...props,
+        weekCount: calendar.weekCount,
+        cells: calendar.weeks.map((week) => week.slice(first, first + names.length)),
+      };
+    },
     // Every week row shares out whatever height the block has, so all of
     // them move when it resizes and the drawing has to follow.
     contentIsLive: ALWAYS,
@@ -795,6 +866,12 @@ const PRIMITIVES = {
     // A month NAME is a date. "JANUARY" pins the page to a month as surely
     // as a day number pins it to a day.
     undated: (props) => ({ ...props, monthName: "" }),
+    // Uppercase, which is how the reference sets it and how the renderer
+    // expects it - the field's own comment says "already formatted".
+    dated: (props, at) => ({
+      ...props,
+      monthName: MONTH_NAMES[at.start.getUTCMonth()].toUpperCase(),
+    }),
     contentIsLive: NEVER,
   },
 
@@ -979,6 +1056,18 @@ const PRIMITIVES = {
     // is wrong, so the instance says which it is.
     undated: (props) =>
       props.keepDates === true ? props : { ...props, month: null },
+    // The month this page is being printed for. `keepDates` means the
+    // instance was pinned to a month of its own on purpose - a reference
+    // calendar beside the page rather than a calendar OF it - so it is left
+    // exactly as it was set.
+    dated: (props, at) =>
+      props.keepDates === true
+        ? props
+        : {
+            ...props,
+            year: at.start.getUTCFullYear(),
+            month: at.start.getUTCMonth() + 1,
+          },
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
       getMiniMonthMinHeightPx(propValues.markable === true),
     // Seven columns of a fixed grid: the drawing is the same marks at
@@ -1621,6 +1710,23 @@ export function withoutDates(slug: string, propValues: unknown): unknown {
   const strip = MODULE_REGISTRY[slug]?.undated;
   if (!strip) return propValues;
   return strip((propValues ?? {}) as Record<string, unknown>);
+}
+
+/**
+ * One instance's props as they should print for a given occurrence.
+ *
+ * Returns the props untouched for a module with no dates in it, which is all
+ * but a handful - so the generator applies this to every instance without
+ * knowing or caring which ones are affected.
+ */
+export function withDates(
+  slug: string,
+  propValues: unknown,
+  at: OccurrenceContext
+): unknown {
+  const fill = MODULE_REGISTRY[slug]?.dated;
+  if (!fill) return propValues;
+  return fill((propValues ?? {}) as Record<string, unknown>, at);
 }
 
 /** The page's spine and title, whichever cadence it is. Callers used to

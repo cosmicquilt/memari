@@ -1,4 +1,9 @@
-// The export route: GET /planner/export?level=WEEKLY -> a real PDF.
+// The export route: GET /planner/export -> the whole book, as a real PDF.
+//
+// THE BOOK BY DEFAULT, one spread with ?level=WEEKLY. The book is the
+// product - a term's worth of pages generated from a handful of templates
+// with the dates filled in - and a single spread is a proofing tool. The
+// default should be the thing somebody wants.
 //
 // This is the end of the pipeline, and the first thing in it a person can
 // reach. Everything before it - the renderers, loadPlannerPages,
@@ -22,6 +27,8 @@ import { auth } from "@clerk/nextjs/server";
 import { getOrCreateBook } from "../actions";
 import { loadPlannerPages } from "../loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
+import { generateBook } from "@/lib/generateBook";
+import { resolveFontFamily, type PlannerTheme } from "@/lib/theme";
 import { PLANNER_TRIMS, trimKeyForWidth } from "@/lib/planner-trims";
 import { LEVELS_IN_BINDING_ORDER, LEVEL_LABELS, type PageLevel } from "@/lib/pageLevels";
 
@@ -48,6 +55,8 @@ export async function GET(request: Request) {
   }
 
   const params = new URL(request.url).searchParams;
+  // No ?level= means the whole book.
+  const wholeBook = !params.has("level");
   const requested = (params.get("level") ?? "WEEKLY").toUpperCase();
   // Checked against the levels that exist, not cast: a mistyped parameter
   // should say so rather than quietly exporting a different spread.
@@ -62,12 +71,44 @@ export async function GET(request: Request) {
   let built: ReturnType<typeof buildPlannerPdf>;
   let title: string;
   let loadedWidthPx: number;
+  let scope: string;
   try {
     const planner = await getOrCreateBook(level);
-    title = `${planner.title} ${LEVEL_LABELS[level]}`;
-    const loaded = await loadPlannerPages(planner, level);
-    loadedWidthPx = loaded.pages[0]?.pageGrid.widthPx ?? 0;
-    built = buildPlannerPdf(loaded.pages);
+    if (wholeBook) {
+      const theme = planner.theme as PlannerTheme | null;
+      const book = generateBook(planner, resolveFontFamily(theme?.fontFamily));
+      if (book.pages.length === 0) {
+        // Said plainly, with the way out. An empty PDF would be worse: it
+        // looks like the export failed rather than like the book has not
+        // been told how long it is.
+        return new Response(
+          [
+            "This book has no pages to print yet.",
+            "",
+            "Set its start and end dates under Page Settings > Term, and the weekly and " +
+              "monthly spreads will be printed for every week and month they cover.",
+            "",
+            `To export just the spread you are looking at instead, add ?level=${level} to this URL.`,
+          ].join("\n"),
+          { status: 409, headers: { "Content-Type": "text/plain; charset=utf-8" } }
+        );
+      }
+      title = planner.title;
+      scope = `whole book`;
+      loadedWidthPx = book.pages[0].pageGrid.widthPx;
+      built = buildPlannerPdf(book.pages);
+    } else {
+      title = `${planner.title} ${LEVEL_LABELS[level]}`;
+      scope = LEVEL_LABELS[level];
+      const loaded = await loadPlannerPages(planner, level);
+      loadedWidthPx = loaded.pages[0]?.pageGrid.widthPx ?? 0;
+      built = buildPlannerPdf(
+        loaded.pages.map((page) => ({
+          pageGrid: page.pageGrid,
+          elements: page.moduleInstances.flatMap((instance) => instance.elements),
+        }))
+      );
+    }
   } catch (error) {
     // A failed export is reported. The alternative - a zero-byte or
     // half-drawn PDF with a 200 on it - is the failure mode this whole
@@ -107,8 +148,8 @@ export async function GET(request: Request) {
         paths: built.report.paths,
         widthPt: Number(built.widthPt.toFixed(2)),
         heightPt: Number(built.heightPt.toFixed(2)),
-        // Which spread of the book this is.
-        level: LEVEL_LABELS[level],
+        // The whole book, or which spread of it.
+        level: scope,
         // The FINISHED size, not the sheet. Someone reading this wants to
         // know what comes back from the printer, and the sheet is a
         // quarter-inch larger on both axes because of the bleed. The label

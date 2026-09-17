@@ -4156,7 +4156,7 @@ type ExportReport = {
   problems: string[];
 };
 
-function ExportPdfButton({ level }: { level: PageLevel }) {
+function ExportPdfButton() {
   const [busy, setBusy] = useState(false);
   // Null while idle. Held until the next export rather than timed out: if
   // something could not be drawn, that is not a message to blink once and
@@ -4167,7 +4167,10 @@ function ExportPdfButton({ level }: { level: PageLevel }) {
     setBusy(true);
     setResult(null);
     try {
-      const response = await fetch(`/planner/export?level=${level}`, { cache: "no-store" });
+      // No ?level=: the WHOLE BOOK. A term's worth of pages generated from
+      // the templates with the dates filled in, which is the product - one
+      // spread is a proofing tool and still reachable by URL.
+      const response = await fetch("/planner/export", { cache: "no-store" });
       if (!response.ok) {
         setResult({ ok: false, message: (await response.text()) || `Export failed (${response.status})` });
         return;
@@ -4226,7 +4229,7 @@ function ExportPdfButton({ level }: { level: PageLevel }) {
         type="button"
         onClick={() => void run()}
         disabled={busy}
-        title="Download this spread as a print-ready PDF, at trim size plus bleed, in the planner's own face"
+        title="Download the whole book as a print-ready PDF - every week and month of its term, at trim size plus bleed, in the planner's own face"
         style={{
           display: "flex",
           alignItems: "center",
@@ -9113,7 +9116,7 @@ export function NativePlannerEditor({
             the status line carries minWidth:0 and an ellipsis, which is what
             lets it take the squeeze at this edge instead of pushing the
             button off it. */}
-        <ExportPdfButton level={level} />
+        <ExportPdfButton />
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>
       <div

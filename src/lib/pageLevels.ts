@@ -123,7 +123,8 @@ export type Occurrence = {
   start: Date;
 };
 
-const MONTH_NAMES = [
+/** Title case, as the month title wants it - it uppercases for itself. */
+export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
@@ -149,7 +150,11 @@ const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getU
 export function occurrences(
   level: PageLevel,
   start: Date | null | undefined,
-  end: Date | null | undefined
+  end: Date | null | undefined,
+  /** Which weekday a week begins on, 0 = Sunday. The planner's own setting
+   *  (theme.weekStartDay), and the same one rotateWeekDays uses to order the
+   *  day columns. Weeks MUST be snapped to it - see below. */
+  weekStartDay = 0
 ): Occurrence[] | null {
   // Matter does not repeat, and is printed whether or not a term is set - it
   // is not a function of the calendar.
@@ -172,12 +177,25 @@ export function occurrences(
   }
 
   if (level === PageLevel.WEEKLY) {
-    // Weeks counted FROM THE TERM'S START, not from a calendar Sunday. A book
-    // that begins on a Wednesday has its first week begin on that Wednesday;
-    // aligning to the calendar instead would print a first spread that is
-    // mostly before the book starts.
-    return Array.from({ length: Math.ceil(days / 7) }, (_, i) => {
-      const day = new Date(utcDay(start) + i * 7 * 86_400_000);
+    // SNAPPED BACK to the planner's own week-start day, not counted forward
+    // from the term's first date.
+    //
+    // The first version counted forward, on the reasoning that a book
+    // beginning on a Wednesday should have its first week begin that
+    // Wednesday. Generating a real book showed why that is wrong: the
+    // spread's day columns are in weekday order (Sunday..Saturday, rotated
+    // by weekStartDay), so a week beginning on a Thursday put its dates on
+    // the page as 4, 5, 6, 7, 1, 2, 3 - out of order, across a spread
+    // somebody is meant to read left to right.
+    //
+    // Snapping means the first spread carries a few days from before the
+    // term starts. That is what every printed planner does, and it is much
+    // the lesser evil: those days are simply there, in the right columns.
+    const offset = (start.getUTCDay() - weekStartDay + 7) % 7;
+    const firstWeek = utcDay(start) - offset * 86_400_000;
+    const spanned = Math.round((utcDay(end) - firstWeek) / 86_400_000) + 1;
+    return Array.from({ length: Math.ceil(spanned / 7) }, (_, i) => {
+      const day = new Date(firstWeek + i * 7 * 86_400_000);
       return {
         key: `W${day.toISOString().slice(0, 10)}`,
         label: `Week of ${day.getUTCDate()} ${MONTH_NAMES[day.getUTCMonth()].slice(0, 3)}`,
@@ -203,6 +221,47 @@ export function occurrences(
 }
 
 /**
+ * Which occurrence a page is being printed for.
+ *
+ * Handed to a module's `dated` hook so it can fill itself in: the week title
+ * needs to know it is week 7 of 13, the hourly grid needs the dates of this
+ * week's days, the month grid needs this month's calendar.
+ */
+export type OccurrenceContext = Occurrence & {
+  level: PageLevel;
+  /** 0-based, and how many there are in the term. "Week 7/13" is these. */
+  index: number;
+  total: number;
+};
+
+/** Weekday names as the day-bearing modules spell them, indexed the way
+ *  `Date.getUTCDay()` does - Sunday is 0. Modules name the weekdays they
+ *  show ("SUNDAY", "MONDAY"), which is what lets a generator work out which
+ *  DATE each of their columns is without being told. */
+export const WEEKDAY_NAMES = [
+  "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY",
+];
+
+/** The day within `start`'s week that falls on a named weekday, or null for
+ *  a name this does not recognise - a module free-texting its own column
+ *  heads must not take the page down. */
+export function dayNamed(start: Date, name: unknown): Date | null {
+  const index = WEEKDAY_NAMES.indexOf(String(name).trim().toUpperCase());
+  if (index < 0) return null;
+  // Forward from the occurrence's own first day, never backwards: a week
+  // that begins on a Wednesday has its Sunday at the END, and reaching back
+  // would date it into the week before.
+  const offset = (index - start.getUTCDay() + 7) % 7;
+  return new Date(start.getTime() + offset * 86_400_000);
+}
+
+/** "DEC 31 - JAN 6", the form the week title was measured in. */
+export function dateRangeLabel(start: Date, end: Date): string {
+  const part = (d: Date) => `${MONTH_NAMES[d.getUTCMonth()].slice(0, 3).toUpperCase()} ${d.getUTCDate()}`;
+  return `${part(start)} - ${part(end)}`;
+}
+
+/**
  * How many times a level's pages are printed over a date range.
  *
  * The count, not the calendar: a range of 90 days is 90 dailies and about 13
@@ -215,7 +274,8 @@ export function occurrences(
 export function printedCount(
   level: PageLevel,
   start: Date | null | undefined,
-  end: Date | null | undefined
+  end: Date | null | undefined,
+  weekStartDay = 0
 ): number | null {
-  return occurrences(level, start, end)?.length ?? null;
+  return occurrences(level, start, end, weekStartDay)?.length ?? null;
 }

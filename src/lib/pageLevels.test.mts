@@ -12,7 +12,9 @@
 import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_LABELS,
+  WEEKDAY_NAMES,
   byLevel,
+  dayNamed,
   occurrences,
   printedCount,
   repeats,
@@ -79,14 +81,17 @@ eq(printedCount("MONTHLY", utc(2026, 1, 1), utc(2026, 1, 1)), 1, "a one-day term
 // A real quarter, counted by hand: Jan 31 + Feb 28 + Mar 31 = 90 days in
 // 2026, which is not a leap year.
 eq(printedCount("DAILY", utc(2026, 1, 1), utc(2026, 3, 31)), 90, "Jan-Mar 2026 is 90 days");
-eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 3, 31)), 13, "90 days is 13 weeks");
+// FOURTEEN, not thirteen: weeks are snapped back to the week-start day, so
+// Jan 1 2026 (a Thursday) sits in the week beginning Sun Dec 28, and the term
+// touches 14 of them. See the block below for why snapping is right.
+eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 3, 31)), 14, "Jan-Mar touches 14 weeks");
 eq(printedCount("MONTHLY", utc(2026, 1, 1), utc(2026, 3, 31)), 3, "Jan-Mar is 3 months");
 
 // THE CASE days/30 GETS WRONG. Six days, spanning two calendar months, and
 // a monthly page is needed for each - you cannot print half of February.
 eq(printedCount("DAILY", utc(2026, 1, 28), utc(2026, 2, 2)), 6, "Jan 28 to Feb 2 is 6 days");
 eq(printedCount("MONTHLY", utc(2026, 1, 28), utc(2026, 2, 2)), 2, "Jan 28 to Feb 2 touches 2 months");
-eq(printedCount("WEEKLY", utc(2026, 1, 28), utc(2026, 2, 2)), 1, "6 days is one week");
+eq(printedCount("WEEKLY", utc(2026, 1, 28), utc(2026, 2, 2)), 2, "Jan 28 to Feb 2 touches 2 weeks");
 
 // Across a year boundary, where a naive month subtraction goes negative.
 eq(
@@ -107,10 +112,18 @@ eq(printedCount("DAILY", utc(2028, 2, 1), utc(2028, 2, 29)), 29, "Feb 2028 has 2
 // into a price.
 eq(printedCount("DAILY", utc(2026, 3, 31), utc(2026, 1, 1)), 0, "an inverted term prints nothing");
 
-// A week that does not divide evenly rounds UP: 8 days needs 2 weekly pages,
-// because the 8th day is in a second week and has to have somewhere to be.
-eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 1, 8)), 2, "8 days needs 2 weeklies");
-eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 1, 7)), 1, "7 days needs 1 weekly");
+// Whole CALENDAR weeks touched, not days divided by seven. Jan 1 2026 is a
+// Thursday, so even one day of it pulls in the week that began the previous
+// Sunday - which is exactly what a printed planner does.
+eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 1, 8)), 2, "Jan 1-8 touches 2 weeks");
+eq(printedCount("WEEKLY", utc(2026, 1, 4), utc(2026, 1, 10)), 1, "a Sun-to-Sat term is one week");
+// Starting the week on MONDAY instead moves the boundary, and the count with
+// it: Sun Jan 4 now belongs to the week that began Mon Dec 29.
+eq(
+  printedCount("WEEKLY", utc(2026, 1, 4), utc(2026, 1, 10), 1),
+  2,
+  "with a Monday start, Sun Jan 4 falls in the previous week"
+);
 
 // --- occurrences, which is what a per-month layout attaches to ---------
 //
@@ -126,11 +139,37 @@ eq(janToMar?.[1].label, "February 2026", "a month labels itself by name and year
 const decToJan = occurrences("MONTHLY", utc(2026, 12, 15), utc(2027, 1, 15));
 eq(decToJan?.map((o) => o.key).join(","), "2026-12,2027-01", "month keys roll into the next year");
 
-// Weeks run FROM THE TERM'S START, not from a calendar Sunday: a book that
-// begins on a Wednesday has its first week begin that Wednesday.
+// WEEKS SNAP BACK to the week-start day. A term beginning on Wed Jan 7 has
+// its first week begin Sun Jan 4.
 const wed = occurrences("WEEKLY", utc(2026, 1, 7), utc(2026, 1, 20));
-eq(wed?.length, 2, "14 days from a Wednesday is 2 weeks");
-eq(wed?.map((o) => o.key).join(","), "W2026-01-07,W2026-01-14", "weeks step 7 days from the start");
+eq(wed?.map((o) => o.key).join(","), "W2026-01-04,W2026-01-11,W2026-01-18", "weeks snap to Sunday");
+eq(
+  occurrences("WEEKLY", utc(2026, 1, 7), utc(2026, 1, 20), 1)?.[0].key,
+  "W2026-01-05",
+  "a Monday-start week snaps to the Monday"
+);
+
+// WHY SNAPPING IS NOT OPTIONAL, and the check that would have caught the
+// first version. A weekly spread lays its day columns out in weekday order,
+// so the dates a module derives for SUNDAY..SATURDAY have to come out as
+// seven consecutive days ASCENDING. Counting weeks forward from an arbitrary
+// term start broke exactly this: a week beginning on a Thursday put the
+// dates on the page as 4, 5, 6, 7, 1, 2, 3 - across a spread somebody reads
+// left to right. Found by generating a real book and looking at it.
+for (const startDay of [0, 1]) {
+  const first = occurrences("WEEKLY", utc(2026, 1, 1), utc(2026, 3, 31), startDay)![0];
+  const order = [...WEEKDAY_NAMES.slice(startDay), ...WEEKDAY_NAMES.slice(0, startDay)];
+  const dates = order.map((name) => dayNamed(first.start, name)!);
+  check(
+    dates.every((d, i) => i === 0 || d.getTime() - dates[i - 1].getTime() === 86_400_000),
+    `week columns run in consecutive days with weekStartDay ${startDay} ` +
+      `(got ${dates.map((d) => d.getUTCDate()).join(",")})`
+  );
+}
+
+// A weekday this does not recognise gives null rather than a wrong date - a
+// module free-texting its own column heads must not silently date them.
+eq(dayNamed(utc(2026, 1, 4), "SOMEDAY"), null, "an unknown weekday has no date");
 
 const threeDays = occurrences("DAILY", utc(2026, 2, 27), utc(2026, 3, 1));
 eq(threeDays?.map((o) => o.key).join(","), "2026-02-27,2026-02-28,2026-03-01", "days cross a month end");

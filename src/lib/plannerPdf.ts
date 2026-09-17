@@ -66,17 +66,17 @@ export function plannerFontBase64(): string | undefined {
   return fontCache;
 }
 
-/** The shape this needs from a loaded page - deliberately the smallest one.
- *  LoadedPage satisfies it, and so does anything else that can produce
- *  rendered elements for a page, which is what keeps the proof sheets and
- *  any future headless render from needing their own exporter. */
+/** The shape this needs from a page - deliberately the smallest one: a size
+ *  and some marks. It used to take the marks grouped per module instance,
+ *  which is how the EDITOR carries them and no business of an exporter's; a
+ *  generated page has no module instances to group by, and there is nothing
+ *  here that ever wanted the grouping. */
 export type PdfPageInput = {
   pageGrid: PageGrid;
-  moduleInstances: { elements: RenderedPolotnoElement[] }[];
+  elements: RenderedPolotnoElement[];
 };
 
 export type PdfPageReport = {
-  modules: number;
   elements: number;
   text: number;
   rects: number;
@@ -197,11 +197,8 @@ export function buildPlannerPdf(pageInputs: PdfPageInput[]): BuiltPdf {
     // trim box written once would be wrong for any page that differed.
     sizes.push(declarePageBoxes(doc, index + 1, page.pageGrid));
     const before = { ...report };
-    for (const instance of page.moduleInstances) {
-      drawPage(doc, instance.elements, font, report);
-    }
+    drawPage(doc, page.elements, font, report);
     pages.push({
-      modules: page.moduleInstances.length,
       elements: report.elements - before.elements,
       text: report.text - before.text,
       rects: report.rects - before.rects,
