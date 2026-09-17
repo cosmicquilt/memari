@@ -26,7 +26,8 @@
 
 import { getOrCreateBook } from "./actions";
 import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
-import { type PageLevel } from "@/lib/pageLevels";
+import { toSvg, flatten } from "@/lib/proofSvg";
+import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -90,8 +91,33 @@ export type PageSettings = {
   rowHeightPt: number;
 };
 
+/**
+ * One page of the WHOLE book, for the timeline drawer.
+ *
+ * Every level, not just the one on the canvas - the drawer's job is that
+ * "every page in the planner is reachable from the timeline", which it
+ * cannot be if the pages of the other levels were never loaded.
+ *
+ * The preview is a real SVG of the real drawing, serialised HERE rather than
+ * on the client. Two reasons: the elements are already shaped on this side,
+ * so shipping them to the browser to be re-serialised would send more bytes
+ * to do the same work; and a preview built any other way would be a picture
+ * of a page rather than the page, which is the mistake the proof sheets
+ * exist to avoid. See proofSvg.
+ */
+export type TimelinePage = {
+  pageId: string;
+  level: PageLevel;
+  position: number;
+  /** `<svg>` markup at the page's own aspect ratio, ready to size with CSS. */
+  previewSvg: string;
+  moduleCount: number;
+};
+
 export type LoadedPlanner = {
   pages: LoadedPage[];
+  /** Every page of the book, in binding order, for the drawer. */
+  timeline: TimelinePage[];
   /** What term this book covers, if it has one yet. Sequence generation
    *  walks it; nothing else reads it. */
   term: { start: Date | null; end: Date | null };
@@ -250,6 +276,53 @@ export async function loadPlannerPages(
     };
   });
 
+  // THE WHOLE BOOK, for the drawer. Rendered separately from `pages` above
+  // because that one is filtered to the level on the canvas and carries far
+  // more per page than a thumbnail needs.
+  const timeline: TimelinePage[] = planner.pages
+    .slice()
+    .sort((a, b) =>
+      a.level === b.level
+        ? a.position - b.position
+        : LEVELS_IN_BINDING_ORDER.indexOf(a.level) - LEVELS_IN_BINDING_ORDER.indexOf(b.level)
+    )
+    .map((page) => {
+      const pageGrid: PageGrid = {
+        widthPx: page.widthPx,
+        heightPx: page.heightPx,
+        gridColumns: page.gridColumns,
+        gridRows: page.gridRows,
+        boxInsetPx: page.gridGapPx / 2,
+        marginPx: page.marginPx,
+      };
+      const marks: string[] = [];
+      for (const instance of page.moduleInstances) {
+        if (instance.moduleType.slug === "freeform-element") continue;
+        if (instance.columnStart === null || instance.rowStart === null) continue;
+        const props = dated
+          ? instance.propValues
+          : withoutDates(instance.moduleType.slug, instance.propValues);
+        for (const element of flatten(
+          renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)
+        )) {
+          marks.push(toSvg(element));
+        }
+      }
+      return {
+        pageId: page.id,
+        level: page.level,
+        position: page.position,
+        // No width or height: the drawer sizes it in CSS and the viewBox
+        // keeps the page's own proportions whatever size it is drawn at.
+        previewSvg:
+          `<svg viewBox="0 0 ${page.widthPx} ${page.heightPx}" ` +
+          `xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">` +
+          marks.join("") +
+          `</svg>`,
+        moduleCount: page.moduleInstances.length,
+      };
+    });
+
   const [leftPage, rightPage] = levelPages;
   const weekTitleInstance = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
   const leftHourly = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
@@ -282,6 +355,7 @@ export async function loadPlannerPages(
 
   return {
     pages,
+    timeline,
     term: {
       start: (planner as { startDate?: Date | null }).startDate ?? null,
       end: (planner as { endDate?: Date | null }).endDate ?? null,

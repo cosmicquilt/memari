@@ -32,7 +32,13 @@ export default async function MonthPlannerPage() {
   // be a different Planner row entirely - see getOrCreateBook on why that is
   // gone.
   const book = await getOrCreateBook("MONTHLY");
-  const { pages, weekSettings, pageSettings } = await loadPlannerPages(book, "MONTHLY");
+  const { pages, timeline, weekSettings, pageSettings } = await loadPlannerPages(book, "MONTHLY");
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} level="MONTHLY" />;
+  return <NativePlannerEditor
+      pages={pages}
+      timeline={timeline}
+      weekSettings={weekSettings}
+      pageSettings={pageSettings}
+      level="MONTHLY"
+    />;
 }

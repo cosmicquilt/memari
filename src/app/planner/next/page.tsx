@@ -23,7 +23,13 @@ export default async function NativePlannerPage() {
   // is the same book's monthly one. Two routes rather than one with a level
   // picker, because the picker is the timeline drawer and it is not built yet.
   const book = await getOrCreateBook("WEEKLY");
-  const { pages, weekSettings, pageSettings } = await loadPlannerPages(book, "WEEKLY");
+  const { pages, timeline, weekSettings, pageSettings } = await loadPlannerPages(book, "WEEKLY");
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} level="WEEKLY" />;
+  return <NativePlannerEditor
+      pages={pages}
+      timeline={timeline}
+      weekSettings={weekSettings}
+      pageSettings={pageSettings}
+      level="WEEKLY"
+    />;
 }

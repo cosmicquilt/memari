@@ -92,7 +92,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { LoadedPage, PageSettings } from "./loadPlannerPages";
+import type { LoadedPage, PageSettings, TimelinePage } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
@@ -154,6 +154,7 @@ import {
 } from "./actions";
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { PageLevel } from "@/lib/pageLevels";
+import { TimelineDrawer, DRAWER_RESTING_HEIGHT } from "./TimelineDrawer";
 import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -4197,10 +4198,14 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 
 export function NativePlannerEditor({
   pages,
+  timeline,
   pageSettings: initialPageSettings,
   level,
 }: {
   pages: LoadedPage[];
+  // Every page of the BOOK, for the timeline drawer - not just this level's.
+  // The drawer's whole job is that every page is reachable from it.
+  timeline: TimelinePage[];
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
   // WHICH LEVEL of the book this editor is showing. Everything else this
@@ -9065,7 +9070,10 @@ export function NativePlannerEditor({
             width: "fit-content",
             marginLeft: centeringOffsetX(scale),
             marginTop: centeringOffsetY(scale),
-            marginBottom: VIEWPORT_PADDING_PX,
+            // The drawer OVERLAYS the canvas, so the canvas reserves room
+            // for it here once instead of being re-scaled every frame of a
+            // drag. See TimelineDrawer's header.
+            marginBottom: VIEWPORT_PADDING_PX + DRAWER_RESTING_HEIGHT,
             // See paletteZoomTransitioning's own comment (main
             // component) for why this is scoped to a flag instead of
             // an unconditional transition — wheel-zoom/manual-zoom
@@ -9221,6 +9229,25 @@ export function NativePlannerEditor({
           onFitPage={() => setZoomMode("fit-page")}
         />
       </div>
+      {/* The book. Outside the scrolling canvas container, because it is
+          fixed to the viewport rather than to the page being edited. */}
+      <TimelineDrawer
+        pages={timeline}
+        activeLevel={level}
+        onOpenLevel={(next) => {
+          if (next === level) return;
+          // A LEVEL, not a page: the editor draws a whole spread, so the two
+          // pages of a level are on screen together and either one of them
+          // means "show this spread".
+          //
+          // Instant, with no transition of its own. Swapping between two
+          // heavy documents is exactly the case Apple says must NOT animate
+          // - a fade on every page change is latency you have to sit through
+          // every single time.
+          const route = next === "MONTHLY" ? "/planner/month" : "/planner/next";
+          window.location.assign(route);
+        }}
+      />
     </div>
   );
 }
