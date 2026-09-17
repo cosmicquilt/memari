@@ -2346,6 +2346,167 @@ export async function setPlannerDated(dated: boolean) {
   await prisma.planner.update({ where: { id: planner.id }, data: { dated } });
 }
 
+/**
+ * Page Settings > Term. What stretch of time this book covers.
+ *
+ * Sequence generation walks it to turn the templates into pages, and the
+ * cog's popup divides it into the months (or weeks, or days) a person can
+ * give their own layout to - see occurrences().
+ *
+ * Both dates or neither. A half-set term is not a shorter book, it is a book
+ * whose length nobody can compute, and every count downstream would have to
+ * carry a third state to say so.
+ */
+export async function setPlannerTerm(startISO: string | null, endISO: string | null) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+
+  if (!startISO || !endISO) {
+    await prisma.planner.update({
+      where: { id: planner.id },
+      data: { startDate: null, endDate: null },
+    });
+    return;
+  }
+
+  // Parsed as UTC midnight, matching every other date in this app - a local
+  // parse would put a book that starts on the 1st into the previous month
+  // for anyone west of Greenwich.
+  const start = new Date(`${startISO}T00:00:00.000Z`);
+  const end = new Date(`${endISO}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Those dates could not be read.");
+  }
+  if (end.getTime() < start.getTime()) {
+    throw new Error("A book cannot end before it begins.");
+  }
+
+  await prisma.planner.update({
+    where: { id: planner.id },
+    data: { startDate: start, endDate: end },
+  });
+}
+
+/**
+ * Give one occurrence its own layout, by copying the default one.
+ *
+ * COPIED, NOT BLANK. "Customise February" means "start from what every other
+ * month gets and change it" - handing back an empty page would throw away
+ * the work the default represents and make the feature something you only
+ * use when starting over.
+ *
+ * Idempotent: an occurrence that already has its own pages is left exactly
+ * as it is rather than being reset to the default, which would silently
+ * discard whatever had been changed.
+ */
+export async function createLevelVariant(level: PageLevel, variantKey: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  if (!variantKey) {
+    throw new Error("An occurrence needs a key.");
+  }
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
+    include: {
+      pages: { include: { moduleInstances: true }, orderBy: { position: "asc" } },
+    },
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+
+  if (planner.pages.some((page) => page.level === level && page.variantKey === variantKey)) {
+    return;
+  }
+  const source = planner.pages.filter((page) => page.level === level && page.variantKey === null);
+  if (source.length === 0) {
+    throw new Error(`There is no default ${level} layout to copy.`);
+  }
+
+  // One transaction: a half-copied spread - the left page of February
+  // present and the right one missing - is worse than no February at all,
+  // because it looks finished.
+  await prisma.$transaction(async (tx) => {
+    for (const page of source) {
+      const copy = await tx.page.create({
+        data: {
+          plannerId: planner.id,
+          level,
+          variantKey,
+          position: page.position,
+          widthPx: page.widthPx,
+          heightPx: page.heightPx,
+          gridColumns: page.gridColumns,
+          gridRows: page.gridRows,
+          gridGapPx: page.gridGapPx,
+          marginPx: page.marginPx,
+        },
+      });
+      if (page.moduleInstances.length === 0) continue;
+      await tx.moduleInstance.createMany({
+        data: page.moduleInstances.map((instance) => ({
+          pageId: copy.id,
+          moduleTypeId: instance.moduleTypeId,
+          placementMode: instance.placementMode,
+          locked: instance.locked,
+          x: instance.x,
+          y: instance.y,
+          width: instance.width,
+          height: instance.height,
+          columnStart: instance.columnStart,
+          rowStart: instance.rowStart,
+          columnSpan: instance.columnSpan,
+          rowSpan: instance.rowSpan,
+          zIndex: instance.zIndex,
+          propValues: instance.propValues as Prisma.InputJsonValue,
+        })),
+      });
+    }
+  });
+}
+
+/**
+ * Put one occurrence back on the default layout.
+ *
+ * Deletes its own pages, so whatever was changed on them is gone - which is
+ * exactly what "stop customising February" means, and why the caller has to
+ * confirm it. The default pages are untouched; they were copied FROM, never
+ * moved.
+ */
+export async function deleteLevelVariant(level: PageLevel, variantKey: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  if (!variantKey) {
+    throw new Error("The default layout cannot be removed.");
+  }
+  const planner = await prisma.planner.findFirst({
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
+  });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+  // Scoped to this planner as well as the key: deleteMany on a key alone
+  // would reach into another person's book.
+  await prisma.page.deleteMany({
+    where: { plannerId: planner.id, level, variantKey },
+  });
+}
+
 // Validates a client-submitted "HH:MM" string strictly (unlike
 // hourlyGridCore.ts's own private timeToMinutes, which trusts
 // already-persisted data and would silently propagate NaN through its

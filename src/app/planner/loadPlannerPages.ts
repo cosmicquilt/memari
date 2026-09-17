@@ -108,6 +108,9 @@ export type PageSettings = {
 export type TimelinePage = {
   pageId: string;
   level: PageLevel;
+  /** Null for the default layout - the one printed for every occurrence
+   *  that has none of its own. A key like "2026-02" is February's alone. */
+  variantKey: string | null;
   position: number;
   /** `<svg>` markup at the page's own aspect ratio, ready to size with CSS. */
   previewSvg: string;
@@ -116,11 +119,18 @@ export type TimelinePage = {
 
 export type LoadedPlanner = {
   pages: LoadedPage[];
+  /** Which occurrence's layout these pages ACTUALLY are - null for the
+   *  default. Not always what was asked for: a key with no pages behind it
+   *  falls back, and the caller has to know so it does not claim otherwise. */
+  variantKey: string | null;
   /** Every page of the book, in binding order, for the drawer. */
   timeline: TimelinePage[];
   /** What term this book covers, if it has one yet. Sequence generation
-   *  walks it; nothing else reads it. */
-  term: { start: Date | null; end: Date | null };
+   *  walks it, and the cog's popup divides it into the occurrences a person
+   *  can give their own layout to. ISO dates rather than Date objects: this
+   *  crosses into a client component, where a Date would be serialised and
+   *  come back as a string anyway. */
+  term: { start: string | null; end: string | null };
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
 };
@@ -137,13 +147,27 @@ export type LoadedPlanner = {
  */
 export async function loadPlannerPages(
   planner: Awaited<ReturnType<typeof getOrCreateBook>>,
-  level: PageLevel
+  level: PageLevel,
+  /** Which occurrence's layout to put on the canvas. Null is the default -
+   *  the one almost every book only ever has. */
+  variantKey: string | null = null
 ): Promise<LoadedPlanner> {
   // Everything below reads this, never planner.pages: an unfiltered read
-  // would put the monthly spread's modules onto the weekly page.
-  const levelPages = planner.pages
-    .filter((page) => page.level === level)
-    .sort((a, b) => a.position - b.position);
+  // would put the monthly spread's modules onto the weekly page - and, once
+  // a month has its own layout, February's modules onto the default one.
+  const at = (key: string | null) =>
+    planner.pages
+      .filter((page) => page.level === level && (page.variantKey ?? null) === key)
+      .sort((a, b) => a.position - b.position);
+
+  // FALL BACK TO THE DEFAULT when the asked-for occurrence has no pages.
+  // Found the hard way: resetting February while editing February left the
+  // browser on ?variant=2026-02 with nothing behind it, and the editor read
+  // pages[0] of an empty list. A bookmarked or hand-typed key does the same.
+  // The default is what that occurrence prints anyway, so falling back shows
+  // the truth rather than an error.
+  const resolvedVariantKey = variantKey !== null && at(variantKey).length === 0 ? null : variantKey;
+  const levelPages = at(resolvedVariantKey);
   const theme = planner.theme as PlannerTheme | null;
   // Not from the theme blob: `dated` is a real column, because it is
   // structural rather than presentational - it says what kind of planner
@@ -311,6 +335,7 @@ export async function loadPlannerPages(
       return {
         pageId: page.id,
         level: page.level,
+        variantKey: page.variantKey,
         position: page.position,
         // No width or height: the drawer sizes it in CSS and the viewBox
         // keeps the page's own proportions whatever size it is drawn at.
@@ -355,10 +380,11 @@ export async function loadPlannerPages(
 
   return {
     pages,
+    variantKey: resolvedVariantKey,
     timeline,
     term: {
-      start: (planner as { startDate?: Date | null }).startDate ?? null,
-      end: (planner as { endDate?: Date | null }).endDate ?? null,
+      start: (planner as { startDate?: Date | null }).startDate?.toISOString().slice(0, 10) ?? null,
+      end: (planner as { endDate?: Date | null }).endDate?.toISOString().slice(0, 10) ?? null,
     },
     weekSettings,
     pageSettings: {

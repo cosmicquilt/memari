@@ -13,6 +13,7 @@ import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_LABELS,
   byLevel,
+  occurrences,
   printedCount,
   repeats,
 } from "./pageLevels.js";
@@ -111,6 +112,51 @@ eq(printedCount("DAILY", utc(2026, 3, 31), utc(2026, 1, 1)), 0, "an inverted ter
 eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 1, 8)), 2, "8 days needs 2 weeklies");
 eq(printedCount("WEEKLY", utc(2026, 1, 1), utc(2026, 1, 7)), 1, "7 days needs 1 weekly");
 
+// --- occurrences, which is what a per-month layout attaches to ---------
+//
+// The KEYS matter as much as the count: a key is stored in Page.variantKey,
+// so one that changed shape would orphan every layout somebody had made.
+
+const janToMar = occurrences("MONTHLY", utc(2026, 1, 1), utc(2026, 3, 31));
+eq(janToMar?.map((o) => o.key).join(","), "2026-01,2026-02,2026-03", "month keys are YYYY-MM");
+eq(janToMar?.[1].label, "February 2026", "a month labels itself by name and year");
+
+// Across a year boundary, where a naive month subtraction goes negative and
+// a naive key would wrap to month 13.
+const decToJan = occurrences("MONTHLY", utc(2026, 12, 15), utc(2027, 1, 15));
+eq(decToJan?.map((o) => o.key).join(","), "2026-12,2027-01", "month keys roll into the next year");
+
+// Weeks run FROM THE TERM'S START, not from a calendar Sunday: a book that
+// begins on a Wednesday has its first week begin that Wednesday.
+const wed = occurrences("WEEKLY", utc(2026, 1, 7), utc(2026, 1, 20));
+eq(wed?.length, 2, "14 days from a Wednesday is 2 weeks");
+eq(wed?.map((o) => o.key).join(","), "W2026-01-07,W2026-01-14", "weeks step 7 days from the start");
+
+const threeDays = occurrences("DAILY", utc(2026, 2, 27), utc(2026, 3, 1));
+eq(threeDays?.map((o) => o.key).join(","), "2026-02-27,2026-02-28,2026-03-01", "days cross a month end");
+
+// Matter has exactly one occurrence and it is the DEFAULT one - a null key,
+// because there is nothing to distinguish it from.
+eq(occurrences("FRONT_MATTER", null, null)?.length, 1, "front matter occurs once with no term");
+eq(occurrences("FRONT_MATTER", null, null)?.[0].key, null, "matter has no variant key");
+
+// Unknown, not empty. Offering zero months to customise would be a lie about
+// a book whose term simply has not been set.
+eq(occurrences("WEEKLY", null, null), null, "a repeating level with no term is unknown");
+
+// THE POINT OF DERIVING ONE FROM THE OTHER: the number of pages printed and
+// the number of occurrences offered for customisation must be the same
+// number. Written separately they would drift, and a book that printed 13
+// weeks while offering 12 to customise loses a week silently.
+for (const level of LEVELS_IN_BINDING_ORDER) {
+  const list = occurrences(level, utc(2026, 1, 1), utc(2026, 3, 31));
+  eq(
+    printedCount(level, utc(2026, 1, 1), utc(2026, 3, 31)),
+    list === null ? null : list.length,
+    `${level}: printed count is the occurrence count`
+  );
+}
+
 // --- grouping ---------------------------------------------------------
 
 const pages = [
@@ -147,6 +193,7 @@ if (failures > 0) {
 } else {
   console.log(
     `All page level checks passed (${LEVELS_IN_BINDING_ORDER.length} levels in binding order; ` +
-      `printed counts exact at one-day, month-boundary, year-boundary and leap-day terms).`
+      `printed counts exact at one-day, month-boundary, year-boundary and leap-day terms; ` +
+      `occurrence keys stable and equal in number to what prints).`
   );
 }

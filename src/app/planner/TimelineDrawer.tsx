@@ -41,9 +41,15 @@ import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_CADENCE,
   LEVEL_LABELS,
+  LEVEL_NOUN,
+  occurrences,
+  repeats,
+  type Occurrence,
   type PageLevel,
 } from "@/lib/pageLevels";
 import type { TimelinePage } from "./loadPlannerPages";
+import { createLevelVariant, deleteLevelVariant } from "./actions";
+import { useAsyncAction } from "./useAsyncAction";
 
 // --- geometry, from the spec -----------------------------------------
 //
@@ -70,9 +76,15 @@ const GRABBER_WIDTH = 36;
 const GRABBER_HEIGHT = 5;
 const GRABBER_BAND = 22;
 
+/** The caption under a column: which occurrence it is, or "every month" for
+ *  the default once something sits beside it. Reserved in every column so
+ *  the level labels below them stay on one line. */
+const SUB_LABEL_HEIGHT = 13;
+
 /** Everything in the drawer that is not a card: the grabber band, the
- *  padding above and below the row, the label and its gap. */
-const CHROME_HEIGHT = GRABBER_BAND + 10 + 8 + 14 + 14;
+ *  padding above and below the row, the sub-label, the level label and the
+ *  gaps between them. */
+const CHROME_HEIGHT = GRABBER_BAND + 10 + 4 + SUB_LABEL_HEIGHT + 8 + 14 + 14;
 
 /** Resting height: the chrome plus one card. Computed rather than typed, so
  *  changing a card changes the drawer and the canvas padding together. */
@@ -112,15 +124,21 @@ const SURFACE = "#2a2a2a";
 export function TimelineDrawer({
   pages,
   activeLevel,
-  onOpenLevel,
+  activeVariantKey,
+  term,
+  onOpen,
 }: {
   /** Every page of the book, already in binding order. */
   pages: TimelinePage[];
   /** The level whose spread is on the canvas. Its pages are the selected
    *  ones - the editor draws a whole spread, so both of them are. */
   activeLevel: PageLevel;
-  /** Bring another level's spread onto the canvas. */
-  onOpenLevel: (level: PageLevel) => void;
+  /** Which occurrence's layout is on the canvas; null is the default. */
+  activeVariantKey: string | null;
+  /** What stretch of time the book covers, as ISO dates. */
+  term: { start: string | null; end: string | null };
+  /** Bring a spread onto the canvas. */
+  onOpen: (level: PageLevel, variantKey: string | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Honoured for the drawer's own settle. Read once and kept live, because a
@@ -207,6 +225,9 @@ export function TimelineDrawer({
 
   const height = dragHeight ?? settledHeight ?? expandedHeight();
   const card = cardSize(height);
+
+  const start = term.start ? new Date(`${term.start}T00:00:00.000Z`) : null;
+  const end = term.end ? new Date(`${term.end}T00:00:00.000Z`) : null;
 
   const groups = LEVELS_IN_BINDING_ORDER.map((level) => ({
     level,
@@ -303,11 +324,13 @@ export function TimelineDrawer({
             key={group.level}
             level={group.level}
             pages={group.pages}
-            active={group.level === activeLevel}
+            activeLevel={activeLevel}
+            activeVariantKey={activeVariantKey}
             card={card}
+            occurrences={occurrences(group.level, start, end)}
             highContrast={highContrast}
             reduceMotion={reduceMotion}
-            onOpen={() => onOpenLevel(group.level)}
+            onOpen={onOpen}
           />
         ))}
       </div>
@@ -324,57 +347,362 @@ export function TimelineDrawer({
 function LevelGroup({
   level,
   pages,
-  active,
+  activeLevel,
+  activeVariantKey,
   card,
+  occurrences: levelOccurrences,
   highContrast,
   reduceMotion,
   onOpen,
 }: {
   level: PageLevel;
   pages: TimelinePage[];
-  active: boolean;
+  activeLevel: PageLevel;
+  activeVariantKey: string | null;
   card: { width: number; height: number };
+  /** Every month (or week, or day) this level covers, or null when the book
+   *  has no term and so has no occurrences to divide into. */
+  occurrences: Occurrence[] | null;
   highContrast: boolean;
   reduceMotion: boolean;
-  onOpen: () => void;
+  onOpen: (level: PageLevel, variantKey: string | null) => void;
 }) {
+  const [open, setOpen] = useState(false);
+
+  // The DEFAULT spread first, then any occurrence that has its own. Grouped
+  // rather than interleaved, because "the one every month gets" and "the one
+  // February gets" are different kinds of thing, and the default is the one
+  // you edit almost always.
+  const byVariant = new Map<string | null, TimelinePage[]>();
+  for (const page of pages) {
+    const key = page.variantKey ?? null;
+    byVariant.set(key, [...(byVariant.get(key) ?? []), page]);
+  }
+  const defaults = byVariant.get(null) ?? [];
+  const variants = [...byVariant.entries()]
+    .filter(([key]) => key !== null)
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
+  const labelFor = (key: string) => levelOccurrences?.find((o) => o.key === key)?.label ?? key;
+
+  // The sub-label row is reserved in EVERY column, variant or not. Without
+  // it a group that has one is taller than its neighbours, the level labels
+  // stop lining up, and the group with the variant pushes its own label out
+  // of the bottom of the drawer - which is what it did.
+  const subLabel = (text: string) => (
+    <div
+      style={{
+        height: SUB_LABEL_HEIGHT,
+        lineHeight: `${SUB_LABEL_HEIGHT}px`,
+        fontSize: 9.5,
+        color: highContrast ? "#ffffff" : "rgba(255, 255, 255, 0.55)",
+        whiteSpace: "nowrap",
+        textAlign: "center",
+        overflow: "hidden",
+      }}
+    >
+      {text}
+    </div>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, position: "relative" }}>
       <div style={{ display: "flex", gap: CARD_GAP, alignItems: "flex-start" }}>
-        {pages.length === 0 ? (
-          <EmptyLevel card={card} />
-        ) : (
-          pages.map((page) => (
-            <PageCard
-              key={page.pageId}
-              page={page}
-              selected={active}
-              card={card}
-              highContrast={highContrast}
-              reduceMotion={reduceMotion}
-              onOpen={onOpen}
-            />
-          ))
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", gap: CARD_GAP }}>
+            {defaults.length === 0 ? (
+              <EmptyLevel card={card} />
+            ) : (
+              defaults.map((page) => (
+                <PageCard
+                  key={page.pageId}
+                  page={page}
+                  selected={level === activeLevel && activeVariantKey === null}
+                  card={card}
+                  highContrast={highContrast}
+                  reduceMotion={reduceMotion}
+                  onOpen={() => onOpen(level, null)}
+                />
+              ))
+            )}
+          </div>
+          {/* Named only once something else is beside it. On its own the
+              default needs no caption - it is the only thing there. */}
+          {subLabel(variants.length > 0 ? `every ${LEVEL_NOUN[level]}` : "")}
+        </div>
+        {/* An occurrence with its own layout sits BESIDE the default, not on
+            top of it. This is exactly where the design originally had cards
+            overlap like a Dock stack - see this file's header for why a
+            stack is the wrong answer to "show me there is more than one". */}
+        {variants.map(([key, variantPages]) => (
+          <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", gap: CARD_GAP }}>
+              {variantPages.map((page) => (
+                <PageCard
+                  key={page.pageId}
+                  page={page}
+                  selected={level === activeLevel && activeVariantKey === key}
+                  card={card}
+                  highContrast={highContrast}
+                  reduceMotion={reduceMotion}
+                  onOpen={() => onOpen(level, key)}
+                />
+              ))}
+            </div>
+            {/* Which occurrence this is. A variant card without one is a
+                duplicate of the default with no way to tell them apart. */}
+            {subLabel(labelFor(String(key)))}
+          </div>
+        ))}
       </div>
+
       {/* The label sits UNDER its cards, 8px down. Uppercase and tracked out,
-          because small uppercase sans-serif collides without the extra
-          room. */}
+          because small uppercase sans-serif collides without the extra room.
+          The cog sits inline with it. */}
       <div
-        title={LEVEL_CADENCE[level]}
         style={{
           marginTop: 8,
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: highContrast ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
           whiteSpace: "nowrap",
         }}
       >
-        {LEVEL_LABELS[level]}
+        <span
+          title={LEVEL_CADENCE[level]}
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: highContrast ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+          }}
+        >
+          {LEVEL_LABELS[level]}
+        </span>
+        {/* QUIET PERMANENCE, not hover-to-reveal. The original design had
+            this appear only when the pointer entered the group, which does
+            not exist on a touch screen, cannot be reached by keyboard, and
+            is invisible to a screen reader while it is transparent. It is
+            always here instead, at 40% - which clears 3:1 against this
+            surface - and saturates to full on hover or focus.
+
+            Only on a level that REPEATS: front and back matter are printed
+            once, so there is no second occurrence to give a layout to. */}
+        {repeats(level) && (
+          <CogButton
+            open={open}
+            onToggle={() => setOpen((v) => !v)}
+            label={`Choose which ${LEVEL_NOUN[level]} gets its own layout`}
+            highContrast={highContrast}
+            reduceMotion={reduceMotion}
+          />
+        )}
       </div>
+
+      {open && (
+        <OccurrencePopover
+          level={level}
+          occurrences={levelOccurrences}
+          customised={new Set(variants.map(([key]) => String(key)))}
+          onClose={() => setOpen(false)}
+          onOpenDefault={() => onOpen(level, null)}
+        />
+      )}
     </div>
+  );
+}
+
+function CogButton({
+  open,
+  onToggle,
+  label,
+  highContrast,
+  reduceMotion,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  highContrast: boolean;
+  reduceMotion: boolean;
+}) {
+  const [lit, setLit] = useState(false);
+  const bright = open || lit || highContrast;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      onPointerEnter={() => setLit(true)}
+      onPointerLeave={() => setLit(false)}
+      onFocus={() => setLit(true)}
+      onBlur={() => setLit(false)}
+      aria-label={label}
+      aria-expanded={open}
+      title={label}
+      style={{
+        // 24px square - WCAG 2.5.8's minimum target - around a 13px glyph.
+        width: 24,
+        height: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        border: "none",
+        background: "transparent",
+        color: bright ? "#ffffff" : "rgba(255, 255, 255, 0.4)",
+        cursor: "pointer",
+        transition: reduceMotion ? "none" : "color 150ms ease-out",
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+        <path
+          d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9L5.3 5.3"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+/**
+ * The months (or weeks, or days) this level covers, and which of them have a
+ * layout of their own.
+ *
+ * REPEAT BY DEFAULT, CUSTOMISE BY EXCEPTION. Every occurrence gets the
+ * default layout unless it is given one here, so this list is almost always
+ * all "default" - which is the point. Most books want one spread repeated,
+ * and the exception has to cost nothing when nobody uses it.
+ */
+function OccurrencePopover({
+  level,
+  occurrences: list,
+  customised,
+  onClose,
+  onOpenDefault,
+}: {
+  level: PageLevel;
+  occurrences: Occurrence[] | null;
+  customised: Set<string>;
+  onClose: () => void;
+  /** Where to go when an occurrence stops having its own layout. */
+  onOpenDefault: () => void;
+}) {
+  const [pending, error, run] = useAsyncAction();
+
+  return (
+    <>
+      {/* A click anywhere else closes it. Behind the panel, so it never eats
+          a click meant for the list itself. */}
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, zIndex: 50, background: "transparent" }}
+      />
+      <div
+        role="dialog"
+        aria-label={`${LEVEL_LABELS[level]} layouts`}
+        style={{
+          position: "absolute",
+          bottom: "100%",
+          left: 0,
+          marginBottom: 10,
+          zIndex: 51,
+          width: 268,
+          maxHeight: 320,
+          overflowY: "auto",
+          background: "#1c1c1e",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
+          borderRadius: 10,
+          boxShadow: "0 8px 28px rgba(0, 0, 0, 0.5)",
+          padding: 8,
+          color: "#ddd",
+          fontSize: 12,
+        }}
+      >
+        {list === null ? (
+          // NOT an empty list, which would read as "this book has no months".
+          // It simply has not been told how long it is yet.
+          <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>
+            Set the start and end dates under Page Settings, and every{" "}
+            {LEVEL_NOUN[level]} the book covers will be listed here.
+          </div>
+        ) : list.length === 0 ? (
+          <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)" }}>
+            This book&rsquo;s term covers none.
+          </div>
+        ) : (
+          list.map((occurrence) => {
+            const key = occurrence.key as string;
+            const isCustom = customised.has(key);
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {occurrence.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: isCustom ? "#8fdc9a" : "rgba(255,255,255,0.4)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isCustom ? "own layout" : "default"}
+                </span>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    run(async () => {
+                      if (isCustom) {
+                        await deleteLevelVariant(level, key);
+                        // Off the deleted occurrence, not a reload of it: the
+                        // pages behind this URL have just been removed. The
+                        // route falls back to the default anyway, but landing
+                        // there by way of a URL that names something gone is
+                        // a lie about where you are.
+                        onOpenDefault();
+                        return;
+                      }
+                      await createLevelVariant(level, key);
+                      // A reload rather than patching state: the drawer, the
+                      // canvas and the routes all read this from the server,
+                      // and re-deriving each of them here would be a second
+                      // description of what the server just did.
+                      window.location.reload();
+                    })
+                  }
+                  style={{
+                    padding: "3px 8px",
+                    fontSize: 10.5,
+                    borderRadius: 5,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: "transparent",
+                    color: isCustom ? "#ff8f5c" : "#ddd",
+                    cursor: pending ? "default" : "pointer",
+                    opacity: pending ? 0.5 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isCustom ? "Reset" : "Customise"}
+                </button>
+              </div>
+            );
+          })
+        )}
+        {error && <div style={{ padding: "6px 8px", color: "#ff8f5c", fontSize: 11 }}>{error}</div>}
+      </div>
+    </>
   );
 }
 

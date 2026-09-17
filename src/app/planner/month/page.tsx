@@ -22,7 +22,14 @@ import { getOrCreateBook } from "../actions";
 import { loadPlannerPages } from "../loadPlannerPages";
 import { NativePlannerEditor } from "../NativePlannerEditor";
 
-export default async function MonthPlannerPage() {
+export default async function MonthPlannerPage({
+  searchParams,
+}: {
+  // ?variant=2026-02 opens THAT month's own layout instead of the default
+  // one. Without it a page created for a month could never be edited, which
+  // breaks the rule the timeline exists to keep: every page reachable.
+  searchParams: Promise<{ variant?: string }>;
+}) {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) {
     return redirectToSignIn();
@@ -31,12 +38,19 @@ export default async function MonthPlannerPage() {
   // The SAME book as /planner/next, shown at its monthly level. It used to
   // be a different Planner row entirely - see getOrCreateBook on why that is
   // gone.
+  const variantKey = (await searchParams).variant || null;
   const book = await getOrCreateBook("MONTHLY");
-  const { pages, timeline, weekSettings, pageSettings } = await loadPlannerPages(book, "MONTHLY");
+  const { pages, timeline, term, variantKey: openVariantKey, weekSettings, pageSettings } = await loadPlannerPages(
+    book,
+    "MONTHLY",
+    variantKey
+  );
 
   return <NativePlannerEditor
       pages={pages}
       timeline={timeline}
+      term={term}
+      variantKey={openVariantKey}
       weekSettings={weekSettings}
       pageSettings={pageSettings}
       level="MONTHLY"

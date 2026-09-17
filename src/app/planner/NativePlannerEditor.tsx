@@ -149,6 +149,7 @@ import {
   updatePlannerFont,
   setPlannerTrim,
   setPlannerDated,
+  setPlannerTerm,
   updateHourlySettings,
   resizeHourlyGridCore,
 } from "./actions";
@@ -3145,6 +3146,7 @@ function ModulePalette({
   pageGrid,
   fontFamily,
   showHours,
+  term,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
@@ -3171,6 +3173,8 @@ function ModulePalette({
   // page's is not, so it does not get the section at all - see the
   // registry's pageSettingsForm.
   showHours: boolean;
+  /** For the Term fields. The drawer needs it too, from the editor itself. */
+  term: { start: string | null; end: string | null };
 }) {
   // Two top-level groups, each independently collapsible, both default
   // collapsed so the panel opens to two header rows rather than every
@@ -3394,6 +3398,12 @@ function ModulePalette({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Term
+            </div>
+            <TermFields term={term} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Dates
             </div>
             <DatesToggle dated={pageSettings.dated} />
@@ -3566,6 +3576,82 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
           Aa
         </button>
       </div>
+      {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * Page Settings > Term. What stretch of time this book covers.
+ *
+ * Two dates and a Save, rather than applying per keystroke: a half-typed
+ * date is a different book, and reloading the editor on every character
+ * would be unusable. It reloads once on Save because the term changes what
+ * the timeline's cog can offer - see occurrences().
+ */
+function TermFields({ term }: { term: { start: string | null; end: string | null } }) {
+  const [pending, error, run] = useAsyncAction();
+  const [start, setStart] = useState(term.start ?? "");
+  const [end, setEnd] = useState(term.end ?? "");
+  const dirty = (term.start ?? "") !== start || (term.end ?? "") !== end;
+
+  const field: CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    padding: "5px 6px",
+    fontSize: 11.5,
+    borderRadius: 6,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: PANEL_BG,
+    color: PANEL_TEXT,
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="date"
+          aria-label="First day of the book"
+          value={start}
+          onChange={(event) => setStart(event.target.value)}
+          style={field}
+        />
+        <span style={{ fontSize: 10.5, color: PANEL_FAINT }}>to</span>
+        <input
+          type="date"
+          aria-label="Last day of the book"
+          value={end}
+          onChange={(event) => setEnd(event.target.value)}
+          style={field}
+        />
+      </div>
+      {dirty && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            run(async () => {
+              // Both or neither: a half-set term is not a shorter book, it is
+              // one whose length nobody can compute.
+              await setPlannerTerm(start || null, end || null);
+              window.location.reload();
+            })
+          }
+          style={{
+            padding: "5px 0",
+            fontSize: 11.5,
+            fontWeight: 600,
+            borderRadius: 6,
+            border: "none",
+            background: "#4a5cff",
+            color: "#fff",
+            cursor: pending ? "default" : "pointer",
+            opacity: pending ? 0.6 : 1,
+          }}
+        >
+          {pending ? "Saving…" : "Save term"}
+        </button>
+      )}
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>
   );
@@ -4199,6 +4285,8 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 export function NativePlannerEditor({
   pages,
   timeline,
+  term,
+  variantKey,
   pageSettings: initialPageSettings,
   level,
 }: {
@@ -4206,6 +4294,11 @@ export function NativePlannerEditor({
   // Every page of the BOOK, for the timeline drawer - not just this level's.
   // The drawer's whole job is that every page is reachable from it.
   timeline: TimelinePage[];
+  /** What stretch of time the book covers, as ISO dates. The drawer divides
+   *  it into the occurrences a person can give their own layout to. */
+  term: { start: string | null; end: string | null };
+  /** Which occurrence's layout is on the canvas. Null is the default one. */
+  variantKey: string | null;
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
   // WHICH LEVEL of the book this editor is showing. Everything else this
@@ -9217,6 +9310,7 @@ export function NativePlannerEditor({
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
               showHours={showHoursSettings}
+              term={term}
             />
           </DndContext>
         </div>
@@ -9234,8 +9328,10 @@ export function NativePlannerEditor({
       <TimelineDrawer
         pages={timeline}
         activeLevel={level}
-        onOpenLevel={(next) => {
-          if (next === level) return;
+        activeVariantKey={variantKey}
+        term={term}
+        onOpen={(next, nextVariant) => {
+          if (next === level && nextVariant === variantKey) return;
           // A LEVEL, not a page: the editor draws a whole spread, so the two
           // pages of a level are on screen together and either one of them
           // means "show this spread".
@@ -9245,7 +9341,7 @@ export function NativePlannerEditor({
           // - a fade on every page change is latency you have to sit through
           // every single time.
           const route = next === "MONTHLY" ? "/planner/month" : "/planner/next";
-          window.location.assign(route);
+          window.location.assign(nextVariant ? `${route}?variant=${encodeURIComponent(nextVariant)}` : route);
         }}
       />
     </div>

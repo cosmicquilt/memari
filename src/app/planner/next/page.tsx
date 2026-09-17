@@ -13,21 +13,35 @@ import { loadPlannerPages } from "../loadPlannerPages";
 import { getOrCreateBook } from "../actions";
 import { NativePlannerEditor } from "../NativePlannerEditor";
 
-export default async function NativePlannerPage() {
+export default async function NativePlannerPage({
+  searchParams,
+}: {
+  // ?variant=2026-02 opens THAT month's own layout instead of the default
+  // one. Without it a page created for a month could never be edited, which
+  // breaks the rule the timeline exists to keep: every page reachable.
+  searchParams: Promise<{ variant?: string }>;
+}) {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) {
     return redirectToSignIn();
   }
 
-  // ONE book, one LEVEL of it. This route is the weekly spread; /planner/month
-  // is the same book's monthly one. Two routes rather than one with a level
-  // picker, because the picker is the timeline drawer and it is not built yet.
+  // ONE book, one LEVEL of it. This route is the weekly spread;
+  // /planner/month is the same book's monthly one, and the timeline drawer
+  // switches between them.
+  const variantKey = (await searchParams).variant || null;
   const book = await getOrCreateBook("WEEKLY");
-  const { pages, timeline, weekSettings, pageSettings } = await loadPlannerPages(book, "WEEKLY");
+  const { pages, timeline, term, variantKey: openVariantKey, weekSettings, pageSettings } = await loadPlannerPages(
+    book,
+    "WEEKLY",
+    variantKey
+  );
 
   return <NativePlannerEditor
       pages={pages}
       timeline={timeline}
+      term={term}
+      variantKey={openVariantKey}
       weekSettings={weekSettings}
       pageSettings={pageSettings}
       level="WEEKLY"

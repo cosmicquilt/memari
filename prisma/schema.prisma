@@ -93,6 +93,18 @@ model Page {
   // migration adds the column with a default, backfills, and drops the
   // default again, so every writer has to say.
   level           PageLevel
+  // WHICH OCCURRENCE of the level this page is for.
+  //
+  // null is the DEFAULT layout - the one printed for every occurrence that
+  // has none of its own, which is almost all of them. A key like "2026-01"
+  // is a layout for that month alone: the generator takes a month's own
+  // pages when they exist and the default ones when they do not.
+  //
+  // "Repeat by default, customise by exception" is the whole product model
+  // here - most people buy a month or ninety days and want one weekly spread
+  // repeated, so the exception has to cost nothing when unused. One nullable
+  // column is that cost.
+  variantKey      String?
   position        Int
   // 24 columns x 36 rows of exactly 75 x 75 print px - one cell is one
   // 1/4in dot at 300dpi, and the cell is square. The margin follows from
@@ -124,9 +136,14 @@ model Page {
   marginPx        Float            @default(187.5)
   moduleInstances ModuleInstance[]
 
-  // Position is now position WITHIN A LEVEL, so two levels of one book can
-  // both have a first page.
-  @@unique([plannerId, level, position])
+  // Position is position within a LEVEL AND A VARIANT: the default weekly
+  // spread has pages 0 and 1, and so does January's own monthly spread.
+  //
+  // The index is created by hand as NULLS NOT DISTINCT (Postgres 15+), which
+  // Prisma cannot express. Without it the default pages - the ones with a
+  // null variantKey, which is most of them - would not be covered by the
+  // constraint at all, since Postgres treats each NULL as distinct.
+  @@unique([plannerId, level, variantKey, position], map: "Page_plannerId_level_variantKey_position_key")
 }
 
 // The "class" of a draggable block: weekly-grid, habit-tracker, etc.

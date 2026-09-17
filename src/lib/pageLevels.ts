@@ -62,6 +62,22 @@ export const LEVEL_CADENCE: Record<PageLevel, string> = {
 };
 
 /**
+ * What ONE occurrence of this level is called: "month", "week", "day".
+ *
+ * Stated rather than derived from the label, because deriving it does not
+ * work: stripping "ly" off "Monthly" and "Weekly" gives month and week, and
+ * off "Daily" gives "dai". That was live in the cog's popover for exactly
+ * as long as it took to read it back.
+ */
+export const LEVEL_NOUN: Record<PageLevel, string> = {
+  FRONT_MATTER: "book",
+  MONTHLY: "month",
+  WEEKLY: "week",
+  DAILY: "day",
+  BACK_MATTER: "book",
+};
+
+/**
  * Does this level repeat, or is it printed once?
  *
  * Derived from the level itself rather than stored: front and back matter
@@ -91,38 +107,115 @@ export function byLevel<T extends { level: PageLevel; position: number }>(
 }
 
 /**
+ * One occurrence of a level within a book's term.
+ *
+ * "The third week", "February 2026". This is what a per-occurrence layout is
+ * FOR, and what the cog's popup lists.
+ */
+export type Occurrence = {
+  /** Stored in `Page.variantKey` when this occurrence gets its own layout.
+   *  Null for a level that does not repeat - front and back matter have one
+   *  occurrence and it is the default one. */
+  key: string | null;
+  /** For a person to read: "February 2026", "Week of 2 Feb". */
+  label: string;
+  /** The first day this occurrence covers. */
+  start: Date;
+};
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
+/**
+ * Every occurrence of a level inside a term.
+ *
+ * THE ONE DESCRIPTION of how a term divides up - printedCount below is its
+ * length, rather than a second piece of arithmetic that could disagree.
+ * That mattered immediately: the count and the list would have been written
+ * separately, and a book that printed 13 weeks but offered 12 to customise
+ * is the kind of fault nobody notices until a week is missing.
+ *
+ * Returns NULL, not an empty list, when a repeating level has no term: the
+ * answer is unknown rather than none, and none reads as free.
+ *
+ * All arithmetic in UTC, so a daylight-saving transition cannot shift a
+ * timestamp across a day boundary - the same reasoning monthCalendar.ts
+ * already applies to its own day counting.
+ */
+export function occurrences(
+  level: PageLevel,
+  start: Date | null | undefined,
+  end: Date | null | undefined
+): Occurrence[] | null {
+  // Matter does not repeat, and is printed whether or not a term is set - it
+  // is not a function of the calendar.
+  if (!repeats(level)) {
+    return [{ key: null, label: "Once", start: start ?? new Date(0) }];
+  }
+  if (!start || !end) return null;
+  const days = Math.round((utcDay(end) - utcDay(start)) / 86_400_000) + 1;
+  if (days <= 0) return [];
+
+  if (level === PageLevel.DAILY) {
+    return Array.from({ length: days }, (_, i) => {
+      const day = new Date(utcDay(start) + i * 86_400_000);
+      return {
+        key: day.toISOString().slice(0, 10),
+        label: `${day.getUTCDate()} ${MONTH_NAMES[day.getUTCMonth()].slice(0, 3)} ${day.getUTCFullYear()}`,
+        start: day,
+      };
+    });
+  }
+
+  if (level === PageLevel.WEEKLY) {
+    // Weeks counted FROM THE TERM'S START, not from a calendar Sunday. A book
+    // that begins on a Wednesday has its first week begin on that Wednesday;
+    // aligning to the calendar instead would print a first spread that is
+    // mostly before the book starts.
+    return Array.from({ length: Math.ceil(days / 7) }, (_, i) => {
+      const day = new Date(utcDay(start) + i * 7 * 86_400_000);
+      return {
+        key: `W${day.toISOString().slice(0, 10)}`,
+        label: `Week of ${day.getUTCDate()} ${MONTH_NAMES[day.getUTCMonth()].slice(0, 3)}`,
+        start: day,
+      };
+    });
+  }
+
+  // Calendar months TOUCHED, not 30-day blocks: a book from Jan 28 to Feb 2
+  // spans two months and wants a page for each, where days/30 would say one.
+  const months =
+    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+    (end.getUTCMonth() - start.getUTCMonth()) +
+    1;
+  return Array.from({ length: Math.max(0, months) }, (_, i) => {
+    const day = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
+    return {
+      key: `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}`,
+      label: `${MONTH_NAMES[day.getUTCMonth()]} ${day.getUTCFullYear()}`,
+      start: day,
+    };
+  });
+}
+
+/**
  * How many times a level's pages are printed over a date range.
  *
  * The count, not the calendar: a range of 90 days is 90 dailies and about 13
  * weeklies, and that ratio is what makes the level toggle a price control.
- * Null start or end means the book has no term yet, so a repeating level
- * cannot be counted at all - which is a real answer and not zero.
+ * Derived from `occurrences` rather than computed again, so the number of
+ * pages printed and the number of occurrences offered for customisation
+ * cannot disagree. Null means the book has no term, which is a real answer
+ * and not zero.
  */
 export function printedCount(
   level: PageLevel,
   start: Date | null | undefined,
   end: Date | null | undefined
 ): number | null {
-  if (!repeats(level)) return 1;
-  if (!start || !end) return null;
-  // Whole days between, inclusive of both ends. In UTC, so a daylight-saving
-  // transition cannot shift a timestamp across a day boundary - the same
-  // reasoning monthCalendar.ts already applies to its own day counting.
-  const days =
-    Math.round(
-      (Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()) -
-        Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())) /
-        86_400_000
-    ) + 1;
-  if (days <= 0) return 0;
-  if (level === PageLevel.DAILY) return days;
-  if (level === PageLevel.WEEKLY) return Math.ceil(days / 7);
-  // Months are counted as calendar months touched, not as 30-day blocks:
-  // a book from Jan 28 to Feb 2 spans two months and wants two monthly
-  // pages, where days/30 would say one.
-  const months =
-    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
-    (end.getUTCMonth() - start.getUTCMonth()) +
-    1;
-  return Math.max(0, months);
+  return occurrences(level, start, end)?.length ?? null;
 }

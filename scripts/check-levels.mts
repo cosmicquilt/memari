@@ -21,7 +21,7 @@ for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
 
 const { PrismaPg } = await import("@prisma/adapter-pg");
 const { PrismaClient } = await import("../src/generated/prisma/client.js");
-const { byLevel, LEVEL_LABELS, LEVEL_CADENCE, printedCount } = await import(
+const { byLevel, LEVEL_LABELS, LEVEL_CADENCE, occurrences } = await import(
   "../src/lib/pageLevels.js"
 );
 
@@ -65,11 +65,19 @@ for (const planner of planners) {
   const groups = byLevel(planner.pages);
   let sheets: number | null = 0;
   for (const group of groups) {
-    const count = printedCount(group.level, planner.startDate, planner.endDate);
-    const times =
-      count === null ? "term not set" : `x${count} = ${count * group.pages.length} page(s)`;
-    const modules = group.pages.reduce((n, p) => n + p.moduleInstances.length, 0);
+    const list = occurrences(group.level, planner.startDate, planner.endDate);
     const label = LEVEL_LABELS[group.level].padEnd(9);
+
+    // Split by VARIANT: the default layout, and any occurrence that has one
+    // of its own. Positions run 0..n-1 within each, not across them, so a
+    // book with a customised February has two page 0s and both are correct.
+    const byVariant = new Map<string | null, typeof group.pages>();
+    for (const page of group.pages) {
+      const key = page.variantKey ?? null;
+      byVariant.set(key, [...(byVariant.get(key) ?? []), page]);
+    }
+    const defaults = byVariant.get(null) ?? [];
+
     if (group.pages.length === 0) {
       // Not a fault. A level with nothing in it is a real state - skip the
       // dailies and the book gets cheaper - and the timeline has to show it
@@ -77,25 +85,59 @@ for (const planner of planners) {
       console.log(`  ${label} -                                    (empty)`);
       continue;
     }
-    console.log(
-      `  ${label} ${String(group.pages.length).padStart(2)} page(s), ${String(modules).padStart(
-        3
-      )} module(s)   ${LEVEL_CADENCE[group.level]}, ${times}`
-    );
-    if (count === null) sheets = null;
-    else if (sheets !== null) sheets += count * group.pages.length;
 
-    // Positions within a level must be 0..n-1 with no gaps: they are an
-    // ORDER, and a gap means either a page was deleted without the rest
-    // being renumbered or two sets got merged carelessly. Worth catching
-    // now, while a book has four pages, rather than when it has four hundred.
-    const positions = group.pages.map((p) => p.position);
-    const expected = positions.map((_, i) => i);
-    if (positions.join() !== expected.join()) {
-      console.error(
-        `    FAIL  ${LEVEL_LABELS[group.level]} positions are [${positions.join(", ")}], expected [${expected.join(", ")}]`
-      );
-      problems++;
+    // What this level actually PRINTS: each occurrence contributes its own
+    // pages when it has them and the default ones when it does not. Summed
+    // per occurrence rather than multiplied, because a customised month may
+    // have a different number of pages from the default.
+    const printed =
+      list === null
+        ? null
+        : list.reduce(
+            (total, occurrence) =>
+              total + (byVariant.get(occurrence.key)?.length ?? defaults.length),
+            0
+          );
+    const modules = group.pages.reduce((n, p) => n + p.moduleInstances.length, 0);
+    const custom = byVariant.size - (byVariant.has(null) ? 1 : 0);
+    console.log(
+      `  ${label} ${String(defaults.length).padStart(2)} default page(s)` +
+        `${custom > 0 ? `, ${custom} with own layout` : ""}, ` +
+        `${String(modules).padStart(3)} module(s)   ${LEVEL_CADENCE[group.level]}` +
+        `${list === null ? ", term not set" : `, x${list.length} = ${printed} page(s)`}`
+    );
+    if (printed === null) sheets = null;
+    else if (sheets !== null) sheets += printed;
+
+    // Positions within a level AND VARIANT must be 0..n-1 with no gaps: they
+    // are an ORDER, and a gap means either a page was deleted without the
+    // rest being renumbered or two sets got merged carelessly.
+    for (const [key, variantPages] of byVariant) {
+      const positions = variantPages.map((p) => p.position).sort((a, b) => a - b);
+      const expected = positions.map((_, i) => i);
+      if (positions.join() !== expected.join()) {
+        console.error(
+          `    FAIL  ${LEVEL_LABELS[group.level]} ${key ?? "default"} positions are ` +
+            `[${positions.join(", ")}], expected [${expected.join(", ")}]`
+        );
+        problems++;
+      }
+    }
+
+    // A layout for an occurrence the book's term does not contain is
+    // orphaned: nothing will ever print it, and it sits in the timeline
+    // looking like part of the book. Reported rather than deleted - a term
+    // that was shortened by accident should not take pages with it.
+    if (list !== null) {
+      const known = new Set(list.map((o) => o.key));
+      for (const key of byVariant.keys()) {
+        if (key !== null && !known.has(key)) {
+          console.error(
+            `    FAIL  ${LEVEL_LABELS[group.level]} has a layout for "${key}", which is outside this book's term`
+          );
+          problems++;
+        }
+      }
     }
   }
 
