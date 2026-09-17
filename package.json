@@ -23,6 +23,7 @@
     "check:levels": "tsx scripts/check-levels.mts",
     "check:book": "tsx scripts/check-book.mts",
     "check:print": "tsx scripts/check-print.mts",
+    "check:contrast": "tsx scripts/check-contrast.mts",
     "fold:books": "tsx scripts/fold-books.mts"
   },
   "dependencies": {

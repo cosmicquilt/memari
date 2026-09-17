@@ -28,6 +28,21 @@ const labelStyle: CSSProperties = {
   color: "rgba(255, 255, 255, 0.6)",
 };
 
+/**
+ * The border is 0.33 white, not the 0.12 the rest of this chrome uses, and
+ * the number is MEASURED rather than chosen.
+ *
+ * WCAG 2.2 1.4.11 wants 3:1 between a control's visual boundary and what is
+ * behind it. On this panel's #1c1c1e, white at 0.12 composites to #373739,
+ * which is 1.43:1 - less than half. The alpha that first reaches 3:1 is
+ * 0.329 (#676768, 3.01:1), so 0.33 it is.
+ *
+ * Worth knowing because the obvious fixes do not work: #444 reads 1.75:1 here
+ * and #666 reads 2.96:1 - the second one misses by four hundredths, which is
+ * exactly the kind of near-miss that survives being looked at. There is no
+ * subtle boundary on a near-black ground; it either carries or it does not.
+ * scripts/check-contrast.mts holds the arithmetic.
+ */
 const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
@@ -36,10 +51,38 @@ const inputStyle: CSSProperties = {
   fontFamily: "inherit",
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
+  border: "1px solid rgba(255, 255, 255, 0.33)",
   borderRadius: 7,
-  outline: "none",
 };
+
+/**
+ * Focus, which inline styles cannot express - so a <style> element, the same
+ * way the timeline drawer writes the rule it cannot inline.
+ *
+ * These fields had `outline: "none"` and nothing in its place, so a keyboard
+ * user tabbing through them was moving a caret nothing on screen marked. An
+ * `outline` rather than a border for the same reason the rest of this app uses
+ * one: it is drawn outside the box and changes no geometry, so a focused field
+ * is the same size as an unfocused one.
+ *
+ * The accent measures 3.46:1 against this panel, which clears 1.4.11's 3:1 for
+ * a focus indicator, and 2px with a 2px offset is the house selection language
+ * already used by the swatches, the drawer and the editor frame.
+ */
+const FOCUS_CSS = `
+.memari-field:focus-visible {
+  outline: 2px solid ${ACCENT};
+  outline-offset: 2px;
+}
+/* A swatch carries two states at once - which shape is CHOSEN, and which
+   button the keyboard is ON - and they are not the same thing, so they cannot
+   share a ring. Selection is the accent, focus is white, focus wins while it
+   lasts. Both are set here rather than inline because an inline outline beats
+   a stylesheet one and a selected swatch would have eaten its own focus ring. */
+.memari-swatch { outline: none; outline-offset: 2px; }
+.memari-swatch[data-selected="true"] { outline: 2px solid ${ACCENT}; }
+.memari-swatch:focus-visible { outline: 2px solid #ffffff; }
+`;
 
 const rowStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
 
@@ -81,6 +124,8 @@ function GlyphSwatch({
       onClick={onPick}
       title={label}
       aria-label={label}
+      className="memari-swatch"
+      data-selected={selected ? "true" : undefined}
       style={{
         width: 34,
         height: 34,
@@ -88,8 +133,6 @@ function GlyphSwatch({
         border: "none",
         borderRadius: 5,
         background: "#fdfcf9",
-        outline: selected ? `2px solid ${ACCENT}` : "none",
-        outlineOffset: 2,
         opacity: selected ? 1 : 0.65,
         cursor: "pointer",
         transition: "opacity 150ms ease-out",
@@ -127,6 +170,7 @@ export function ModuleFieldsForm({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <style>{FOCUS_CSS}</style>
       {fields.map((field, index) => {
         if (field.kind === "note") {
           return (
@@ -212,6 +256,7 @@ export function ModuleFieldsForm({
                 onChange={(event) =>
                   onChange(field.key, event.target.value === "" ? null : Number(event.target.value))
                 }
+                className="memari-field"
                 style={inputStyle}
               />
             </label>
@@ -225,6 +270,7 @@ export function ModuleFieldsForm({
               <select
                 value={(values[field.key] as string | undefined) ?? ""}
                 onChange={(event) => onChange(field.key, event.target.value)}
+                className="memari-field"
                 style={{ ...inputStyle, cursor: "pointer" }}
               >
                 {field.options.map((option) => (
@@ -268,6 +314,7 @@ export function ModuleFieldsForm({
                 rows={field.rows ?? 5}
                 value={(values[field.key] as string | undefined) ?? ""}
                 onChange={(event) => onChange(field.key, event.target.value)}
+                className="memari-field"
                 style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
               />
             </label>
@@ -285,6 +332,7 @@ export function ModuleFieldsForm({
                 // instead of the cursor being fought - see cleanPropsForSave.
                 value={((values[field.key] as string[] | undefined) ?? []).join("\n")}
                 onChange={(event) => onChange(field.key, event.target.value.split("\n"))}
+                className="memari-field"
                 style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
               />
               <span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.35)" }}>
@@ -301,6 +349,7 @@ export function ModuleFieldsForm({
               type="text"
               value={(values[field.key] as string | undefined) ?? ""}
               onChange={(event) => onChange(field.key, event.target.value)}
+              className="memari-field"
               style={inputStyle}
             />
           </label>
