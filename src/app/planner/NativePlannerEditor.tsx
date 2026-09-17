@@ -155,7 +155,8 @@ import {
 } from "./actions";
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { PageLevel } from "@/lib/pageLevels";
-import { TimelineDrawer, DRAWER_RESTING_HEIGHT } from "./TimelineDrawer";
+import { TimelineDrawer, DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
+import { usePrefersReducedMotion } from "./useMediaQuery";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
 import { useAsyncAction } from "./useAsyncAction";
 
@@ -9501,6 +9502,7 @@ function ZoomControls({
   onFitWidth: () => void;
   onFitPage: () => void;
 }) {
+  const reduceMotion = usePrefersReducedMotion();
   const buttonStyle = (active: boolean): React.CSSProperties => ({
     border: "none",
     background: active ? "#4a5cff" : "transparent",
@@ -9513,11 +9515,34 @@ function ZoomControls({
   });
   return (
     <div
+      // The drawer positions this element directly, by id - see ZOOM_BAR_ID.
+      id={ZOOM_BAR_ID}
       style={{
         position: "fixed",
-        bottom: 16,
+        // SIXTEEN PIXELS ABOVE THE DRAWER'S LIVE EDGE.
+        //
+        // From a CSS variable the drawer publishes, not from the drawerHeight
+        // prop. That prop is the SETTLED height by design - the canvas sizes
+        // its bottom margin from it, and re-laying out a two-page spread on
+        // every frame of a drag is the thrashing the drawer exists to avoid -
+        // so following it left this bar stationary until you let go. The
+        // variable updates continuously and re-renders nothing.
+        //
+        // The fallback matters: it is what this reads on the very first paint
+        // and if the drawer is ever absent.
+        bottom: `calc(var(--memari-drawer-height, ${DRAWER_RESTING_HEIGHT}px) + 16px)`,
+        // And the last 22px down to where it originally sat, once the tab has
+        // parked and given the space back. A separate property from `bottom`
+        // precisely so it can run on a separate clock.
+        transform: "translate(-50%, var(--memari-zoom-drop, 0px))",
+        // Tracking runs on the panel's clock (and not at all mid-drag, where
+        // it must stay glued to the finger); the drop runs on the tab's.
+        // Both clocks come from the drawer, which is the only thing that
+        // knows which way it is going and what the tab is doing.
+        transition: reduceMotion
+          ? "none"
+          : "var(--memari-zoom-track-transition, none), var(--memari-zoom-drop-transition, none)",
         left: "50%",
-        transform: "translateX(-50%)",
         width: "fit-content",
         display: "flex",
         alignItems: "center",
