@@ -111,7 +111,6 @@ if (odd.length > 0) {
 // The number that decides whether a line of text gets cut off. Measured from
 // the TRIM edge, not the sheet edge: the bleed is cut away, so a mark 0.4in
 // from the sheet edge is 0.275in from where the knife lands.
-const safetyPx = SAFETY_MARGIN_IN * DPI;
 const bleedPx = trim.bleedPx;
 let tightest = { inches: Infinity, page: "", what: "" };
 
