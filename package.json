@@ -20,7 +20,8 @@
     "check:page": "tsx scripts/check-week-page.mts",
     "check:layout": "tsx scripts/check-layout.mts",
     "check:gaps": "tsx scripts/check-gaps.mts",
-    "check:levels": "tsx scripts/check-levels.mts"
+    "check:levels": "tsx scripts/check-levels.mts",
+    "fold:books": "tsx scripts/fold-books.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.0",

@@ -18,13 +18,6 @@ model User {
   name  String?
 }
 
-enum BaseType {
-  WEEK
-  MONTH
-  QUARTER
-  YEAR
-}
-
 // How often a page REPEATS in the finished book.
 //
 // You design each level once and the book is stamped out from it: a WEEKLY
@@ -57,7 +50,6 @@ model Planner {
   // `User` table via webhook is a later task, not a blocker for this.
   ownerId    String
   title      String
-  baseType   BaseType
   // Does this planner carry DATES, or is it a template you write them into?
   // The free tier is the undated one (see the business model: the book is
   // derived from templates, and a template has no dates). Undated is applied

@@ -323,29 +323,54 @@ function spineGapRows(
   return slug === "hourly-grid-core" ? hourlyGapRows(cellPx, propValues, rowSpan) : 1;
 }
 
-export async function getOrCreatePlanner() {
+/**
+ * The one book this person is building, with the pages of one LEVEL ready.
+ *
+ * ONE BOOK, NOT ONE PLANNER PER CADENCE. There used to be two of these - a
+ * WEEK planner and a MONTH planner, two unrelated rows - because a page had
+ * no way of saying how often it was printed. It has one now (Page.level), so
+ * the weekly spread and the monthly spread are two LEVELS of one book, which
+ * is what the timeline drawer needs and what a printed book actually is.
+ *
+ * Every lookup that used to filter on `baseType: "WEEK"` now just asks for
+ * the owner's book. That filter existed to stop a week operation reading the
+ * month planner's pages - reported as a month layout overlaying the week
+ * spread - and the bug it guarded against cannot happen with one row.
+ *
+ * Idempotent, and safe to call for a level that already exists: it creates
+ * the book if there is none, seeds this level's spread if that is missing,
+ * and re-applies the level's layout, which is itself idempotent.
+ */
+const BOOK: Prisma.PlannerFindFirstArgs["orderBy"] = [{ createdAt: "asc" }, { id: "asc" }];
+
+const WITH_PAGES = {
+  pages: {
+    orderBy: { position: "asc" },
+    include: { moduleInstances: { include: { moduleType: true } } },
+  },
+} as const;
+
+/** Which arrangement a level's pages start as. A level with no entry seeds
+ *  blank pages, which is exactly right for front matter and for dailies -
+ *  they have no spine to lay out around. */
+const LEVEL_LAYOUT: Partial<Record<PageLevel, (gridRows: number) => PageLayout>> = {
+  WEEKLY: weekLayout,
+  MONTHLY: monthLayout,
+};
+
+export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
+  // Oldest first, id as the tie-break. Which row is "the book" must not
+  // depend on what the database felt like returning - the same order
+  // fold-books.mts uses to decide which planner survives a fold.
   let planner = await prisma.planner.findFirst({
-    // baseType matters as soon as a user has more than one planner, and
-    // visiting the month route creates a second. Without it findFirst
-    // returns whichever the database hands back first, so a WEEK operation
-    // could read - or seed week content onto - the MONTH planner's pages.
-    // Reported as a month layout overlaying the week spread. The month
-    // seeding already filtered, and its own comment warned about exactly
-    // this; these four were the ones that had not been given the same care.
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
-    include: {
-      pages: {
-        orderBy: { position: "asc" },
-        include: {
-          moduleInstances: { include: { moduleType: true } },
-        },
-      },
-    },
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
+    include: WITH_PAGES,
   });
 
   if (!planner) {
@@ -353,74 +378,40 @@ export async function getOrCreatePlanner() {
       data: {
         ownerId: userId,
         title: "My First Planner",
-        baseType: "WEEK",
-        // gridColumns/gridRows/gridGapPx are left unset here — Page's
-        // schema defaults (4x30 grid, matching ModuleType's
-        // defaultColumnSpan/RowSpan in prisma/seed.mts) apply.
-        // Two pages: a week spread is a 2-page spread when the book is
-        // open flat (position 0 = left/Sun-Tue, position 1 = right/Wed-Sat).
-        // Position is position WITHIN the level - see Page.level.
-        pages: {
-          create: [
-            { position: 0, level: PageLevel.WEEKLY },
-            { position: 1, level: PageLevel.WEEKLY },
-          ],
-        },
+        // gridColumns/gridRows/gridGapPx are left unset here - Page's
+        // schema defaults (24x36 lattice) apply.
+        pages: { create: [{ position: 0, level }, { position: 1, level }] },
       },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: {
-            moduleInstances: { include: { moduleType: true } },
-          },
-        },
-      },
+      include: WITH_PAGES,
     });
   }
 
   let needsRefetch = false;
 
-  // Auto-heal: a planner created before the second page existed only has
-  // one. Add it rather than requiring a fresh planner.
-  if (planner.pages.length < 2) {
-    await prisma.page.create({
-      data: { plannerId: planner.id, position: 1, level: PageLevel.WEEKLY },
-    });
+  // This level's own spread. A spread is two pages - the book open flat,
+  // position 0 on the left and 1 on the right - and positions are per level,
+  // so the weeklies and the monthlies each have their own 0 and 1.
+  const atLevel = (p: NonNullable<typeof planner>) =>
+    p.pages.filter((page) => page.level === level);
+  for (let position = atLevel(planner).length; position < 2; position++) {
+    await prisma.page.create({ data: { plannerId: planner.id, position, level } });
     needsRefetch = true;
     planner = await prisma.planner.findUniqueOrThrow({
       where: { id: planner.id },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: { moduleInstances: { include: { moduleType: true } } },
-        },
-      },
+      include: WITH_PAGES,
     });
   }
 
-  // A stable const, not the `let planner` binding, for the type below —
-  // `typeof planner.pages` re-reads planner's declared (nullable) type
-  // rather than its narrowed type at this point, since planner is
-  // reassigned across branches above.
-  const pages = planner.pages;
-  const [leftPage, rightPage] = pages;
-
-  // The whole arrangement, from src/lib/pageLayouts.ts.
-  if (await applyLayout(weekLayout(leftPage.gridRows), [leftPage, rightPage])) {
+  const [leftPage, rightPage] = atLevel(planner);
+  const layout = LEVEL_LAYOUT[level];
+  if (layout && (await applyLayout(layout(leftPage.gridRows), [leftPage, rightPage]))) {
     needsRefetch = true;
   }
 
   if (needsRefetch) {
     planner = await prisma.planner.findUniqueOrThrow({
       where: { id: planner.id },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: {
-            moduleInstances: { include: { moduleType: true } },
-          },
-        },
-      },
+      include: WITH_PAGES,
     });
   }
 
@@ -514,7 +505,10 @@ export async function setPlannerTrim(trim: PlannerTrimKey) {
 
   const spec = PLANNER_TRIMS[trim];
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    // The owner's book. Deterministic order, so which row this is never
+    // depends on what the database felt like returning - see BOOK.
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -612,7 +606,10 @@ export async function resetPlannerToTemplate() {
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    // The owner's book. Deterministic order, so which row this is never
+    // depends on what the database felt like returning - see BOOK.
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -730,104 +727,12 @@ export async function resetPlannerToTemplate() {
   ]);
 }
 
-// Parallel to getOrCreatePlanner above, not a generalization of it into a
-// multi-baseType dispatcher — that generalization is better deferred
-// until the native editor's own requirements for "how does a user pick/
-// switch a planner's baseType" are known; guessing that shape now risks
-// redoing it (see the migration plan). Same "one Planner = one 2-page
-// spread of a given baseType" model as the WEEK planner: this seeds one
-// specific month (January 2024, matching the reference PDF exactly, for
-// easy visual comparison — see the migration plan's verification step),
-// not a full 12-month year. A later pass can generalize to an arbitrary
-// year/month once there's a real UI for picking one.
-export async function getOrCreateMonthPlanner() {
-  const { userId } = await auth();
-  if (!userId) {
-    throw new Error("Not signed in");
-  }
-
-  // baseType filter matters here in a way it doesn't for
-  // getOrCreatePlanner's WEEK lookup above — a user can have both a WEEK
-  // and a MONTH planner, and findFirst without this filter would happily
-  // return whichever one it found first.
-  let planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false, baseType: "MONTH" },
-    include: {
-      pages: {
-        orderBy: { position: "asc" },
-        include: { moduleInstances: { include: { moduleType: true } } },
-      },
-    },
-  });
-
-  if (!planner) {
-    planner = await prisma.planner.create({
-      data: {
-        ownerId: userId,
-        title: "My First Month",
-        baseType: "MONTH",
-        // Two pages, same "book open flat" convention as the WEEK
-        // planner: position 0 = left (Sun/Mon/Tue columns), position 1 =
-        // right (Wed/Thu/Fri/Sat columns).
-        pages: {
-          create: [
-            { position: 0, level: PageLevel.MONTHLY },
-            { position: 1, level: PageLevel.MONTHLY },
-          ],
-        },
-      },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: { moduleInstances: { include: { moduleType: true } } },
-        },
-      },
-    });
-  }
-
-  let needsRefetch = false;
-
-  if (planner.pages.length < 2) {
-    await prisma.page.create({
-      data: { plannerId: planner.id, position: 1, level: PageLevel.MONTHLY },
-    });
-    needsRefetch = true;
-    planner = await prisma.planner.findUniqueOrThrow({
-      where: { id: planner.id },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: { moduleInstances: { include: { moduleType: true } } },
-        },
-      },
-    });
-  }
-
-  const pages = planner.pages;
-  const [leftPage, rightPage] = pages;
-
-  // The fixed January 2024 calendar, the 16-row grid span and the day
-  // names all moved into monthLayout() with the placements that used them.
-
-  // The whole arrangement, from src/lib/pageLayouts.ts.
-  if (await applyLayout(monthLayout(leftPage.gridRows), [leftPage, rightPage])) {
-    needsRefetch = true;
-  }
-
-  if (needsRefetch) {
-    planner = await prisma.planner.findUniqueOrThrow({
-      where: { id: planner.id },
-      include: {
-        pages: {
-          orderBy: { position: "asc" },
-          include: { moduleInstances: { include: { moduleType: true } } },
-        },
-      },
-    });
-  }
-
-  return planner;
-}
+// getOrCreateMonthPlanner is gone. It was "parallel to getOrCreatePlanner,
+// not a generalization of it", and its own comment said the generalization
+// was deferred "until the native editor's own requirements for how a user
+// picks a planner are known". They are known now: a person has ONE book and
+// the monthly spread is a level of it, so the two functions are one -
+// getOrCreateBook(PageLevel.MONTHLY).
 
 // Adds a module at wherever the user actually dropped it on the canvas
 // (see PlannerEditorCanvas's palette drag handlers), snapped to the
@@ -2321,14 +2226,10 @@ export async function updateWeekSettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    // baseType matters as soon as a user has more than one planner, and
-    // visiting the month route creates a second. Without it findFirst
-    // returns whichever the database hands back first, so a WEEK operation
-    // could read - or seed week content onto - the MONTH planner's pages.
-    // Reported as a month layout overlaying the week spread. The month
-    // seeding already filtered, and its own comment warned about exactly
-    // this; these four were the ones that had not been given the same care.
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    // The owner's book. Deterministic order, so which row this is never
+    // depends on what the database felt like returning - see BOOK.
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -2398,14 +2299,10 @@ export async function updatePlannerFont(fontFamily: FontChoice) {
   }
 
   const planner = await prisma.planner.findFirst({
-    // baseType matters as soon as a user has more than one planner, and
-    // visiting the month route creates a second. Without it findFirst
-    // returns whichever the database hands back first, so a WEEK operation
-    // could read - or seed week content onto - the MONTH planner's pages.
-    // Reported as a month layout overlaying the week spread. The month
-    // seeding already filtered, and its own comment warned about exactly
-    // this; these four were the ones that had not been given the same care.
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    // The owner's book. Deterministic order, so which row this is never
+    // depends on what the database felt like returning - see BOOK.
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2428,18 +2325,19 @@ export async function updatePlannerFont(fontFamily: FontChoice) {
  * database - makes turning dates back on a re-seed, which throws away a date
  * range somebody typed by hand.
  *
- * Takes the baseType rather than assuming WEEK. updatePlannerFont above does
- * assume it, which is why the month spread cannot change its own font; this
- * is not going to repeat that.
+ * Takes no cadence any more: there is one book, and every level of it is
+ * dated or undated together. A monthly spread with dates beside a weekly one
+ * without them is not a planner anybody wants.
  */
-export async function setPlannerDated(dated: boolean, baseType: "WEEK" | "MONTH") {
+export async function setPlannerDated(dated: boolean) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false, baseType },
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2521,14 +2419,10 @@ export async function updateHourlySettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    // baseType matters as soon as a user has more than one planner, and
-    // visiting the month route creates a second. Without it findFirst
-    // returns whichever the database hands back first, so a WEEK operation
-    // could read - or seed week content onto - the MONTH planner's pages.
-    // Reported as a month layout overlaying the week spread. The month
-    // seeding already filtered, and its own comment warned about exactly
-    // this; these four were the ones that had not been given the same care.
-    where: { ownerId: userId, isTemplate: false, baseType: "WEEK" },
+    // The owner's book. Deterministic order, so which row this is never
+    // depends on what the database felt like returning - see BOOK.
+    where: { ownerId: userId, isTemplate: false },
+    orderBy: BOOK,
     include: {
       pages: {
         orderBy: { position: "asc" },

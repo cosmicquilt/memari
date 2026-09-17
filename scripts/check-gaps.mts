@@ -84,7 +84,12 @@ for (const page of pages) {
     const lowest = group.reduce((a, b) =>
       a.rowStart + a.rowSpan > b.rowStart + b.rowSpan ? a : b
     );
-    const where = `"${page.planner.title}" page ${page.position}, column ${columnStart}+${columnSpan}`;
+    // The LEVEL as well as the position. Positions are per level now - a
+    // book has a weekly page 0 and a monthly page 0 - so "page 0" on its own
+    // no longer names anything.
+    const where =
+      `"${page.planner.title}" ${page.level} page ${page.position}, ` +
+      `column ${columnStart}+${columnSpan}`;
 
     if (fix) {
       await prisma.moduleInstance.update({

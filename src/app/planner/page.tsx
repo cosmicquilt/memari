@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreatePlanner } from "./actions";
+import { getOrCreateBook } from "./actions";
 import { PlannerEditor } from "./PlannerEditor";
 import type { PageGrid } from "@/lib/grid";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
@@ -10,7 +10,7 @@ export default async function PlannerPage() {
     return redirectToSignIn();
   }
 
-  const planner = await getOrCreatePlanner();
+  const planner = await getOrCreateBook("WEEKLY");
 
   // Two-page spread — shown together, matching the reference planner
   // viewed with the book open flat (left = Sun-Tue, right = Wed-Sat).

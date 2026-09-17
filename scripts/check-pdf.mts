@@ -11,8 +11,8 @@
 // what this verifies is the file that actually gets downloaded rather than
 // a lookalike built by the script.
 //
-//   npx tsx scripts/check-pdf.mts          # the WEEK planner
-//   npx tsx scripts/check-pdf.mts MONTH
+//   npx tsx scripts/check-pdf.mts          # the book's weekly spread
+//   npx tsx scripts/check-pdf.mts MONTHLY
 import { readFileSync, writeFileSync } from "node:fs";
 
 for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
@@ -32,17 +32,20 @@ const prisma = new PrismaClient({
 
 // Checked rather than cast: a mistyped argument should say so, not quietly
 // query for a planner type that does not exist and report "none found".
-const BASE_TYPES = ["WEEK", "MONTH"] as const;
-type BaseType = (typeof BASE_TYPES)[number];
-const requested = (process.argv[2] ?? "WEEK").toUpperCase();
-if (!BASE_TYPES.includes(requested as BaseType)) {
-  console.error(`Unknown planner type "${requested}". Expected one of: ${BASE_TYPES.join(", ")}`);
+const { LEVELS_IN_BINDING_ORDER } = await import("../src/lib/pageLevels.js");
+type Level = (typeof LEVELS_IN_BINDING_ORDER)[number];
+const requested = (process.argv[2] ?? "WEEKLY").toUpperCase();
+if (!LEVELS_IN_BINDING_ORDER.includes(requested as Level)) {
+  console.error(`Unknown level "${requested}". Expected one of: ${LEVELS_IN_BINDING_ORDER.join(", ")}`);
   process.exit(1);
 }
-const baseType = requested as BaseType;
+const level = requested as Level;
 
+// The book, not "the WEEK planner". There is one per person now and its
+// levels are spreads of it - see getOrCreateBook.
 const planner = await prisma.planner.findFirst({
-  where: { isTemplate: false, baseType },
+  where: { isTemplate: false },
+  orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   include: {
     pages: {
       orderBy: { position: "asc" },
@@ -52,12 +55,17 @@ const planner = await prisma.planner.findFirst({
 });
 
 if (!planner) {
-  console.error(`No ${baseType} planner in the database to export.`);
+  console.error("No book in the database to export.");
+  process.exit(1);
+}
+if (!planner.pages.some((page) => page.level === level)) {
+  console.error(`"${planner.title}" has no ${level} pages to export.`);
   process.exit(1);
 }
 
 const loaded = await loadPlannerPages(
-  planner as unknown as Parameters<typeof loadPlannerPages>[0]
+  planner as unknown as Parameters<typeof loadPlannerPages>[0],
+  level
 );
 
 const built = buildPlannerPdf(loaded.pages);
@@ -70,7 +78,7 @@ built.pages.forEach((page, index) => {
   );
 });
 
-const out = `public/planner-${baseType.toLowerCase()}.pdf`;
+const out = `public/planner-${level.toLowerCase()}.pdf`;
 writeFileSync(out, Buffer.from(built.bytes));
 const bytes = built.bytes;
 
@@ -85,12 +93,12 @@ console.log(
 // The same file, by the name a person downloading it would get - so the
 // filename rule is exercised by something rather than only ever running in
 // a route nobody checks.
-console.log(`downloads as: ${pdfFilename(planner.title)}`);
+console.log(`downloads as: ${pdfFilename(`${planner.title} ${level}`)}`);
 // A browser downloads a PDF rather than showing it, so there is a viewer
 // page that renders it with pdf.js - otherwise the one artefact that
 // actually matters is the one thing you cannot look at.
 console.log(`Look at it: http://localhost:3000/pdf-proof.html?f=/${out.replace("public/", "")}`);
-console.log(`Or from the editor: the Export PDF button, which serves /planner/export?planner=${baseType}`);
+console.log(`Or from the editor: the Export PDF button, which serves /planner/export?level=${level}`);
 
 // --- what actually landed in the file --------------------------------
 //

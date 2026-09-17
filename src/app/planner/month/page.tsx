@@ -18,7 +18,7 @@
 // nothing for them to change.
 
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreateMonthPlanner } from "../actions";
+import { getOrCreateBook } from "../actions";
 import { loadPlannerPages } from "../loadPlannerPages";
 import { NativePlannerEditor } from "../NativePlannerEditor";
 
@@ -28,9 +28,11 @@ export default async function MonthPlannerPage() {
     return redirectToSignIn();
   }
 
-  const { pages, weekSettings, pageSettings } = await loadPlannerPages(
-    await getOrCreateMonthPlanner()
-  );
+  // The SAME book as /planner/next, shown at its monthly level. It used to
+  // be a different Planner row entirely - see getOrCreateBook on why that is
+  // gone.
+  const book = await getOrCreateBook("MONTHLY");
+  const { pages, weekSettings, pageSettings } = await loadPlannerPages(book, "MONTHLY");
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} baseType="MONTH" />;
+  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} level="MONTHLY" />;
 }

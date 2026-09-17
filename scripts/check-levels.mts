@@ -58,7 +58,8 @@ for (const planner of planners) {
           .slice(0, 10)}`
       : "no term set";
   console.log(
-    `\n"${planner.title}"  ${planner.baseType}  ${planner.dated ? "dated" : "UNDATED"}  (${term})`
+    `
+"${planner.title}"  ${planner.dated ? "dated" : "UNDATED"}  (${term})`
   );
 
   const groups = byLevel(planner.pages);

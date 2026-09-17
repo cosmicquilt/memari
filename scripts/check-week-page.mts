@@ -25,7 +25,9 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
 
-const baseType = (process.argv[2] ?? "WEEK") as "WEEK" | "MONTH";
+// Which spread of the book to check. A book holds several levels now, so
+// this filters the pages rather than picking a whole planner.
+const level = (process.argv[2] ?? "WEEKLY").toUpperCase();
 
 const PAGE = {
   widthPx: 2175,
@@ -66,7 +68,7 @@ const flat = (els: El[]): El[] =>
   els.flatMap((e) => (e.type === "group" ? flat(e.children ?? []) : [e]));
 
 const planner = await prisma.planner.findFirst({
-  where: { baseType, isTemplate: false },
+  where: { isTemplate: false },
   orderBy: { updatedAt: "desc" },
   include: {
     pages: {
@@ -76,7 +78,7 @@ const planner = await prisma.planner.findFirst({
   },
 });
 if (!planner) {
-  console.error(`No ${baseType} planner found.`);
+  console.error("No book found.");
   process.exit(1);
 }
 
@@ -86,7 +88,13 @@ const bad = (message: string) => {
   problems++;
 };
 
-for (const [index, page] of planner.pages.entries()) {
+const levelPages = planner.pages.filter((page) => page.level === level);
+if (levelPages.length === 0) {
+  console.error(`"${planner.title}" has no ${level} pages.`);
+  process.exit(1);
+}
+
+for (const [index, page] of levelPages.entries()) {
   const placed = page.moduleInstances.filter(
     (mi) => mi.columnStart !== null && mi.rowStart !== null
   );

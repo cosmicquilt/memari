@@ -39,7 +39,7 @@ type Row = [string, number, number, number, number, number, boolean];
 /** The same arrangement pageLayouts.test.mts pins, checked here through
  *  the database rather than in memory. */
 const BASELINE: Record<string, Row[]> = {
-  WEEK: [
+  WEEKLY: [
     ["week-title", 0, 0, 0, 6, 3, true],
     ["hourly-grid-core", 0, 6, 0, 18, 20, true],
     ["labeled-box", 0, 0, 3, 6, 7, false],
@@ -49,7 +49,7 @@ const BASELINE: Record<string, Row[]> = {
     ["hourly-grid-core", 1, 0, 0, 24, 20, true],
     ["todo-checklist", 1, 0, 21, 24, 15, false],
   ],
-  MONTH: [
+  MONTHLY: [
     ["month-title", 0, 0, 0, 6, 3, true],
     ["month-grid-core", 0, 6, 0, 18, 16, true],
     ["labeled-box", 0, 0, 2, 6, 4, false],
@@ -116,21 +116,23 @@ async function applyLayout(layout: PageLayout, pageIds: string[]) {
 
 const only = process.argv[2]?.toUpperCase();
 
-for (const baseType of ["WEEK", "MONTH"] as const) {
-  if (only && only !== baseType) continue;
-  const layout = baseType === "WEEK" ? weekLayout(36) : monthLayout(36);
+// The levels that have a template arrangement. A level with no layout seeds
+// blank pages, and there is nothing to check about a blank page.
+const LAYOUTS = { WEEKLY: weekLayout, MONTHLY: monthLayout } as const;
+
+for (const level of Object.keys(LAYOUTS) as Array<keyof typeof LAYOUTS>) {
+  if (only && only !== level) continue;
+  const layout = LAYOUTS[level](36);
   const planner = await prisma.planner.create({
     data: {
       ownerId: THROWAWAY_OWNER,
-      title: `layout check ${baseType}`,
-      baseType,
-      // The level this cadence's pages belong to. A throwaway planner, but
-      // it still has to be a real one - a layout checked at the wrong level
-      // is not the layout anybody ships.
+      title: `layout check ${level}`,
+      // A throwaway planner, but a real one: a layout checked at the wrong
+      // level is not the layout anybody ships.
       pages: {
         create: [
-          { position: 0, level: baseType === "WEEK" ? "WEEKLY" : "MONTHLY" },
-          { position: 1, level: baseType === "WEEK" ? "WEEKLY" : "MONTHLY" },
+          { position: 0, level },
+          { position: 1, level },
         ],
       },
     },
@@ -145,7 +147,7 @@ for (const baseType of ["WEEK", "MONTH"] as const) {
     // load, so anything re-proposed here is a module that would be
     // duplicated each time the editor opened.
     const again = await applyLayout(layout, pageIds);
-    if (again !== 0) bad(`${baseType}: a second run added ${again} more module(s)`);
+    if (again !== 0) bad(`${level}: a second run added ${again} more module(s)`);
 
     const pages = await prisma.page.findMany({
       where: { id: { in: pageIds } },
@@ -167,14 +169,14 @@ for (const baseType of ["WEEK", "MONTH"] as const) {
       }
     });
 
-    const want = sortRows(BASELINE[baseType]);
+    const want = sortRows(BASELINE[level]);
     const have = sortRows(got);
-    console.log(`\n${baseType}: created ${created}, read back ${have.length}`);
+    console.log(`\n${level}: created ${created}, read back ${have.length}`);
     for (let i = 0; i < Math.max(want.length, have.length); i++) {
       const a = have[i];
       const b = want[i];
       if (!a || !b || JSON.stringify(a) !== JSON.stringify(b)) {
-        bad(`${baseType} row ${i}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`);
+        bad(`${level} row ${i}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`);
       } else {
         console.log(
           `  ok    ${a[0].padEnd(18)} page ${a[1]}  col ${String(a[2]).padStart(2)}+${String(a[4]).padStart(2)}` +
@@ -189,7 +191,7 @@ for (const baseType of ["WEEK", "MONTH"] as const) {
     );
     const props = (spine?.propValues ?? {}) as { dayCount?: number; dayLabels?: unknown[] };
     if (props.dayCount !== 3 || (props.dayLabels ?? []).length !== 3) {
-      bad(`${baseType}: left spine came back with dayCount ${props.dayCount} and ` +
+      bad(`${level}: left spine came back with dayCount ${props.dayCount} and ` +
         `${(props.dayLabels ?? []).length} labels, expected 3 and 3`);
     }
   } finally {

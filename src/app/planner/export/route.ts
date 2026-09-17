@@ -1,4 +1,4 @@
-// The export route: GET /planner/export?planner=WEEK -> a real PDF.
+// The export route: GET /planner/export?level=WEEKLY -> a real PDF.
 //
 // This is the end of the pipeline, and the first thing in it a person can
 // reach. Everything before it - the renderers, loadPlannerPages,
@@ -19,10 +19,11 @@
 // agree. Nothing about this page is recomputed here.
 
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreatePlanner, getOrCreateMonthPlanner } from "../actions";
+import { getOrCreateBook } from "../actions";
 import { loadPlannerPages } from "../loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
 import { PLANNER_TRIMS, trimKeyForWidth } from "@/lib/planner-trims";
+import { LEVELS_IN_BINDING_ORDER, LEVEL_LABELS, type PageLevel } from "@/lib/pageLevels";
 
 // jsPDF and the font read both want Node, not the edge runtime.
 export const runtime = "nodejs";
@@ -30,22 +31,10 @@ export const runtime = "nodejs";
 // cached here would hand someone yesterday's planner.
 export const dynamic = "force-dynamic";
 
-/**
- * Which cadences can be exported, and how each one is fetched.
- *
- * A map rather than a chain of `if (type === "WEEK")`, because this is the
- * kind of list that gets extended and not updated - the codebase has undone
- * that same defect in the zone logic and in the edit affordance. Partial on
- * purpose: BaseType already names QUARTER and YEAR, and neither has a
- * planner to load yet, so asking for one says so rather than exporting the
- * wrong planner's pages.
- */
-const LOADERS = {
-  WEEK: getOrCreatePlanner,
-  MONTH: getOrCreateMonthPlanner,
-} as const;
-
-type ExportableType = keyof typeof LOADERS;
+// There is no loader map any more. There used to be one entry per planner
+// type, because a week planner and a month planner were two unrelated rows;
+// there is ONE book now and a level picks which of its spreads to export, so
+// the list that used to get extended-and-not-updated has nothing left in it.
 
 export async function GET(request: Request) {
   const { userId } = await auth();
@@ -59,26 +48,24 @@ export async function GET(request: Request) {
   }
 
   const params = new URL(request.url).searchParams;
-  const requested = (params.get("planner") ?? "WEEK").toUpperCase();
-  // hasOwnProperty, not `in`: `in` walks the prototype chain, so a request
-  // for ?planner=constructor would pass the guard and then be CALLED. The
-  // uppercasing above happens to save it today, which is not a reason to
-  // leave a query parameter reaching Object.prototype.
-  if (!Object.prototype.hasOwnProperty.call(LOADERS, requested)) {
+  const requested = (params.get("level") ?? "WEEKLY").toUpperCase();
+  // Checked against the levels that exist, not cast: a mistyped parameter
+  // should say so rather than quietly exporting a different spread.
+  if (!LEVELS_IN_BINDING_ORDER.includes(requested as PageLevel)) {
     return new Response(
-      `Cannot export "${requested}". Exportable planners: ${Object.keys(LOADERS).join(", ")}.`,
+      `Cannot export "${requested}". Levels: ${LEVELS_IN_BINDING_ORDER.join(", ")}.`,
       { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } }
     );
   }
-  const baseType = requested as ExportableType;
+  const level = requested as PageLevel;
 
   let built: ReturnType<typeof buildPlannerPdf>;
   let title: string;
   let loadedWidthPx: number;
   try {
-    const planner = await LOADERS[baseType]();
-    title = planner.title;
-    const loaded = await loadPlannerPages(planner);
+    const planner = await getOrCreateBook(level);
+    title = `${planner.title} ${LEVEL_LABELS[level]}`;
+    const loaded = await loadPlannerPages(planner, level);
     loadedWidthPx = loaded.pages[0]?.pageGrid.widthPx ?? 0;
     built = buildPlannerPdf(loaded.pages);
   } catch (error) {
@@ -120,6 +107,8 @@ export async function GET(request: Request) {
         paths: built.report.paths,
         widthPt: Number(built.widthPt.toFixed(2)),
         heightPt: Number(built.heightPt.toFixed(2)),
+        // Which spread of the book this is.
+        level: LEVEL_LABELS[level],
         // The FINISHED size, not the sheet. Someone reading this wants to
         // know what comes back from the printer, and the sheet is a
         // quarter-inch larger on both axes because of the bleed. The label

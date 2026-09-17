@@ -153,6 +153,7 @@ import {
   resizeHourlyGridCore,
 } from "./actions";
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
+import type { PageLevel } from "@/lib/pageLevels";
 import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -3143,7 +3144,6 @@ function ModulePalette({
   pageGrid,
   fontFamily,
   showHours,
-  baseType,
 }: {
   activeId: string | null;
   activeDelta: { x: number; y: number };
@@ -3170,10 +3170,6 @@ function ModulePalette({
   // page's is not, so it does not get the section at all - see the
   // registry's pageSettingsForm.
   showHours: boolean;
-  // Which planner the Dates toggle should act on. Same reason the editor
-  // itself takes it - see NativePlannerEditor's own prop comment: nothing
-  // about the rendered pages says which planner row they came from.
-  baseType: "WEEK" | "MONTH";
 }) {
   // Two top-level groups, each independently collapsible, both default
   // collapsed so the panel opens to two header rows rather than every
@@ -3399,7 +3395,7 @@ function ModulePalette({
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Dates
             </div>
-            <DatesToggle dated={pageSettings.dated} baseType={baseType} />
+            <DatesToggle dated={pageSettings.dated} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
@@ -3585,13 +3581,13 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
 //
 // A reload rather than a local state update, same as FontToggle: it changes
 // what every page draws, and the pages are shaped on the server.
-function DatesToggle({ dated, baseType }: { dated: boolean; baseType: "WEEK" | "MONTH" }) {
+function DatesToggle({ dated }: { dated: boolean }) {
   const [pending, error, run] = useAsyncAction();
 
   const handlePick = (next: boolean) => {
     if (next === dated || pending) return;
     run(async () => {
-      await setPlannerDated(next, baseType);
+      await setPlannerDated(next);
       window.location.reload();
     });
   };
@@ -4073,7 +4069,7 @@ type ExportReport = {
   problems: string[];
 };
 
-function ExportPdfButton({ baseType }: { baseType: "WEEK" | "MONTH" }) {
+function ExportPdfButton({ level }: { level: PageLevel }) {
   const [busy, setBusy] = useState(false);
   // Null while idle. Held until the next export rather than timed out: if
   // something could not be drawn, that is not a message to blink once and
@@ -4084,7 +4080,7 @@ function ExportPdfButton({ baseType }: { baseType: "WEEK" | "MONTH" }) {
     setBusy(true);
     setResult(null);
     try {
-      const response = await fetch(`/planner/export?planner=${baseType}`, { cache: "no-store" });
+      const response = await fetch(`/planner/export?level=${level}`, { cache: "no-store" });
       if (!response.ok) {
         setResult({ ok: false, message: (await response.text()) || `Export failed (${response.status})` });
         return;
@@ -4202,19 +4198,19 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 export function NativePlannerEditor({
   pages,
   pageSettings: initialPageSettings,
-  baseType,
+  level,
 }: {
   pages: LoadedPage[];
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
-  // WHICH planner this editor is showing. Everything else this component
-  // needs, it can ask the registry for - showHoursSettings below reads the
-  // spine's own pageSettingsForm rather than testing the cadence, and that
-  // is the right pattern for BEHAVIOUR. This is not behaviour: the export
-  // route has to fetch a specific planner out of the database, and no
-  // amount of looking at the rendered pages identifies which one. The
-  // route that loaded it knows, so the route says.
-  baseType: "WEEK" | "MONTH";
+  // WHICH LEVEL of the book this editor is showing. Everything else this
+  // component needs, it can ask the registry for - showHoursSettings below
+  // reads the spine's own pageSettingsForm rather than testing the cadence,
+  // and that is the right pattern for BEHAVIOUR. This is not behaviour: the
+  // export route has to fetch a specific set of pages out of the database,
+  // and no amount of looking at the rendered ones identifies which set. The
+  // route that loaded them knows, so the route says.
+  level: PageLevel;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -4227,7 +4223,7 @@ export function NativePlannerEditor({
   // Does this cadence's spine own the Hours form? A month page's does not,
   // and it was being offered a full set of hourly controls with no hourly
   // grid to apply them to. Asked from the registry rather than tested as
-  // `baseType === "WEEK"`, so a cadence added later gets the right answer
+  // the level, so a cadence added later gets the right answer
   // without anyone remembering this - see pageSettingsForm.
   const showHoursSettings = useMemo(
     () =>
@@ -9019,7 +9015,7 @@ export function NativePlannerEditor({
             the status line carries minWidth:0 and an ellipsis, which is what
             lets it take the squeeze at this edge instead of pushing the
             button off it. */}
-        <ExportPdfButton baseType={baseType} />
+        <ExportPdfButton level={level} />
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>
       <div
@@ -9213,7 +9209,6 @@ export function NativePlannerEditor({
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
               showHours={showHoursSettings}
-              baseType={baseType}
             />
           </DndContext>
         </div>

@@ -22,6 +22,7 @@
 
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { MIN_ROW_SPAN } from "@/lib/moduleRegistry";
+import type { PageLevel } from "@/lib/pageLevels";
 
 /** One module, where it goes, and what it starts with. */
 export type LayoutPlacement = {
@@ -72,7 +73,11 @@ export type LayoutGroup = {
 
 export type PageLayout = {
   key: string;
-  baseType: "WEEK" | "MONTH";
+  /** Which repeating set this layout is the template for. It used to name
+   *  a planner type, back when a week planner and a month planner were two
+   *  separate books; they are two LEVELS of one book now, so the layout
+   *  belongs to the level. */
+  level: PageLevel;
   title: string;
   groups: LayoutGroup[];
 };
@@ -157,7 +162,7 @@ export function weekLayout(gridRows: number): PageLayout {
   const day = (name: string, date: number) => ({ name, date });
   return {
     key: "week-default",
-    baseType: "WEEK",
+    level: "WEEKLY",
     title: "My First Planner",
     groups: [
       {
@@ -325,8 +330,11 @@ export function monthLayout(gridRows: number): PageLayout {
   });
   return {
     key: "month-default",
-    baseType: "MONTH",
-    title: "My First Month",
+    level: "MONTHLY",
+    // The BOOK's title comes from the weekly layout, which is the one that
+    // creates it. This names the layout, not a planner of its own - there
+    // is no separate month planner any more.
+    title: "Monthly spread",
     groups: [
       {
         name: "month title",

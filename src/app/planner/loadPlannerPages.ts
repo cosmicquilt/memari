@@ -24,9 +24,9 @@
 // Server-only (reads via getOrCreatePlanner, a server action) — every
 // caller must be a Server Component or another server action.
 
-import { getOrCreatePlanner } from "./actions";
+import { getOrCreateBook } from "./actions";
 import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
-import type { PageLevel } from "@/lib/pageLevels";
+import { type PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
@@ -100,15 +100,24 @@ export type LoadedPlanner = {
 };
 
 /**
- * @param planner Which planner to load. Supplied by the caller rather than
- * fetched here, so a route picks its own cadence - the week spread and the
- * month spread are the same editor over different spine modules, not two
- * editors. This used to call getOrCreatePlanner() itself, which is the
- * WEEK one, and was the reason the month route could not use any of this.
+ * @param planner The book. Supplied by the caller rather than fetched here,
+ * so a route picks its own level - the week spread and the month spread are
+ * the same editor over different spine modules, not two editors.
+ * @param level Which of the book's levels to shape into pages. A book holds
+ * pages at every level at once now, and the editor draws ONE spread, so the
+ * others are filtered out here rather than by the caller - this is already
+ * the one place that turns a planner row into pages, and a second filter
+ * somewhere else is a second description of what a spread is.
  */
 export async function loadPlannerPages(
-  planner: Awaited<ReturnType<typeof getOrCreatePlanner>>
+  planner: Awaited<ReturnType<typeof getOrCreateBook>>,
+  level: PageLevel
 ): Promise<LoadedPlanner> {
+  // Everything below reads this, never planner.pages: an unfiltered read
+  // would put the monthly spread's modules onto the weekly page.
+  const levelPages = planner.pages
+    .filter((page) => page.level === level)
+    .sort((a, b) => a.position - b.position);
   const theme = planner.theme as PlannerTheme | null;
   // Not from the theme blob: `dated` is a real column, because it is
   // structural rather than presentational - it says what kind of planner
@@ -123,7 +132,7 @@ export async function loadPlannerPages(
   // correctly, which isn't available yet one page at a time inside the
   // per-page loop below. The stored dayLabels themselves are untouched;
   // this only overrides what gets rendered.
-  const [plannerLeftPage, plannerRightPage] = planner.pages;
+  const [plannerLeftPage, plannerRightPage] = levelPages;
   const plannerLeftHourly = plannerLeftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
   const plannerRightHourly = plannerRightPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
   const rotatedDayLabels = rotateWeekDays(
@@ -132,7 +141,7 @@ export async function loadPlannerPages(
     weekStartDay
   );
 
-  const pages: LoadedPage[] = planner.pages.map((page, pageIndex) => {
+  const pages: LoadedPage[] = levelPages.map((page, pageIndex) => {
     const pageGrid: PageGrid = {
       widthPx: page.widthPx,
       heightPx: page.heightPx,
@@ -241,7 +250,7 @@ export async function loadPlannerPages(
     };
   });
 
-  const [leftPage, rightPage] = planner.pages;
+  const [leftPage, rightPage] = levelPages;
   const weekTitleInstance = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "week-title");
   const leftHourly = leftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
   const rightHourly = rightPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
