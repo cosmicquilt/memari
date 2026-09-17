@@ -20,6 +20,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { widenHairline, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
 // — two on-screen thickness floors (strokes and fill hairlines), a
@@ -31,46 +32,16 @@ import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 // rather than compensating for it, so the whole apparatus is gone. See
 // RectLayer's own comment for the full reasoning.
 
-// Minimum on-screen thickness, in DEVICE pixels, for a rect thin enough
-// to be a rule/divider rather than a shape. NOT a browser workaround —
-// the SVG layer made both engines agree — but a legibility floor for the
-// on-screen preview only.
+// The legibility floor for a rule too thin for the screen now lives in
+// src/lib/hairline.ts, because the timeline previews need the IDENTICAL
+// rule and a preview whose hairlines fade at a different zoom from the
+// canvas's is a preview that disagrees with the page. The reasoning that
+// used to sit here - why the floor goes on the ink as well as the width,
+// and what each of the two half-fixes broke - moved there with it.
 //
-// Vector antialiasing is faithful: a hairline under one device pixel
-// renders at proportional opacity, which is correct and is what the
-// printed PDF will do at 300 DPI. On screen at 37% zoom, though, a
-// design hairline computes to well under a device pixel and fades to
-// nearly invisible — reported directly, "horizontal lines start
-// disapearing sooner at around <37%," which sits inside the default
-// fit-width view (~0.28-0.43 for a two-page spread).
-//
-// THE FLOOR BELONGS ON THE INK, NOT ON THE WIDTH. This used to clamp the
-// divisor so the floor stopped growing below 30% zoom, because without
-// that a rule inflated without bound as you zoomed out - at 15% a 2px rule
-// forced to 4x its design weight - and read as heavy. But clamping the
-// WIDTH is what let lines start vanishing again below 30%, which is the
-// "horizontal lines start disapearing sooner at around <37%" report and
-// the same thing seen in Firefox.
-//
-// Both complaints come from doing half the job. Forcing a hairline to a
-// whole pixel and leaving it at full strength makes it heavy; that is what
-// the clamp was really compensating for. PostScript and PDF reserve width
-// 0 to mean "thinnest the device can draw" and Figma pins a hairline to
-// one physical pixel however far you zoom out - and both drop the OPACITY
-// in proportion, which is what keeps it reading as a hairline. A rule
-// forced to 4x its weight at a quarter of the ink is not heavy; it is the
-// same amount of ink, spread thin enough for the screen to show it.
-//
-// So the width grows without limit now, and the ink falls to match. What
-// is clamped instead is how faint that ink may get: coverage below about a
-// third washes out against white through the sRGB gamma curve, which is
-// the very disappearance this exists to stop.
-const MIN_ONSCREEN_RECT_PX = 1.0;
-const MIN_ONSCREEN_INK = 0.35;
-// A rect this much thinner than it is long (either axis) is treated as a
-// rule, not a small filled shape — comfortably below any checkbox or
-// date-box aspect ratio in this app's modules (all closer to square).
-const HAIRLINE_ASPECT_RATIO = 0.15;
+// This layer addresses CSS pixels, so it passes a CSS-px scale and gets a
+// one-CSS-px floor. A canvas owns its backing store and passes a device-px
+// scale for a finer one.
 
 // A resizing module's content (elements/origin) is frozen at whatever it
 // was last rendered for — see NativePlannerEditor's resizeFrozenSize
@@ -335,33 +306,19 @@ function markGeometry(
   const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
   const inset = strokeWidth / 2;
 
-  // Legibility floor for fill-only rules — see MIN_ONSCREEN_RECT_PX. Grown
-  // outward from the rule's own centre so its position doesn't shift, and
-  // only ever applied to the thin axis of something already shaped like a
-  // rule.
-  let rx = left;
-  let ry = top;
-  let rw = width;
-  let rh = height;
-  let ink = 1;
-  if (hasFill && !hasStroke && scale > 0) {
-    const needed = MIN_ONSCREEN_RECT_PX / scale;
-    if (height > 0 && height < width * HAIRLINE_ASPECT_RATIO && needed > height) {
-      ry = top - (needed - height) / 2;
-      rh = needed;
-      ink = Math.max(MIN_ONSCREEN_INK, height / needed);
-    } else if (width > 0 && width < height * HAIRLINE_ASPECT_RATIO && needed > width) {
-      rx = left - (needed - width) / 2;
-      rw = needed;
-      ink = Math.max(MIN_ONSCREEN_INK, width / needed);
-    }
-  }
+  // Legibility floor for fill-only rules - see src/lib/hairline.ts. A
+  // stroked box is already a stroke and is left alone.
+  const rule =
+    hasFill && !hasStroke
+      ? widenHairline({ x: left, y: top, width, height }, scale)
+      : { x: left, y: top, width, height, ink: 1 };
+
   return {
-    x: rx + inset,
-    y: ry + inset,
-    width: Math.max(0, rw - strokeWidth),
-    height: Math.max(0, rh - strokeWidth),
-    ink,
+    x: rule.x + inset,
+    y: rule.y + inset,
+    width: Math.max(0, rule.width - strokeWidth),
+    height: Math.max(0, rule.height - strokeWidth),
+    ink: rule.ink,
   };
 }
 
