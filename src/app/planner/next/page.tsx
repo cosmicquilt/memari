@@ -21,5 +21,5 @@ export default async function NativePlannerPage() {
 
   const { pages, weekSettings, pageSettings } = await loadPlannerPages(await getOrCreatePlanner());
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} />;
+  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} baseType="WEEK" />;
 }

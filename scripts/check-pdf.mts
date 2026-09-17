@@ -5,13 +5,15 @@
 // step is a file a printer accepts, so the check has to be that file.
 //
 // It deliberately goes through loadPlannerPages - the same page-shaping the
-// editor uses, which that file was factored out to allow ("the (upcoming)
-// headless export route"). Nothing about geometry is restated here, so the
-// PDF cannot drift from what the editor shows.
+// editor uses, which that file was factored out to allow - and through
+// buildPlannerPdf, which is the same assembly /planner/export hands to a
+// person. Nothing about geometry or about the document is restated here, so
+// what this verifies is the file that actually gets downloaded rather than
+// a lookalike built by the script.
 //
 //   npx tsx scripts/check-pdf.mts          # the WEEK planner
 //   npx tsx scripts/check-pdf.mts MONTH
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
   const match = /^\s*([A-Z_]+)\s*=\s*"?([^"\r\n]*)"?\s*$/.exec(line);
@@ -21,9 +23,8 @@ for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
 const { PrismaPg } = await import("@prisma/adapter-pg");
 const { PrismaClient } = await import("../src/generated/prisma/client.js");
 const { loadPlannerPages } = await import("../src/app/planner/loadPlannerPages.js");
-const { createPdf, drawPage, installFont, emptyReport, pxToPt } = await import(
-  "../src/lib/pdfDocument.js"
-);
+const { buildPlannerPdf, printReadinessProblems, pdfFilename, describePageSize, FONT_PATH } =
+  await import("../src/lib/plannerPdf.js");
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -59,53 +60,37 @@ const loaded = await loadPlannerPages(
   planner as unknown as Parameters<typeof loadPlannerPages>[0]
 );
 
-// The planner's own face, if a file has been placed for it. Without one the
-// document falls back to Times and says so - see installFont on why that is
-// not merely a cosmetic difference.
-// The variable font from google/fonts, which is what upstream ships - there
-// are no static instances in the repository. Its OFL licence sits beside it
-// and must travel with it wherever this font goes.
-const FONT_PATH = "assets/fonts/Newsreader.ttf";
-const ttf = existsSync(FONT_PATH) ? readFileSync(FONT_PATH).toString("base64") : undefined;
+const built = buildPlannerPdf(loaded.pages);
+const report = built.report;
 
-const first = loaded.pages[0];
-const doc = createPdf(first.pageGrid);
-const font = installFont(doc, "Newsreader", ttf);
-const report = emptyReport();
-
-loaded.pages.forEach((page, index) => {
-  if (index > 0) {
-    doc.addPage([pxToPt(page.pageGrid.widthPx), pxToPt(page.pageGrid.heightPx)]);
-  }
-  const before = { ...report };
-  for (const instance of page.moduleInstances) {
-    drawPage(doc, instance.elements, font, report);
-  }
+built.pages.forEach((page, index) => {
   console.log(
-    `  page ${index + 1}: ${page.moduleInstances.length} modules, ` +
-      `${report.elements - before.elements} marks ` +
-      `(${report.text - before.text} text, ${report.rects - before.rects} rects, ` +
-      `${report.paths - before.paths} paths)`
+    `  page ${index + 1}: ${page.modules} modules, ${page.elements} marks ` +
+      `(${page.text} text, ${page.rects} rects, ${page.paths} paths)`
   );
 });
 
 const out = `public/planner-${baseType.toLowerCase()}.pdf`;
-const bytes = doc.output("arraybuffer");
-writeFileSync(out, Buffer.from(bytes));
+writeFileSync(out, Buffer.from(built.bytes));
+const bytes = built.bytes;
 
-const w = pxToPt(first.pageGrid.widthPx);
-const h = pxToPt(first.pageGrid.heightPx);
 console.log(
-  `\n${out}: ${loaded.pages.length} page(s), ${(bytes.byteLength / 1024).toFixed(0)} KB, ` +
-    `${w.toFixed(1)} x ${h.toFixed(1)} pt (${(w / 72).toFixed(3)} x ${(h / 72).toFixed(3)} in, trim plus bleed)`
+  `\n${out}: ${built.pages.length} page(s), ${(bytes.byteLength / 1024).toFixed(0)} KB, ` +
+    `${built.widthPt.toFixed(1)} x ${built.heightPt.toFixed(1)} pt - ` +
+    describePageSize(built.size)
 );
 console.log(
   `${report.elements} marks drawn: ${report.text} text, ${report.rects} rects, ${report.paths} paths`
 );
+// The same file, by the name a person downloading it would get - so the
+// filename rule is exercised by something rather than only ever running in
+// a route nobody checks.
+console.log(`downloads as: ${pdfFilename(planner.title)}`);
 // A browser downloads a PDF rather than showing it, so there is a viewer
 // page that renders it with pdf.js - otherwise the one artefact that
 // actually matters is the one thing you cannot look at.
 console.log(`Look at it: http://localhost:3000/pdf-proof.html?f=/${out.replace("public/", "")}`);
+console.log(`Or from the editor: the Export PDF button, which serves /planner/export?planner=${baseType}`);
 
 // --- what actually landed in the file --------------------------------
 //
@@ -156,6 +141,88 @@ console.log(
 );
 
 let problems = 0;
+
+// --- where the knife goes --------------------------------------------
+//
+// The page boxes, read out of the raw bytes rather than trusted from the
+// builder. MediaBox is the sheet; TrimBox is the finished page; BleedBox
+// is how far ink may run past the trim. Nothing in these planners actually
+// bleeds - every mark sits at least 0.52in inside the trim line, measured -
+// so the 0.125in a 7x10 sheet carries is an INSTRUCTION, and an instruction
+// only counts if it is in the file. A printer that infers differently, and
+// scales the sheet to fit 7x10 instead of cutting it, puts every measurement
+// in the book out by 3.4%.
+const pdfText = buffer.toString("latin1");
+// Parsed by hand rather than with a regex built from a string: PDF boxes
+// are `/MediaBox [0 0 522. 738.]`, and the bracket-and-backslash soup a
+// constructed RegExp needs for that is exactly the kind of thing that goes
+// wrong silently.
+const boxesOf = (name: string) => {
+  const key = `/${name}`;
+  const out: number[][] = [];
+  for (let i = pdfText.indexOf(key); i !== -1; i = pdfText.indexOf(key, i + 1)) {
+    const open = pdfText.indexOf("[", i);
+    const close = pdfText.indexOf("]", open);
+    // The bracket has to belong to THIS key, not to some later one.
+    if (open === -1 || close === -1 || open > i + key.length + 2) continue;
+    out.push(pdfText.slice(open + 1, close).trim().split(/\s+/).map(Number));
+  }
+  return out;
+};
+const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+const size = built.size;
+const expected: Record<string, number[]> = {
+  MediaBox: [0, 0, size.sheetWidthPt, size.sheetHeightPt],
+  TrimBox: [
+    size.bleedPt,
+    size.bleedPt,
+    size.sheetWidthPt - size.bleedPt,
+    size.sheetHeightPt - size.bleedPt,
+  ],
+  BleedBox: [0, 0, size.sheetWidthPt, size.sheetHeightPt],
+};
+for (const [name, want] of Object.entries(expected)) {
+  const found = boxesOf(name);
+  if (found.length !== loaded.pages.length) {
+    console.error(
+      `  FAIL  ${found.length} /${name} in the file, expected one per page (${loaded.pages.length})`
+    );
+    problems++;
+    continue;
+  }
+  const wrong = found.filter((box) => !box.every((v, i) => near(v, want[i])));
+  if (wrong.length > 0) {
+    console.error(
+      `  FAIL  /${name} is [${wrong[0].join(" ")}], expected [${want.map((v) => Number(v.toFixed(2))).join(" ")}]`
+    );
+    problems++;
+  }
+}
+// INDEPENDENT of everything above, which only proves the file agrees with
+// itself: if the bleed were wrong, MediaBox, TrimBox and BuiltPdf.size
+// would all be wrong together and every comparison would still pass. A
+// finished page is a NAMED size - 7 x 10, US Letter - and every named trim
+// is a multiple of half an inch. A 7.25 x 10.25 trim box is not a size
+// anyone sells; it is the sheet with the bleed forgotten, which is the
+// exact mistake this whole block exists to prevent.
+for (const [edge, pt] of [["width", size.trimWidthPt], ["height", size.trimHeightPt]] as const) {
+  const inches = pt / 72;
+  if (Math.abs(inches * 2 - Math.round(inches * 2)) > 0.001) {
+    console.error(
+      `  FAIL  trim ${edge} is ${inches.toFixed(3)}in, which is not a half-inch multiple.\n` +
+        `        A finished page is a named size; this looks like the sheet with\n` +
+        `        the bleed left in. Check bleedPx in planner-trims.ts.`
+    );
+    problems++;
+  }
+}
+if (problems === 0) {
+  console.log(
+    `page boxes: MediaBox ${(size.sheetWidthPt / 72).toFixed(3)} x ${(size.sheetHeightPt / 72).toFixed(3)} in, ` +
+      `TrimBox ${(size.trimWidthPt / 72).toFixed(3)} x ${(size.trimHeightPt / 72).toFixed(3)} in ` +
+      `(${(size.bleedPt / 72).toFixed(3)}in bleed declared on every page)`
+  );
+}
 if (streams !== loaded.pages.length) {
   console.error(`  FAIL  ${streams} page content stream(s) in the file, expected ${loaded.pages.length}`);
   problems++;
@@ -168,24 +235,19 @@ if (ops.rects !== report.rects) {
   console.error(`  FAIL  ${report.rects} rects drawn but ${ops.rects} in the file`);
   problems++;
 }
-if (report.skipped > 0) {
-  console.error(`  FAIL  ${report.skipped} element(s) were not drawn at all`);
+// Everything the export route would warn a person about, in the same words
+// - one definition of "print-ready", so a green run here and a clean
+// download there cannot mean different things.
+for (const problem of printReadinessProblems(built)) {
+  console.error(`  FAIL  ${problem}`);
   problems++;
 }
-if (report.unsupportedPathCommands.length > 0) {
+if (!built.font.embedded) {
   console.error(
-    `  FAIL  path command(s) this exporter cannot draw: ${report.unsupportedPathCommands.join(", ")}`
-  );
-  problems++;
-}
-if (!font.embedded) {
-  console.error(
-    `  FAIL  no font embedded - set in ${font.name}, not the planner's own face.\n` +
-      `        Little overflows (1 of 915 catalogue labels), but the planner is\n` +
+    `        Little overflows (1 of 915 catalogue labels), but the planner is\n` +
       `        designed in Newsreader and a substitute face is a different\n` +
       `        product on paper. Put a TTF at ${FONT_PATH} to fix.`
   );
-  problems++;
 }
 
 await prisma.$disconnect();

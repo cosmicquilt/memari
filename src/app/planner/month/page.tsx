@@ -32,5 +32,5 @@ export default async function MonthPlannerPage() {
     await getOrCreateMonthPlanner()
   );
 
-  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} />;
+  return <NativePlannerEditor pages={pages} weekSettings={weekSettings} pageSettings={pageSettings} baseType="MONTH" />;
 }

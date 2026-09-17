@@ -3975,6 +3975,159 @@ function PaletteChevron({ open }: { open: boolean }) {
   );
 }
 
+// The export. This is the product: everything else in this editor exists
+// so that a printed page comes out right, and until this button there was
+// no way to get one without a terminal.
+//
+// A FETCH, NOT AN <a download>. A link would be two lines and would work,
+// and it was rejected for three reasons that all matter here:
+//
+//   - the export is a real server render of both pages, so there is a
+//     visible wait, and a link gives no way to say so - you click and
+//     nothing happens until the file appears;
+//   - a failure arrives as a RESPONSE. A link would download it: a file
+//     named planner.pdf containing "Sign in to export a planner." A fetch
+//     reads the status and says it in the toolbar instead;
+//   - the route reports what it drew (X-Export-Report), including anything
+//     it could NOT draw faithfully. A print pipeline that quietly omits a
+//     mark is worse than one that fails, and a link throws that header
+//     away.
+//
+// The file is still delivered by the browser's own download machinery - a
+// blob URL and a synthetic click - so it lands in the downloads folder with
+// the filename the server chose, exactly as a link would have.
+type ExportReport = {
+  pages: number;
+  marks: number;
+  /** The FINISHED page size, e.g. "7 × 10 in" - not the sheet, which
+   *  is a quarter-inch larger on both axes because of the bleed. The one
+   *  fact here you might want to change before sending it to a printer. */
+  trim: string;
+  embedded: boolean;
+  problems: string[];
+};
+
+function ExportPdfButton({ baseType }: { baseType: "WEEK" | "MONTH" }) {
+  const [busy, setBusy] = useState(false);
+  // Null while idle. Held until the next export rather than timed out: if
+  // something could not be drawn, that is not a message to blink once and
+  // withdraw while the person is looking at their new file.
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const response = await fetch(`/planner/export?planner=${baseType}`, { cache: "no-store" });
+      if (!response.ok) {
+        setResult({ ok: false, message: (await response.text()) || `Export failed (${response.status})` });
+        return;
+      }
+
+      const blob = await response.blob();
+      // The server's filename, not one guessed here - it is the planner's
+      // own title and today's date, and the two should not be able to
+      // disagree. Parsed off the header the response already carries.
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "planner.pdf";
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Not revoked synchronously: Safari has not finished reading the blob
+      // when click() returns, and revoking under it cancels the download.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      let report: ExportReport | null = null;
+      try {
+        const header = response.headers.get("X-Export-Report");
+        report = header ? (JSON.parse(header) as ExportReport) : null;
+      } catch {
+        // A report that will not parse is worth nothing but must not cost
+        // the person the file they just successfully downloaded.
+        report = null;
+      }
+
+      if (report && report.problems.length > 0) {
+        setResult({ ok: false, message: `Downloaded, but: ${report.problems.join("; ")}` });
+      } else if (report) {
+        setResult({
+          ok: true,
+          message:
+            `${filename} — ${report.trim}, ` +
+            `${report.pages} page${report.pages === 1 ? "" : "s"}, ${report.marks} marks`,
+        });
+      } else {
+        setResult({ ok: true, message: filename });
+      }
+    } catch (error) {
+      setResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={busy}
+        title="Download this spread as a print-ready PDF, at trim size plus bleed, in the planner's own face"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          flexShrink: 0,
+          padding: "4px 12px",
+          fontSize: 12,
+          // The accent, alone in this header: it is the one control that
+          // produces the thing the whole app is for.
+          background: busy ? "#2f3a8a" : "#4a5cff",
+          color: "#fff",
+          border: "none",
+          borderRadius: 6,
+          cursor: busy ? "default" : "pointer",
+          opacity: busy ? 0.75 : 1,
+          transition: "background 0.15s ease, opacity 0.15s ease",
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 3v11m0 0 4-4m-4 4-4-4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        {busy ? "Exporting…" : "Export PDF"}
+      </button>
+      {result && (
+        <span
+          style={{
+            flexShrink: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 11,
+            color: result.ok ? "#8fdc9a" : "#ff8f5c",
+          }}
+          title={result.message}
+        >
+          {result.message}
+        </span>
+      )}
+    </>
+  );
+}
+
 const ZERO_OFFSET = { x: 0, y: 0 };
 const EMPTY_RESIZE_PAIRS: ResizePair[] = [];
 const EMPTY_STACK_BOTTOMS: StackBottom[] = [];
@@ -3983,10 +4136,19 @@ const EMPTY_INSTANCE_IDS: string[] = [];
 export function NativePlannerEditor({
   pages,
   pageSettings: initialPageSettings,
+  baseType,
 }: {
   pages: LoadedPage[];
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
+  // WHICH planner this editor is showing. Everything else this component
+  // needs, it can ask the registry for - showHoursSettings below reads the
+  // spine's own pageSettingsForm rather than testing the cadence, and that
+  // is the right pattern for BEHAVIOUR. This is not behaviour: the export
+  // route has to fetch a specific planner out of the database, and no
+  // amount of looking at the rendered pages identifies which one. The
+  // route that loaded it knows, so the route says.
+  baseType: "WEEK" | "MONTH";
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -8762,7 +8924,7 @@ export function NativePlannerEditor({
             the pdf." Scoped to the sidebar column and the below-hourly-
             grid area on both pages, not the whole page — see
             handleResetPlannerToTemplate's own comment on why.
-            marginLeft:auto pushes this (and saveError after it) to the
+            marginLeft:auto pushes this and everything after it to the
             header's right edge, same trick saveError used on its own
             before this existed. */}
         <button
@@ -8772,18 +8934,26 @@ export function NativePlannerEditor({
           title="Debug: wipe the sidebar (Things I'm Grateful For / Reminders / Notes) and the to-do area below the hourly grid on both pages, and put back the original template"
           style={{
             marginLeft: "auto",
+            flexShrink: 0,
             padding: "4px 10px",
             fontSize: 12,
             background: "#3a3a3a",
             color: "#ddd",
             border: "1px solid #555",
-            borderRadius: 10,
+            borderRadius: 6,
             cursor: isResettingPlanner ? "default" : "pointer",
             opacity: isResettingPlanner ? 0.6 : 1,
           }}
         >
           {isResettingPlanner ? "Resetting…" : "Reset to Template"}
         </button>
+        {/* Last in the header, per request. The fragment's two children —
+            the button and its own status line — become direct flex children
+            here and pick up the header's own gap, so no wrapper is needed;
+            the status line carries minWidth:0 and an ellipsis, which is what
+            lets it take the squeeze at this edge instead of pushing the
+            button off it. */}
+        <ExportPdfButton baseType={baseType} />
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>
       <div
