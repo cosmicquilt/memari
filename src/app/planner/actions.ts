@@ -34,6 +34,8 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import {
   weekLayout,
   dayLayout,
+  frontMatterLayout,
+  backMatterLayout,
   monthLayout,
   missingPlacements,
   weekSidebarBoxes,
@@ -354,10 +356,15 @@ const WITH_PAGES = {
 /** Which arrangement a level's pages start as. A level with no entry seeds
  *  blank pages, which is exactly right for front matter and for dailies -
  *  they have no spine to lay out around. */
+// Every level now has one, so the Partial is doing nothing - but it stays,
+// because a level added later must be allowed to start with a blank page
+// rather than forcing someone to invent an arrangement for it first.
 const LEVEL_LAYOUT: Partial<Record<PageLevel, (gridRows: number) => PageLayout>> = {
-  WEEKLY: weekLayout,
+  FRONT_MATTER: frontMatterLayout,
   MONTHLY: monthLayout,
+  WEEKLY: weekLayout,
   DAILY: dayLayout,
+  BACK_MATTER: backMatterLayout,
 };
 
 /**

@@ -9350,17 +9350,19 @@ export function NativePlannerEditor({
           // heavy documents is exactly the case Apple says must NOT animate
           // - a fade on every page change is latency you have to sit through
           // every single time.
-          // A level maps to the route that edits it. A map rather than a
-          // chain of ifs, and PARTIAL on purpose: front and back matter have
-          // no route yet, and the drawer must not offer to open something
-          // that would 404.
-          const ROUTES: Partial<Record<PageLevel, string>> = {
-            WEEKLY: "/planner/next",
+          // A level maps to the route that edits it. TOTAL now - every level
+          // has one - which is what makes "every page in the planner is
+          // reachable from the timeline" true rather than aspirational. A
+          // Record rather than a Partial so a level added to the enum will
+          // not compile until it has somewhere to go.
+          const ROUTES: Record<PageLevel, string> = {
+            FRONT_MATTER: "/planner/beginning",
             MONTHLY: "/planner/month",
+            WEEKLY: "/planner/next",
             DAILY: "/planner/day",
+            BACK_MATTER: "/planner/ending",
           };
           const route = ROUTES[next];
-          if (!route) return;
           window.location.assign(nextVariant ? `${route}?variant=${encodeURIComponent(nextVariant)}` : route);
         }}
       />

@@ -283,6 +283,89 @@ export function weekLayout(gridRows: number): PageLayout {
 }
 
 /**
+ * The matter: the pages printed once, at the front and the back.
+ *
+ * NO LOCKED SPINE, and that is the whole character of them. Every other level
+ * is built around a block that owns the page - the hours, the calendar - and
+ * the free zones sit in what is left. Matter has none, so the page is an
+ * empty lattice and a module can go anywhere on it. It is the easiest kind of
+ * page in the app and the most open.
+ *
+ * Which also means the template here is a STARTING POINT rather than a
+ * structure: nothing is locked, so every box can be moved, resized, retitled
+ * or deleted. It exists because a blank page is a worse first impression than
+ * a page with something sensible on it - the same reason the weekly spread
+ * seeds its sidebar rather than leaving three empty columns.
+ *
+ * Built from labeled-box alone. "Blank or ruled" needs no new module: it IS
+ * labeled-box, with `ruled` deciding which. A page-sized one with no heading
+ * is a notes page.
+ */
+function matterLayout(
+  key: string,
+  level: PageLevel,
+  title: string,
+  boxes: Array<[heading: string, rowStart: number, rowSpan: number, ruled: boolean]>
+): PageLayout {
+  return {
+    key,
+    level,
+    title,
+    groups: [
+      {
+        // One decision for the whole page: if anything is already here, the
+        // template does not push its own boxes in beside it. Matter is the
+        // level people will rearrange most, and re-seeding over that would
+        // be the worst place in the app to do it.
+        name: "matter boxes",
+        present: { by: "labeled-box-column", columnStart: 0 },
+        placements: boxes.map(([heading, rowStart, rowSpan, ruled]) => ({
+          slug: "labeled-box",
+          page: 0 as const,
+          columnStart: 0,
+          // Full width. A matter page has no sidebar to leave room for.
+          columnSpan: 24,
+          rowStart,
+          rowSpan,
+          locked: false,
+          propValues: { heading, ruled, templateHeading: heading },
+        })),
+      },
+    ],
+  };
+}
+
+/**
+ * The front matter: the first page of the book.
+ *
+ * Whose book it is, what the term is for, and how its owner will know it
+ * worked. Three boxes rather than one blank page, because the question a
+ * planner opens with is the reason somebody bought it.
+ */
+export function frontMatterLayout(gridRows: number): PageLayout {
+  const tail = Math.max(MIN_ROW_SPAN, gridRows - 22);
+  return matterLayout("front-matter-default", "FRONT_MATTER", "Beginning", [
+    ["This Planner Belongs To", 0, 4, false],
+    ["What I Want From These Months", 4, 9, true],
+    ["How I Will Know It Worked", 13, 9, true],
+    ["Anything Else", 22, tail, true],
+  ]);
+}
+
+/**
+ * The back matter: the last page.
+ *
+ * One ruled page. Every planner ends with somewhere to write that is not
+ * about any particular day, and a ruled full-page box is exactly that - the
+ * thing the memory calls "blank or ruled needs no new module".
+ */
+export function backMatterLayout(gridRows: number): PageLayout {
+  return matterLayout("back-matter-default", "BACK_MATTER", "Ending", [
+    ["Notes", 0, gridRows, true],
+  ]);
+}
+
+/**
  * The daily page.
  *
  * ONE page, not a spread. A week and a month are each a thing you look at
