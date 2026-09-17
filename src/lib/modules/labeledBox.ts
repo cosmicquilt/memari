@@ -9,9 +9,26 @@
 // and the header band is ~13.7pt tall — same convention as the
 // day-header tabs in the hourly grid.
 
+/**
+ * How the body of the box is ruled.
+ *
+ * Widened from a boolean, which could only say lined-or-not. A dot grid is
+ * the third thing people actually want, and the page already has one - see
+ * `rule === "dotted"` below, where the dots are the page's OWN lattice
+ * showing through rather than a second grid invented for the box.
+ */
+export type BoxRule = "none" | "lined" | "dotted";
+
 export type LabeledBoxConfig = {
   heading: string;
-  ruled: boolean;
+  /** "none" | "lined" | "dotted". */
+  rule?: BoxRule;
+  /** THE OLD BOOLEAN. Read only when `rule` is absent, so a box saved before
+   *  this existed still draws its lines. Nothing writes it any more; the
+   *  editor writes `rule`. Same shape of change as quote-block's text->body
+   *  rename, and kept for the same reason: a stored value nobody migrated
+   *  must not silently become something else. */
+  ruled?: boolean;
 };
 
 export type RenderedElement = {
@@ -231,10 +248,14 @@ export function renderLabeledBox(
     });
   }
 
-  // Ruled body lines, if explicitly requested — default is blank, no
-  // horizontal lines inside the box (matches the reference: the sidebar
-  // boxes are blank writing space, not a ruled notebook).
-  if (config.ruled) {
+  // Ruled body, if explicitly requested — default is blank, no marks inside
+  // the box (matches the reference: the sidebar boxes are blank writing
+  // space, not a ruled notebook).
+  //
+  // `rule` if it is there, the old `ruled` boolean if it is not. A box saved
+  // before the three-state setting existed keeps drawing exactly what it drew.
+  const rule: BoxRule = config.rule ?? (config.ruled ? "lined" : "none");
+  if (rule !== "none") {
     // Ruled ON the dot lattice, not at a fixed offset below the heading.
     //
     // The lines used to start one spacing below the header band, and the
@@ -262,20 +283,57 @@ export function renderLabeledBox(
     // Numbered by which lattice row it is, not by which line it happens to
     // be - see this file's own note on semantic ids. A box whose heading
     // grows keeps the ids of the rules that did not move.
+    // A DOT is the rule broken into pieces on the lattice's own columns, not
+    // a dashed line at some invented spacing: the page is a 1/4in dot grid,
+    // and a dotted box should be that grid showing through. Three times the
+    // rule's own weight so a dot reads as a dot rather than as a speck - a
+    // 0.3pt square at 300dpi is barely over one printed pixel.
+    const dotSize = ruledLineWidth * 3;
+    const columnPitch = pitch;
+    const originX = lattice ? geometry.x - lattice.insetPx : geometry.x;
+    const left = geometry.x + 8;
+    const right = geometry.x + geometry.width - 8;
+
     for (let row = 0; ; row++) {
       const y = first + row * pitch;
       if (y > bottom - pitch / 4) break;
-      elements.push({
-        id: id(`rule${Math.round((y - origin) / pitch)}`),
-        type: "figure",
-        subType: "rect",
-        x: geometry.x + 8,
-        y: y - ruledLineWidth / 2,
-        width: geometry.width - 16,
-        height: ruledLineWidth,
-        fill: NEAR_BLACK,
-        stroke: "none",
-      });
+      // Numbered by which lattice row it is, not by which line it happens to
+      // be - see this file's own note on semantic ids. A box whose heading
+      // grows keeps the ids of the rules that did not move.
+      const rowIndex = Math.round((y - origin) / pitch);
+      if (rule === "lined") {
+        elements.push({
+          id: id(`rule${rowIndex}`),
+          type: "figure",
+          subType: "rect",
+          x: left,
+          y: y - ruledLineWidth / 2,
+          width: geometry.width - 16,
+          height: ruledLineWidth,
+          fill: NEAR_BLACK,
+          stroke: "none",
+        });
+        continue;
+      }
+      // Dotted: one dot per lattice COLUMN that falls inside the box, so
+      // the dots of two boxes side by side line up with each other and with
+      // every other mark on the page.
+      const firstColumn = Math.ceil((left - originX) / columnPitch);
+      for (let column = firstColumn; ; column++) {
+        const x = originX + column * columnPitch;
+        if (x > right) break;
+        elements.push({
+          id: id(`dot${rowIndex}-${column}`),
+          type: "figure",
+          subType: "rect",
+          x: x - dotSize / 2,
+          y: y - dotSize / 2,
+          width: dotSize,
+          height: dotSize,
+          fill: NEAR_BLACK,
+          stroke: "none",
+        });
+      }
     }
   }
 

@@ -15,6 +15,8 @@
 
 import type { CSSProperties } from "react";
 import type { ModuleField } from "@/lib/moduleRegistry";
+import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
+import { toSvg } from "@/lib/proofSvg";
 
 const ACCENT = "#4a5cff";
 
@@ -40,6 +42,70 @@ const inputStyle: CSSProperties = {
 };
 
 const rowStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
+
+/**
+ * One glyph, drawn rather than named.
+ *
+ * DRAWN BY THE SAME CODE THAT PRINTS IT: glyphElement is the one description
+ * of what a droplet is, and proofSvg serialises it exactly as the proof
+ * sheets and the PDF exporter do. A hand-drawn icon for the picker would be a
+ * second description of the shape, and the first time one changed they would
+ * disagree.
+ *
+ * On PAPER, not on the dark panel. The glyph is drawn in the real ink colour
+ * at the real hairline weight, so the swatch shows what comes off the press
+ * rather than a recoloured version of it - and it needs no recolouring, which
+ * would have meant rewriting the markup the renderer emitted.
+ */
+function GlyphSwatch({
+  shape,
+  label,
+  selected,
+  onPick,
+}: {
+  shape: GlyphShape;
+  label: string;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  // Drawn in a 100-unit box and shown at 34px. The viewBox does the scaling,
+  // so the hairline stays proportionally what it is on the page.
+  const markup = toSvg(
+    glyphElement({ id: `swatch-${shape}`, x: 18, y: 18, sizePx: 64, shape, opacity: 1 }) as never
+  );
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onPick}
+      title={label}
+      aria-label={label}
+      style={{
+        width: 34,
+        height: 34,
+        padding: 0,
+        border: "none",
+        borderRadius: 5,
+        background: "#fdfcf9",
+        outline: selected ? `2px solid ${ACCENT}` : "none",
+        outlineOffset: 2,
+        opacity: selected ? 1 : 0.65,
+        cursor: "pointer",
+        transition: "opacity 150ms ease-out",
+      }}
+    >
+      <svg
+        viewBox="0 0 100 100"
+        width="34"
+        height="34"
+        style={{ display: "block", pointerEvents: "none" }}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: markup }}
+      />
+    </button>
+  );
+}
 
 export function ModuleFieldsForm({
   fields,
@@ -168,6 +234,29 @@ export function ModuleFieldsForm({
                 ))}
               </select>
             </label>
+          );
+        }
+
+        if (field.kind === "icon") {
+          return (
+            <div key={field.key} style={rowStyle}>
+              <span style={labelStyle}>{field.label}</span>
+              <div
+                role="radiogroup"
+                aria-label={field.label}
+                style={{ display: "flex", flexWrap: "wrap", gap: 6 }}
+              >
+                {field.options.map((option) => (
+                  <GlyphSwatch
+                    key={option.value}
+                    shape={option.value as GlyphShape}
+                    label={option.label}
+                    selected={values[field.key] === option.value}
+                    onPick={() => onChange(field.key, option.value)}
+                  />
+                ))}
+              </div>
+            </div>
           );
         }
 

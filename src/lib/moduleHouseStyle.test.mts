@@ -420,6 +420,72 @@ for (const slug of REGISTERED_SLUGS) {
   }
 }
 
+// --- the three body rules of a labeled box ----------------------------
+//
+// The loop above renders every module with its PREVIEW props, and a labeled
+// box previews blank - so "lined" and "dotted" are drawn by nothing it does.
+// They are the settings a person actually reaches for, and dotted is new, so
+// they get their own pass.
+//
+// A DOT MUST LAND ON THE LATTICE, exactly as a rule must: the page is a 1/4in
+// dot grid and a dotted box is meant to be that grid showing through. Dots a
+// little off it would read as a second, wrong grid printed over the first -
+// which is worse than no dots, and invisible on screen until it is on paper.
+for (const rule of ["none", "lined", "dotted"] as const) {
+  const elements = render("labeled-box", 12, 10, { heading: "Notes", rule });
+  const marks = elements.filter((e) => typeof e.id === "string" && /-(rule|dot)\d/.test(String(e.id)));
+  checked++;
+
+  if (rule === "none") {
+    if (marks.length > 0) fail(`labeled-box rule "none": drew ${marks.length} body mark(s)`);
+    continue;
+  }
+  if (marks.length === 0) {
+    fail(`labeled-box rule "${rule}": drew no body marks at all`);
+    continue;
+  }
+
+  for (const mark of marks) {
+    const midY = (mark.y ?? 0) + (mark.height ?? 0) / 2;
+    const rowsOff = Math.abs(midY - (PAGE.marginPx + Math.round((midY - PAGE.marginPx) / PITCH) * PITCH));
+    if (rowsOff > 0.51) {
+      fail(`labeled-box rule "${rule}": ${mark.id} sits ${rowsOff.toFixed(1)}px off a lattice ROW`);
+      break;
+    }
+    // A dot is on a lattice INTERSECTION - both axes - where a line spans
+    // the box and only its row matters.
+    if (rule === "dotted") {
+      const midX = (mark.x ?? 0) + (mark.width ?? 0) / 2;
+      const colsOff = Math.abs(
+        midX - (PAGE.marginPx + Math.round((midX - PAGE.marginPx) / PITCH) * PITCH)
+      );
+      if (colsOff > 0.51) {
+        fail(`labeled-box dotted: ${mark.id} sits ${colsOff.toFixed(1)}px off a lattice COLUMN`);
+        break;
+      }
+    }
+  }
+
+  // A dotted box is a GRID, not one row of dots: several rows and several
+  // columns, or the setting is drawing something else.
+  if (rule === "dotted") {
+    const rows = new Set(marks.map((m) => Math.round(((m.y ?? 0) + (m.height ?? 0) / 2) / PITCH)));
+    const columns = new Set(marks.map((m) => Math.round(((m.x ?? 0) + (m.width ?? 0) / 2) / PITCH)));
+    if (rows.size < 2 || columns.size < 2) {
+      fail(`labeled-box dotted: ${rows.size} row(s) x ${columns.size} column(s) is not a grid`);
+    }
+  }
+}
+
+// The OLD boolean still draws. A box saved before `rule` existed holds
+// `ruled: true` and nothing has migrated it; if this stops working, those
+// boxes silently lose their lines.
+const legacy = render("labeled-box", 12, 10, { heading: "Notes", ruled: true });
+if (legacy.filter((e) => /-rule\d/.test(String(e.id))).length === 0) {
+  fail('labeled-box: the legacy `ruled: true` boolean no longer draws lines');
+}
+checked++;
+
 if (failures > 0) {
   console.error(`\nHouse style violated in ${failures} case(s).`);
   process.exit(1);

@@ -132,6 +132,12 @@ export type ModuleField =
   // A closed set, where free text would just be a way to misspell one of
   // the options.
   | { kind: "select"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // A closed set of SHAPES. The same values a select would carry, but the
+  // control draws each one instead of naming it: "Droplets" is a word for a
+  // thing you would recognise instantly and cannot picture from the word.
+  // A separate kind rather than a flag on select, because which control to
+  // use IS what a field kind says.
+  | { kind: "icon"; key: string; label: string; options: Array<{ value: string; label: string }> }
   // Multi-line text kept as ONE string, newlines and all - a passage,
   // where `lines` would turn a prayer into an array of its lines and lose
   // the fact that it is a single piece of writing. The two look identical
@@ -551,6 +557,11 @@ const PRIMITIVES = {
             "type": "string",
             "default": "Notes"
           },
+          "rule": {
+            "type": "string",
+            "enum": ["none", "lined", "dotted"],
+            "default": "none"
+          },
           "ruled": {
             "type": "boolean",
             "default": false
@@ -574,7 +585,16 @@ const PRIMITIVES = {
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
-      { kind: "boolean", key: "ruled", label: "Ruled (lined) body" },
+      {
+        kind: "select",
+        key: "rule",
+        label: "Body",
+        options: [
+          { value: "none", label: "Blank" },
+          { value: "lined", label: "Lined" },
+          { value: "dotted", label: "Dotted" },
+        ],
+      },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily, lattice),
@@ -1179,7 +1199,7 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
       {
-        kind: "select",
+        kind: "icon",
         key: "icon",
         label: "Icon",
         options: [
