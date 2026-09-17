@@ -81,7 +81,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -2974,7 +2974,14 @@ function SectionAddButton({
 // "just translate the dragged element itself in place" technique
 // rather than dnd-kit's own DragOverlay, for the same documented reason
 // that technique exists at all.
-function PaletteCard({
+/**
+ * MEMOISED. The palette is ~127 of these and a drag re-rendered every one of
+ * them on every pointermove, because NativePlannerEditor calls setActiveDelta
+ * per move and nothing between stopped the wave. Its props are a slug, a
+ * label, a registry constant, the page grid and two drag flags - all stable
+ * while a canvas drag is happening, none of which that drag can change.
+ */
+const PaletteCard = memo(function PaletteCard({
   slug,
   label,
   previewProps,
@@ -3130,7 +3137,7 @@ function PaletteCard({
       </div>
     </div>
   );
-}
+});
 
 const PALETTE_SIDEBAR_WIDTH_PX = 260;
 // Card preview width — the panel's own width less its padding, the
@@ -3540,7 +3547,16 @@ function ModulePalette({
                         pageGrid={pageGrid}
                         fontFamily={fontFamily}
                         isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
-                        dragOffset={activeDelta}
+                        // THE LIVE DELTA GOES TO THE ONE CARD BEING DRAGGED,
+                        // and a frozen zero to the other hundred and twenty
+                        // six. A card only reads this when it is the one
+                        // moving, so handing it to all of them changed
+                        // nothing on screen and changed one prop identity on
+                        // every pointermove - which is all it takes to defeat
+                        // the memo below and re-render the whole palette.
+                        dragOffset={
+                          activeId === `${PALETTE_ID_PREFIX}${m.slug}` ? activeDelta : ZERO_OFFSET
+                        }
                       />
                     ))}
                   </div>

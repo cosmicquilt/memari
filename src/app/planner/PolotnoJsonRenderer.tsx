@@ -18,7 +18,7 @@
 // to that container's own top-left corner, the same relationship
 // Polotno's group/children model already has.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { widenHairline, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
 
@@ -576,7 +576,29 @@ function flattenElements(elements: RenderedPolotnoElement[]): RenderedPolotnoEle
   return out;
 }
 
-export function PolotnoJsonRenderer({
+/**
+ * MEMOISED, and it is the palette that makes it matter.
+ *
+ * The editor holds ~127 palette cards, each drawing its module through this
+ * component, and NativePlannerEditor calls setActiveDelta on every
+ * pointermove of a drag. Nothing between that state and these cards was
+ * memoised, so a drag re-rendered every one of them. Counted on a real book
+ * with a real gesture: **293 invocations of this component per pointermove**,
+ * of which eight were modules on the canvas and the rest were palette
+ * previews that had not changed and could not change.
+ *
+ * A palette card already memoises the elements it hands down, and its other
+ * props here are numbers and a literal null, so the whole subtree is skipped
+ * once identity is checked. The canvas's own modules still re-render, because
+ * their `suppressOuterBorderSize` is a fresh object every frame and they
+ * genuinely are changing - eight of those is the work a drag should cost.
+ *
+ * This does not change what anything draws. Skipping a render whose props are
+ * identical produces the same tree, and the arrival animations compare a
+ * previous mark set to the current one - with no render there is no change to
+ * animate.
+ */
+function PolotnoJsonRendererImpl({
   elements,
   originX,
   originY,
@@ -889,3 +911,5 @@ export function PolotnoJsonRenderer({
     </>
   );
 }
+
+export const PolotnoJsonRenderer = memo(PolotnoJsonRendererImpl);
