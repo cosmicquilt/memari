@@ -156,6 +156,7 @@ import {
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { PageLevel } from "@/lib/pageLevels";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT } from "./TimelineDrawer";
+import { ModuleEditor, type EditingModule } from "./ModuleEditor";
 import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -748,6 +749,7 @@ function NativeModule({
   scale,
   justAdded,
   onDelete,
+  onEditModule,
   isHovered,
   onHoverStart,
   onHoverEnd,
@@ -870,6 +872,9 @@ function NativeModule({
   // see handleDeleteModule's own comment (main component) for what
   // happens next (gravity-repack the rest of its stack).
   onDelete: (instanceId: string) => void;
+  /** Open this module in the expand-to-page editor. Absent for a module with
+   *  nothing to set, which is why the pencil asks `fields` rather than this. */
+  onEditModule?: () => void;
   // Whether *this* module is the one hoveredInstanceId (main component)
   // currently points at — lifted up there rather than tracked as local
   // state here, specifically so a delete can reassign it manually after
@@ -966,6 +971,11 @@ function NativeModule({
   // shared branch would just be a pile of slug-conditionals inside
   // otherwise-identical code.
   const [isEditingHabits, setIsEditingHabits] = useState(false);
+  // The edit pencil is invisible until the pointer is over its module, which
+  // is right for a per-item control on a page of eight of them - but opacity
+  // 0 does not remove it from the tab order, so a keyboard user was landing
+  // focus on something they could not see. It shows for focus as well.
+  const [isPencilFocused, setIsPencilFocused] = useState(false);
   const [draftHabitsText, setDraftHabitsText] = useState((habits ?? []).join("\n"));
   const commitHabits = useCallback(
     (value: string) => {
@@ -1385,15 +1395,25 @@ function NativeModule({
           are one per row, spread down the full height of the grid, so
           there's no single small region that corresponds to "the
           editable content" the way a labeled-box's header is. */}
-      {!locked && slug === "habit-tracker" && !isEditingHabits && (
+      {/* EVERY module that has anything to set gets this, not the two that
+          somebody hand-wrote an editor for. `fields` is the editor's data
+          model and always was - see ModuleEditor - so asking whether a
+          module HAS fields is the whole condition, and a module added
+          tomorrow arrives with an editor rather than needing one written.
+
+          It opens the module at a size you can see it at, which is what was
+          asked for: "expand the module to page size and create a container
+          around it to further edit it". */}
+      {!locked && (moduleDefinition(slug)?.fields?.length ?? 0) > 0 && (
         <button
           type="button"
-          title="Edit habit names"
+          title={`Edit ${moduleDefinition(slug)?.label ?? slug}`}
           onPointerDown={(event) => event.stopPropagation()}
+          onFocus={() => setIsPencilFocused(true)}
+          onBlur={() => setIsPencilFocused(false)}
           onClick={(event) => {
             event.stopPropagation();
-            setDraftHabitsText((habits ?? []).join("\n"));
-            setIsEditingHabits(true);
+            onEditModule?.();
           }}
           style={{
             position: "absolute",
@@ -1412,8 +1432,8 @@ function NativeModule({
             lineHeight: 1,
             padding: 0,
             cursor: "pointer",
-            opacity: isHovered ? 1 : 0,
-            pointerEvents: isHovered ? "auto" : "none",
+            opacity: isHovered || isPencilFocused ? 1 : 0,
+            pointerEvents: isHovered || isPencilFocused ? "auto" : "none",
             transition: "opacity 0.12s ease",
             zIndex: 6,
           }}
@@ -1472,6 +1492,7 @@ function NativeModule({
 }
 
 function NativePage({
+  onEditModule: onEditModuleRequested,
   page,
   instanceIds,
   placements,
@@ -1582,6 +1603,9 @@ function NativePage({
   // now, so there is only one list to point at.
   onOpenPaletteModules: () => void;
   onDeleteModule: (instanceId: string) => void;
+  /** Open a module in the expand-to-page editor. Owned by the editor itself,
+   *  because the overlay it opens covers the whole viewport. */
+  onEditModule: (editing: EditingModule) => void;
   onUpdateHeading: (instanceId: string, newHeading: string) => void;
   onUpdateHabits: (instanceId: string, habits: string[]) => void;
   // See NativeModule's own isHovered comment — lifted to the main
@@ -1862,6 +1886,17 @@ function NativePage({
             scale={scale}
             justAdded={justAddedIds?.has(id) ?? false}
             onDelete={onDeleteModule}
+            onEditModule={() =>
+              onEditModuleRequested({
+                instanceId: id,
+                slug: info.slug,
+                propValues: (info.propValues ?? {}) as Record<string, unknown>,
+                columnStart: placement.columnStart,
+                rowStart: placement.rowStart,
+                columnSpan: placement.columnSpan,
+                rowSpan: placement.rowSpan,
+              })
+            }
             isHovered={hoveredInstanceId === id}
             onHoverStart={onHoverStart}
             onHoverEnd={onHoverEnd}
@@ -4326,6 +4361,11 @@ export function NativePlannerEditor({
   // drag, which would re-scale the spread on every frame. See
   // TimelineDrawer's header on why it overlays rather than pushes.
   const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
+  // Which module is open in the expand-to-page editor, if any. Held here
+  // rather than in the page or the module, because the editor covers the
+  // whole viewport and only one may be open at a time.
+  const [editingModule, setEditingModule] = useState<EditingModule | null>(null);
+
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
   // Does this cadence's spine own the Hours form? A month page's does not,
   // and it was being offered a full set of hourly controls with no hourly
@@ -8981,6 +9021,44 @@ export function NativePlannerEditor({
   // position for the length of the settle, and needs to keep the
   // elevation and the layer promotion it had during the drag until it
   // arrives.
+  /**
+   * Put a module's saved settings back into the page, without reloading.
+   *
+   * The server has already committed them; this redraws the one module that
+   * changed. A reload would work and would cost the scroll position, the
+   * zoom, and the drawer's detent - everything about where you were.
+   *
+   * Re-RENDERED, not patched into the old elements: the drawing is a
+   * function of the props, and a habit tracker given a new row has different
+   * marks rather than a changed one.
+   */
+  const patchModuleProps = useCallback(
+    (instanceId: string, propValues: Record<string, unknown>) => {
+      setModuleLookup((prev) => {
+        const current = prev.get(instanceId);
+        const placement = placements[instanceId];
+        const page = pages.find((p) => p.pageId === current?.pageId);
+        if (!current || !placement || !page) return prev;
+        return new Map(prev).set(instanceId, {
+          ...current,
+          propValues,
+          elements: renderModuleInstance(
+            {
+              id: instanceId,
+              locked: current.locked,
+              ...placement,
+              propValues,
+              moduleType: { slug: current.slug },
+            },
+            page.pageGrid,
+            fontFamily
+          ),
+        });
+      });
+    },
+    [pages, placements, fontFamily]
+  );
+
   const settlingIds = useMemo(() => {
     if (!settling) return null;
     const ids = new Set(Object.keys(settling.offsets));
@@ -9288,6 +9366,7 @@ export function NativePlannerEditor({
                     key={page.pageId}
                     page={page}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
+                    onEditModule={setEditingModule}
                     placements={liveDisplayPlacements}
                     moduleLookup={moduleLookup}
                     activeId={activeId}
@@ -9350,6 +9429,15 @@ export function NativePlannerEditor({
       </div>
       {/* The book. Outside the scrolling canvas container, because it is
           fixed to the viewport rather than to the page being edited. */}
+      {editingModule && (
+        <ModuleEditor
+          editing={editingModule}
+          pageGrid={pages[0].pageGrid}
+          fontFamily={fontFamily}
+          onClose={() => setEditingModule(null)}
+          onSaved={(instanceId, propValues) => patchModuleProps(instanceId, propValues)}
+        />
+      )}
       <TimelineDrawer
         pages={timeline}
         activeLevel={level}
