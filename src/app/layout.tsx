@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Newsreader, Hanken_Grotesk } from "next/font/google";
+import { Geist, Geist_Mono, Newsreader, Hanken_Grotesk, Almarai } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
@@ -49,6 +49,24 @@ const hankenGrotesk = Hanken_Grotesk({
   weight: ["300"],
 });
 
+// THE APP'S OWN FONT - the chrome, and only the chrome.
+//
+// Everything on the canvas names its family explicitly in its element data
+// (Newsreader, or Hanken Grotesk when a planner is set to sans - see
+// src/lib/theme.ts), because those families are what gets EMBEDDED IN THE PDF
+// and has to match what prints. Nothing there inherits from the page, so
+// changing the interface font cannot reach a module, a preview or an export.
+//
+// Weights 300/400/700/800 are all Almarai has. The chrome asks for 600 in
+// nine places; CSS resolves a missing 600 upward, so those render at 700 and
+// read a little bolder than they did. That is the whole visible cost of the
+// switch, and it is worth knowing rather than discovering.
+const almarai = Almarai({
+  variable: "--font-almarai",
+  subsets: ["latin"],
+  weight: ["300", "400", "700", "800"],
+});
+
 export const metadata: Metadata = {
   title: "Memari Editor",
   description: "Build and print your own planner.",
@@ -59,7 +77,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <ClerkProvider>
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} h-full antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} ${almarai.variable} h-full antialiased`}
       >
         <body className="min-h-full flex flex-col">{children}</body>
       </html>
