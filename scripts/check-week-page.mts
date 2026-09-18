@@ -65,6 +65,7 @@ type El = {
   y?: number;
   width?: number;
   height?: number;
+  fill?: string;
   strokeWidth?: number;
   children?: El[];
 };
@@ -198,11 +199,26 @@ for (const page of levelPages) {
         worstEscape = Math.max(worstEscape, over);
       }
 
-      // 4. Full-width rules sit on the pitch - on a dot row or exactly
+      // 4. Horizontal RULES sit on the pitch - on a dot row or exactly
       //    between two. See moduleHouseStyle.test.mts's onPitch.
+      //
+      //    A rule is what every renderer draws one as: a FILLED, flat rect
+      //    with no outline, at least one cell across. This used to be "any
+      //    flat rect at least half the module's width", which was wrong
+      //    both ways (2026-09-18):
+      //      - it took the daily page's day-name box for a rule - an OUTLINE,
+      //        not a fill, flat only because one day spans the whole grid -
+      //        and failed it for a centre 2.96px (0.71pt) off a half line.
+      //        The same box on every weekly day, a third as wide, was never
+      //        looked at, and nothing about it is wrong: its top is the box
+      //        inset below a dot row, its height the reference header's.
+      //      - it never looked at the weekly hour rules at all, each being
+      //        one day wide and so under half the grid.
       if (e.type !== "figure" || e.subType !== "rect" || e === box) continue;
+      const outline = (e.strokeWidth ?? 0) > 0 && (!e.fill || e.fill === "none" || e.fill === "transparent");
+      if (outline) continue;
       if (h >= w / 4) continue;
-      if (w < (right - left) * 0.5) continue;
+      if (w < PITCH) continue;
       // Modules written before the shared frame sit at a known offset -
       // the same list moduleHouseStyle.test.mts carries, and for the same
       // reason: the debt is visible rather than silently skipped.
