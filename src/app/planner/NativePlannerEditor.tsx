@@ -9377,7 +9377,7 @@ export function NativePlannerEditor({
           {paletteOpen ? "✕" : "☰"}
         </button>
         <strong>
-          Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>EDITOR</span>
+          Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
         </strong>
         {/* Icon only, per request. Placed BEFORE the Reset button for
             the same reason everything else here is: that one owns
