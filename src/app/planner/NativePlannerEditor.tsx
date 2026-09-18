@@ -81,7 +81,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -156,7 +156,8 @@ import {
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { PageLevel } from "@/lib/pageLevels";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
-import { usePrefersReducedMotion } from "./useMediaQuery";
+import { usePrefersReducedMotion, useIsomorphicLayoutEffect } from "./useMediaQuery";
+import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
 import { useAsyncAction } from "./useAsyncAction";
 
@@ -3046,6 +3047,7 @@ const PaletteCard = memo(function PaletteCard({
   fontFamily,
   isDragging,
   dragOffset,
+  drawPreview,
 }: {
   slug: string;
   label: string;
@@ -3054,6 +3056,8 @@ const PaletteCard = memo(function PaletteCard({
   fontFamily: string;
   isDragging: boolean;
   dragOffset: { x: number; y: number };
+  /** False until the palette's drawings are wanted - see drawCards. */
+  drawPreview: boolean;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `${PALETTE_ID_PREFIX}${slug}` });
   // The card shows the module as it would actually be drawn, at its
@@ -3069,24 +3073,32 @@ const PaletteCard = memo(function PaletteCard({
   // then scaled it up 2.5x to fill the card - reported as "the preview
   // looks crazy big, two squares and big text inside". The unit is the
   // sidebar, not the cell.
+  // The box's size is always known - it is cheap, and it is what keeps the
+  // card the same height before and after its drawing arrives. The drawing
+  // is the expensive part, and waits for drawPreview.
   const preview = useMemo(() => {
     const previewColumns = dayUnitColumns(pageGrid);
     const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns, previewProps);
     const placement = { columnStart: 0, rowStart: 0, columnSpan: previewColumns, rowSpan };
-    const rect = gridCellToPixels(pageGrid, placement);
-    const elements = renderModuleInstance(
-      {
-        id: `palette-preview-${slug}`,
-        locked: false,
-        ...placement,
-        propValues: previewProps,
-        moduleType: { slug },
-      },
-      pageGrid,
-      fontFamily
-    );
-    return { rect, elements };
-  }, [slug, previewProps, pageGrid, fontFamily]);
+    return { placement, rect: gridCellToPixels(pageGrid, placement) };
+  }, [slug, previewProps, pageGrid]);
+  const elements = useMemo(
+    () =>
+      drawPreview
+        ? renderModuleInstance(
+            {
+              id: `palette-preview-${slug}`,
+              locked: false,
+              ...preview.placement,
+              propValues: previewProps,
+              moduleType: { slug },
+            },
+            pageGrid,
+            fontFamily
+          )
+        : null,
+    [drawPreview, preview, slug, previewProps, pageGrid, fontFamily]
+  );
 
   // Scaled to the card's own width. The rendered module is ~500 print
   // pixels across at one column, so this is a large reduction - fine
@@ -3183,13 +3195,15 @@ const PaletteCard = memo(function PaletteCard({
         }}
       >
         <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-          <PolotnoJsonRenderer
-            elements={preview.elements}
-            originX={preview.rect.x}
-            originY={preview.rect.y}
-            scale={scale}
-            suppressOuterBorderSize={null}
-          />
+          {elements && (
+            <PolotnoJsonRenderer
+              elements={elements}
+              originX={preview.rect.x}
+              originY={preview.rect.y}
+              scale={scale}
+              suppressOuterBorderSize={null}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -3287,6 +3301,33 @@ function ModulePalette({
   // the panel itself opens (the title wraps once 260px of width is taken).
   // Observed rather than passed down, so the two cannot disagree.
   const panelHeaderHeightPx = useHeaderHeightPx();
+
+  // THE CARDS' DRAWINGS WAIT until the page has settled, or until the panel
+  // opens, whichever is first. The panel starts closed, parked off-screen,
+  // and its 122 cards each draw a real module: measured on the weekly
+  // spread they were 1.21 MB of a 1.92 MB page and 4,919 of its 6,150 DOM
+  // nodes - all rendered on the server, downloaded, and hydrated before the
+  // timeline's page previews could draw at all. With them deferred, the
+  // production build's wait for those previews went from ~250ms to ~85ms
+  // warm and ~850ms to ~300ms cold.
+  //
+  // Idle rather than on first open, so opening the panel is still instant:
+  // the drawings are made in the background once the page is quiet, in a
+  // transition that input can interrupt. Opening it sooner than that just
+  // makes them now - adjusted during render, not in an effect, so the
+  // opening frame already has them.
+  const [drawCards, setDrawCards] = useState(false);
+  if (open && !drawCards) setDrawCards(true);
+  useEffect(() => {
+    if (drawCards) return;
+    const draw = () => startTransition(() => setDrawCards(true));
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(draw, { timeout: 2000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(draw, 300);
+    return () => window.clearTimeout(handle);
+  }, [drawCards]);
 
   const [modulesOpen, setModulesOpen] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
@@ -3614,6 +3655,7 @@ function ModulePalette({
                         dragOffset={
                           activeId === `${PALETTE_ID_PREFIX}${m.slug}` ? activeDelta : ZERO_OFFSET
                         }
+                        drawPreview={drawCards}
                       />
                     ))}
                   </div>
@@ -4401,6 +4443,7 @@ export function NativePlannerEditor({
   variantKey,
   pageSettings: initialPageSettings,
   level,
+  initialViewport,
 }: {
   pages: LoadedPage[];
   // Every page of the BOOK, for the timeline drawer - not just this level's.
@@ -4421,6 +4464,10 @@ export function NativePlannerEditor({
   // and no amount of looking at the rendered ones identifies which set. The
   // route that loaded them knows, so the route says.
   level: PageLevel;
+  /** The window size the editor last measured, read by the server from its
+   *  cookie, so the first frame renders at the zoom it will have. Null on a
+   *  first visit. See src/lib/viewportCookie.ts. */
+  initialViewport?: ViewportSize | null;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -5338,10 +5385,28 @@ export function NativePlannerEditor({
   // ever read columnStart/columnSpan out of a StackBottom, never
   // bottomId's own identity) pick these up, via the plain array-concat
   // at their own two render sites below.
-  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
-  useEffect(() => {
-    const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+  // Seeded with the size the SERVER rendered for - the viewport cookie - so
+  // the first client render matches the server's HTML exactly, and the zoom
+  // is right from the first frame whenever the window is the one last
+  // measured. 1200 x 800 is only the guess for a first visit, and on a first
+  // visit the canvas is hidden until the measurement below lands.
+  const [viewportSize, setViewportSize] = useState<ViewportSize>(initialViewport ?? { width: 1200, height: 800 });
+  // A LAYOUT effect, not a plain one: a correction made here commits before
+  // the browser paints, so the canvas is never shown at the server's size
+  // and then again at the real one. It used to be useEffect, which painted
+  // the server's 26% first and then jumped to 28%.
+  useIsomorphicLayoutEffect(() => {
+    const update = () => {
+      const measured = { width: window.innerWidth, height: window.innerHeight };
+      setViewportSize((current) =>
+        current.width === measured.width && current.height === measured.height ? current : measured
+      );
+      writeViewportCookie(measured);
+    };
     update();
+    // In the same layout pass as the correction above, so the first frame
+    // the canvas is visible in is already at its final zoom.
+    document.documentElement.removeAttribute(VIEWPORT_UNMEASURED_ATTRIBUTE);
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
@@ -9262,6 +9327,9 @@ export function NativePlannerEditor({
         // scrolling, only the browser's automatic-compensation behavior
         // — nothing else here relies on that behavior to begin with.
         style={{ flex: 1, minHeight: 0, overflow: "auto", overflowAnchor: "none", position: "relative" }}
+        // Hidden by globals.css while the page was rendered for a different
+        // window size than this one - see src/lib/viewportCookie.ts.
+        data-memari-canvas=""
       >
         {/* marginLeft/marginTop: centeringOffsetX/Y(scale), not CSS
             margin:auto or flex+justifyContent:center — both of those

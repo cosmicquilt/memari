@@ -53,3 +53,61 @@ body {
   from { opacity: 1; }
   to { opacity: 0; }
 }
+
+/* The canvas, while the page on screen was rendered for another window
+   size - a first visit, or a window resized since the last one. The editor
+   removes the attribute in the same layout pass that applies the measured
+   zoom, so the canvas is first seen at its final size, never at the
+   server's guess and then jumping. See src/lib/viewportCookie.ts. */
+html[data-memari-viewport-unmeasured] [data-memari-canvas] {
+  visibility: hidden;
+}
+
+/* A timeline card's loading indicator, until its page preview has drawn.
+   Apple's activity indicator: eight rounded spokes, the bright one stepping
+   clockwise with a fading tail, in system grey.
+
+   It is there FROM THE FIRST FRAME. It used to wait 300ms before fading
+   in, so that a quick load would never flash it - which left the card
+   empty with nothing in it for that long, and read as a delay of its own.
+   Asked for directly: show it straight away, or not at all. On a warm
+   production load it is up for a few frames at most. CSS only, rendered
+   by the server, so it runs before any script does. */
+.memari-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  color: #8e8e93;
+  pointer-events: none;
+}
+.memari-spinner i {
+  position: absolute;
+  left: 7px;
+  top: 0;
+  width: 2px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: 1px 8px;
+  animation: memari-spinner-spoke 0.8s linear infinite;
+}
+/* Spoke k sits at (k-1) x 45deg and runs (8-k) x 0.1s ahead, which puts the
+   brightest spoke at k = 10t: moving clockwise, the others trailing it. */
+.memari-spinner i:nth-child(1) { transform: rotate(0deg);   animation-delay: -0.7s; }
+.memari-spinner i:nth-child(2) { transform: rotate(45deg);  animation-delay: -0.6s; }
+.memari-spinner i:nth-child(3) { transform: rotate(90deg);  animation-delay: -0.5s; }
+.memari-spinner i:nth-child(4) { transform: rotate(135deg); animation-delay: -0.4s; }
+.memari-spinner i:nth-child(5) { transform: rotate(180deg); animation-delay: -0.3s; }
+.memari-spinner i:nth-child(6) { transform: rotate(225deg); animation-delay: -0.2s; }
+.memari-spinner i:nth-child(7) { transform: rotate(270deg); animation-delay: -0.1s; }
+.memari-spinner i:nth-child(8) { transform: rotate(315deg); animation-delay: 0s; }
+canvas[data-drawn] + .memari-spinner {
+  display: none;
+}
+@keyframes memari-spinner-spoke {
+  from { opacity: 1; }
+  to { opacity: 0.2; }
+}

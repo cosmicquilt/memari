@@ -370,7 +370,6 @@ export function TimelineDrawer({
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   /** The drawer's own element, so its custom properties can be scoped to it. */
-  const sectionRef = useRef<HTMLElement>(null);
   // Whether the hand is currently closed on the grabber. Separate from
   // dragHeight, which only exists once the pointer has MOVED - the cursor has
   // to change on press, not on travel, or the grab reads as not having taken.
@@ -758,35 +757,23 @@ export function TimelineDrawer({
    * the tab has left it.
    */
   useIsomorphicLayoutEffect(() => {
-    // ON THIS SECTION, NOT ON documentElement - and this is the change that
-    // matters for the frame rate.
+    // The drawer's own copies of these - its height and the preview size -
+    // are RENDERED on the section now, so the server's first frame has them;
+    // see its style. They stay on the SECTION, NOT ON documentElement, and
+    // that is the part that matters for the frame rate: a custom property
+    // set on the root is inherited by every element in the document, so
+    // writing one invalidates style for all of them - a two-page spread of
+    // modules, sixty times a second, to move a drawer. Scoped to the
+    // section, the invalidation stops at the drawer's own subtree.
     //
-    // A custom property set on the root is inherited by every element in the
-    // document, so writing one invalidates style for all of them. On this
-    // probe-sized page that is nothing; in the editor the same write asks the
-    // browser to re-resolve a two-page spread of modules, sixty times a
-    // second, to move a drawer. Scoped here, the invalidation stops at the
-    // drawer's own subtree.
-    const element = sectionRef.current;
-    if (!element) return;
-    const root = element.style;
-    root.setProperty("--memari-drawer-height", `${height}px`);
-    // THE PREVIEW SIZE TOO, for the same reason and one more.
-    //
-    // Every card used to take its width and height as React props, so a drag
-    // re-rendered the whole drawer - every group, every card - on every
-    // pointer move, and each of those renders sat in front of the browser
-    // relaying out and re-rasterising a page of SVG. Reported as the preview
-    // area being "laggy during the live resizing", and gone the moment you
-    // release, which is the tell: after release it is pure CSS and React is
-    // doing nothing at all.
-    //
-    // Through a variable, the cards' props stop changing, so the memoised
-    // components below skip re-rendering entirely and the browser is left to
-    // do the one job that genuinely has to happen.
-    root.setProperty("--memari-card-h", `${cardSize(panelHeight).height}px`);
-    root.setProperty("--memari-card-w", `${cardSize(panelHeight).width}px`);
-    // How far the fixed-size drawing has to shrink to fill that card.
+    // The preview size is a VARIABLE rather than the cards' props for the
+    // other reason. Every card used to take its width and height as React
+    // props, so a drag re-rendered the whole drawer - every group, every
+    // card - on every pointer move, and each of those renders sat in front
+    // of the browser relaying out and re-rasterising a page of SVG. Reported
+    // as the preview area being "laggy during the live resizing", and gone
+    // the moment you release. Through a variable, the cards' props stop
+    // changing and the memoised components below skip re-rendering entirely.
 
     // Written onto the bar itself rather than anywhere it could be inherited
     // from - see ZOOM_BAR_ID.
@@ -816,7 +803,7 @@ export function TimelineDrawer({
         ? `transform ${SHIFT_MS}ms ${SETTLE} ${TAB_PARK_DELAY_MS}ms`
         : `transform ${SLIDE_MS}ms ${SETTLE}`
     );
-  }, [height, panelHeight, parked, moving, closing, dragHeight]);
+  }, [height, parked, moving, closing, dragHeight]);
 
   // Memoised for the same reason: recomputing `pages.filter` and
   // `occurrences` every render hands every LevelGroup a brand-new array and
@@ -837,7 +824,6 @@ export function TimelineDrawer({
 
   return (
     <section
-      ref={sectionRef}
       aria-label="Planner timeline"
       style={{
         position: "fixed",
@@ -865,6 +851,24 @@ export function TimelineDrawer({
         // canvas.
         pointerEvents: "none",
         transition: moving ? `height ${SLIDE_MS}ms ${SETTLE}` : "none",
+        // The drawer's live edge and the preview size, for everything inside
+        // that sizes itself against them. RENDERED, so they are in the
+        // server's first frame. They used to be written by a layout effect,
+        // which only runs once the page's script has loaded - and until then
+        // every card's `width: var(--memari-card-w)` pointed at nothing, and
+        // the canvas inside fell back to the browser's default 300x150.
+        // Measured on the first frame: fourteen 300x150 cards, half hidden
+        // below a drawer that was already the right height, which is the
+        // "large, then jumps to the right size" seen on every load.
+        //
+        // Still not through the CARDS' props, which is the point the effect's
+        // comment makes: this section re-renders on a drag anyway (its
+        // height is right above), and the memoised cards below do not.
+        ...({
+          "--memari-drawer-height": `${height}px`,
+          "--memari-card-h": `${cardSize(panelHeight).height}px`,
+          "--memari-card-w": `${cardSize(panelHeight).width}px`,
+        } as CSSProperties),
       }}
     >
       {/* The grabber. One affordance, two jobs: drag to resize, click to
@@ -1586,6 +1590,10 @@ function PagePreview({ page }: { page: TimelinePage }) {
         canvas.height = height;
       }
       drawPreview(context, previewMarks, pageWidthPx, pageHeightPx);
+      // Takes the card's loading indicator away - see .memari-spinner in
+      // globals.css. An attribute rather than state, so drawing re-renders
+      // nothing.
+      canvas.setAttribute("data-drawn", "");
     };
 
     const paintFromLayout = () => {
@@ -1650,16 +1658,32 @@ function PagePreview({ page }: { page: TimelinePage }) {
   }, [previewMarks, pageWidthPx, pageHeightPx]);
 
   return (
-    <canvas
-      ref={ref}
-      // Nothing inside a canvas is in the accessibility tree anyway; saying
-      // so keeps it from being announced as an empty image. The card around
-      // it is a real button with a real name, which is what a reader needs.
-      aria-hidden="true"
-      style={{ display: "block", width: "100%", height: "100%", pointerEvents: "none" }}
-    />
+    <>
+      <canvas
+        ref={ref}
+        // Nothing inside a canvas is in the accessibility tree anyway; saying
+        // so keeps it from being announced as an empty image. The card around
+        // it is a real button with a real name, which is what a reader needs.
+        aria-hidden="true"
+        style={{ display: "block", width: "100%", height: "100%", pointerEvents: "none" }}
+      />
+      {/* Until the canvas has drawn. The drawing cannot happen before the
+          editor's script has loaded and hydrated - ~85ms warm in production,
+          a second or more in dev or on a slow first visit - so this is
+          rendered by the server and runs on CSS alone, and only fades in
+          once the wait is long enough to notice. */}
+      <span className="memari-spinner" aria-hidden="true">
+        {SPINNER_SPOKES.map((spoke) => (
+          <i key={spoke} />
+        ))}
+      </span>
+    </>
   );
 }
+
+/** Eight, as Apple's activity indicator has. Positions and timing are in
+ *  globals.css, keyed by :nth-child. */
+const SPINNER_SPOKES = [0, 1, 2, 3, 4, 5, 6, 7];
 
 function PageCardInner({
   page,
@@ -1687,6 +1711,8 @@ function PageCardInner({
     width: "var(--memari-card-w)",
     height: "var(--memari-card-h)",
     display: "block",
+    // For the loading indicator, which centres itself in the card.
+    position: "relative",
     padding: 0,
     border: highContrast && !selected ? "1px solid #777777" : "none",
     borderRadius: 3,

@@ -15,6 +15,8 @@ import { auth } from "@clerk/nextjs/server";
 import { getOrCreateBook } from "./actions";
 import { loadPlannerPages } from "./loadPlannerPages";
 import { NativePlannerEditor } from "./NativePlannerEditor";
+import { cookies } from "next/headers";
+import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
 import type { PageLevel } from "@/lib/pageLevels";
 
 export async function renderLevelPage(
@@ -31,6 +33,9 @@ export async function renderLevelPage(
   }
 
   const variantKey = (await searchParams).variant || null;
+  // The window size this browser last reported, so the canvas renders at
+  // its real zoom from the first frame - see src/lib/viewportCookie.ts.
+  const initialViewport = parseViewportCookie((await cookies()).get(VIEWPORT_COOKIE)?.value);
   const book = await getOrCreateBook(level);
   const {
     pages,
@@ -50,6 +55,7 @@ export async function renderLevelPage(
       weekSettings={weekSettings}
       pageSettings={pageSettings}
       level={level}
+      initialViewport={initialViewport}
     />
   );
 }
