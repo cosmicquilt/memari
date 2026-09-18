@@ -8,7 +8,12 @@
 // propValues, real neighbours - which is where a regression from a
 // geometry change would actually show up.
 //
-//   npx tsx scripts/check-week-page.mts [WEEK|MONTH]
+//   npm run check:page                 # every page of the book
+//   npm run check:page -- MONTHLY      # one level
+//
+// EVERY LEVEL by default, since 2026-09-18. It used to default to WEEKLY,
+// and the monthly page carried a to-do lying across two boxes that this
+// check reports in one line - it had simply never been pointed there.
 import { readFileSync } from "node:fs";
 
 for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -25,9 +30,8 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
 
-// Which spread of the book to check. A book holds several levels now, so
-// this filters the pages rather than picking a whole planner.
-const level = (process.argv[2] ?? "WEEKLY").toUpperCase();
+// Which level of the book to check, or all of them.
+const level = process.argv[2]?.toUpperCase() ?? null;
 
 const PAGE = {
   widthPx: 2175,
@@ -88,17 +92,18 @@ const bad = (message: string) => {
   problems++;
 };
 
-const levelPages = planner.pages.filter((page) => page.level === level);
+const levelPages = level === null ? planner.pages : planner.pages.filter((page) => page.level === level);
 if (levelPages.length === 0) {
   console.error(`"${planner.title}" has no ${level} pages.`);
   process.exit(1);
 }
 
-for (const [index, page] of levelPages.entries()) {
+for (const page of levelPages) {
   const placed = page.moduleInstances.filter(
     (mi) => mi.columnStart !== null && mi.rowStart !== null
   );
-  console.log(`\npage ${index} - ${placed.length} modules`);
+  const variant = page.variantKey ? ` (${page.variantKey})` : "";
+  console.log(`\n${page.level}${variant} page ${page.position} - ${placed.length} modules`);
 
   // 1. No two modules may claim the same cell.
   for (let a = 0; a < placed.length; a++) {
