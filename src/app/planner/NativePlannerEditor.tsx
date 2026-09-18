@@ -179,6 +179,9 @@ const ZOOM_STEP = 1.2; // per zoom in/out button click
 // still doesn't feel right.
 const WHEEL_ZOOM_SENSITIVITY = 0.0075;
 const WHEEL_DELTA_CLAMP = 50;
+// How long after the last wheel event a pinch counts as over, and its zoom
+// is committed. Trackpads send them every few milliseconds mid-gesture.
+const PINCH_SETTLE_MS = 150;
 const VIEWPORT_PADDING_PX = 24; // breathing room around the page(s), each side
 const CONTENT_TOP_OFFSET_PX = VIEWPORT_PADDING_PX; // the minimum top gutter centeringOffsetY reserves before adding any extra centering room — see that function's own comment
 // The header's own rendered height, measured against the running app:
@@ -5618,16 +5621,48 @@ export function NativePlannerEditor({
     [centeringOffsetX, centeringOffsetY]
   );
 
+  // Where a zoom to `atScale` leaves the scroll position, keeping the
+  // page-space point `contentX/Y` under the screen anchor. ONE description,
+  // read by the commit below and by the pinch preview, which has to put the
+  // canvas exactly where the commit will or every pinch ends in a jump.
+  const scrollAfterZoom = useCallback(
+    (contentX: number, contentY: number, atScale: number, anchorScreenX: number, anchorScreenY: number) => ({
+      left: contentX * atScale + centeringOffsetX(atScale) - anchorScreenX,
+      top: contentY * atScale + centeringOffsetY(atScale) - anchorScreenY,
+    }),
+    [centeringOffsetX, centeringOffsetY]
+  );
+
+  // The layer a trackpad pinch transforms, and taking that transform off -
+  // see applyPinchPreview below. Declared here because the commit's layout
+  // effect is what takes it off.
+  const zoomLayerRef = useRef<HTMLDivElement | null>(null);
+  const clearPinchPreview = useCallback(() => {
+    const layer = zoomLayerRef.current;
+    if (!layer) return;
+    layer.style.transform = "";
+    layer.style.transformOrigin = "";
+    layer.style.willChange = "";
+  }, []);
+
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     const pending = pendingZoomAnchorRef.current;
     if (!container || !pending) return;
     pendingZoomAnchorRef.current = null;
-    const newOffsetX = centeringOffsetX(pending.atScale);
-    const newOffsetY = centeringOffsetY(pending.atScale);
-    container.scrollLeft = pending.contentX * pending.atScale + newOffsetX - pending.anchorScreenX;
-    container.scrollTop = pending.contentY * pending.atScale + newOffsetY - pending.anchorScreenY;
-  }, [scale, centeringOffsetX, centeringOffsetY]);
+    const next = scrollAfterZoom(
+      pending.contentX,
+      pending.contentY,
+      pending.atScale,
+      pending.anchorScreenX,
+      pending.anchorScreenY
+    );
+    container.scrollLeft = next.left;
+    container.scrollTop = next.top;
+    // A pinch's preview transform comes off in the same frame the real
+    // zoom lands in - see applyPinchPreview.
+    clearPinchPreview();
+  }, [scale, scrollAfterZoom, clearPinchPreview]);
 
   // Fit-width/Fit-page reset the view from scratch (matching Polotno's
   // own "reset to scale-to-fit" behavior — it shows the page from the
@@ -5705,6 +5740,85 @@ export function NativePlannerEditor({
   const pendingWheelRef = useRef<{ deltaY: number; clientX: number; clientY: number } | null>(null);
   const wheelRafIdRef = useRef<number | null>(null);
 
+  // THE PINCH DOES NOT GO THROUGH REACT UNTIL IT STOPS.
+  //
+  // Reported as the trackpad zoom being "a bit laggy". Every frame of a
+  // pinch used to commit a new scale, and a scale change re-renders every
+  // page, module and drawing, because each one takes `scale` for its
+  // hairlines. Measured in dev: 35ms of React work per zoom step, median,
+  // 132ms at worst - whether the timeline was open or closed - and only
+  // 0.4ms of style and layout after it. So the lag was React, redone for
+  // every frame of the gesture.
+  //
+  // Now a pinch moves the already-drawn canvas as ONE GPU LAYER - a
+  // transform on the layer that holds it, which the compositor applies
+  // without asking React, the layout or the painter for anything - and the
+  // real zoom is committed once, PINCH_SETTLE_MS after the last wheel
+  // event. The same approach as Figma, Maps and Preview, with the same
+  // trade: zooming in, the canvas can look soft until the commit redraws
+  // it at the new size.
+  //
+  // THE PREVIEW LANDS WHERE THE COMMIT WILL. Each frame's transform is
+  // worked out from scrollAfterZoom - the commit's own arithmetic - and
+  // clamped to the scroll range the new layout will have, which is where
+  // the browser will clamp the commit. The commit removes the transform in
+  // the same frame it lands (see the zoom layout effect), so a pinch ends
+  // with no movement at all.
+  const pinchRef = useRef<{ toScale: number; clientX: number; clientY: number } | null>(null);
+  const pinchSettleTimerRef = useRef<number | null>(null);
+
+  const applyPinchPreview = useCallback(() => {
+    const pinch = pinchRef.current;
+    const container = scrollContainerRef.current;
+    const layer = zoomLayerRef.current;
+    if (!pinch || !container || !layer) return;
+    const fromScale = scaleRef.current;
+    const toScale = pinch.toScale;
+    const rect = container.getBoundingClientRect();
+    const anchorScreenX = pinch.clientX - rect.left;
+    const anchorScreenY = pinch.clientY - rect.top;
+    const fromOffsetX = centeringOffsetX(fromScale);
+    const fromOffsetY = centeringOffsetY(fromScale);
+    // Exactly what zoomAnchored will compute at the commit.
+    const contentX = (container.scrollLeft + anchorScreenX - fromOffsetX) / fromScale;
+    const contentY = (container.scrollTop + anchorScreenY - fromOffsetY) / fromScale;
+    const target = scrollAfterZoom(contentX, contentY, toScale, anchorScreenX, anchorScreenY);
+    // The range the committed layout will scroll over: the margin plus the
+    // scaled spread across (the spread's own margin makes its layout box
+    // the scaled size), and down the same plus the bottom gutter the canvas
+    // keeps for the drawer - see the zoom layer's own style.
+    const toOffsetX = centeringOffsetX(toScale);
+    const toOffsetY = centeringOffsetY(toScale);
+    const maxLeft = Math.max(0, toOffsetX + spreadWidthPx * toScale - container.clientWidth);
+    const maxTop = Math.max(
+      0,
+      toOffsetY + pageHeightPx * toScale + VIEWPORT_PADDING_PX + drawerHeight - container.clientHeight
+    );
+    const left = Math.min(maxLeft, Math.max(0, target.left));
+    const top = Math.min(maxTop, Math.max(0, target.top));
+    // The layer's origin sits at (offset - scroll) on screen now, and a
+    // page point at page*scale inside it. Mapping now onto then is a
+    // translate and a scale about that origin.
+    const dx = toOffsetX - left - (fromOffsetX - container.scrollLeft);
+    const dy = toOffsetY - top - (fromOffsetY - container.scrollTop);
+    layer.style.transformOrigin = "0 0";
+    layer.style.willChange = "transform";
+    layer.style.transform = `translate(${dx}px, ${dy}px) scale(${toScale / fromScale})`;
+  }, [centeringOffsetX, centeringOffsetY, scrollAfterZoom, spreadWidthPx, pageHeightPx, drawerHeight]);
+
+  const commitPinch = useCallback(() => {
+    pinchSettleTimerRef.current = null;
+    const pinch = pinchRef.current;
+    pinchRef.current = null;
+    if (!pinch) return;
+    if (clampScale(pinch.toScale) === scaleRef.current) {
+      // Nothing to commit, so no commit to take the preview off with.
+      clearPinchPreview();
+      return;
+    }
+    zoomAnchored(pinch.toScale, pinch.clientX, pinch.clientY);
+  }, [zoomAnchored, clearPinchPreview]);
+
   const flushWheelZoom = useCallback(() => {
     wheelRafIdRef.current = null;
     const pending = pendingWheelRef.current;
@@ -5715,14 +5829,18 @@ export function NativePlannerEditor({
     // multiplicative step compounds explosively fast under a trackpad
     // pinch gesture's many rapid-fire events. Clamping deltaY caps how
     // much even one unusually large accumulated flush can move the
-    // scale by. Anchored to the actual cursor position, not the
-    // viewport center — this is the one zoom trigger that has a real
-    // cursor position to anchor to, matching Figma/Maps/Photoshop's own
-    // wheel-zoom feel.
+    // scale by. Anchored to the cursor, not the viewport center — this is
+    // the one zoom trigger that has a real cursor position to anchor to,
+    // matching Figma/Maps/Photoshop's own wheel-zoom feel. The anchor is
+    // fixed where the pinch started: fingers pinching on a trackpad do not
+    // move the pointer, and a moving anchor under one transform would
+    // slide the page sideways.
     const clampedDeltaY = Math.max(-WHEEL_DELTA_CLAMP, Math.min(WHEEL_DELTA_CLAMP, pending.deltaY));
     const factor = Math.pow(2, -clampedDeltaY * WHEEL_ZOOM_SENSITIVITY);
-    zoomAnchored(scaleRef.current * factor, pending.clientX, pending.clientY);
-  }, [zoomAnchored]);
+    const pinch = pinchRef.current ?? { toScale: scaleRef.current, clientX: pending.clientX, clientY: pending.clientY };
+    pinchRef.current = { ...pinch, toScale: clampScale(pinch.toScale * factor) };
+    applyPinchPreview();
+  }, [applyPinchPreview]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -5739,13 +5857,17 @@ export function NativePlannerEditor({
       if (wheelRafIdRef.current === null) {
         wheelRafIdRef.current = requestAnimationFrame(flushWheelZoom);
       }
+      // The pinch is over once the events stop.
+      if (pinchSettleTimerRef.current !== null) window.clearTimeout(pinchSettleTimerRef.current);
+      pinchSettleTimerRef.current = window.setTimeout(commitPinch, PINCH_SETTLE_MS);
     };
     container.addEventListener("wheel", listener, { passive: false });
     return () => {
       container.removeEventListener("wheel", listener);
       if (wheelRafIdRef.current !== null) cancelAnimationFrame(wheelRafIdRef.current);
+      if (pinchSettleTimerRef.current !== null) window.clearTimeout(pinchSettleTimerRef.current);
     };
-  }, [flushWheelZoom]);
+  }, [flushWheelZoom, commitPinch]);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   // Raw, unscaled screen-pixel delta from @dnd-kit, updated continuously
@@ -9418,6 +9540,20 @@ export function NativePlannerEditor({
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           >
+            {/* The layer a trackpad pinch transforms while it is in
+                progress - see applyPinchPreview. THE SPREAD ONLY. It was
+                the div above at first, which also holds ModulePalette, and
+                a transform (or will-change: transform) makes an element the
+                containing block for every position:fixed element inside it:
+                mid-pinch the palette stopped being pinned to the window and
+                was moved and scaled with the canvas - measured at 378x4407
+                against its usual 260x724 - showing up as a panel sitting
+                still inside the canvas. Same origin as that div's content,
+                so the pinch arithmetic is unchanged. flow-root so the
+                spread's negative margins stay inside this box rather than
+                collapsing through it: its box is the scaled footprint. Its
+                React style never sets a transform. */}
+            <div ref={zoomLayerRef} style={{ display: "flow-root" }}>
             <div
               style={{
                 transform: `scale(${scale})`,
@@ -9492,6 +9628,7 @@ export function NativePlannerEditor({
                   />
                 ))}
               </div>
+            </div>
             </div>
             <ModulePalette
               activeId={activeId}
