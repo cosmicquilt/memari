@@ -106,11 +106,16 @@ const CARD_GAP = 8;
 const GROUP_GAP = 32;
 
 /** The grabber itself, and the target around it. The visual pill is 36 x 5;
- *  a 5px-high hit area fails WCAG 2.5.8's 24px minimum and Apple's own 44pt,
- *  so the pill sits inside a transparent 44px band that takes the events. */
+ *  a 5px-high hit area fails WCAG 2.5.8's 24px minimum, so the pill sits
+ *  inside a band that takes the events.
+ *
+ *  The band IS the tab - closed, it is all that is left of the drawer - so
+ *  this is also the tab's height, and the height of the open panel's top
+ *  edge, which is the tab widened. 28px since 2026-09-18, asked for as "a
+ *  bit taller"; it was 22, which was below that 24px minimum. */
 const GRABBER_WIDTH = 36;
 const GRABBER_HEIGHT = 5;
-const GRABBER_BAND = 22;
+const GRABBER_BAND = 28;
 
 /** The caption under a column: which occurrence it is, or "every month" for
  *  the default once something sits beside it. Reserved in every column so
@@ -315,6 +320,42 @@ const TAB_PARK_X = `calc(${50 - TAB_RIGHT_INSET_PERCENT}vw - ${TAB_WIDTH / 2}px)
 
 const ACCENT = "#4a5cff";
 const SURFACE = "#2a2a2a";
+
+/** How long either shadow takes to fade. Short: it is a change of lighting
+ *  at the ends of a move, not a move of its own. */
+const SHADOW_FADE_MS = 180;
+/** Closed: the tab (and, while it is on screen, the drawer) casting UP onto
+ *  the canvas it sits on. The "none" form keeps the same geometry at zero
+ *  alpha, so the fade interpolates the colour rather than the shape.
+ *  0.27: raised from 0.22 to 0.30 as "a bit" more, then set to 27% by
+ *  Andrew directly. */
+const SHADOW_ON_CANVAS = "0 -2px 10px rgba(0, 0, 0, 0.27)";
+const SHADOW_ON_CANVAS_NONE = "0 -2px 10px rgba(0, 0, 0, 0)";
+/**
+ * Open: the canvas casting DOWN onto the drawer's top edge.
+ *
+ * A GAUSSIAN FALL-OFF, not a straight ramp. A linear gradient reads as a
+ * band with an edge where it stops; a blurred shadow thins out along a bell
+ * curve, fast at first and then with a long soft tail, and that is what makes
+ * it read as blur rather than as a stripe. Asked for as "blurrier", after
+ * "increase the spread and intensity a bit" (10px at 0.40 -> 14px at 0.52,
+ * both linear). 24px deep, sigma a third of that, so it is effectively clear
+ * by the bottom; the darkness at the edge stays 0.52, so it is softer, not
+ * darker. Built from the formula rather than typed as stops, so the curve has
+ * one description.
+ */
+const SHADOW_ON_DRAWER_DEPTH = 24;
+const SHADOW_ON_DRAWER = (() => {
+  const peak = 0.52;
+  const sigma = SHADOW_ON_DRAWER_DEPTH / 3;
+  const steps = 8;
+  const stops = Array.from({ length: steps + 1 }, (_, i) => {
+    const y = (SHADOW_ON_DRAWER_DEPTH * i) / steps;
+    const alpha = i === steps ? 0 : peak * Math.exp(-((y / sigma) ** 2) / 2);
+    return `rgba(0, 0, 0, ${alpha.toFixed(3)}) ${y}px`;
+  });
+  return `linear-gradient(to bottom, ${stops.join(", ")})`;
+})();
 /** The occurrence list's width. A constant rather than a literal because the
  *  panel is positioned in script now, and keeping it on screen near the right
  *  edge means knowing how wide it is - see OccurrencePopover. */
@@ -389,7 +430,7 @@ export function TimelineDrawer({
       : expandedHeight();
 
   const onGrabberPointerDown = (event: React.PointerEvent) => {
-    // Capture so the drag survives the pointer leaving this 22px band -
+    // Capture so the drag survives the pointer leaving this band -
     // which it does immediately, since dragging up is the whole point. It is
     // guarded because setPointerCapture THROWS for a pointer the browser
     // does not consider active, and an exception here would abandon the
@@ -737,6 +778,44 @@ export function TimelineDrawer({
       : properties.map((p) => `${p} ${phase.ms}ms ${phases.ease} ${phase.delay}ms`).join(", ");
 
   /**
+   * TWO SHADOWS, and they change places around the tab's change of shape.
+   *
+   * Asked for, 2026-09-18:
+   *   - OPEN, the canvas casts onto the drawer - "within and onto the expanded
+   *     tab/timeline drawer area (from the canvas so to speak)". It fades in
+   *     once the tab has finished widening, and out right before it starts
+   *     to shrink back into a tab.
+   *   - CLOSED, the tab and the drawer cast onto the canvas. It fades in once
+   *     it has become a tab, stays while closed, and fades out right before
+   *     the tab starts to widen.
+   *
+   * The one that LEAVES is gone by the moment the shape starts to move - it
+   * already overlaps the slide or the return to the middle, which is clean.
+   * The one that ARRIVES starts at 80% of the widen or shrink, the same
+   * overlap every phase in this drawer takes (see `phases`), rather than
+   * after it: a pause between the tab settling and its lighting changing
+   * reads as a second, separate event. At 80% of its time the SETTLE curve
+   * is 96% of the way there. That matters most for the shadow onto the
+   * drawer, which spans the full width - shown while the tab was still
+   * narrow, it would shade the canvas either side of it. The shadow onto the
+   * canvas is the tab's own shape, so it is clean at any width; closing, it
+   * starts to arrive exactly as the tab starts to travel to the right.
+   *
+   * Both are timed off `phases.shape` rather than given numbers of their
+   * own, so they stay attached to it if the sequence is ever retimed.
+   *
+   * Keyed to the SETTLED detent, like `parked`: a drag moves the panel and
+   * nothing else, so neither shadow changes until the drawer lands.
+   */
+  const shapeStart = phases.shape.delay;
+  const shapeNearlyDone = phases.shape.delay + Math.round(phases.shape.ms * 0.8);
+  const fadeOutBy = (at: number) => ({ delay: Math.max(0, at - SHADOW_FADE_MS), ms: SHADOW_FADE_MS });
+  const fadeInFrom = (at: number) => ({ delay: at, ms: SHADOW_FADE_MS });
+  const shadowOnDrawerFade = closing ? fadeOutBy(shapeStart) : fadeInFrom(shapeNearlyDone);
+  const shadowOnCanvasFade = closing ? fadeInFrom(shapeNearlyDone) : fadeOutBy(shapeStart);
+  const shadowOnCanvas = parked ? SHADOW_ON_CANVAS : SHADOW_ON_CANVAS_NONE;
+
+  /**
    * The drawer's live edge, published as CSS variables for anything that has
    * to sit against it - today, the zoom bar.
    *
@@ -943,11 +1022,14 @@ export function TimelineDrawer({
           // the handle stays under the finger and simply narrows.
           transform: parked ? `translateX(${TAB_PARK_X})` : "translateX(0)",
           borderRadius: `${10 * (1 - openness)}px ${10 * (1 - openness)}px 0 0`,
+          // Onto the canvas, while closed - see shadowOnCanvasFade.
+          boxShadow: shadowOnCanvas,
           transition: !moving
             ? "none"
             : [
                 phaseTransition(phases.shape, "width", "border-radius"),
                 phaseTransition(phases.park, "transform"),
+                phaseTransition(shadowOnCanvasFade, "box-shadow"),
               ].join(", "),
         }}
       >
@@ -984,7 +1066,15 @@ export function TimelineDrawer({
           // eased, the two would disagree for the length of the settle - as a
           // clip across the cards growing, or as transparent panel below them
           // shrinking. Same duration and curve, so they never disagree.
-          transition: moving ? `height ${SLIDE_MS}ms ${SETTLE}` : "none",
+          transition: moving
+            ? [`height ${SLIDE_MS}ms ${SETTLE}`, phaseTransition(shadowOnCanvasFade, "box-shadow")].join(", ")
+            : "none",
+          // The drawer area's half of the shadow onto the canvas: while the
+          // tab is small and the panel is on screen under it - the slide - the
+          // panel's top edge casts too. Closed, it is below the screen. The
+          // tab is transformed, so it paints above this and its own lower
+          // edge is not shaded by it.
+          boxShadow: shadowOnCanvas,
           boxSizing: "border-box",
           background: SURFACE,
           pointerEvents: "auto",
@@ -1025,6 +1115,26 @@ export function TimelineDrawer({
           />
         ))}
       </div>
+
+      {/* The canvas's shadow onto the open drawer - see shadowOnDrawerFade.
+          An overlay rather than an inset box-shadow: the section paints
+          nothing, and an inset shadow on the tab would stop at its bottom
+          edge, where the tab meets the timeline. Positioned and last, so it
+          paints over both. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: SHADOW_ON_DRAWER_DEPTH,
+          background: SHADOW_ON_DRAWER,
+          pointerEvents: "none",
+          opacity: parked ? 0 : 1,
+          transition: phaseTransition(shadowOnDrawerFade, "opacity"),
+        }}
+      />
 
       {/* Scrollbars hidden: a trackpad-first row is navigated by swiping, and
           a visible bar in a 102px-tall strip eats the cards. Kept as a real
