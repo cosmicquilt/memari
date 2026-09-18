@@ -17,7 +17,6 @@ import {
   pixelsToGridCell,
   clampGridPlacement,
   rectsOverlap,
-  findNearestFreeCell,
   resolveModulePlacement,
   moduleInstancesToRects,
   packStackFromTop,
@@ -56,6 +55,18 @@ function assert(cond: boolean, msg: string) {
     failures++;
     console.error("FAIL:", msg);
   }
+}
+
+// Most cases below expect the drop to LAND. A refusal is its own outcome
+// with its own checks, so here it fails by name rather than letting
+// `.placement` read as undefined and every later check pass on NaN.
+function resolve(...args: Parameters<typeof resolveModulePlacement>) {
+  const r = resolveModulePlacement(...args);
+  if (!r.fits) {
+    assert(false, `expected the drop to land, got a refusal over rows ${r.region.rowStart}-${r.region.rowStart + r.region.rowSpan}`);
+    return { placement: { columnStart: -1, rowStart: -1 }, reflow: [] };
+  }
+  return r;
 }
 
 // Matches the real app's default page (see prisma/schema.prisma).
@@ -150,44 +161,87 @@ const page: PageGrid = {
   assert(excluded.length === 1, "moduleInstancesToRects excludes the given id (e.g. the instance being resized)");
 }
 
-// --- findNearestFreeCell ---
+// --- resolveModulePlacement: a drop with no room is REFUSED ---
+// It used to be relocated by findNearestFreeCell - to another column
+// entirely when one had space, which is somewhere the user never pointed,
+// and when nothing had space, handed back overlapping whatever was under
+// it. Both are gone. Expected values are written out, not derived.
 {
-  const relocated = findNearestFreeCell(
-    page,
-    { columnStart: 0, rowStart: 5, columnSpan: 1, rowSpan: 3 },
-    [
-      { columnStart: 0, rowStart: 5, columnSpan: 1, rowSpan: 3 },
-      { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 3 },
-    ]
-  );
-  assert(
-    !rectsOverlap({ ...relocated, columnSpan: 1, rowSpan: 3 }, { columnStart: 0, rowStart: 5, columnSpan: 1, rowSpan: 3 }) &&
-      !rectsOverlap({ ...relocated, columnSpan: 1, rowSpan: 3 }, { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 3 }),
-    "findNearestFreeCell avoids every occupied rect, not just the one nearest the candidate"
-  );
-
-  // A fully-packed target column falls back to a different column
-  // instead of returning something overlapping.
-  const packedColumn: GridRect[] = Array.from({ length: 30 }, (_, i) => ({
+  // A column packed with same-shape siblings, 30 one-row modules.
+  const packedColumn = Array.from({ length: 30 }, (_, i) => ({
+    id: `p${i}`,
+    locked: false,
     columnStart: 0,
     rowStart: i,
     columnSpan: 1,
     rowSpan: 1,
   }));
-  const fallback = findNearestFreeCell(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 1 }, packedColumn);
-  assert(fallback.columnStart !== 0, "a fully-packed column falls back to scanning other columns");
-  assert(!packedColumn.some((o) => rectsOverlap({ ...fallback, columnSpan: 1, rowSpan: 1 }, o)), "the fallback cell doesn't overlap anything");
-
-  // A genuinely full grid (nothing fits anywhere) doesn't throw or hang
-  // — it returns *something* (the clamped candidate) rather than crashing.
-  const fullGrid: GridRect[] = [];
-  for (let c = 0; c < page.gridColumns; c++) {
-    for (let r = 0; r < page.gridRows; r++) fullGrid.push({ columnStart: c, rowStart: r, columnSpan: 1, rowSpan: 1 });
+  const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 1 }, packedColumn);
+  assert(!r.fits, "a full column refuses the drop instead of relocating it to another column");
+  if (!r.fits) {
+    assert(
+      r.region.columnStart === 0 && r.region.columnSpan === 1 && r.region.rowStart === 0 && r.region.rowSpan === 30,
+      `the refusal names the whole stretch that has no room, column 0 rows 0-30 (got ${JSON.stringify(r.region)})`
+    );
   }
-  const noRoom = findNearestFreeCell(page, { columnStart: 2, rowStart: 10, columnSpan: 1, rowSpan: 1 }, fullGrid);
+  // The same column, with every sibling allowed to shrink to 1: still
+  // refused, because each is already there.
+  const floors = Object.fromEntries(packedColumn.map((p) => [p.id, 1]));
+  const shrunk = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 1 }, packedColumn, undefined, floors);
+  assert(!shrunk.fits, "a column already at every floor refuses too");
+}
+
+// --- resolveModulePlacement: a stack is bounded by EVERYTHING in its columns ---
+// The two shapes the old repack ran straight through, both found as
+// overlaps rather than by reading the code.
+{
+  const tall: PageGrid = { ...page, gridColumns: 1, gridRows: 20 };
+  // grid.property.test.mts's first counterexample (7a08f8a): a locked
+  // block between siblings. The old result put A at 1-5 and B at 5-7, both
+  // on the lock.
+  const column = [
+    { id: "A", locked: false, columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 4 },
+    { id: "L", locked: true, columnStart: 0, rowStart: 4, columnSpan: 1, rowSpan: 3 },
+    { id: "B", locked: false, columnStart: 0, rowStart: 7, columnSpan: 1, rowSpan: 2 },
+    { id: "C", locked: false, columnStart: 0, rowStart: 9, columnSpan: 1, rowSpan: 3 },
+    { id: "D", locked: false, columnStart: 0, rowStart: 12, columnSpan: 1, rowSpan: 5 },
+  ];
+  const full = resolveModulePlacement(tall, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 }, column);
+  assert(!full.fits, "the stretch above a mid-column lock is full: refused rather than repacked through the lock");
+  if (!full.fits) {
+    assert(full.region.rowStart === 0 && full.region.rowSpan === 4, `refused over rows 0-4, the stretch above the lock (got ${JSON.stringify(full.region)})`);
+  }
+  const room = resolve(tall, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 }, column, undefined, { A: 2 });
+  assert(room.placement.rowStart === 0, `with A allowed to shrink, the drop lands at row 0 (got ${room.placement.rowStart})`);
   assert(
-    noRoom.columnStart >= 0 && noRoom.columnStart < page.gridColumns && noRoom.rowStart >= 0 && noRoom.rowStart < page.gridRows,
-    "a fully-occupied grid still returns some in-bounds cell rather than throwing"
+    JSON.stringify(room.reflow) === JSON.stringify([{ id: "A", rowStart: 1, rowSpan: 3 }]),
+    `A shrinks to 3 rows at 1-4, stopping at the lock, and nothing below the lock moves (got ${JSON.stringify(room.reflow)})`
+  );
+
+  // A NARROWER module between two full-width ones, with no lock anywhere
+  // in the zone. Hours 0-20, the gutter 20-21, full-width T 21-24, S
+  // narrowed to 6 of 18 columns at 24-30; U (4 rows, full width) dragged
+  // up from 30 onto T. The old result put U at 21 and T at 25, both on S.
+  const week: PageGrid = { ...page, gridColumns: 24, gridRows: 36 };
+  const zone = [
+    { id: "hours", locked: true, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 },
+    { id: "gutter", locked: true, columnStart: 6, rowStart: 20, columnSpan: 18, rowSpan: 1 },
+    { id: "T", locked: false, columnStart: 6, rowStart: 21, columnSpan: 18, rowSpan: 3 },
+    { id: "S", locked: false, columnStart: 6, rowStart: 24, columnSpan: 6, rowSpan: 6 },
+  ];
+  const mixed = resolveModulePlacement(week, { columnStart: 6, rowStart: 20, columnSpan: 18, rowSpan: 4 }, zone, 30);
+  assert(!mixed.fits, "a narrower module between two full-width ones bounds their stack: refused rather than laid over it");
+  if (!mixed.fits) {
+    assert(mixed.region.rowStart === 21 && mixed.region.rowSpan === 3, `refused over rows 21-24, between the gutter and S (got ${JSON.stringify(mixed.region)})`);
+  }
+  // Below S there is room, and a drop aimed there lands there.
+  const below = resolve(week, { columnStart: 6, rowStart: 31, columnSpan: 18, rowSpan: 4 }, [
+    ...zone,
+    { id: "V", locked: false, columnStart: 6, rowStart: 30, columnSpan: 18, rowSpan: 2 },
+  ], 12);
+  assert(
+    below.placement.rowStart === 32 && below.reflow.length === 0,
+    `dropped onto V below S, U packs in after V at row 32 (got row ${below.placement.rowStart}, reflow ${JSON.stringify(below.reflow)})`
   );
 }
 
@@ -238,7 +292,7 @@ const page: PageGrid = {
 
   // Drag Gratitude to the very top — bounded by week-title.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 6 }, [weekTitle, reminders, notes]);
+    const r = resolve(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 6 }, [weekTitle, reminders, notes]);
     assertValidStack("drag-gratitude-to-top", r.placement, 6, r.reflow, { reminders: 9, notes: 13 }, siblingDefaults);
     assert(r.placement.rowStart >= 2, "drag-gratitude-to-top: dragged module itself clears week-title");
   }
@@ -246,13 +300,13 @@ const page: PageGrid = {
   // Drag Notes to an out-of-range row (39, past the 30-row grid, as an
   // un-pre-clamped drag position would be) — bounded by the page bottom.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 39, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders]);
+    const r = resolve(page, { columnStart: 0, rowStart: 39, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders]);
     assertValidStack("drag-notes-past-bottom", r.placement, 13, r.reflow, { gratitude: 6, reminders: 9 }, siblingDefaults);
   }
 
   // Ordinary mid-stack reorder.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes]);
+    const r = resolve(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes]);
     assertValidStack("drag-reminders-to-middle", r.placement, 9, r.reflow, { gratitude: 6, notes: 13 }, siblingDefaults);
   }
 
@@ -268,7 +322,7 @@ const page: PageGrid = {
   // existing sibling over the dragged item — which, for two items that
   // were already adjacent, reconstructs the pre-drag order exactly.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(r.placement.rowStart === 2, "dragging reminders UP onto gratitude's exact rowStart actually moves it there, not back to its own start");
     assert(
       r.reflow.some((m) => m.id === "gratitude" && m.rowStart === 11),
@@ -284,7 +338,7 @@ const page: PageGrid = {
   // instead (this was caught exactly that way: the first fix broke this
   // direction while fixing the other one).
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 6 }, [weekTitle, reminders, notes], 2);
+    const r = resolve(page, { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 6 }, [weekTitle, reminders, notes], 2);
     assert(r.placement.rowStart === 11, "dragging gratitude DOWN onto reminders' exact rowStart lands it right after reminders' new position, not back at its own start (2)");
     assert(
       r.reflow.some((m) => m.id === "reminders" && m.rowStart === 2),
@@ -301,7 +355,7 @@ const page: PageGrid = {
   // Real scenario from the monthly-layout sidebar's 4-box stack, ported
   // to this file's 3-box fixtures.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(r.placement.rowStart === 2, "dragging reminders past week-title still clamps to right after it, not overlapping it");
     assert(
       r.reflow.some((m) => m.id === "gratitude" && m.rowStart === 11),
@@ -327,7 +381,7 @@ const page: PageGrid = {
   // the boundary is row 14.5. Row 15 is still well short of notes' own
   // rowStart of 17, so this keeps testing what it was written to test.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(r.placement.rowStart !== 8, "dragging reminders only partway onto notes still swaps, not snapping back to its own start");
     assert(
       r.reflow.some((m) => m.id === "notes" && m.rowStart === 8),
@@ -342,7 +396,7 @@ const page: PageGrid = {
   // isn't simply "any overlap at all triggers a swap," which would make
   // trivial nudges surprising.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 10, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 10, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(
       !r.reflow.some((m) => m.id === "notes"),
       "dragging reminders only barely into notes' territory (short of the center threshold) doesn't swap them"
@@ -366,7 +420,7 @@ const page: PageGrid = {
   {
     const smallGratitude = { id: "gratitude", columnStart: 0, rowStart: 2, columnSpan: 1, rowSpan: 4, locked: false };
     const smallReminders = { id: "reminders", columnStart: 0, rowStart: 23, columnSpan: 1, rowSpan: 7, locked: false };
-    const r = resolveModulePlacement(
+    const r = resolve(
       page,
       { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 17 },
       [weekTitle, smallGratitude, smallReminders],
@@ -387,17 +441,21 @@ const page: PageGrid = {
     );
   }
 
-  // Dropping directly on a locked block (not a same-span sibling stack)
-  // relocates instead of reflowing.
+  // Dropping directly on a locked block lands in the free stretch beside
+  // it, in the same column - never on it, and never in another column.
   {
     const hourlyGrid = { id: "hourly", columnStart: 1, rowStart: 0, columnSpan: 3, rowSpan: 19, locked: true };
-    const r = resolveModulePlacement(page, { columnStart: 1, rowStart: 5, columnSpan: 1, rowSpan: 2 }, [hourlyGrid]);
+    const r = resolve(page, { columnStart: 1, rowStart: 5, columnSpan: 1, rowSpan: 2 }, [hourlyGrid]);
     assert(r.reflow.length === 0, "dropping on a locked block never reflows");
-    assert(!rectsOverlap({ ...r.placement, columnSpan: 1, rowSpan: 2 }, hourlyGrid), "relocated placement clears the locked block");
+    assert(!rectsOverlap({ ...r.placement, columnSpan: 1, rowSpan: 2 }, hourlyGrid), "the placement clears the locked block");
+    assert(
+      r.placement.columnStart === 1 && r.placement.rowStart === 19,
+      `it lands directly under the block, column 1 row 19 (got ${JSON.stringify(r.placement)})`
+    );
   }
 
-  // More content than the column has room for — reorder can't make it
-  // fit, so it must relocate instead of producing an overflowing stack.
+  // More content than the column has room for, and nobody allowed to
+  // shrink: refused, with every sibling left exactly where it was.
   {
     const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 10 }, [
       weekTitle,
@@ -405,18 +463,17 @@ const page: PageGrid = {
       reminders,
       notes,
     ]);
-    assert(r.reflow.length === 0, "an unfittable reorder falls back to relocation, leaving siblings untouched");
-    assert(
-      ![weekTitle, gratitude, reminders, notes].some((o) => rectsOverlap({ ...r.placement, columnSpan: 1, rowSpan: 10 }, o)),
-      "the relocated placement clears everything already on the page"
-    );
+    assert(!r.fits, "an unfittable reorder is refused rather than relocated or overlapped");
+    if (!r.fits) {
+      assert(r.region.rowStart === 2 && r.region.rowSpan === 28, `refused over the sidebar below week-title, rows 2-30 (got ${JSON.stringify(r.region)})`);
+    }
   }
 
   // A locked block wider than the stack (column-range overlap, not exact
   // span match) still bounds it correctly.
   {
     const wideLockedAbove = { id: "wide-locked", columnStart: 0, rowStart: 0, columnSpan: 4, rowSpan: 3, locked: true };
-    const r = resolveModulePlacement(page, { columnStart: 1, rowStart: 3, columnSpan: 1, rowSpan: 5 }, [wideLockedAbove]);
+    const r = resolve(page, { columnStart: 1, rowStart: 3, columnSpan: 1, rowSpan: 5 }, [wideLockedAbove]);
     assert(!rectsOverlap({ ...r.placement, columnSpan: 1, rowSpan: 5 }, wideLockedAbove), "a wider locked block still bounds a narrower stack via column overlap");
   }
 }
@@ -524,11 +581,11 @@ const page: PageGrid = {
   // the case that felt like "the one below jumps up too soon": the old
   // rule fired at Notes' top EDGE (row 17), reached at rowStart 12.5.
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(draggedIsAbove(r, "notes", 17), "reorder-threshold: reminders at row 13 stays above notes (bottom 22 < 23.5)");
   }
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
+    const r = resolve(page, { columnStart: 0, rowStart: 15, columnSpan: 1, rowSpan: 9 }, [weekTitle, gratitude, notes], 8);
     assert(!draggedIsAbove(r, "notes", 17), "reorder-threshold: reminders at row 15 moves below notes (bottom 24 > 23.5)");
   }
 
@@ -543,11 +600,11 @@ const page: PageGrid = {
   // swap it produced arrived only after the item had visibly passed the
   // midpoint: "takes too long going up".
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
+    const r = resolve(page, { columnStart: 0, rowStart: 13, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
     assert(!draggedIsAbove(r, "reminders", 8), "reorder-threshold: notes at row 13 stays below reminders (top 13 > 12.5)");
   }
   {
-    const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 12, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
+    const r = resolve(page, { columnStart: 0, rowStart: 12, columnSpan: 1, rowSpan: 13 }, [weekTitle, gratitude, reminders], 17);
     assert(draggedIsAbove(r, "reminders", 8), "reorder-threshold: notes at row 12 moves above reminders (top 12 < 12.5)");
   }
 
@@ -574,7 +631,7 @@ const page: PageGrid = {
       ? Array.from({ length: 28 }, (_, i) => i + 2)
       : Array.from({ length: 28 }, (_, i) => 29 - i);
     for (const row of rows) {
-      const r = resolveModulePlacement(page, { columnStart: 0, rowStart: row, columnSpan: 1, rowSpan: draggedSpan }, others, originalRow);
+      const r = resolve(page, { columnStart: 0, rowStart: row, columnSpan: 1, rowSpan: draggedSpan }, others, originalRow);
       if (draggedIsAbove(r, siblingId, siblingDefaultRow) !== goingDown) return row;
     }
     return null;
@@ -606,14 +663,12 @@ const page: PageGrid = {
   const notes = { id: "notes", columnStart: 0, rowStart: 17, columnSpan: 1, rowSpan: 13, locked: false };
   const others = [weekTitle, gratitude, reminders, notes];
 
-  // Omitting minRowSpanById entirely (every existing caller) must behave
-  // exactly as before this change — falls through to findNearestFreeCell
-  // (relocated elsewhere, empty reflow) rather than shrinking anything,
-  // even though the zone is genuinely full and a shrink *would* make it
-  // fit. This is the "old callers get identical output" guarantee.
+  // Omitting minRowSpanById means nobody may shrink - an ordinary reorder
+  // never touches anyone's size. The zone is genuinely full, so the drop
+  // is refused, even though a shrink *would* have made it fit.
   {
     const r = resolveModulePlacement(page, { columnStart: 0, rowStart: 20, columnSpan: 1, rowSpan: 2 }, others);
-    assert(r.reflow.length === 0, "omitting minRowSpanById: no reflow — falls through to findNearestFreeCell, doesn't repack the stack");
+    assert(!r.fits, "omitting minRowSpanById: a full zone refuses rather than shrinking anyone");
   }
 
   // Fits once shrunk: candidate (already at its own 2-row minimum) drops
@@ -624,7 +679,7 @@ const page: PageGrid = {
   // covers it without needing to touch Gratitude/Reminders at all.
   {
     const minRowSpanById = { gratitude: 2, reminders: 4, notes: 2 };
-    const r = resolveModulePlacement(
+    const r = resolve(
       page,
       { columnStart: 0, rowStart: 20, columnSpan: 1, rowSpan: 2 },
       others,
@@ -651,9 +706,8 @@ const page: PageGrid = {
   }
 
   // Doesn't fit even at every floor: floors equal current sizes (zero
-  // shrinkable room anywhere) — must fall through to the exact same
-  // findNearestFreeCell relocation as the no-minRowSpanById case, not a
-  // partial/broken shrink.
+  // shrinkable room anywhere). This is the case the editor draws its
+  // no-entry mark for - refused, not a partial or broken shrink.
   {
     const minRowSpanById = { gratitude: 6, reminders: 9, notes: 13 };
     const r = resolveModulePlacement(
@@ -663,7 +717,7 @@ const page: PageGrid = {
       undefined,
       minRowSpanById
     );
-    assert(r.reflow.length === 0, "doesn't-fit-even-shrunk: falls through with no reflow, same as omitting minRowSpanById");
+    assert(!r.fits, "doesn't-fit-even-shrunk: refused, same as omitting minRowSpanById");
   }
 
   // Cascade correctly skips a sibling already at its own floor and moves
@@ -674,7 +728,7 @@ const page: PageGrid = {
   // not from wherever the dragged item itself sorted.
   {
     const minRowSpanById = { notes: 13, reminders: 4, gratitude: 2 }; // notes has zero room
-    const r = resolveModulePlacement(
+    const r = resolve(
       page,
       { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 2 },
       others,
@@ -694,7 +748,7 @@ const page: PageGrid = {
   // top/bottom edge cases above.
   {
     const minRowSpanById = { gratitude: 2, reminders: 2, notes: 2 };
-    const r = resolveModulePlacement(
+    const r = resolve(
       page,
       { columnStart: 0, rowStart: 8, columnSpan: 1, rowSpan: 2 },
       others,

@@ -1513,6 +1513,7 @@ function NativePage({
   hourlyResizeStackBottoms,
   emptyZones,
   suppressAddZones,
+  blockedRegion,
   resizingIds,
   easeContent,
   reflowContent,
@@ -1579,6 +1580,9 @@ function NativePage({
   // positioned from committed geometry, which a crossing has
   // deliberately departed from on screen - see their own render guards.
   suppressAddZones: boolean;
+  // The zone on THIS page a drag is over that has no room even with
+  // everything in it at its minimum, or null. See BlockedZoneMark.
+  blockedRegion: GridRect | null;
   resizingIds: ReadonlySet<string> | null;
   // The one module whose box is currently easing between zone shapes,
   // with the geometry its CONTENT should render at meanwhile - the
@@ -2079,11 +2083,8 @@ function NativePage({
           onClick={() => onOpenPaletteModules()}
         />
       ))}
-      {/* Live palette-drag preview — only rendered on whichever page the
-          drag is currently over (see handleDragMove's own comment on how
-          that's determined). Grid-snapped, recomputed on every pointer
-          move, same "show it before you commit to it" idea as
-          resizePairs/stackBottoms' own live previews above. */}
+      {/* Last, so it sits over the modules it is about. */}
+      {blockedRegion && <BlockedZoneMark pageGrid={page.pageGrid} region={blockedRegion} />}
     </div>
   );
 }
@@ -2659,6 +2660,120 @@ function edgeDashOffset(length: number): number {
   return ADD_MODULE_DASH_PX / 2 - length / 2;
 }
 
+// The dashed rounded edge the "+" box is drawn with, and the no-entry mark
+// too. One drawing for both, so the two read as one family and cannot
+// drift apart: they are the same shape saying opposite things about a
+// zone. See the header comment above ADD_MODULE_DASH_PX for the
+// four-edge-plus-solid-corners design and why. Absolutely positioned to
+// exactly cover its parent, pointerEvents:none so it never intercepts
+// anything meant for what it sits on.
+function DashedZoneEdge({ width, height, color }: { width: number; height: number; color: string }) {
+  // Inset by half the stroke width on every side — an SVG stroke is
+  // centered on its own path by default, so without this the outer
+  // half would run past the parent's own edge and get clipped instead
+  // of landing flush with it (same "inset a stroke to keep its outer
+  // edge at the box's own boundary" adjustment PolotnoJsonRenderer's
+  // own outline rendering already relies on elsewhere in this file).
+  const half = ADD_MODULE_BORDER_PX / 2;
+  const x0 = half;
+  const y0 = half;
+  const x1 = Math.max(half, width - half);
+  const y1 = Math.max(half, height - half);
+  // Same clamp CSS border-radius applies automatically (and SVG's own
+  // rx/ry did too, in the previous single-<rect> version) — manually
+  // replicated here since these are now four independent lines/arcs
+  // this component builds itself, with no single shape left for the
+  // browser to auto-clamp for it.
+  const r = Math.max(0, Math.min(ADD_MODULE_RADIUS_PX, (x1 - x0) / 2, (y1 - y0) / 2));
+  const flatWidth = Math.max(0, x1 - x0 - 2 * r);
+  const flatHeight = Math.max(0, y1 - y0 - 2 * r);
+  const horizontalDashProps = {
+    stroke: color,
+    strokeWidth: ADD_MODULE_BORDER_PX,
+    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
+    strokeDashoffset: edgeDashOffset(flatWidth),
+    strokeLinecap: "butt" as const,
+  };
+  const verticalDashProps = {
+    stroke: color,
+    strokeWidth: ADD_MODULE_BORDER_PX,
+    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
+    strokeDashoffset: edgeDashOffset(flatHeight),
+    strokeLinecap: "butt" as const,
+  };
+  const cornerProps = { fill: "none", stroke: color, strokeWidth: ADD_MODULE_BORDER_PX };
+  return (
+    <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}>
+      {/* Top and bottom: same flatWidth/offset, so besides each
+          being individually centered (the actual requirement), the
+          two also end up mirroring each other — a bonus, not
+          something separately computed for. */}
+      <line x1={x0 + r} y1={y0} x2={x1 - r} y2={y0} {...horizontalDashProps} />
+      <line x1={x0 + r} y1={y1} x2={x1 - r} y2={y1} {...horizontalDashProps} />
+      <line x1={x0} y1={y0 + r} x2={x0} y2={y1 - r} {...verticalDashProps} />
+      <line x1={x1} y1={y0 + r} x2={x1} y2={y1 - r} {...verticalDashProps} />
+      {/* Four quarter-circle corners, solid (no dasharray) —
+          deliberately not dashed at all, so there's nothing for a
+          corner to clip awkwardly through. Clockwise sweep
+          (sweep-flag 1) matches the same direction a rounded-rect's
+          own implicit path already goes in. */}
+      <path d={`M ${x0},${y0 + r} A ${r},${r} 0 0 1 ${x0 + r},${y0}`} {...cornerProps} />
+      <path d={`M ${x1 - r},${y0} A ${r},${r} 0 0 1 ${x1},${y0 + r}`} {...cornerProps} />
+      <path d={`M ${x1},${y1 - r} A ${r},${r} 0 0 1 ${x1 - r},${y1}`} {...cornerProps} />
+      <path d={`M ${x0 + r},${y1} A ${r},${r} 0 0 1 ${x0},${y1 - r}`} {...cornerProps} />
+    </svg>
+  );
+}
+
+// The "+" box's size rule for its icon, shared with the no-entry mark.
+function zoneIconSize(zoneWidth: number): number {
+  return Math.max(40, Math.min(64, zoneWidth * 0.24));
+}
+
+// Laid over the zone a drag is over when there is no room in it even with
+// everything there at its own minimum. Andrew, 2026-09-18: a circle with a
+// line through it, in a rounded rectangle, mid opacity, over the region,
+// in the style of the "+" box - and red. It is the "+" box's drawing with
+// the opposite meaning, so it takes the same edge, radius and icon weight.
+// Releasing over it adds nothing and moves nothing (see handleDragEnd). No
+// dot field: the "+" box shows free lattice, and this sits over modules.
+const BLOCKED_ZONE_COLOR = "rgba(214, 40, 40, 0.5)";
+const BLOCKED_ZONE_FILL = "rgba(214, 40, 40, 0.08)";
+
+function BlockedZoneMark({ pageGrid, region }: { pageGrid: PageGrid; region: GridRect }) {
+  const rect = gridCellToPixels(pageGrid, region);
+  const iconSize = zoneIconSize(rect.width);
+  return (
+    <div
+      role="img"
+      aria-label="No room here: every module in this area is already at its smallest size"
+      style={{
+        position: "absolute",
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: BLOCKED_ZONE_FILL,
+        borderRadius: ADD_MODULE_RADIUS_PX,
+        color: BLOCKED_ZONE_COLOR,
+        pointerEvents: "none",
+      }}
+    >
+      <DashedZoneEdge width={rect.width} height={rect.height} color={BLOCKED_ZONE_COLOR} />
+      {/* The "+" icon's own 24-unit box and stroke. The slash runs
+          top-left to bottom-right, as the prohibition sign does, and
+          ends on the circle: 12 +/- 8 cos 45 degrees. */}
+      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth={2.75} />
+        <path d="M6.34 6.34L17.66 17.66" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
+
 function AddModuleButton({
   pageGrid,
   columnStart,
@@ -2708,42 +2823,7 @@ function AddModuleButton({
   // it goes from 0 to some room). Clamped here, once, and used for
   // every downstream visual computation instead of the raw rect.height.
   const visualHeight = Math.max(0, rect.height);
-  const iconSize = Math.max(40, Math.min(64, rect.width * 0.24));
-
-  // Inset by half the stroke width on every side — an SVG stroke is
-  // centered on its own path by default, so without this the outer
-  // half would run past the button's own edge and get clipped instead
-  // of landing flush with it (same "inset a stroke to keep its outer
-  // edge at the box's own boundary" adjustment PolotnoJsonRenderer's
-  // own outline rendering already relies on elsewhere in this file).
-  const half = ADD_MODULE_BORDER_PX / 2;
-  const x0 = half;
-  const y0 = half;
-  const x1 = Math.max(half, rect.width - half);
-  const y1 = Math.max(half, visualHeight - half);
-  // Same clamp CSS border-radius applies automatically (and SVG's own
-  // rx/ry did too, in the previous single-<rect> version) — manually
-  // replicated here since these are now four independent lines/arcs
-  // this component builds itself, with no single shape left for the
-  // browser to auto-clamp for it.
-  const r = Math.max(0, Math.min(ADD_MODULE_RADIUS_PX, (x1 - x0) / 2, (y1 - y0) / 2));
-  const flatWidth = Math.max(0, x1 - x0 - 2 * r);
-  const flatHeight = Math.max(0, y1 - y0 - 2 * r);
-  const horizontalDashProps = {
-    stroke: ADD_MODULE_DASH_COLOR,
-    strokeWidth: ADD_MODULE_BORDER_PX,
-    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
-    strokeDashoffset: edgeDashOffset(flatWidth),
-    strokeLinecap: "butt" as const,
-  };
-  const verticalDashProps = {
-    stroke: ADD_MODULE_DASH_COLOR,
-    strokeWidth: ADD_MODULE_BORDER_PX,
-    strokeDasharray: `${ADD_MODULE_DASH_PX} ${ADD_MODULE_GAP_PX}`,
-    strokeDashoffset: edgeDashOffset(flatHeight),
-    strokeLinecap: "butt" as const,
-  };
-  const cornerProps = { fill: "none", stroke: ADD_MODULE_DASH_COLOR, strokeWidth: ADD_MODULE_BORDER_PX };
+  const iconSize = zoneIconSize(rect.width);
 
   return (
     <button
@@ -2803,34 +2883,8 @@ function AddModuleButton({
           <circle key={`${dot.x}:${dot.y}`} cx={dot.x} cy={dot.y} r={DOT_RADIUS_PX} fill={DOT_COLOR} />
         ))}
       </svg>
-      {/* The dashed edge — see this file's own header comment above
-          for the four-edge-plus-solid-corners design and why.
-          Absolutely positioned to exactly cover the button,
-          pointerEvents:none so it never intercepts the click meant
-          for the button itself. */}
-      <svg
-        width={rect.width}
-        height={visualHeight}
-        style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
-      >
-        {/* Top and bottom: same flatWidth/offset, so besides each
-            being individually centered (the actual requirement), the
-            two also end up mirroring each other — a bonus, not
-            something separately computed for. */}
-        <line x1={x0 + r} y1={y0} x2={x1 - r} y2={y0} {...horizontalDashProps} />
-        <line x1={x0 + r} y1={y1} x2={x1 - r} y2={y1} {...horizontalDashProps} />
-        <line x1={x0} y1={y0 + r} x2={x0} y2={y1 - r} {...verticalDashProps} />
-        <line x1={x1} y1={y0 + r} x2={x1} y2={y1 - r} {...verticalDashProps} />
-        {/* Four quarter-circle corners, solid (no dasharray) —
-            deliberately not dashed at all, so there's nothing for a
-            corner to clip awkwardly through. Clockwise sweep
-            (sweep-flag 1) matches the same direction a rounded-rect's
-            own implicit path already goes in. */}
-        <path d={`M ${x0},${y0 + r} A ${r},${r} 0 0 1 ${x0 + r},${y0}`} {...cornerProps} />
-        <path d={`M ${x1 - r},${y0} A ${r},${r} 0 0 1 ${x1},${y0 + r}`} {...cornerProps} />
-        <path d={`M ${x1},${y1 - r} A ${r},${r} 0 0 1 ${x1 - r},${y1}`} {...cornerProps} />
-        <path d={`M ${x0 + r},${y1} A ${r},${r} 0 0 1 ${x0},${y1 - r}`} {...cornerProps} />
-      </svg>
+      {/* The dashed edge — see DashedZoneEdge. */}
+      <DashedZoneEdge width={rect.width} height={visualHeight} color={ADD_MODULE_DASH_COLOR} />
       {/* A real icon, not the text glyph "+" — requested directly
           ("can you change to plus icon as well"). Two round-capped
           strokes rather than a font character: renders at a precise,
@@ -7093,7 +7147,20 @@ export function NativePlannerEditor({
       // just a boundary it never knew existed. Pulled from targetPageId
       // (not always info.pageId — a genuine crossing needs the TARGET
       // page's own reserved add-zones, not the source page's).
-      for (const stackBottom of stackBottomsByPageId[targetPageId] ?? []) {
+      //
+      // SAME-ZONE REORDERS ONLY, since 2026-09-18. For a module ARRIVING
+      // - a crossing or a palette drop - that free space is exactly where
+      // it should go, and reserving it made the preview shrink the stack
+      // (or, with nothing shrinkable, overlap it) while the server, which
+      // never reserved it, committed into the free space instead. Measured:
+      // a 2-row arrival over a 9-row stack with 6 free rows below previewed
+      // at row 28 with the stack cut to 7, and committed at row 30 with the
+      // stack untouched. Under "insert at minimum, shrink only when full"
+      // it would also have drawn the no-entry mark over a zone still
+      // showing its "+". An arrival cannot float for want of this: the
+      // crossing branch below packs it up against the stack
+      // (packedTopEdge), which did not exist when this was written.
+      for (const stackBottom of crossingZones ? [] : stackBottomsByPageId[targetPageId] ?? []) {
         const gapRowSpan = stackBottom.maxBottomBound - stackBottom.stackBottomRowEnd;
         if (gapRowSpan <= 0) continue;
         targetOthersWithReservations.push({
@@ -7113,8 +7180,7 @@ export function NativePlannerEditor({
       // anyone's own size" precedent (only a genuinely new arrival at a
       // new size does). Scoped to unlocked siblings sharing the
       // candidate's own exact column range — the same set
-      // resolveModulePlacement's own isSameColumnStack test would
-      // recognize as this stack's siblings anyway.
+      // resolveModulePlacement recognizes as this stack's siblings anyway.
       // Only while genuinely crossing zones - an ordinary same-zone
       // reorder never shrinks anyone. The floors themselves come from the
       // shared rule; this `if` is the policy about when to offer them.
@@ -7125,13 +7191,23 @@ export function NativePlannerEditor({
           })
         : undefined;
 
-      const { placement: rawResolved, reflow: targetReflow } = resolveModulePlacement(
+      const resolution = resolveModulePlacement(
         targetPageGrid,
         candidate,
         targetOthersWithReservations,
         current.rowStart,
         minRowSpanById
       );
+      // No room even with everyone there at their minimum. Nothing moves
+      // - not the target stack, and not the source stack either, since
+      // the module is not leaving - and it stays where it came from.
+      // `blocked` is what the page draws its no-entry mark from and what
+      // handleDragEnd refuses the drop on: one resolution, both readers.
+      const blocked = resolution.fits ? null : { pageId: targetPageId, region: resolution.region };
+      const rawResolved = resolution.fits
+        ? resolution.placement
+        : { columnStart: current.columnStart, rowStart: current.rowStart };
+      const targetReflow = resolution.fits ? resolution.reflow : [];
 
       // Pack the arriving module up against whatever sits directly above
       // it in the target zone. resolveModulePlacement only reflows on a
@@ -7155,7 +7231,7 @@ export function NativePlannerEditor({
       // edge, topEdge equals rawResolved.rowStart, and nothing changes.
       // Crossings only — same-zone reorder keeps its existing behavior.
       let resolved = rawResolved;
-      if (crossingZones) {
+      if (crossingZones && !blocked) {
         const topEdge = packedTopEdge(
           targetOthersWithReservations,
           { columnStart: candidate.columnStart, columnSpan: effectiveColumnSpan },
@@ -7191,7 +7267,7 @@ export function NativePlannerEditor({
       // and overlapping instead of making room, and it corrupted the
       // resolved row the drop was then committed at.
       const reflow =
-        crossingZones && instanceId !== PHANTOM_ID
+        crossingZones && instanceId !== PHANTOM_ID && !blocked
           ? [
               ...targetReflow,
               ...gravityRepackAfterDeparture(
@@ -7220,6 +7296,7 @@ export function NativePlannerEditor({
         targetPageId,
         targetPageGrid,
         zoneKey,
+        blocked,
       };
     },
     [
@@ -7265,43 +7342,31 @@ export function NativePlannerEditor({
   // threshold-based correction never quite was (a real ~236px
   // corruption was eventually caught slipping under its 300px bar and
   // reaching the screen).
-  const crossingLivePreview = useMemo(() => {
+  // The ONE preview every drag reader renders from: crossingLivePreview
+  // (sizes), dragVisuals (transforms) and the no-entry mark. They used to
+  // each make this choice themselves, from identical copied lines, and
+  // they must agree for a given render or the dragged box's size and its
+  // transform desync.
+  //
+  // The held zone governs, always (confirmedCrossingRef's own comment,
+  // near readPointerDelta). It refreshes on every tick the pointer is
+  // inside a zone, so reorder previews still track the pointer live; it
+  // freezes only over dead space - over the hours grid mid-way, say,
+  // which was the original "i want it to stay returning to that position
+  // it was in when i went off the section" request. Preferring a fresh
+  // resolution whenever it happened to say "crossing" is what once let
+  // boundary chatter through to the size: the lock only ever applied on
+  // non-crossing ticks, which is exactly when it had nothing to hold back.
+  const activeDragPreview = useMemo(() => {
     if (!activeId || activeId.startsWith(PALETTE_ID_PREFIX)) return null;
-    const rawPreview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
-    // Prefers the LOCKED preview (confirmedCrossingRef's own comment,
-    // near readPointerDelta) whenever this instance has one —
-    // handleDragMove freezes it on the first confirmed tick of each
-    // crossing episode and never refreshes it again until a genuine
-    // exit, so the live preview stops re-resolving (and the insert
-    // target stops moving around) as the pointer wanders deeper into
-    // the target zone. Only falls back to the fresh raw evaluation when
-    // there's no lock yet for this instance (a brand-new crossing, not
-    // yet reflected in state) or the raw reading has genuinely dropped
-    // to not-crossing (handled by the lock clearing itself, in which
-    // case rawPreview is what should render — probably null/not
-    // crossing).
-    // Fresh resolution whenever the pointer is genuinely over a zone
-    // this module can land in; the last confirmed one ONLY when it
-    // isn't. That single rule covers both behaviours this has to have:
-    // reorder previews track the pointer live within a zone (standard
-    // drag-reorder), and the target stops drifting while the pointer is
-    // somewhere with no valid target — over the hours grid mid-way,
-    // say, which was the original "i want it to stay returning to that
-    // position it was in when i went off the section" request. Applied
-    // identically in visualOffsets below; the two must agree on the
-    // same preview for a given render or the dragged box's size and its
-    // transform desync.
-    // The held zone governs, always. Preferring rawPreview whenever it
-    // happened to say "crossing" is what let boundary chatter through to
-    // the size: the lock only ever applied on non-crossing ticks, which is
-    // exactly when it had nothing to hold back. The held preview refreshes
-    // on every tick the pointer is inside a zone, so this stays live; it
-    // freezes only over dead space, which is the intent.
-    const preview =
-      confirmedCrossingPreview?.instanceId === activeId
-        ? confirmedCrossingPreview.preview
-        : rawPreview;
-    if (!preview?.crossingZones) return null;
+    return confirmedCrossingPreview?.instanceId === activeId
+      ? confirmedCrossingPreview.preview
+      : resolveDrag(activeId, activeDelta.x, activeDelta.y);
+  }, [activeId, activeDelta, resolveDrag, confirmedCrossingPreview]);
+
+  const crossingLivePreview = useMemo(() => {
+    const preview = activeDragPreview;
+    if (!activeId || !preview?.crossingZones) return null;
     const placementOverrides: Record<string, Placement> = {
       [activeId]: {
         columnStart: preview.current.columnStart,
@@ -7355,7 +7420,7 @@ export function NativePlannerEditor({
       reflowContentPlacements[move.id] = easingContentGeometry(box, prev);
     }
     return { draggedId: activeId, placementOverrides, reflowContentPlacements };
-  }, [activeId, activeDelta, resolveDrag, displayPlacements, confirmedCrossingPreview]);
+  }, [activeId, activeDragPreview, displayPlacements]);
 
 
   const liveDisplayPlacements = useMemo(
@@ -7835,7 +7900,10 @@ export function NativePlannerEditor({
         const phantomResult = phantomHeld ?? resolveDrag(PHANTOM_ID, phantomDelta.x, phantomDelta.y);
         setActiveId(null);
         setActiveDelta(ZERO_OFFSET);
-        if (!phantomResult) {
+        // Released over the no-entry mark: nothing is added, and the
+        // siblings never moved (a blocked preview has no reflow), so
+        // taking the phantom away is the whole of it.
+        if (!phantomResult || phantomResult.blocked) {
           removePhantom();
           return;
         }
@@ -7990,6 +8058,10 @@ export function NativePlannerEditor({
           : null;
       const result = heldPreview ?? resolveDrag(instanceId, dropDelta.x, dropDelta.y);
       if (!result) return;
+      // Released over the no-entry mark. The module goes back where it
+      // came from - activeId is already cleared, which drops its drag
+      // transform - and nothing is committed or recorded for undo.
+      if (result.blocked) return;
       const {
         pageGrid,
         current,
@@ -8919,26 +8991,9 @@ export function NativePlannerEditor({
     let draggedAnchor: { x: number; y: number } = { x: 0, y: 0 };
 
     if (activeId) {
-      // Same "prefer the locked preview" logic as crossingLivePreview's
-      // own identical code (see its comment, and confirmedCrossingRef's
-      // near readPointerDelta) — kept consistent with it on
-      // purpose: both need to agree on the same preview for a given
-      // render, or the dragged item's own grab-point-anchored transform
-      // here would desync from its actual live grid box size over
-      // there, once that size is locked for the rest of the crossing
-      // episode instead of continuously re-resolving.
-      const rawPreview = resolveDrag(activeId, activeDelta.x, activeDelta.y);
-      // Same rule as crossingLivePreview above — see its comment.
-      // The held zone governs, always. Preferring rawPreview whenever it
-      // happened to say "crossing" is what let boundary chatter through to
-      // the size: the lock only ever applied on non-crossing ticks, which is
-      // exactly when it had nothing to hold back. The held preview refreshes
-      // on every tick the pointer is inside a zone, so this stays live; it
-      // freezes only over dead space, which is the intent.
-      const preview =
-        confirmedCrossingPreview?.instanceId === activeId
-          ? confirmedCrossingPreview.preview
-          : rawPreview;
+      // The same preview crossingLivePreview sizes the box from - see
+      // activeDragPreview for why there is exactly one.
+      const preview = activeDragPreview;
       if (preview) {
         const { pageGrid, reflow, current, crossingZones, effectiveColumnSpan, effectiveRowSpan } = preview;
         // The dragged item follows the pointer directly and
@@ -9003,7 +9058,7 @@ export function NativePlannerEditor({
     }
 
     return { offsets, draggedAnchor };
-  }, [activeId, activeDelta, placements, resolveDrag, scale, settling, grabFraction, confirmedCrossingPreview]);
+  }, [activeId, activeDelta, activeDragPreview, placements, scale, settling, grabFraction]);
 
   const visualOffsets = dragVisuals.offsets;
   // Page-pixel correction folded into the dragged module's left/top so
@@ -9344,6 +9399,9 @@ export function NativePlannerEditor({
                     hourlyResizeStackBottoms={hourlyStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     suppressAddZones={crossingInProgress}
+                    blockedRegion={
+                      activeDragPreview?.blocked?.pageId === page.pageId ? activeDragPreview.blocked.region : null
+                    }
                     resizingIds={effectiveResizingIds}
                     easeContent={easeContent}
                     reflowContent={reflowContentAll}

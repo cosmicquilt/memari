@@ -23,7 +23,6 @@ import {
   pixelsToGridCell,
   gridCellToAllocation,
   rectsOverlap,
-  findNearestFreeCell,
   resolveModulePlacement,
   packStackFromTop,
   gravityRepackAfterDeparture,
@@ -99,6 +98,67 @@ const sceneArb = pageArb.chain((page) =>
       }))
   )
 );
+
+// The same engine on the shape the first generator cannot make: a zone
+// several columns wide holding a mix of full-width modules (siblings of
+// the dropped one) and NARROWER ones (obstacles to it), some locked, with
+// per-module shrink floors - which is what a crossing or a palette drop
+// passes. A narrower module between two full-width ones is the case the
+// old repack laid modules on top of with no lock anywhere in sight.
+const mixedSceneArb = fc
+  .record({
+    gridRows: fc.integer({ min: 6, max: 36 }),
+    width: fc.integer({ min: 2, max: 4 }),
+    specs: fc.array(
+      fc.record({
+        rowSpan: fc.integer({ min: 1, max: 6 }),
+        narrow: fc.boolean(),
+        locked: fc.boolean(),
+        floorCut: fc.integer({ min: 0, max: 5 }),
+        gapAbove: fc.integer({ min: 0, max: 1 }),
+      }),
+      { minLength: 1, maxLength: 6 }
+    ),
+    rowStart: fc.integer({ min: -3, max: 40 }),
+    rowSpan: fc.integer({ min: 1, max: 6 }),
+    withFloors: fc.boolean(),
+    original: fc.option(fc.integer({ min: 0, max: 36 }), { nil: undefined }),
+  })
+  .map((s) => {
+    const page: PageGrid = {
+      widthPx: 2175,
+      heightPx: 3075,
+      gridColumns: s.width + 1,
+      gridRows: s.gridRows,
+      boxInsetPx: 6,
+      marginPx: 37.5,
+    };
+    const others: Member[] = [];
+    const floors: Record<string, number> = {};
+    let cursor = 0;
+    s.specs.forEach((spec, i) => {
+      cursor += spec.gapAbove;
+      if (cursor + spec.rowSpan > page.gridRows) return;
+      const id = `z${i}`;
+      others.push({
+        id,
+        locked: spec.locked,
+        columnStart: 0,
+        rowStart: cursor,
+        columnSpan: spec.narrow ? 1 : s.width,
+        rowSpan: spec.rowSpan,
+      });
+      floors[id] = Math.max(1, spec.rowSpan - spec.floorCut);
+      cursor += spec.rowSpan;
+    });
+    const candidate: GridRect = {
+      columnStart: 0,
+      rowStart: s.rowStart,
+      columnSpan: s.width,
+      rowSpan: Math.min(s.rowSpan, page.gridRows),
+    };
+    return { page, others, candidate, floors: s.withFloors ? floors : undefined, original: s.original };
+  });
 
 function anyOverlap(rects: GridRect[]): [number, number] | null {
   for (let i = 0; i < rects.length; i++) {
@@ -241,80 +301,133 @@ check(
 );
 
 // --- resolveModulePlacement ------------------------------------------------
+//
+// Every property runs on both generators. The single-column one is where
+// this file started; the mixed one reaches narrower modules and floors.
+
+type Scene = { page: PageGrid; others: Member[]; candidate: GridRect; floors?: Record<string, number>; original?: number };
+const plainScenes: fc.Arbitrary<Scene> = sceneArb;
+const scenes = fc.oneof(plainScenes, mixedSceneArb);
+const resolveScene = (s: Scene) => resolveModulePlacement(s.page, s.candidate, s.others, s.original, s.floors);
 
 check(
-  "resolved placement is always inside the grid",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = resolveModulePlacement(page, candidate, others);
-    return inBounds(page, placedRect(candidate, r.placement));
+  "a resolved drop lands inside the grid",
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    return !r.fits || inBounds(s.page, placedRect(s.candidate, r.placement));
   })
 );
 
+// No precondition. This used to hold only "whenever the content actually
+// fits", because the engine could not say no: on a full grid it handed
+// back the drop point overlapping whatever was under it. A drop either
+// lands without touching anything, or is refused.
 check(
-  "the resolved layout never overlaps, whenever the content actually fits",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    // Precondition, not a weakening: findNearestFreeCell documents that a
-    // genuinely full grid gets the clamped (still overlapping) candidate
-    // back, because there is nothing better to return. Asserting no-overlap
-    // there would be asserting the impossible.
-    const needed = candidate.rowSpan + others.reduce((sum, o) => sum + o.rowSpan, 0);
-    if (needed > page.gridRows) return true;
-    const r = resolveModulePlacement(page, candidate, others);
-    return anyOverlap(finalLayout(others, placedRect(candidate, r.placement), r.reflow)) === null;
+  "a resolved drop never overlaps anything",
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    return anyOverlap(finalLayout(s.others, placedRect(s.candidate, r.placement), r.reflow)) === null;
   })
 );
 
 check(
   "reflow never moves a locked module",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = resolveModulePlacement(page, candidate, others);
-    const lockedIds = new Set(others.filter((o) => o.locked).map((o) => o.id));
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    const lockedIds = new Set(s.others.filter((o) => o.locked).map((o) => o.id));
     return r.reflow.every((m) => !lockedIds.has(m.id));
   })
 );
 
 check(
   "reflow never invents or drops a module",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = resolveModulePlacement(page, candidate, others);
-    const known = new Set(others.map((o) => o.id));
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    const known = new Set(s.others.map((o) => o.id));
     return r.reflow.every((m) => known.has(m.id)) && new Set(r.reflow.map((m) => m.id)).size === r.reflow.length;
   })
 );
 
 check(
+  "reflow never shrinks a module below its floor, or grows one",
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    return r.reflow.every((m) => {
+      if (m.rowSpan === undefined) return true;
+      const before = s.others.find((o) => o.id === m.id)!;
+      return m.rowSpan <= before.rowSpan && m.rowSpan >= (s.floors?.[m.id] ?? before.rowSpan);
+    });
+  })
+);
+
+check(
   "every module in the resolved layout stays inside the grid",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = resolveModulePlacement(page, candidate, others);
-    return finalLayout(others, placedRect(candidate, r.placement), r.reflow).every((rect) =>
-      inBounds(page, rect)
-    );
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    return finalLayout(s.others, placedRect(s.candidate, r.placement), r.reflow).every((rect) => inBounds(s.page, rect));
   })
 );
 
 // Idempotence: dropping a module exactly where it was just resolved to
 // should be a no-op. If this fails, a drag that changes nothing still
-// rewrites the page — and the second result is the one that ships.
-// KNOWN FAILURE, and the reason this file is not yet wired into `npm test`.
-// The stack-reorder path gathers all unlocked same-column siblings and
-// repacks them as one contiguous run, ignoring locked blocks between them:
-// dropping a 1-row module at row 12 of
-//   m0_0 0-3 unlocked | LOCKED 4-7 | LOCKED 8-10 | LOCKED 11 | m0_4 12-17
-// returns placement row 4 and moves m0_4 to row 5, both inside the locked
-// blocks, while rows 18-25 sit empty. Locked modules are never *moved* (that
-// property passes) - they are laid on top of.
+// rewrites the page — and the second result is the one that ships. It
+// failed from the day it was written until 2026-09-18, on a locked block
+// between two siblings that the repack ran straight through.
 check(
   "resolving an already-resolved placement moves nothing further",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const first = resolveModulePlacement(page, candidate, others);
-    const firstRect = placedRect(candidate, first.placement);
-    const settled = finalLayout(others, firstRect, first.reflow);
-    const settledOthers: Member[] = others.map((o, i) => ({ ...o, ...settled[i + 1] }));
-    const second = resolveModulePlacement(page, firstRect, settledOthers);
+  fc.property(scenes, (s) => {
+    const first = resolveScene(s);
+    if (!first.fits) return true;
+    const firstRect = placedRect(s.candidate, first.placement);
+    const settled = finalLayout(s.others, firstRect, first.reflow);
+    const settledOthers: Member[] = s.others.map((o, i) => ({ ...o, ...settled[i + 1] }));
+    const second = resolveModulePlacement(s.page, firstRect, settledOthers, s.original, s.floors);
     return (
+      second.fits &&
       second.placement.rowStart === first.placement.rowStart &&
-      second.placement.columnStart === first.placement.columnStart
+      second.placement.columnStart === first.placement.columnStart &&
+      second.reflow.length === 0
     );
+  })
+);
+
+// A refusal has to be TRUE, or the editor draws its no-entry mark over a
+// zone that had room. Restated from the inputs rather than from the
+// engine's own arithmetic: the refused region is free of everything that
+// is not a sibling, it is in the dropped module's own columns, and even
+// with every sibling in it at its floor, it is too short.
+check(
+  "a refusal only happens when the region really has no room",
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (r.fits) return true;
+    const { region } = r;
+    if (region.columnStart !== s.candidate.columnStart || region.columnSpan !== s.candidate.columnSpan) return false;
+    const sibling = (o: Member) =>
+      !o.locked && o.columnStart === s.candidate.columnStart && o.columnSpan === s.candidate.columnSpan;
+    const inRegion = s.others.filter((o) => rectsOverlap(o, region));
+    if (inRegion.some((o) => !sibling(o))) {
+      // The one case with no free stretch to name: every row of these
+      // columns is covered by something that is not a sibling, and the
+      // refusal falls back to the drop point itself. Legal only then.
+      const blockers = s.others.filter(
+        (o) =>
+          !sibling(o) &&
+          o.columnStart < s.candidate.columnStart + s.candidate.columnSpan &&
+          o.columnStart + o.columnSpan > s.candidate.columnStart
+      );
+      for (let row = 0; row < s.page.gridRows; row++) {
+        if (!blockers.some((o) => o.rowStart <= row && row < o.rowStart + o.rowSpan)) return false;
+      }
+      return true;
+    }
+    const floorsTotal = inRegion.reduce((sum, o) => sum + (s.floors?.[o.id] ?? o.rowSpan), 0);
+    return floorsTotal + s.candidate.rowSpan > region.rowSpan;
   })
 );
 
@@ -418,34 +531,6 @@ check(
     // grows past where the stack already ended.
     if (anyOverlap(settled) !== null) return false;
     return settled.every((m) => m.rowStart + m.rowSpan <= originalBottom);
-  })
-);
-
-// --- findNearestFreeCell ---------------------------------------------------
-
-check(
-  "findNearestFreeCell returns an in-bounds cell",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = findNearestFreeCell(page, candidate, others);
-    return inBounds(page, placedRect(candidate, r));
-  })
-);
-
-check(
-  "findNearestFreeCell returns a free cell whenever one exists",
-  fc.property(sceneArb, ({ page, others, candidate }) => {
-    const r = findNearestFreeCell(page, candidate, others);
-    const chosen = placedRect(candidate, r);
-    if (!others.some((o) => rectsOverlap(chosen, o))) return true;
-    // It returned an overlapping cell — legal ONLY if the grid genuinely
-    // has nowhere to put this span.
-    for (let c = 0; c <= page.gridColumns - candidate.columnSpan; c++) {
-      for (let row = 0; row <= page.gridRows - candidate.rowSpan; row++) {
-        const test = { ...candidate, columnStart: c, rowStart: row };
-        if (!others.some((o) => rectsOverlap(test, o))) return false;
-      }
-    }
-    return true;
   })
 );
 

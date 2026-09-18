@@ -376,12 +376,19 @@ export function PlannerEditorCanvas({
           ...(page ? gatherLiveTrackedRects(page, pageGrid, moduleGridInfo, node.id).map((r) => ({ ...r, locked: false })) : []),
         ];
 
-        const { placement, reflow } = resolveModulePlacement(
+        const resolution = resolveModulePlacement(
           pageGrid,
           candidate,
           others,
           lastRowStartRef.current[node.id]
         );
+        // No room: back to the row it last settled on, rather than on top
+        // of whatever is under the pointer. This route is the legacy
+        // comparison point and has no overlay to explain the refusal.
+        const placement = resolution.fits
+          ? resolution.placement
+          : { columnStart: candidate.columnStart, rowStart: lastRowStartRef.current[node.id] ?? candidate.rowStart };
+        const reflow = resolution.fits ? resolution.reflow : [];
         lastRowStartRef.current[node.id] = placement.rowStart;
 
         // Displaced siblings move too — same "shift the children by

@@ -1122,13 +1122,20 @@ export async function addPaletteModuleAt(
           configOf(otherMi)
         );
       }
-      const { placement: resolvedPlacement, reflow: paletteReflow } = resolveModulePlacement(
+      const paletteResolution = resolveModulePlacement(
         pageGrid,
         { ...candidate, columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
         occupied,
         undefined,
         paletteMinRowSpanById
       );
+      // The editor already showed "no room" and never sends this; a
+      // refusal here means the two disagreed, and the answer is still to
+      // write nothing rather than a module on top of another.
+      if (!paletteResolution.fits) {
+        throw new Error("No room here: every module in this zone is already at its minimum size");
+      }
+      const { placement: resolvedPlacement, reflow: paletteReflow } = paletteResolution;
 
       // Pack the arriving module up against whatever sits directly
       // above it, exactly as resolveDrag does client-side for a
@@ -1495,13 +1502,19 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
     return mi ? { slug: mi.moduleType.slug, propValues: configOf(mi) } : undefined;
   });
 
-  const { placement: resolved, reflow } = resolveModulePlacement(
+  const resolution = resolveModulePlacement(
     targetPageGrid,
     candidate,
     targetOthers,
     instance.rowStart,
     minRowSpanById
   );
+  // Nothing has been written yet. See addPaletteModuleAt's identical
+  // refusal: the editor shows "no room" and keeps the module where it was.
+  if (!resolution.fits) {
+    throw new Error("No room here: every module in this zone is already at its minimum size");
+  }
+  const { placement: resolved, reflow } = resolution;
 
   // Crossing leaves a gap in the SOURCE zone (the one being left) —
   // resolveModulePlacement above only ever reorders/reflows the TARGET
