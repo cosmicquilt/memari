@@ -701,10 +701,13 @@ type StackBottom = {
 // crossing runs them at once and they should land together; two
 // durations read as one movement chasing another.
 //
-// A slider in the header overrides this live (see easeMs state). It
-// exists because every animation bug in this area was found by slowing
-// it down and watching, and rebuilding between values loses the drag
-// you were in the middle of.
+// A slider in the header used to override this live, because every
+// animation bug in this area was found by slowing one down and watching
+// it, and rebuilding between values loses the drag you were in the middle
+// of. It was a debug control sitting in the shipped header, and it is gone;
+// this constant is what it was left at. To get that back for an afternoon,
+// put the state and the input back rather than editing this number - that
+// was the whole point of it being a slider.
 const DEFAULT_EASE_MS = 400;
 
 const boxResizeTransition = (easeMs: number) =>
@@ -854,7 +857,7 @@ function NativeModule({
   // the other page, a module is out of position for the whole settle,
   // so it has to keep the elevation and layer it had while dragged.
   isSettling: boolean;
-  // Live value of the header's duration slider - see DEFAULT_EASE_MS.
+  // How long a crossing animation takes - see DEFAULT_EASE_MS.
   easeMs: number;
   // True for the couple of frames right after this instance was created
   // by a palette drag-drop (see handleAddModule's own comment) —
@@ -6091,9 +6094,10 @@ export function NativePlannerEditor({
   // commit, which would let the content render once at the target size
   // before freezing - a single-frame flash of the exact artefact this
   // exists to remove.
-  // Length of every crossing animation, adjustable live from the header.
-  // See DEFAULT_EASE_MS for why they all share one number.
-  const [easeMs, setEaseMs] = useState(DEFAULT_EASE_MS);
+  // Length of every crossing animation - see DEFAULT_EASE_MS for why they
+  // all share one number. A header slider used to drive this; it was a debug
+  // control, and 400ms is the value it was left at.
+  const easeMs = DEFAULT_EASE_MS;
 
   // The same thing for SIBLINGS a reflow is resizing. They need it for
   // the same reason the dragged module does and could not previously
@@ -9141,64 +9145,6 @@ export function NativePlannerEditor({
           <HistoryButton direction="undo" disabled={history.past.length === 0} onClick={() => void stepHistory("undo")} />
           <HistoryButton direction="redo" disabled={history.future.length === 0} onClick={() => void stepHistory("redo")} />
         </div>
-        {/* Live control over how long every crossing animation takes.
-            Every animation bug in this area was found by slowing it
-            down and watching one, and rebuilding between values loses
-            the drag you were in the middle of - so it is a slider
-            rather than a constant to edit.
-
-            Placed BEFORE the Reset button deliberately: that one owns
-            marginLeft:auto, so anything after it lands in the header's
-            right-hand group, and this header is nowrap - a control
-            there gets crushed or pushed off the right edge. Same
-            lesson the anchor toggle taught before it was deleted.
-
-            0 disables the animation entirely, which is a genuinely
-            useful setting and not just the bottom of the range: it is
-            how the resize behaved before any of this, and the fastest
-            way to tell an animation bug from a layout one. */}
-        {/* SHRINKS rather than holding its width. This is the widest thing
-            in a nowrap header, and holding 110px of slider is what pushed
-            the header 25px over its own width below about 700px - the row
-            had nothing left to give. It is also the least important control
-            here: a debug slider yields before a title or a button does. */}
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexShrink: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            whiteSpace: "nowrap",
-            fontSize: 12,
-            color: "#bbb",
-          }}
-          title="How long a cross-zone resize and the reflow around it take"
-        >
-          Ease
-          <input
-            type="range"
-            min={0}
-            max={1200}
-            step={50}
-            value={easeMs}
-            onChange={(event) => setEaseMs(Number(event.target.value))}
-            style={{ width: 110, minWidth: 40, flexShrink: 1, cursor: "pointer" }}
-          />
-          <span
-            style={{
-              minWidth: 0,
-              flexShrink: 1,
-              overflow: "hidden",
-              textAlign: "right",
-              fontVariantNumeric: "tabular-nums",
-              color: "#ddd",
-            }}
-          >
-            {easeMs}ms
-          </span>
-        </label>
         {/* Debug-only sidebar + to-do reset — requested directly: "reset
             the entire page to the original layout we first made... from
             the pdf." Scoped to the sidebar column and the below-hourly-
