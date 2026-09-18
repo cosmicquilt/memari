@@ -111,3 +111,15 @@ canvas[data-drawn] + .memari-spinner {
   from { opacity: 1; }
   to { opacity: 0.2; }
 }
+
+/* The timeline's row scrolls sideways by swiping, with no visible bar - a
+   bar in a strip this short eats the cards. It was a <style> element inside
+   TimelineDrawer, deleted by accident in fa8ad25 while its comment stayed;
+   the 15px classic bar that came back on Windows covered the bottom of the
+   row, and with it each level box's lower edge. */
+.memari-timeline-track {
+  scrollbar-width: none;
+}
+.memari-timeline-track::-webkit-scrollbar {
+  display: none;
+}

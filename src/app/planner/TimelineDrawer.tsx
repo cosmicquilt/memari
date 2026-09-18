@@ -37,6 +37,7 @@
 // separates it instead.
 
 import {
+  Fragment,
   memo,
   useEffect,
   useLayoutEffect,
@@ -85,6 +86,46 @@ const CARD_HEIGHT = 102;
  *  the preview's own viewBox keeps the drawing true inside it. */
 const PAGE_RATIO = 2175 / 3075;
 const CARD_GAP = 8;
+/** The line between the pages of a spread, which is ONE card - see
+ *  PageCardInner. One CSS pixel of Apple's light-mode separator grey, laid
+ *  BETWEEN the two previews rather than over either, so each page keeps
+ *  its own proportions. */
+const SPREAD_SEAM_PX = 1;
+const SPREAD_SEAM_COLOR = "#c6c6c8";
+
+/**
+ * THE ACTIVE SET IS BIGGER, and a hovered one grows toward it. Asked for,
+ * 2026-09-18: "increase the size of the active page/spread and for hovering
+ * over the other page preview can you un grey them and animate them larger
+ * on hover and back small on hover off".
+ *
+ * Active: 1.2x, and it takes that room in the row - its neighbours move
+ * aside rather than being overlapped, since it stays that size for as long
+ * as it is open. Every row reserves the active height, so the boxes all
+ * stay one height whichever level is open.
+ *
+ * Hovered (or keyboard-focused): 1.1x, and it PUSHES ITS NEIGHBOURS ASIDE
+ * - "shift the other items like adjacent pages and add page button out the
+ * way while all of them stay center within container". The card grows
+ * about its own centre, what is left of it moves left by half the growth,
+ * what is right of it moves right by half, and the level's box does not
+ * change size, so the other levels and the rules between them stay still.
+ * 1.1 keeps the active set the largest thing in the row.
+ *
+ * Both are REAL SIZE CHANGES, not transforms. A scaled canvas is a
+ * stretched bitmap, soft and with thickened hairlines; resized, it redraws
+ * itself crisp at every frame through the same ResizeObserver a drawer drag
+ * uses.
+ */
+const ACTIVE_SCALE = 1.2;
+/** The default set's name in LevelGroup's lift state. Variant keys are
+ *  occurrence keys like "2026-02", never this. */
+const DEFAULT_SET_KEY = "default";
+const HOVER_SCALE = 1.1;
+/** Quick, as a hover has to be, on the drawer's own curve. */
+const HOVER_MS = 220;
+/** How tall every row of cards is: room for the active set. */
+const CARD_ROW_HEIGHT = `calc(${ACTIVE_SCALE} * var(--memari-card-h))`;
 
 // A NOTE ON WHAT NOT TO DO HERE, because it was tried and reverted.
 //
@@ -101,9 +142,38 @@ const CARD_GAP = 8;
 //
 // It did not help the frame rate either, which was the tell that the cost was
 // somewhere else entirely - see where the custom properties are written.
-/** Between one group's last card and the next group's first. Whitespace,
- *  not a divider: Apple groups by proximity and draws no rule. */
-const GROUP_GAP = 32;
+/**
+ * EACH LEVEL IS A BOX, since 2026-09-18: "make each level contained in a
+ * thin a bit lighter grey than the timeline background itself rounded
+ * rectangle border", the level's name centred along the bottom inside it
+ * and the cog in its top-right corner. Its padding and the gap between
+ * boxes are GROUP_PAD_TOP, GROUP_PAD_X and GROUP_GAP, further down: they
+ * are derived from the band under the cards.
+ */
+const GROUP_BORDER_PX = 1;
+/** A bit lighter than SURFACE (#2a2a2a) - white at 10% over it. */
+const GROUP_BORDER = "#3f3f3f";
+/** Below the level's name. */
+const GROUP_PAD_BOTTOM = 6;
+/** Typed, not derived from the padding. It was concentric with the cards -
+ *  their 3px corner plus the padding plus the border, 12px - until the
+ *  padding grew to 39, where the same rule gives 43: nearly a pill, which
+ *  nobody asked for. */
+const GROUP_RADIUS = 12;
+/** The cog's 24px target sits this far inside the box's top-right corner,
+ *  in the band above the cards that centring them leaves - so it needs no
+ *  gutter of its own. */
+const COG_TARGET = 24;
+const COG_INSET = 4;
+/** The row's own padding, around the boxes rather than between them. */
+const TRACK_PAD_TOP = 8;
+const TRACK_PAD_BOTTOM = 8;
+const TRACK_PAD_X = 11;
+/** A column's cards, then its caption. */
+const CARD_TO_SUB_LABEL = 4;
+/** The level's name: 11px uppercase in a 14px line, 2px under the captions. */
+const LEVEL_LABEL_HEIGHT = 14;
+const LEVEL_LABEL_GAP = 2;
 
 /** The grabber itself, and the target around it. The visual pill is 36 x 5;
  *  a 5px-high hit area fails WCAG 2.5.8's 24px minimum, so the pill sits
@@ -122,14 +192,52 @@ const GRABBER_BAND = 28;
  *  the level labels below them stay on one line. */
 const SUB_LABEL_HEIGHT = 13;
 
-/** Everything in the drawer that is not a card: the grabber band, the
- *  padding above and below the row, the sub-label, the level label and the
- *  gaps between them. */
-const CHROME_HEIGHT = GRABBER_BAND + 10 + 4 + SUB_LABEL_HEIGHT + 8 + 14 + 14;
+/** Above the cards: exactly what sits below them - the caption, the level's
+ *  name and the padding under it - so the previews are centred top to
+ *  bottom inside the border. Asked for, 2026-09-18: "i want the page
+ *  previews to look vertically center within the borders". Derived rather
+ *  than typed, so it stays centred if any of those change. */
+const GROUP_PAD_TOP =
+  CARD_TO_SUB_LABEL + SUB_LABEL_HEIGHT + LEVEL_LABEL_GAP + LEVEL_LABEL_HEIGHT + GROUP_PAD_BOTTOM;
 
-/** Resting height: the chrome plus one card. Computed rather than typed, so
- *  changing a card changes the drawer and the canvas padding together. */
-export const DRAWER_RESTING_HEIGHT = CHROME_HEIGHT + CARD_HEIGHT;
+/** Beside the cards, and between two boxes: the same as above and below
+ *  them, so each level's previews sit in an even margin all round and the
+ *  boxes are spaced at that same rhythm. Asked for, 2026-09-18: "add
+ *  similar paddings to the sides as well and between adjacent level
+ *  borders". */
+const GROUP_PAD_X = GROUP_PAD_TOP;
+const GROUP_GAP = GROUP_PAD_TOP;
+/** A vertical rule in the gap between two boxes, in the border's own grey:
+ *  "a vertical line same grey as border between adjacent levels 80% of the
+ *  height of the border". Centred both ways - 19px of gap either side of a
+ *  1px line, and 10% of the box's height above and below it. */
+const LEVEL_DIVIDER_PX = 1;
+const LEVEL_DIVIDER_SHARE = 0.8;
+
+/** Everything in the drawer that is not a card, top to bottom: the grabber
+ *  band, the row's padding, a box's border and padding, the caption, the
+ *  level's name, and the same on the way out. Every term is a constant the
+ *  layout itself reads, so this cannot say one height while the row lays
+ *  out another - which it did, while the cog sat in the name's row: a 24px
+ *  button in a line counted as 14 overflowed the bottom by 10. */
+const CHROME_HEIGHT =
+  GRABBER_BAND +
+  TRACK_PAD_TOP +
+  GROUP_BORDER_PX +
+  GROUP_PAD_TOP +
+  CARD_TO_SUB_LABEL +
+  SUB_LABEL_HEIGHT +
+  LEVEL_LABEL_GAP +
+  LEVEL_LABEL_HEIGHT +
+  GROUP_PAD_BOTTOM +
+  GROUP_BORDER_PX +
+  TRACK_PAD_BOTTOM;
+
+/** Resting height: the chrome plus a row of cards, which is tall enough for
+ *  the active set. Computed rather than typed, so changing a card changes
+ *  the drawer and the canvas padding together. Rounded UP, so the row never
+ *  overruns the drawer by the fraction 102 x 1.2 leaves. */
+export const DRAWER_RESTING_HEIGHT = CHROME_HEIGHT + Math.ceil(CARD_HEIGHT * ACTIVE_SCALE);
 
 /** Closed: the grabber band and nothing else. Not zero - the lip IS the way
  *  back, and a panel that disappears entirely needs some other control
@@ -147,7 +255,8 @@ export const DRAWER_CLOSED_HEIGHT = GRABBER_BAND;
  * was for.
  */
 function cardSize(drawerHeight: number) {
-  const height = Math.max(CARD_HEIGHT, Math.round(drawerHeight - CHROME_HEIGHT));
+  // The room left is a row, and a row is ACTIVE_SCALE cards tall.
+  const height = Math.max(CARD_HEIGHT, Math.floor((drawerHeight - CHROME_HEIGHT) / ACTIVE_SCALE));
   return { height, width: Math.round(height * PAGE_RATIO) };
 }
 
@@ -1081,7 +1190,7 @@ export function TimelineDrawer({
           display: "flex",
           alignItems: "flex-start",
           gap: GROUP_GAP,
-          padding: "10px 20px 14px",
+          padding: `${TRACK_PAD_TOP}px ${TRACK_PAD_X}px ${TRACK_PAD_BOTTOM}px`,
           overflowX: "auto",
           overflowY: "hidden",
           // NOT FADED. Asked for directly: "you don't need to fade in or out
@@ -1100,7 +1209,7 @@ export function TimelineDrawer({
           // where one is visible but too faint to have been aimed at.
         }}
       >
-        {groups.map((group) => (
+        {groups.map((group, index) => (
           <LevelGroup
             key={group.level}
             level={group.level}
@@ -1112,6 +1221,7 @@ export function TimelineDrawer({
             highContrast={highContrast}
             reduceMotion={reduceMotion}
             onOpen={onOpen}
+            dividerAfter={index < groups.length - 1}
           />
         ))}
       </div>
@@ -1137,11 +1247,9 @@ export function TimelineDrawer({
       />
 
       {/* Scrollbars hidden: a trackpad-first row is navigated by swiping, and
-          a visible bar in a 102px-tall strip eats the cards. Kept as a real
-          stylesheet rule because ::-webkit-scrollbar has no inline form. */}
-      {/* Scrollbars hidden: a trackpad-first row is navigated by swiping, and
-          a visible bar in a 102px-tall strip eats the cards. Kept as a real
-          stylesheet rule because ::-webkit-scrollbar has no inline form.
+          a visible bar in a 102px-tall strip eats the cards. A real
+          stylesheet rule, in globals.css, because ::-webkit-scrollbar has no
+          inline form.
 
           THE CARDS' SIZE TRANSITION IS NOT HERE, and was, and did nothing.
           A rule like `.is-settling .memari-card { transition: width ... }`
@@ -1179,6 +1287,7 @@ function LevelGroupInner({
   highContrast,
   reduceMotion,
   onOpen,
+  dividerAfter,
 }: {
   level: PageLevel;
   pages: TimelinePage[];
@@ -1191,6 +1300,8 @@ function LevelGroupInner({
   highContrast: boolean;
   reduceMotion: boolean;
   onOpen: (level: PageLevel, variantKey: string | null) => void;
+  /** Draw the rule between this box and the next. Every box but the last. */
+  dividerAfter: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // What the popover hangs off. It has to be measured rather than positioned
@@ -1233,29 +1344,98 @@ function LevelGroupInner({
     </div>
   );
 
+  const hasCog = repeats(level);
+
+  // WHICH SET IS LIFTED - hovered, or focused from the keyboard - is held
+  // here rather than in the card, because the whole row answers it. The
+  // lifted card takes its extra width in the row, so its neighbours move
+  // aside; the row then gives back half of that on each side, as negative
+  // margins, so its footprint in the box - and so the box - stays the same
+  // size and the level stays centred in it. See HOVER_SCALE.
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const liftFor = (key: string, selected: boolean) =>
+    !selected && (hoverKey === key || focusKey === key);
+  const liftHandlers = (key: string) => ({
+    onHover: (on: boolean) => setHoverKey((current) => (on ? key : current === key ? null : current)),
+    onFocusVisible: (on: boolean) =>
+      setFocusKey((current) => (on ? key : current === key ? null : current)),
+  });
+  const defaultSelected = level === activeLevel && activeVariantKey === null;
+  const liftedPages =
+    (liftFor(DEFAULT_SET_KEY, defaultSelected) ? defaults.length : 0) +
+    variants.reduce(
+      (sum, [key, variantPages]) =>
+        sum + (liftFor(String(key), level === activeLevel && activeVariantKey === key) ? variantPages.length : 0),
+      0
+    );
+  const recentre =
+    liftedPages > 0 ? `calc(${round4((-liftedPages * (HOVER_SCALE - 1)) / 2)} * var(--memari-card-w))` : "0px";
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, position: "relative" }}>
-      <div style={{ display: "flex", gap: CARD_GAP, alignItems: "flex-start" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", gap: CARD_GAP }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        flexShrink: 0,
+        position: "relative",
+        border: `${GROUP_BORDER_PX}px solid ${highContrast ? "#777777" : GROUP_BORDER}`,
+        borderRadius: GROUP_RADIUS,
+        padding: `${GROUP_PAD_TOP}px ${GROUP_PAD_X}px ${GROUP_PAD_BOTTOM}px`,
+      }}
+    >
+      {/* The rule between this box and the next - see LEVEL_DIVIDER_SHARE.
+          Hung off the box rather than put in the row as an element of its
+          own, which would take a gap on each side of it and push the boxes
+          apart. Absolute offsets here are from inside the border, so the
+          border is added back: `100%` is the box without it. */}
+      {dividerAfter && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: `calc(100% + ${GROUP_BORDER_PX + (GROUP_GAP - LEVEL_DIVIDER_PX) / 2}px)`,
+            top: `calc((100% + ${2 * GROUP_BORDER_PX}px) * ${(1 - LEVEL_DIVIDER_SHARE) / 2} - ${GROUP_BORDER_PX}px)`,
+            width: LEVEL_DIVIDER_PX,
+            height: `calc((100% + ${2 * GROUP_BORDER_PX}px) * ${LEVEL_DIVIDER_SHARE})`,
+            background: highContrast ? "#777777" : GROUP_BORDER,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+      <div
+        style={{
+          display: "flex",
+          gap: CARD_GAP,
+          alignItems: "flex-start",
+          marginLeft: recentre,
+          marginRight: recentre,
+          // On the card's own clock, so the row moves back exactly as fast
+          // as the card pushes it out.
+          transition: reduceMotion
+            ? "none"
+            : `margin-left ${HOVER_MS}ms ${SETTLE}, margin-right ${HOVER_MS}ms ${SETTLE}`,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
+          <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center" }}>
             {defaults.length === 0 ? (
               <EmptyLevel />
             ) : (
-              defaults.map((page) => (
-                <PageCard
-                  key={page.pageId}
-                  page={page}
-                  selected={level === activeLevel && activeVariantKey === null}
-                  card={card}
-                  // Removable only when it is BLANK and not the last one -
-                  // the server refuses anything else, and offering a control
-                  // that will be refused is worse than not offering it.
-                  removable={defaults.length > 1 && page.moduleCount === 0}
-                  highContrast={highContrast}
-                  reduceMotion={reduceMotion}
-                  onOpen={() => onOpen(level, null)}
-                />
-              ))
+              <PageCard
+                pages={defaults}
+                selected={defaultSelected}
+                lifted={liftFor(DEFAULT_SET_KEY, defaultSelected)}
+                {...liftHandlers(DEFAULT_SET_KEY)}
+                card={card}
+                // A page is removable only when it is BLANK and not the last
+                // one - the server refuses anything else, and offering a
+                // control that will be refused is worse than not offering it.
+                canRemoveBlank={defaults.length > 1}
+                highContrast={highContrast}
+                reduceMotion={reduceMotion}
+                onOpen={() => onOpen(level, null)}
+              />
             )}
           </div>
           {/* Named only once something else is beside it. On its own the
@@ -1270,25 +1450,26 @@ function LevelGroupInner({
             At the end of the DEFAULT column only. A variant's set is a copy
             of the default's, and offering to grow one of them out of step
             with the other is a question nobody asked. */}
-        <AddPageCard card={card} level={level} variantKey={null} reduceMotion={reduceMotion} />
+        <div style={{ display: "flex", height: CARD_ROW_HEIGHT, alignItems: "center", flexShrink: 0 }}>
+          <AddPageCard card={card} level={level} variantKey={null} reduceMotion={reduceMotion} />
+        </div>
         {/* An occurrence with its own layout sits BESIDE the default, not on
             top of it. This is exactly where the design originally had cards
             overlap like a Dock stack - see this file's header for why a
             stack is the wrong answer to "show me there is more than one". */}
         {variants.map(([key, variantPages]) => (
-          <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ display: "flex", gap: CARD_GAP }}>
-              {variantPages.map((page) => (
-                <PageCard
-                  key={page.pageId}
-                  page={page}
-                  selected={level === activeLevel && activeVariantKey === key}
-                  card={card}
-                  highContrast={highContrast}
-                  reduceMotion={reduceMotion}
-                  onOpen={() => onOpen(level, key)}
-                />
-              ))}
+          <div key={key} style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
+            <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center" }}>
+              <PageCard
+                pages={variantPages}
+                selected={level === activeLevel && activeVariantKey === key}
+                lifted={liftFor(String(key), level === activeLevel && activeVariantKey === key)}
+                {...liftHandlers(String(key))}
+                card={card}
+                highContrast={highContrast}
+                reduceMotion={reduceMotion}
+                onOpen={() => onOpen(level, key)}
+              />
             </div>
             {/* Which occurrence this is. A variant card without one is a
                 duplicate of the default with no way to tell them apart. */}
@@ -1297,15 +1478,17 @@ function LevelGroupInner({
         ))}
       </div>
 
-      {/* The label sits UNDER its cards, 8px down. Uppercase and tracked out,
-          because small uppercase sans-serif collides without the extra room.
-          The cog sits inline with it. */}
+      {/* The level's name, centred along the bottom of its box. Uppercase and
+          tracked out, because small uppercase sans-serif collides without the
+          extra room. Its own line now - the cog used to share it, and a 24px
+          button in a 14px line pushed the three repeating levels' names 3.75px
+          below Beginning's and Ending's. */}
       <div
         style={{
-          marginTop: 8,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
+          marginTop: LEVEL_LABEL_GAP,
+          height: LEVEL_LABEL_HEIGHT,
+          lineHeight: `${LEVEL_LABEL_HEIGHT}px`,
+          textAlign: "center",
           whiteSpace: "nowrap",
         }}
       >
@@ -1321,7 +1504,11 @@ function LevelGroupInner({
         >
           {LEVEL_LABELS[level]}
         </span>
-        {/* QUIET PERMANENCE, not hover-to-reveal. The original design had
+      </div>
+
+      {/* The cog, in the box's top-right corner.
+
+          QUIET PERMANENCE, not hover-to-reveal. The original design had
             this appear only when the pointer entered the group, which does
             not exist on a touch screen, cannot be reached by keyboard, and
             is invisible to a screen reader while it is transparent. It is
@@ -1342,7 +1529,8 @@ function LevelGroupInner({
 
             Only on a level that REPEATS: front and back matter are printed
             once, so there is no second occurrence to give a layout to. */}
-        {repeats(level) && (
+      {hasCog && (
+        <div style={{ position: "absolute", top: COG_INSET, right: COG_INSET }}>
           <CogButton
             buttonRef={cogRef}
             open={open}
@@ -1351,8 +1539,8 @@ function LevelGroupInner({
             highContrast={highContrast}
             reduceMotion={reduceMotion}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {open && (
         <OccurrencePopover
@@ -1399,8 +1587,8 @@ function CogButton({
       title={label}
       style={{
         // 24px square - WCAG 2.5.8's minimum target - around a 13px glyph.
-        width: 24,
-        height: 24,
+        width: COG_TARGET,
+        height: COG_TARGET,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -1493,9 +1681,10 @@ function OccurrencePopover({
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return;
       setAt({
-        // Kept on screen when a cog near the right edge would push a 268px
-        // panel off it.
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - PANEL_WIDTH - 8)),
+        // Right-aligned with the cog, which sits in its box's top-right
+        // corner: the panel opens back over its own level rather than out
+        // over the next one. Kept on screen either way.
+        left: Math.max(8, Math.min(rect.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - 8)),
         bottom: window.innerHeight - rect.top + 10,
       });
     };
@@ -1795,34 +1984,111 @@ function PagePreview({ page }: { page: TimelinePage }) {
  *  globals.css, keyed by :nth-child. */
 const SPINNER_SPOKES = [0, 1, 2, 3, 4, 5, 6, 7];
 
+/**
+ * The pages that open together - one page, or a SPREAD - as ONE card.
+ *
+ * Asked for, 2026-09-18: "connect only spread page previews (not single
+ * pages) ... with a thin grey line separating and one active border around
+ * both of them when selected instead around each." A spread was two cards
+ * eight pixels apart, each with its own ring, which read as two things that
+ * happened to be selected at once. It is one thing: clicking either opened
+ * the same spread, and the canvas draws them as one.
+ *
+ * So one button, one ring and one name for the set, with each page in its
+ * own slot and the seam between them. A set of one is exactly the card it
+ * always was. The set is what the canvas draws together - a level's
+ * default pages, or one occurrence's - so a set of three, which the "+"
+ * card can make, is joined the same way.
+ *
+ * The page slots FLEX rather than taking the card width themselves. The
+ * card's width is what transitions during a settle, and a slot sized from
+ * the same variable would need a transition of its own to keep up; a flex
+ * slot is simply always its share. At rest the share is exactly one card
+ * width, because the seams are added to the total, not taken out of it.
+ *
+ * Three boxes, for the sizes - see ACTIVE_SCALE. The OUTER one is what the
+ * row lays out: card-sized, or 1.2x for the active set. On hover it keeps
+ * that size and takes MARGINS, which is what moves its neighbours aside.
+ * The FRAME inside it is what visibly grows into those margins: absolutely
+ * placed, and in PERCENTAGES of the outer box, so a drawer drag (which
+ * changes the outer box every frame) never sets off the hover's transition
+ * - a percentage's computed value does not change when its container does.
+ * Keeping the two apart is also what lets the outer box's width stay on
+ * the drawer's settle clock while the hover runs on its own. The button
+ * fills the frame.
+ */
 function PageCardInner({
-  page,
+  pages,
   selected,
   card,
-  removable = false,
+  canRemoveBlank = false,
   highContrast,
   reduceMotion,
   onOpen,
+  lifted,
+  onHover,
+  onFocusVisible,
 }: {
-  page: TimelinePage;
+  pages: TimelinePage[];
   selected: boolean;
+  /** Hovered or keyboard-focused, and not the open set - see LevelGroup. */
+  lifted: boolean;
+  onHover: (on: boolean) => void;
+  onFocusVisible: (on: boolean) => void;
   card: { sizeTransition: string };
-  /** Show the remove control. Only ever true for a blank page that is not
-   *  the last of its set - see deletePageFromLevel. */
-  removable?: boolean;
+  /** Offer to remove the set's BLANK pages. Only ever true when the set has
+   *  more than one - see deletePageFromLevel. */
+  canRemoveBlank?: boolean;
   highContrast: boolean;
   reduceMotion: boolean;
   onOpen: () => void;
 }) {
+  const count = pages.length;
+  const first = pages[0];
+  const moduleCount = pages.reduce((sum, page) => sum + page.moduleCount, 0);
+  const title =
+    count === 1
+      ? `${LEVEL_LABELS[first.level]} page ${first.position + 1} - ${first.moduleCount} module(s)`
+      : `${LEVEL_LABELS[first.level]} spread, pages ${first.position + 1}-${pages[count - 1].position + 1} - ${moduleCount} module(s)`;
   // Outline with an OFFSET, not a border: a border sits inside the box and
   // changes the thumbnail's own proportions, which on a page preview is the
   // one thing that must stay true.
-  const style: CSSProperties = {
-    width: "var(--memari-card-w)",
-    height: "var(--memari-card-h)",
-    display: "block",
-    // For the loading indicator, which centres itself in the card.
+  const seams = (count - 1) * SPREAD_SEAM_PX;
+  const scale = selected ? ACTIVE_SCALE : 1;
+  // What the frame grows by on each side, and so how far the neighbours
+  // move: half of what the pages grow by. The seams do not grow.
+  const pushAside = lifted ? `calc(${round4((count * (HOVER_SCALE - 1)) / 2)} * var(--memari-card-w))` : "0px";
+  const outer: CSSProperties = {
     position: "relative",
+    flexShrink: 0,
+    width: `calc(${round4(count * scale)} * var(--memari-card-w) + ${seams}px)`,
+    height: `calc(${scale} * var(--memari-card-h))`,
+    marginLeft: pushAside,
+    marginRight: pushAside,
+    transition: reduceMotion
+      ? "none"
+      : [card.sizeTransition, `margin-left ${HOVER_MS}ms ${SETTLE}`, `margin-right ${HOVER_MS}ms ${SETTLE}`]
+          .filter(Boolean)
+          .join(", "),
+  };
+  // The frame grows the PAGES by `grow` and leaves the seams at 1px, so a
+  // spread keeps each page's proportions at every step of the hover.
+  const grow = lifted ? HOVER_SCALE : 1;
+  const unscaled = seams * (grow - 1);
+  const frame: CSSProperties = {
+    position: "absolute",
+    left: `calc(${round4((1 - grow) / 2)} * 100% + ${round4(unscaled / 2)}px)`,
+    top: `calc(${round4((1 - grow) / 2)} * 100%)`,
+    width: `calc(${grow} * 100% - ${round4(unscaled)}px)`,
+    height: `calc(${grow} * 100%)`,
+    transition: reduceMotion
+      ? "none"
+      : ["left", "top", "width", "height"].map((p) => `${p} ${HOVER_MS}ms ${SETTLE}`).join(", "),
+  };
+  const style: CSSProperties = {
+    width: "100%",
+    height: "100%",
+    display: "flex",
     padding: 0,
     border: highContrast && !selected ? "1px solid #777777" : "none",
     borderRadius: 3,
@@ -1830,34 +2096,86 @@ function PageCardInner({
     // Dimming the unselected is what keeps a row of thumbnails from
     // competing with the canvas it describes. Under Increase Contrast it
     // goes, and the selection ring thickens to carry the distinction alone.
-    opacity: selected || highContrast ? 1 : 0.6,
+    // A hovered card comes up to full strength while it is under the
+    // pointer - "un grey them".
+    opacity: selected || lifted || highContrast ? 1 : 0.6,
     outline: selected ? `${highContrast ? 4 : 2}px solid ${ACCENT}` : "none",
     outlineOffset: 2,
     cursor: selected ? "default" : "pointer",
     overflow: "hidden",
-    transition: reduceMotion
-      ? "none"
-      : ["opacity 150ms ease-out", card.sizeTransition].filter(Boolean).join(", "),
+    transition: reduceMotion ? "none" : `opacity ${HOVER_MS}ms ${SETTLE}`,
   };
+  const removable = canRemoveBlank && pages.some((page) => page.moduleCount === 0);
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      {removable && <RemovePageButton pageId={page.pageId} reduceMotion={reduceMotion} />}
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-current={selected ? "page" : undefined}
-      title={`${LEVEL_LABELS[page.level]} page ${page.position + 1} - ${page.moduleCount} module(s)`}
-      className="memari-card"
-      style={style}
-    >
-      {/* The real drawing at page scale, from the same elements the PDF
-          exporter reads - see loadPlannerPages' TimelinePage. A preview made
-          any other way would be a picture OF the page rather than the
-          page. */}
-      <PagePreview page={page} />
-    </button>
+    <div style={outer}>
+      <div
+        style={frame}
+        // On the frame, not the button, so the remove badge - which sits
+        // half outside the card - counts as part of it.
+        onPointerEnter={() => onHover(true)}
+        onPointerLeave={() => onHover(false)}
+        // Keyboard focus lifts a card as a hover does; a click's focus does
+        // not, or a card clicked and then left would stay large.
+        onFocus={(event) => onFocusVisible((event.target as HTMLElement).matches(":focus-visible"))}
+        onBlur={() => onFocusVisible(false)}
+      >
+        {/* Each blank page's remove control, over that page's own top-right
+            corner. A layer laid out like the slots below rather than inside
+            them, because a button cannot hold another button. */}
+        {removable && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              gap: SPREAD_SEAM_PX,
+              pointerEvents: "none",
+            }}
+          >
+            {pages.map((page) => (
+              <div key={page.pageId} style={{ position: "relative", flex: "1 1 0", minWidth: 0 }}>
+                {page.moduleCount === 0 && <RemovePageButton pageId={page.pageId} reduceMotion={reduceMotion} />}
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-current={selected ? "page" : undefined}
+          title={title}
+          className="memari-card"
+          style={style}
+        >
+          {pages.map((page, index) => (
+            <Fragment key={page.pageId}>
+              {index > 0 && (
+                <span
+                  aria-hidden="true"
+                  style={{ flex: `0 0 ${SPREAD_SEAM_PX}px`, background: SPREAD_SEAM_COLOR }}
+                />
+              )}
+              {/* Positioned for the loading indicator, which centres itself
+                  in its page. */}
+              <span style={{ position: "relative", flex: "1 1 0", minWidth: 0, height: "100%" }}>
+                {/* The real drawing at page scale, from the same elements the
+                    PDF exporter reads - see loadPlannerPages' TimelinePage. A
+                    preview made any other way would be a picture OF the page
+                    rather than the page. */}
+                <PagePreview page={page} />
+              </span>
+            </Fragment>
+          ))}
+        </button>
+      </div>
     </div>
   );
+}
+
+/** A calc() coefficient without floating-point tails: (1 - 1.1) / 2 is
+ *  -0.050000000000000044. */
+function round4(value: number) {
+  return Math.round(value * 10000) / 10000;
 }
 
 /**
@@ -1895,6 +2213,7 @@ function RemovePageButton({
       aria-label="Remove this blank page"
       title={error ?? "Remove this blank page"}
       style={{
+        pointerEvents: "auto",
         position: "absolute",
         top: -7,
         right: -7,
