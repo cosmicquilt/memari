@@ -1361,6 +1361,9 @@ function LevelGroupInner({
     onFocusVisible: (on: boolean) =>
       setFocusKey((current) => (on ? key : current === key ? null : current)),
   });
+  // Hovered or keyboard-focused, INCLUDING the open set - which does not
+  // lift, but can still be removed. This is what shows a card's X.
+  const showsControls = (key: string) => hoverKey === key || focusKey === key;
   const defaultSelected = level === activeLevel && activeVariantKey === null;
   const liftedPages =
     (liftFor(DEFAULT_SET_KEY, defaultSelected) ? defaults.length : 0) +
@@ -1426,6 +1429,7 @@ function LevelGroupInner({
                 pages={defaults}
                 selected={defaultSelected}
                 lifted={liftFor(DEFAULT_SET_KEY, defaultSelected)}
+                controlsShown={showsControls(DEFAULT_SET_KEY)}
                 {...liftHandlers(DEFAULT_SET_KEY)}
                 card={card}
                 // A page is removable only when it is BLANK and not the last
@@ -1464,7 +1468,22 @@ function LevelGroupInner({
                 pages={variantPages}
                 selected={level === activeLevel && activeVariantKey === key}
                 lifted={liftFor(String(key), level === activeLevel && activeVariantKey === key)}
+                controlsShown={showsControls(String(key))}
                 {...liftHandlers(String(key))}
+                // REMOVE THIS OCCURRENCE'S OWN LAYOUT, from the card itself.
+                // Asked for: "I added a january 2026 spread but there is no
+                // button to delete. add an x button to the top corner when
+                // hovering a page preview". The same server action as the
+                // cog's Reset - the month goes back to printing the default.
+                removeLabel={`Remove ${labelFor(String(key))}'s own layout`}
+                onRemove={async () => {
+                  await deleteLevelVariant(level, String(key));
+                  // Off the deleted occurrence if it is the one open: the
+                  // pages behind that URL have just gone. Otherwise a reload,
+                  // since the drawer reads the book from the server.
+                  if (level === activeLevel && activeVariantKey === key) onOpen(level, null);
+                  else window.location.reload();
+                }}
                 card={card}
                 highContrast={highContrast}
                 reduceMotion={reduceMotion}
@@ -2026,13 +2045,23 @@ function PageCardInner({
   reduceMotion,
   onOpen,
   lifted,
+  controlsShown,
   onHover,
   onFocusVisible,
+  onRemove,
+  removeLabel,
 }: {
   pages: TimelinePage[];
   selected: boolean;
   /** Hovered or keyboard-focused, and not the open set - see LevelGroup. */
   lifted: boolean;
+  /** Hovered or keyboard-focused, open or not: show the card's X. */
+  controlsShown: boolean;
+  /** Remove the whole SET - an occurrence's own layout. Absent for the
+   *  default set, which cannot be removed; its blank pages have their own
+   *  X each, see canRemoveBlank. */
+  onRemove?: () => Promise<void>;
+  removeLabel?: string;
   onHover: (on: boolean) => void;
   onFocusVisible: (on: boolean) => void;
   card: { sizeTransition: string };
@@ -2119,6 +2148,18 @@ function PageCardInner({
         onFocus={(event) => onFocusVisible((event.target as HTMLElement).matches(":focus-visible"))}
         onBlur={() => onFocusVisible(false)}
       >
+        {/* The set's X, over its top-right corner. Before the button in the
+            DOM, like the blank-page layer below, so a keyboard reaches the
+            card's controls in reading order; positioned, so it paints above
+            the card either way. */}
+        {onRemove && (
+          <CornerRemoveButton
+            label={removeLabel ?? "Remove"}
+            visible={controlsShown}
+            reduceMotion={reduceMotion}
+            onRemove={onRemove}
+          />
+        )}
         {/* Each blank page's remove control, over that page's own top-right
             corner. A layer laid out like the slots below rather than inside
             them, because a button cannot hold another button. */}
@@ -2134,7 +2175,17 @@ function PageCardInner({
           >
             {pages.map((page) => (
               <div key={page.pageId} style={{ position: "relative", flex: "1 1 0", minWidth: 0 }}>
-                {page.moduleCount === 0 && <RemovePageButton pageId={page.pageId} reduceMotion={reduceMotion} />}
+                {page.moduleCount === 0 && (
+                  <CornerRemoveButton
+                    label="Remove this blank page"
+                    visible={controlsShown}
+                    reduceMotion={reduceMotion}
+                    onRemove={async () => {
+                      await deletePageFromLevel(page.pageId);
+                      window.location.reload();
+                    }}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -2179,66 +2230,169 @@ function round4(value: number) {
 }
 
 /**
- * Remove a blank page from a level's set.
+ * A card's X: remove a blank page from a level's set, or an occurrence's own
+ * layout.
  *
- * Sits over the card's top-right corner. Quiet until the pointer is near -
- * but PRESENT, not hover-created, so it is in the accessibility tree and a
- * keyboard can reach it. Only rendered for a page the server will actually
- * agree to delete, so it never offers something that fails.
+ * SHOWN WHEN ITS CARD IS HOVERED or focused from the keyboard, and when it
+ * is itself focused from the keyboard - "add an x button to the top corner
+ * when hovering a page preview". It was permanently visible at 35%, which on
+ * a row of cards is a row of Xs. But it is PRESENT the whole time, only
+ * transparent, so it stays in the accessibility tree and in the tab order;
+ * and since it is part of its card's frame, the pointer cannot be over it
+ * without the card being hovered and the X therefore showing.
+ *
+ * TWO CLICKS - "make it two clicks with red remove". The first turns the X
+ * into a red "Remove", growing left out of the corner; the second removes.
+ * Leaving the card, Escape or tabbing away puts it back. An occurrence's
+ * layout is a month's worth of design, and one stray click on a control
+ * that only appears under the pointer was all that stood between it and
+ * gone. Blank pages get the same two steps, so the control means one thing.
+ *
+ * A 24px target (WCAG 2.5.8's minimum) around the 18px disc that was here
+ * before, centred where the disc was, over the card's top-right corner.
+ * Only ever rendered where the server will agree to the removal, so it
+ * never offers something that fails.
  */
-function RemovePageButton({
-  pageId,
+function CornerRemoveButton({
+  label,
+  visible,
   reduceMotion,
+  onRemove,
 }: {
-  pageId: string;
+  label: string;
+  visible: boolean;
   reduceMotion: boolean;
+  onRemove: () => Promise<void>;
 }) {
   const [pending, error, run] = useAsyncAction();
   const [lit, setLit] = useState(false);
+  // Keyboard focus only. A mouse click focuses a button too (in Chrome),
+  // and counting that would keep the X up after the pointer had left.
+  const [focusVisible, setFocusVisible] = useState(false);
+  const [armed, setArmed] = useState(false);
+  // Disarmed the moment its card stops being hovered or focused - adjusted
+  // during render, so there is never a frame of a red "Remove" left behind
+  // on a card the pointer has already left.
+  if (armed && !visible && !focusVisible && !pending) setArmed(false);
+  const shown = visible || focusVisible || pending || error !== null || armed;
+  const discWidth = armed ? REMOVE_PILL_WIDTH : REMOVE_DISC;
+  const ease = (property: string) => `${property} 150ms ease-out`;
   return (
     <button
       type="button"
       disabled={pending}
       onPointerEnter={() => setLit(true)}
       onPointerLeave={() => setLit(false)}
-      onFocus={() => setLit(true)}
-      onBlur={() => setLit(false)}
+      onFocus={(event) => setFocusVisible(event.currentTarget.matches(":focus-visible"))}
+      onBlur={() => {
+        setFocusVisible(false);
+        setArmed(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && armed) {
+          event.stopPropagation();
+          setArmed(false);
+        }
+      }}
       onClick={(event) => {
         event.stopPropagation();
-        run(async () => {
-          await deletePageFromLevel(pageId);
-          window.location.reload();
-        });
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
+        void run(onRemove).then(() => setArmed(false));
       }}
-      aria-label="Remove this blank page"
-      title={error ?? "Remove this blank page"}
+      aria-label={armed ? `Confirm: ${label}` : label}
+      title={error ?? (armed ? `Click again to ${label.toLowerCase()}` : label)}
       style={{
         pointerEvents: "auto",
         position: "absolute",
-        top: -7,
-        right: -7,
+        // Anchored by its RIGHT edge, so the "Remove" grows out of the
+        // corner to the left, over the card, rather than off it.
+        top: -(REMOVE_TARGET - REMOVE_DISC) / 2 - 7,
+        right: -(REMOVE_TARGET - REMOVE_DISC) / 2 - 7,
         zIndex: 2,
-        width: 18,
-        height: 18,
+        width: discWidth + (REMOVE_TARGET - REMOVE_DISC),
+        height: REMOVE_TARGET,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
-        borderRadius: 9,
         border: "none",
-        background: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255,255,255,0.35)",
-        color: "#1c1c1e",
+        background: "transparent",
         cursor: pending ? "default" : "pointer",
-        opacity: pending ? 0.5 : 1,
-        transition: reduceMotion ? "none" : "background 150ms ease-out",
+        opacity: shown ? (pending ? 0.5 : 1) : 0,
+        transition: reduceMotion ? "none" : [ease("opacity"), ease("width")].join(", "),
       }}
     >
-      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-      </svg>
+      <span
+        style={{
+          position: "relative",
+          width: discWidth,
+          height: REMOVE_DISC,
+          borderRadius: REMOVE_DISC / 2,
+          overflow: "hidden",
+          background: error
+            ? "#ff8f5c"
+            : armed
+            ? REMOVE_RED
+            : lit
+            ? "#ffffff"
+            : "rgba(255,255,255,0.35)",
+          color: "#1c1c1e",
+          transition: reduceMotion ? "none" : [ease("width"), ease("background")].join(", "),
+        }}
+      >
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            opacity: armed ? 0 : 1,
+            transition: reduceMotion ? "none" : ease("opacity"),
+          }}
+        >
+          <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ffffff",
+            fontSize: 10.5,
+            fontWeight: 600,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            opacity: armed ? 1 : 0,
+            transition: reduceMotion ? "none" : ease("opacity"),
+          }}
+        >
+          Remove
+        </span>
+      </span>
     </button>
   );
 }
+
+/** The X's visible disc, and the target around it. */
+const REMOVE_DISC = 18;
+const REMOVE_TARGET = 24;
+/** The disc once armed, wide enough for "Remove" with room either side. */
+const REMOVE_PILL_WIDTH = 58;
+/** The armed disc. Not Apple's system red (#ff3b30 / #ff453a): white type
+ *  on that is 3.55:1, under the 4.5 that 10.5px text needs. This one is
+ *  4.83:1 and still unmistakably red. check:contrast holds it there. */
+const REMOVE_RED = "#d92d20";
 
 /**
  * The card that adds a page to a level.

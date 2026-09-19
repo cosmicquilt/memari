@@ -171,6 +171,12 @@ if (cogAlpha < levelLabelAlpha) {
   );
 }
 
+// The timeline's two-step remove: "Remove" in white on the armed red, at
+// 10.5px - body text, so 4.5:1. Apple's system reds do not make it with
+// white type (#ff3b30 is 3.55:1), which is why this is its own colour.
+const removeRed = hex(read(drawer, "the armed remove colour (REMOVE_RED)", /const REMOVE_RED = "(#[0-9a-f]{6})"/i));
+check(`"Remove" in white on ${format(removeRed)}`, contrast(hex("#ffffff"), removeRed), BODY_TEXT, "1.4.3");
+
 if (focusWidth < FOCUS_MIN_WIDTH) {
   console.log(`  FAIL  focus ring is ${focusWidth}px; 2.4.13 wants at least ${FOCUS_MIN_WIDTH}px`);
   problems++;
