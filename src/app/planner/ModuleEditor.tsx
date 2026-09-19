@@ -172,21 +172,41 @@ export function ModuleEditor({
           height: box.height * scale,
           flexShrink: 0,
           background: "#fdfcf9",
-          borderRadius: 4,
+          // Square-cornered, as the palette cards are and for their reason:
+          // the module's own outer border sits exactly on these bounds, so a
+          // radius here would clip its real corners off.
           outline: `2px solid ${ACCENT}`,
           outlineOffset: 3,
           position: "relative",
           overflow: "hidden",
         }}
       >
-        <PolotnoJsonRenderer
-          elements={elements}
-          originX={box.x}
-          originY={box.y}
-          scale={scale}
-          suppressOuterBorderSize={null}
-          textElements={null}
-        />
+        {/* MAGNIFIED BY A TRANSFORM, as the canvas and the palette cards
+            are. The renderer draws in print px - one SVG unit to one CSS
+            px - and takes `scale` only for the hairline floor; it never
+            enlarges anything itself. Without this the module drew at 1:1 in
+            the top-left of a frame sized for `scale`: measured 438x437 in a
+            604x604 frame, the "white space outside it" that was reported. */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: box.width,
+            height: box.height,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          <PolotnoJsonRenderer
+            elements={elements}
+            originX={box.x}
+            originY={box.y}
+            scale={scale}
+            suppressOuterBorderSize={null}
+            textElements={null}
+          />
+        </div>
       </div>
 
       <div
