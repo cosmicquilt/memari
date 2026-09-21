@@ -1403,6 +1403,14 @@ function LevelGroupInner({
     (sum, one) => sum + (liftFor(one.key, one.selected) ? one.pages.length : 0),
     0
   );
+  // The row gives the lift back on the card's own clock - see liftMs in
+  // PageCardInner: SLIDE_MS when the card under the pointer (or focus) is
+  // the one just opened, so the row and that card settle together.
+  const recentreMs = [...defaultCards, ...variantCards.flat()].some(
+    (one) => one.selected && (hoverKey === one.key || focusKey === one.key)
+  )
+    ? SLIDE_MS
+    : HOVER_MS;
   const recentre =
     liftedPages > 0 ? `calc(${round4((-liftedPages * (HOVER_SCALE - 1)) / 2)} * var(--memari-card-w))` : "0px";
 
@@ -1448,7 +1456,7 @@ function LevelGroupInner({
           // as the card pushes it out.
           transition: reduceMotion
             ? "none"
-            : `margin-left ${HOVER_MS}ms ${SETTLE}, margin-right ${HOVER_MS}ms ${SETTLE}`,
+            : `margin-left ${recentreMs}ms ${SETTLE}, margin-right ${recentreMs}ms ${SETTLE}`,
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
@@ -2131,6 +2139,15 @@ function PageCardInner({
   // one thing that must stay true.
   const seams = (count - 1) * SPREAD_SEAM_PX;
   const scale = selected ? ACTIVE_SCALE : 1;
+  // ONE CLOCK WHEN A HOVERED CARD IS CHOSEN. Clicked, a card goes from
+  // lifted (1.1x, in place) to open (1.2x, in the row) - two changes at once,
+  // the lift going and the size arriving. On their own clocks (the lift's
+  // 220ms, the size's SLIDE_MS) the lift finished first and the card visibly
+  // shrank before it grew: measured 159.4 -> 157.9 -> 173.8px. Reported as
+  // the clicked preview's animation being laggy. On the SAME clock and curve
+  // the product (1 + 0.2e)(1.1 - 0.1e) only ever grows, so an open card's
+  // lift runs on SLIDE_MS; every other card's stays quick.
+  const liftMs = selected ? SLIDE_MS : HOVER_MS;
   // What the frame grows by on each side, and so how far the neighbours
   // move: half of what the pages grow by. The seams do not grow.
   const pushAside = lifted ? `calc(${round4((count * (HOVER_SCALE - 1)) / 2)} * var(--memari-card-w))` : "0px";
@@ -2143,7 +2160,7 @@ function PageCardInner({
     marginRight: pushAside,
     transition: reduceMotion
       ? "none"
-      : [card.sizeTransition, `margin-left ${HOVER_MS}ms ${SETTLE}`, `margin-right ${HOVER_MS}ms ${SETTLE}`]
+      : [card.sizeTransition, `margin-left ${liftMs}ms ${SETTLE}`, `margin-right ${liftMs}ms ${SETTLE}`]
           .filter(Boolean)
           .join(", "),
   };
@@ -2159,7 +2176,7 @@ function PageCardInner({
     height: `calc(${grow} * 100%)`,
     transition: reduceMotion
       ? "none"
-      : ["left", "top", "width", "height"].map((p) => `${p} ${HOVER_MS}ms ${SETTLE}`).join(", "),
+      : ["left", "top", "width", "height"].map((p) => `${p} ${liftMs}ms ${SETTLE}`).join(", "),
   };
   const style: CSSProperties = {
     width: "100%",

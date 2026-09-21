@@ -29,14 +29,30 @@
 //   - the ZOOM and the PALETTE carry over: the editor reports them as they
 //     change, and the next layout starts from them.
 // What changes is the pages on the canvas, which is the point.
+//
+// AND THE CLICKED CARD ANSWERS AT ONCE. The timeline used to show the new
+// selection only when the new layout arrived - 437ms after the click,
+// measured on the dev server, and a network round trip in production - so
+// the card seemed to ignore the click and then jump. Now the timeline shows
+// the choice immediately (`choosing`) and the card grows while the layout
+// loads; the editor is rebuilt once that grow has finished (SLIDE_MS after
+// the click, or when the layout arrives if that is later), so the one heavy
+// piece of work - rebuilding the editor - never lands in the middle of the
+// animation. And it is a TRANSITION, so React renders it in slices and
+// the page stays responsive. Tried in one go instead, it was a single
+// 417-648ms block on the dev server starting right as the grow ended -
+// clipping its last frames and freezing everything - and the canvas changed
+// no sooner (~1.0s after the click either way, in dev; production is
+// several times faster).
 
-import { useCallback, useRef, useState } from "react";
+import { startTransition, useCallback, useMemo, useRef, useState } from "react";
 import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
-import { TimelineDrawer, DRAWER_RESTING_HEIGHT } from "./TimelineDrawer";
+import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
+import { usePrefersReducedMotion } from "./useMediaQuery";
 import { loadLevel } from "./loadLevel";
 
 /** A layout, and the view it opens with - the view the previous one left. */
@@ -54,6 +70,10 @@ export function EditorShell({
   load?: typeof loadLevel;
 }) {
   const [open, setOpen] = useState<OpenLayout>({ ...initial, ui: null });
+  // The layout just clicked, shown as selected in the timeline while it
+  // loads. Null once it is open.
+  const [choosing, setChoosing] = useState<{ level: PageLevel; variantKey: string | null } | null>(null);
+  const reduceMotion = usePrefersReducedMotion();
   // The drawer's SETTLED height - the canvas's room for it. Here rather than
   // in the editor because the drawer is here.
   const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
@@ -70,25 +90,47 @@ export function EditorShell({
 
   const openLevel = useCallback(async (level: PageLevel, variantKey: string | null) => {
     const request = ++latest.current;
+    const clickedAt = performance.now();
+    setChoosing({ level, variantKey });
     document.documentElement.style.cursor = "progress";
     try {
       const loaded = await load(level, variantKey);
       if (request !== latest.current) return;
+      // Let the card finish growing before the editor is rebuilt.
+      const growLeft = reduceMotion ? 0 : SLIDE_MS - (performance.now() - clickedAt);
+      if (growLeft > 0) await new Promise((resolve) => setTimeout(resolve, growLeft));
+      if (request !== latest.current) return;
       // The layout ACTUALLY opened - loadPlannerPages falls back to the
       // default for a key with nothing behind it - so a refresh reopens it.
       writeOpenLevelCookie({ level, variantKey: loaded.variantKey });
-      setOpen({ ...loaded, level, ui: view.current });
+      const ui = view.current;
+      startTransition(() => {
+        setOpen({ ...loaded, level, ui });
+        setChoosing(null);
+      });
     } catch (error) {
-      // Stay on the layout that is showing. Nothing was changed, so nothing
-      // needs undoing; the click can simply be tried again.
+      // Stay on the layout that is showing, and put the timeline's selection
+      // back on it. Nothing was changed, so nothing needs undoing; the click
+      // can simply be tried again.
       console.error("Could not open that layout:", error);
+      if (request === latest.current) setChoosing(null);
     } finally {
       if (request === latest.current) document.documentElement.style.cursor = "";
     }
-  }, [load]);
+  }, [load, reduceMotion]);
 
-  return (
-    <>
+  // What the timeline shows as open: the one being opened, if any.
+  const shownLevel = choosing?.level ?? open.level;
+  const shownVariantKey = choosing ? choosing.variantKey : open.variantKey;
+
+  // THE EDITOR IS NOT RE-RENDERED FOR THE TIMELINE'S SAKE. Showing the
+  // clicked card as chosen is a change of this shell's state, and without
+  // this the whole editor - every page, module and drawing - rendered again
+  // with it, for nothing: measured as a 76-109ms stall right at the click,
+  // which is exactly when the card should start to move. Memoised on the
+  // editor's own inputs, React skips it unless one of them changed.
+  const editor = useMemo(
+    () => (
       <NativePlannerEditor
         key={`${open.level}:${open.variantKey ?? ""}`}
         pages={open.pages}
@@ -100,14 +142,21 @@ export function EditorShell({
         initialUi={open.ui}
         onUiChange={reportView}
       />
+    ),
+    [open, initialViewport, drawerHeight, reportView]
+  );
+
+  return (
+    <>
+      {editor}
       <TimelineDrawer
         pages={open.timeline}
-        activeLevel={open.level}
-        activeVariantKey={open.variantKey}
+        activeLevel={shownLevel}
+        activeVariantKey={shownVariantKey}
         term={open.term}
         onHeightChange={setDrawerHeight}
         onOpen={(next, nextVariant) => {
-          if (next === open.level && nextVariant === open.variantKey) return;
+          if (next === shownLevel && nextVariant === shownVariantKey) return;
           // A LEVEL, not a page: the editor draws a whole spread, so either
           // page of it means "show this spread". Instant, with no transition
           // of its own - swapping between two heavy documents is the case
