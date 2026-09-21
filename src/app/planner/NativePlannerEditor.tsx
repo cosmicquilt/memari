@@ -8649,6 +8649,31 @@ export function NativePlannerEditor({
     ]
   );
 
+  // A drag that ends WITHOUT a drop: Escape, or anything else dnd-kit
+  // cancels on. It calls onDragCancel instead of onDragEnd, and there was
+  // no handler, so activeId stayed set and the module stayed where the
+  // drag had carried it - translated, raised, and no longer following the
+  // pointer - until the next drag reset it.
+  //
+  // What is left is exactly what a release over the no-entry mark leaves:
+  // nothing committed, nothing recorded for undo, no server call. Clearing
+  // activeId drops the drag transform, so the module eases home the same
+  // way. A palette drag also has a phantom on the page - a real entry in
+  // placements and moduleLookup - which has to go, and siblings it pushed
+  // aside fall back with it. The held crossing preview is cleared too; it
+  // is gated on activeId everywhere it is read, but a cancelled gesture
+  // should not leave one behind for anything that forgets the gate.
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+    setActiveDelta(ZERO_OFFSET);
+    removePhantom();
+    confirmedCrossingRef.current = null;
+    setConfirmedCrossingPreview(null);
+    pendingZoneRef.current = null;
+    pendingZoneTicksRef.current = 0;
+    pointerOriginRef.current = null;
+  }, [removePhantom]);
+
   // Advances the settle FLIP from "start" (drawn at the residual offset,
   // no transition — see `settling` state's own comment) to "settle" (eased
   // to {0,0}) one animation frame later, so the browser actually paints
@@ -9663,6 +9688,7 @@ export function NativePlannerEditor({
             onDragStart={handleDragStart}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
             {/* The layer a trackpad pinch transforms while it is in
                 progress - see applyPinchPreview. THE SPREAD ONLY. It was
