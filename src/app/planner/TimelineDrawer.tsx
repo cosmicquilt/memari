@@ -168,7 +168,6 @@ const COG_INSET = 4;
 /** The row's own padding, around the boxes rather than between them. */
 const TRACK_PAD_TOP = 8;
 const TRACK_PAD_BOTTOM = 8;
-const TRACK_PAD_X = 11;
 /** A column's cards, then its caption. */
 const CARD_TO_SUB_LABEL = 4;
 /** The level's name: 11px uppercase in a 14px line, 2px under the captions. */
@@ -207,6 +206,12 @@ const GROUP_PAD_TOP =
  *  borders". */
 const GROUP_PAD_X = GROUP_PAD_TOP;
 const GROUP_GAP = GROUP_PAD_TOP;
+/** From the screen's edge to the first box, and from the last box to the
+ *  row's end: HALF the gap between two boxes. It was 11, from before the
+ *  boxes had their 39px, and the first box sat tight against the edge with
+ *  far more room on its other side. Andrew was shown matched (39) and half
+ *  side by side, 2026-09-21, and chose half. */
+const TRACK_PAD_X = GROUP_GAP / 2;
 /** A vertical rule in the gap between two boxes, in the border's own grey:
  *  "a vertical line same grey as border between adjacent levels 80% of the
  *  height of the border". Centred both ways - 19px of gap either side of a
@@ -493,12 +498,13 @@ export function TimelineDrawer({
    *  drawer SETTLES, not while it is being dragged. */
   onHeightChange?: (height: number) => void;
 }) {
-  // THREE detents, not two: closed, resting, expanded. Closed leaves the
+  // FOUR detents: closed, resting, middle, expanded. Closed leaves the
   // grabber band and nothing else - a thin lip you can pull back up, rather
   // than a panel that vanishes and needs some other control to bring back.
   // Asked for directly: "I want to be able to close bottom timeline
-  // seamlessly in the design."
-  const [detent, setDetent] = useState<"closed" | "resting" | "expanded">("resting");
+  // seamlessly in the design." MIDDLE is halfway between resting and
+  // expanded, asked for 2026-09-21: "we should add a level between the two".
+  const [detent, setDetent] = useState<"closed" | "resting" | "middle" | "expanded">("resting");
   // Which open detent a close should return to. A grabber that both drags
   // and toggles has to mean ONE thing when clicked, and "close / reopen" is
   // what it is for - the middle detent is reached by dragging, and clicking
@@ -509,7 +515,7 @@ export function TimelineDrawer({
   // size while it is closed. A ref read during render is unsound under
   // concurrent rendering - a discarded render attempt can write one, and the
   // replay then reads a value from a pass that never happened.
-  const [lastOpen, setLastOpen] = useState<"resting" | "expanded">("resting");
+  const [lastOpen, setLastOpen] = useState<"resting" | "middle" | "expanded">("resting");
   // Honoured for the drawer's own settle, and for the zoom bar that now rides
   // on it - which is why these moved into a hook rather than staying here.
   const reduceMotion = usePrefersReducedMotion();
@@ -536,6 +542,10 @@ export function TimelineDrawer({
       ? DRAWER_CLOSED_HEIGHT
       : which === "resting"
       ? DRAWER_RESTING_HEIGHT
+      : which === "middle"
+      ? // Derived from the two it sits between, so it stays between them
+        // on any window - expanded follows the window's height.
+        Math.round((DRAWER_RESTING_HEIGHT + expandedHeight()) / 2)
       : expandedHeight();
 
   const onGrabberPointerDown = (event: React.PointerEvent) => {
@@ -595,7 +605,7 @@ export function TimelineDrawer({
     if (height === null) return;
     // Snap to whichever detent is nearest. Detents, not free resize: a panel
     // that can rest anywhere has no shape you can learn.
-    const candidates = ["closed", "resting", "expanded"] as const;
+    const candidates = ["closed", "resting", "middle", "expanded"] as const;
     let nearest: typeof detent = "resting";
     let best = Infinity;
     for (const candidate of candidates) {
