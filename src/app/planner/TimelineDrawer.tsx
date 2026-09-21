@@ -1001,7 +1001,11 @@ export function TimelineDrawer({
         ? `transform ${SHIFT_MS}ms ${SETTLE} ${TAB_PARK_DELAY_MS}ms`
         : `transform ${SLIDE_MS}ms ${SETTLE}`
     );
-  }, [height, parked, moving, closing, dragHeight]);
+    // The open layout too: EditorShell rebuilds the editor - and with it the
+    // zoom bar - when another layout opens, while this drawer carries on, so
+    // the new bar has to be given its place in that same commit, before
+    // paint, or it shows for a frame where a resting drawer would put it.
+  }, [height, parked, moving, closing, dragHeight, activeLevel, activeVariantKey]);
 
   // Memoised for the same reason: recomputing `pages.filter` and
   // `occurrences` every render hands every LevelGroup a brand-new array and

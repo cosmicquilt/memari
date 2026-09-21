@@ -92,7 +92,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { LoadedPage, PageSettings, TimelinePage } from "./loadPlannerPages";
+import type { LoadedPage, PageSettings } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
@@ -154,8 +154,7 @@ import {
   resizeHourlyGridCore,
 } from "./actions";
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
-import type { PageLevel } from "@/lib/pageLevels";
-import { TimelineDrawer, DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
+import { DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
 import { usePrefersReducedMotion, useIsomorphicLayoutEffect, usePointerCanHover } from "./useMediaQuery";
 import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
@@ -4482,42 +4481,45 @@ const EMPTY_RESIZE_PAIRS: ResizePair[] = [];
 const EMPTY_STACK_BOTTOMS: StackBottom[] = [];
 const EMPTY_INSTANCE_IDS: string[] = [];
 
+/** The view a layout hands to the next one when EditorShell swaps them. */
+export type EditorUi = {
+  zoomMode: "fit-width" | "fit-page" | "manual";
+  manualScale: number;
+  paletteOpen: boolean;
+};
+
 export function NativePlannerEditor({
   pages,
-  timeline,
   term,
-  variantKey,
   pageSettings: initialPageSettings,
-  level,
   initialViewport,
-  onOpenLevel,
+  drawerHeight = DRAWER_RESTING_HEIGHT,
+  initialUi,
+  onUiChange,
 }: {
   pages: LoadedPage[];
-  // Every page of the BOOK, for the timeline drawer - not just this level's.
-  // The drawer's whole job is that every page is reachable from it.
-  timeline: TimelinePage[];
-  /** What stretch of time the book covers, as ISO dates. The drawer divides
-   *  it into the occurrences a person can give their own layout to. */
+  /** What stretch of time the book covers, as ISO dates - for Page
+   *  Settings. (The timeline, which also reads it, lives in EditorShell.) */
   term: { start: string | null; end: string | null };
-  /** Which occurrence's layout is on the canvas. Null is the default one. */
-  variantKey: string | null;
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
-  // WHICH LEVEL of the book this editor is showing. Everything else this
-  // component needs, it can ask the registry for - showHoursSettings below
-  // reads the spine's own pageSettingsForm rather than testing the cadence,
-  // and that is the right pattern for BEHAVIOUR. This is not behaviour: the
-  // export route has to fetch a specific set of pages out of the database,
-  // and no amount of looking at the rendered ones identifies which set. The
-  // route that loaded them knows, so the route says.
-  level: PageLevel;
+  // WHICH LEVEL and which occurrence's layout are open is EditorShell's to
+  // know, not this editor's: only the timeline drawer needed them, and the
+  // drawer lives in the shell. Everything else this component needs, it can
+  // ask the registry for - showHoursSettings below reads the spine's own
+  // pageSettingsForm rather than testing the cadence.
   /** The window size the editor last measured, read by the server from its
    *  cookie, so the first frame renders at the zoom it will have. Null on a
    *  first visit. See src/lib/viewportCookie.ts. */
   initialViewport?: ViewportSize | null;
-  /** Open another of the book's layouts IN PLACE - EditorShell swaps the
-   *  editor over without the address or the page changing. */
-  onOpenLevel?: (level: PageLevel, variantKey: string | null) => void;
+  /** How much room the canvas leaves below itself for the timeline - the
+   *  drawer's SETTLED height. The drawer lives in EditorShell, outside this
+   *  editor, so that swapping layouts never rebuilds it; see that file. */
+  drawerHeight?: number;
+  /** The zoom and the palette as the previous layout left them, so opening
+   *  another layout does not reset the view - see EditorShell. */
+  initialUi?: EditorUi | null;
+  onUiChange?: (ui: EditorUi) => void;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -4526,12 +4528,11 @@ export function NativePlannerEditor({
   // otherwise the block redraws at its new height while the control that
   // nominally set it still reads the old one.
   const [pageSettings, setPageSettings] = useState(initialPageSettings);
-  // How much room the canvas leaves below itself for the timeline. It starts
-  // at the resting height and follows the drawer's SETTLED height - so
-  // closing the drawer gives the page back its room - but never tracks a
-  // drag, which would re-scale the spread on every frame. See
-  // TimelineDrawer's header on why it overlays rather than pushes.
-  const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
+  // How much room the canvas leaves below itself for the timeline is the
+  // `drawerHeight` prop: the drawer's SETTLED height - so closing the drawer
+  // gives the page back its room - never a drag's, which would re-scale the
+  // spread on every frame. See TimelineDrawer's header on why it overlays
+  // rather than pushes, and EditorShell on why it lives outside this editor.
   // Which module is open in the expand-to-page editor, if any. Held here
   // rather than in the page or the module, because the editor covers the
   // whole viewport and only one may be open at a time.
@@ -5482,8 +5483,10 @@ export function NativePlannerEditor({
   // that's genuinely stateful — an incremental step from wherever it was
   // last, not a function of anything else — so that's the only piece
   // that actually lives in useState.
-  const [zoomMode, setZoomMode] = useState<"fit-width" | "fit-page" | "manual">("fit-width");
-  const [manualScale, setManualScale] = useState(1);
+  // Seeded from the layout that was open before this one, if any: opening
+  // the monthly spread from the weekly one keeps the zoom you had.
+  const [zoomMode, setZoomMode] = useState<EditorUi["zoomMode"]>(initialUi?.zoomMode ?? "fit-width");
+  const [manualScale, setManualScale] = useState(initialUi?.manualScale ?? 1);
 
   // Declared here (ahead of ModulePalette's own state block further
   // down, which still owns setting it) specifically because
@@ -5493,7 +5496,11 @@ export function NativePlannerEditor({
   // position every render, so relocating just the declaration (not the
   // logic that sets it) is enough. See paletteReservedWidth's own
   // comment for what this drives.
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(initialUi?.paletteOpen ?? false);
+  // Reported as it changes, so the next layout can start from it.
+  useEffect(() => {
+    onUiChange?.({ zoomMode, manualScale, paletteOpen });
+  }, [zoomMode, manualScale, paletteOpen, onUiChange]);
   // How much of the viewport's left edge ModulePalette's own sliding
   // panel currently occupies — requested directly: "when you expand
   // side bar it zooms out a little and scrolls so the canvas is still
@@ -9711,31 +9718,9 @@ export function NativePlannerEditor({
           onSaved={(instanceId, propValues) => patchModuleProps(instanceId, propValues)}
         />
       )}
-      <TimelineDrawer
-        pages={timeline}
-        activeLevel={level}
-        activeVariantKey={variantKey}
-        term={term}
-        onHeightChange={setDrawerHeight}
-        onOpen={(next, nextVariant) => {
-          if (next === level && nextVariant === variantKey) return;
-          // A LEVEL, not a page: the editor draws a whole spread, so the two
-          // pages of a level are on screen together and either one of them
-          // means "show this spread".
-          //
-          // Instant, with no transition of its own. Swapping between two
-          // heavy documents is exactly the case Apple says must NOT animate
-          // - a fade on every page change is latency you have to sit through
-          // every single time.
-          //
-          // IN PLACE, not a page load: every level used to be its own route,
-          // and opening one loaded a whole new document. Asked for: "I dont
-          // want site to change while swapping between their monthly weekly
-          // layout". EditorShell fetches the layout and swaps the editor over
-          // at the same address - see that file.
-          onOpenLevel?.(next, nextVariant);
-        }}
-      />
+      {/* The timeline drawer is not here: EditorShell renders it beside this
+          editor, so that opening another layout - which rebuilds this
+          editor - leaves the drawer exactly as it was. */}
     </div>
   );
 }
