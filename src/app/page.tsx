@@ -9,10 +9,11 @@ import { redirect } from "next/navigation";
 // which counted the user table and, whenever the database was unreachable,
 // printed the database's own error message on a public page.
 //
-// The weekly spread, because that is the editor's main route - see
-// levelPage. Signing in from here returns to "/", which lands there too.
+// To /app, the editor's home - see src/app/app/page.tsx. Signing in from here
+// returns to "/", which lands there too. "/" itself is kept free for the
+// landing page Andrew has in mind.
 export default async function Home() {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) return redirectToSignIn();
-  redirect("/planner/next");
+  redirect("/app");
 }

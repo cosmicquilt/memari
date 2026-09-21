@@ -103,7 +103,7 @@ console.log(`downloads as: ${pdfFilename(`${planner.title} ${level}`)}`);
 // page that renders it with pdf.js - otherwise the one artefact that
 // actually matters is the one thing you cannot look at.
 console.log(`Look at it: http://localhost:3000/pdf-proof.html?f=/${out.replace("public/", "")}`);
-console.log(`Or from the editor: the Export PDF button, which serves /planner/export?level=${level}`);
+console.log(`Or from the editor: the Export PDF button, which serves /app/export?level=${level}`);
 
 // --- what actually landed in the file --------------------------------
 //

@@ -4367,7 +4367,7 @@ function ExportPdfButton() {
       // No ?level=: the WHOLE BOOK. A term's worth of pages generated from
       // the templates with the dates filled in, which is the product - one
       // spread is a proofing tool and still reachable by URL.
-      const response = await fetch("/planner/export", { cache: "no-store" });
+      const response = await fetch("/app/export", { cache: "no-store" });
       if (!response.ok) {
         setResult({ ok: false, message: (await response.text()) || `Export failed (${response.status})` });
         return;
@@ -4490,6 +4490,7 @@ export function NativePlannerEditor({
   pageSettings: initialPageSettings,
   level,
   initialViewport,
+  onOpenLevel,
 }: {
   pages: LoadedPage[];
   // Every page of the BOOK, for the timeline drawer - not just this level's.
@@ -4514,6 +4515,9 @@ export function NativePlannerEditor({
    *  cookie, so the first frame renders at the zoom it will have. Null on a
    *  first visit. See src/lib/viewportCookie.ts. */
   initialViewport?: ViewportSize | null;
+  /** Open another of the book's layouts IN PLACE - EditorShell swaps the
+   *  editor over without the address or the page changing. */
+  onOpenLevel?: (level: PageLevel, variantKey: string | null) => void;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -9723,20 +9727,13 @@ export function NativePlannerEditor({
           // heavy documents is exactly the case Apple says must NOT animate
           // - a fade on every page change is latency you have to sit through
           // every single time.
-          // A level maps to the route that edits it. TOTAL now - every level
-          // has one - which is what makes "every page in the planner is
-          // reachable from the timeline" true rather than aspirational. A
-          // Record rather than a Partial so a level added to the enum will
-          // not compile until it has somewhere to go.
-          const ROUTES: Record<PageLevel, string> = {
-            FRONT_MATTER: "/planner/beginning",
-            MONTHLY: "/planner/month",
-            WEEKLY: "/planner/next",
-            DAILY: "/planner/day",
-            BACK_MATTER: "/planner/ending",
-          };
-          const route = ROUTES[next];
-          window.location.assign(nextVariant ? `${route}?variant=${encodeURIComponent(nextVariant)}` : route);
+          //
+          // IN PLACE, not a page load: every level used to be its own route,
+          // and opening one loaded a whole new document. Asked for: "I dont
+          // want site to change while swapping between their monthly weekly
+          // layout". EditorShell fetches the layout and swaps the editor over
+          // at the same address - see that file.
+          onOpenLevel?.(next, nextVariant);
         }}
       />
     </div>

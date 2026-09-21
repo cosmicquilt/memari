@@ -24,8 +24,8 @@
 // agree. Nothing about this page is recomputed here.
 
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreateBook } from "../actions";
-import { loadPlannerPages } from "../loadPlannerPages";
+import { getOrCreateBook } from "@/app/planner/actions";
+import { loadPlannerPages } from "@/app/planner/loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
 import { generateBook } from "@/lib/generateBook";
 import { resolveFontFamily, type PlannerTheme } from "@/lib/theme";

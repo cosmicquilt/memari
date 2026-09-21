@@ -1,61 +1,45 @@
-// One level of the book, in the native editor.
+// The editor's page, at memari.studio/app.
 //
-// SHARED BY EVERY LEVEL'S ROUTE. There are five of them now and they differ
-// by one word; five copies of this would be five places to remember when the
-// editor's props change, which is the kind of duplication that quietly drifts
-// - the month route already spent a while passing a prop the week route did
-// not. Each route file is three lines and this is the page.
-//
-// Separate ROUTES rather than one /planner/[level], deliberately: /planner/next
-// and /planner/month are the URLs that exist and are linked from comments,
-// scripts and whatever Andrew has open. A dynamic segment would be tidier and
-// is not worth breaking them for.
+// ONE PAGE FOR THE WHOLE BOOK, since 2026-09-21. Each level used to have its
+// own route - /planner/next for the week, /planner/month and three more -
+// and moving between them in the timeline loaded a new document. Asked for
+// instead: "I dont want site to change while swapping between their monthly
+// weekly layout ... within same journal". The address is now /app whatever is
+// open, and EditorShell swaps layouts in place through loadLevel. This file
+// renders the FIRST layout: the one the browser last had open, from its
+// cookie, or the weekly spread. The old addresses redirect here - see
+// next.config.ts.
 
 import { auth } from "@clerk/nextjs/server";
+import { cookies } from "next/headers";
+import { PageLevel } from "@/generated/prisma/enums";
+import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
+import { OPEN_LEVEL_COOKIE, parseOpenLevelCookie } from "@/lib/openLevelCookie";
 import { getOrCreateBook } from "./actions";
 import { loadPlannerPages } from "./loadPlannerPages";
-import { NativePlannerEditor } from "./NativePlannerEditor";
-import { cookies } from "next/headers";
-import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
-import type { PageLevel } from "@/lib/pageLevels";
+import { EditorShell } from "./EditorShell";
 
-export async function renderLevelPage(
-  level: PageLevel,
-  // ?variant=2026-02 opens THAT occurrence's own layout instead of the
-  // default one. Without it a page created for a month could never be
-  // edited, which breaks the rule the timeline exists to keep: every page
-  // reachable.
-  searchParams: Promise<{ variant?: string }>
-) {
+export async function renderEditor() {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) {
     return redirectToSignIn();
   }
 
-  const variantKey = (await searchParams).variant || null;
+  const cookieStore = await cookies();
   // The window size this browser last reported, so the canvas renders at
   // its real zoom from the first frame - see src/lib/viewportCookie.ts.
-  const initialViewport = parseViewportCookie((await cookies()).get(VIEWPORT_COOKIE)?.value);
-  const book = await getOrCreateBook(level);
-  const {
-    pages,
-    timeline,
-    term,
-    variantKey: openVariantKey,
-    weekSettings,
-    pageSettings,
-  } = await loadPlannerPages(book, level, variantKey);
+  const initialViewport = parseViewportCookie(cookieStore.get(VIEWPORT_COOKIE)?.value);
+  // The layout this browser last had open, so a refresh comes back to it
+  // rather than to the weekly spread. An occurrence's own layout (a month's,
+  // say) is part of it: without that, a page made for one month could only
+  // be reached by opening it from the timeline every time.
+  const opened = parseOpenLevelCookie(cookieStore.get(OPEN_LEVEL_COOKIE)?.value) ?? {
+    level: PageLevel.WEEKLY,
+    variantKey: null,
+  };
 
-  return (
-    <NativePlannerEditor
-      pages={pages}
-      timeline={timeline}
-      term={term}
-      variantKey={openVariantKey}
-      weekSettings={weekSettings}
-      pageSettings={pageSettings}
-      level={level}
-      initialViewport={initialViewport}
-    />
-  );
+  const book = await getOrCreateBook(opened.level);
+  const loaded = await loadPlannerPages(book, opened.level, opened.variantKey);
+
+  return <EditorShell initial={{ ...loaded, level: opened.level }} initialViewport={initialViewport} />;
 }
