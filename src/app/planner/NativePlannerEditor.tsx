@@ -732,6 +732,14 @@ const boxResizeTransition = (easeMs: number) =>
 // clean "asking 1, 2, 3, adopted" with no oscillation.
 const ZONE_SWITCH_TICKS = 3;
 
+/** The centred edit button's largest size, in print px - twice the corner
+ *  badges' 70, since it is now the module's main control rather than a
+ *  corner mark. Smaller modules get less; see pencilSize. */
+const EDIT_BUTTON_MAX_PX = 140;
+/** How present the edit button is while its module is hovered: there, not
+ *  shouting over the drawing underneath it. */
+const EDIT_BUTTON_REST_OPACITY = 0.55;
+
 function NativeModule({
   instanceId,
   locked,
@@ -766,6 +774,8 @@ function NativeModule({
   habits,
   onUpdateHabits,
   widthPx,
+  boxWidthPx,
+  boxHeightPx,
   fontFamily,
 }: {
   instanceId: string;
@@ -913,6 +923,12 @@ function NativeModule({
   // fixed height. Only meaningful (and only passed a real value) for
   // labeled-box.
   widthPx: number;
+  // The module's box in print px, from the same gridCellToPixels that
+  // places it - so the centred edit button can size itself to fit. Two
+  // numbers rather than an object: a fresh object every render would
+  // defeat this component's memo.
+  boxWidthPx: number;
+  boxHeightPx: number;
   // Page Settings' current font choice — used only by the two inline
   // edit overlays below (heading text input, habit-names textarea), so
   // the live edit cursor matches whatever the surrounding canvas is
@@ -991,6 +1007,16 @@ function NativeModule({
   const badgesReachable = usePointerCanHover();
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
   const [isPencilHovered, setIsPencilHovered] = useState(false);
+  // Where a press on the edit button began. The button sits in the middle
+  // of the module - where people grab it - so a press there has to be able
+  // to become a drag, and the module travels under the pointer while it
+  // does: the release lands on the button again and the browser calls it a
+  // click. A click whose pointer moved further than dnd-kit's own 5px
+  // activation distance was a drag, and is ignored.
+  const pencilPressAt = useRef<{ x: number; y: number } | null>(null);
+  // Small modules get a smaller button: never more than 60% of the box's
+  // shorter side, so it cannot fill or overrun a slim one.
+  const pencilSize = Math.max(0, Math.min(EDIT_BUTTON_MAX_PX, 0.6 * Math.min(boxWidthPx, boxHeightPx)));
   const [draftHabitsText, setDraftHabitsText] = useState((habits ?? []).join("\n"));
   const commitHabits = useCallback(
     (value: string) => {
@@ -1445,44 +1471,86 @@ function NativeModule({
         <button
           type="button"
           title={`Edit ${moduleDefinition(slug)?.label ?? slug}`}
-          onPointerDown={(event) => event.stopPropagation()}
+          // NOT stopped here, unlike the delete badge: a press on this button
+          // must still be able to drag the module, since it covers the
+          // module's middle. dnd-kit only starts a drag after 5px of travel,
+          // so a still press stays a click - see pencilPressAt.
+          onPointerDown={(event) => {
+            pencilPressAt.current = { x: event.clientX, y: event.clientY };
+          }}
           onMouseEnter={() => setIsPencilHovered(true)}
           onMouseLeave={() => setIsPencilHovered(false)}
           onFocus={() => setIsPencilFocused(true)}
           onBlur={() => setIsPencilFocused(false)}
           onClick={(event) => {
             event.stopPropagation();
+            const pressedAt = pencilPressAt.current;
+            pencilPressAt.current = null;
+            // A keyboard press has no pointer (detail 0) and always counts.
+            if (
+              event.detail > 0 &&
+              pressedAt &&
+              Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 5
+            ) {
+              return;
+            }
             onEditModule?.();
           }}
           style={{
+            // IN THE MIDDLE OF THE MODULE, larger and quieter. It sat on the
+            // top-left corner, straddling it, and a module's top-left corner
+            // is its left-hand neighbour's top-right - where that module's
+            // delete badge sits. Reported as the two overlapping; asked for
+            // instead: "a larger button with lower opacity in the center of
+            // the module". The delete badge keeps the corner.
             position: "absolute",
-            top: -35,
-            left: -35,
-            width: 70,
-            height: 70,
+            left: "50%",
+            top: "50%",
+            width: pencilSize,
+            height: pencilSize,
+            transform: "translate(-50%, -50%)",
             borderRadius: "50%",
             // See the delete badge's own note: the circle is the hit area.
             clipPath: "circle(50%)",
             border: "none",
             background: "#c7c7c7",
-            color: "#666666",
+            color: "#444444",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            // The pencil glyph measures dead centre in this circle - it is
-            // the x that did not - so it stays as it is.
-            fontSize: 30,
-            lineHeight: 1,
             padding: 0,
             cursor: "pointer",
-            opacity: isHovered || isPencilFocused || isPencilHovered ? 1 : 0,
-            pointerEvents:
-              badgesReachable || isHovered || isPencilFocused || isPencilHovered ? "auto" : "none",
+            // Quiet over the module, full when the pointer is on it or it
+            // has keyboard focus.
+            opacity: isPencilHovered || isPencilFocused ? 0.95 : isHovered ? EDIT_BUTTON_REST_OPACITY : 0,
+            // Only while it shows. Unlike the corner badges it never needs
+            // reaching from outside its module - it is in the middle, so the
+            // pointer cannot be on it without the module being hovered - and
+            // an invisible button there would swallow presses meant for the
+            // module.
+            pointerEvents: isHovered || isPencilFocused || isPencilHovered ? "auto" : "none",
             transition: "opacity 0.12s ease",
             zIndex: 6,
           }}
         >
-          ✎
+          {/* Drawn, like the delete badge's x: a typed glyph sits on its
+              font's baseline and differs from system to system. A pencil at
+              the proportions the old glyph had in its circle (~40%). */}
+          <svg
+            width={pencilSize * 0.42}
+            height={pencilSize * 0.42}
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M4 20h4L18.5 9.5a2.83 2.83 0 0 0-4-4L4 16v4M13.5 6.5l4 4"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       )}
       {!locked && slug === "habit-tracker" && isEditingHabits && (
@@ -1954,6 +2022,8 @@ function NativePage({
             habits={info.slug === "habit-tracker" ? ((info.propValues.habits as string[] | undefined) ?? []) : null}
             onUpdateHabits={onUpdateHabits}
             widthPx={info.slug === "labeled-box" ? gridCellToPixels(page.pageGrid, placement).width : 0}
+            boxWidthPx={gridCellToPixels(page.pageGrid, placement).width}
+            boxHeightPx={gridCellToPixels(page.pageGrid, placement).height}
             fontFamily={fontFamily}
           />
         );
