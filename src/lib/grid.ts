@@ -328,6 +328,66 @@ export function followerRowsAfterGrowth(
 }
 
 /**
+ * Where the modules under the hours go when an HOURS SETTING changes the
+ * hours' height - a new row height or a new time range.
+ *
+ * `members` is the stack under the hours, top to bottom, and `newTop` the
+ * row it now starts at: the hours' new bottom plus the gap that height
+ * implies. They are packed down from there. If they no longer fit they
+ * give up rows one at a time each (takeRowsFairly), no lower than their
+ * floors; if the hours got shorter, the rows freed go to the LAST one, so
+ * the stack's bottom edge stays where it was - an expand and the collapse
+ * after it put everything back. `unmet` is how many rows could not be
+ * found, and anything above zero means the setting does not fit.
+ *
+ * updateHourlySettings commits with this, and the row-height drag previews
+ * with it. They used to work it out separately, and the preview sized the
+ * shrink from how far the hours' SPAN moved rather than how far the stack's
+ * TOP did. Those differ whenever the gap under the hours changes with the
+ * height - 9pt to 12pt on the default hours takes the span 20 -> 27 but
+ * the gap 1 -> 0, so the to-do moved six rows and was shrunk by seven, and
+ * a one-row hole sat at the foot of the page until the commit answered.
+ * Measured on the real daily page; reported as a gap appearing below the
+ * bottom module and disappearing a bit after.
+ *
+ * Deliberately not followerRowsAfterGrowth, which is the SPINE'S OWN EDGE
+ * being dragged (increments off, or a calendar): there the module nearest
+ * the edge gives way first. A setting is not aimed at any one module.
+ */
+export function rowsBelowHours(
+  members: Array<{ rowStart: number; rowSpan: number; minRowSpan: number }>,
+  newTop: number,
+  gridRows: number
+): { rows: Array<{ rowStart: number; rowSpan: number }>; unmet: number } {
+  const available = gridRows - newTop;
+  if (members.length === 0) return { rows: [], unmet: Math.max(0, -available) };
+  let spans = members.map((m) => m.rowSpan);
+  let unmet = 0;
+  const total = spans.reduce((sum, span) => sum + span, 0);
+  if (available < total) {
+    const taken = takeRowsFairly(
+      spans,
+      members.map((m) => m.minRowSpan),
+      total - available
+    );
+    spans = taken.spans;
+    unmet = taken.unmet;
+  } else if (newTop < members[0].rowStart) {
+    spans = [...spans];
+    spans[spans.length - 1] += members[0].rowStart - newTop;
+  }
+  let cursor = newTop;
+  return {
+    rows: spans.map((rowSpan) => {
+      const row = { rowStart: cursor, rowSpan };
+      cursor += rowSpan;
+      return row;
+    }),
+    unmet,
+  };
+}
+
+/**
  * Which zone of a page a target cell belongs to, and what column range a
  * module placed there takes.
  *

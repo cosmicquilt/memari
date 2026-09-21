@@ -25,6 +25,7 @@ import {
   pixelsToContainingCell,
   takeRowsFairly,
   followerRowsAfterGrowth,
+  rowsBelowHours,
   resolveZone,
   packedTopEdge,
   type PageGrid,
@@ -1004,6 +1005,62 @@ console.log("All takeRowsFairly checks passed.");
   assert(rows[0].rowStart === 21 && rows[0].rowSpan === 15, "a zero delta changes nothing");
 }
 console.log("All followerRowsAfterGrowth checks passed.");
+
+// --- rowsBelowHours ----------------------------------------------------------
+// The daily page as stored: hours at rows 0-19 with a one-row gap, the to-do
+// at 21-35 on a 36-row page. 12pt takes the hours to 27 rows with NO gap, so
+// the to-do's top moves six rows while the hours' span grows seven. It must
+// be shrunk by six and still reach the foot of the page - the preview shrank
+// it by seven and left the last row empty.
+{
+  const { rows, unmet } = rowsBelowHours([{ rowStart: 21, rowSpan: 15, minRowSpan: 3 }], 27, 36);
+  assert(
+    unmet === 0 && rows[0].rowStart === 27 && rows[0].rowSpan === 9 && rows[0].rowStart + rows[0].rowSpan === 36,
+    `a growth that also closes the gap is taken from the top's move, not the span's (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  // And back: the six rows freed go to the to-do, not to a hole under it.
+  const { rows } = rowsBelowHours([{ rowStart: 27, rowSpan: 9, minRowSpan: 3 }], 21, 36);
+  assert(
+    rows[0].rowStart === 21 && rows[0].rowSpan === 15,
+    `shorter hours give the rows back to the last module (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  // Several give way evenly - the rule a settings change was asked for.
+  const { rows } = rowsBelowHours(
+    [{ rowStart: 21, rowSpan: 8, minRowSpan: 2 }, { rowStart: 29, rowSpan: 7, minRowSpan: 2 }],
+    25,
+    36
+  );
+  assert(
+    rows.map((r) => `${r.rowStart}+${r.rowSpan}`).join(",") === "25+6,31+5",
+    `four rows come two from each (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  // Only the last one grows on the way back, and a gap already at the foot
+  // stays: the stack's bottom edge does not move.
+  const { rows } = rowsBelowHours(
+    [{ rowStart: 25, rowSpan: 4, minRowSpan: 2 }, { rowStart: 29, rowSpan: 3, minRowSpan: 2 }],
+    21,
+    36
+  );
+  assert(
+    rows.map((r) => `${r.rowStart}+${r.rowSpan}`).join(",") === "21+4,25+7",
+    `the bottom edge stays at 32 (got ${JSON.stringify(rows)})`
+  );
+}
+{
+  const { rows, unmet } = rowsBelowHours([{ rowStart: 21, rowSpan: 15, minRowSpan: 3 }], 39, 36);
+  assert(unmet === 6 && rows[0].rowSpan === 3, `what cannot be found is reported (got unmet ${unmet})`);
+}
+{
+  assert(rowsBelowHours([], 37, 36).unmet === 1, "with nothing below, the hours themselves must fit");
+  assert(rowsBelowHours([], 30, 36).unmet === 0, "and fit when they do");
+}
+console.log("All rowsBelowHours checks passed.");
 // --- resolveZone -----------------------------------------------------------
 // Left page: hourly at columns 6-23, rows 0-19. Sidebar is 0-5.
 {

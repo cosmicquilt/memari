@@ -12,7 +12,7 @@ import {
   columnSpanToDayCount,
   cellHeightPx,
   pixelHeightToRowSpan,
-  takeRowsFairly,
+  rowsBelowHours,
   resolveZone,
   followerRowsAfterGrowth,
   resolveModulePlacement,
@@ -2832,14 +2832,20 @@ export async function updateHourlySettings(settings: {
       // column range — same "exact match, not just overlap" membership
       // test resizeStackFromBottom/resizeAdjacentModules already use for
       // "is this really the same stack," not a looser overlap check.
-      let belowMembers = page.moduleInstances.filter(
-        (mi): mi is typeof mi & { rowStart: number } =>
-          !mi.locked &&
-          mi.rowStart !== null &&
-          mi.columnStart === hourly.columnStart &&
-          mi.columnSpan === hourly.columnSpan &&
-          mi.rowStart >= hourly.rowStart! + hourly.rowSpan
-      );
+      // Top to bottom. The fit, the fair shrink and "the lowest" below all
+      // read this order, and the database hands rows back in whatever order
+      // it likes - so "delete the lowest to fit" could remove one that was
+      // not the lowest.
+      let belowMembers = page.moduleInstances
+        .filter(
+          (mi): mi is typeof mi & { rowStart: number } =>
+            !mi.locked &&
+            mi.rowStart !== null &&
+            mi.columnStart === hourly.columnStart &&
+            mi.columnSpan === hourly.columnSpan &&
+            mi.rowStart >= hourly.rowStart! + hourly.rowSpan
+        )
+        .sort((a, b) => a.rowStart - b.rowStart);
       // Checked against each member's CURRENT rowSpan, not its own minimum
       // floor — this repack (packStackFromTop, below) only ever moves a
       // member's rowStart, it never shrinks a member's own rowSpan to fit.
@@ -2857,45 +2863,42 @@ export async function updateHourlySettings(settings: {
 
       // Make room by SHRINKING what is below rather than refusing. This
       // used to throw the moment the below-zone did not fit at its current
-      // sizes, leaving the user to go and resize something first.
-      // takeRowsFairly takes one row at a time from each module in turn, so
-      // they give way evenly instead of the bottom one flattening to its
-      // floor while the one above keeps full height.
-      const belowCurrentTotal = belowMembers.reduce((sum, mi) => sum + mi.rowSpan, 0);
-      // Against the settings being committed, not the stored ones: the
-      // block is being resized to fit these hours, so the gap under them
-      // has to be measured from the same place.
+      // sizes, leaving the user to go and resize something first. The rule -
+      // a row at a time from each, no lower than its floor, and freed rows
+      // back to the last one when the hours get shorter - is rowsBelowHours
+      // (grid.ts), which the row-height drag previews with as well.
+      //
+      // The gap is measured against the settings being committed, not the
+      // stored ones: the block is being resized to fit these hours, so the
+      // gap under them has to be measured from the same place.
       const gapRows = hourlyGapRows(
         cellHeightPx(pageGrid),
         { ...settings, intervalMode: "on" },
         newRowSpan
       );
-      const availableForBelow = pageGrid.gridRows - newRowSpan - gapRows;
-      let belowSpans = belowMembers.map((mi) => mi.rowSpan);
-      if (belowMembers.length > 0 && availableForBelow < belowCurrentTotal) {
-        const floors = belowMembers.map((mi) =>
-          getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan, configOf(mi))
-        );
-        const result = takeRowsFairly(belowSpans, floors, belowCurrentTotal - availableForBelow);
-        if (result.unmet > 0) {
-          // Only name the modules when removing the lowest would actually
-          // close the gap. At 18pt with 30-minute increments the hours need
-          // 39 of 36 rows on their own, so deleting anything is futile -
-          // and offering it would walk someone through destroying a module
-          // for nothing. Everything below is at its floor by this point, so
-          // the lowest frees exactly its floor.
-          const deletingLowestWouldFit = floors[floors.length - 1] >= result.unmet;
-          const names = deletingLowestWouldFit
-            ? belowMembers.map(
-                (mi) => ((mi.propValues as { heading?: string } | null)?.heading ?? mi.moduleType.name)
-              )
-            : [];
-          throw new Error(`HOURS_DO_NOT_FIT:${result.unmet}:${names.join("|")}`);
-        }
-        belowSpans = result.spans;
-      }
-      if (belowMembers.length === 0 && availableForBelow < 0) {
-        throw new Error(`HOURS_DO_NOT_FIT:${-availableForBelow}:`);
+      const floors = belowMembers.map((mi) =>
+        getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan, configOf(mi))
+      );
+      const placed = rowsBelowHours(
+        belowMembers.map((mi, i) => ({ rowStart: mi.rowStart, rowSpan: mi.rowSpan, minRowSpan: floors[i] })),
+        hourly.rowStart + newRowSpan + gapRows,
+        pageGrid.gridRows
+      );
+      if (placed.unmet > 0) {
+        // Only name the modules when removing the lowest would actually
+        // close the gap. At 18pt with 30-minute increments the hours need
+        // 39 of 36 rows on their own, so deleting anything is futile -
+        // and offering it would walk someone through destroying a module
+        // for nothing. Everything below is at its floor by this point, so
+        // the lowest frees exactly its floor.
+        const deletingLowestWouldFit =
+          belowMembers.length > 0 && floors[floors.length - 1] >= placed.unmet;
+        const names = deletingLowestWouldFit
+          ? belowMembers.map(
+              (mi) => ((mi.propValues as { heading?: string } | null)?.heading ?? mi.moduleType.name)
+            )
+          : [];
+        throw new Error(`HOURS_DO_NOT_FIT:${placed.unmet}:${names.join("|")}`);
       }
 
       perPage.push({
@@ -2906,8 +2909,8 @@ export async function updateHourlySettings(settings: {
         gapRows,
         belowMembers: belowMembers.map((mi, i) => ({
           id: mi.id,
-          rowStart: mi.rowStart,
-          rowSpan: belowSpans[i],
+          rowStart: placed.rows[i].rowStart,
+          rowSpan: placed.rows[i].rowSpan,
         })),
       });
     }
@@ -2934,19 +2937,16 @@ export async function updateHourlySettings(settings: {
           },
         })
       );
-      // rowSpan as well as rowStart: belowMembers now carries the spans
-      // takeRowsFairly settled on, which may be smaller than what is
-      // stored. packStackFromTop only reports position changes, so the
-      // heights are written straight from the members.
-      let cursor = p.hourlyRowStart + p.newRowSpan + p.gapRows;
-      for (const member of [...p.belowMembers].sort((a, b) => (a.rowStart ?? 0) - (b.rowStart ?? 0))) {
+      // Written exactly as rowsBelowHours placed them - rows and spans both,
+      // since a member can have shrunk or, when the hours got shorter,
+      // grown.
+      for (const member of p.belowMembers) {
         updates.push(
           prisma.moduleInstance.update({
             where: { id: member.id },
-            data: { rowStart: cursor, rowSpan: member.rowSpan },
+            data: { rowStart: member.rowStart, rowSpan: member.rowSpan },
           })
         );
-        cursor += member.rowSpan;
       }
     }
   }
