@@ -45,3 +45,18 @@ export const usePrefersReducedMotion = () => useMediaQuery("(prefers-reduced-mot
 
 /** Quiet chrome goes to full white rather than sitting at reduced contrast. */
 export const usePrefersHighContrast = () => useMediaQuery("(prefers-contrast: more)");
+
+/**
+ * There is a pointer that can hover, so a control can be reached by moving
+ * onto it rather than having to be revealed first.
+ *
+ * The module badges (delete, edit, the zone's +) are invisible until their
+ * module is hovered, and they were also click-through while invisible - so
+ * the only way to one was to enter the module first and travel out to the
+ * corner. Reported exactly that way. Where a pointer hovers, they stay
+ * hit-testable and light up when it arrives on them. Where it does NOT -
+ * a touch screen, where the first contact is already a tap - an invisible
+ * control that takes taps would delete a module nobody could see, so they
+ * keep the old behaviour there.
+ */
+export const usePointerCanHover = () => useMediaQuery("(hover: hover)");

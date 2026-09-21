@@ -156,7 +156,7 @@ import {
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { PageLevel } from "@/lib/pageLevels";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
-import { usePrefersReducedMotion, useIsomorphicLayoutEffect } from "./useMediaQuery";
+import { usePrefersReducedMotion, useIsomorphicLayoutEffect, usePointerCanHover } from "./useMediaQuery";
 import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
 import { useAsyncAction } from "./useAsyncAction";
@@ -984,6 +984,14 @@ function NativeModule({
   // 0 does not remove it from the tab order, so a keyboard user was landing
   // focus on something they could not see. It shows for focus as well.
   const [isPencilFocused, setIsPencilFocused] = useState(false);
+  // REACHABLE WHERE THEY ARE. Each badge tracks its own hover, and stays
+  // hit-testable while invisible wherever a pointer can hover, so moving
+  // onto one lights it up: "currently you have to hover over the module
+  // before you can hover over the button instead of being able to access it
+  // where it is". Its module's hover still shows both, as before.
+  const badgesReachable = usePointerCanHover();
+  const [isDeleteHovered, setIsDeleteHovered] = useState(false);
+  const [isPencilHovered, setIsPencilHovered] = useState(false);
   const [draftHabitsText, setDraftHabitsText] = useState((habits ?? []).join("\n"));
   const commitHabits = useCallback(
     (value: string) => {
@@ -1254,9 +1262,13 @@ function NativeModule({
           this click from also being read as the start of a drag — both
           `listeners` (dnd-kit's own activator) and this button live on
           the same element tree, and pointerdown bubbles from this button
-          up to the wrapper div's handler otherwise. pointerEvents: none
-          while hidden so a hidden button sitting in the corner can't
-          swallow a click meant for the module underneath it.
+          up to the wrapper div's handler otherwise. It stays hit-testable
+          while hidden wherever a pointer can hover, so
+          it can be reached directly rather than only from inside its own
+          module; clipPath keeps that area to the visible circle, and on a
+          touch screen (no hover) it goes back to being click-through, since
+          an invisible control taking taps would delete a module nobody
+          could see.
           top/right: -(size/2) straddles the module's own top-right
           corner exactly — the circle's *center*, not its edge, sits on
           the corner point, half hanging outside the box. Safe to let it
@@ -1272,6 +1284,8 @@ function NativeModule({
           type="button"
           title="Delete module"
           onPointerDown={(event) => event.stopPropagation()}
+          onMouseEnter={() => setIsDeleteHovered(true)}
+          onMouseLeave={() => setIsDeleteHovered(false)}
           onClick={(event) => {
             event.stopPropagation();
             onDelete(instanceId);
@@ -1283,23 +1297,39 @@ function NativeModule({
             width: 70,
             height: 70,
             borderRadius: "50%",
+            // Hit-tests to the circle, not its square box - border-radius
+            // is paint-only. It matters now that this takes the pointer
+            // while invisible: the four transparent corners would
+            // otherwise swallow the page around it.
+            clipPath: "circle(50%)",
             border: "none",
             background: "#c7c7c7",
             color: "#666666",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 45,
-            lineHeight: 1,
             padding: 0,
             cursor: "pointer",
-            opacity: isHovered ? 1 : 0,
-            pointerEvents: isHovered ? "auto" : "none",
+            opacity: isHovered || isDeleteHovered ? 1 : 0,
+            pointerEvents: badgesReachable || isHovered || isDeleteHovered ? "auto" : "none",
             transition: "opacity 0.12s ease",
             zIndex: 6,
           }}
         >
-          ×
+          {/* DRAWN, not typed. It was the character "x" at 45px, and a
+              glyph sits on its font's baseline rather than in the middle of
+              a circle: measured 5.5px low in a 70px circle, 7.9% of the
+              diameter, which is what "isn't centered in any of them" was.
+              A path is centred by its own geometry at every size. Sized to
+              the ink the glyph had (17px across) so nothing else changes. */}
+          <svg width={35} height={35} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       )}
       {/* Heading edit — labeled-box only (the one module type with a
@@ -1417,6 +1447,8 @@ function NativeModule({
           type="button"
           title={`Edit ${moduleDefinition(slug)?.label ?? slug}`}
           onPointerDown={(event) => event.stopPropagation()}
+          onMouseEnter={() => setIsPencilHovered(true)}
+          onMouseLeave={() => setIsPencilHovered(false)}
           onFocus={() => setIsPencilFocused(true)}
           onBlur={() => setIsPencilFocused(false)}
           onClick={(event) => {
@@ -1430,18 +1462,23 @@ function NativeModule({
             width: 70,
             height: 70,
             borderRadius: "50%",
+            // See the delete badge's own note: the circle is the hit area.
+            clipPath: "circle(50%)",
             border: "none",
             background: "#c7c7c7",
             color: "#666666",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            // The pencil glyph measures dead centre in this circle - it is
+            // the x that did not - so it stays as it is.
             fontSize: 30,
             lineHeight: 1,
             padding: 0,
             cursor: "pointer",
-            opacity: isHovered || isPencilFocused ? 1 : 0,
-            pointerEvents: isHovered || isPencilFocused ? "auto" : "none",
+            opacity: isHovered || isPencilFocused || isPencilHovered ? 1 : 0,
+            pointerEvents:
+              badgesReachable || isHovered || isPencilFocused || isPencilHovered ? "auto" : "none",
             transition: "opacity 0.12s ease",
             zIndex: 6,
           }}
@@ -2976,6 +3013,9 @@ function SectionAddButton({
     [pageGrid, columnStart, rowStart, columnSpan, rowSpan]
   );
   const [selfHovered, setSelfHovered] = useState(false);
+  // Its own hover could never START it, because it was click-through until
+  // something else made it visible - see usePointerCanHover.
+  const reachable = usePointerCanHover();
   const visible = isHovered || selfHovered;
   return (
     <button
@@ -3003,17 +3043,20 @@ function SectionAddButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 67.5,
-        lineHeight: 1,
         padding: 0,
         cursor: "pointer",
         opacity: visible ? 1 : 0,
-        pointerEvents: visible ? "auto" : "none",
+        pointerEvents: reachable || visible ? "auto" : "none",
         transition: "opacity 0.12s ease",
         zIndex: 6,
       }}
     >
-      +
+      {/* Drawn, like AddModuleButton's own plus and for the delete badge's
+          reason: the character sat 8px low in this 105px circle. Sized to
+          the ink it had (30px across). */}
+      <svg width={45} height={45} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 4v16M4 12h16" stroke="currentColor" strokeWidth={2.75} strokeLinecap="round" />
+      </svg>
     </button>
   );
 }
