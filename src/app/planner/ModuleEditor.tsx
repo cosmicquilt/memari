@@ -25,7 +25,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { moduleDefinition, cleanPropsForSave } from "@/lib/moduleRegistry";
-import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
 import { gridCellToPixels } from "@/lib/grid";
 import { flatten } from "@/lib/proofSvg";
@@ -56,12 +56,16 @@ export function ModuleEditor({
   editing,
   pageGrid,
   fontFamily,
+  renderContext,
   onClose,
   onSaved,
 }: {
   editing: EditingModule;
   pageGrid: PageGrid;
   fontFamily: string;
+  /** The module's page's - see src/lib/renderContext.ts. The draft is the
+   *  stored props; the preview shows them as the page prints them. */
+  renderContext: PageRenderContext | null;
   onClose: () => void;
   /** The committed props, so the page behind can redraw without a reload. */
   onSaved: (instanceId: string, propValues: Record<string, unknown>) => void;
@@ -98,7 +102,7 @@ export function ModuleEditor({
   // Redrawn from the DRAFT, so the preview is what saving would produce.
   const elements = useMemo(
     () =>
-      renderModuleInstance(
+      renderOnPage(
         {
           id: editing.instanceId,
           locked: true,
@@ -110,9 +114,10 @@ export function ModuleEditor({
           moduleType: { slug: editing.slug },
         },
         pageGrid,
-        fontFamily
+        fontFamily,
+        renderContext
       ),
-    [draft, editing, pageGrid, fontFamily]
+    [draft, editing, pageGrid, fontFamily, renderContext]
   );
 
   // THE HEADING IS EDITED WHERE IT IS DRAWN - "it should allow you to edit

@@ -25,19 +25,14 @@
 // caller must be a Server Component or another server action.
 
 import { getOrCreateBook } from "./actions";
-import { findSpine, findTitle, withDates, withoutDates } from "@/lib/moduleRegistry";
+import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
-import {
-  LEVELS_IN_BINDING_ORDER,
-  occurrences,
-  type OccurrenceContext,
-  type PageLevel,
-} from "@/lib/pageLevels";
+import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
-import { rotateWeekDays, type DayLabel } from "@/lib/weekDays";
+import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 export type LoadedModuleInstance = {
@@ -71,6 +66,11 @@ export type LoadedPage = {
   level: PageLevel;
   position: number;
   pageGrid: PageGrid;
+  /** What this page's modules are drawn with - the occurrence it is edited
+   *  as, its rotated day columns, dated or not. Handed over so that every
+   *  LATER drawing of a module (a live resize, a drop) is dated the same
+   *  way as the first; see src/lib/renderContext.ts. */
+  renderContext: PageRenderContext | null;
   moduleInstances: LoadedModuleInstance[];
   interactiveZones: { sidebar: GridRect | null; belowHourlyGrid: GridRect | null };
 };
@@ -197,38 +197,7 @@ export async function loadPlannerPages(
   const fontFamily = resolveFontFamily(fontChoice);
   const weekStartDay = theme?.weekStartDay ?? 0;
 
-  // Which occurrence this page is being edited AS.
-  //
-  // A variant's own occurrence when one is open, and the FIRST otherwise -
-  // the default layout prints for every occurrence, and the first is the one
-  // a person can check against a calendar. Null when the book has no term,
-  // in which case there is nothing to fill in and the stored values stand.
-  const start = (planner as { startDate?: Date | null }).startDate ?? null;
-  const end = (planner as { endDate?: Date | null }).endDate ?? null;
-  const list = occurrences(level, start, end, weekStartDay);
-  const index = resolvedVariantKey
-    ? (list ?? []).findIndex((o) => o.key === resolvedVariantKey)
-    : 0;
-  const previewOccurrence: OccurrenceContext | null =
-    list && list.length > 0 && index >= 0
-      ? { ...list[index], level, index, total: list.length }
-      : null;
-
-  // Computed once, up front, from both pages together — rotateWeekDays
-  // needs the full canonical 7-day list (left's 3 + right's 4) to rotate
-  // correctly, which isn't available yet one page at a time inside the
-  // per-page loop below. The stored dayLabels themselves are untouched;
-  // this only overrides what gets rendered.
-  const [plannerLeftPage, plannerRightPage] = levelPages;
-  const plannerLeftHourly = plannerLeftPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-  const plannerRightHourly = plannerRightPage?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
-  const rotatedDayLabels = rotateWeekDays(
-    ((plannerLeftHourly?.propValues as { dayLabels?: DayLabel[] } | undefined)?.dayLabels ?? []) as DayLabel[],
-    ((plannerRightHourly?.propValues as { dayLabels?: DayLabel[] } | undefined)?.dayLabels ?? []) as DayLabel[],
-    weekStartDay
-  );
-
-  const pages: LoadedPage[] = levelPages.map((page, pageIndex) => {
+  const pages: LoadedPage[] = levelPages.map((page) => {
     const pageGrid: PageGrid = {
       widthPx: page.widthPx,
       heightPx: page.heightPx,
@@ -242,10 +211,11 @@ export async function loadPlannerPages(
       boxInsetPx: page.gridGapPx / 2,
       marginPx: page.marginPx,
     };
-    // pageIndex 0 = left, 1 = right — matches planner.pages' own
-    // orderBy: position "asc" ordering, same assumption the weekSettings
-    // block below (leftPage/rightPage destructure) already relies on.
-    const rotatedForThisPage = pageIndex === 0 ? rotatedDayLabels.left : rotatedDayLabels.right;
+    // Which occurrence this page is edited AS, its day columns rotated to
+    // the book's week start, dated or not - one function, shared with the
+    // editor and the server actions, so a module drawn later is dated the
+    // way it was drawn here.
+    const renderContext = renderContextForPage(planner, page.id);
 
     const moduleInstances: LoadedModuleInstance[] = [];
     for (const instance of page.moduleInstances) {
@@ -257,38 +227,6 @@ export async function loadPlannerPages(
         columnSpan: instance.columnSpan,
         rowSpan: instance.rowSpan,
       });
-      // Substitute the rotated day labels only for hourly-grid-core, only
-      // for rendering — the raw instance (and what's stored in the DB)
-      // keeps its original, unrotated dayLabels.
-      const renderInstance =
-        instance.moduleType.slug === "hourly-grid-core"
-          ? { ...instance, propValues: { ...(instance.propValues as object), dayLabels: rotatedForThisPage } }
-          : instance;
-      // WHAT THIS PAGE WILL ACTUALLY PRINT AS, applied here and only here.
-      //
-      // Undated: the values are taken out, so the editor shows the blanks and
-      // the rules you will write on.
-      //
-      // Dated: the values are filled in FOR THE OCCURRENCE BEING EDITED - so
-      // February's own layout says FEBRUARY rather than the JANUARY it was
-      // copied from, and the default weekly spread shows the book's first
-      // week rather than whatever fiction was seeded into it. The editor is
-      // a preview of a printed page; showing a month name that belongs to a
-      // different month is the one thing it must not do.
-      //
-      // ONLY THE RENDER. `propValues` below is the RAW stored value, so
-      // nothing the editor saves can bake a date into a template.
-      //
-      // Every instance is offered to the hook, not a list of the date-bearing
-      // ones - each module declares its own answer in the registry, so a
-      // module added tomorrow with a date in it is covered without this line
-      // changing.
-      const renderProps = !dated
-        ? withoutDates(instance.moduleType.slug, renderInstance.propValues)
-        : previewOccurrence
-        ? withDates(instance.moduleType.slug, renderInstance.propValues, previewOccurrence)
-        : renderInstance.propValues;
-      const datedInstance = { ...renderInstance, propValues: renderProps };
       moduleInstances.push({
         id: instance.id,
         slug: instance.moduleType.slug,
@@ -300,7 +238,12 @@ export async function loadPlannerPages(
         propValues: instance.propValues,
         originX: origin.x,
         originY: origin.y,
-        elements: renderModuleInstance(datedInstance, pageGrid, fontFamily),
+        // WHAT THIS PAGE WILL ACTUALLY PRINT AS: filled in for the
+        // occurrence being edited (or emptied, on an undated book), with the
+        // week's days in the book's order. ONLY THE DRAWING - `propValues`
+        // above stays the raw stored value, so nothing the editor saves can
+        // bake a date into a template. See src/lib/renderContext.ts.
+        elements: renderOnPage(instance, pageGrid, fontFamily, renderContext),
       });
     }
     // Sorted so DOM order matches z-index intent (later = painted on
@@ -344,6 +287,7 @@ export async function loadPlannerPages(
       level: page.level,
       position: page.position,
       pageGrid,
+      renderContext,
       moduleInstances,
       interactiveZones: { sidebar, belowHourlyGrid },
     };

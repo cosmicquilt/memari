@@ -96,6 +96,7 @@ import type { LoadedPage, PageSettings } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
@@ -1879,8 +1880,11 @@ function NativePage({
         // deliberately drawn at the larger of the two sizes so the box
         // can clip it (see easeContent's own comment).
         const liveOrigin = contentIsLive ? gridCellToPixels(page.pageGrid, contentPlacement) : null;
+        // Through renderOnPage, with the page's own context: the stored props
+        // are the TEMPLATE, and drawn raw they put the daily page's MONDAY
+        // back over its THURSDAY for the length of a resize.
         const elements = contentIsLive
-          ? renderModuleInstance(
+          ? renderOnPage(
               {
                 id,
                 locked: info.locked,
@@ -1892,7 +1896,8 @@ function NativePage({
                 moduleType: { slug: info.slug },
               },
               page.pageGrid,
-              fontFamily
+              fontFamily,
+              page.renderContext
             )
           : info.elements;
         // A second render at the module's FINAL geometry, for text only,
@@ -1908,7 +1913,7 @@ function NativePage({
         // runs for one module for the length of one ease.
         const textElements =
           contentIsLive && isEasingBox
-            ? renderModuleInstance(
+            ? renderOnPage(
                 {
                   id,
                   locked: info.locked,
@@ -1939,7 +1944,8 @@ function NativePage({
                   moduleType: { slug: info.slug },
                 },
                 page.pageGrid,
-                fontFamily
+                fontFamily,
+                page.renderContext
               )
             : null;
         // The dragged module leaves grid flow: its box is the committed
@@ -4684,6 +4690,15 @@ export function NativePlannerEditor({
     return map;
   }, [pages]);
 
+  // What each page's modules are drawn with - see src/lib/renderContext.ts.
+  // Every module drawn after load goes through renderOnPage with its own
+  // page's entry, so it is dated exactly as the load dated it.
+  const renderContextByPageId = useMemo(() => {
+    const map: Record<string, PageRenderContext | null> = {};
+    for (const page of pages) map[page.pageId] = page.renderContext;
+    return map;
+  }, [pages]);
+
   // Which instance ids belong to each page — derived from moduleLookup,
   // not `page.moduleInstances` directly, specifically so a module added
   // after initial load (see handleAddModule) shows up: moduleLookup is
@@ -7068,10 +7083,11 @@ export function NativePlannerEditor({
         new Map(prev).set(PHANTOM_ID, {
           pageId: target.pageId,
           locked: false,
-          elements: renderModuleInstance(
+          elements: renderOnPage(
             { id: PHANTOM_ID, locked: false, ...placement, propValues: meta.previewProps, moduleType: { slug } },
             phantomPageGrid,
-            fontFamily
+            fontFamily,
+            renderContextByPageId[target.pageId]
           ),
           originX: origin.x,
           originY: origin.y,
@@ -7125,6 +7141,7 @@ export function NativePlannerEditor({
       setGrabFraction({ x: 0.5, y: 0.5 });
     },
     [
+      renderContextByPageId,
       easeContentDuringResize,
       easeSiblingsDuringResize,
       fontFamily,
@@ -8362,10 +8379,11 @@ export function NativePlannerEditor({
               ...info,
               pageId: phantomResult.targetPageId,
               propValues,
-              elements: renderModuleInstance(
+              elements: renderOnPage(
                 { id: PHANTOM_ID, locked: false, ...dropped, propValues, moduleType: { slug: info.slug } },
                 phantomResult.targetPageGrid,
-                fontFamily
+                fontFamily,
+                renderContextByPageId[phantomResult.targetPageId]
               ),
               originX: origin.x,
               originY: origin.y,
@@ -8383,10 +8401,11 @@ export function NativePlannerEditor({
             const sibOrigin = gridCellToPixels(sibGrid, sibNext);
             next.set(move.id, {
               ...sib,
-              elements: renderModuleInstance(
+              elements: renderOnPage(
                 { id: move.id, locked: sib.locked, ...sibNext, propValues: sib.propValues, moduleType: { slug: sib.slug } },
                 sibGrid,
-                fontFamily
+                fontFamily,
+                renderContextByPageId[sib.pageId]
               ),
               originX: sibOrigin.x,
               originY: sibOrigin.y,
@@ -8584,7 +8603,7 @@ export function NativePlannerEditor({
               draggedInfo.slug === "todo-checklist"
                 ? { ...draggedInfo.propValues, dayCount: newPlacement.columnSpan }
                 : draggedInfo.propValues;
-            const elements = renderModuleInstance(
+            const elements = renderOnPage(
               {
                 id: instanceId,
                 locked: draggedInfo.locked,
@@ -8596,7 +8615,9 @@ export function NativePlannerEditor({
                 moduleType: { slug: draggedInfo.slug },
               },
               pageGrid,
-              fontFamily
+              fontFamily,
+              // Drawn as the page it is LANDING on.
+              renderContextByPageId[targetPageId]
             );
             const origin = gridCellToPixels(pageGrid, newPlacement);
             // pageId: targetPageId — without this, instanceIdsByPageId
@@ -8615,7 +8636,7 @@ export function NativePlannerEditor({
             const prevPlacement = placements[move.id];
             if (!info || !prevPlacement) continue;
             const siblingPlacement = { ...prevPlacement, rowStart: move.rowStart, rowSpan: move.rowSpan };
-            const elements = renderModuleInstance(
+            const elements = renderOnPage(
               {
                 id: move.id,
                 locked: info.locked,
@@ -8627,7 +8648,8 @@ export function NativePlannerEditor({
                 moduleType: { slug: info.slug },
               },
               pageGrid,
-              fontFamily
+              fontFamily,
+              renderContextByPageId[info.pageId]
             );
             const origin = gridCellToPixels(pageGrid, siblingPlacement);
             next.set(move.id, { ...info, elements, originX: origin.x, originY: origin.y });
@@ -8695,6 +8717,7 @@ export function NativePlannerEditor({
     },
     [
       placements,
+      renderContextByPageId,
       recordGeometry,
       removePhantom,
       resolveDrag,
@@ -9518,7 +9541,7 @@ export function NativePlannerEditor({
         return new Map(prev).set(instanceId, {
           ...current,
           propValues,
-          elements: renderModuleInstance(
+          elements: renderOnPage(
             {
               id: instanceId,
               locked: current.locked,
@@ -9527,7 +9550,8 @@ export function NativePlannerEditor({
               moduleType: { slug: current.slug },
             },
             page.pageGrid,
-            fontFamily
+            fontFamily,
+            page.renderContext
           ),
         });
       });
@@ -9874,6 +9898,8 @@ export function NativePlannerEditor({
           editing={editingModule}
           pageGrid={pages[0].pageGrid}
           fontFamily={fontFamily}
+          // The module's own page's, so the preview is dated as the page is.
+          renderContext={renderContextByPageId[moduleLookup.get(editingModule.instanceId)?.pageId ?? ""] ?? null}
           onClose={() => setEditingModule(null)}
           onSaved={(instanceId, propValues) => patchModuleProps(instanceId, propValues)}
         />

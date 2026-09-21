@@ -30,7 +30,11 @@ const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
 import {
   canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
-import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import {
+  renderContextForPage,
+  renderOnPage,
+  type PageRenderContext,
+} from "@/lib/renderContext";
 import {
   weekLayout,
   dayLayout,
@@ -166,6 +170,7 @@ function sanitizePropValues(
 function renderInstance(
   row: {
     id: string;
+    pageId: string;
     locked: boolean;
     columnStart: number | null;
     rowStart: number | null;
@@ -175,10 +180,55 @@ function renderInstance(
   },
   slug: string,
   pageGrid: PageGrid,
-  fontFamily: string
+  fontFamily: string,
+  contexts: RenderContexts
 ) {
-  const [element] = renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid, fontFamily);
+  const [element] = renderOnPage({ ...row, moduleType: { slug } }, pageGrid, fontFamily, contexts(row.pageId));
   return element;
+}
+
+/**
+ * What each page of a book is drawn with - see src/lib/renderContext.ts.
+ *
+ * Every render an action sends back goes through renderInstance or
+ * renderInstanceElements, and both take this. Without it they drew the
+ * stored TEMPLATE: the daily page's hours came back from a resize saying
+ * MONDAY over the THURSDAY the page load had shown, and stayed that way
+ * until a reload.
+ */
+type RenderContexts = (pageId: string) => PageRenderContext | null;
+
+/** The contexts of every page in the book that holds `pageId`, in one
+ *  query: the term, the theme, and each page's hourly grid (for its day
+ *  columns) - everything renderContextForPage reads, and nothing else. */
+async function renderContextsForBookOf(pageId: string): Promise<RenderContexts> {
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: {
+      planner: {
+        select: {
+          dated: true,
+          startDate: true,
+          endDate: true,
+          theme: true,
+          pages: {
+            select: {
+              id: true,
+              level: true,
+              variantKey: true,
+              position: true,
+              moduleInstances: {
+                where: { moduleType: { slug: "hourly-grid-core" } },
+                select: { propValues: true, moduleType: { select: { slug: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  const book = page?.planner;
+  return (id) => (book ? renderContextForPage(book, id) : null);
 }
 
 // Same wrapper as renderInstance above, but returns every element
@@ -197,6 +247,7 @@ function renderInstance(
 function renderInstanceElements(
   row: {
     id: string;
+    pageId: string;
     locked: boolean;
     columnStart: number | null;
     rowStart: number | null;
@@ -206,9 +257,10 @@ function renderInstanceElements(
   },
   slug: string,
   pageGrid: PageGrid,
-  fontFamily: string
+  fontFamily: string,
+  contexts: RenderContexts
 ) {
-  return renderModuleInstance({ ...row, moduleType: { slug } }, pageGrid, fontFamily);
+  return renderOnPage({ ...row, moduleType: { slug } }, pageGrid, fontFamily, contexts(row.pageId));
 }
 
 // The WEEK planner's default sidebar content — the 3 labeled boxes from
@@ -1222,7 +1274,8 @@ export async function addPaletteModuleAt(
 
   const pageGrid = pageGridFor(page);
   const paletteFontFamily = fontFamilyFromTheme(page.planner.theme);
-  const element = renderInstance(created, moduleTypeSlug, pageGrid, paletteFontFamily);
+  const contexts = await renderContextsForBookOf(page.id);
+  const element = renderInstance(created, moduleTypeSlug, pageGrid, paletteFontFamily, contexts);
 
   return {
     instanceId: created.id,
@@ -1261,7 +1314,8 @@ export async function addPaletteModuleAt(
         row,
         page.moduleInstances.find((mi) => mi.id === row.id)?.moduleType.slug ?? moduleTypeSlug,
         pageGrid,
-        paletteFontFamily
+        paletteFontFamily,
+        contexts
       ),
     })),
   };
@@ -1595,11 +1649,19 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   // every page), but this makes that correctness explicit rather than
   // incidental to it.
   const targetIds = new Set<string>([instance.id, ...reflow.map((m) => m.id)]);
+  // Each row drawn as ITS page - the moved module as the page it landed on.
+  const contexts = await renderContextsForBookOf(targetPageId);
   return updated.map((row) => ({
     id: row.id,
     rowStart: row.rowStart as number,
     rowSpan: row.rowSpan,
-    elements: renderInstanceElements(row, slugById.get(row.id) ?? slug, targetIds.has(row.id) ? targetPageGrid : sourcePageGrid, fontFamily),
+    elements: renderInstanceElements(
+      row,
+      slugById.get(row.id) ?? slug,
+      targetIds.has(row.id) ? targetPageGrid : sourcePageGrid,
+      fontFamily,
+      contexts
+    ),
   }));
 }
 
@@ -1758,7 +1820,8 @@ export async function updateModuleConfig(
     updated,
     instance.moduleType.slug,
     pageGrid,
-    fontFamilyFromTheme(instance.page.planner.theme)
+    fontFamilyFromTheme(instance.page.planner.theme),
+    await renderContextsForBookOf(updated.pageId)
   );
 
   return { element, propValues: updated.propValues };
@@ -1854,7 +1917,8 @@ export async function updateModuleSize(
     updated,
     instance.moduleType.slug,
     pageGrid,
-    fontFamilyFromTheme(instance.page.planner.theme)
+    fontFamilyFromTheme(instance.page.planner.theme),
+    await renderContextsForBookOf(updated.pageId)
   );
 
   return { element, columnSpan: updated.columnSpan, rowSpan: updated.rowSpan };
@@ -2033,13 +2097,14 @@ export async function resizeAdjacentModules(
   ]);
 
   const fontFamily = fontFamilyFromTheme(top.page.planner.theme);
+  const contexts = await renderContextsForBookOf(updatedTop.pageId);
   return {
     top: {
-      element: renderInstance(updatedTop, top.moduleType.slug, pageGrid, fontFamily),
+      element: renderInstance(updatedTop, top.moduleType.slug, pageGrid, fontFamily, contexts),
       rowSpan: updatedTop.rowSpan,
     },
     bottom: {
-      element: renderInstance(updatedBottom, bottom.moduleType.slug, pageGrid, fontFamily),
+      element: renderInstance(updatedBottom, bottom.moduleType.slug, pageGrid, fontFamily, contexts),
       rowStart: updatedBottom.rowStart,
       rowSpan: updatedBottom.rowSpan,
     },
@@ -2241,11 +2306,12 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   );
 
   const fontFamily = fontFamilyFromTheme(bottom.page.planner.theme);
+  const contexts = await renderContextsForBookOf(bottom.pageId);
   return updated.map((row, i) => ({
     id: row.id,
     rowStart: plan[i].rowStart,
     rowSpan: row.rowSpan,
-    elements: renderInstanceElements(row, plan[i].slug, pageGrid, fontFamily),
+    elements: renderInstanceElements(row, plan[i].slug, pageGrid, fontFamily, contexts),
   }));
 }
 
@@ -2988,6 +3054,8 @@ export async function updateHourlySettings(settings: {
   });
   if (!after) return [];
   const fontFamily = fontFamilyFromTheme(after.theme);
+  // From the book AFTER the change: a new week start re-orders the days.
+  const contexts: RenderContexts = (pageId) => renderContextForPage(after, pageId);
   return after.pages.flatMap((page) => {
     const pageGrid = pageGridFor(page);
     return page.moduleInstances
@@ -2997,7 +3065,7 @@ export async function updateHourlySettings(settings: {
         rowStart: mi.rowStart as number,
         rowSpan: mi.rowSpan,
         propValues: mi.propValues,
-        elements: renderInstanceElements(mi, mi.moduleType.slug, pageGrid, fontFamily),
+        elements: renderInstanceElements(mi, mi.moduleType.slug, pageGrid, fontFamily, contexts),
       }));
   });
 }
@@ -3220,6 +3288,7 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
       ...a.followers.map((mi) => [mi.id, a.pageGrid] as const),
     ])
   );
+  const contexts = await renderContextsForBookOf(instance.pageId);
   return updated.map((row) => ({
     id: row.id,
     rowStart: row.rowStart as number,
@@ -3228,7 +3297,8 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
       row,
       slugById.get(row.id) ?? instance.moduleType.slug,
       gridById.get(row.id) ?? dragged.pageGrid,
-      fontFamily
+      fontFamily,
+      contexts
     ),
   }));
 }
@@ -3350,6 +3420,7 @@ export async function restoreModulePlacements(
   );
 
   const fontFamily = fontFamilyFromTheme(owned[0].page.planner.theme);
+  const contexts = await renderContextsForBookOf(owned[0].pageId);
   return updated.map((row) => {
     const page = pageById.get(row.pageId);
     const mi = ownedById.get(row.id);
@@ -3364,7 +3435,8 @@ export async function restoreModulePlacements(
         row,
         mi?.moduleType.slug ?? "",
         pageGridFor(page!),
-        fontFamily
+        fontFamily,
+        contexts
       ),
     };
   });
