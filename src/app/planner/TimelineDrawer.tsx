@@ -1346,6 +1346,17 @@ function LevelGroupInner({
 
   const hasCog = repeats(level);
 
+  // THE ROWS ARE ON THE CARDS' CLOCK. A row's height is 1.2 cards (room for
+  // the active set - see CARD_ROW_HEIGHT), read from the same variable the
+  // cards are, and it had no transition while they did: on a settle the rows
+  // took their new height at once and the cards, centred in them, eased to
+  // theirs over SLIDE_MS. Reported as the contents jumping up (settling down
+  // to resting) or down (settling up to expanded) before sliding back.
+  // Measured before the fix: 8px above resting and let go, the level's name
+  // jumped 8.4px and the cards 4.2px in the first frame. "" while dragging,
+  // like the cards, so neither lags the finger.
+  const rowTransition = reduceMotion ? "none" : card.sizeTransition;
+
   // WHICH SET IS LIFTED - hovered, or focused from the keyboard - is held
   // here rather than in the card, because the whole row answers it. The
   // lifted card takes its extra width in the row, so its neighbours move
@@ -1421,7 +1432,7 @@ function LevelGroupInner({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
-          <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center", transition: rowTransition }}>
             {defaults.length === 0 ? (
               <EmptyLevel />
             ) : (
@@ -1454,7 +1465,7 @@ function LevelGroupInner({
             At the end of the DEFAULT column only. A variant's set is a copy
             of the default's, and offering to grow one of them out of step
             with the other is a question nobody asked. */}
-        <div style={{ display: "flex", height: CARD_ROW_HEIGHT, alignItems: "center", flexShrink: 0 }}>
+        <div style={{ display: "flex", height: CARD_ROW_HEIGHT, alignItems: "center", flexShrink: 0, transition: rowTransition }}>
           <AddPageCard card={card} level={level} variantKey={null} reduceMotion={reduceMotion} />
         </div>
         {/* An occurrence with its own layout sits BESIDE the default, not on
@@ -1463,7 +1474,7 @@ function LevelGroupInner({
             stack is the wrong answer to "show me there is more than one". */}
         {variants.map(([key, variantPages]) => (
           <div key={key} style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
-            <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center", transition: rowTransition }}>
               <PageCard
                 pages={variantPages}
                 selected={level === activeLevel && activeVariantKey === key}
