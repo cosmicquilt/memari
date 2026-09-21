@@ -9,19 +9,23 @@
 // from actions.ts and this imports loadPlannerPages.
 
 import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
-import { getOrCreateBook } from "./actions";
+import { openBook } from "./actions";
 import { loadPlannerPages, type LoadedPlanner } from "./loadPlannerPages";
 
-export async function loadLevel(level: PageLevel, variantKey: string | null): Promise<LoadedPlanner> {
+export async function loadLevel(
+  journalId: string,
+  level: PageLevel,
+  variantKey: string | null
+): Promise<LoadedPlanner> {
   // A server action is a public endpoint, whatever its type says: check the
   // level is one that exists before it reaches a query. Signing in is
-  // getOrCreateBook's check, as it is for every action here.
+  // openBook's check, as is whether the journal is theirs.
   if (!(LEVELS_IN_BINDING_ORDER as readonly string[]).includes(level)) {
     throw new Error("No such level");
   }
   if (variantKey !== null && typeof variantKey !== "string") {
     throw new Error("No such layout");
   }
-  const book = await getOrCreateBook(level);
+  const book = await openBook(journalId, level);
   return loadPlannerPages(book, level, variantKey);
 }

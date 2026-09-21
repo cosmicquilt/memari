@@ -1,10 +1,37 @@
-import { renderEditor } from "@/app/planner/levelPage";
+import { auth } from "@clerk/nextjs/server";
+import { cookies } from "next/headers";
+import { journalsOf, templatePreviews } from "@/app/planner/journals";
+import { StartDialog } from "@/app/planner/StartDialog";
+import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
 
-// memari.studio/app - the editor, asked for 2026-09-21: "make memari.studio/app
-// the location of the editor". ONE address for the whole book: which layout
-// is open (weekly, monthly, a month's own layout...) is the editor's state,
-// not part of the address - "I dont want site to change while swapping
-// between their monthly weekly layout". See EditorShell.
+// memari.studio/app - the start dialog: open one of your journals, or create
+// one. Asked for 2026-09-21, modelled on Photoshop's New Document dialog. A
+// journal's own address, /app/j/<id>, skips this and opens it directly.
 export default async function AppPage() {
-  return renderEditor();
+  const { userId, redirectToSignIn } = await auth();
+  if (!userId) return redirectToSignIn();
+
+  const journals = await journalsOf(userId);
+  const remembered = parseLastJournalCookie((await cookies()).get(LAST_JOURNAL_COOKIE)?.value);
+  // Only if it is still one of theirs: a deleted journal, or another
+  // person's id in a shared browser, is simply not preselected.
+  const lastJournalId = journals.some((j) => j.id === remembered) ? remembered : null;
+
+  return (
+    <StartDialog
+      journals={journals}
+      lastJournalId={lastJournalId}
+      templates={templatePreviews()}
+      defaultTerm={nextQuarter(new Date())}
+    />
+  );
+}
+
+/** A new journal's term to start from: three months from the first of next
+ *  month - the quarter the subscription ships by default. */
+function nextQuarter(today: Date): { start: string; end: string } {
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1));
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 0));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
 }

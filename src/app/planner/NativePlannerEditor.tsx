@@ -97,6 +97,8 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
+import Link from "next/link";
+import { useJournalId } from "./journalContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
@@ -3813,12 +3815,13 @@ function ModulePalette({
 // reliable than hand-rolling a client-side re-render of locked content
 // that was never sent to the client in the first place.
 function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
+  const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
 
   const handlePick = (choice: FontChoice) => {
     if (choice === fontChoice || pending) return;
     run(async () => {
-      await updatePlannerFont(choice);
+      await updatePlannerFont(journalId, choice);
       window.location.reload();
     });
   };
@@ -3868,6 +3871,7 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
  * the timeline's cog can offer - see occurrences().
  */
 function TermFields({ term }: { term: { start: string | null; end: string | null } }) {
+  const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const [start, setStart] = useState(term.start ?? "");
   const [end, setEnd] = useState(term.end ?? "");
@@ -3911,7 +3915,7 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
             run(async () => {
               // Both or neither: a half-set term is not a shorter book, it is
               // one whose length nobody can compute.
-              await setPlannerTerm(start || null, end || null);
+              await setPlannerTerm(journalId, start || null, end || null);
               window.location.reload();
             })
           }
@@ -3947,12 +3951,13 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
 // A reload rather than a local state update, same as FontToggle: it changes
 // what every page draws, and the pages are shaped on the server.
 function DatesToggle({ dated }: { dated: boolean }) {
+  const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
 
   const handlePick = (next: boolean) => {
     if (next === dated || pending) return;
     run(async () => {
-      await setPlannerDated(next);
+      await setPlannerDated(journalId, next);
       window.location.reload();
     });
   };
@@ -3994,13 +3999,14 @@ function DatesToggle({ dated }: { dated: boolean }) {
 // that reaches the page bottom, which is the same thing dragging its
 // bottom edge does. No confirmation needed, since nothing is discarded.
 function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
+  const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const current = trimKeyForWidth(pageGrid.widthPx);
 
   const handlePick = (key: PlannerTrimKey) => {
     if (key === current || pending) return;
     run(async () => {
-      await setPlannerTrim(key);
+      await setPlannerTrim(journalId, key);
       window.location.reload();
     });
   };
@@ -4105,9 +4111,10 @@ function HoursForm({
   const [draftCompact, setDraftCompact] = useState(compactHourRows);
   const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
+  const journalId = useJournalId();
 
   const save = (deleteLowestBelowToFit?: boolean) =>
-    updateHourlySettings({
+    updateHourlySettings(journalId, {
       deleteLowestBelowToFit,
       startTime: draftStart,
       endTime: draftEnd,
@@ -4435,6 +4442,7 @@ type ExportReport = {
 };
 
 function ExportPdfButton() {
+  const journalId = useJournalId();
   const [busy, setBusy] = useState(false);
   // Null while idle. Held until the next export rather than timed out: if
   // something could not be drawn, that is not a message to blink once and
@@ -4448,7 +4456,7 @@ function ExportPdfButton() {
       // No ?level=: the WHOLE BOOK. A term's worth of pages generated from
       // the templates with the dates filled in, which is the product - one
       // spread is a proofing tool and still reachable by URL.
-      const response = await fetch("/app/export", { cache: "no-store" });
+      const response = await fetch(`/app/export?journal=${encodeURIComponent(journalId)}`, { cache: "no-store" });
       if (!response.ok) {
         setResult({ ok: false, message: (await response.text()) || `Export failed (${response.status})` });
         return;
@@ -4578,6 +4586,7 @@ export function NativePlannerEditor({
   drawerHeight = DRAWER_RESTING_HEIGHT,
   initialUi,
   onUiChange,
+  journalTitle,
 }: {
   pages: LoadedPage[];
   /** What stretch of time the book covers, as ISO dates - for Page
@@ -4602,6 +4611,8 @@ export function NativePlannerEditor({
    *  another layout does not reset the view - see EditorShell. */
   initialUi?: EditorUi | null;
   onUiChange?: (ui: EditorUi) => void;
+  /** The open journal's name, shown beside the wordmark. */
+  journalTitle?: string;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -4610,6 +4621,7 @@ export function NativePlannerEditor({
   // otherwise the block redraws at its new height while the control that
   // nominally set it still reads the old one.
   const [pageSettings, setPageSettings] = useState(initialPageSettings);
+  const journalId = useJournalId();
   // How much room the canvas leaves below itself for the timeline is the
   // `drawerHeight` prop: the drawer's SETTLED height - so closing the drawer
   // gives the page back its room - never a drag's, which would re-scale the
@@ -9144,7 +9156,7 @@ export function NativePlannerEditor({
         // and then the whole page refreshing. updateHourlySettings hands
         // back the post-change geometry and renders, so the result can just
         // replace what the preview was standing in for.
-        serializeCommit(() => updateHourlySettings(nextSettings))
+        serializeCommit(() => updateHourlySettings(journalId, nextSettings))
           .then((results) => {
             setPageSettings((prev) => ({ ...prev, rowHeightPt }));
             setPlacements((prev) => {
@@ -9203,6 +9215,7 @@ export function NativePlannerEditor({
     },
     [
       handleStackResizeAdjacent,
+      journalId,
       recordGeometry,
       pageSettings,
       setSaveError,
@@ -9392,13 +9405,13 @@ export function NativePlannerEditor({
     if (!confirmed) return;
     setIsResettingPlanner(true);
     try {
-      await resetPlannerToTemplate();
+      await resetPlannerToTemplate(journalId);
       window.location.reload();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setIsResettingPlanner(false);
     }
-  }, []);
+  }, [journalId]);
 
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
@@ -9613,9 +9626,34 @@ export function NativePlannerEditor({
         >
           {paletteOpen ? "✕" : "☰"}
         </button>
-        <strong>
-          Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
-        </strong>
+        {/* The wordmark is the way back to every journal: /app opens the start
+            dialog. The journal's own name beside it, since a person can now
+            have several and needs to see which one this is. */}
+        <Link
+          href="/app"
+          title="All journals"
+          style={{ color: "inherit", textDecoration: "none", flexShrink: 0 }}
+        >
+          <strong>
+            Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+          </strong>
+        </Link>
+        {journalTitle && (
+          <span
+            title={journalTitle}
+            style={{
+              color: "rgba(255, 255, 255, 0.6)",
+              fontSize: 13,
+              minWidth: 0,
+              maxWidth: 260,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {journalTitle}
+          </span>
+        )}
         {/* Icon only, per request. Placed BEFORE the Reset button for
             the same reason everything else here is: that one owns
             marginLeft:auto, and this header is nowrap, so anything

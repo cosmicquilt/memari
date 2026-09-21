@@ -24,7 +24,7 @@
 // Server-only (reads via getOrCreatePlanner, a server action) — every
 // caller must be a Server Component or another server action.
 
-import { getOrCreateBook } from "./actions";
+import type { BookWithPages } from "./bookSeeding";
 import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
@@ -137,6 +137,10 @@ export type TimelinePage = {
 };
 
 export type LoadedPlanner = {
+  /** Which journal this is - the id in the address, and its name. The
+   *  editor passes the id to every action that works on the journal as a
+   *  whole; the name is shown in the header. */
+  journal: { id: string; title: string };
   pages: LoadedPage[];
   /** Which occurrence's layout these pages ACTUALLY are - null for the
    *  default. Not always what was asked for: a key with no pages behind it
@@ -165,7 +169,7 @@ export type LoadedPlanner = {
  * somewhere else is a second description of what a spread is.
  */
 export async function loadPlannerPages(
-  planner: Awaited<ReturnType<typeof getOrCreateBook>>,
+  planner: BookWithPages,
   level: PageLevel,
   /** Which occurrence's layout to put on the canvas. Null is the default -
    *  the one almost every book only ever has. */
@@ -304,38 +308,13 @@ export async function loadPlannerPages(
         : LEVELS_IN_BINDING_ORDER.indexOf(a.level) - LEVELS_IN_BINDING_ORDER.indexOf(b.level)
     )
     .map((page) => {
-      const pageGrid: PageGrid = {
-        widthPx: page.widthPx,
-        heightPx: page.heightPx,
-        gridColumns: page.gridColumns,
-        gridRows: page.gridRows,
-        boxInsetPx: page.gridGapPx / 2,
-        marginPx: page.marginPx,
-      };
-      const elements = [];
-      for (const instance of page.moduleInstances) {
-        if (instance.moduleType.slug === "freeform-element") continue;
-        if (instance.columnStart === null || instance.rowStart === null) continue;
-        const props = dated
-          ? instance.propValues
-          : withoutDates(instance.moduleType.slug, instance.propValues);
-        elements.push(
-          ...flatten(
-            renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)
-          )
-        );
-      }
-      // `skipped` is deliberately dropped here and fatal in check:preview. A
-      // book holding one mark this vocabulary has not met should still show
-      // its other pages; the place to find out is the check, not a blank
-      // thumbnail in front of somebody.
-      const { marks } = toPreviewMarks(elements);
+      const previewMarks = pageThumbnail(page, fontFamily, dated);
       return {
         pageId: page.id,
         level: page.level,
         variantKey: page.variantKey,
         position: page.position,
-        previewMarks: marks,
+        previewMarks,
         pageWidthPx: page.widthPx,
         pageHeightPx: page.heightPx,
         moduleCount: page.moduleInstances.length,
@@ -373,6 +352,7 @@ export async function loadPlannerPages(
     | undefined;
 
   return {
+    journal: { id: planner.id, title: planner.title },
     pages,
     variantKey: resolvedVariantKey,
     timeline,
@@ -393,4 +373,37 @@ export async function loadPlannerPages(
       rowHeightPt: hourlyProps?.rowHeightPt ?? 9,
     },
   };
+}
+
+/**
+ * A page's thumbnail marks: every module drawn from its STORED props (the
+ * timeline shows the templates, not one occurrence of them), with the dates
+ * taken out on an undated journal. Shared by the timeline and the start
+ * dialog's journal cards, so a journal looks the same in both.
+ */
+export function pageThumbnail(
+  page: BookWithPages["pages"][number],
+  fontFamily: string,
+  dated: boolean
+): PreviewMark[] {
+  const pageGrid: PageGrid = {
+    widthPx: page.widthPx,
+    heightPx: page.heightPx,
+    gridColumns: page.gridColumns,
+    gridRows: page.gridRows,
+    boxInsetPx: page.gridGapPx / 2,
+    marginPx: page.marginPx,
+  };
+  const elements = [];
+  for (const instance of page.moduleInstances) {
+    if (instance.moduleType.slug === "freeform-element") continue;
+    if (instance.columnStart === null || instance.rowStart === null) continue;
+    const props = dated ? instance.propValues : withoutDates(instance.moduleType.slug, instance.propValues);
+    elements.push(...flatten(renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)));
+  }
+  // `skipped` is deliberately dropped here and fatal in check:preview. A
+  // book holding one mark this vocabulary has not met should still show
+  // its other pages; the place to find out is the check, not a blank
+  // thumbnail in front of somebody.
+  return toPreviewMarks(elements).marks;
 }

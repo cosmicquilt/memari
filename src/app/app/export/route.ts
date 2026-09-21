@@ -24,7 +24,7 @@
 // agree. Nothing about this page is recomputed here.
 
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreateBook } from "@/app/planner/actions";
+import { openBook } from "@/app/planner/actions";
 import { loadPlannerPages } from "@/app/planner/loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
 import { generateBook } from "@/lib/generateBook";
@@ -55,6 +55,15 @@ export async function GET(request: Request) {
   }
 
   const params = new URL(request.url).searchParams;
+  // Which journal: a person can have several, so the editor says which one
+  // it has open. Checked against the signed-in person by openBook.
+  const journalId = params.get("journal");
+  if (!journalId) {
+    return new Response("Which journal? Export from the editor, or add ?journal=<id> to this URL.", {
+      status: 400,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
   // No ?level= means the whole book.
   const wholeBook = !params.has("level");
   const requested = (params.get("level") ?? "WEEKLY").toUpperCase();
@@ -73,7 +82,7 @@ export async function GET(request: Request) {
   let loadedWidthPx: number;
   let scope: string;
   try {
-    const planner = await getOrCreateBook(level);
+    const planner = await openBook(journalId, level);
     if (wholeBook) {
       const theme = planner.theme as PlannerTheme | null;
       const book = generateBook(planner, resolveFontFamily(theme?.fontFamily));
@@ -110,6 +119,12 @@ export async function GET(request: Request) {
       );
     }
   } catch (error) {
+    if (error instanceof Error && error.message === "Journal not found") {
+      return new Response("Journal not found.", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
     // A failed export is reported. The alternative - a zero-byte or
     // half-drawn PDF with a 200 on it - is the failure mode this whole
     // pipeline is built to avoid, because the person who finds it is

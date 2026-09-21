@@ -1,5 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { getOrCreateBook } from "./actions";
+import { redirect } from "next/navigation";
+import { openBook } from "./actions";
+import { oldestJournalId } from "./journals";
+import { JournalProvider } from "./journalContext";
 import { PlannerEditor } from "./PlannerEditor";
 import type { PageGrid } from "@/lib/grid";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
@@ -10,7 +13,12 @@ export default async function PlannerPage() {
     return redirectToSignIn();
   }
 
-  const planner = await getOrCreateBook("WEEKLY");
+  // The legacy comparison editor works on one journal - the oldest, which was
+  // the only one before a person could have several. None yet: the start
+  // dialog is where a journal is made.
+  const journalId = await oldestJournalId(userId);
+  if (!journalId) redirect("/app");
+  const planner = await openBook(journalId, "WEEKLY");
 
   // Two-page spread — shown together, matching the reference planner
   // viewed with the book open flat (left = Sun-Tue, right = Wed-Sat).
@@ -149,5 +157,9 @@ export default async function PlannerPage() {
     rightDates: dayDates(rightHourly),
   };
 
-  return <PlannerEditor pages={pages} weekSettings={weekSettings} />;
+  return (
+    <JournalProvider value={journalId}>
+      <PlannerEditor pages={pages} weekSettings={weekSettings} />
+    </JournalProvider>
+  );
 }

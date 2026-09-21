@@ -14,8 +14,10 @@ import {
   LEVEL_LABELS,
   WEEKDAY_NAMES,
   byLevel,
+  bookPageCount,
   dayNamed,
   inSpreads,
+  LEVEL_PAGE_COUNT,
   occurrences,
   printedCount,
   repeats,
@@ -245,6 +247,23 @@ eq(cards("WEEKLY", 4), "1-2 | 3 | 4", "pages added to a week are single after it
 eq(cards("MONTHLY", 3), "1-2 | 3", "a month's spread, then page 3 alone");
 eq(cards("WEEKLY", 1), "1", "a set shorter than its spread is still one card");
 eq(cards("WEEKLY", 0), "", "and an empty set is no cards");
+
+// --- a whole book's page count --------------------------------------------
+//
+// The start dialog's live count. January to March 2026 with every level on is
+// the book the dev planner generates: 1 + 3 x 2 + 14 x 2 + 90 + 1 = 126.
+{
+  const all = Object.fromEntries(LEVELS_IN_BINDING_ORDER.map((level) => [level, LEVEL_PAGE_COUNT[level]]));
+  eq(bookPageCount(all, utc(2026, 1, 1), utc(2026, 3, 31)), 126, "Jan-Mar 2026, every level");
+  eq(
+    bookPageCount({ FRONT_MATTER: 1, WEEKLY: 2, BACK_MATTER: 1 }, utc(2026, 1, 1), utc(2026, 3, 31)),
+    30,
+    "the same term without months and days: 1 + 14 x 2 + 1"
+  );
+  eq(bookPageCount({ WEEKLY: 3 }, utc(2026, 1, 1), utc(2026, 3, 31)), 42, "a three-page week prints three pages a week");
+  eq(bookPageCount(all, null, null), null, "no term is not zero pages");
+  eq(bookPageCount({}, utc(2026, 1, 1), utc(2026, 3, 31)), 0, "no levels, no pages");
+}
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);

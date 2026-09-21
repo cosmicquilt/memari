@@ -30,26 +30,20 @@ const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
 import {
   canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
-import { LEVEL_PAGE_COUNT } from "@/lib/pageLevels";
+import {
+  WITH_PAGES,
+  ensureLevel,
+  parseTerm,
+  validateNewJournal,
+  createBookFor,
+  JOURNAL_TITLE_MAX,
+} from "./bookSeeding";
 import {
   renderContextForPage,
   renderOnPage,
   type PageRenderContext,
 } from "@/lib/renderContext";
-import {
-  weekLayout,
-  dayLayout,
-  frontMatterLayout,
-  backMatterLayout,
-  monthLayout,
-  missingPlacements,
-  titleCorrections,
-  weekSidebarBoxes,
-  weekTodoPlacements,
-  weekHourlyPlacements,
-  type PageLayout,
-  type ExistingInstance,
-} from "@/lib/pageLayouts";
+import { weekSidebarBoxes, weekTodoPlacements, weekHourlyPlacements } from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
   getHourlyGridCoreOffModeMinHeightPx,
@@ -288,77 +282,6 @@ const weekTodoTemplate = weekTodoPlacements;
 const WEEK_HOURLY_TEMPLATE = weekHourlyPlacements();
 
 /**
- * Create whatever a spread is MISSING from its layout, and nothing it
- * already has.
- *
- * This replaced a run of bespoke `ensureX` helpers - one per module in the
- * arrangement, each repeating the same "is it here? no? create it" shape
- * with its coordinates inlined. They worked, and they were the reason
- * there could only ever be one layout per cadence: a second one meant a
- * second set of them. The arrangement is data now (src/lib/pageLayouts.ts)
- * and this is the only code that applies it, so a new layout is an entry.
- *
- * Runs on EVERY load, not just the first, so "missing" has to be decided
- * by something that does not go stale - see PresenceRule, and the month
- * Notes box that was guarded by a row number its own create had moved off.
- */
-async function applyLayout(
-  layout: PageLayout,
-  pages: Array<{
-    id: string;
-    moduleInstances: Array<{
-      moduleType: { slug: string };
-      columnStart: number | null;
-      propValues: unknown;
-    }>;
-  }>
-): Promise<boolean> {
-  const existing = pages.map((page) =>
-    page.moduleInstances.map(
-      (mi): ExistingInstance => ({
-        slug: mi.moduleType.slug,
-        columnStart: mi.columnStart,
-        heading: (mi.propValues as { heading?: string } | null)?.heading,
-      })
-    )
-  ) as [ExistingInstance[], ExistingInstance[]];
-
-  const missing = missingPlacements(layout, existing);
-  if (missing.length === 0) return false;
-
-  const types = await prisma.moduleType.findMany({
-    where: { slug: { in: [...new Set(missing.map((m) => m.slug))] } },
-  });
-  const bySlug = new Map(types.map((t) => [t.slug, t]));
-
-  await prisma.moduleInstance.createMany({
-    data: missing.map((placement) => {
-      const type = bySlug.get(placement.slug);
-      if (!type) {
-        // A layout naming a module that is not registered is a bug in the
-        // layout, and a silent skip would leave a hole in the page that
-        // nobody could explain.
-        throw new Error(
-          `${layout.key} places "${placement.slug}", which is not a registered module type`
-        );
-      }
-      return {
-        pageId: pages[placement.page].id,
-        moduleTypeId: type.id,
-        placementMode: "GRID" as const,
-        locked: placement.locked,
-        columnStart: placement.columnStart,
-        rowStart: placement.rowStart,
-        columnSpan: placement.columnSpan ?? type.defaultColumnSpan,
-        rowSpan: placement.rowSpan ?? type.defaultRowSpan,
-        propValues: placement.propValues as Prisma.InputJsonValue,
-      };
-    }),
-  });
-  return true;
-}
-
-/**
  * The clear rows a spine keeps beneath it.
  *
  * Only the hours have a content height that stops short of their box, and
@@ -381,138 +304,87 @@ function spineGapRows(
 }
 
 /**
- * The one book this person is building, with the pages of one LEVEL ready.
+ * The journal a request is about: THIS id, and only if it is the signed-in
+ * person's.
  *
- * ONE BOOK, NOT ONE PLANNER PER CADENCE. There used to be two of these - a
- * WEEK planner and a MONTH planner, two unrelated rows - because a page had
- * no way of saying how often it was printed. It has one now (Page.level), so
- * the weekly spread and the monthly spread are two LEVELS of one book, which
- * is what the timeline drawer needs and what a printed book actually is.
- *
- * Every lookup that used to filter on `baseType: "WEEK"` now just asks for
- * the owner's book. That filter existed to stop a week operation reading the
- * month planner's pages - reported as a month layout overlaying the week
- * spread - and the bug it guarded against cannot happen with one row.
- *
- * Idempotent, and safe to call for a level that already exists: it creates
- * the book if there is none, seeds this level's spread if that is missing,
- * and re-applies the level's layout, which is itself idempotent.
+ * A person has as many journals as they like, so "the owner's book" no
+ * longer names one. The id comes from the address (/app/j/<id>) through the
+ * editor, and a server action is a public endpoint - so the id proves
+ * nothing, and the ownerId in the same query is what keeps one person out
+ * of another's journal. Every journal lookup goes through here.
  */
-const BOOK: Prisma.PlannerFindFirstArgs["orderBy"] = [{ createdAt: "asc" }, { id: "asc" }];
+function journalWhere(userId: string, journalId: unknown) {
+  if (typeof journalId !== "string" || journalId.length === 0 || journalId.length > 64) {
+    throw new Error(JOURNAL_NOT_FOUND);
+  }
+  return { id: journalId, ownerId: userId, isTemplate: false };
+}
 
-const WITH_PAGES = {
-  pages: {
-    orderBy: { position: "asc" },
-    include: { moduleInstances: { include: { moduleType: true } } },
-  },
-} as const;
+/** Thrown when a journal id is not the signed-in person's, or not anyone's.
+ *  One message for both, so it cannot be used to learn which ids exist. */
+const JOURNAL_NOT_FOUND = "Journal not found";
 
-/** Which arrangement a level's pages start as. A level with no entry seeds
- *  blank pages, which is exactly right for front matter and for dailies -
- *  they have no spine to lay out around. */
-// Every level now has one, so the Partial is doing nothing - but it stays,
-// because a level added later must be allowed to start with a blank page
-// rather than forcing someone to invent an arrangement for it first.
-const LEVEL_LAYOUT: Partial<Record<PageLevel, (gridRows: number) => PageLayout>> = {
-  FRONT_MATTER: frontMatterLayout,
-  MONTHLY: monthLayout,
-  WEEKLY: weekLayout,
-  DAILY: dayLayout,
-  BACK_MATTER: backMatterLayout,
-};
-
-export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
+/**
+ * One of this person's journals, with the pages of one LEVEL ready - see
+ * ensureLevel. What opening a journal, switching layouts and exporting all
+ * start from.
+ */
+export async function openBook(journalId: string, level: PageLevel = PageLevel.WEEKLY) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
-
-  // Oldest first, id as the tie-break. Which row is "the book" must not
-  // depend on what the database felt like returning - the same order
-  // fold-books.mts uses to decide which planner survives a fold.
-  let planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+  const planner = await prisma.planner.findFirst({
+    where: journalWhere(userId, journalId),
     include: WITH_PAGES,
   });
+  if (!planner) throw new Error(JOURNAL_NOT_FOUND);
+  return ensureLevel(planner, level);
+}
 
-  if (!planner) {
-    planner = await prisma.planner.create({
-      data: {
-        ownerId: userId,
-        title: "My First Planner",
-        // gridColumns/gridRows/gridGapPx are left unset here - Page's
-        // schema defaults (24x36 lattice) apply.
-        pages: {
-          create: Array.from({ length: LEVEL_PAGE_COUNT[level] }, (_, position) => ({
-            position,
-            level,
-          })),
-        },
-      },
-      include: WITH_PAGES,
-    });
+/**
+ * A new journal, from the start dialog's Create. Returns its id, for the
+ * dialog to open it at /app/j/<id>. See validateNewJournal for what is
+ * checked and createBookFor for what is made.
+ */
+export async function createJournal(input: unknown): Promise<string> {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
   }
+  const journal = await createBookFor(userId, validateNewJournal(input));
+  return journal.id;
+}
 
-  let needsRefetch = false;
-
-  // This level's own set. A spread is two pages - the book open flat,
-  // position 0 on the left and 1 on the right - and a daily is one. Positions
-  // are per level, so each level has its own 0.
-  const wanted = LEVEL_PAGE_COUNT[level];
-  const atLevel = (p: NonNullable<typeof planner>) =>
-    p.pages.filter((page) => page.level === level);
-  for (let position = atLevel(planner).length; position < wanted; position++) {
-    await prisma.page.create({ data: { plannerId: planner.id, position, level } });
-    needsRefetch = true;
-    planner = await prisma.planner.findUniqueOrThrow({
-      where: { id: planner.id },
-      include: WITH_PAGES,
-    });
+/** Rename a journal. Blank is refused rather than stored: a journal with no
+ *  name cannot be told apart from the others in Saved. */
+export async function renameJournal(journalId: string, title: string): Promise<string> {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
   }
+  const clean = typeof title === "string" ? title.trim().slice(0, JOURNAL_TITLE_MAX) : "";
+  if (!clean) throw new Error("A journal needs a name.");
+  const { count } = await prisma.planner.updateMany({
+    where: journalWhere(userId, journalId),
+    data: { title: clean },
+  });
+  if (count === 0) throw new Error(JOURNAL_NOT_FOUND);
+  return clean;
+}
 
-  // applyLayout takes the pages a placement's `page` index refers to, so a
-  // one-page level hands it a one-page list rather than a spread with a hole
-  // in it.
-  const levelPages = atLevel(planner).sort((a, b) => a.position - b.position);
-  const layout = LEVEL_LAYOUT[level];
-  if (layout && (await applyLayout(layout(levelPages[0].gridRows), levelPages))) {
-    needsRefetch = true;
+/**
+ * Delete a journal: its pages and every module on them go with it (the
+ * schema cascades). There is no trash yet, which is why the dialog asks
+ * twice.
+ */
+export async function deleteJournal(journalId: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Not signed in");
   }
-  // Titles are locked, so their size is the layout's - see titleCorrections.
-  // This is what repairs a book seeded with a 3-row month title lying over
-  // the top of its sidebar, and every occurrence layout copied from it.
-  const corrections = layout
-    ? titleCorrections(
-        layout(levelPages[0].gridRows),
-        levelPages.map((page) =>
-          page.moduleInstances.map((mi) => ({
-            id: mi.id,
-            slug: mi.moduleType.slug,
-            locked: mi.locked,
-            columnStart: mi.columnStart,
-            rowStart: mi.rowStart,
-            columnSpan: mi.columnSpan,
-            rowSpan: mi.rowSpan,
-          }))
-        )
-      )
-    : [];
-  if (corrections.length > 0) {
-    await prisma.$transaction(
-      corrections.map((c) => prisma.moduleInstance.update({ where: { id: c.id }, data: c.data }))
-    );
-    needsRefetch = true;
-  }
-
-  if (needsRefetch) {
-    planner = await prisma.planner.findUniqueOrThrow({
-      where: { id: planner.id },
-      include: WITH_PAGES,
-    });
-  }
-
-  return planner;
+  const { count } = await prisma.planner.deleteMany({ where: journalWhere(userId, journalId) });
+  if (count === 0) throw new Error(JOURNAL_NOT_FOUND);
 }
 
 // Debug-only "put the sidebar and the TO-DO checklist back exactly like
@@ -596,16 +468,13 @@ export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
  * (weekSidebarTemplateBoxes, weekTodoTemplate), so the re-lay lands
  * correctly at either size with nothing trim-specific written down.
  */
-export async function setPlannerTrim(trim: PlannerTrimKey) {
+export async function setPlannerTrim(journalId: string, trim: PlannerTrimKey) {
   const { userId } = await auth();
   if (!userId) throw new Error("Not signed in");
 
   const spec = PLANNER_TRIMS[trim];
   const planner = await prisma.planner.findFirst({
-    // The owner's book. Deterministic order, so which row this is never
-    // depends on what the database felt like returning - see BOOK.
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -696,17 +565,14 @@ export async function setPlannerTrim(trim: PlannerTrimKey) {
   ]);
 }
 
-export async function resetPlannerToTemplate() {
+export async function resetPlannerToTemplate(journalId: string) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
   const planner = await prisma.planner.findFirst({
-    // The owner's book. Deterministic order, so which row this is never
-    // depends on what the database felt like returning - see BOOK.
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -2337,7 +2203,7 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
 // settings is an infrequent, deliberate action (once per week of
 // planning, not an interactive drag), so the caller just reloads the
 // page afterward instead.
-export async function updateWeekSettings(settings: {
+export async function updateWeekSettings(journalId: string, settings: {
   weekNumber: number;
   weekTotal: number;
   dateRangeLabel: string;
@@ -2350,10 +2216,7 @@ export async function updateWeekSettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    // The owner's book. Deterministic order, so which row this is never
-    // depends on what the database felt like returning - see BOOK.
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: {
       pages: {
         orderBy: { position: "asc" },
@@ -2416,17 +2279,14 @@ export async function updateWeekSettings(settings: {
 // "infrequent, deliberate action, caller reloads afterward" tradeoff as
 // updateWeekSettings above, not a live-patchable single element: a font
 // change affects every module on both pages at once, not one instance.
-export async function updatePlannerFont(fontFamily: FontChoice) {
+export async function updatePlannerFont(journalId: string, fontFamily: FontChoice) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
   const planner = await prisma.planner.findFirst({
-    // The owner's book. Deterministic order, so which row this is never
-    // depends on what the database felt like returning - see BOOK.
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2453,15 +2313,14 @@ export async function updatePlannerFont(fontFamily: FontChoice) {
  * dated or undated together. A monthly spread with dates beside a weekly one
  * without them is not a planner anybody wants.
  */
-export async function setPlannerDated(dated: boolean) {
+export async function setPlannerDated(journalId: string, dated: boolean) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
 
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2481,42 +2340,23 @@ export async function setPlannerDated(dated: boolean) {
  * whose length nobody can compute, and every count downstream would have to
  * carry a third state to say so.
  */
-export async function setPlannerTerm(startISO: string | null, endISO: string | null) {
+export async function setPlannerTerm(journalId: string, startISO: string | null, endISO: string | null) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
   });
   if (!planner) {
     throw new Error("Planner not found");
   }
 
-  if (!startISO || !endISO) {
-    await prisma.planner.update({
-      where: { id: planner.id },
-      data: { startDate: null, endDate: null },
-    });
-    return;
-  }
-
-  // Parsed as UTC midnight, matching every other date in this app - a local
-  // parse would put a book that starts on the 1st into the previous month
-  // for anyone west of Greenwich.
-  const start = new Date(`${startISO}T00:00:00.000Z`);
-  const end = new Date(`${endISO}T00:00:00.000Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    throw new Error("Those dates could not be read.");
-  }
-  if (end.getTime() < start.getTime()) {
-    throw new Error("A book cannot end before it begins.");
-  }
-
+  // The same reading Create uses - see parseTerm.
+  const term = parseTerm(startISO, endISO);
   await prisma.planner.update({
     where: { id: planner.id },
-    data: { startDate: start, endDate: end },
+    data: { startDate: term?.start ?? null, endDate: term?.end ?? null },
   });
 }
 
@@ -2532,7 +2372,7 @@ export async function setPlannerTerm(startISO: string | null, endISO: string | n
  * as it is rather than being reset to the default, which would silently
  * discard whatever had been changed.
  */
-export async function createLevelVariant(level: PageLevel, variantKey: string) {
+export async function createLevelVariant(journalId: string, level: PageLevel, variantKey: string) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
@@ -2541,8 +2381,7 @@ export async function createLevelVariant(level: PageLevel, variantKey: string) {
     throw new Error("An occurrence needs a key.");
   }
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: {
       pages: { include: { moduleInstances: true }, orderBy: { position: "asc" } },
     },
@@ -2618,14 +2457,13 @@ export async function createLevelVariant(level: PageLevel, variantKey: string) {
  * Appended, never inserted: position is the order pages are bound in, and the
  * new one goes after the ones that exist.
  */
-export async function addPageToLevel(level: PageLevel, variantKey: string | null) {
+export async function addPageToLevel(journalId: string, level: PageLevel, variantKey: string | null) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
   }
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: { pages: true },
   });
   if (!planner) {
@@ -2730,7 +2568,7 @@ export async function deletePageFromLevel(pageId: string) {
  * confirm it. The default pages are untouched; they were copied FROM, never
  * moved.
  */
-export async function deleteLevelVariant(level: PageLevel, variantKey: string) {
+export async function deleteLevelVariant(journalId: string, level: PageLevel, variantKey: string) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Not signed in");
@@ -2739,8 +2577,7 @@ export async function deleteLevelVariant(level: PageLevel, variantKey: string) {
     throw new Error("The default layout cannot be removed.");
   }
   const planner = await prisma.planner.findFirst({
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
   });
   if (!planner) {
     throw new Error("Planner not found");
@@ -2789,7 +2626,7 @@ function timeStringToMinutes(time: string): number | null {
 // branch (not just discarded) so switching back to "on" later restores
 // whatever the user had picked, rather than reverting to schema
 // defaults.
-export async function updateHourlySettings(settings: {
+export async function updateHourlySettings(journalId: string, settings: {
   startTime: string; // "HH:MM"
   endTime: string; // "HH:MM"
   intervalMinutes: 30 | 60;
@@ -2825,10 +2662,7 @@ export async function updateHourlySettings(settings: {
   }
 
   const planner = await prisma.planner.findFirst({
-    // The owner's book. Deterministic order, so which row this is never
-    // depends on what the database felt like returning - see BOOK.
-    where: { ownerId: userId, isTemplate: false },
-    orderBy: BOOK,
+    where: journalWhere(userId, journalId),
     include: {
       pages: {
         orderBy: { position: "asc" },

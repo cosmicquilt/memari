@@ -19,6 +19,7 @@
     "check:pdf": "tsx scripts/check-pdf.mts",
     "check:page": "tsx scripts/check-week-page.mts",
     "check:layout": "tsx scripts/check-layout.mts",
+    "check:journals": "tsx scripts/check-journals.mts",
     "check:gaps": "tsx scripts/check-gaps.mts",
     "check:levels": "tsx scripts/check-levels.mts",
     "check:book": "tsx scripts/check-book.mts",

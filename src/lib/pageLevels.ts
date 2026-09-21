@@ -31,15 +31,6 @@ export type { PageLevel };
 export const LEVELS_IN_BINDING_ORDER = Object.values(PageLevel) as PageLevel[];
 
 /**
- * What each level is called on screen.
- *
- * Separate from the enum value on purpose. Andrew's words for the ends were
- * "BEGINNING" and "ENDING", and that "beginning and ending names may be
- * changed" - a display label is a string in this file; an enum value is a
- * migration. FRONT_MATTER/BACK_MATTER are what the book trade calls them and
- * will not need renaming when the screen does.
- */
-/**
  * How many pages a level's set STARTS as - its spread.
  *
  * A week and a month are each a thing you look at whole, so they open flat -
@@ -79,6 +70,15 @@ export function inSpreads<T>(pages: T[], level: PageLevel): T[][] {
   );
 }
 
+/**
+ * What each level is called on screen.
+ *
+ * Separate from the enum value on purpose. Andrew's words for the ends were
+ * "BEGINNING" and "ENDING", and that "beginning and ending names may be
+ * changed" - a display label is a string in this file; an enum value is a
+ * migration. FRONT_MATTER/BACK_MATTER are what the book trade calls them and
+ * will not need renaming when the screen does.
+ */
 export const LEVEL_LABELS: Record<PageLevel, string> = {
   FRONT_MATTER: "Beginning",
   MONTHLY: "Monthly",
@@ -318,4 +318,29 @@ export function printedCount(
   weekStartDay = 0
 ): number | null {
   return occurrences(level, start, end, weekStartDay)?.length ?? null;
+}
+
+/**
+ * How many pages a whole book prints: each level's pages times how many
+ * times that level prints over the term. `pagesPerLevel` is a journal's own
+ * sets (a week of three pages prints three a week), or LEVEL_PAGE_COUNT for
+ * a journal not made yet - the start dialog shows this as the levels are
+ * switched on and off, because cadence is the price. Null when the book has
+ * no term: that is a real answer, and not zero.
+ */
+export function bookPageCount(
+  pagesPerLevel: Partial<Record<PageLevel, number>>,
+  start: Date | null | undefined,
+  end: Date | null | undefined,
+  weekStartDay = 0
+): number | null {
+  let total = 0;
+  for (const level of LEVELS_IN_BINDING_ORDER) {
+    const pages = pagesPerLevel[level] ?? 0;
+    if (pages === 0) continue;
+    const times = printedCount(level, start, end, weekStartDay);
+    if (times === null) return null;
+    total += pages * times;
+  }
+  return total;
 }

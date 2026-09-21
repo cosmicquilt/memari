@@ -45,10 +45,12 @@
 // no sooner (~1.0s after the click either way, in dev; production is
 // several times faster).
 
-import { startTransition, useCallback, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
+import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
+import { JournalProvider } from "./journalContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
@@ -87,6 +89,14 @@ export function EditorShell({
   // Only the latest request may land. Two quick clicks in the timeline race,
   // and the one asked for LAST is the one that should be on screen.
   const latest = useRef(0);
+  const journalId = initial.journal.id;
+
+  // The journal to preselect the next time the start dialog opens - see
+  // lastJournalCookie. Written here, by the page, for the same reason the
+  // open-level cookie is: a cookie set by a server action refreshes the route.
+  useEffect(() => {
+    writeLastJournalCookie(journalId);
+  }, [journalId]);
 
   const openLevel = useCallback(async (level: PageLevel, variantKey: string | null) => {
     const request = ++latest.current;
@@ -94,7 +104,7 @@ export function EditorShell({
     setChoosing({ level, variantKey });
     document.documentElement.style.cursor = "progress";
     try {
-      const loaded = await load(level, variantKey);
+      const loaded = await load(journalId, level, variantKey);
       if (request !== latest.current) return;
       // Let the card finish growing before the editor is rebuilt.
       const growLeft = reduceMotion ? 0 : SLIDE_MS - (performance.now() - clickedAt);
@@ -117,7 +127,7 @@ export function EditorShell({
     } finally {
       if (request === latest.current) document.documentElement.style.cursor = "";
     }
-  }, [load, reduceMotion]);
+  }, [load, reduceMotion, journalId]);
 
   // What the timeline shows as open: the one being opened, if any.
   const shownLevel = choosing?.level ?? open.level;
@@ -141,13 +151,14 @@ export function EditorShell({
         drawerHeight={drawerHeight}
         initialUi={open.ui}
         onUiChange={reportView}
+        journalTitle={open.journal.title}
       />
     ),
     [open, initialViewport, drawerHeight, reportView]
   );
 
   return (
-    <>
+    <JournalProvider value={journalId}>
       {editor}
       <TimelineDrawer
         pages={open.timeline}
@@ -164,6 +175,6 @@ export function EditorShell({
           void openLevel(next, nextVariant);
         }}
       />
-    </>
+    </JournalProvider>
   );
 }

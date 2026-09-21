@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useJournalId } from "./journalContext";
 import { createStore } from "polotno/model/store";
 import {
   PolotnoContainer,
@@ -178,6 +179,7 @@ export function PlannerEditorCanvas({
   pages: PageProp[];
   weekSettings: WeekSettings;
 }) {
+  const journalId = useJournalId();
   // One store per mounted editor instance, not module-level like the
   // standalone test — this page can be visited by many different users.
   const store = useMemo(
@@ -693,9 +695,9 @@ export function PlannerEditorCanvas({
   // flat element those blocks render as, and this is an infrequent,
   // deliberate save (once per week of planning), not an interactive drag.
   const handleSaveWeekSettings = useCallback(async (settings: WeekSettings) => {
-    await updateWeekSettings(settings);
+    await updateWeekSettings(journalId, settings);
     window.location.reload();
-  }, []);
+  }, [journalId]);
 
   // Clicking an empty-zone placeholder (EmptyZoneOverlay) opens the
   // Modules palette — openSidePanel is Polotno's own documented-by-use

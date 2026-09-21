@@ -12,14 +12,20 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
 import { PageLevel } from "@/generated/prisma/enums";
 import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
 import { OPEN_LEVEL_COOKIE, parseOpenLevelCookie } from "@/lib/openLevelCookie";
-import { getOrCreateBook } from "./actions";
+import { openBook } from "./actions";
 import { loadPlannerPages } from "./loadPlannerPages";
 import { EditorShell } from "./EditorShell";
 
-export async function renderEditor() {
+/**
+ * The editor on one of the signed-in person's journals - /app/j/<id>. A
+ * journal id that is not theirs is a 404, the same as one that does not
+ * exist, so the address cannot be used to learn which ids are real.
+ */
+export async function renderEditor(journalId: string) {
   const { userId, redirectToSignIn } = await auth();
   if (!userId) {
     return redirectToSignIn();
@@ -38,7 +44,13 @@ export async function renderEditor() {
     variantKey: null,
   };
 
-  const book = await getOrCreateBook(opened.level);
+  let book;
+  try {
+    book = await openBook(journalId, opened.level);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Journal not found") notFound();
+    throw error;
+  }
   const loaded = await loadPlannerPages(book, opened.level, opened.variantKey);
 
   return <EditorShell initial={{ ...loaded, level: opened.level }} initialViewport={initialViewport} />;
