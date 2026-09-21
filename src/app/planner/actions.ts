@@ -30,6 +30,7 @@ const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
 import {
   canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
+import { LEVEL_PAGE_COUNT } from "@/lib/pageLevels";
 import {
   renderContextForPage,
   renderOnPage,
@@ -417,22 +418,6 @@ const LEVEL_LAYOUT: Partial<Record<PageLevel, (gridRows: number) => PageLayout>>
   WEEKLY: weekLayout,
   DAILY: dayLayout,
   BACK_MATTER: backMatterLayout,
-};
-
-/**
- * How many pages a level's set is.
- *
- * A week and a month are each a thing you look at whole, so they open flat -
- * two pages, the book laid open. A DAY is a day: one page, and ninety of them
- * as spreads is a book twice the size for no more content. Two consecutive
- * days face each other in the bound book anyway.
- */
-const LEVEL_PAGE_COUNT: Record<PageLevel, number> = {
-  FRONT_MATTER: 1,
-  MONTHLY: 2,
-  WEEKLY: 2,
-  DAILY: 1,
-  BACK_MATTER: 1,
 };
 
 export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {

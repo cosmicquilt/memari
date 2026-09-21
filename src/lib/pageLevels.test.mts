@@ -15,6 +15,7 @@ import {
   WEEKDAY_NAMES,
   byLevel,
   dayNamed,
+  inSpreads,
   occurrences,
   printedCount,
   repeats,
@@ -225,6 +226,25 @@ eq(
   pages.length,
   "no page is lost or duplicated by grouping"
 );
+
+// --- the timeline's cards ------------------------------------------------
+//
+// A level's template spread is ONE card and every page added after it is a
+// card of its own. Reported: pages added to Beginning grouped up in twos -
+// "pages should be single in the timeline unless they are a part of a two
+// page spread like the monthly and weekly templates".
+const cards = (level: Parameters<typeof inSpreads>[1], n: number) =>
+  inSpreads(Array.from({ length: n }, (_, i) => i + 1), level)
+    .map((card) => card.join("-"))
+    .join(" | ");
+eq(cards("FRONT_MATTER", 3), "1 | 2 | 3", "pages added to Beginning stay single");
+eq(cards("BACK_MATTER", 2), "1 | 2", "pages added to Ending stay single");
+eq(cards("DAILY", 2), "1 | 2", "a day is one page, and so is a page added to it");
+eq(cards("WEEKLY", 2), "1-2", "the week's spread is one card");
+eq(cards("WEEKLY", 4), "1-2 | 3 | 4", "pages added to a week are single after its spread");
+eq(cards("MONTHLY", 3), "1-2 | 3", "a month's spread, then page 3 alone");
+eq(cards("WEEKLY", 1), "1", "a set shorter than its spread is still one card");
+eq(cards("WEEKLY", 0), "", "and an empty set is no cards");
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);

@@ -57,6 +57,7 @@ import {
   LEVEL_CADENCE,
   LEVEL_LABELS,
   LEVEL_NOUN,
+  inSpreads,
   occurrences,
   repeats,
   type Occurrence,
@@ -1390,11 +1391,16 @@ function LevelGroupInner({
   // lift, but can still be removed. This is what shows a card's X.
   const showsControls = (key: string) => hoverKey === key || focusKey === key;
   const defaultSelected = level === activeLevel && activeVariantKey === null;
-  // Every card this group draws, with the key its lift state goes by: a set
-  // is one card per SPREAD (see inSpreads), so a set of three is two cards,
-  // lifted one at a time.
+  // Every card this group draws, with the key its lift state goes by: the
+  // level's SPREAD as one card, then each added page as its own (see
+  // inSpreads), lifted one at a time.
   const cardsOf = (setKey: string, setPages: TimelinePage[], selected: boolean) =>
-    inSpreads(setPages).map((spread, index) => ({ key: `${setKey}:${index}`, pages: spread, selected, index }));
+    inSpreads(setPages, level).map((spread, index) => ({
+      key: `${setKey}:${index}`,
+      pages: spread,
+      selected,
+      index,
+    }));
   const defaultCards = cardsOf(DEFAULT_SET_KEY, defaults, defaultSelected);
   const variantCards = variants.map(([key, variantPages]) =>
     cardsOf(String(key), variantPages, level === activeLevel && activeVariantKey === key)
@@ -2069,10 +2075,11 @@ const SPINNER_SPOKES = [0, 1, 2, 3, 4, 5, 6, 7];
  *
  * So one button, one ring and one name for the spread, with each page in its
  * own slot and the seam between them. A single page is exactly the card it
- * always was. A SET LONGER THAN TWO - which the "+" card makes - is shown as
- * its spreads, then any page left over on its own card: pages 1-2 joined,
- * page 3 alone. Shown both ways, 2026-09-21, Andrew chose "spread then page
- * 3 alone" over one strip of three. See inSpreads.
+ * always was. A PAGE ADDED with the "+" card is its own card: a week's pages
+ * 1-2 joined, page 3 alone (Andrew's choice over one strip of three,
+ * 2026-09-21), and a page added to Beginning alone beside the first -
+ * "pages should be single in the timeline unless they are a part of a two
+ * page spread like the monthly and weekly templates". See inSpreads.
  *
  * The page slots FLEX rather than taking the card width themselves. The
  * card's width is what transitions during a settle, and a slot sized from
@@ -2285,18 +2292,6 @@ function PageCardInner({
       </div>
     </div>
   );
-}
-
-/**
- * A set's pages as the cards the timeline shows: SPREADS of two, in order,
- * then a page left over on its own. [1, 2, 3] is [[1, 2], [3]]; [1, 2, 3, 4]
- * is [[1, 2], [3, 4]]; a single page is [[1]]. Every card of a set still
- * opens the whole set - the canvas draws it all.
- */
-function inSpreads<T>(pages: T[]): T[][] {
-  const spreads: T[][] = [];
-  for (let index = 0; index < pages.length; index += 2) spreads.push(pages.slice(index, index + 2));
-  return spreads;
 }
 
 /** A calc() coefficient without floating-point tails: (1 - 1.1) / 2 is
