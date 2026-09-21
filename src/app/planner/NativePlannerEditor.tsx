@@ -9807,7 +9807,22 @@ function ZoomControls({
       <button onClick={onZoomOut} title="Zoom out" style={buttonStyle(false)}>
         −
       </button>
-      <span style={{ fontSize: 13, color: "#333", minWidth: 44, textAlign: "center" }}>{Math.round(scale * 100)}%</span>
+      {/* The number in the system's own sans-serif - SF on a Mac, Segoe UI
+          on Windows - rather than the interface face, Almarai, whose figures
+          read as a display face in a readout. Asked for: "switch zoom
+          number in the zoom ui to normal sans serif font". Only the number;
+          the rest of the bar keeps the interface font. */}
+      <span
+        style={{
+          fontSize: 13,
+          color: "#333",
+          minWidth: 44,
+          textAlign: "center",
+          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        }}
+      >
+        {Math.round(scale * 100)}%
+      </span>
       <button onClick={onZoomIn} title="Zoom in" style={buttonStyle(false)}>
         +
       </button>
