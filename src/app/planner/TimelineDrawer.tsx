@@ -1386,13 +1386,19 @@ function LevelGroupInner({
   // lift, but can still be removed. This is what shows a card's X.
   const showsControls = (key: string) => hoverKey === key || focusKey === key;
   const defaultSelected = level === activeLevel && activeVariantKey === null;
-  const liftedPages =
-    (liftFor(DEFAULT_SET_KEY, defaultSelected) ? defaults.length : 0) +
-    variants.reduce(
-      (sum, [key, variantPages]) =>
-        sum + (liftFor(String(key), level === activeLevel && activeVariantKey === key) ? variantPages.length : 0),
-      0
-    );
+  // Every card this group draws, with the key its lift state goes by: a set
+  // is one card per SPREAD (see inSpreads), so a set of three is two cards,
+  // lifted one at a time.
+  const cardsOf = (setKey: string, setPages: TimelinePage[], selected: boolean) =>
+    inSpreads(setPages).map((spread, index) => ({ key: `${setKey}:${index}`, pages: spread, selected, index }));
+  const defaultCards = cardsOf(DEFAULT_SET_KEY, defaults, defaultSelected);
+  const variantCards = variants.map(([key, variantPages]) =>
+    cardsOf(String(key), variantPages, level === activeLevel && activeVariantKey === key)
+  );
+  const liftedPages = [...defaultCards, ...variantCards.flat()].reduce(
+    (sum, one) => sum + (liftFor(one.key, one.selected) ? one.pages.length : 0),
+    0
+  );
   const recentre =
     liftedPages > 0 ? `calc(${round4((-liftedPages * (HOVER_SCALE - 1)) / 2)} * var(--memari-card-w))` : "0px";
 
@@ -1446,21 +1452,26 @@ function LevelGroupInner({
             {defaults.length === 0 ? (
               <EmptyLevel />
             ) : (
-              <PageCard
-                pages={defaults}
-                selected={defaultSelected}
-                lifted={liftFor(DEFAULT_SET_KEY, defaultSelected)}
-                controlsShown={showsControls(DEFAULT_SET_KEY)}
-                {...liftHandlers(DEFAULT_SET_KEY)}
-                card={card}
-                // A page is removable only when it is BLANK and not the last
-                // one - the server refuses anything else, and offering a
-                // control that will be refused is worse than not offering it.
-                canRemoveBlank={defaults.length > 1}
-                highContrast={highContrast}
-                reduceMotion={reduceMotion}
-                onOpen={() => onOpen(level, null)}
-              />
+              defaultCards.map((one) => (
+                <PageCard
+                  key={one.key}
+                  pages={one.pages}
+                  selected={one.selected}
+                  lifted={liftFor(one.key, one.selected)}
+                  controlsShown={showsControls(one.key)}
+                  {...liftHandlers(one.key)}
+                  card={card}
+                  // A page is removable only when it is BLANK and not the
+                  // last of its SET - the server refuses anything else, and
+                  // offering a control that will be refused is worse than not
+                  // offering it. The set, not this card: page 3 alone on its
+                  // card is still one of three.
+                  canRemoveBlank={defaults.length > 1}
+                  highContrast={highContrast}
+                  reduceMotion={reduceMotion}
+                  onOpen={() => onOpen(level, null)}
+                />
+              ))
             )}
           </div>
           {/* Named only once something else is beside it. On its own the
@@ -1482,34 +1493,44 @@ function LevelGroupInner({
             top of it. This is exactly where the design originally had cards
             overlap like a Dock stack - see this file's header for why a
             stack is the wrong answer to "show me there is more than one". */}
-        {variants.map(([key, variantPages]) => (
+        {variants.map(([key], variantIndex) => (
           <div key={key} style={{ display: "flex", flexDirection: "column", gap: CARD_TO_SUB_LABEL }}>
             <div style={{ display: "flex", gap: CARD_GAP, height: CARD_ROW_HEIGHT, alignItems: "center", transition: rowTransition }}>
-              <PageCard
-                pages={variantPages}
-                selected={level === activeLevel && activeVariantKey === key}
-                lifted={liftFor(String(key), level === activeLevel && activeVariantKey === key)}
-                controlsShown={showsControls(String(key))}
-                {...liftHandlers(String(key))}
-                // REMOVE THIS OCCURRENCE'S OWN LAYOUT, from the card itself.
-                // Asked for: "I added a january 2026 spread but there is no
-                // button to delete. add an x button to the top corner when
-                // hovering a page preview". The same server action as the
-                // cog's Reset - the month goes back to printing the default.
-                removeLabel={`Remove ${labelFor(String(key))}'s own layout`}
-                onRemove={async () => {
-                  await deleteLevelVariant(level, String(key));
-                  // Off the deleted occurrence if it is the one open: the
-                  // pages behind that URL have just gone. Otherwise a reload,
-                  // since the drawer reads the book from the server.
-                  if (level === activeLevel && activeVariantKey === key) onOpen(level, null);
-                  else window.location.reload();
-                }}
-                card={card}
-                highContrast={highContrast}
-                reduceMotion={reduceMotion}
-                onOpen={() => onOpen(level, key)}
-              />
+              {variantCards[variantIndex].map((one) => (
+                <PageCard
+                  key={one.key}
+                  pages={one.pages}
+                  selected={one.selected}
+                  lifted={liftFor(one.key, one.selected)}
+                  controlsShown={showsControls(one.key)}
+                  {...liftHandlers(one.key)}
+                  // REMOVE THIS OCCURRENCE'S OWN LAYOUT, from the card itself.
+                  // Asked for: "I added a january 2026 spread but there is no
+                  // button to delete. add an x button to the top corner when
+                  // hovering a page preview". The same server action as the
+                  // cog's Reset - the month goes back to printing the default.
+                  // On the FIRST card only: it removes the whole set, and an X
+                  // on every card of it would read as removing that card.
+                  removeLabel={one.index === 0 ? `Remove ${labelFor(String(key))}'s own layout` : undefined}
+                  onRemove={
+                    one.index === 0
+                      ? async () => {
+                          await deleteLevelVariant(level, String(key));
+                          // Off the deleted occurrence if it is the one open:
+                          // the pages behind that URL have just gone.
+                          // Otherwise a reload, since the drawer reads the
+                          // book from the server.
+                          if (level === activeLevel && activeVariantKey === key) onOpen(level, null);
+                          else window.location.reload();
+                        }
+                      : undefined
+                  }
+                  card={card}
+                  highContrast={highContrast}
+                  reduceMotion={reduceMotion}
+                  onOpen={() => onOpen(level, key)}
+                />
+              ))}
             </div>
             {/* Which occurrence this is. A variant card without one is a
                 duplicate of the default with no way to tell them apart. */}
@@ -2034,11 +2055,12 @@ const SPINNER_SPOKES = [0, 1, 2, 3, 4, 5, 6, 7];
  * happened to be selected at once. It is one thing: clicking either opened
  * the same spread, and the canvas draws them as one.
  *
- * So one button, one ring and one name for the set, with each page in its
- * own slot and the seam between them. A set of one is exactly the card it
- * always was. The set is what the canvas draws together - a level's
- * default pages, or one occurrence's - so a set of three, which the "+"
- * card can make, is joined the same way.
+ * So one button, one ring and one name for the spread, with each page in its
+ * own slot and the seam between them. A single page is exactly the card it
+ * always was. A SET LONGER THAN TWO - which the "+" card makes - is shown as
+ * its spreads, then any page left over on its own card: pages 1-2 joined,
+ * page 3 alone. Shown both ways, 2026-09-21, Andrew chose "spread then page
+ * 3 alone" over one strip of three. See inSpreads.
  *
  * The page slots FLEX rather than taking the card width themselves. The
  * card's width is what transitions during a settle, and a slot sized from
@@ -2242,6 +2264,18 @@ function PageCardInner({
       </div>
     </div>
   );
+}
+
+/**
+ * A set's pages as the cards the timeline shows: SPREADS of two, in order,
+ * then a page left over on its own. [1, 2, 3] is [[1, 2], [3]]; [1, 2, 3, 4]
+ * is [[1, 2], [3, 4]]; a single page is [[1]]. Every card of a set still
+ * opens the whole set - the canvas draws it all.
+ */
+function inSpreads<T>(pages: T[]): T[][] {
+  const spreads: T[][] = [];
+  for (let index = 0; index < pages.length; index += 2) spreads.push(pages.slice(index, index + 2));
+  return spreads;
 }
 
 /** A calc() coefficient without floating-point tails: (1 - 1.1) / 2 is
