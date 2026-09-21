@@ -23,11 +23,13 @@
 // than a border, controls that are permanently present and quiet rather than
 // revealed on hover, and a spring rather than an ease.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { moduleDefinition, cleanPropsForSave } from "@/lib/moduleRegistry";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import type { PageGrid } from "@/lib/grid";
 import { gridCellToPixels } from "@/lib/grid";
+import { flatten } from "@/lib/proofSvg";
+import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm } from "./ModuleFieldsForm";
 import { updateModuleConfig } from "./actions";
@@ -112,6 +114,30 @@ export function ModuleEditor({
       ),
     [draft, editing, pageGrid, fontFamily]
   );
+
+  // THE HEADING IS EDITED WHERE IT IS DRAWN - "it should allow you to edit
+  // the title cleanly with a text hover". Every renderer that draws a
+  // module's heading gives it the id `<instance>-heading` and reads it from
+  // a `heading` text field, so when both are there the drawn heading gives
+  // way to a real text field laid exactly over it: same face, same size,
+  // same uppercase, same place. Hovering shows it is text; clicking puts
+  // the caret where you clicked. It edits the same draft as the Heading
+  // field beside it, so the two cannot disagree.
+  const headingId = `${editing.instanceId}-heading`;
+  const hasHeadingField = definition?.fields?.some((field) => field.kind === "text" && field.key === "heading") ?? false;
+  const heading = useMemo(
+    () =>
+      hasHeadingField
+        ? flatten(elements).find((element) => element.type === "text" && element.id === headingId) ?? null
+        : null,
+    [elements, hasHeadingField, headingId]
+  );
+  const drawnElements = useMemo(
+    () => (heading ? withoutElement(elements, headingId) : elements),
+    [elements, heading, headingId]
+  );
+  const [headingHovered, setHeadingHovered] = useState(false);
+  const [headingFocused, setHeadingFocused] = useState(false);
 
   // Fit the module into whatever room is left beside the fields. Measured
   // from the viewport rather than assumed, because a module can be a sixth of
@@ -199,7 +225,7 @@ export function ModuleEditor({
           }}
         >
           <PolotnoJsonRenderer
-            elements={elements}
+            elements={drawnElements}
             originX={box.x}
             originY={box.y}
             scale={scale}
@@ -207,6 +233,72 @@ export function ModuleEditor({
             textElements={null}
           />
         </div>
+
+        {/* The heading, as a field. In CSS px OUTSIDE the transform, so its
+            hover ring is a real 1px at any magnification rather than one
+            print px scaled up. Its box is the renderer's text box exactly:
+            one line, 1.2em tall, from the element's top - which is how the
+            renderer draws every heading, wrapped or not - so nothing moves
+            when the caret arrives. */}
+        {heading && (
+          <input
+            type="text"
+            aria-label="Heading, on the page"
+            className="memari-heading-field"
+            value={String(draft.heading ?? "")}
+            // An UNSET heading prints its module's default - the to-do's
+            // "TO - DO", a mini month's month name - so an empty field shows
+            // what the renderer drew for it, in the same ink, where it
+            // prints. Typing replaces it, exactly as it would on paper.
+            placeholder={heading.text ?? ""}
+            spellCheck={false}
+            onChange={(event) => {
+              const value = event.target.value;
+              setDraft((current) => ({ ...current, heading: value }));
+            }}
+            onKeyDown={(event) => {
+              // A heading is one line; Return means done with it.
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+            onPointerEnter={() => setHeadingHovered(true)}
+            onPointerLeave={() => setHeadingHovered(false)}
+            onFocus={() => setHeadingFocused(true)}
+            onBlur={() => setHeadingFocused(false)}
+            style={{
+              position: "absolute",
+              left: ((heading.x ?? 0) - box.x) * scale,
+              top: ((heading.y ?? 0) - box.y) * scale,
+              width: (heading.width ?? 0) * scale,
+              height: (heading.fontSize ?? 0) * 1.2 * scale,
+              margin: 0,
+              padding: 0,
+              border: "none",
+              borderRadius: 2,
+              background: headingFocused
+                ? "rgba(74, 92, 255, 0.07)"
+                : headingHovered
+                ? "rgba(74, 92, 255, 0.04)"
+                : "transparent",
+              // The ring sits OUTSIDE the text's box, so the text itself
+              // stays exactly where the page prints it.
+              outline: `1px solid ${
+                headingFocused ? ACCENT : headingHovered ? "rgba(74, 92, 255, 0.5)" : "transparent"
+              }`,
+              outlineOffset: 3,
+              fontFamily: heading.fontFamily,
+              fontSize: (heading.fontSize ?? 0) * scale,
+              fontWeight: "normal",
+              lineHeight: 1.2,
+              letterSpacing: (heading.letterSpacing as CSSProperties["letterSpacing"]) ?? "normal",
+              textAlign: (heading.align as CSSProperties["textAlign"]) ?? "left",
+              textTransform: "uppercase",
+              color: heading.fill ?? "#000000",
+              caretColor: ACCENT,
+              cursor: "text",
+              transition: "outline-color 120ms ease-out, background 120ms ease-out",
+            }}
+          />
+        )}
       </div>
 
       <div
@@ -311,4 +403,14 @@ export function ModuleEditor({
       </div>
     </div>
   );
+}
+
+/** The element list without one element, wherever it sits - groups included,
+ *  since a module that is not locked arrives wrapped in one. */
+function withoutElement(elements: RenderedPolotnoElement[], id: string): RenderedPolotnoElement[] {
+  return elements
+    .filter((element) => element.id !== id)
+    .map((element) =>
+      element.type === "group" ? { ...element, children: withoutElement(element.children ?? [], id) } : element
+    );
 }

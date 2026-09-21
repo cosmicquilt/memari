@@ -123,3 +123,12 @@ canvas[data-drawn] + .memari-spinner {
 .memari-timeline-track::-webkit-scrollbar {
   display: none;
 }
+
+/* The module editor's in-place heading. Its placeholder is the heading the
+   module prints when none is set ("TO - DO"), so it is drawn in the
+   heading's own ink - a placeholder's usual grey would show something the
+   page does not print. ::placeholder has no inline form. */
+.memari-heading-field::placeholder {
+  color: inherit;
+  opacity: 1;
+}
