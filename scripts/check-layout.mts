@@ -50,7 +50,7 @@ const BASELINE: Record<string, Row[]> = {
     ["todo-checklist", 1, 0, 21, 24, 15, false],
   ],
   MONTHLY: [
-    ["month-title", 0, 0, 0, 6, 3, true],
+    ["month-title", 0, 0, 0, 6, 2, true],
     ["month-grid-core", 0, 6, 0, 18, 16, true],
     ["labeled-box", 0, 0, 2, 6, 4, false],
     ["labeled-box", 0, 0, 6, 6, 6, false],

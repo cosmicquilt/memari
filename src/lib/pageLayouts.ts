@@ -21,7 +21,7 @@
 // its pre-migration width on every reset."
 
 import { computeMonthCalendar } from "@/lib/monthCalendar";
-import { MIN_ROW_SPAN } from "@/lib/moduleRegistry";
+import { MIN_ROW_SPAN, moduleDefinition } from "@/lib/moduleRegistry";
 import type { PageLevel } from "@/lib/pageLevels";
 
 /** One module, where it goes, and what it starts with. */
@@ -134,7 +134,94 @@ export function missingPlacements(
   return out;
 }
 
+/** A module instance as stored, as much of it as titleCorrections reads. */
+export type StoredInstance = {
+  id: string;
+  slug: string;
+  locked: boolean;
+  columnStart: number | null;
+  rowStart: number | null;
+  columnSpan: number;
+  rowSpan: number;
+};
+
+/**
+ * Where a book's stored TITLES differ from the layout's, and what to write to
+ * put them back.
+ *
+ * A title is locked: nobody can move or resize it, so its geometry belongs to
+ * the layout, not to the database. The bootstrap only ever ADDS what is
+ * missing (missingPlacements), so a title seeded at the wrong size stays
+ * that size for good - which is how books seeded with a 3-row month title
+ * kept it over their sidebar after the layout was put right. Run on load,
+ * this conforms them. Only the fields the layout states are compared; a null
+ * span is the module type's to decide.
+ *
+ * `pages` is every page at the level, variants included - a month's own
+ * layout is a copy of the default and carries the same title.
+ */
+export function titleCorrections(
+  layout: PageLayout,
+  pages: StoredInstance[][]
+): Array<{ id: string; data: Partial<Pick<StoredInstance, "columnStart" | "rowStart" | "columnSpan" | "rowSpan">> }> {
+  const out: Array<{ id: string; data: Partial<Pick<StoredInstance, "columnStart" | "rowStart" | "columnSpan" | "rowSpan">> }> = [];
+  for (const group of layout.groups) {
+    for (const placement of group.placements) {
+      if (!placement.locked || !moduleDefinition(placement.slug)?.isTitle) continue;
+      for (const instance of pages.flat()) {
+        if (instance.slug !== placement.slug || !instance.locked) continue;
+        const data: Partial<Pick<StoredInstance, "columnStart" | "rowStart" | "columnSpan" | "rowSpan">> = {};
+        if (instance.columnStart !== placement.columnStart) data.columnStart = placement.columnStart;
+        if (instance.rowStart !== placement.rowStart) data.rowStart = placement.rowStart;
+        if (placement.columnSpan !== null && instance.columnSpan !== placement.columnSpan) data.columnSpan = placement.columnSpan;
+        if (placement.rowSpan !== null && instance.rowSpan !== placement.rowSpan) data.rowSpan = placement.rowSpan;
+        if (Object.keys(data).length > 0) out.push({ id: instance.id, data });
+      }
+    }
+  }
+  return out;
+}
+
 // --- the layouts ------------------------------------------------------
+
+/**
+ * How tall each page's TITLE is, in rows - stated here, not left to the
+ * module type's default.
+ *
+ * The sidebar under a title starts where the title ends, so the two have to
+ * be one number. They were two: the layouts left the titles' spans null,
+ * which the bootstrap fills from the module type, and wrote the first
+ * sidebar row by hand. When the page moved onto the dot lattice the week
+ * title went to 3 rows - its two lines of fixed-size type need 0.65in, and
+ * 2 dots is 0.5in - and month-title's default went to 3 with it, while the
+ * monthly sidebar still started at row 2. Every book seeded after that had
+ * its month title lying over the top row of Monthly Mantra: the sidebar
+ * then held 34 rows of boxes in the 33 below the title, so every reorder was
+ * refused and the no-entry mark covered the sidebar from one row down.
+ * Reported on the live site 2026-09-21.
+ *
+ * The month title is ONE line of 19pt type, 22.8pt, which sits in 2 rows
+ * (0.5in) with room to spare - what it was designed at, and what the
+ * monthly sidebar was always laid out under.
+ */
+export const WEEK_TITLE_ROW_SPAN = 3;
+export const MONTH_TITLE_ROW_SPAN = 2;
+
+/** A sidebar's boxes stacked straight down from `top`, each starting where
+ *  the one above it ends. A null span runs to the foot of the page. */
+function stackBelow(
+  top: number,
+  gridRows: number,
+  boxes: Array<[heading: string, rowSpan: number | null]>
+): Array<[string, number, number]> {
+  let row = top;
+  return boxes.map(([heading, span]) => {
+    const rowSpan = span ?? gridRows - row;
+    const box: [string, number, number] = [heading, row, rowSpan];
+    row += rowSpan;
+    return box;
+  });
+}
 
 const HOUR_DEFAULTS = {
   startTime: "05:30",
@@ -175,7 +262,7 @@ export function weekLayout(gridRows: number): PageLayout {
             columnStart: 0,
             rowStart: 0,
             columnSpan: null,
-            rowSpan: null,
+            rowSpan: WEEK_TITLE_ROW_SPAN,
             locked: true,
             propValues: { weekNumber: 1, weekTotal: 52, dateRangeLabel: "DEC 31 - JAN 6" },
           },
@@ -228,13 +315,11 @@ export function weekLayout(gridRows: number): PageLayout {
         // boxes in beside it.
         name: "sidebar boxes",
         present: { by: "labeled-box-column", columnStart: 0 },
-        placements: (
-          [
-            ["Things I'm Grateful For", 3, 7],
-            ["Reminders", 10, 11],
-            ["Notes", 21, belowGrid],
-          ] as Array<[string, number, number]>
-        ).map(([heading, rowStart, rowSpan]) => ({
+        placements: stackBelow(WEEK_TITLE_ROW_SPAN, gridRows, [
+          ["Things I'm Grateful For", 7],
+          ["Reminders", 11],
+          ["Notes", belowGrid],
+        ]).map(([heading, rowStart, rowSpan]) => ({
           slug: "labeled-box",
           page: 0 as const,
           columnStart: 0,
@@ -519,7 +604,7 @@ export function monthLayout(gridRows: number): PageLayout {
             columnStart: 0,
             rowStart: 0,
             columnSpan: null,
-            rowSpan: null,
+            rowSpan: MONTH_TITLE_ROW_SPAN,
             locked: true,
             propValues: { monthName: "JANUARY" },
           },
@@ -544,17 +629,14 @@ export function monthLayout(gridRows: number): PageLayout {
       {
         name: "sidebar boxes",
         present: { by: "labeled-box-column", columnStart: 0 },
-        placements: (
-          [
-            // Row 2 - month-title occupies rows 0-1, same convention as
-            // week-title.
-            ["Monthly Mantra", 2, 4],
-            ["Priorities", 6, 6],
-            ["Reminders", 12, 7],
-            // Runs to the foot of the page rather than to a fixed span.
-            ["Tentative Dates", 19, gridRows - 19],
-          ] as Array<[string, number, number]>
-        ).map(([heading, rowStart, rowSpan]) => ({
+        // Straight down from the title - see MONTH_TITLE_ROW_SPAN.
+        placements: stackBelow(MONTH_TITLE_ROW_SPAN, gridRows, [
+          ["Monthly Mantra", 4],
+          ["Priorities", 6],
+          ["Reminders", 7],
+          // Runs to the foot of the page rather than to a fixed span.
+          ["Tentative Dates", null],
+        ]).map(([heading, rowStart, rowSpan]) => ({
           slug: "labeled-box",
           page: 0 as const,
           columnStart: 0,

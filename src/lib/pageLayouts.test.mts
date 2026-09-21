@@ -14,7 +14,17 @@
 // the editor. That is not hypothetical either: the month's Notes box was
 // guarded by a row number the create had since moved off, and added a
 // second box on every run.
-import { weekLayout, monthLayout, missingPlacements, type ExistingInstance } from "./pageLayouts";
+import {
+  weekLayout,
+  monthLayout,
+  dayLayout,
+  frontMatterLayout,
+  backMatterLayout,
+  missingPlacements,
+  titleCorrections,
+  type ExistingInstance,
+  type StoredInstance,
+} from "./pageLayouts";
 import { moduleDefinition } from "./moduleRegistry";
 
 const GRID_ROWS = 36;
@@ -34,12 +44,12 @@ const WEEK_BASELINE: Row[] = [
 ];
 
 const MONTH_BASELINE: Row[] = [
-  // 3, not the 2 the live planner carries: that row was seeded before
-  // month-title's own default span changed, and the bootstrap has always
-  // taken the span from the module type. The layout is right and the
-  // planner in the database is a row out of date - which is exactly what
-  // "reset to template" is for.
-  ["month-title", 0, 0, 0, 6, 3, true],
+  // 2 rows, stated by the layout (MONTH_TITLE_ROW_SPAN). This baseline once
+  // said 3 and called the older 2-row planners out of date - but at 3 the
+  // title lay over row 2, where Monthly Mantra starts, and every book seeded
+  // that way refused to reorder its sidebar. The overlap check below is what
+  // would have caught it; nothing compared placements with each other.
+  ["month-title", 0, 0, 0, 6, 2, true],
   ["month-grid-core", 0, 6, 0, 18, 16, true],
   ["labeled-box", 0, 0, 2, 6, 4, false],
   ["labeled-box", 0, 0, 6, 6, 6, false],
@@ -160,11 +170,80 @@ for (const rows of [36, 34]) {
   }
 }
 
+// --- nothing overlaps ------------------------------------------------
+//
+// Every layout, both trims, spans resolved the way the bootstrap resolves
+// them. Two placements on one page must not share a cell. This is the check
+// that did not exist when the month title's default grew to 3 rows under a
+// sidebar laid out for 2: the arrangement above matched its baseline, and
+// the baseline had the overlap in it.
+for (const rows of [36, 34]) {
+  for (const layout of [
+    weekLayout(rows),
+    monthLayout(rows),
+    dayLayout(rows),
+    frontMatterLayout(rows),
+    backMatterLayout(rows),
+  ]) {
+    const placed = missingPlacements(layout, [[], []]).map((p) => {
+      const db = moduleDefinition(p.slug)?.db;
+      return {
+        label: `${p.slug} p${p.page} c${p.columnStart} r${p.rowStart}`,
+        page: p.page,
+        c: p.columnStart,
+        r: p.rowStart,
+        w: p.columnSpan ?? db?.defaultColumnSpan ?? 0,
+        h: p.rowSpan ?? db?.defaultRowSpan ?? 0,
+      };
+    });
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        const a = placed[i];
+        const b = placed[j];
+        if (a.page !== b.page) continue;
+        const overlap = a.c < b.c + b.w && b.c < a.c + a.w && a.r < b.r + b.h && b.r < a.r + a.h;
+        if (overlap) fail(`${layout.key} at ${rows} rows: ${a.label} (${a.w}x${a.h}) overlaps ${b.label} (${b.w}x${b.h})`);
+      }
+    }
+  }
+}
+
+// --- stored titles are put back to the layout -------------------------
+//
+// A title is locked, so its geometry is the layout's. A book seeded with the
+// 3-row month title has to come back to 2 - on the default layout and on
+// every occurrence copied from it - and nothing else may be touched.
+{
+  const stored = (id: string, slug: string, rowSpan: number, locked = true, rowStart = 0): StoredInstance => ({
+    id,
+    slug,
+    locked,
+    columnStart: 0,
+    rowStart,
+    columnSpan: 6,
+    rowSpan,
+  });
+  const fixes = titleCorrections(monthLayout(GRID_ROWS), [
+    [stored("title", "month-title", 3), stored("mantra", "labeled-box", 4, false, 2)],
+    [],
+    [stored("feb-title", "month-title", 3)],
+  ]);
+  const got = fixes.map((f) => `${f.id}:${JSON.stringify(f.data)}`).join(" ");
+  if (got !== 'title:{"rowSpan":2} feb-title:{"rowSpan":2}') {
+    fail(`month: title corrections were ${got || "none"}, expected both titles back to 2 rows and nothing else`);
+  }
+  const none = titleCorrections(monthLayout(GRID_ROWS), [[stored("title", "month-title", 2)]]);
+  if (none.length > 0) fail(`month: a title already at the layout's size was "corrected" (${JSON.stringify(none)})`);
+  const week = titleCorrections(weekLayout(GRID_ROWS), [[stored("wt", "week-title", 3)]]);
+  if (week.length > 0) fail(`week: a 3-row week title was "corrected" (${JSON.stringify(week)})`);
+}
+
 if (failures > 0) {
   console.error(`\n${failures} layout problem(s).`);
   process.exit(1);
 }
 console.log(
   "All page layout checks passed (both layouts match the seeded baseline, " +
-    "are idempotent, leave a user's sidebar alone, and fit both trims)."
+    "are idempotent, leave a user's sidebar alone, fit both trims, overlap nowhere, " +
+    "and a stored title is put back to the layout's size)."
 );

@@ -43,6 +43,7 @@ import {
   backMatterLayout,
   monthLayout,
   missingPlacements,
+  titleCorrections,
   weekSidebarBoxes,
   weekTodoPlacements,
   weekHourlyPlacements,
@@ -476,6 +477,31 @@ export async function getOrCreateBook(level: PageLevel = PageLevel.WEEKLY) {
   const levelPages = atLevel(planner).sort((a, b) => a.position - b.position);
   const layout = LEVEL_LAYOUT[level];
   if (layout && (await applyLayout(layout(levelPages[0].gridRows), levelPages))) {
+    needsRefetch = true;
+  }
+  // Titles are locked, so their size is the layout's - see titleCorrections.
+  // This is what repairs a book seeded with a 3-row month title lying over
+  // the top of its sidebar, and every occurrence layout copied from it.
+  const corrections = layout
+    ? titleCorrections(
+        layout(levelPages[0].gridRows),
+        levelPages.map((page) =>
+          page.moduleInstances.map((mi) => ({
+            id: mi.id,
+            slug: mi.moduleType.slug,
+            locked: mi.locked,
+            columnStart: mi.columnStart,
+            rowStart: mi.rowStart,
+            columnSpan: mi.columnSpan,
+            rowSpan: mi.rowSpan,
+          }))
+        )
+      )
+    : [];
+  if (corrections.length > 0) {
+    await prisma.$transaction(
+      corrections.map((c) => prisma.moduleInstance.update({ where: { id: c.id }, data: c.data }))
+    );
     needsRefetch = true;
   }
 
