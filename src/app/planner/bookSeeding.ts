@@ -357,3 +357,70 @@ export async function createBookFor(ownerId: string, input: NewJournal): Promise
   }
   return planner;
 }
+
+/**
+ * One more page at a level, seeded the way that level's pages are seeded.
+ *
+ * THE FIRST PAGE OF A LEVEL BRINGS THE LEVEL INTO EXISTENCE, and there were
+ * two ways to do that which did not agree. Choosing a level when the journal
+ * is created runs ensureLevel, which applies LEVEL_LAYOUT and gives you an
+ * hourly grid, a title, a sidebar. Pressing "+" on a level with no pages
+ * created a bare Page row and nothing else. Reported 2026-09-22: "when i
+ * added a daily page from one not being there ... the new daily page's
+ * preview appeared blank until clicked on". It was blank because it WAS
+ * blank - measured on a journal made without a daily level, the added page
+ * came back with 0 module instances and its preview drew 0 ink, and opening
+ * it did not seed it either.
+ *
+ * So the first page of a level is laid out. A LATER one is not: the menu
+ * that adds it says "Blank page", a level that already has its pages is not
+ * being brought into existence, and a second copy of the daily template
+ * stacked on the first is not what "add a page" offers.
+ *
+ * The layout is applied through applyLayout, the same function ensureLevel
+ * uses, so there is still one description of what a level's page looks like.
+ * A layout that describes a spread hands its FIRST page here, since that is
+ * how many pages are being added.
+ */
+export async function addPageAtLevel(
+  plannerId: string,
+  level: PageLevel,
+  variantKey: string | null
+): Promise<string> {
+  const planner = await prisma.planner.findUniqueOrThrow({
+    where: { id: plannerId },
+    include: { pages: true },
+  });
+
+  const siblings = planner.pages.filter(
+    (page) => page.level === level && (page.variantKey ?? null) === variantKey
+  );
+  // The page's own size comes from a sibling rather than from the schema
+  // defaults: a planner switched to Letter has 2550px pages, and a new one
+  // at 2175 would be a different size from the rest of its own book.
+  const model = siblings[0] ?? planner.pages[0];
+  const created = await prisma.page.create({
+    data: {
+      plannerId: planner.id,
+      level,
+      variantKey,
+      position: siblings.length,
+      ...(model
+        ? {
+            widthPx: model.widthPx,
+            heightPx: model.heightPx,
+            gridColumns: model.gridColumns,
+            gridRows: model.gridRows,
+            gridGapPx: model.gridGapPx,
+            marginPx: model.marginPx,
+          }
+        : {}),
+    },
+  });
+
+  const layout = LEVEL_LAYOUT[level];
+  if (siblings.length === 0 && layout) {
+    await applyLayout(layout(created.gridRows), [{ id: created.id, moduleInstances: [] }]);
+  }
+  return created.id;
+}

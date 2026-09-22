@@ -34,6 +34,7 @@ import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import {
   WITH_PAGES,
   ensureLevel,
+  addPageAtLevel,
   parseTerm,
   validateNewJournal,
   createBookFor,
@@ -2559,40 +2560,14 @@ export async function addPageToLevel(journalId: string, level: PageLevel, varian
   if (!userId) {
     throw new Error("Not signed in");
   }
-  const planner = await prisma.planner.findFirst({
-    where: journalWhere(userId, journalId),
-    include: { pages: true },
-  });
+  const planner = await prisma.planner.findFirst({ where: journalWhere(userId, journalId), select: { id: true } });
   if (!planner) {
     throw new Error("Planner not found");
   }
-
-  const siblings = planner.pages.filter(
-    (page) => page.level === level && (page.variantKey ?? null) === variantKey
-  );
-  // The page's own size comes from a sibling rather than from the schema
-  // defaults: a planner switched to Letter has 2550px pages, and a new one
-  // at 2175 would be a different size from the rest of its own book.
-  const model = siblings[0] ?? planner.pages[0];
-  const page = await prisma.page.create({
-    data: {
-      plannerId: planner.id,
-      level,
-      variantKey,
-      position: siblings.length,
-      ...(model
-        ? {
-            widthPx: model.widthPx,
-            heightPx: model.heightPx,
-            gridColumns: model.gridColumns,
-            gridRows: model.gridRows,
-            gridGapPx: model.gridGapPx,
-            marginPx: model.marginPx,
-          }
-        : {}),
-    },
-  });
-  return page.id;
+  // How a page is shaped belongs with the rest of the seeding - see
+  // addPageAtLevel, which lays out the first page of a level the same way
+  // creating the journal with that level would have.
+  return addPageAtLevel(planner.id, level, variantKey);
 }
 
 /**

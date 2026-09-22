@@ -406,6 +406,16 @@ const hairlines: Probe = {
 // same thing and the bug is invisible. That is the whole argument for the
 // harness carrying its own pixel ratios.
 //
+// WHAT THIS HOLDS, AND WHAT IT DOES NOT. There were two halves to the fix.
+// This probe holds the SERVER half - that the ratio reaches the markup - and
+// sabotaging it (parse the cookie as dpr 1) reports "348 rules with NO rule
+// thinner than 3 device px". The other half, correcting the ratio in a
+// layout effect rather than an effect, is NOT held here: the only way to
+// mount a RectLayer fresh in a live document is a route this probe cannot
+// reach, and sabotaging that half alone leaves this green. It rests on a
+// measurement taken by hand in a visible window, recorded in
+// useDevicePixelRatio.
+//
 // The invariant is the hairline probe's, applied to every FRAME of a
 // transition rather than to the settled page: the thinnest rule on screen is
 // one device pixel. The dpr-1 floor puts the floor at `dpr` instead, so
@@ -472,33 +482,58 @@ const pageChange: Probe = {
         fail("page change", `${what}: no frame drew any rules - nothing was measured`);
         return;
       }
+      // THE SIGNATURE IS EXACTLY `dpr`, not "anything but 1".
+      //
+      // The wrong floor is one CSS pixel, which is precisely dpr device
+      // pixels, and it applies to every hairline at once. "Thinnest is not
+      // 1" looked like the same statement and is not: a PARTIAL frame part
+      // way through a client-side transition can hold a few dozen marks that
+      // genuinely have no sub-pixel rule among them, and this reported one
+      // at 3x - "33 rules with the thinnest at 2 device px". Two is not a
+      // CSS pixel on a 3x screen and never was the bug. The check was wrong,
+      // not the app.
       let worst: { n: number; thinnest: number; hidden: boolean } | null = null;
       for (const frame of drawn) {
-        if (Math.abs(frame.thinnest - 1) > 0.02 && (worst === null || frame.thinnest > worst.thinnest)) worst = frame;
+        if (Math.abs(frame.thinnest - dpr) < 0.02 && (worst === null || frame.n > worst.n)) worst = frame;
       }
       if (worst) {
         fail(
           "page change",
-          `${dpr}x ${what}: a frame painted ${worst.n} rules with the thinnest at ${worst.thinnest} device px, ` +
-            `not 1 - the ratio had not arrived and the hairline floor was a CSS pixel`
+          `${dpr}x ${what}: a frame painted ${worst.n} rules with NO rule thinner than ${worst.thinnest} ` +
+            `device px - which is exactly one CSS pixel here, so the ratio had not arrived and every ` +
+            `hairline was floored at it`
         );
       } else {
-        note("page change", `${dpr}x ${what}: ${drawn.length} drawn frames, every one with a 1-device-px rule`);
+        note(
+          "page change",
+          `${dpr}x ${what}: ${drawn.length} drawn frames, none floored at a CSS pixel`
+        );
       }
     };
 
+    // FIRST LOAD writes the viewport cookie and is hidden while it does -
+    // the guard script flags a page rendered for the wrong window, and
+    // globals.css keeps the canvas at visibility:hidden until the editor
+    // measures. Nothing is visible to get wrong.
     await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(3000);
     await worstOf("first load");
 
-    const cards = page.locator("button.memari-card");
-    if ((await cards.count()) < 2) {
-      fail("page change", "fewer than two timeline cards - nothing to switch between");
-      return;
-    }
-    await cards.nth(0).click();
+    // THE SECOND LOAD IS THE ONE THAT MATTERS, and it took two wrong probes
+    // to find it. The cookie now matches this window, so the guard does NOT
+    // hide anything: the server's own markup paints immediately. If the
+    // server did not know the display's ratio it floored every hairline at a
+    // CSS pixel and that is what is on screen, before a line of JavaScript
+    // has run.
+    //
+    // Opening a page card was tried here and is a DEAD SWITCH: React
+    // reconciles the existing RectLayers rather than remounting them, so the
+    // ratio in their state survives the transition and nothing can be wrong.
+    // Sabotaging the fix left it green, which is how that was found.
+    await page.evaluate(`window.__f = []`);
+    await page.reload({ waitUntil: "networkidle" });
     await page.waitForTimeout(3000);
-    await worstOf("after opening a timeline card");
+    await worstOf("a reload with the viewport cookie already set");
   },
 };
 
@@ -539,7 +574,55 @@ const consoleClean: Probe = {
   },
 };
 
-const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, consoleClean];
+// ---------------------------------------------------------------------
+// 6. A mutation does not reload the document.
+//
+// Andrew, adding a daily page to a journal that had none: "it did a full
+// page reload and shifted the timeline view back to the beginning". Every
+// structural change in the drawer ended with window.location.reload() -
+// eight call sites - so the drawer's scroll and detent, the canvas's zoom
+// and scroll, and every in-flight animation went with the document.
+//
+// The invariant is crude on purpose and holds all eight at once: put a value
+// on `window`, change something, and it must still be there. Nothing else
+// distinguishes "asked the server again" from "threw the page away", and a
+// reload is invisible to every other check in this repo.
+//
+// Sabotaged by putting window.location.reload() back into addBlank:
+// "window state was wiped - the document was reloaded".
+// ---------------------------------------------------------------------
+const noReload: Probe = {
+  name: "no reload",
+  ratios: [1],
+  run: async (page, { base, journalId }) => {
+    await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(3000);
+
+    const add = page.locator('button[aria-label^="Add a page to"]').first();
+    if ((await add.count()) === 0) {
+      fail("no reload", "no add-a-page control in the timeline");
+      return;
+    }
+    const before = await page.locator("button.memari-card").count();
+    await page.evaluate(`window.__survives = "yes"`);
+    await add.click();
+    await page.waitForTimeout(3500);
+
+    const survived = (await page.evaluate(`window.__survives`)) === "yes";
+    const after = await page.locator("button.memari-card").count();
+    if (!survived) {
+      fail("no reload", "window state was wiped - the document was reloaded to show a change");
+    }
+    if (after <= before) {
+      fail("no reload", `the page count did not change (${before} -> ${after}) - the add did not take`);
+    }
+    if (survived && after > before) {
+      note("no reload", `a page was added (${before} -> ${after} cards) without reloading the document`);
+    }
+  },
+};
+
+const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, noReload, consoleClean];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;
 if (PROBES.length === 0) {
   console.error(`No probe matches --only ${ONLY}. Try: ${ALL_PROBES.map((p) => p.name).join(", ")}`);

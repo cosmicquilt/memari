@@ -65,6 +65,7 @@ import {
 } from "@/lib/pageLevels";
 import type { TimelinePage } from "./loadPlannerPages";
 import { useJournalId } from "./journalContext";
+import { useRefreshPages } from "./pagesRefreshContext";
 import {
   addPageToLevel,
   addSavedPage,
@@ -1400,6 +1401,7 @@ function LevelGroupInner({
   /** Draw the rule between this box and the next. Every box but the last. */
   dividerAfter: boolean;
 }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [open, setOpen] = useState(false);
   // What the popover hangs off. It has to be measured rather than positioned
@@ -1630,11 +1632,11 @@ function LevelGroupInner({
                       ? async () => {
                           await deleteLevelVariant(journalId, level, String(key));
                           // Off the deleted occurrence if it is the one open:
-                          // the pages behind that URL have just gone.
-                          // Otherwise a reload, since the drawer reads the
-                          // book from the server.
+                          // the pages behind it have just gone. Otherwise
+                          // re-read, since the drawer reads the book from
+                          // the server.
                           if (level === activeLevel && activeVariantKey === key) onOpen(level, null);
-                          else window.location.reload();
+                          else await refreshPages();
                         }
                       : undefined
                   }
@@ -1938,6 +1940,7 @@ function OccurrencePopover({
   /** Where to go when an occurrence stops having its own layout. */
   onOpenDefault: () => void;
 }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   return (
@@ -1996,11 +1999,12 @@ function OccurrencePopover({
                       return;
                     }
                     await createLevelVariant(journalId, level, key);
-                    // A reload rather than patching state: the drawer, the
-                    // canvas and the routes all read this from the server,
-                    // and re-deriving each of them here would be a second
-                    // description of what the server just did.
-                    window.location.reload();
+                    // Re-read rather than patching state: the drawer and
+                    // the canvas both read this from the server, and
+                    // re-deriving either here would be a second description
+                    // of what the server just did. See pagesRefreshContext -
+                    // asking again is not the same as reloading.
+                    await refreshPages();
                   })
                 }
                 style={{
@@ -2105,6 +2109,7 @@ function PageCardInner({
   reduceMotion: boolean;
   onOpen: () => void;
 }) {
+  const refreshPages = useRefreshPages();
   const count = pages.length;
   const first = pages[0];
   const moduleCount = pages.reduce((sum, page) => sum + page.moduleCount, 0);
@@ -2213,7 +2218,7 @@ function PageCardInner({
             reduceMotion={reduceMotion}
             onRemove={async () => {
               await deletePageFromLevel(first.pageId);
-              window.location.reload();
+              await refreshPages();
             }}
           />
         )}
@@ -2282,7 +2287,7 @@ function PageCardInner({
                     reduceMotion={reduceMotion}
                     onRemove={async () => {
                       await deletePageFromLevel(page.pageId);
-                      window.location.reload();
+                      await refreshPages();
                     }}
                   />
                 )}
@@ -2515,6 +2520,7 @@ function AddPageCardInner({
   /** See PageCard's. */
   savedInSet: string;
 }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const [lit, setLit] = useState(false);
@@ -2526,10 +2532,11 @@ function AddPageCardInner({
   const addBlank = () =>
     run(async () => {
       await addPageToLevel(journalId, level, variantKey);
-      // The server shapes the pages; re-deriving the drawer, the canvas
-      // and the routes here would be a second description of what it
-      // just did.
-      window.location.reload();
+      // The server shapes the pages; re-deriving the drawer and the canvas
+      // here would be a second description of what it just did. So ask it
+      // again - see pagesRefreshContext, and note that this used to reload
+      // the document, which threw away the drawer's scroll with it.
+      await refreshPages();
     });
   const printed = `printed ${LEVEL_NOUN[level] === "book" ? "once" : `every ${LEVEL_NOUN[level]}`} alongside the others`;
   return (
@@ -2607,7 +2614,7 @@ function AddPageCardInner({
               onChoose={() =>
                 run(async () => {
                   await addSavedPage(journalId, level, variantKey, option.id);
-                  window.location.reload();
+                  await refreshPages();
                 })
               }
             />
@@ -2894,6 +2901,7 @@ function CardMenu({
   linked: TimelinePage["saved"];
   savedInSet: string;
 }) {
+  const refreshPages = useRefreshPages();
   const saved = useSavedItems().pages;
   const [pending, error, run] = useAsyncAction();
   const kind = pages.length === 2 ? "spread" : "page";
@@ -2922,7 +2930,7 @@ function CardMenu({
             event.preventDefault();
             void run(async () => {
               await savePagesToSaved(pageIds, name);
-              window.location.reload();
+              await refreshPages();
             });
           }}
           style={{ display: "grid", gap: 6, padding: "4px 8px 6px" }}
@@ -2999,7 +3007,7 @@ function CardMenu({
                 }
                 void run(async () => {
                   await replaceWithSavedPage(pageIds, option.id);
-                  window.location.reload();
+                  await refreshPages();
                 });
               }}
             />

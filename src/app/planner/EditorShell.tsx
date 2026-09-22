@@ -52,6 +52,7 @@ import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
 import { JournalProvider } from "./journalContext";
 import { SavedProvider, type SavedItems } from "./savedContext";
+import { PagesRefreshProvider } from "./pagesRefreshContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
@@ -110,16 +111,21 @@ export function EditorShell({
     writeLastJournalCookie(journalId);
   }, [journalId]);
 
-  const openLevel = useCallback(async (level: PageLevel, variantKey: string | null) => {
+  /**
+   * @param silent re-reading the level that is already open, after something
+   *   changed it. No card was clicked, so there is nothing to mark as
+   *   chosen and nothing to wait for - see PagesRefreshProvider below.
+   */
+  const openLevel = useCallback(async (level: PageLevel, variantKey: string | null, silent = false) => {
     const request = ++latest.current;
     const clickedAt = performance.now();
-    setChoosing({ level, variantKey });
+    if (!silent) setChoosing({ level, variantKey });
     document.documentElement.style.cursor = "progress";
     try {
       const loaded = await load(journalId, level, variantKey);
       if (request !== latest.current) return;
       // Let the card finish growing before the editor is rebuilt.
-      const growLeft = reduceMotion ? 0 : SLIDE_MS - (performance.now() - clickedAt);
+      const growLeft = silent || reduceMotion ? 0 : SLIDE_MS - (performance.now() - clickedAt);
       if (growLeft > 0) await new Promise((resolve) => setTimeout(resolve, growLeft));
       if (request !== latest.current) return;
       // The layout ACTUALLY opened - loadPlannerPages falls back to the
@@ -140,6 +146,15 @@ export function EditorShell({
       if (request === latest.current) document.documentElement.style.cursor = "";
     }
   }, [load, reduceMotion, journalId]);
+
+  // Re-read what is open, from the server, without a reload - see
+  // pagesRefreshContext.tsx. Bound to whatever level is open NOW, so a
+  // mutation made while the daily spread is showing comes back as the daily
+  // spread rather than sending the editor somewhere else.
+  const refreshPages = useCallback(
+    () => openLevel(open.level, open.variantKey, true),
+    [openLevel, open.level, open.variantKey]
+  );
 
   // What the timeline shows as open: the one being opened, if any.
   const shownLevel = choosing?.level ?? open.level;
@@ -172,8 +187,9 @@ export function EditorShell({
 
   return (
     <ServerDevicePixelRatio.Provider value={initialDpr}>
-      <JournalProvider value={journalId}>
-        <SavedProvider value={saved}>
+      <PagesRefreshProvider value={refreshPages}>
+        <JournalProvider value={journalId}>
+          <SavedProvider value={saved}>
         {editor}
         <TimelineDrawer
           pages={open.timeline}
@@ -190,8 +206,9 @@ export function EditorShell({
             void openLevel(next, nextVariant);
           }}
         />
-        </SavedProvider>
-      </JournalProvider>
+          </SavedProvider>
+        </JournalProvider>
+      </PagesRefreshProvider>
     </ServerDevicePixelRatio.Provider>
   );
 }
