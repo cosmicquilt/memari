@@ -90,6 +90,15 @@ import { placeAnchoredPanel, type PanelPlacement } from "@/lib/anchoredPanel";
 /** The card at rest. Width follows from the ratio rather than being typed
  *  beside it, so the two can never say different things. */
 const CARD_HEIGHT = 102;
+/** The card at the COMPACT detent - half the resting one, so more of the
+ *  book is on screen at once. Derived from CARD_HEIGHT rather than typed
+ *  beside it: the two are one decision, and a literal 51 here would go stale
+ *  the day the card at rest changes.
+ *
+ *  Half rather than two thirds because the chrome around the row is 124px
+ *  whatever the card is - two thirds moved the drawer by only 41px, which is
+ *  not a step anyone would find. */
+const CARD_HEIGHT_COMPACT = Math.round(CARD_HEIGHT / 2);
 /** A page is 2175 x 3075 print px. The card reserves that same ratio, and
  *  the preview's own viewBox keeps the drawing true inside it. */
 const PAGE_RATIO = 2175 / 3075;
@@ -252,6 +261,14 @@ const CHROME_HEIGHT =
  *  overruns the drawer by the fraction 102 x 1.2 leaves. */
 export const DRAWER_RESTING_HEIGHT = CHROME_HEIGHT + Math.ceil(CARD_HEIGHT * ACTIVE_SCALE);
 
+/** Compact: the same chrome, half the card. Asked for 2026-09-22 - "can we
+ *  add one more smaller than the current ones" - and reached by DRAGGING,
+ *  like middle and expanded. A click still just closes and reopens, which
+ *  is the behaviour to leave alone: "i like it how it is now with click to
+ *  close". */
+export const DRAWER_COMPACT_HEIGHT =
+  CHROME_HEIGHT + Math.ceil(CARD_HEIGHT_COMPACT * ACTIVE_SCALE);
+
 /** Closed: the grabber band and nothing else. Not zero - the lip IS the way
  *  back, and a panel that disappears entirely needs some other control
  *  invented to reopen it. */
@@ -269,7 +286,7 @@ export const DRAWER_CLOSED_HEIGHT = GRABBER_BAND;
  */
 function cardSize(drawerHeight: number) {
   // The room left is a row, and a row is ACTIVE_SCALE cards tall.
-  const height = Math.max(CARD_HEIGHT, Math.floor((drawerHeight - CHROME_HEIGHT) / ACTIVE_SCALE));
+  const height = Math.max(CARD_HEIGHT_COMPACT, Math.floor((drawerHeight - CHROME_HEIGHT) / ACTIVE_SCALE));
   return { height, width: Math.round(height * PAGE_RATIO) };
 }
 
@@ -506,13 +523,15 @@ export function TimelineDrawer({
    *  drawer SETTLES, not while it is being dragged. */
   onHeightChange?: (height: number) => void;
 }) {
-  // FOUR detents: closed, resting, middle, expanded. Closed leaves the
+  // FIVE detents: closed, compact, resting, middle, expanded. Closed leaves the
   // grabber band and nothing else - a thin lip you can pull back up, rather
   // than a panel that vanishes and needs some other control to bring back.
   // Asked for directly: "I want to be able to close bottom timeline
   // seamlessly in the design." MIDDLE is halfway between resting and
   // expanded, asked for 2026-09-21: "we should add a level between the two".
-  const [detent, setDetent] = useState<"closed" | "resting" | "middle" | "expanded">("resting");
+  const [detent, setDetent] = useState<"closed" | "compact" | "resting" | "middle" | "expanded">(
+    "resting"
+  );
   // Which open detent a close should return to. A grabber that both drags
   // and toggles has to mean ONE thing when clicked, and "close / reopen" is
   // what it is for - the middle detent is reached by dragging, and clicking
@@ -523,7 +542,7 @@ export function TimelineDrawer({
   // size while it is closed. A ref read during render is unsound under
   // concurrent rendering - a discarded render attempt can write one, and the
   // replay then reads a value from a pass that never happened.
-  const [lastOpen, setLastOpen] = useState<"resting" | "middle" | "expanded">("resting");
+  const [lastOpen, setLastOpen] = useState<"compact" | "resting" | "middle" | "expanded">("resting");
   // Honoured for the drawer's own settle, and for the zoom bar that now rides
   // on it - which is why these moved into a hook rather than staying here.
   const reduceMotion = usePrefersReducedMotion();
@@ -548,6 +567,8 @@ export function TimelineDrawer({
   const heightOf = (which: typeof detent) =>
     which === "closed"
       ? DRAWER_CLOSED_HEIGHT
+      : which === "compact"
+      ? DRAWER_COMPACT_HEIGHT
       : which === "resting"
       ? DRAWER_RESTING_HEIGHT
       : which === "middle"
@@ -613,7 +634,7 @@ export function TimelineDrawer({
     if (height === null) return;
     // Snap to whichever detent is nearest. Detents, not free resize: a panel
     // that can rest anywhere has no shape you can learn.
-    const candidates = ["closed", "resting", "middle", "expanded"] as const;
+    const candidates = ["closed", "compact", "resting", "middle", "expanded"] as const;
     let nearest: typeof detent = "resting";
     let best = Infinity;
     for (const candidate of candidates) {
@@ -721,9 +742,16 @@ export function TimelineDrawer({
   // expandedHeight() reads window.innerHeight, so it is only consulted above
   // resting. At or below it the answer is a constant, which is also the only
   // case that runs on the server.
+  // FLOORED AT THE SMALLEST OPEN DETENT, which is compact and was resting.
+  // The floor is what stops the contents reflowing while the drawer slides
+  // away on a close - it travels with its cards at the size they were. That
+  // reasoning is about the SMALLEST OPEN height, not about resting in
+  // particular, and leaving it at resting is what made the compact detent
+  // land at the right height with cards still laid out for the old one:
+  // --memari-drawer-height went to 186 while --memari-card-h stayed 102.
   const contentHeight =
-    height <= DRAWER_RESTING_HEIGHT
-      ? DRAWER_RESTING_HEIGHT
+    height <= DRAWER_COMPACT_HEIGHT
+      ? DRAWER_COMPACT_HEIGHT
       : Math.min(height, expandedHeight());
 
   // What the SURFACE has to cover: the whole panel, including any stretch
