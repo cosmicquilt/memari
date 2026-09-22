@@ -10,10 +10,20 @@
 // selected, so Enter or a double click opens it. First time, with nothing
 // saved, it opens on Create.
 //
-// Saved has Journals only for now. Saved pages and saved modules come next;
-// they need somewhere to be added TO, which is the editor, not this dialog.
+// A guest (see guest.ts) sees what that means - journals kept in this
+// browser, deleted after a while unopened - and how to keep them: sign in.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PageLevel } from "@/lib/pageLevels";
 import { LEVELS_IN_BINDING_ORDER, LEVEL_LABELS, LEVEL_PAGE_COUNT, bookPageCount } from "@/lib/pageLevels";
@@ -21,6 +31,7 @@ import type { PlannerTrimKey } from "@/lib/planner-trims";
 import type { JournalCard, ThumbnailPage } from "./journals";
 import { createJournal, deleteJournal, renameJournal } from "./actions";
 import { PagePreview } from "./PagePreview";
+import { usePrefersReducedMotion } from "./useMediaQuery";
 
 // The editor's chrome - see the design-language memory. Solid surfaces, one
 // accent spent on the primary action and on selection, labels small and
@@ -65,11 +76,14 @@ export function StartDialog({
   lastJournalId,
   templates,
   defaultTerm,
+  guest,
 }: {
   journals: JournalCard[];
   lastJournalId: string | null;
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
+  /** Set for someone using Memari without an account - see guest.ts. */
+  guest: { journalLimit: number; idleDays: number } | null;
 }) {
   const router = useRouter();
   const [journals, setJournals] = useState(initialJournals);
@@ -111,12 +125,13 @@ export function StartDialog({
           <strong style={{ alignSelf: "center", padding: "12px 0" }}>
             Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
           </strong>
-          <div role="tablist" aria-label="Start" style={{ display: "flex", gap: 32 }}>
+          <TabStrip tab={tab}>
             {(["saved", "create"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 role="tab"
+                data-tab={t}
                 id={`start-tab-${t}`}
                 aria-selected={tab === t}
                 aria-controls="start-panel"
@@ -134,7 +149,7 @@ export function StartDialog({
                 {t === "saved" ? "Saved" : "Create"}
               </button>
             ))}
-          </div>
+          </TabStrip>
           <div style={{ justifySelf: "end", alignSelf: "center" }}>
             {backTo && (
               <button type="button" className="sd-x" onClick={close} aria-label="Close and go back to your journal" title="Back to your journal">
@@ -145,6 +160,13 @@ export function StartDialog({
             )}
           </div>
         </div>
+        {guest && (
+          <p className="sd-guest">
+            You&rsquo;re using Memari as a guest. Your journals stay in this browser, and one you haven&rsquo;t opened
+            for {guest.idleDays} days is deleted. <Link href="/sign-in?redirect_url=%2Fapp">Sign in</Link> to keep them
+            &mdash; they come with you.
+          </p>
+        )}
         <div id="start-panel" role="tabpanel" aria-labelledby={`start-tab-${tab}`} className="sd-body">
           {tab === "saved" ? (
             <SavedJournals
@@ -164,7 +186,13 @@ export function StartDialog({
               leaving={leaving}
             />
           ) : (
-            <CreateJournal templates={templates} defaultTerm={defaultTerm} onCreated={open} leaving={leaving} />
+            <CreateJournal
+              templates={templates}
+              defaultTerm={defaultTerm}
+              onCreated={open}
+              leaving={leaving}
+              guestLimit={guest && journals.length >= guest.journalLimit ? guest.journalLimit : null}
+            />
           )}
         </div>
       </div>
@@ -370,11 +398,14 @@ function CreateJournal({
   defaultTerm,
   onCreated,
   leaving,
+  guestLimit,
 }: {
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
   onCreated: (id: string) => void;
   leaving: boolean;
+  /** Set when a guest already has as many journals as a guest may keep. */
+  guestLimit: number | null;
 }) {
   const [presetId, setPresetId] = useState(PRESETS[0].id);
   const [levels, setLevels] = useState<PageLevel[]>(PRESETS[0].levels);
@@ -508,8 +539,19 @@ function CreateJournal({
           <small>{pages === null ? "Set a term to count the pages" : levelsLabel(levels)}</small>
         </div>
         {error && <p style={{ color: ERROR_TEXT, fontSize: 12, margin: 0 }}>{error}</p>}
+        {guestLimit !== null && (
+          <p style={{ color: DIM, fontSize: 12, margin: 0, lineHeight: 1.45 }}>
+            A guest can keep {guestLimit} journals. <Link href="/sign-in?redirect_url=%2Fapp" style={{ color: "#fff" }}>Sign in</Link> to
+            make more &mdash; the ones you have come with you.
+          </p>
+        )}
         <div className="sd-actions">
-          <button type="button" className="sd-btn sd-primary" onClick={() => void create()} disabled={busy || leaving || levels.length === 0}>
+          <button
+            type="button"
+            className="sd-btn sd-primary"
+            onClick={() => void create()}
+            disabled={busy || leaving || levels.length === 0 || guestLimit !== null}
+          >
             {busy || leaving ? "Creating…" : "Create"}
           </button>
         </div>
@@ -572,13 +614,19 @@ function Spread({ pages }: { pages: ThumbnailPage[] }) {
 }
 
 const STYLES = `
-.sd-dialog { width: min(1080px, 100%); height: min(720px, 100%); display: grid; grid-template-rows: auto 1fr; }
-.sd-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
+.sd-dialog { width: min(1080px, 100%); height: min(720px, 100%); display: flex; flex-direction: column; }
+.sd-guest { margin: 0; padding: 10px 22px; font-size: 13px; line-height: 1.45; color: ${DIM}; border-bottom: 1px solid ${LINE}; background: #202023; }
+.sd-guest a { color: #fff; }
+.sd-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
 .sd-main { padding: 20px 22px; overflow: auto; display: grid; gap: 14px; align-content: start; border-right: 1px solid ${LINE}; }
 .sd-details { padding: 20px; overflow: auto; display: grid; gap: 16px; align-content: start; grid-auto-rows: max-content; }
 .sd-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: ${DIM}; }
 .sd-tab { background: none; border: none; color: ${DIM}; font: inherit; font-size: 15px; padding: 14px 2px 12px; border-bottom: 2px solid transparent; cursor: pointer; min-height: 44px; }
-.sd-tab[aria-selected="true"] { color: #fff; border-bottom-color: #fff; }
+.sd-tab[aria-selected="true"] { color: #fff; }
+/* Until the sliding bar has measured the tabs - the page as the server sent
+   it, before any script - the chosen tab carries its own underline, so the
+   first paint is never missing one. */
+.sd-tabs:not([data-measured]) .sd-tab[aria-selected="true"] { border-bottom-color: #fff; }
 .sd-x { width: 32px; height: 32px; display: grid; place-items: center; background: none; border: none; color: ${DIM}; border-radius: 8px; cursor: pointer; }
 .sd-x:hover { color: #fff; background: ${CONTROL}; }
 .sd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
@@ -621,3 +669,73 @@ const STYLES = `
 }
 @media (prefers-reduced-motion: reduce) { .sd-card, .sd-disclosure span { transition: none !important; } }
 `;
+
+/**
+ * The Saved / Create tabs, with ONE underline that slides to the chosen tab
+ * - asked for, 2026-09-21: "animate the horizontal bar below to animate back
+ * and forth as you swap". The bar is measured off the tab buttons
+ * themselves, so it fits each label whatever its width, and re-measured on
+ * resize and once the fonts have loaded (a label's width changes when its
+ * face arrives). Under reduced motion it moves without sliding.
+ */
+function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactNode }) {
+  const strip = useRef<HTMLDivElement | null>(null);
+  // Where the bar sits, and whether getting there should SLIDE. Only a change
+  // of tab slides: the first placement, a window resize and the fonts
+  // arriving all move it without animating - a bar that swept in on load, or
+  // chased the tabs while a window was dragged, would be motion for nothing.
+  const [bar, setBar] = useState<{ left: number; width: number; slide: boolean } | null>(null);
+  const placedFor = useRef<"saved" | "create" | null>(null);
+  const reduceMotion = usePrefersReducedMotion();
+
+  const measure = useCallback((slide: boolean) => {
+    const button = strip.current?.querySelector<HTMLElement>(`[aria-selected="true"]`);
+    if (!button) return;
+    setBar({ left: button.offsetLeft, width: button.offsetWidth, slide });
+  }, []);
+
+  useLayoutEffect(() => {
+    measure(placedFor.current !== null && placedFor.current !== tab);
+    placedFor.current = tab;
+  }, [tab, measure]);
+
+  useEffect(() => {
+    const still = () => measure(false);
+    window.addEventListener("resize", still);
+    void document.fonts?.ready.then(still);
+    return () => window.removeEventListener("resize", still);
+  }, [measure]);
+
+  return (
+    <div
+      ref={strip}
+      role="tablist"
+      aria-label="Start"
+      className="sd-tabs"
+      data-measured={bar ? "" : undefined}
+      style={{ position: "relative", display: "flex", gap: 32 }}
+    >
+      {children}
+      {bar && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            height: 2,
+            width: bar.width,
+            transform: `translateX(${bar.left}px)`,
+            background: "#fff",
+            borderRadius: 1,
+            transition:
+              bar.slide && !reduceMotion
+                ? "transform 280ms cubic-bezier(0.25, 0.8, 0.25, 1), width 280ms cubic-bezier(0.25, 0.8, 0.25, 1)"
+                : "none",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+

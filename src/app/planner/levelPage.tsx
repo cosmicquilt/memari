@@ -10,9 +10,9 @@
 // cookie, or the weekly spread. The old addresses redirect here - see
 // next.config.ts.
 
-import { auth } from "@clerk/nextjs/server";
+import { claimGuestWork, currentOwner, signInPath } from "@/lib/owner";
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { PageLevel } from "@/generated/prisma/enums";
 import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
 import { OPEN_LEVEL_COOKIE, parseOpenLevelCookie } from "@/lib/openLevelCookie";
@@ -26,10 +26,11 @@ import { EditorShell } from "./EditorShell";
  * exist, so the address cannot be used to learn which ids are real.
  */
 export async function renderEditor(journalId: string) {
-  const { userId, redirectToSignIn } = await auth();
-  if (!userId) {
-    return redirectToSignIn();
-  }
+  const owner = await currentOwner();
+  if (!owner) redirect(signInPath(`/app/j/${journalId}`));
+  // Signed in on a browser that was used as a guest: bring that work along -
+  // including this journal, if it was the guest's.
+  if (!owner.guest) await claimGuestWork(owner.id);
 
   const cookieStore = await cookies();
   // The window size this browser last reported, so the canvas renders at
@@ -53,5 +54,7 @@ export async function renderEditor(journalId: string) {
   }
   const loaded = await loadPlannerPages(book, opened.level, opened.variantKey);
 
-  return <EditorShell initial={{ ...loaded, level: opened.level }} initialViewport={initialViewport} />;
+  return (
+    <EditorShell initial={{ ...loaded, level: opened.level }} initialViewport={initialViewport} guest={owner.guest} />
+  );
 }

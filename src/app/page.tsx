@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { currentOwner, signInPath } from "@/lib/owner";
 import { redirect } from "next/navigation";
 
 // memari.studio's front door, for now: sign in, then the planner. Asked for,
@@ -13,7 +13,7 @@ import { redirect } from "next/navigation";
 // returns to "/", which lands there too. "/" itself is kept free for the
 // landing page Andrew has in mind.
 export default async function Home() {
-  const { userId, redirectToSignIn } = await auth();
-  if (!userId) return redirectToSignIn();
+  // A guest counts: they already chose to try it without an account.
+  if (!(await currentOwner())) redirect(signInPath("/app"));
   redirect("/app");
 }

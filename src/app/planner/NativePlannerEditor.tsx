@@ -4587,6 +4587,7 @@ export function NativePlannerEditor({
   initialUi,
   onUiChange,
   journalTitle,
+  guest = false,
 }: {
   pages: LoadedPage[];
   /** What stretch of time the book covers, as ISO dates - for Page
@@ -4613,6 +4614,9 @@ export function NativePlannerEditor({
   onUiChange?: (ui: EditorUi) => void;
   /** The open journal's name, shown beside the wordmark. */
   journalTitle?: string;
+  /** Someone using Memari without an account: the header offers to keep
+   *  their work by signing in. See guest.ts. */
+  guest?: boolean;
 }) {
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
@@ -9653,6 +9657,24 @@ export function NativePlannerEditor({
           >
             {journalTitle}
           </span>
+        )}
+        {guest && (
+          <a
+            href={`/sign-in?redirect_url=${encodeURIComponent(`/app/j/${journalId}`)}`}
+            title="You're a guest: sign in to keep your journals - they come with you"
+            style={{
+              flexShrink: 0,
+              fontSize: 12,
+              color: "#fff",
+              textDecoration: "none",
+              border: "1px solid rgba(255, 255, 255, 0.33)",
+              borderRadius: 999,
+              padding: "4px 10px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Guest &middot; Sign in to keep it
+          </a>
         )}
         {/* Icon only, per request. Placed BEFORE the Reset button for
             the same reason everything else here is: that one owns

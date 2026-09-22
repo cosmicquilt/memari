@@ -23,7 +23,7 @@
 // description - so the export must not be a second render that happens to
 // agree. Nothing about this page is recomputed here.
 
-import { auth } from "@clerk/nextjs/server";
+import { currentOwnerId } from "@/lib/owner";
 import { openBook } from "@/app/planner/actions";
 import { loadPlannerPages } from "@/app/planner/loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
@@ -44,8 +44,7 @@ export const dynamic = "force-dynamic";
 // the list that used to get extended-and-not-updated has nothing left in it.
 
 export async function GET(request: Request) {
-  const { userId } = await auth();
-  if (!userId) {
+  if (!(await currentOwnerId())) {
     // Not a redirect: this URL is fetched by a button, and a 200 page of
     // sign-in HTML would be downloaded as a .pdf full of markup.
     return new Response("Sign in to export a planner.", {

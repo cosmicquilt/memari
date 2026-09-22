@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { signInPath } from "@/lib/owner";
 import { openBook } from "./actions";
 import { oldestJournalId } from "./journals";
 import { JournalProvider } from "./journalContext";
@@ -8,10 +9,10 @@ import type { PageGrid } from "@/lib/grid";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 
 export default async function PlannerPage() {
-  const { userId, redirectToSignIn } = await auth();
-  if (!userId) {
-    return redirectToSignIn();
-  }
+  // The legacy comparison editor is for signed-in accounts only; a guest is
+  // sent to the real editor.
+  const { userId } = await auth();
+  if (!userId) redirect(signInPath("/planner"));
 
   // The legacy comparison editor works on one journal - the oldest, which was
   // the only one before a person could have several. None yet: the start

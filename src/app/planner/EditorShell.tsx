@@ -64,12 +64,15 @@ export function EditorShell({
   initial,
   initialViewport,
   load = loadLevel,
+  guest = false,
 }: {
   initial: LoadedPlanner & { level: PageLevel };
   initialViewport: ViewportSize | null;
   /** How a layout is fetched. Always loadLevel in the app; a stand-in lets a
    *  test drive the swap without a signed-in session. */
   load?: typeof loadLevel;
+  /** Someone using Memari without an account - see guest.ts. */
+  guest?: boolean;
 }) {
   const [open, setOpen] = useState<OpenLayout>({ ...initial, ui: null });
   // The layout just clicked, shown as selected in the timeline while it
@@ -152,9 +155,10 @@ export function EditorShell({
         initialUi={open.ui}
         onUiChange={reportView}
         journalTitle={open.journal.title}
+        guest={guest}
       />
     ),
-    [open, initialViewport, drawerHeight, reportView]
+    [open, initialViewport, drawerHeight, reportView, guest]
   );
 
   return (

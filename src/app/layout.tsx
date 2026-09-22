@@ -75,7 +75,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <ClerkProvider>
+    // signInUrl: Clerk's own redirects to sign in (an expired session, say)
+    // land on our page, which offers "Continue as guest", not Clerk's hosted one.
+    <ClerkProvider signInUrl="/sign-in">
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} ${almarai.variable} h-full antialiased`}

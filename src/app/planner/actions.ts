@@ -1,6 +1,7 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { currentOwnerId } from "@/lib/owner";
+import { GUEST_JOURNAL_LIMIT, isGuestOwner } from "@/lib/guest";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { PageLevel } from "@/generated/prisma/enums";
@@ -330,7 +331,7 @@ const JOURNAL_NOT_FOUND = "Journal not found";
  * start from.
  */
 export async function openBook(journalId: string, level: PageLevel = PageLevel.WEEKLY) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -339,6 +340,11 @@ export async function openBook(journalId: string, level: PageLevel = PageLevel.W
     include: WITH_PAGES,
   });
   if (!planner) throw new Error(JOURNAL_NOT_FOUND);
+  // A guest journal is deleted after GUEST_IDLE_DAYS without being opened,
+  // so opening one is what keeps it: the row's updatedAt is the clock.
+  if (isGuestOwner(userId)) {
+    await prisma.planner.update({ where: { id: planner.id }, data: { updatedAt: new Date() } });
+  }
   return ensureLevel(planner, level);
 }
 
@@ -348,18 +354,27 @@ export async function openBook(journalId: string, level: PageLevel = PageLevel.W
  * checked and createBookFor for what is made.
  */
 export async function createJournal(input: unknown): Promise<string> {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
-  const journal = await createBookFor(userId, validateNewJournal(input));
+  const valid = validateNewJournal(input);
+  if (isGuestOwner(userId)) {
+    const count = await prisma.planner.count({ where: { ownerId: userId, isTemplate: false } });
+    if (count >= GUEST_JOURNAL_LIMIT) {
+      throw new Error(
+        `A guest can keep ${GUEST_JOURNAL_LIMIT} journals. Sign in to make more - the ones you have come with you.`
+      );
+    }
+  }
+  const journal = await createBookFor(userId, valid);
   return journal.id;
 }
 
 /** Rename a journal. Blank is refused rather than stored: a journal with no
  *  name cannot be told apart from the others in Saved. */
 export async function renameJournal(journalId: string, title: string): Promise<string> {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -379,7 +394,7 @@ export async function renameJournal(journalId: string, title: string): Promise<s
  * twice.
  */
 export async function deleteJournal(journalId: string): Promise<void> {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -469,7 +484,7 @@ export async function deleteJournal(journalId: string): Promise<void> {
  * correctly at either size with nothing trim-specific written down.
  */
 export async function setPlannerTrim(journalId: string, trim: PlannerTrimKey) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) throw new Error("Not signed in");
 
   const spec = PLANNER_TRIMS[trim];
@@ -566,7 +581,7 @@ export async function setPlannerTrim(journalId: string, trim: PlannerTrimKey) {
 }
 
 export async function resetPlannerToTemplate(journalId: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -709,7 +724,7 @@ export async function addPaletteModuleAt(
   columnStart: number,
   rowStart: number
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1206,7 +1221,7 @@ export async function updateModulePlacement(
   instanceId: string,
   placement: { columnStart: number; rowStart: number }
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1262,7 +1277,7 @@ export async function updateModulePlacement(
 // the actual "even if the section is full" behavior; nothing here
 // reimplements it.
 export async function moveModuleAcrossZones(instanceId: string, targetPageId: string, columnStart: number, rowStart: number) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1546,7 +1561,7 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
 // PlannerEditorCanvas's save flow, which diffs the tracked ids it started
 // with against what's still on the page).
 export async function deleteModuleInstance(instanceId: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1588,7 +1603,7 @@ export async function deleteModuleInstance(instanceId: string) {
 // separate handling needed for "deleted the bottom module" vs "deleted
 // one in the middle," they fall out of the same repack.
 export async function deleteModuleWithGravity(instanceId: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1666,7 +1681,7 @@ export async function updateModuleConfig(
   instanceId: string,
   propValues: Record<string, unknown>
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1724,7 +1739,7 @@ export async function updateModuleSize(
   instanceId: string,
   size: { columnSpan: number; rowSpan: number }
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -1821,7 +1836,7 @@ export async function resizeAdjacentModules(
   bottomInstanceId: string,
   deltaRows: number
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2016,7 +2031,7 @@ export async function resizeAdjacentModules(
 //   ends up as one contiguous block at the bottom, not scattered
 //   between individual members.
 export async function resizeStackFromBottom(bottomInstanceId: string, totalDeltaRows: number) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2210,7 +2225,7 @@ export async function updateWeekSettings(journalId: string, settings: {
   leftDates: number[]; // [Sun, Mon, Tue]
   rightDates: number[]; // [Wed, Thu, Fri, Sat]
 }) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2280,7 +2295,7 @@ export async function updateWeekSettings(journalId: string, settings: {
 // updateWeekSettings above, not a live-patchable single element: a font
 // change affects every module on both pages at once, not one instance.
 export async function updatePlannerFont(journalId: string, fontFamily: FontChoice) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2314,7 +2329,7 @@ export async function updatePlannerFont(journalId: string, fontFamily: FontChoic
  * without them is not a planner anybody wants.
  */
 export async function setPlannerDated(journalId: string, dated: boolean) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2341,7 +2356,7 @@ export async function setPlannerDated(journalId: string, dated: boolean) {
  * carry a third state to say so.
  */
 export async function setPlannerTerm(journalId: string, startISO: string | null, endISO: string | null) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2373,7 +2388,7 @@ export async function setPlannerTerm(journalId: string, startISO: string | null,
  * discard whatever had been changed.
  */
 export async function createLevelVariant(journalId: string, level: PageLevel, variantKey: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2458,7 +2473,7 @@ export async function createLevelVariant(journalId: string, level: PageLevel, va
  * new one goes after the ones that exist.
  */
 export async function addPageToLevel(journalId: string, level: PageLevel, variantKey: string | null) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2514,7 +2529,7 @@ export async function addPageToLevel(journalId: string, level: PageLevel, varian
  * variant are an ORDER and must stay 0..n-1 - check:levels enforces that.
  */
 export async function deletePageFromLevel(pageId: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2569,7 +2584,7 @@ export async function deletePageFromLevel(pageId: string) {
  * moved.
  */
 export async function deleteLevelVariant(journalId: string, level: PageLevel, variantKey: string) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2645,7 +2660,7 @@ export async function updateHourlySettings(journalId: string, settings: {
   // module below the hours and try again. See HOURS_DO_NOT_FIT.
   deleteLowestBelowToFit?: boolean;
 }) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -2945,7 +2960,7 @@ export async function updateHourlySettings(journalId: string, settings: {
 // handleStackResizeAdjacent applies either result identically without
 // needing to know which action actually ran.
 export async function resizeHourlyGridCore(instanceId: string, deltaRows: number) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -3152,7 +3167,7 @@ export async function savePageElements(
   pageId: string,
   elements: PolotnoElement[]
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }
@@ -3217,7 +3232,7 @@ export async function restoreModulePlacements(
     rowSpan: number;
   }>
 ) {
-  const { userId } = await auth();
+  const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
   }

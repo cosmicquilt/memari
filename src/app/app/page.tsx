@@ -1,5 +1,7 @@
-import { auth } from "@clerk/nextjs/server";
+import { claimGuestWork, currentOwner, signInPath } from "@/lib/owner";
+import { GUEST_IDLE_DAYS, GUEST_JOURNAL_LIMIT } from "@/lib/guest";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { journalsOf, templatePreviews } from "@/app/planner/journals";
 import { StartDialog } from "@/app/planner/StartDialog";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
@@ -8,10 +10,12 @@ import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCo
 // one. Asked for 2026-09-21, modelled on Photoshop's New Document dialog. A
 // journal's own address, /app/j/<id>, skips this and opens it directly.
 export default async function AppPage() {
-  const { userId, redirectToSignIn } = await auth();
-  if (!userId) return redirectToSignIn();
+  const owner = await currentOwner();
+  if (!owner) redirect(signInPath("/app"));
+  // Signed in on a browser that was used as a guest: bring that work along.
+  if (!owner.guest) await claimGuestWork(owner.id);
 
-  const journals = await journalsOf(userId);
+  const journals = await journalsOf(owner.id);
   const remembered = parseLastJournalCookie((await cookies()).get(LAST_JOURNAL_COOKIE)?.value);
   // Only if it is still one of theirs: a deleted journal, or another
   // person's id in a shared browser, is simply not preselected.
@@ -23,6 +27,7 @@ export default async function AppPage() {
       lastJournalId={lastJournalId}
       templates={templatePreviews()}
       defaultTerm={nextQuarter(new Date())}
+      guest={owner.guest ? { journalLimit: GUEST_JOURNAL_LIMIT, idleDays: GUEST_IDLE_DAYS } : null}
     />
   );
 }
