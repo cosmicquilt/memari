@@ -767,13 +767,23 @@ const boxResizeTransition = (easeMs: number) =>
 // clean "asking 1, 2, 3, adopted" with no oscillation.
 const ZONE_SWITCH_TICKS = 3;
 
-/** The centred edit button's largest size, in print px - twice the corner
- *  badges' 70, since it is now the module's main control rather than a
- *  corner mark. Smaller modules get less; see pencilSize. */
-const EDIT_BUTTON_MAX_PX = 140;
+/** The centred edit button's largest size, in print px. It was 140 - twice
+ *  the corner badges' 70 - when it moved to the middle and became the
+ *  module's main control. At that size it read as the loudest thing on a
+ *  large module rather than an affordance on it ("a bit smaller"), so it is
+ *  1.5x the badge instead of 2x. Smaller modules get less; see pencilSize. */
+const EDIT_BUTTON_MAX_PX = 105;
+/** The share of a small module the button may take, so it shrinks with its
+ *  box rather than only being capped by the maximum above. Lowered with it:
+ *  the cap alone would only have changed the large modules. */
+const EDIT_BUTTON_BOX_SHARE = 0.5;
 /** How present the edit button is while its module is hovered: there, not
- *  shouting over the drawing underneath it. */
-const EDIT_BUTTON_REST_OPACITY = 0.55;
+ *  shouting over the drawing underneath it. Quieter than the 0.55 it moved
+ *  to the middle with - centred over the drawing it covers more of it, so
+ *  the same ink reads as more. It is a hover-only affordance, not standing
+ *  chrome, which is why check:contrast's "never quieter than the text beside
+ *  it" rule does not reach it. */
+const EDIT_BUTTON_REST_OPACITY = 0.4;
 
 function NativeModule({
   instanceId,
@@ -1051,7 +1061,10 @@ function NativeModule({
   const pencilPressAt = useRef<{ x: number; y: number } | null>(null);
   // Small modules get a smaller button: never more than 60% of the box's
   // shorter side, so it cannot fill or overrun a slim one.
-  const pencilSize = Math.max(0, Math.min(EDIT_BUTTON_MAX_PX, 0.6 * Math.min(boxWidthPx, boxHeightPx)));
+  const pencilSize = Math.max(
+    0,
+    Math.min(EDIT_BUTTON_MAX_PX, EDIT_BUTTON_BOX_SHARE * Math.min(boxWidthPx, boxHeightPx))
+  );
   const [draftHabitsText, setDraftHabitsText] = useState((habits ?? []).join("\n"));
   const commitHabits = useCallback(
     (value: string) => {

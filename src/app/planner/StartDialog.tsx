@@ -58,6 +58,37 @@ const CONTROL = "#2a2a2a";
 const LINE = "rgba(255, 255, 255, 0.1)";
 const DIM = "rgba(255, 255, 255, 0.6)";
 const ACCENT = "#4a5cff";
+/** The segmented group's inner padding. Named because the sliding pill has
+ *  to start inside it, and a literal 3 in two places is two descriptions of
+ *  one measurement. */
+const SEGMENT_PADDING = 3;
+
+/**
+ * Behind the dialog: near-black, with a hint of granite.
+ *
+ * It was #111113 - a flat fill with a little BLUE in it, which is the
+ * default-feeling neutral this project's design language warns about. Asked
+ * for 2026-09-22: "black and white maybe a very little hint of brown
+ * granite".
+ *
+ * So the ground is a true neutral near-black and the speckle is the only
+ * colour in it, warm rather than blue. Three layers of fine dots on
+ * co-prime tile sizes (37/41, 53/61, 71/67 px): co-prime so the three
+ * patterns do not come back into step and print a visible grid, which is
+ * what a single tiled layer does. Alphas are 0.05 and under - at full
+ * strength this reads as dirt on the screen rather than stone.
+ *
+ * Pure CSS rather than an image: it covers the whole window at any size,
+ * costs no request, and cannot be the thing that has not loaded yet behind a
+ * dialog that is the first thing anyone sees.
+ */
+const BACKDROP_BASE = "#0c0c0c";
+const BACKDROP_GRANITE = [
+  "radial-gradient(circle at 30% 40%, rgba(150, 126, 104, 0.05) 0 0.9px, transparent 1.6px)",
+  "radial-gradient(circle at 70% 20%, rgba(168, 148, 128, 0.035) 0 0.8px, transparent 1.5px)",
+  "radial-gradient(circle at 45% 75%, rgba(120, 104, 90, 0.045) 0 1.1px, transparent 1.9px)",
+].join(", ");
+const BACKDROP_GRANITE_SIZE = "37px 41px, 53px 61px, 71px 67px";
 const DANGER = "#d92d20";
 const ERROR_TEXT = "#ff8f5c";
 
@@ -137,7 +168,18 @@ export function StartDialog({
   }, [backTo, close]);
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#111113", display: "grid", placeItems: "center", padding: 16 }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: BACKDROP_BASE,
+        backgroundImage: BACKDROP_GRANITE,
+        backgroundSize: BACKDROP_GRANITE_SIZE,
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+      }}
+    >
       <style>{STYLES}</style>
       <div
         role="dialog"
@@ -296,11 +338,27 @@ function SectionSwitch({
     ["pages", "Pages"],
     ["modules", "Modules"],
   ];
+  // NO SLIDING PILL HERE, and the reason is structural rather than a taste
+  // call. The three Saved sections are three different components, each
+  // rendering its own copy of this switcher, so choosing a section does not
+  // re-render the strip - it REPLACES it. Measured: the old node detaches
+  // (its rect reads 0) and a new one mounts knowing nothing about where the
+  // highlight was. A CSS transition has nothing to travel from, and six
+  // attempts at remembering the position across the remount each landed
+  // somewhere worse - the last one left the pill under the wrong label.
+  //
+  // The fix is to stop it remounting: hoist this switcher out of
+  // SavedJournals and the two SavedItems so it sits in one place above
+  // them. That is a restructure of three components' layouts, and it is
+  // the thing to do before trying this again.
   return (
     <div className="sd-seg" role="group" aria-label="Saved">
       {sections.map(([key, label], index) => (
         <button key={key} type="button" aria-pressed={section === key} onClick={() => onChange(key)}>
-          {label} <span style={{ opacity: 0.6 }}>{counts[index]}</span>
+          {label}
+          {/* Its own element with a real gap, rather than a space in the
+              text - "more space between those and the number". */}
+          <span style={{ opacity: 0.6, marginLeft: 9 }}>{counts[index]}</span>
         </button>
       ))}
     </div>
@@ -959,7 +1017,7 @@ const STYLES = `
 .sd-disclosure:hover { color: #fff; }
 .sd-chip { background: ${CONTROL}; border: 1px solid rgba(255,255,255,0.15); color: ${DIM}; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; min-height: 28px; }
 .sd-chip[aria-pressed="true"] { border-color: ${ACCENT}; color: #fff; background: #2d3170; }
-.sd-seg { display: inline-flex; background: ${CONTROL}; border-radius: 8px; padding: 3px; gap: 3px; width: max-content; }
+.sd-seg { display: inline-flex; background: ${CONTROL}; border-radius: 8px; padding: ${SEGMENT_PADDING}px; gap: 3px; width: max-content; }
 .sd-seg button { background: none; border: none; color: ${DIM}; font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; min-height: 26px; }
 .sd-seg button[aria-pressed="true"] { background: #3a3a3c; color: #fff; }
 .sd-count { border-top: 1px solid ${LINE}; padding-top: 12px; display: grid; gap: 2px; }
@@ -979,6 +1037,63 @@ const STYLES = `
 @media (prefers-reduced-motion: reduce) { .sd-card, .sd-disclosure span { transition: none !important; } }
 `;
 
+/** How the highlight travels, wherever it is used. One curve for both
+ *  strips, so the Saved/Create underline and the Journals/Pages/Modules pill
+ *  read as the same gesture rather than two that merely resemble each
+ *  other. */
+const HIGHLIGHT_SLIDE =
+  "transform 280ms cubic-bezier(0.25, 0.8, 0.25, 1), width 280ms cubic-bezier(0.25, 0.8, 0.25, 1)";
+
+/**
+ * Measure the selected control in a strip, so ONE highlight can slide to it.
+ *
+ * Written once and used twice: the Saved / Create underline and the
+ * Journals / Pages / Modules pill. They were going to be the same fifteen
+ * lines twice over, and two copies of a measurement is how the two ended up
+ * sliding at different speeds in the first place.
+ *
+ * Only a change of SELECTION slides. The first placement, a window resize and
+ * the fonts arriving all move it without animating - a highlight that swept
+ * in on load, or chased the controls while a window was dragged, would be
+ * motion for nothing. (A label's width really does change when its face
+ * arrives, which is why fonts.ready is listened for at all.)
+ */
+function useSlidingHighlight(active: string, selectedSelector: string) {
+  const strip = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<{ left: number; width: number; height: number; slide: boolean } | null>(
+    null
+  );
+  const placedFor = useRef<string | null>(null);
+
+  const measure = useCallback(
+    (slide: boolean) => {
+      const control = strip.current?.querySelector<HTMLElement>(selectedSelector);
+      if (!control) return;
+      setBox({
+        left: control.offsetLeft,
+        width: control.offsetWidth,
+        height: control.offsetHeight,
+        slide,
+      });
+    },
+    [selectedSelector]
+  );
+
+  useLayoutEffect(() => {
+    measure(placedFor.current !== null && placedFor.current !== active);
+    placedFor.current = active;
+  }, [active, measure]);
+
+  useEffect(() => {
+    const still = () => measure(false);
+    window.addEventListener("resize", still);
+    void document.fonts?.ready.then(still);
+    return () => window.removeEventListener("resize", still);
+  }, [measure]);
+
+  return { strip, box };
+}
+
 /**
  * The Saved / Create tabs, with ONE underline that slides to the chosen tab
  * - asked for, 2026-09-21: "animate the horizontal bar below to animate back
@@ -988,32 +1103,8 @@ const STYLES = `
  * face arrives). Under reduced motion it moves without sliding.
  */
 function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactNode }) {
-  const strip = useRef<HTMLDivElement | null>(null);
-  // Where the bar sits, and whether getting there should SLIDE. Only a change
-  // of tab slides: the first placement, a window resize and the fonts
-  // arriving all move it without animating - a bar that swept in on load, or
-  // chased the tabs while a window was dragged, would be motion for nothing.
-  const [bar, setBar] = useState<{ left: number; width: number; slide: boolean } | null>(null);
-  const placedFor = useRef<"saved" | "create" | null>(null);
+  const { strip, box } = useSlidingHighlight(tab, '[aria-selected="true"]');
   const reduceMotion = usePrefersReducedMotion();
-
-  const measure = useCallback((slide: boolean) => {
-    const button = strip.current?.querySelector<HTMLElement>(`[aria-selected="true"]`);
-    if (!button) return;
-    setBar({ left: button.offsetLeft, width: button.offsetWidth, slide });
-  }, []);
-
-  useLayoutEffect(() => {
-    measure(placedFor.current !== null && placedFor.current !== tab);
-    placedFor.current = tab;
-  }, [tab, measure]);
-
-  useEffect(() => {
-    const still = () => measure(false);
-    window.addEventListener("resize", still);
-    void document.fonts?.ready.then(still);
-    return () => window.removeEventListener("resize", still);
-  }, [measure]);
 
   return (
     <div
@@ -1021,11 +1112,11 @@ function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactN
       role="tablist"
       aria-label="Start"
       className="sd-tabs"
-      data-measured={bar ? "" : undefined}
+      data-measured={box ? "" : undefined}
       style={{ position: "relative", display: "flex", gap: 32 }}
     >
       {children}
-      {bar && (
+      {box && (
         <span
           aria-hidden="true"
           style={{
@@ -1033,14 +1124,11 @@ function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactN
             bottom: 0,
             left: 0,
             height: 2,
-            width: bar.width,
-            transform: `translateX(${bar.left}px)`,
+            width: box.width,
+            transform: `translateX(${box.left}px)`,
             background: "#fff",
             borderRadius: 1,
-            transition:
-              bar.slide && !reduceMotion
-                ? "transform 280ms cubic-bezier(0.25, 0.8, 0.25, 1), width 280ms cubic-bezier(0.25, 0.8, 0.25, 1)"
-                : "none",
+            transition: box.slide && !reduceMotion ? HIGHLIGHT_SLIDE : "none",
           }}
         />
       )}
