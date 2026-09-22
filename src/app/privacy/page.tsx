@@ -14,6 +14,10 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     src/app/guest/route.ts, and their saved items follow
 //   - the PDF is built on the server (src/app/app/export/route.ts) and
 //     handed back; it is not stored and not sent anywhere
+//   - Polotno was listed as a processor while the legacy /planner editor
+//     still loaded its SDK. That route and the dependency are gone, so the
+//     entry went with them - a processor you no longer use is a disclosure
+//     that misleads
 //
 // If any of that changes, this page changes in the same commit.
 
@@ -129,10 +133,6 @@ export default function PrivacyPage() {
         <LI>
           <A href="https://clerk.com/legal/privacy">Clerk</A> &mdash; accounts and sign-in, for
           people who choose to have one.
-        </LI>
-        <LI>
-          <A href="https://polotno.com/">Polotno</A> &mdash; an editor component still loaded on one
-          older page of the app, which may contact its own servers to check its licence.
         </LI>
       </UL>
 
