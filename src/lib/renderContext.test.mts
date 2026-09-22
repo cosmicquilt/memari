@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { propsForRender, renderContextForPage, renderOnPage, type RenderContextBook } from "./renderContext.js";
 import { renderModuleInstance } from "./renderModuleInstance.js";
+import { pageThumbnail } from "../app/planner/loadPlannerPages.js";
 import type { PageGrid } from "./grid.js";
 
 let failures = 0;
@@ -138,6 +139,47 @@ const stored = (id: string) => book.pages.find((p) => p.id === id)!.moduleInstan
   check(!/renderModuleInstance\(/.test(moduleEditor), "the module editor's preview is drawn as its page");
   const load = source("../app/planner/loadPlannerPages.ts");
   check(/renderOnPage\(instance, pageGrid, fontFamily, renderContext\)/.test(load), "the page load draws through renderOnPage");
+  // AND NOTHING RAW BESIDE IT. Checking only that renderOnPage appears is
+  // what let the thumbnail slip: pageThumbnail sat in this same file calling
+  // renderModuleInstance directly, so the positive check passed while every
+  // timeline card drew its page as the seed left it.
+  check(
+    !/renderModuleInstance\(/.test(load),
+    "loadPlannerPages draws no page module raw - the thumbnail did, and showed the seed's January"
+  );
+}
+
+// --- a thumbnail says what its page says ------------------------------------
+//
+// THE INVARIANT THE SOURCE CHECK IS A PROXY FOR. A page drawn small is the
+// same page: if the canvas reads "DEC 28 - JAN 3" and the card under it reads
+// "DEC 31 - JAN 6", one of them is lying about what will print. Measured on a
+// real book when this was reported, those were the exact two strings.
+{
+  const pageGrid: PageGrid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 75 };
+  const instance = {
+    id: "h",
+    locked: true,
+    columnStart: 6,
+    rowStart: 0,
+    columnSpan: 18,
+    rowSpan: 20,
+    propValues: stored("day"),
+    moduleType: { slug: "hourly-grid-core" },
+  };
+  const source = { ...pageGrid, gridGapPx: 12, moduleInstances: [instance] };
+  const context = renderContextForPage(book, "day");
+  const onCanvas = JSON.stringify(renderOnPage(instance, pageGrid, "serif", context));
+  const asThumbnail = JSON.stringify(pageThumbnail(source as never, "serif", context));
+  check(onCanvas.includes("THURSDAY"), "the canvas draws the page's own day");
+  check(
+    asThumbnail.includes("THURSDAY") && !asThumbnail.includes("MONDAY"),
+    "the thumbnail draws the same day as the canvas, not the stored template"
+  );
+  // With NO context it still draws the stored values, which is what a saved
+  // page - belonging to no term - has to keep doing.
+  const loose = JSON.stringify(pageThumbnail(source as never, "serif", null));
+  check(loose.includes("MONDAY"), "a thumbnail with no context draws the stored values, as a saved page must");
 }
 
 if (failures > 0) {

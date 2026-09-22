@@ -144,6 +144,9 @@ export function StartDialog({
   const [savedModules, setSavedModules] = useState(initialSavedModules);
   const [section, setSection] = useState<SavedSection>("journals");
   const [tab, setTab] = useState<"saved" | "create">(initialJournals.length > 0 ? "saved" : "create");
+  // The pill's travel is owned HERE because this component survives the
+  // section change that replaces the strip - see useSectionPillTravel.
+  useSectionPillTravel(section, tab === "saved");
   const [selectedId, setSelectedId] = useState<string | null>(lastJournalId ?? initialJournals[0]?.id ?? null);
   const [backTo, setBackTo] = useState<string | null>(lastJournalId);
   const [leaving, setLeaving] = useState(false);
@@ -338,23 +341,48 @@ function SectionSwitch({
     ["pages", "Pages"],
     ["modules", "Modules"],
   ];
-  // NO SLIDING PILL HERE, and the reason is structural rather than a taste
-  // call. The three Saved sections are three different components, each
-  // rendering its own copy of this switcher, so choosing a section does not
-  // re-render the strip - it REPLACES it. Measured: the old node detaches
-  // (its rect reads 0) and a new one mounts knowing nothing about where the
-  // highlight was. A CSS transition has nothing to travel from, and six
-  // attempts at remembering the position across the remount each landed
-  // somewhere worse - the last one left the pill under the wrong label.
-  //
-  // The fix is to stop it remounting: hoist this switcher out of
-  // SavedJournals and the two SavedItems so it sits in one place above
-  // them. That is a restructure of three components' layouts, and it is
-  // the thing to do before trying this again.
+  // The pill is a SIBLING of the buttons, placed from the selected one, so
+  // there is a single element to move. It does not animate itself: this
+  // strip is replaced wholesale whenever the section changes - the three
+  // Saved sections are different components, each rendering its own copy -
+  // so a new pill mounts knowing nothing of where the old one was. The
+  // travel is played by StartDialog, which does not unmount. See
+  // `useSectionPillTravel`.
+  const { strip, box } = useSlidingHighlight(section, '[aria-pressed="true"]');
+
   return (
-    <div className="sd-seg" role="group" aria-label="Saved">
+    <div
+      className="sd-seg"
+      role="group"
+      aria-label="Saved"
+      ref={strip}
+      data-measured={box ? "" : undefined}
+      style={{ position: "relative" }}
+    >
+      {box && (
+        <span
+          aria-hidden="true"
+          data-section-pill=""
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            height: box.height,
+            width: box.width,
+            transform: `translate(${box.left}px, ${SEGMENT_PADDING}px)`,
+            background: "#3a3a3c",
+            borderRadius: 6,
+          }}
+        />
+      )}
       {sections.map(([key, label], index) => (
-        <button key={key} type="button" aria-pressed={section === key} onClick={() => onChange(key)}>
+        <button
+          key={key}
+          type="button"
+          aria-pressed={section === key}
+          onClick={() => onChange(key)}
+          style={{ position: "relative", zIndex: 1 }}
+        >
           {label}
           {/* Its own element with a real gap, rather than a space in the
               text - "more space between those and the number". */}
@@ -363,6 +391,65 @@ function SectionSwitch({
       ))}
     </div>
   );
+}
+
+/**
+ * Slide the Saved sections' pill, from OUTSIDE the strip that holds it.
+ *
+ * The strip is replaced on every change, so nothing inside it can remember
+ * where the highlight was - a new pill mounts with no history, and six
+ * attempts at carrying the position across that remount each failed a
+ * different way (the entrance frame, StrictMode's double mount,
+ * `document.fonts.ready` resolving into the gap, and a guard that consumed
+ * the remembered value in a run that happened before the first measurement
+ * had committed).
+ *
+ * This hook lives in StartDialog, which does NOT unmount, so its ref
+ * genuinely survives. It finds whatever pill is on screen now and plays the
+ * travel with the Web Animations API - which takes an explicit from and to,
+ * and so needs no before-and-after paint to compare.
+ */
+function useSectionPillTravel(section: SavedSection, showing: boolean) {
+  const previous = useRef<number | null>(null);
+  const reduceMotion = usePrefersReducedMotion();
+
+  useLayoutEffect(() => {
+    if (!showing) {
+      previous.current = null;
+      return;
+    }
+    // THE PILL IS NOT THERE YET when this first runs. The strip measures
+    // itself in its own layout effect and renders the pill on the render
+    // after that, and a child's effects run before its parent's - so on the
+    // commit this effect sees, the new strip has no pill at all. Waiting is
+    // the difference between animating and silently doing nothing.
+    //
+    // A TIMEOUT, not requestAnimationFrame. A background tab pauses rAF
+    // entirely, so an rAF retry never fires there and the travel is silently
+    // skipped - which is exactly how this looked while being tested in a
+    // hidden pane: correct in every position, and never once moving.
+    let timer = 0;
+    const play = () => {
+      const pill = document.querySelector<HTMLElement>("[data-section-pill]");
+      if (!pill) {
+        timer = window.setTimeout(play, 0);
+        return;
+      }
+      const left = Number(pill.style.transform.match(/translate\((-?[\d.]+)px/)?.[1]) || 0;
+      const from = previous.current;
+      previous.current = left;
+      if (from === null || from === left || reduceMotion) return;
+      pill.animate(
+        [
+          { transform: `translate(${from}px, ${SEGMENT_PADDING}px)` },
+          { transform: `translate(${left}px, ${SEGMENT_PADDING}px)` },
+        ],
+        { duration: 280, easing: "cubic-bezier(0.25, 0.8, 0.25, 1)" }
+      );
+    };
+    play();
+    return () => window.clearTimeout(timer);
+  }, [section, showing, reduceMotion]);
 }
 
 const trimLabelFor = (widthPx: number) =>
@@ -1020,6 +1107,10 @@ const STYLES = `
 .sd-seg { display: inline-flex; background: ${CONTROL}; border-radius: 8px; padding: ${SEGMENT_PADDING}px; gap: 3px; width: max-content; }
 .sd-seg button { background: none; border: none; color: ${DIM}; font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; min-height: 26px; }
 .sd-seg button[aria-pressed="true"] { background: #3a3a3c; color: #fff; }
+/* Once the pill has been measured it paints the selection, as one element
+   that can travel. Until then the button keeps its own background, so the
+   chosen section is marked on the very first paint. */
+.sd-seg[data-measured] button[aria-pressed="true"] { background: none; }
 .sd-count { border-top: 1px solid ${LINE}; padding-top: 12px; display: grid; gap: 2px; }
 .sd-count b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .sd-count small { font-size: 12px; color: ${DIM}; }

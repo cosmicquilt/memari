@@ -25,12 +25,12 @@
 // caller must be a Server Component or another server action.
 
 import type { BookWithPages } from "./bookSeeding";
-import { findSpine, findTitle, withoutDates } from "@/lib/moduleRegistry";
+import { findSpine, findTitle } from "@/lib/moduleRegistry";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
-import { renderModuleInstance, type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { WeekSettings } from "./WeekSettingsPanel";
@@ -329,7 +329,8 @@ export async function loadPlannerPages(
         : LEVELS_IN_BINDING_ORDER.indexOf(a.level) - LEVELS_IN_BINDING_ORDER.indexOf(b.level)
     )
     .map((page) => {
-      const previewMarks = pageThumbnail(page, fontFamily, dated);
+      // Its own page's context, so a card is dated the way its page is.
+      const previewMarks = pageThumbnail(page, fontFamily, renderContextForPage(planner, page.id));
       return {
         pageId: page.id,
         level: page.level,
@@ -401,16 +402,31 @@ export async function loadPlannerPages(
 }
 
 /**
- * A page's thumbnail marks: every module drawn from its STORED props (the
- * timeline shows the templates, not one occurrence of them), with the dates
- * taken out on an undated journal. Shared by the timeline and the start
- * dialog's journal cards, so a journal looks the same in both - and by saved
- * pages, which are not a journal's pages but are drawn exactly as one.
+ * A page's thumbnail marks: every module drawn THE WAY ITS PAGE DRAWS IT.
+ *
+ * It used to draw the stored props instead, on the reasoning that the
+ * timeline shows the templates rather than one occurrence of them. The
+ * timeline does show templates - one card per template page, not one per
+ * week of the book - but a template's stored props still carry whatever the
+ * seed put in them, and the seed's week is "DEC 31 - JAN 6". So a journal
+ * whose term started in October had a canvas dated October above a thumbnail
+ * of the same page dated January. Reported as "i set term but timeline
+ * previews still show up like as january"; measured on a real book, canvas
+ * "DEC 28 - JAN 3" against thumbnail "DEC 31 - JAN 6" for one page.
+ *
+ * Two descriptions of one page, which is this codebase's oldest fault. It
+ * takes the page's render context now - the same one the canvas, the editor
+ * and the server actions all go through - so the two cannot disagree.
+ *
+ * Shared by the timeline and the start dialog's journal cards, so a journal
+ * looks the same in both, and by saved pages - which are not a journal's
+ * pages at all and so have no occurrence to be drawn as. They pass a context
+ * with a null occurrence, which draws the stored values, exactly as before.
  */
 export function pageThumbnail(
   page: ThumbnailSource,
   fontFamily: string,
-  dated: boolean
+  context: PageRenderContext | null
 ): PreviewMark[] {
   const pageGrid: PageGrid = {
     widthPx: page.widthPx,
@@ -424,8 +440,7 @@ export function pageThumbnail(
   for (const instance of page.moduleInstances) {
     if (instance.moduleType.slug === "freeform-element") continue;
     if (instance.columnStart === null || instance.rowStart === null) continue;
-    const props = dated ? instance.propValues : withoutDates(instance.moduleType.slug, instance.propValues);
-    elements.push(...flatten(renderModuleInstance({ ...instance, propValues: props }, pageGrid, fontFamily)));
+    elements.push(...flatten(renderOnPage(instance, pageGrid, fontFamily, context)));
   }
   // `skipped` is deliberately dropped here and fatal in check:preview. A
   // book holding one mark this vocabulary has not met should still show

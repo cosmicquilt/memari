@@ -7,6 +7,7 @@
 // be callable from a browser.
 
 import { prisma } from "@/lib/prisma";
+import { renderContextForPage } from "@/lib/renderContext";
 import type { PageLevel } from "@/generated/prisma/enums";
 import { LEVEL_PAGE_COUNT, LEVELS_IN_BINDING_ORDER, bookPageCount } from "@/lib/pageLevels";
 import { missingPlacements } from "@/lib/pageLayouts";
@@ -66,7 +67,9 @@ export async function journalsOf(ownerId: string): Promise<JournalCard[]> {
           .sort((a, b) => a.position - b.position)
           .slice(0, LEVEL_PAGE_COUNT[coverLevel])
           .map((page) => ({
-            previewMarks: pageThumbnail(page, fontFamily, planner.dated),
+            // The page's own context, so a card in the start dialog is dated
+            // the way the page is when you open it.
+            previewMarks: pageThumbnail(page, fontFamily, renderContextForPage(planner, page.id)),
             pageWidthPx: page.widthPx,
             pageHeightPx: page.heightPx,
           }))
