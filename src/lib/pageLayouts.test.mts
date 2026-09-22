@@ -21,8 +21,10 @@ import {
   frontMatterLayout,
   backMatterLayout,
   missingPlacements,
+  placementsOnFreeCells,
   titleCorrections,
   type ExistingInstance,
+  type LayoutPlacement,
   type StoredInstance,
 } from "./pageLayouts";
 import { moduleDefinition } from "./moduleRegistry";
@@ -153,6 +155,131 @@ for (const layout of [weekLayout(GRID_ROWS), monthLayout(GRID_ROWS)]) {
   }
 }
 
+// --- a seed never lands on somebody's own work -------------------------
+//
+// applyLayout runs on EVERY load and creates whatever is missing, at the
+// layout's own coordinates. A PresenceRule can stop matching while the cells
+// it describes are still occupied, and then the seed is created on top of
+// whatever is there. Nothing raises; the page simply has two modules in one
+// place. It was a fourth way to write an overlap, alongside the three the
+// drop path had.
+//
+// Both vulnerable rules are in live use, so both are named here.
+{
+  const GRID = GRID_ROWS;
+  /** A module already on the page, as a rect. */
+  const at = (columnStart: number, rowStart: number, columnSpan: number, rowSpan: number) => ({
+    columnStart,
+    rowStart,
+    columnSpan,
+    rowSpan,
+  });
+
+  // A placement's spans may be null - "the module type's default" - and a
+  // cell test needs numbers, so resolve them the way applyLayout does.
+  const resolve = (p: LayoutPlacement) => ({
+    ...p,
+    columnSpan: p.columnSpan ?? 6,
+    rowSpan: p.rowSpan ?? 4,
+  });
+
+  // 1. `by: "labeled-box-heading"` - the monthly page's Notes boxes. Rename
+  //    one and the rule stops matching while the box stays put.
+  {
+    const layout = monthLayout(GRID);
+    const renamed: ExistingInstance[] = [{ slug: "labeled-box", columnStart: 6, heading: "Ideas" }];
+    const missing = missingPlacements(layout, [renamed, []]).filter((p) => p.page === 0);
+    const notes = missing.find((p) => (p.propValues as { heading?: string }).heading === "Notes");
+    if (!notes) {
+      fail("month: renaming the Notes box no longer makes the layout want it back - this case has moved");
+    } else {
+      // Where the renamed box actually sits: the seed's own cells, because
+      // renaming a box does not move it.
+      const occupied = [at(notes.columnStart, notes.rowStart, notes.columnSpan ?? 6, notes.rowSpan ?? 4)];
+      const { create, blocked } = placementsOnFreeCells(missing.map(resolve), occupied);
+      if (blocked.length === 0) {
+        fail("month: a renamed Notes box would have the seeded Notes created on top of it");
+      }
+      for (const made of create) {
+        for (const rect of occupied) {
+          if (
+            made.columnStart < rect.columnStart + rect.columnSpan &&
+            rect.columnStart < made.columnStart + made.columnSpan &&
+            made.rowStart < rect.rowStart + rect.rowSpan &&
+            rect.rowStart < made.rowStart + made.rowSpan
+          ) {
+            fail(`month: seeded ${made.slug} would be created on top of the user's box`);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. `by: "slug"` - delete the to-do, put something else where it was.
+  {
+    const layout = weekLayout(GRID);
+    const missing = missingPlacements(layout, [[], []]);
+    const todo = missing.find((p) => p.slug === "todo-checklist");
+    if (!todo) {
+      fail("week: the layout no longer seeds a to-do - this case has moved");
+    } else {
+      const usersBox = at(todo.columnStart, todo.rowStart, todo.columnSpan ?? 6, todo.rowSpan ?? 4);
+      const { create, blocked } = placementsOnFreeCells([resolve(todo)], [usersBox]);
+      if (blocked.length !== 1 || create.length !== 0) {
+        fail("week: a deleted to-do would be re-created on top of whatever took its place");
+      }
+    }
+  }
+
+  // 3. TWO SEEDS CANNOT LAND ON EACH OTHER. The real layouts never
+  //    self-overlap - the check further down proves that - so nothing in
+  //    this repo exercises it, and a guard nothing exercises is the
+  //    dead-switch defect this file's own `seed: "each" | "all"` comment
+  //    was written about. Sabotage found it: dropping the line that makes an
+  //    accepted placement occupy its cells changed no result anywhere. So
+  //    the guard is stated directly instead.
+  {
+    const two: LayoutPlacement[] = [
+      {
+        slug: "labeled-box", page: 0, columnStart: 0, rowStart: 0,
+        columnSpan: 6, rowSpan: 6, locked: false, propValues: { heading: "First" },
+      },
+      {
+        slug: "labeled-box", page: 0, columnStart: 0, rowStart: 3,
+        columnSpan: 6, rowSpan: 6, locked: false, propValues: { heading: "Second" },
+      },
+    ];
+    const { create, blocked } = placementsOnFreeCells(two.map(resolve), []);
+    if (create.length !== 1 || blocked.length !== 1) {
+      fail(
+        `two overlapping placements gave ${create.length} created and ${blocked.length} blocked, expected 1 and 1`
+      );
+    }
+    if (create[0] && (create[0].propValues as { heading?: string }).heading !== "First") {
+      fail("of two overlapping placements, the one kept was not the first");
+    }
+  }
+
+  //    Every seed is created on an empty page,
+  //    which is the case that must not regress: this filter exists to stop
+  //    overlaps, not to stop seeding.
+  for (const layout of [weekLayout(GRID), monthLayout(GRID), dayLayout(GRID)]) {
+    const missing = missingPlacements(layout, [[], []]);
+    for (const page of [0, 1]) {
+      const forPage = missing.filter((p) => p.page === page).map(resolve);
+      const { create, blocked } = placementsOnFreeCells(forPage, []);
+      if (blocked.length > 0) {
+        fail(
+          `${layout.key} page ${page}: ${blocked.length} seed(s) refused on an EMPTY page - the layout overlaps itself`
+        );
+      }
+      if (create.length !== forPage.length) {
+        fail(`${layout.key} page ${page}: ${forPage.length} seeds became ${create.length}`);
+      }
+    }
+  }
+}
+
 // --- the trims -------------------------------------------------------
 //
 // 36 rows on 7x10, 34 on Letter. The difference has to land on the boxes
@@ -245,5 +372,6 @@ if (failures > 0) {
 console.log(
   "All page layout checks passed (both layouts match the seeded baseline, " +
     "are idempotent, leave a user's sidebar alone, fit both trims, overlap nowhere, " +
+    "never seed onto occupied cells, " +
     "and a stored title is put back to the layout's size)."
 );

@@ -21,7 +21,9 @@ import {
   titleCorrections,
   type PageLayout,
   type ExistingInstance,
+  placementsOnFreeCells,
 } from "@/lib/pageLayouts";
+import { moduleInstancesToRects } from "@/lib/grid";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import type { FontChoice, PlannerTheme } from "@/lib/theme";
 
@@ -74,6 +76,12 @@ async function applyLayout(
     moduleInstances: Array<{
       moduleType: { slug: string };
       columnStart: number | null;
+      // The GEOMETRY too, and not only for tidiness: a placement may only be
+      // created where there is room for it, and the cells a module occupies
+      // are not derivable from its slug. See placementsOnFreeCells.
+      rowStart: number | null;
+      columnSpan: number;
+      rowSpan: number;
       propValues: unknown;
     }>;
   }>
@@ -96,30 +104,67 @@ async function applyLayout(
   });
   const bySlug = new Map(types.map((t) => [t.slug, t]));
 
-  await prisma.moduleInstance.createMany({
-    data: missing.map((placement) => {
-      const type = bySlug.get(placement.slug);
-      if (!type) {
-        // A layout naming a module that is not registered is a bug in the
-        // layout, and a silent skip would leave a hole in the page that
-        // nobody could explain.
-        throw new Error(
-          `${layout.key} places "${placement.slug}", which is not a registered module type`
-        );
-      }
-      return {
-        pageId: pages[placement.page].id,
-        moduleTypeId: type.id,
-        placementMode: "GRID" as const,
-        locked: placement.locked,
-        columnStart: placement.columnStart,
-        rowStart: placement.rowStart,
-        columnSpan: placement.columnSpan ?? type.defaultColumnSpan,
-        rowSpan: placement.rowSpan ?? type.defaultRowSpan,
-        propValues: placement.propValues as Prisma.InputJsonValue,
-      };
-    }),
+  // The spans resolved, because a placement's own may be null - "take the
+  // module type's default" - and a cell test needs real numbers.
+  const resolved = missing.map((placement) => {
+    const type = bySlug.get(placement.slug);
+    if (!type) {
+      // A layout naming a module that is not registered is a bug in the
+      // layout, and a silent skip would leave a hole in the page that
+      // nobody could explain.
+      throw new Error(
+        `${layout.key} places "${placement.slug}", which is not a registered module type`
+      );
+    }
+    return {
+      placement,
+      type,
+      columnStart: placement.columnStart,
+      rowStart: placement.rowStart,
+      columnSpan: placement.columnSpan ?? type.defaultColumnSpan,
+      rowSpan: placement.rowSpan ?? type.defaultRowSpan,
+    };
   });
+
+  // ONE PAGE AT A TIME. A placement's `page` is an index into `pages`, and
+  // occupancy is a fact about one page - testing a left-page seed against
+  // the right page's modules would block it for no reason.
+  const rows: Prisma.ModuleInstanceCreateManyInput[] = [];
+  let blockedTotal = 0;
+  for (const [index, page] of pages.entries()) {
+    const occupied = moduleInstancesToRects(
+      page.moduleInstances.map((mi, i) => ({ id: `existing-${i}`, ...mi }))
+    );
+    const { create, blocked } = placementsOnFreeCells(
+      resolved.filter((r) => r.placement.page === index),
+      occupied
+    );
+    blockedTotal += blocked.length;
+    for (const item of create) {
+      rows.push({
+        pageId: page.id,
+        moduleTypeId: item.type.id,
+        placementMode: "GRID" as const,
+        locked: item.placement.locked,
+        columnStart: item.columnStart,
+        rowStart: item.rowStart,
+        columnSpan: item.columnSpan,
+        rowSpan: item.rowSpan,
+        propValues: item.placement.propValues as Prisma.InputJsonValue,
+      });
+    }
+  }
+
+  // Not silent. A blocked placement means somebody's own work is in the
+  // cells the layout wanted, which is normal and is also the only trace
+  // that this ran at all.
+  if (blockedTotal > 0) {
+    console.info(
+      `[applyLayout] ${layout.key}: ${blockedTotal} seeded placement(s) not created - their cells are occupied`
+    );
+  }
+  if (rows.length === 0) return false;
+  await prisma.moduleInstance.createMany({ data: rows });
   return true;
 }
 

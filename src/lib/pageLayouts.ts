@@ -23,6 +23,7 @@
 import { computeMonthCalendar } from "@/lib/monthCalendar";
 import { MIN_ROW_SPAN, moduleDefinition } from "@/lib/moduleRegistry";
 import type { PageLevel } from "@/lib/pageLevels";
+import { rectsOverlap, type GridRect } from "@/lib/grid";
 
 /** One module, where it goes, and what it starts with. */
 export type LayoutPlacement = {
@@ -114,6 +115,51 @@ function satisfies(rule: PresenceRule, existing: ExistingInstance[]): boolean {
  * Pure: no database, no module types, no ids. That is what lets the test
  * check the layout against a known-good arrangement directly.
  */
+/**
+ * Of the placements a layout is missing, the ones whose cells are FREE.
+ *
+ * `applyLayout` runs on every load and creates whatever `missingPlacements`
+ * returns, at the layout's own coordinates. On a page nobody has touched
+ * that is exactly right. On a page somebody HAS touched it was a silent
+ * overlap writer, because a PresenceRule can stop matching while the cells
+ * it describes are still occupied:
+ *
+ *   - `by: "slug"` - delete the to-do, put a box where it was, and the next
+ *     load re-creates the to-do on top of the box.
+ *   - `by: "labeled-box-heading"` - rename the monthly page's "Notes" and
+ *     the next load re-creates "Notes" on top of the box you renamed. Both
+ *     of the monthly layout's notes groups are keyed this way.
+ *
+ * Neither raises anything. The row is created, the page has two modules in
+ * the same cells, and the only sign is the drawing.
+ *
+ * So a placement is created only where there is room for it. That
+ * deliberately does NOT decide whether a deleted seed box should come back
+ * - where the cells are free it still does, exactly as before. It decides
+ * only that it may never come back ON something, which is never what
+ * anyone meant.
+ *
+ * Accepted placements join `occupied`, so two placements in one run cannot
+ * land on each other either.
+ */
+export function placementsOnFreeCells<T extends GridRect>(
+  placements: readonly T[],
+  occupied: readonly GridRect[]
+): { create: T[]; blocked: T[] } {
+  const taken: GridRect[] = [...occupied];
+  const create: T[] = [];
+  const blocked: T[] = [];
+  for (const placement of placements) {
+    if (taken.some((rect) => rectsOverlap(placement, rect))) {
+      blocked.push(placement);
+      continue;
+    }
+    create.push(placement);
+    taken.push(placement);
+  }
+  return { create, blocked };
+}
+
 export function missingPlacements(
   layout: PageLayout,
   pages: [ExistingInstance[], ExistingInstance[]]
