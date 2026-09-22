@@ -28,7 +28,11 @@ import type { FontChoice, PlannerTheme } from "@/lib/theme";
 export const WITH_PAGES = {
   pages: {
     orderBy: { position: "asc" },
-    include: { moduleInstances: { include: { moduleType: true } } },
+    include: {
+      moduleInstances: { include: { moduleType: true, savedModule: { select: { name: true } } } },
+      // Which saved page this one is a use of, by name - see savedItems.ts.
+      savedPage: { select: { name: true } },
+    },
   },
 } as const;
 

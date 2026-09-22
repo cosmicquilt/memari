@@ -1,7 +1,7 @@
 "use server";
 
 import { currentOwnerId } from "@/lib/owner";
-import { GUEST_JOURNAL_LIMIT, isGuestOwner } from "@/lib/guest";
+import { GUEST_JOURNAL_LIMIT, GUEST_SAVED_LIMIT, isGuestOwner } from "@/lib/guest";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { PageLevel } from "@/generated/prisma/enums";
@@ -39,6 +39,19 @@ import {
   createBookFor,
   JOURNAL_TITLE_MAX,
 } from "./bookSeeding";
+import {
+  addSavedPageToSet,
+  deleteSavedModule as deleteSavedModuleFor,
+  deleteSavedPage as deleteSavedPageFor,
+  renameSavedModule as renameSavedModuleFor,
+  renameSavedPage as renameSavedPageFor,
+  replacePagesWithSaved,
+  saveModuleAs,
+  savePagesAs,
+  savedModuleForAdd,
+  spreadSavedModuleProps,
+  syncLinkedPages,
+} from "./savedItems";
 import {
   renderContextForPage,
   renderOnPage,
@@ -566,7 +579,26 @@ export async function setPlannerTrim(journalId: string, trim: PlannerTrimKey) {
     }
   }
 
+  // A SAVED PAGE KEEPS THE SIZE IT WAS SAVED AT, so a page that follows one
+  // cannot change size and go on following it: every use would be rewritten
+  // with rows that do not fit. The journal's uses become its own pages,
+  // keeping what is on them, and the saved pages stay as they were.
+  const resizing = planner.pages.some(
+    (page) =>
+      page.widthPx !== spec.widthPx ||
+      page.heightPx !== spec.heightPx ||
+      page.gridRows !== spec.gridRows ||
+      page.marginPx !== spec.marginPx
+  );
   await prisma.$transaction([
+    ...(resizing
+      ? [
+          prisma.page.updateMany({
+            where: { plannerId: planner.id, savedPageId: { not: null } },
+            data: { savedPageId: null, savedPageIndex: null },
+          }),
+        ]
+      : []),
     prisma.page.updateMany({
       where: { id: { in: planner.pages.map((page) => page.id) } },
       data: {
@@ -663,6 +695,12 @@ export async function resetPlannerToTemplate(journalId: string) {
     : [];
 
   await prisma.$transaction([
+    // Resetting THIS journal's spread, not every journal's: a spread that
+    // follows a saved one stops following it before it is put back.
+    prisma.page.updateMany({
+      where: { id: { in: [leftPage.id, rightPage.id] } },
+      data: { savedPageId: null, savedPageIndex: null },
+    }),
     ...titleResets,
     ...hourlyResets,
     prisma.moduleInstance.deleteMany({
@@ -722,7 +760,9 @@ export async function addPaletteModuleAt(
   pageId: string,
   moduleTypeSlug: string,
   columnStart: number,
-  rowStart: number
+  rowStart: number,
+  /** A module from Saved: placed with its settings, and linked to it. */
+  savedModuleId: string | null = null
 ) {
   const userId = await currentOwnerId();
   if (!userId) {
@@ -755,6 +795,10 @@ export async function addPaletteModuleAt(
       const moduleType = await tx.moduleType.findUniqueOrThrow({
         where: { slug: moduleTypeSlug },
       });
+      const saved = savedModuleId ? await savedModuleForAdd(tx, userId, savedModuleId) : null;
+      if (saved && saved.slug !== moduleTypeSlug) {
+        throw new Error("Saved module not found");
+      }
 
       // todo-checklist and habit-tracker size *and position* themselves
       // to match whichever page they land on — 3 day-columns wide,
@@ -962,8 +1006,10 @@ export async function addPaletteModuleAt(
         pageGrid,
         effectiveColumnSpan,
         // A module that does not exist yet has no stored props - only
-        // whatever this drop overrides. The rest comes from the schema.
-        configOverrides
+        // whatever this drop overrides. The rest comes from the schema -
+        // or, for a saved module, from its own settings, which is also what
+        // the palette's drag preview is sized from.
+        saved ? { ...(saved.propValues as Record<string, unknown>), ...configOverrides } : configOverrides
       );
       const candidate = clampGridPlacement(pageGrid, {
         columnStart: effectiveColumnStart,
@@ -1121,6 +1167,8 @@ export async function addPaletteModuleAt(
         ...Object.fromEntries(
           Object.entries(schema.properties ?? {}).map(([key, def]) => [key, def.default])
         ),
+        // A saved module arrives as it was saved, not as the palette's.
+        ...((saved?.propValues ?? {}) as Record<string, unknown>),
         ...configOverrides,
       };
       // See getOrCreatePlanner's identical field on its own seeded boxes
@@ -1128,7 +1176,7 @@ export async function addPaletteModuleAt(
       // reset" target is just its own starting heading (the schema
       // default, "Notes"), same as any other instance's is whatever it
       // started as.
-      if (moduleTypeSlug === "labeled-box") {
+      if (moduleTypeSlug === "labeled-box" && !saved) {
         defaultConfig.templateHeading = defaultConfig.heading;
       }
 
@@ -1156,6 +1204,7 @@ export async function addPaletteModuleAt(
           columnSpan: effectiveColumnSpan,
           rowSpan: effectiveRowSpan,
           propValues: defaultConfig as Prisma.InputJsonValue,
+          savedModuleId: saved?.id ?? null,
         },
       });
 
@@ -1163,6 +1212,8 @@ export async function addPaletteModuleAt(
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
+
+  await syncLinkedPages([page.id]);
 
   const pageGrid = pageGridFor(page);
   const paletteFontFamily = fontFamilyFromTheme(page.planner.theme);
@@ -1190,6 +1241,7 @@ export async function addPaletteModuleAt(
     columnSpan: created.columnSpan,
     rowSpan: created.rowSpan,
     propValues: created.propValues,
+    savedModuleId: created.savedModuleId,
     element,
     // Everything the drop MOVED, re-rendered at its new geometry, the
     // same shape moveModuleAcrossZones returns. Without this the caller
@@ -1249,6 +1301,7 @@ export async function updateModulePlacement(
     where: { id: instanceId },
     data: { columnStart: clamped.columnStart, rowStart: clamped.rowStart },
   });
+  await syncLinkedPages([instance.pageId]);
 }
 
 // Repositioning an existing todo-checklist/habit-tracker/labeled-box
@@ -1524,6 +1577,7 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   }
 
   const updated = await prisma.$transaction(updates);
+  await syncLinkedPages([instance.pageId, targetPageId]);
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const slugById = new Map<string, string>([[instance.id, slug]]);
@@ -1577,6 +1631,7 @@ export async function deleteModuleInstance(instanceId: string) {
   }
 
   await prisma.moduleInstance.delete({ where: { id: instanceId } });
+  await syncLinkedPages([instance.pageId]);
 }
 
 // Deletes a module from the live native editor's hover-to-delete button
@@ -1662,6 +1717,7 @@ export async function deleteModuleWithGravity(instanceId: string) {
     prisma.moduleInstance.delete({ where: { id: target.id } }),
     ...plan.map((p) => prisma.moduleInstance.update({ where: { id: p.id }, data: { rowStart: p.rowStart } })),
   ]);
+  await syncLinkedPages([target.pageId]);
 
   return { deletedId: target.id, shifted: plan };
 }
@@ -1706,6 +1762,24 @@ export async function updateModuleConfig(
     where: { id: instanceId },
     data: { propValues: sanitized as Prisma.InputJsonValue },
   });
+  // A SAVED module's settings are every use's: the saved module and each of
+  // its instances take them, and every page holding one is synced. The
+  // editor is told whether any use besides this one is in this journal, so
+  // it can reload rather than go on showing the old settings there.
+  const touchedPages = instance.savedModuleId
+    ? await spreadSavedModuleProps(userId, instance.savedModuleId, sanitized as Prisma.InputJsonValue)
+    : [instance.pageId];
+  const rewritten = await syncLinkedPages(touchedPages);
+  const otherUsesHere = await prisma.moduleInstance.count({
+    where: {
+      id: { not: instance.id },
+      page: { plannerId: instance.page.plannerId },
+      OR: [
+        ...(instance.savedModuleId ? [{ savedModuleId: instance.savedModuleId }] : []),
+        { pageId: { in: rewritten } },
+      ],
+    },
+  });
 
   const pageGrid = pageGridFor(instance.page);
   const element = renderInstance(
@@ -1716,7 +1790,7 @@ export async function updateModuleConfig(
     await renderContextsForBookOf(updated.pageId)
   );
 
-  return { element, propValues: updated.propValues };
+  return { element, propValues: updated.propValues, otherUsesChanged: otherUsesHere > 0 };
 }
 
 // Grows/shrinks a non-locked module's row and/or column span, keeping its
@@ -1804,6 +1878,7 @@ export async function updateModuleSize(
     where: { id: instanceId },
     data: { columnSpan: clampedColumnSpan, rowSpan: clampedRowSpan },
   });
+  await syncLinkedPages([updated.pageId]);
 
   const element = renderInstance(
     updated,
@@ -1987,6 +2062,8 @@ export async function resizeAdjacentModules(
       })
     ),
   ]);
+
+  await syncLinkedPages([updatedTop.pageId, updatedBottom.pageId]);
 
   const fontFamily = fontFamilyFromTheme(top.page.planner.theme);
   const contexts = await renderContextsForBookOf(updatedTop.pageId);
@@ -2196,6 +2273,7 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   const updated = await prisma.$transaction(
     plan.map((p) => prisma.moduleInstance.update({ where: { id: p.id }, data: { rowStart: p.rowStart, rowSpan: p.rowSpan } }))
   );
+  await syncLinkedPages([bottom.pageId]);
 
   const fontFamily = fontFamilyFromTheme(bottom.page.planner.theme);
   const contexts = await renderContextsForBookOf(bottom.pageId);
@@ -2286,6 +2364,7 @@ export async function updateWeekSettings(journalId: string, settings: {
   applyDates(rightPage, settings.rightDates);
 
   await Promise.all(updates);
+  await syncLinkedPages([leftPage.id, rightPage.id]);
 }
 
 // Page Settings > Font. Planner-wide (not per-page/per-instance) — see
@@ -2449,6 +2528,11 @@ export async function createLevelVariant(journalId: string, level: PageLevel, va
           rowSpan: instance.rowSpan,
           zIndex: instance.zIndex,
           propValues: instance.propValues as Prisma.InputJsonValue,
+          // The copy is this occurrence's OWN - its pages do not follow a
+          // saved page, or customising February would change every use.
+          // A saved MODULE on them stays linked: that link is the module's,
+          // and its editor says so.
+          savedModuleId: instance.savedModuleId,
         })),
       });
     }
@@ -2527,6 +2611,10 @@ export async function addPageToLevel(journalId: string, level: PageLevel, varian
  *
  * The rest of the set is renumbered, because positions within a level and
  * variant are an ORDER and must stay 0..n-1 - check:levels enforces that.
+ *
+ * A USE OF A SAVED PAGE can go with things on it: they are kept in Saved, so
+ * removing it loses nothing - and emptying it first would empty every use.
+ * A saved spread goes as a whole, both pages.
  */
 export async function deletePageFromLevel(pageId: string) {
   const userId = await currentOwnerId();
@@ -2540,7 +2628,7 @@ export async function deletePageFromLevel(pageId: string) {
   if (!page || page.planner.ownerId !== userId) {
     throw new Error("Page not found");
   }
-  if (page.moduleInstances.length > 0) {
+  if (page.moduleInstances.length > 0 && !page.savedPageId) {
     throw new Error("Only a blank page can be removed. Delete what is on it first.");
   }
 
@@ -2552,16 +2640,21 @@ export async function deletePageFromLevel(pageId: string) {
     },
     orderBy: { position: "asc" },
   });
-  if (siblings.length <= 1) {
+  // The page, or every page of the saved spread it is one side of. Only one
+  // use of a saved page can be in a set, so these are that use's pages.
+  const removing = page.savedPageId
+    ? siblings.filter((sibling) => sibling.savedPageId === page.savedPageId)
+    : [page];
+  if (siblings.length - removing.length < 1) {
     throw new Error("A level needs at least one page.");
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.page.delete({ where: { id: page.id } });
+    await tx.page.deleteMany({ where: { id: { in: removing.map((r) => r.id) } } });
     // Renumbered in one pass, and to a range that cannot collide with the
     // rows still there: shifting 2 down to 1 while 1 still exists trips the
     // unique index. Negative positions are free.
-    const rest = siblings.filter((s) => s.id !== page.id);
+    const rest = siblings.filter((s) => !removing.some((r) => r.id === s.id));
     for (const [index, sibling] of rest.entries()) {
       if (sibling.position !== index) {
         await tx.page.update({ where: { id: sibling.id }, data: { position: -1 - index } });
@@ -2883,6 +2976,7 @@ export async function updateHourlySettings(journalId: string, settings: {
     ...updates,
     prisma.planner.update({ where: { id: planner.id }, data: { theme: nextTheme as Prisma.InputJsonValue } }),
   ]);
+  await syncLinkedPages(planner.pages.map((page) => page.id));
 
   // Every surviving grid-placed instance, with its post-change geometry and
   // a fresh render, in the same {id, rowStart, rowSpan, elements} shape
@@ -3131,6 +3225,7 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
 
   const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
   const updated = await prisma.$transaction(writes);
+  await syncLinkedPages(updated.map((row) => row.pageId));
 
   // Each row rendered as what it actually is. The fallback slug here used
   // to be the literal "hourly-grid-core", which was true while this only
@@ -3205,6 +3300,7 @@ export async function savePageElements(
       })),
     }),
   ]);
+  await syncLinkedPages([pageId]);
 }
 
 // Bulk placement restore, for undo/redo.
@@ -3278,6 +3374,7 @@ export async function restoreModulePlacements(
       })
     )
   );
+  await syncLinkedPages([...owned.map((mi) => mi.pageId), ...entries.map((entry) => entry.pageId)]);
 
   const fontFamily = fontFamilyFromTheme(owned[0].page.planner.theme);
   const contexts = await renderContextsForBookOf(owned[0].pageId);
@@ -3300,4 +3397,82 @@ export async function restoreModulePlacements(
       ),
     };
   });
+}
+
+
+// ------------------------------------------------------------------ Saved
+//
+// Saved > Pages and Saved > Modules. The work is in savedItems.ts; each of
+// these checks who is asking and hands it the owner.
+
+async function requireOwner(): Promise<string> {
+  const userId = await currentOwnerId();
+  if (!userId) throw new Error("Not signed in");
+  return userId;
+}
+
+/** A guest keeps GUEST_SAVED_LIMIT of each kind - see guest.ts. */
+async function refuseOverGuestLimit(userId: string, kind: "pages" | "modules") {
+  if (!isGuestOwner(userId)) return;
+  const count =
+    kind === "pages"
+      ? await prisma.savedPage.count({ where: { ownerId: userId } })
+      : await prisma.savedModule.count({ where: { ownerId: userId } });
+  if (count >= GUEST_SAVED_LIMIT) {
+    throw new Error(`A guest can keep ${GUEST_SAVED_LIMIT} saved ${kind}. Sign in to save more - what you have comes with you.`);
+  }
+}
+
+/** Save a timeline card's page or spread, linked - see savedItems.ts. */
+export async function savePagesToSaved(pageIds: string[], name: string): Promise<string> {
+  const userId = await requireOwner();
+  await refuseOverGuestLimit(userId, "pages");
+  const saved = await savePagesAs(userId, pageIds, name);
+  return saved.id;
+}
+
+/** A saved page or spread, added to the end of one set of a journal. */
+export async function addSavedPage(
+  journalId: string,
+  level: PageLevel,
+  variantKey: string | null,
+  savedPageId: string
+): Promise<string[]> {
+  const userId = await requireOwner();
+  const planner = await prisma.planner.findFirst({ where: journalWhere(userId, journalId), select: { id: true } });
+  if (!planner) throw new Error(JOURNAL_NOT_FOUND);
+  if (!Object.values(PageLevel).includes(level)) throw new Error("No such kind of page.");
+  if (variantKey !== null && (typeof variantKey !== "string" || variantKey.length > 32)) {
+    throw new Error("No such occurrence.");
+  }
+  return addSavedPageToSet(userId, planner.id, level, variantKey, savedPageId);
+}
+
+/** A card's page or spread replaced by a saved one, linked. */
+export async function replaceWithSavedPage(pageIds: string[], savedPageId: string): Promise<void> {
+  await replacePagesWithSaved(await requireOwner(), pageIds, savedPageId);
+}
+
+export async function renameSavedPage(savedPageId: string, name: string): Promise<string> {
+  return (await renameSavedPageFor(await requireOwner(), savedPageId, name)).name;
+}
+
+export async function deleteSavedPage(savedPageId: string): Promise<void> {
+  await deleteSavedPageFor(await requireOwner(), savedPageId);
+}
+
+/** Save a placed module with its settings, linked. */
+export async function saveModuleToSaved(instanceId: string, name: string): Promise<string> {
+  const userId = await requireOwner();
+  await refuseOverGuestLimit(userId, "modules");
+  const saved = await saveModuleAs(userId, instanceId, name);
+  return saved.id;
+}
+
+export async function renameSavedModule(savedModuleId: string, name: string): Promise<string> {
+  return (await renameSavedModuleFor(await requireOwner(), savedModuleId, name)).name;
+}
+
+export async function deleteSavedModule(savedModuleId: string): Promise<void> {
+  await deleteSavedModuleFor(await requireOwner(), savedModuleId);
 }

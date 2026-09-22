@@ -135,6 +135,14 @@ model Page {
   gridGapPx       Float            @default(12)
   marginPx        Float            @default(187.5)
   moduleInstances ModuleInstance[]
+  // A LINKED COPY of a saved page or spread, or null for a page of this
+  // journal's own. Every copy of one saved page holds the same modules:
+  // an edit to any of them is copied to the others and to the saved item
+  // itself - see src/app/planner/savedItems.ts. savedPageIndex is which
+  // page of the saved item this is: 0, or 1 for a spread's right page.
+  savedPageId     String?
+  savedPage       SavedPage?       @relation(fields: [savedPageId], references: [id], onDelete: SetNull)
+  savedPageIndex  Int?
 
   // Position is position within a LEVEL AND A VARIANT: the default weekly
   // spread has pages 0 and 1, and so does January's own monthly spread.
@@ -144,6 +152,7 @@ model Page {
   // null variantKey, which is most of them - would not be covered by the
   // constraint at all, since Postgres treats each NULL as distinct.
   @@unique([plannerId, level, variantKey, position], map: "Page_plannerId_level_variantKey_position_key")
+  @@index([savedPageId])
 }
 
 // The "class" of a draggable block: weekly-grid, habit-tracker, etc.
@@ -160,6 +169,7 @@ model ModuleType {
   defaultColumnSpan  Int              @default(1)
   defaultRowSpan     Int              @default(1)
   instances          ModuleInstance[]
+  savedModules       SavedModule[]
 }
 
 enum ModulePlacementMode {
@@ -200,5 +210,64 @@ model ModuleInstance {
   zIndex        Int                 @default(0)
   propValues    Json                @default("{}")
 
+  // A LINKED use of a saved module: its settings are the saved module's,
+  // and changing them here changes every use. Placement stays this
+  // instance's own - one saved tracker can sit in a sidebar here and full
+  // width there. See src/app/planner/savedItems.ts.
+  savedModuleId String?
+  savedModule   SavedModule?        @relation(fields: [savedModuleId], references: [id], onDelete: SetNull)
+
   @@index([pageId])
+  @@index([savedModuleId])
+}
+
+// A page or a two-page spread somebody saved to use again - Saved > Pages.
+//
+// LINKED, not copied (Andrew, 2026-09-21: "for now it can just change all
+// of them"): the pages it is used on are real pages carrying savedPageId,
+// and an edit to any one of them is copied to the rest and to `content`
+// here. `content` is what a new use is made from, and what the saved item
+// still holds after every page using it has gone.
+//
+// It keeps the SIZE it was saved at, and is only offered to journals of
+// that size: a 34-row Letter page does not fit a 36-row 7x10 one.
+model SavedPage {
+  id          String   @id @default(cuid())
+  ownerId     String
+  name        String
+  // 1 for a page, 2 for a spread.
+  pageCount   Int
+  widthPx     Float
+  heightPx    Float
+  gridColumns Int
+  gridRows    Int
+  gridGapPx   Float
+  marginPx    Float
+  // SavedPageContent - one list of module slots per page. See savedItems.ts.
+  content     Json
+  pages       Page[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+// A module somebody saved with its settings - Saved > Modules. Linked the
+// same way: every instance carrying savedModuleId shows these propValues.
+// columnSpan/rowSpan are the size it was saved at, for the preview only;
+// a placed use takes the size of wherever it is dropped.
+model SavedModule {
+  id           String           @id @default(cuid())
+  ownerId      String
+  name         String
+  moduleTypeId String
+  moduleType   ModuleType       @relation(fields: [moduleTypeId], references: [id])
+  propValues   Json             @default("{}")
+  columnSpan   Int
+  rowSpan      Int
+  instances    ModuleInstance[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([ownerId])
 }

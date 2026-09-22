@@ -62,12 +62,23 @@ export const LEVEL_PAGE_COUNT: Record<PageLevel, number> = {
  * The timeline paired every level two at a time, which made two pages added
  * to Beginning look like a spread they never were. Every card of a set still
  * opens the whole set - the canvas draws it all.
+ *
+ * The one other spread is a SAVED one added after it: `joined(a, b)` says
+ * whether page b is the right-hand page of the spread a starts, and a pair it
+ * says yes to is one card. Nothing else joins.
  */
-export function inSpreads<T>(pages: T[], level: PageLevel): T[][] {
+export function inSpreads<T>(pages: T[], level: PageLevel, joined: (a: T, b: T) => boolean = () => false): T[][] {
   const spread = Math.max(1, LEVEL_PAGE_COUNT[level]);
-  return [pages.slice(0, spread), ...pages.slice(spread).map((page) => [page])].filter(
-    (card) => card.length > 0
-  );
+  const cards = [pages.slice(0, spread)];
+  for (let i = spread; i < pages.length; i++) {
+    if (i + 1 < pages.length && joined(pages[i], pages[i + 1])) {
+      cards.push([pages[i], pages[i + 1]]);
+      i++;
+    } else {
+      cards.push([pages[i]]);
+    }
+  }
+  return cards.filter((card) => card.length > 0);
 }
 
 /**

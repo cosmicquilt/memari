@@ -12,6 +12,11 @@
 //
 // A guest (see guest.ts) sees what that means - journals kept in this
 // browser, deleted after a while unopened - and how to keep them: sign in.
+//
+// Saved holds three kinds of thing (Andrew, 2026-09-21): Journals, Pages -
+// a saved page or a saved spread - and Modules. Only a journal OPENS from
+// here; a saved page or module has nowhere to go until a journal is open, so
+// here they are looked at, renamed and deleted, and used from the editor.
 
 import {
   useCallback,
@@ -29,8 +34,19 @@ import type { PageLevel } from "@/lib/pageLevels";
 import { LEVELS_IN_BINDING_ORDER, LEVEL_LABELS, LEVEL_PAGE_COUNT, bookPageCount } from "@/lib/pageLevels";
 import type { PlannerTrimKey } from "@/lib/planner-trims";
 import type { JournalCard, ThumbnailPage } from "./journals";
-import { createJournal, deleteJournal, renameJournal } from "./actions";
+import {
+  createJournal,
+  deleteJournal,
+  deleteSavedModule,
+  deleteSavedPage,
+  renameJournal,
+  renameSavedModule,
+  renameSavedPage,
+} from "./actions";
 import { PagePreview } from "./PagePreview";
+import { SavedThumb } from "./SavedThumb";
+import type { SavedModuleCard, SavedPageCard } from "./savedItems";
+import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { usePrefersReducedMotion } from "./useMediaQuery";
 
 // The editor's chrome - see the design-language memory. Solid surfaces, one
@@ -71,14 +87,20 @@ function termLabel(start: string | null, end: string | null): string {
 
 const levelsLabel = (levels: PageLevel[]) => levels.map((l) => LEVEL_LABELS[l]).join(" · ") || "No pages yet";
 
+type SavedSection = "journals" | "pages" | "modules";
+
 export function StartDialog({
   journals: initialJournals,
+  savedPages: initialSavedPages,
+  savedModules: initialSavedModules,
   lastJournalId,
   templates,
   defaultTerm,
   guest,
 }: {
   journals: JournalCard[];
+  savedPages: SavedPageCard[];
+  savedModules: SavedModuleCard[];
   lastJournalId: string | null;
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
@@ -87,6 +109,9 @@ export function StartDialog({
 }) {
   const router = useRouter();
   const [journals, setJournals] = useState(initialJournals);
+  const [savedPages, setSavedPages] = useState(initialSavedPages);
+  const [savedModules, setSavedModules] = useState(initialSavedModules);
+  const [section, setSection] = useState<SavedSection>("journals");
   const [tab, setTab] = useState<"saved" | "create">(initialJournals.length > 0 ? "saved" : "create");
   const [selectedId, setSelectedId] = useState<string | null>(lastJournalId ?? initialJournals[0]?.id ?? null);
   const [backTo, setBackTo] = useState<string | null>(lastJournalId);
@@ -168,8 +193,62 @@ export function StartDialog({
           </p>
         )}
         <div id="start-panel" role="tabpanel" aria-labelledby={`start-tab-${tab}`} className="sd-body">
-          {tab === "saved" ? (
+          {tab === "saved" && section === "pages" ? (
+            <SavedItems
+              // Keyed by kind: the two sections are the same component in the
+              // same place, and without a key the one shown second inherited
+              // the first's selection - an id it does not have.
+              key="page"
+              kind="page"
+              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              items={savedPages.map((page) => ({
+                id: page.id,
+                name: page.name,
+                kindLabel: page.pageCount === 2 ? "Spread" : "Page",
+                usedIn: page.usedIn,
+                size: trimLabelFor(page.size.widthPx),
+                thumb: <SavedThumb previews={page.previews} widthPx={page.size.widthPx} heightPx={page.size.heightPx} height={100} />,
+              }))}
+              onRename={async (id, name) => {
+                const saved = await renameSavedPage(id, name);
+                setSavedPages((all) => all.map((p) => (p.id === id ? { ...p, name: saved } : p)));
+                return saved;
+              }}
+              onDelete={async (id) => {
+                await deleteSavedPage(id);
+                setSavedPages((all) => all.filter((p) => p.id !== id));
+              }}
+            />
+          ) : tab === "saved" && section === "modules" ? (
+            <SavedItems
+              key="module"
+              kind="module"
+              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              items={savedModules.map((module) => ({
+                id: module.id,
+                name: module.name,
+                kindLabel: module.kind,
+                usedIn: module.usedIn,
+                size: null,
+                thumb: (
+                  <span style={{ display: "block", position: "relative", height: "100%", maxWidth: "100%", aspectRatio: `${module.preview.widthPx} / ${module.preview.heightPx}`, background: "#fdfcf9" }}>
+                    <PagePreview page={{ previewMarks: module.preview.marks, pageWidthPx: module.preview.widthPx, pageHeightPx: module.preview.heightPx }} />
+                  </span>
+                ),
+              }))}
+              onRename={async (id, name) => {
+                const saved = await renameSavedModule(id, name);
+                setSavedModules((all) => all.map((m) => (m.id === id ? { ...m, name: saved } : m)));
+                return saved;
+              }}
+              onDelete={async (id) => {
+                await deleteSavedModule(id);
+                setSavedModules((all) => all.filter((m) => m.id !== id));
+              }}
+            />
+          ) : tab === "saved" ? (
             <SavedJournals
+              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
               journals={journals}
               selectedId={selectedId}
               onSelect={setSelectedId}
@@ -202,7 +281,37 @@ export function StartDialog({
 
 // --- Saved -----------------------------------------------------------------
 
+/** Journals, Pages, Modules - which kind of saved thing Saved is showing. */
+function SectionSwitch({
+  section,
+  onChange,
+  counts,
+}: {
+  section: SavedSection;
+  onChange: (section: SavedSection) => void;
+  counts: [number, number, number];
+}) {
+  const sections: Array<[SavedSection, string]> = [
+    ["journals", "Journals"],
+    ["pages", "Pages"],
+    ["modules", "Modules"],
+  ];
+  return (
+    <div className="sd-seg" role="group" aria-label="Saved">
+      {sections.map(([key, label], index) => (
+        <button key={key} type="button" aria-pressed={section === key} onClick={() => onChange(key)}>
+          {label} <span style={{ opacity: 0.6 }}>{counts[index]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const trimLabelFor = (widthPx: number) =>
+  Object.values(PLANNER_TRIMS).find((trim) => trim.widthPx === widthPx)?.label ?? `${widthPx}px wide`;
+
 function SavedJournals({
+  switcher,
   journals,
   selectedId,
   onSelect,
@@ -212,6 +321,7 @@ function SavedJournals({
   onDeleted,
   leaving,
 }: {
+  switcher: ReactNode;
   journals: JournalCard[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -230,7 +340,7 @@ function SavedJournals({
   return (
     <>
       <div className="sd-main">
-        <div className="sd-label">Journals ({journals.length})</div>
+        {switcher}
         {journals.length === 0 ? (
           <p style={{ color: DIM, margin: 0 }}>
             No journals yet.{" "}
@@ -378,6 +488,205 @@ function JournalDetails({
           {leaving ? "Opening…" : "Open"}
         </button>
       </div>
+    </>
+  );
+}
+
+/** A saved page or module, as Saved lists it. */
+type SavedItemCard = {
+  id: string;
+  name: string;
+  /** "Page", "Spread", or the module's kind. */
+  kindLabel: string;
+  usedIn: number;
+  /** The page size a saved page keeps; null for a module, which has none. */
+  size: string | null;
+  thumb: ReactNode;
+};
+
+/**
+ * Saved > Pages and Saved > Modules. Listed, renamed and deleted here - they
+ * are USED from the editor, which is where there is a page to put one on.
+ * The empty state says where, since that is the one thing a person arriving
+ * here with none cannot guess.
+ */
+function SavedItems({
+  kind,
+  switcher,
+  items,
+  onRename,
+  onDelete,
+}: {
+  kind: "page" | "module";
+  switcher: ReactNode;
+  items: SavedItemCard[];
+  onRename: (id: string, name: string) => Promise<string>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id ?? null);
+  const selected = items.find((item) => item.id === selectedId) ?? null;
+  return (
+    <>
+      <div className="sd-main">
+        {switcher}
+        {items.length === 0 ? (
+          <p style={{ color: DIM, margin: 0, lineHeight: 1.5, maxWidth: 520 }}>
+            {kind === "page"
+              ? "No saved pages yet. In a journal, hover a page in the timeline, open its menu from the dots on its corner, and choose Save. A spread saves as one."
+              : "No saved modules yet. In a journal, open a module to edit it and choose \u201cSave this module\u201d."}
+          </p>
+        ) : (
+          <div className="sd-grid">
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="sd-card"
+                aria-pressed={item.id === selectedId}
+                onClick={() => setSelectedId(item.id)}
+              >
+                <span className="sd-thumb">{item.thumb}</span>
+                <span className="sd-name">{item.name}</span>
+                <span className="sd-meta">
+                  {item.kindLabel} · {usedInLabel(item.usedIn)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <aside className="sd-details" aria-live="polite">
+        {selected ? (
+          <SavedItemDetails
+            key={selected.id}
+            kind={kind}
+            item={selected}
+            onRename={onRename}
+            onDeleted={async (id) => {
+              await onDelete(id);
+              const rest = items.filter((item) => item.id !== id);
+              setSelectedId(rest[0]?.id ?? null);
+            }}
+          />
+        ) : (
+          <p style={{ color: DIM, margin: 0 }}>
+            {items.length === 0 ? "" : `Select a saved ${kind} to see it here.`}
+          </p>
+        )}
+      </aside>
+    </>
+  );
+}
+
+const usedInLabel = (n: number) => (n === 0 ? "not used" : n === 1 ? "used in 1 journal" : `used in ${n} journals`);
+
+function SavedItemDetails({
+  kind,
+  item,
+  onRename,
+  onDeleted,
+}: {
+  kind: "page" | "module";
+  item: SavedItemCard;
+  onRename: (id: string, name: string) => Promise<string>;
+  onDeleted: (id: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(item.name);
+  const [error, setError] = useState<string | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const commitName = async () => {
+    const next = name.trim();
+    if (next === item.name) return;
+    if (!next) {
+      setName(item.name);
+      return;
+    }
+    try {
+      setName(await onRename(item.id, next));
+      setError(null);
+    } catch (e) {
+      setName(item.name);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const remove = async () => {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      await onDeleted(item.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+      setArmed(false);
+    }
+  };
+
+  const what = kind === "page" ? (item.kindLabel === "Spread" ? "spread" : "page") : "module";
+  return (
+    <>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div className="sd-label">Saved {what}</div>
+        <input
+          className="sd-title-input"
+          value={name}
+          aria-label={`Saved ${what} name`}
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => void commitName()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setName(item.name);
+            }
+          }}
+        />
+      </div>
+      <span className="sd-thumb" style={{ height: 160 }}>
+        {item.thumb}
+      </span>
+      <dl className="sd-facts">
+        <Fact label="Kind">{item.kindLabel}</Fact>
+        {item.size && <Fact label="Size">{item.size}</Fact>}
+        <Fact label="Used">{usedInLabel(item.usedIn)}</Fact>
+      </dl>
+      <p style={{ color: DIM, fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>
+        Linked: a change to any use of it changes every use.{" "}
+        {kind === "page"
+          ? `Add it to a journal from the \u201c+\u201d at the end of a row in the timeline${item.size ? `, in a ${item.size} journal` : ""}.`
+          : "Place it from Saved at the top of the Modules panel."}
+      </p>
+      {error && <p style={{ color: ERROR_TEXT, fontSize: 12, margin: 0 }}>{error}</p>}
+      <div className="sd-actions">
+        <button
+          type="button"
+          className="sd-btn"
+          onClick={() => void remove()}
+          onBlur={() => setArmed(false)}
+          disabled={busy}
+          title={
+            kind === "page"
+              ? "Journals using it keep the pages as they are, no longer linked"
+              : "Modules placed from it keep their settings, no longer linked"
+          }
+          style={armed ? { background: DANGER, borderColor: DANGER, color: "#fff" } : undefined}
+        >
+          {armed ? `Delete saved ${what}?` : "Delete"}
+        </button>
+      </div>
+      {armed && (
+        <p style={{ color: DIM, fontSize: 12, lineHeight: 1.45, margin: 0 }}>
+          {kind === "page"
+            ? "Journals using it keep those pages exactly as they are - they just stop being linked."
+            : "Modules placed from it keep their settings - they just stop being linked."}
+        </p>
+      )}
     </>
   );
 }

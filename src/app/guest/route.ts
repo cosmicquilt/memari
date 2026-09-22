@@ -6,9 +6,9 @@
 // keeps its id - pressing the button twice must not orphan the journals the
 // first press made.
 //
-// Also where abandoned guest journals are cleared: guest journals nobody has
-// opened for GUEST_IDLE_DAYS are deleted whenever someone starts as a guest.
-// Cheap - one indexed delete - and it needs no scheduled job to exist.
+// Also where abandoned guest work is cleared: guest journals nobody has
+// opened for GUEST_IDLE_DAYS (and then their saved items), deleted whenever
+// someone starts as a guest. A few indexed queries, and no scheduled job.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -35,9 +35,28 @@ export async function POST(request: NextRequest) {
   }
 
   const cutoff = new Date(Date.now() - GUEST_IDLE_DAYS * 24 * 60 * 60 * 1000);
-  await prisma.planner.deleteMany({
-    where: { ownerId: { startsWith: GUEST_OWNER_PREFIX }, updatedAt: { lt: cutoff } },
-  });
+  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX }, updatedAt: { lt: cutoff } };
+  await prisma.planner.deleteMany({ where: idleGuest });
+  // A guest's saved items go once the guest has no journals left and the
+  // item itself has sat as long. Not on idleness alone: a saved page is only
+  // touched when it is edited, and a guest still using their journals would
+  // otherwise lose it from Saved.
+  const savedOwners = new Set(
+    [
+      ...(await prisma.savedPage.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
+      ...(await prisma.savedModule.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
+    ].map((row) => row.ownerId)
+  );
+  if (savedOwners.size > 0) {
+    const active = await prisma.planner.findMany({
+      where: { ownerId: { in: [...savedOwners] } },
+      select: { ownerId: true },
+      distinct: ["ownerId"],
+    });
+    for (const row of active) savedOwners.delete(row.ownerId);
+    const gone = { ...idleGuest, ownerId: { in: [...savedOwners] } };
+    await prisma.$transaction([prisma.savedPage.deleteMany({ where: gone }), prisma.savedModule.deleteMany({ where: gone })]);
+  }
 
   const id = guestIdFromCookie(request.cookies.get(GUEST_COOKIE)?.value) ?? newGuestId();
   const value = guestCookieValue(id)!;

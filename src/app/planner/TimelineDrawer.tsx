@@ -67,10 +67,15 @@ import type { TimelinePage } from "./loadPlannerPages";
 import { useJournalId } from "./journalContext";
 import {
   addPageToLevel,
+  addSavedPage,
   createLevelVariant,
   deletePageFromLevel,
   deleteLevelVariant,
+  replaceWithSavedPage,
+  savePagesToSaved,
 } from "./actions";
+import { useSavedItems, type SavedPageOption } from "./savedContext";
+import { SavedThumb } from "./SavedThumb";
 import { useAsyncAction } from "./useAsyncAction";
 import { PagePreview } from "./PagePreview";
 
@@ -1397,11 +1402,15 @@ function LevelGroupInner({
   // level's SPREAD as one card, then each added page as its own (see
   // inSpreads), lifted one at a time.
   const cardsOf = (setKey: string, setPages: TimelinePage[], selected: boolean) =>
-    inSpreads(setPages, level).map((spread, index) => ({
+    inSpreads(setPages, level, joinedSavedSpread).map((spread, index) => ({
       key: `${setKey}:${index}`,
       pages: spread,
       selected,
       index,
+      // A card added to the set - not its first - that is a use of a saved
+      // page can be taken out whole: what is on it is kept in Saved.
+      canRemoveLinked: index > 0 && isOneSavedUse(spread) && setPages.length > spread.length,
+      savedInSet: savedIdsIn(setPages),
     }));
   const defaultCards = cardsOf(DEFAULT_SET_KEY, defaults, defaultSelected);
   const variantCards = variants.map(([key, variantPages]) =>
@@ -1487,6 +1496,8 @@ function LevelGroupInner({
                   // offering it. The set, not this card: page 3 alone on its
                   // card is still one of three.
                   canRemoveBlank={defaults.length > 1}
+                  canRemoveLinked={one.canRemoveLinked}
+                  savedInSet={one.savedInSet}
                   highContrast={highContrast}
                   reduceMotion={reduceMotion}
                   onOpen={() => onOpen(level, null)}
@@ -1507,7 +1518,13 @@ function LevelGroupInner({
             of the default's, and offering to grow one of them out of step
             with the other is a question nobody asked. */}
         <div style={{ display: "flex", height: CARD_ROW_HEIGHT, alignItems: "center", flexShrink: 0, transition: rowTransition }}>
-          <AddPageCard card={card} level={level} variantKey={null} reduceMotion={reduceMotion} />
+          <AddPageCard
+            card={card}
+            level={level}
+            variantKey={null}
+            reduceMotion={reduceMotion}
+            savedInSet={savedIdsIn(defaults)}
+          />
         </div>
         {/* An occurrence with its own layout sits BESIDE the default, not on
             top of it. This is exactly where the design originally had cards
@@ -1545,6 +1562,8 @@ function LevelGroupInner({
                         }
                       : undefined
                   }
+                  canRemoveLinked={one.canRemoveLinked}
+                  savedInSet={one.savedInSet}
                   card={card}
                   highContrast={highContrast}
                   reduceMotion={reduceMotion}
@@ -1708,13 +1727,8 @@ function CogButton({
 }
 
 /**
- * The months (or weeks, or days) this level covers, and which of them have a
- * layout of their own.
- *
- * REPEAT BY DEFAULT, CUSTOMISE BY EXCEPTION. Every occurrence gets the
- * default layout unless it is given one here, so this list is almost always
- * all "default" - which is the point. Most books want one spread repeated,
- * and the exception has to cost nothing when nobody uses it.
+ * A panel that opens UPWARDS from a control in the drawer: the cog's list of
+ * occurrences, the "+" card's choice of page, a card's menu.
  *
  * IT CANNOT LIVE IN THE DRAWER'S TREE, and this shipped broken because it
  * did. The panel opens UPWARDS out of a level group, and every level group
@@ -1735,38 +1749,33 @@ function CogButton({
  * far the filmstrip has been scrolled, which is not a number this component
  * can know.
  */
-function OccurrencePopover({
+function AnchoredPanel({
   anchorRef,
-  level,
-  occurrences: list,
-  customised,
+  label,
   onClose,
-  onOpenDefault,
+  width = PANEL_WIDTH,
+  children,
 }: {
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-  level: PageLevel;
-  occurrences: Occurrence[] | null;
-  customised: Set<string>;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  label: string;
   onClose: () => void;
-  /** Where to go when an occurrence stops having its own layout. */
-  onOpenDefault: () => void;
+  width?: number;
+  children: React.ReactNode;
 }) {
-  const journalId = useJournalId();
-  const [pending, error, run] = useAsyncAction();
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
 
   // Before paint, so it never shows for a frame in the wrong place. Re-run on
   // scroll (capture: the filmstrip's own scroll does not bubble) and on
-  // resize, so the panel stays on its cog rather than being left behind.
+  // resize, so the panel stays on its control rather than being left behind.
   useLayoutEffect(() => {
     const place = () => {
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return;
       setAt({
-        // Right-aligned with the cog, which sits in its box's top-right
-        // corner: the panel opens back over its own level rather than out
-        // over the next one. Kept on screen either way.
-        left: Math.max(8, Math.min(rect.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - 8)),
+        // Right-aligned with the control, which for the cog sits in its box's
+        // top-right corner: the panel opens back over its own level rather
+        // than out over the next one. Kept on screen either way.
+        left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
         bottom: window.innerHeight - rect.top + 10,
       });
     };
@@ -1777,7 +1786,7 @@ function OccurrencePopover({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [anchorRef]);
+  }, [anchorRef, width]);
 
   // Escape closes, like every other dismissible surface in the editor.
   useEffect(() => {
@@ -1800,13 +1809,13 @@ function OccurrencePopover({
       />
       <div
         role="dialog"
-        aria-label={`${LEVEL_LABELS[level]} layouts`}
+        aria-label={label}
         style={{
           position: "fixed",
           left: at.left,
           bottom: at.bottom,
           zIndex: 51,
-          width: PANEL_WIDTH,
+          width,
           maxHeight: 320,
           overflowY: "auto",
           background: "#1c1c1e",
@@ -1818,89 +1827,125 @@ function OccurrencePopover({
           fontSize: 12,
         }}
       >
-        {list === null ? (
-          // NOT an empty list, which would read as "this book has no months".
-          // It simply has not been told how long it is yet.
-          <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>
-            Set the start and end dates under Page Settings, and every{" "}
-            {LEVEL_NOUN[level]} the book covers will be listed here.
-          </div>
-        ) : list.length === 0 ? (
-          <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)" }}>
-            This book&rsquo;s term covers none.
-          </div>
-        ) : (
-          list.map((occurrence) => {
-            const key = occurrence.key as string;
-            const isCustom = customised.has(key);
-            return (
-              <div
-                key={key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                }}
-              >
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {occurrence.label}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: isCustom ? "#8fdc9a" : "rgba(255,255,255,0.4)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {isCustom ? "own layout" : "default"}
-                </span>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    run(async () => {
-                      if (isCustom) {
-                        await deleteLevelVariant(journalId, level, key);
-                        // Off the deleted occurrence, not a reload of it: the
-                        // pages behind this URL have just been removed. The
-                        // route falls back to the default anyway, but landing
-                        // there by way of a URL that names something gone is
-                        // a lie about where you are.
-                        onOpenDefault();
-                        return;
-                      }
-                      await createLevelVariant(journalId, level, key);
-                      // A reload rather than patching state: the drawer, the
-                      // canvas and the routes all read this from the server,
-                      // and re-deriving each of them here would be a second
-                      // description of what the server just did.
-                      window.location.reload();
-                    })
-                  }
-                  style={{
-                    padding: "3px 8px",
-                    fontSize: 10.5,
-                    borderRadius: 5,
-                    border: "1px solid rgba(255,255,255,0.15)",
-                    background: "transparent",
-                    color: isCustom ? "#ff8f5c" : "#ddd",
-                    cursor: pending ? "default" : "pointer",
-                    opacity: pending ? 0.5 : 1,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {isCustom ? "Reset" : "Customise"}
-                </button>
-              </div>
-            );
-          })
-        )}
-        {error && <div style={{ padding: "6px 8px", color: "#ff8f5c", fontSize: 11 }}>{error}</div>}
+        {children}
       </div>
     </>,
     document.body
+  );
+}
+
+/**
+ * The months (or weeks, or days) this level covers, and which of them have a
+ * layout of their own.
+ *
+ * REPEAT BY DEFAULT, CUSTOMISE BY EXCEPTION. Every occurrence gets the
+ * default layout unless it is given one here, so this list is almost always
+ * all "default" - which is the point. Most books want one spread repeated,
+ * and the exception has to cost nothing when nobody uses it.
+ *
+ * Drawn in an AnchoredPanel - see there for why it cannot live in the drawer.
+ */
+function OccurrencePopover({
+  anchorRef,
+  level,
+  occurrences: list,
+  customised,
+  onClose,
+  onOpenDefault,
+}: {
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  level: PageLevel;
+  occurrences: Occurrence[] | null;
+  customised: Set<string>;
+  onClose: () => void;
+  /** Where to go when an occurrence stops having its own layout. */
+  onOpenDefault: () => void;
+}) {
+  const journalId = useJournalId();
+  const [pending, error, run] = useAsyncAction();
+  return (
+    <AnchoredPanel anchorRef={anchorRef} label={`${LEVEL_LABELS[level]} layouts`} onClose={onClose}>
+      {list === null ? (
+        // NOT an empty list, which would read as "this book has no months".
+        // It simply has not been told how long it is yet.
+        <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>
+          Set the start and end dates under Page Settings, and every{" "}
+          {LEVEL_NOUN[level]} the book covers will be listed here.
+        </div>
+      ) : list.length === 0 ? (
+        <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)" }}>
+          This book&rsquo;s term covers none.
+        </div>
+      ) : (
+        list.map((occurrence) => {
+          const key = occurrence.key as string;
+          const isCustom = customised.has(key);
+          return (
+            <div
+              key={key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 8px",
+                borderRadius: 6,
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {occurrence.label}
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: isCustom ? "#8fdc9a" : "rgba(255,255,255,0.4)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {isCustom ? "own layout" : "default"}
+              </span>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  run(async () => {
+                    if (isCustom) {
+                      await deleteLevelVariant(journalId, level, key);
+                      // Off the deleted occurrence, not a reload of it: the
+                      // pages behind this URL have just been removed. The
+                      // route falls back to the default anyway, but landing
+                      // there by way of a URL that names something gone is
+                      // a lie about where you are.
+                      onOpenDefault();
+                      return;
+                    }
+                    await createLevelVariant(journalId, level, key);
+                    // A reload rather than patching state: the drawer, the
+                    // canvas and the routes all read this from the server,
+                    // and re-deriving each of them here would be a second
+                    // description of what the server just did.
+                    window.location.reload();
+                  })
+                }
+                style={{
+                  padding: "3px 8px",
+                  fontSize: 10.5,
+                  borderRadius: 5,
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  background: "transparent",
+                  color: isCustom ? "#ff8f5c" : "#ddd",
+                  cursor: pending ? "default" : "pointer",
+                  opacity: pending ? 0.5 : 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {isCustom ? "Reset" : "Customise"}
+              </button>
+            </div>
+          );
+        })
+      )}
+      {error && <div style={{ padding: "6px 8px", color: "#ff8f5c", fontSize: 11 }}>{error}</div>}
+    </AnchoredPanel>
   );
 }
 
@@ -1944,6 +1989,8 @@ function PageCardInner({
   selected,
   card,
   canRemoveBlank = false,
+  canRemoveLinked = false,
+  savedInSet,
   highContrast,
   reduceMotion,
   onOpen,
@@ -1971,6 +2018,12 @@ function PageCardInner({
   /** Offer to remove the set's BLANK pages. Only ever true when the set has
    *  more than one - see deletePageFromLevel. */
   canRemoveBlank?: boolean;
+  /** Offer to remove this card whole: a use of a saved page, added to the
+   *  set - see deletePageFromLevel. */
+  canRemoveLinked?: boolean;
+  /** The saved pages already used in this card's set, comma-joined - a set
+   *  can use each once. A string so the memo below still compares equal. */
+  savedInSet: string;
   highContrast: boolean;
   reduceMotion: boolean;
   onOpen: () => void;
@@ -1978,10 +2031,14 @@ function PageCardInner({
   const count = pages.length;
   const first = pages[0];
   const moduleCount = pages.reduce((sum, page) => sum + page.moduleCount, 0);
+  const linked = isOneSavedUse(pages) ? first.saved : null;
   const title =
-    count === 1
+    (count === 1
       ? `${LEVEL_LABELS[first.level]} page ${first.position + 1} - ${first.moduleCount} module(s)`
-      : `${LEVEL_LABELS[first.level]} spread, pages ${first.position + 1}-${pages[count - 1].position + 1} - ${moduleCount} module(s)`;
+      : `${LEVEL_LABELS[first.level]} spread, pages ${first.position + 1}-${pages[count - 1].position + 1} - ${moduleCount} module(s)`) +
+    (linked ? ` - saved as "${linked.name}": editing it changes every use` : "");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLButtonElement>(null);
   // Outline with an OFFSET, not a border: a border sits inside the box and
   // changes the thumbnail's own proportions, which on a page preview is the
   // one thing that must stay true.
@@ -2071,6 +2128,60 @@ function PageCardInner({
             reduceMotion={reduceMotion}
             onRemove={onRemove}
           />
+        )}
+        {!onRemove && canRemoveLinked && (
+          <CornerRemoveButton
+            label={count === 2 ? "Remove this saved spread from the journal" : "Remove this saved page from the journal"}
+            visible={controlsShown}
+            reduceMotion={reduceMotion}
+            onRemove={async () => {
+              await deletePageFromLevel(first.pageId);
+              window.location.reload();
+            }}
+          />
+        )}
+        {/* The card's menu - save it, or put a saved one in its place - over
+            its top-LEFT corner, the X having the right. */}
+        <CornerMenuButton
+          buttonRef={menuRef}
+          label={count === 2 ? "Spread options" : "Page options"}
+          visible={controlsShown || menuOpen}
+          open={menuOpen}
+          reduceMotion={reduceMotion}
+          onToggle={() => setMenuOpen((v) => !v)}
+        />
+        {menuOpen && (
+          <AnchoredPanel
+            anchorRef={menuRef}
+            label={count === 2 ? "Spread options" : "Page options"}
+            onClose={() => setMenuOpen(false)}
+          >
+            <CardMenu pages={pages} linked={linked} savedInSet={savedInSet} />
+          </AnchoredPanel>
+        )}
+        {/* A use of a saved page says so, always: an edit to it is an edit
+            to every journal that uses it. */}
+        {linked && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: 4,
+              bottom: 4,
+              zIndex: 1,
+              width: 16,
+              height: 16,
+              borderRadius: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: ACCENT,
+              color: "#ffffff",
+              pointerEvents: "none",
+            }}
+          >
+            <LinkGlyph size={9} />
+          </span>
         )}
         {/* Each blank page's remove control, over that page's own top-right
             corner. A layer laid out like the slots below rather than inside
@@ -2318,64 +2429,116 @@ function AddPageCardInner({
   level,
   variantKey,
   reduceMotion,
+  savedInSet,
 }: {
   card: { sizeTransition: string };
   level: PageLevel;
   variantKey: string | null;
   reduceMotion: boolean;
+  /** See PageCard's. */
+  savedInSet: string;
 }) {
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const [lit, setLit] = useState(false);
+  // WITH NOTHING SAVED, "+" ADDS A BLANK PAGE AT ONCE, as it always has - a
+  // menu of one choice is a click for nothing. With saved pages it asks which.
+  const saved = useSavedItems().pages;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const addBlank = () =>
+    run(async () => {
+      await addPageToLevel(journalId, level, variantKey);
+      // The server shapes the pages; re-deriving the drawer, the canvas
+      // and the routes here would be a second description of what it
+      // just did.
+      window.location.reload();
+    });
+  const printed = `printed ${LEVEL_NOUN[level] === "book" ? "once" : `every ${LEVEL_NOUN[level]}`} alongside the others`;
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onPointerEnter={() => setLit(true)}
-      onPointerLeave={() => setLit(false)}
-      onFocus={() => setLit(true)}
-      onBlur={() => setLit(false)}
-      onClick={() =>
-        run(async () => {
-          await addPageToLevel(journalId, level, variantKey);
-          // The server shapes the pages; re-deriving the drawer, the canvas
-          // and the routes here would be a second description of what it
-          // just did.
-          window.location.reload();
-        })
-      }
-      aria-label={`Add a page to ${LEVEL_LABELS[level].toLowerCase()}`}
-      title={
-        error ??
-        `Add a page to ${LEVEL_LABELS[level].toLowerCase()} - a blank one, ` +
-          `printed ${LEVEL_NOUN[level] === "book" ? "once" : `every ${LEVEL_NOUN[level]}`} alongside the others`
-      }
-      className="memari-card"
-      style={{
-        width: "var(--memari-card-w)",
-        height: "var(--memari-card-h)",
-        flexShrink: 0,
-        padding: 0,
-        borderRadius: 3,
-        border: `2px dashed ${error ? "#ff8f5c" : lit ? "rgba(255,255,255,0.5)" : "rgba(255, 255, 255, 0.2)"}`,
-        background: "transparent",
-        color: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255, 255, 255, 0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: pending ? "default" : "pointer",
-        opacity: pending ? 0.5 : 1,
-        transition: reduceMotion
-          ? "none"
-          : ["color 150ms ease-out", "border-color 150ms ease-out", card.sizeTransition]
-              .filter(Boolean)
-              .join(", "),
-      }}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    </button>
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        disabled={pending}
+        onPointerEnter={() => setLit(true)}
+        onPointerLeave={() => setLit(false)}
+        onFocus={() => setLit(true)}
+        onBlur={() => setLit(false)}
+        onClick={() => (saved.length > 0 ? setMenuOpen((v) => !v) : addBlank())}
+        aria-label={`Add a page to ${LEVEL_LABELS[level].toLowerCase()}`}
+        aria-haspopup={saved.length > 0 ? "dialog" : undefined}
+        aria-expanded={saved.length > 0 ? menuOpen : undefined}
+        title={
+          error ??
+          (saved.length > 0
+            ? `Add a page to ${LEVEL_LABELS[level].toLowerCase()} - blank, or one you saved - ${printed}`
+            : `Add a page to ${LEVEL_LABELS[level].toLowerCase()} - a blank one, ${printed}`)
+        }
+        className="memari-card"
+        style={{
+          width: "var(--memari-card-w)",
+          height: "var(--memari-card-h)",
+          flexShrink: 0,
+          padding: 0,
+          borderRadius: 3,
+          border: `2px dashed ${error ? "#ff8f5c" : lit ? "rgba(255,255,255,0.5)" : "rgba(255, 255, 255, 0.2)"}`,
+          background: "transparent",
+          color: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255, 255, 255, 0.35)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: pending ? "default" : "pointer",
+          opacity: pending ? 0.5 : 1,
+          transition: reduceMotion
+            ? "none"
+            : ["color 150ms ease-out", "border-color 150ms ease-out", card.sizeTransition]
+                .filter(Boolean)
+                .join(", "),
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
+      {menuOpen && (
+        <AnchoredPanel
+          anchorRef={buttonRef}
+          label={`Add a page to ${LEVEL_LABELS[level].toLowerCase()}`}
+          onClose={() => setMenuOpen(false)}
+        >
+          <MenuButton disabled={pending} onClick={addBlank}>
+            <span
+              aria-hidden="true"
+              style={{ width: 22, height: 30, flexShrink: 0, border: "1.5px dashed rgba(255,255,255,0.4)", borderRadius: 2 }}
+            />
+            <span style={{ flex: 1 }}>Blank page</span>
+          </MenuButton>
+          <MenuHeading>Saved</MenuHeading>
+          {saved.map((option) => (
+            <SavedOption
+              key={option.id}
+              option={option}
+              unavailable={
+                !option.fits
+                  ? "A different page size"
+                  : savedInSet.split(",").includes(option.id)
+                  ? "Already in this set"
+                  : null
+              }
+              disabled={pending}
+              onChoose={() =>
+                run(async () => {
+                  await addSavedPage(journalId, level, variantKey, option.id);
+                  window.location.reload();
+                })
+              }
+            />
+          ))}
+          {error && <MenuError>{error}</MenuError>}
+        </AnchoredPanel>
+      )}
+    </>
   );
 }
 
@@ -2412,6 +2575,362 @@ function EmptyLevelInner() {
     >
       empty
     </div>
+  );
+}
+
+// --- saved pages -----------------------------------------------------------
+//
+// Saved > Pages in the timeline: a card's menu saves it or puts a saved one in
+// its place, and the "+" card offers saved pages beside a blank one. A saved
+// page is LINKED - every use is the same page, and an edit to any of them is
+// an edit to all (see savedItems.ts) - so a use wears a link badge, always.
+
+/** Page b is the right-hand page of the saved spread that page a starts. */
+function joinedSavedSpread(a: TimelinePage, b: TimelinePage): boolean {
+  return !!a.saved && !!b.saved && a.saved.id === b.saved.id && a.saved.index === 0 && b.saved.index === 1;
+}
+
+/** Every page of the card is the same use of one saved page. */
+function isOneSavedUse(pages: TimelinePage[]): boolean {
+  const first = pages[0]?.saved;
+  return !!first && pages.every((page, index) => page.saved?.id === first.id && page.saved.index === index);
+}
+
+/** The saved pages a set already uses, comma-joined - see PageCard. */
+function savedIdsIn(pages: TimelinePage[]): string {
+  return [...new Set(pages.map((page) => page.saved?.id).filter(Boolean))].join(",");
+}
+
+/** A chain link, for "this is a use of a saved page". */
+function LinkGlyph({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4L12 5.6M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * A card's menu control, over its top-LEFT corner - the X's mirror image,
+ * shown and hidden with it, for the same reasons (see CornerRemoveButton).
+ */
+function CornerMenuButton({
+  buttonRef,
+  label,
+  visible,
+  open,
+  reduceMotion,
+  onToggle,
+}: {
+  buttonRef: React.RefObject<HTMLButtonElement | null>;
+  label: string;
+  visible: boolean;
+  open: boolean;
+  reduceMotion: boolean;
+  onToggle: () => void;
+}) {
+  const [lit, setLit] = useState(false);
+  const [focusVisible, setFocusVisible] = useState(false);
+  const shown = visible || focusVisible || open;
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      aria-label={label}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      title={label}
+      onPointerEnter={() => setLit(true)}
+      onPointerLeave={() => setLit(false)}
+      onFocus={(event) => setFocusVisible(event.currentTarget.matches(":focus-visible"))}
+      onBlur={() => setFocusVisible(false)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      style={{
+        pointerEvents: "auto",
+        position: "absolute",
+        top: -(REMOVE_TARGET - REMOVE_DISC) / 2 - 7,
+        left: -(REMOVE_TARGET - REMOVE_DISC) / 2 - 7,
+        zIndex: 2,
+        width: REMOVE_TARGET,
+        height: REMOVE_TARGET,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        opacity: shown ? 1 : 0,
+        transition: reduceMotion ? "none" : "opacity 150ms ease-out",
+      }}
+    >
+      <span
+        style={{
+          width: REMOVE_DISC,
+          height: REMOVE_DISC,
+          borderRadius: REMOVE_DISC / 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+          background: open || lit ? "#ffffff" : "rgba(255,255,255,0.35)",
+          transition: reduceMotion ? "none" : "background 150ms ease-out",
+        }}
+      >
+        {[0, 1, 2].map((dot) => (
+          <span key={dot} style={{ width: 2.5, height: 2.5, borderRadius: 2, background: "#1c1c1e" }} />
+        ))}
+      </span>
+    </button>
+  );
+}
+
+/** One row of a timeline menu: a full-width button. */
+function MenuButton({
+  disabled,
+  onClick,
+  title,
+  children,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const [lit, setLit] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      onPointerEnter={() => setLit(true)}
+      onPointerLeave={() => setLit(false)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "6px 8px",
+        border: "none",
+        borderRadius: 6,
+        background: lit && !disabled ? "rgba(255,255,255,0.08)" : "transparent",
+        color: disabled ? "rgba(255,255,255,0.4)" : "#ddd",
+        font: "inherit",
+        fontSize: 12,
+        textAlign: "left",
+        cursor: disabled ? "default" : "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "10px 8px 4px",
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: "rgba(255,255,255,0.6)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuError({ children }: { children: React.ReactNode }) {
+  return (
+    <div role="alert" style={{ padding: "6px 8px", color: "#ff8f5c", fontSize: 11, lineHeight: 1.4 }}>
+      {children}
+    </div>
+  );
+}
+
+/** A saved page in a menu: its drawing, its name, and what choosing it does
+ *  - or why it cannot be chosen here. */
+function SavedOption({
+  option,
+  unavailable,
+  disabled,
+  armed = null,
+  onChoose,
+}: {
+  option: SavedPageOption;
+  /** Why it cannot be used here, or null. */
+  unavailable: string | null;
+  disabled: boolean;
+  /** Set once it has been clicked and is waiting for the confirming click. */
+  armed?: string | null;
+  onChoose: () => void;
+}) {
+  return (
+    <MenuButton disabled={disabled || unavailable !== null} onClick={onChoose} title={unavailable ?? undefined}>
+      <SavedThumb previews={option.previews} widthPx={option.size.widthPx} heightPx={option.size.heightPx} height={30} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {option.name}
+        </span>
+        <span
+          style={{
+            display: "block",
+            fontSize: 10.5,
+            color: armed ? "#ff8f5c" : "rgba(255,255,255,0.5)",
+          }}
+        >
+          {armed ?? unavailable ?? (option.pageCount === 2 ? "Spread" : "Page")}
+        </span>
+      </span>
+    </MenuButton>
+  );
+}
+
+/**
+ * A card's menu: save its page or spread, or put a saved one in its place.
+ *
+ * A card that is ALREADY a use of a saved page says which, and what that
+ * means, instead of offering to save it - it is saved. Forking one use into a
+ * journal's own ("save as") is for later (Andrew, 2026-09-21).
+ *
+ * Replacing takes two clicks, like removing: the first says what will happen
+ * - on a page of the journal's own, that what is on it now is lost.
+ */
+function CardMenu({
+  pages,
+  linked,
+  savedInSet,
+}: {
+  pages: TimelinePage[];
+  linked: TimelinePage["saved"];
+  savedInSet: string;
+}) {
+  const saved = useSavedItems().pages;
+  const [pending, error, run] = useAsyncAction();
+  const kind = pages.length === 2 ? "spread" : "page";
+  const [name, setName] = useState(`${LEVEL_LABELS[pages[0].level]} ${kind}`);
+  const [armed, setArmed] = useState<string | null>(null);
+  const pageIds = pages.map((page) => page.pageId);
+  const inSet = savedInSet.split(",");
+  const replacements = saved.filter((option) => option.pageCount === pages.length && option.id !== linked?.id);
+  return (
+    <>
+      {linked ? (
+        <div style={{ padding: "6px 8px 4px", lineHeight: 1.45 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#ffffff", fontWeight: 600 }}>
+            <LinkGlyph />
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Saved as &ldquo;{linked.name}&rdquo;
+            </span>
+          </div>
+          <div style={{ marginTop: 4, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+            Linked: a change to this {kind} changes it in every journal that uses it.
+          </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(async () => {
+              await savePagesToSaved(pageIds, name);
+              window.location.reload();
+            });
+          }}
+          style={{ display: "grid", gap: 6, padding: "4px 8px 6px" }}
+        >
+          <label htmlFor="memari-save-page-name" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+            Save this {kind}
+          </label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              id="memari-save-page-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={60}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "5px 8px",
+                font: "inherit",
+                fontSize: 12,
+                color: "#ffffff",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: 6,
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={pending || name.trim().length === 0}
+              style={{
+                padding: "5px 12px",
+                font: "inherit",
+                fontSize: 12,
+                fontWeight: 600,
+                border: "none",
+                borderRadius: 6,
+                background: ACCENT,
+                color: "#ffffff",
+                cursor: pending ? "default" : "pointer",
+                opacity: pending || name.trim().length === 0 ? 0.5 : 1,
+              }}
+            >
+              Save
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", lineHeight: 1.4 }}>
+            Add it to any journal from the &ldquo;+&rdquo; at the end of a row. It stays linked: a change to any use
+            changes them all.
+          </div>
+        </form>
+      )}
+      {replacements.length > 0 && (
+        <>
+          <MenuHeading>Replace with</MenuHeading>
+          {replacements.map((option) => (
+            <SavedOption
+              key={option.id}
+              option={option}
+              unavailable={
+                !option.fits ? "A different page size" : inSet.includes(option.id) ? "Already in this set" : null
+              }
+              disabled={pending}
+              armed={
+                armed === option.id
+                  ? linked
+                    ? "Click again to replace"
+                    : "Click again - what is on it now is lost"
+                  : null
+              }
+              onChoose={() => {
+                if (armed !== option.id) {
+                  setArmed(option.id);
+                  return;
+                }
+                void run(async () => {
+                  await replaceWithSavedPage(pageIds, option.id);
+                  window.location.reload();
+                });
+              }}
+            />
+          ))}
+        </>
+      )}
+      {error && <MenuError>{error}</MenuError>}
+    </>
   );
 }
 

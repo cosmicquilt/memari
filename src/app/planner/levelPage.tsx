@@ -19,6 +19,8 @@ import { OPEN_LEVEL_COOKIE, parseOpenLevelCookie } from "@/lib/openLevelCookie";
 import { openBook } from "./actions";
 import { loadPlannerPages } from "./loadPlannerPages";
 import { EditorShell } from "./EditorShell";
+import { sameSize, savedModulesOf, savedPagesOf } from "./savedItems";
+import { resolveFontFamily, type PlannerTheme } from "@/lib/theme";
 
 /**
  * The editor on one of the signed-in person's journals - /app/j/<id>. A
@@ -53,8 +55,22 @@ export async function renderEditor(journalId: string) {
     throw error;
   }
   const loaded = await loadPlannerPages(book, opened.level, opened.variantKey);
+  // Saved > Pages drawn in this journal's font, each marked with whether it
+  // fits this journal's page size; Saved > Modules for the palette.
+  const fontFamily = resolveFontFamily((book.theme as PlannerTheme | null)?.fontFamily);
+  const [savedPages, savedModules] = await Promise.all([savedPagesOf(owner.id, fontFamily), savedModulesOf(owner.id)]);
+  const journalPage = book.pages[0];
+  const saved = {
+    pages: savedPages.map((card) => ({ ...card, fits: !journalPage || sameSize(card.size, journalPage) })),
+    modules: savedModules,
+  };
 
   return (
-    <EditorShell initial={{ ...loaded, level: opened.level }} initialViewport={initialViewport} guest={owner.guest} />
+    <EditorShell
+      initial={{ ...loaded, level: opened.level }}
+      initialViewport={initialViewport}
+      guest={owner.guest}
+      saved={saved}
+    />
   );
 }

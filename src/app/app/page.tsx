@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { journalsOf, templatePreviews } from "@/app/planner/journals";
 import { StartDialog } from "@/app/planner/StartDialog";
+import { savedModulesOf, savedPagesOf } from "@/app/planner/savedItems";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
 
 // memari.studio/app - the start dialog: open one of your journals, or create
@@ -15,7 +16,11 @@ export default async function AppPage() {
   // Signed in on a browser that was used as a guest: bring that work along.
   if (!owner.guest) await claimGuestWork(owner.id);
 
-  const journals = await journalsOf(owner.id);
+  const [journals, savedPages, savedModules] = await Promise.all([
+    journalsOf(owner.id),
+    savedPagesOf(owner.id),
+    savedModulesOf(owner.id),
+  ]);
   const remembered = parseLastJournalCookie((await cookies()).get(LAST_JOURNAL_COOKIE)?.value);
   // Only if it is still one of theirs: a deleted journal, or another
   // person's id in a shared browser, is simply not preselected.
@@ -24,6 +29,8 @@ export default async function AppPage() {
   return (
     <StartDialog
       journals={journals}
+      savedPages={savedPages}
+      savedModules={savedModules}
       lastJournalId={lastJournalId}
       templates={templatePreviews()}
       defaultTerm={nextQuarter(new Date())}

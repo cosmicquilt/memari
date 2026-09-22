@@ -30,10 +30,22 @@ import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import { LEVELS_IN_BINDING_ORDER, type PageLevel } from "@/lib/pageLevels";
 import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
-import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { renderModuleInstance, type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { WeekSettings } from "./WeekSettingsPanel";
+
+/** What a thumbnail is drawn from: a page's size and its modules. A journal's
+ *  page is one; so is a saved page's content - see savedItems.ts. */
+export type ThumbnailSource = {
+  widthPx: number;
+  heightPx: number;
+  gridColumns: number;
+  gridRows: number;
+  gridGapPx: number;
+  marginPx: number;
+  moduleInstances: ModuleInstanceForRender[];
+};
 
 export type LoadedModuleInstance = {
   id: string;
@@ -44,6 +56,8 @@ export type LoadedModuleInstance = {
   columnSpan: number;
   rowSpan: number;
   propValues: unknown;
+  /** A use of a saved module - its settings are every use's - or null. */
+  savedModule: { id: string; name: string } | null;
   // This instance's own pixel origin (top-left of its grid cell, in the
   // same 0..PRINT_WIDTH_PX/HEIGHT_PX space its elements' own x/y are
   // already expressed in) — PolotnoJsonRenderer subtracts this from
@@ -134,6 +148,9 @@ export type TimelinePage = {
   pageWidthPx: number;
   pageHeightPx: number;
   moduleCount: number;
+  /** The saved page this is a use of, and which of its pages (0, or 1 for a
+   *  spread's right page) - or null for a page of the journal's own. */
+  saved: { id: string; name: string; index: number } | null;
 };
 
 export type LoadedPlanner = {
@@ -240,6 +257,10 @@ export async function loadPlannerPages(
         columnSpan: instance.columnSpan,
         rowSpan: instance.rowSpan,
         propValues: instance.propValues,
+        savedModule:
+          instance.savedModuleId && instance.savedModule
+            ? { id: instance.savedModuleId, name: instance.savedModule.name }
+            : null,
         originX: origin.x,
         originY: origin.y,
         // WHAT THIS PAGE WILL ACTUALLY PRINT AS: filled in for the
@@ -318,6 +339,10 @@ export async function loadPlannerPages(
         pageWidthPx: page.widthPx,
         pageHeightPx: page.heightPx,
         moduleCount: page.moduleInstances.length,
+        saved:
+          page.savedPageId && page.savedPage
+            ? { id: page.savedPageId, name: page.savedPage.name, index: page.savedPageIndex ?? 0 }
+            : null,
       };
     });
 
@@ -379,10 +404,11 @@ export async function loadPlannerPages(
  * A page's thumbnail marks: every module drawn from its STORED props (the
  * timeline shows the templates, not one occurrence of them), with the dates
  * taken out on an undated journal. Shared by the timeline and the start
- * dialog's journal cards, so a journal looks the same in both.
+ * dialog's journal cards, so a journal looks the same in both - and by saved
+ * pages, which are not a journal's pages but are drawn exactly as one.
  */
 export function pageThumbnail(
-  page: BookWithPages["pages"][number],
+  page: ThumbnailSource,
   fontFamily: string,
   dated: boolean
 ): PreviewMark[] {

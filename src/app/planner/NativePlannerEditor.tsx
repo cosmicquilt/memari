@@ -162,6 +162,8 @@ import { DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
 import { usePrefersReducedMotion, useIsomorphicLayoutEffect, usePointerCanHover } from "./useMediaQuery";
 import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
+import { useSavedItems } from "./savedContext";
+import type { SavedModuleCard } from "./savedItems";
 import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
@@ -468,6 +470,28 @@ const PANEL_FAINT = "#9a9a9a";
 const PANEL_FILL = "#f6f6f6";
 const PANEL_FILL_HOVER = "#ededed";
 const PALETTE_ID_PREFIX = "palette:";
+/** A saved module's card: `palette:saved:<id>`. Still a palette id - every
+ *  "is this a palette drag" test reads the prefix above. */
+const SAVED_PALETTE_PREFIX = `${PALETTE_ID_PREFIX}saved:`;
+/** The palette section saved modules are listed in. */
+const SAVED_SECTION = "Saved";
+
+/** What a palette card places: a catalogue module at its preview settings,
+ *  or a saved module at its own - linked to it. */
+type PaletteEntry = {
+  slug: string;
+  previewProps: Record<string, unknown>;
+  savedModule: { id: string; name: string } | null;
+};
+function paletteEntry(rawId: string, saved: SavedModuleCard[]): PaletteEntry | null {
+  if (rawId.startsWith(SAVED_PALETTE_PREFIX)) {
+    const item = saved.find((m) => m.id === rawId.slice(SAVED_PALETTE_PREFIX.length));
+    return item ? { slug: item.slug, previewProps: item.propValues, savedModule: { id: item.id, name: item.name } } : null;
+  }
+  const slug = rawId.slice(PALETTE_ID_PREFIX.length);
+  const meta = PALETTE_MODULES.find((m) => m.slug === slug);
+  return meta ? { slug, previewProps: meta.previewProps as Record<string, unknown>, savedModule: null } : null;
+}
 // The provisional instance a palette drag becomes once the pointer
 // reaches a page. Not a real module until the drop commits, but it
 // lives in `placements` and `moduleLookup` for the duration of the
@@ -548,6 +572,8 @@ type ModuleInfo = {
   // to its schema default.
   slug: string;
   propValues: Record<string, unknown>;
+  /** A use of a saved module, or null - see savedItems.ts. */
+  savedModule: { id: string; name: string } | null;
 };
 
 // Two vertically-stacked, directly-adjacent unlocked modules in the same
@@ -2025,6 +2051,7 @@ function NativePage({
                 rowStart: placement.rowStart,
                 columnSpan: placement.columnSpan,
                 rowSpan: placement.rowSpan,
+                savedModule: info.savedModule,
               })
             }
             isHovered={hoveredInstanceId === id}
@@ -3170,6 +3197,7 @@ function SectionAddButton({
  */
 const PaletteCard = memo(function PaletteCard({
   slug,
+  dragId = `${PALETTE_ID_PREFIX}${slug}`,
   label,
   previewProps,
   pageGrid,
@@ -3179,6 +3207,10 @@ const PaletteCard = memo(function PaletteCard({
   drawPreview,
 }: {
   slug: string;
+  /** What a drag of this card is called - see paletteEntry. A saved
+   *  module's card is `palette:saved:<id>`, not its slug: two saved
+   *  modules can be the same kind. */
+  dragId?: string;
   label: string;
   previewProps: Record<string, unknown>;
   pageGrid: PageGrid;
@@ -3188,7 +3220,7 @@ const PaletteCard = memo(function PaletteCard({
   /** False until the palette's drawings are wanted - see drawCards. */
   drawPreview: boolean;
 }) {
-  const { attributes, listeners, setNodeRef } = useDraggable({ id: `${PALETTE_ID_PREFIX}${slug}` });
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: dragId });
   // The card shows the module as it would actually be drawn, at its
   // narrowest single-column form — the same renderModuleInstance the
   // page itself uses, not an illustration of it. Sized to ONE DAY UNIT -
@@ -3469,7 +3501,12 @@ function ModulePalette({
   // hundred behind headers rather than in front of them.
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     General: true,
+    [SAVED_SECTION]: true,
   });
+  // Saved > Modules, first: the ones somebody made are the ones they came
+  // back for. Dragged like any card, placed with their own settings, and
+  // linked - see paletteEntry.
+  const savedModules = useSavedItems().modules;
   // A hundred and fifteen cards is more than anyone scrolls. Typing here
   // searches every section at once and opens the ones that match, so the
   // categories are how you BROWSE and this is how you FETCH - a palette
@@ -3519,6 +3556,11 @@ function ModulePalette({
   // what an error message or a URL names, and it is often the only handle
   // anyone has on a module they are trying to find.
   const moduleQuery = moduleFilter.trim().toLowerCase();
+  const savedShown = moduleQuery
+    ? savedModules.filter(
+        (m) => m.name.toLowerCase().includes(moduleQuery) || m.kind.toLowerCase().includes(moduleQuery)
+      )
+    : savedModules;
   const paletteSections = moduleQuery
     ? PALETTE_SECTIONS.map((section) => ({
         ...section,
@@ -3742,6 +3784,37 @@ function ModulePalette({
               outline: "none",
             }}
           />
+          {savedShown.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {sectionButton(SAVED_SECTION, savedShown.length, moduleQuery.length > 0 || openCategories[SAVED_SECTION] === true, () =>
+                setOpenCategories((open) => ({ ...open, [SAVED_SECTION]: !open[SAVED_SECTION] }))
+              )}
+              <PaletteCollapse
+                open={moduleQuery.length > 0 || openCategories[SAVED_SECTION] === true}
+                allowOverflow={isDraggingPaletteCard}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, paddingBottom: 4 }}>
+                  {savedShown.map((m) => {
+                    const dragId = `${SAVED_PALETTE_PREFIX}${m.id}`;
+                    return (
+                      <PaletteCard
+                        key={m.id}
+                        slug={m.slug}
+                        dragId={dragId}
+                        label={m.name}
+                        previewProps={m.propValues}
+                        pageGrid={pageGrid}
+                        fontFamily={fontFamily}
+                        isDragging={activeId === dragId}
+                        dragOffset={activeId === dragId ? activeDelta : ZERO_OFFSET}
+                        drawPreview={drawCards}
+                      />
+                    );
+                  })}
+                </div>
+              </PaletteCollapse>
+            </div>
+          )}
           {paletteSections.map((section) => {
             // A search result is already the answer to "which ones" - it
             // opens regardless of how the section was left, so a match
@@ -3792,7 +3865,7 @@ function ModulePalette({
               </div>
             );
           })}
-          {paletteSections.length === 0 && (
+          {paletteSections.length === 0 && savedShown.length === 0 && (
             <div style={{ fontSize: 12, color: PANEL_FAINT, padding: "4px 0 8px" }}>
               No modules match “{moduleFilter.trim()}”.
             </div>
@@ -4635,6 +4708,8 @@ export function NativePlannerEditor({
   // rather than in the page or the module, because the editor covers the
   // whole viewport and only one may be open at a time.
   const [editingModule, setEditingModule] = useState<EditingModule | null>(null);
+  // Saved > Modules - the palette's saved cards, and what dragging one places.
+  const savedModules = useSavedItems().modules;
 
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
   // Does this cadence's spine own the Hours form? A month page's does not,
@@ -4694,6 +4769,7 @@ export function NativePlannerEditor({
           originY: mi.originY,
           slug: mi.slug,
           propValues,
+          savedModule: mi.savedModule,
         });
       }
     }
@@ -6276,7 +6352,7 @@ export function NativePlannerEditor({
   // mirroring it so the drag handlers can read it synchronously (they
   // run before the state they set has been committed).
   const [phantomSlug, setPhantomSlug] = useState<string | null>(null);
-  const phantomRef = useRef<{ slug: string; pageId: string } | null>(null);
+  const phantomRef = useRef<{ slug: string; pageId: string; savedModule: PaletteEntry["savedModule"] } | null>(null);
   const removePhantom = useCallback(() => {
     if (!phantomRef.current) return;
     phantomRef.current = null;
@@ -7034,9 +7110,9 @@ export function NativePlannerEditor({
       // and an overlap test that refused the drop rather than making
       // room. A palette drop consequently behaved nothing like dragging
       // the same module once it was on the page. All of it is gone.
-      const slug = rawId.slice(PALETTE_ID_PREFIX.length);
-      const meta = PALETTE_MODULES.find((m) => m.slug === slug);
-      if (!meta) return;
+      const entry = paletteEntry(rawId, savedModules);
+      if (!entry) return;
+      const { slug, previewProps } = entry;
       const clientPointer = lastPointerRef.current;
       const target = screenPointToPageCell(clientPointer.x, clientPointer.y);
       // Still off-canvas - nothing to place it against yet.
@@ -7078,7 +7154,7 @@ export function NativePlannerEditor({
         phantomColumnSpan,
         // Not placed yet, so its content is the palette's preview props -
         // the same ones the phantom is rendered with just below.
-        meta.previewProps as Record<string, unknown>
+        previewProps
       );
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
@@ -7092,7 +7168,7 @@ export function NativePlannerEditor({
         rowSpan: phantomRowSpan,
       };
       const origin = gridCellToPixels(phantomPageGrid, placement);
-      phantomRef.current = { slug, pageId: target.pageId };
+      phantomRef.current = { slug, pageId: target.pageId, savedModule: entry.savedModule };
       setPhantomSlug(slug);
       setPlacements((prev) => ({ ...prev, [PHANTOM_ID]: placement }));
       setModuleLookup((prev) =>
@@ -7100,7 +7176,7 @@ export function NativePlannerEditor({
           pageId: target.pageId,
           locked: false,
           elements: renderOnPage(
-            { id: PHANTOM_ID, locked: false, ...placement, propValues: meta.previewProps, moduleType: { slug } },
+            { id: PHANTOM_ID, locked: false, ...placement, propValues: previewProps, moduleType: { slug } },
             phantomPageGrid,
             fontFamily,
             renderContextByPageId[target.pageId]
@@ -7108,7 +7184,8 @@ export function NativePlannerEditor({
           originX: origin.x,
           originY: origin.y,
           slug,
-          propValues: meta.previewProps,
+          propValues: previewProps,
+          savedModule: entry.savedModule,
         })
       );
       setActiveId(PHANTOM_ID);
@@ -7162,6 +7239,7 @@ export function NativePlannerEditor({
       easeSiblingsDuringResize,
       fontFamily,
       instanceIdsByPageId,
+      savedModules,
       moduleLookup,
       resolveZoneForColumn,
       screenPointToPageCell,
@@ -8035,7 +8113,9 @@ export function NativePlannerEditor({
       // siblings have already moved aside on screen and capturing here
       // would snapshot the layout that includes the add. The "+" button
       // path has nothing optimistic in front of it, so it captures here.
-      before?: GeometrySnapshot
+      before?: GeometrySnapshot,
+      // A saved module, placed with its settings and linked to it.
+      savedModule: PaletteEntry["savedModule"] = null
     ) => {
       const beforeSnapshot = before ?? captureGeometry();
       // See gestureBlockedByPendingCommit's own comment — the requested
@@ -8055,7 +8135,9 @@ export function NativePlannerEditor({
         // same race too: adding right after a reposition/resize
         // shouldn't read a stale "what's occupied" view server-side
         // either.
-        const result = await serializeCommit(() => addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart));
+        const result = await serializeCommit(() =>
+          addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart, savedModule?.id ?? null)
+        );
         if (result.columnStart === null || result.rowStart === null) return; // unreachable — GRID-mode instances always have both
         const finalColumnStart = result.columnStart;
         const finalRowStart = result.rowStart;
@@ -8111,6 +8193,7 @@ export function NativePlannerEditor({
             originY: origin.y,
             slug: moduleTypeSlug,
             propValues,
+            savedModule: result.savedModuleId && savedModule ? savedModule : null,
           });
           // Reflowed siblings need their re-rendered content and a new
           // origin too - their geometry changed, so content generated
@@ -8434,7 +8517,8 @@ export function NativePlannerEditor({
           phantom.slug,
           dropped.columnStart,
           dropped.rowStart,
-          phantomBefore
+          phantomBefore,
+          phantom.savedModule
         );
         return;
       }

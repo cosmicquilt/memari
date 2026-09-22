@@ -51,6 +51,7 @@ import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
 import { JournalProvider } from "./journalContext";
+import { SavedProvider, type SavedItems } from "./savedContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
@@ -65,6 +66,7 @@ export function EditorShell({
   initialViewport,
   load = loadLevel,
   guest = false,
+  saved,
 }: {
   initial: LoadedPlanner & { level: PageLevel };
   initialViewport: ViewportSize | null;
@@ -73,6 +75,8 @@ export function EditorShell({
   load?: typeof loadLevel;
   /** Someone using Memari without an account - see guest.ts. */
   guest?: boolean;
+  /** Saved > Pages and Saved > Modules - see savedContext.tsx. */
+  saved?: SavedItems;
 }) {
   const [open, setOpen] = useState<OpenLayout>({ ...initial, ui: null });
   // The layout just clicked, shown as selected in the timeline while it
@@ -163,22 +167,24 @@ export function EditorShell({
 
   return (
     <JournalProvider value={journalId}>
-      {editor}
-      <TimelineDrawer
-        pages={open.timeline}
-        activeLevel={shownLevel}
-        activeVariantKey={shownVariantKey}
-        term={open.term}
-        onHeightChange={setDrawerHeight}
-        onOpen={(next, nextVariant) => {
-          if (next === shownLevel && nextVariant === shownVariantKey) return;
-          // A LEVEL, not a page: the editor draws a whole spread, so either
-          // page of it means "show this spread". Instant, with no transition
-          // of its own - swapping between two heavy documents is the case
-          // Apple says must NOT animate.
-          void openLevel(next, nextVariant);
-        }}
-      />
+      <SavedProvider value={saved}>
+        {editor}
+        <TimelineDrawer
+          pages={open.timeline}
+          activeLevel={shownLevel}
+          activeVariantKey={shownVariantKey}
+          term={open.term}
+          onHeightChange={setDrawerHeight}
+          onOpen={(next, nextVariant) => {
+            if (next === shownLevel && nextVariant === shownVariantKey) return;
+            // A LEVEL, not a page: the editor draws a whole spread, so either
+            // page of it means "show this spread". Instant, with no transition
+            // of its own - swapping between two heavy documents is the case
+            // Apple says must NOT animate.
+            void openLevel(next, nextVariant);
+          }}
+        />
+      </SavedProvider>
     </JournalProvider>
   );
 }

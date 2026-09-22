@@ -21,6 +21,9 @@ export const GUEST_OWNER_PREFIX = "guest:";
 /** How many journals a guest may make. Enough to try Memari properly, few
  *  enough that one browser cannot fill the database. */
 export const GUEST_JOURNAL_LIMIT = 3;
+/** How many saved pages, and separately saved modules, a guest may keep -
+ *  the same reasoning as the journal limit. */
+export const GUEST_SAVED_LIMIT = 20;
 /** A guest journal nobody has opened for this long is deleted. */
 export const GUEST_IDLE_DAYS = 30;
 /** The cookie outlives the idle limit: an active guest keeps their id; an

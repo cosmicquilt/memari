@@ -32,7 +32,7 @@ import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm } from "./ModuleFieldsForm";
-import { updateModuleConfig } from "./actions";
+import { saveModuleToSaved, updateModuleConfig } from "./actions";
 import { useAsyncAction } from "./useAsyncAction";
 
 const ACCENT = "#4a5cff";
@@ -50,6 +50,8 @@ export type EditingModule = {
   rowStart: number;
   columnSpan: number;
   rowSpan: number;
+  /** A use of a saved module - see savedItems.ts - or null. */
+  savedModule: { id: string; name: string } | null;
 };
 
 export function ModuleEditor({
@@ -74,6 +76,8 @@ export function ModuleEditor({
   const [draft, setDraft] = useState<Record<string, unknown>>(editing.propValues);
   const [pending, error, run] = useAsyncAction();
   const dirty = JSON.stringify(draft) !== JSON.stringify(editing.propValues);
+  // Saving it to Saved > Modules: closed, or open with the name to give it.
+  const [saveName, setSaveName] = useState<string | null>(null);
 
   // Escape closes. A full-screen panel that can only be dismissed by finding
   // its own button is a trap, and this one covers the page you were editing.
@@ -165,9 +169,26 @@ export function ModuleEditor({
       // the `lines` field, where a blank line somebody is typing around has
       // to survive until they stop.
       const cleaned = cleanPropsForSave(editing.slug, draft);
-      await updateModuleConfig(editing.instanceId, cleaned);
+      const result = await updateModuleConfig(editing.instanceId, cleaned);
+      // A saved module used elsewhere in this journal changed there too.
+      // The server has it right; the canvas and the timeline are showing the
+      // old settings, so they are read again rather than patched one by one.
+      if (result.otherUsesChanged) {
+        window.location.reload();
+        return;
+      }
       onSaved(editing.instanceId, cleaned);
       onClose();
+    });
+
+  // Save to Saved > Modules, with the draft committed first so what is saved
+  // is what is on screen. The page reloads: the palette lists saved modules,
+  // and this one is now one of them.
+  const saveToSaved = (name: string) =>
+    run(async () => {
+      if (dirty) await updateModuleConfig(editing.instanceId, cleanPropsForSave(editing.slug, draft));
+      await saveModuleToSaved(editing.instanceId, name);
+      window.location.reload();
     });
 
   return (
@@ -369,6 +390,93 @@ export function ModuleEditor({
           />
         </div>
 
+        {/* SAVED > MODULES. A use of a saved module says so - its settings
+            are every use's, and Done changes them all. Anything else can be
+            saved, to place again from the Modules panel's Saved section. */}
+        <div
+          style={{
+            padding: "10px 16px",
+            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+            fontSize: 11,
+            lineHeight: 1.45,
+            color: "rgba(255,255,255,0.6)",
+          }}
+        >
+          {editing.savedModule ? (
+            <>
+              <div style={{ color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                Saved as &ldquo;{editing.savedModule.name}&rdquo;
+              </div>
+              Linked: a change here changes it everywhere it is used.
+            </>
+          ) : saveName === null ? (
+            <button
+              type="button"
+              onClick={() => setSaveName(definition?.label ?? "")}
+              style={{
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                color: "#fff",
+                font: "inherit",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Save this module&hellip;
+            </button>
+          ) : (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveToSaved(saveName);
+              }}
+              style={{ display: "grid", gap: 6 }}
+            >
+              <label htmlFor="memari-save-module-name">Save to Saved, to place it again anywhere</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  id="memari-save-module-name"
+                  value={saveName}
+                  onChange={(event) => setSaveName(event.target.value)}
+                  maxLength={60}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: "5px 8px",
+                    font: "inherit",
+                    fontSize: 12,
+                    color: "#fff",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    borderRadius: 6,
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={pending || saveName.trim().length === 0}
+                  style={{
+                    padding: "5px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: "none",
+                    borderRadius: 6,
+                    background: ACCENT,
+                    color: "#fff",
+                    cursor: pending ? "default" : "pointer",
+                    opacity: pending || saveName.trim().length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+              <span>It stays linked: a change to any use changes them all.</span>
+            </form>
+          )}
+        </div>
+
         <footer
           style={{
             display: "flex",
@@ -383,7 +491,7 @@ export function ModuleEditor({
           )}
           {!error && (
             <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-              {dirty ? "Unsaved" : "Saved"}
+              {dirty ? "Unsaved changes" : "No changes"}
             </span>
           )}
           <button

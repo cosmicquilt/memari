@@ -247,6 +247,15 @@ eq(cards("WEEKLY", 4), "1-2 | 3 | 4", "pages added to a week are single after it
 eq(cards("MONTHLY", 3), "1-2 | 3", "a month's spread, then page 3 alone");
 eq(cards("WEEKLY", 1), "1", "a set shorter than its spread is still one card");
 eq(cards("WEEKLY", 0), "", "and an empty set is no cards");
+// A saved spread added after the template's joins; nothing else does.
+const withSaved = (level: Parameters<typeof inSpreads>[1], pages: string[]) =>
+  inSpreads(pages, level, (a, b) => a.endsWith("L") && b.endsWith("R") && a[0] === b[0])
+    .map((card) => card.join("-"))
+    .join(" | ");
+eq(withSaved("WEEKLY", ["1", "2", "sL", "sR"]), "1-2 | sL-sR", "a saved spread added to a week is one card");
+eq(withSaved("FRONT_MATTER", ["1", "sL", "sR", "2"]), "1 | sL-sR | 2", "and in Beginning, between single pages");
+eq(withSaved("BACK_MATTER", ["1", "sR", "sL"]), "1 | sR | sL", "a right page before its left joins nothing");
+eq(withSaved("WEEKLY", ["sL", "sR", "3"]), "sL-sR | 3", "a template spread replaced by a saved one is still the first card");
 
 // --- a whole book's page count --------------------------------------------
 //

@@ -42,10 +42,12 @@ export async function claimGuestWork(userId: string): Promise<number> {
   const guestId = guestIdFromCookie((await cookies()).get(GUEST_COOKIE)?.value);
   if (!guestId) return 0;
   const guestOwner = `${GUEST_OWNER_PREFIX}${guestId}`;
-  const [journals] = await prisma.$transaction([
+  const [journals, pages, modules] = await prisma.$transaction([
     prisma.planner.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
+    prisma.savedPage.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
+    prisma.savedModule.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
   ]);
-  return journals.count;
+  return journals.count + pages.count + modules.count;
 }
 
 /** Our own sign-in page, returning to `returnTo` afterwards - it is also
