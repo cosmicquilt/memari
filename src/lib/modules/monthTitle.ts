@@ -107,14 +107,19 @@ export function renderMonthTitle(
     // September is the worst and was not the one reported; November is
     // simply the month it was noticed in.
     //
-    // PER MONTH, NOT ONE SIZE FOR ALL TWELVE. Fitting every month to
-    // SEPTEMBER's requirement would put the whole book at about 15pt,
-    // shrinking the eight that were already fine. This keeps each title as
-    // large as its own name allows - so eight months are untouched at 19pt,
-    // three drop about a point, and only September moves visibly. The trade
-    // is that title size is no longer identical month to month; if that
-    // reads as sloppy when flipping through, the other choice is one size
-    // for the set and it belongs here rather than at the call site.
+    // PER MONTH, NOT ONE SIZE FOR ALL TWELVE - DECIDED, not a default.
+    // Fitting every month to SEPTEMBER's requirement would put the whole
+    // book at about 15pt, shrinking the eight that were already fine. This
+    // keeps each title as large as its own name allows: eight months
+    // untouched at 19pt, three down about a point, only September visibly
+    // smaller.
+    //
+    // The cost is that title size is no longer identical month to month,
+    // which is what you would notice flipping through rather than on any one
+    // spread. Put to Andrew with that trade stated, 2026-09-22: "keep it per
+    // month, thats fine". So a future reader who finds the sizes uneven is
+    // looking at the choice, not an oversight - changing it means fitting
+    // the longest name once and applying that size to every month.
     const estimated = estimateTextWidthPx(config.monthName, fontSize);
     const scaled = estimated > geometry.width ? fontSize * (geometry.width / estimated) : fontSize;
     // A floor, so narrowing the module cannot shrink the month to nothing.
