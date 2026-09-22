@@ -39,86 +39,16 @@
 // manage to render it at all - which is exactly the question nothing was
 // asking.
 
-import { readFileSync } from "node:fs";
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { ensureServer, makeGuestJournal, disconnect } from "./appUnderTest.mjs";
 
-for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
-  const match = /^\s*([A-Z_]+)\s*=\s*"?([^"\r\n]*)"?\s*$/.exec(line);
-  if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
-}
-
-const { prisma } = await import("../src/lib/prisma.js");
-const { createBookFor, validateNewJournal } = await import("../src/app/planner/bookSeeding.js");
-const { GUEST_COOKIE, guestCookieValue, newGuestId, guestModeAvailable } = await import("../src/lib/guest.js");
-
-// Next 16 refuses to start a second dev server for the same directory, and
-// the usual state of this machine is one already running on 3000. So: use
-// whatever is up, and only boot one if nothing is.
-const RUNNING_PORT = 3000;
-const OWN_PORT = 3210;
 const baseArg = process.argv.indexOf("--base");
-let BASE = baseArg === -1 ? `http://localhost:${RUNNING_PORT}` : process.argv[baseArg + 1];
+const explicitBase = baseArg === -1 ? undefined : process.argv[baseArg + 1];
 
 let failures = 0;
 const check = (ok: boolean, message: string) => {
   console.log(`  ${ok ? "ok  " : "FAIL"}  ${message}`);
   if (!ok) failures++;
 };
-
-// Guest mode is how this check reaches the signed-in half of the app without
-// a password. Without the secret there is no way in, and a check that
-// silently skipped the journal page would be worse than one that stops.
-if (!guestModeAvailable()) {
-  console.error(
-    "GUEST_COOKIE_SECRET is not set, so this check cannot open a journal.\n" +
-      "Add a throwaway value to .env - see handoff/HANDOFF.md."
-  );
-  process.exit(1);
-}
-
-const THROWAWAY_TITLE = "Route check journal";
-const guestId = newGuestId();
-const ownerId = `guest:${guestId}`;
-const cookie = `${GUEST_COOKIE}=${guestCookieValue(guestId)}`;
-
-let server: ChildProcess | null = null;
-
-/** Kill the dev server and everything it spawned. `next dev` runs its
- *  compiler in a child, and on Windows killing the parent orphans it, which
- *  leaves the port held and the next run failing for the wrong reason. */
-function stopServer() {
-  if (!server?.pid) return;
-  try {
-    if (process.platform === "win32") {
-      execFileSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
-    } else {
-      process.kill(-server.pid, "SIGKILL");
-    }
-  } catch {
-    /* already gone */
-  }
-  server = null;
-}
-
-/** Knock on /privacy: static, no database, no auth, so an answer means the
- *  server is listening and able to compile. */
-async function answers(base: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${base}/privacy`, { redirect: "manual" });
-    return response.status > 0;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForReady(base: string, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await answers(base)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  return false;
-}
 
 type Expectation = {
   path: string;
@@ -146,39 +76,17 @@ const ERROR_MARKERS = [
   "Application error: a server-side exception",
 ];
 
-async function main() {
-  if (baseArg === -1 && !(await answers(BASE))) {
-    BASE = `http://localhost:${OWN_PORT}`;
-    console.log(`Nothing on :${RUNNING_PORT}; starting next dev on :${OWN_PORT} ...`);
-    server = spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["next", "dev", "--port", String(OWN_PORT)], {
-      stdio: "ignore",
-      detached: process.platform !== "win32",
-      env: process.env,
-    });
-    if (!(await waitForReady(BASE, 180_000))) {
-      console.error(`The dev server never answered on :${OWN_PORT}.`);
-      failures++;
-      return;
-    }
-  }
-  console.log(`Base: ${BASE}${server ? " (started here)" : " (already running)"}\n`);
+let stopServer: () => void = () => {};
 
-  // A real journal, made the way the start dialog makes one, owned by the
-  // guest whose cookie we carry. Every level, so the journal page renders
-  // the timeline at each level - which is where the SSR fault was.
-  const journal = await createBookFor(
-    ownerId,
-    validateNewJournal({
-      title: THROWAWAY_TITLE,
-      trim: "bound7x10",
-      startISO: "2026-01-01",
-      endISO: "2026-03-31",
-      levels: ["JOURNAL", "MONTHLY", "WEEKLY", "DAILY"],
-      dated: true,
-      weekStartDay: 0,
-      font: "serif",
-    })
-  );
+async function main() {
+  const server = await ensureServer(explicitBase);
+  stopServer = server.stop;
+  console.log(`Base: ${server.base}${server.started ? " (started here)" : " (already running)"}\n`);
+
+  const guest = await makeGuestJournal("Route check journal");
+  const { cookie } = guest;
+  const BASE = server.base;
+  const journal = { id: guest.journalId };
 
   const routes: Expectation[] = [
     // "/" is a redirect on purpose and always has been - src/app/page.tsx
@@ -224,15 +132,18 @@ async function main() {
       }
     }
   } finally {
-    await prisma.planner.deleteMany({ where: { ownerId } });
+    await guest.remove();
   }
 }
 
 try {
   await main();
+} catch (error) {
+  console.error(`  ${(error as Error).message}`);
+  failures++;
 } finally {
   stopServer();
-  await prisma.$disconnect();
+  await disconnect();
 }
 
 console.log(failures === 0 ? "\nEvery route answered." : `\n${failures} problem(s).`);
