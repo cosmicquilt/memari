@@ -21,6 +21,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { widenHairline, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
+import { useDevicePixelRatio } from "./useMediaQuery";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
 // — two on-screen thickness floors (strokes and fill hairlines), a
@@ -276,7 +277,11 @@ function markGeometry(
   element: RenderedPolotnoElement,
   originX: number,
   originY: number,
-  scale: number,
+  /** DEVICE pixels per print pixel - the on-screen zoom times the display's
+   *  pixel ratio. Device, not CSS: the hairline floor below is "the thinnest
+   *  mark this screen can draw", and one CSS pixel is three of those on a 3x
+   *  display. */
+  deviceScale: number,
   suppressOuterBorderSize: { width: number; height: number } | null
 ): MarkGeometry | null {
   const left = (element.x ?? 0) - originX;
@@ -310,7 +315,7 @@ function markGeometry(
   // stroked box is already a stroke and is left alone.
   const rule =
     hasFill && !hasStroke
-      ? widenHairline({ x: left, y: top, width, height }, scale)
+      ? widenHairline({ x: left, y: top, width, height }, deviceScale)
       : { x: left, y: top, width, height, ink: 1 };
 
   return {
@@ -334,8 +339,9 @@ function RectLayer({
   rects: RenderedPolotnoElement[];
   originX: number;
   originY: number;
-  // Current on-screen zoom, needed to convert MIN_ONSCREEN_RECT_PX from
-  // device pixels into this layer's own page-pixel coordinate space.
+  // Current on-screen zoom, in CSS pixels per print pixel. Multiplied by
+  // the display's pixel ratio before it reaches the hairline floor - see
+  // markGeometry's own parameter.
   scale: number;
   suppressOuterBorderSize: { width: number; height: number } | null;
   // Non-zero only when these rects are being animated to their final
@@ -346,6 +352,15 @@ function RectLayer({
   // FLIP: there is nothing for them to travel to.
   leaving?: boolean;
 }) {
+  // THE FLOOR IS ONE DEVICE PIXEL, NOT ONE CSS PIXEL, and that distinction
+  // is the whole of a reported fault: "some lines when at further zooms look
+  // blurry because they are wider versions that are grey while other lines
+  // show at skinny detailed lines". Measured at 28% zoom on a 3x display,
+  // every ruled line was 1 CSS px - THREE device pixels - of 35% grey,
+  // landing on a different subpixel phase each time, beside stroked outlines
+  // the browser drew crisp at full ink. A legibility floor that overshoots
+  // the display by 3x is not a floor, it is the thing you notice.
+  const dpr = useDevicePixelRatio();
   const nodes = useRef(new Map<string, SVGRectElement>());
   const previous = useRef(new Map<string, MarkGeometry>());
   const running = useRef(new Map<string, Animation>());
@@ -354,7 +369,7 @@ function RectLayer({
   // than whatever a later one has since overwritten.
   const drawn = new Map<string, MarkGeometry>();
   for (const element of rects) {
-    const geometry = markGeometry(element, originX, originY, scale, suppressOuterBorderSize);
+    const geometry = markGeometry(element, originX, originY, scale * dpr, suppressOuterBorderSize);
     if (geometry) drawn.set(element.id, geometry);
   }
 

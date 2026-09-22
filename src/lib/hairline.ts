@@ -30,12 +30,27 @@
 // at a different zoom from the canvas's is a preview that disagrees with the
 // page it is a preview of.
 
-/** The floor, in OUTPUT units - whatever unit `scale` converts print px
- *  into. The editor's SVG can only address CSS px, so it passes a CSS-px
- *  scale and the floor is one CSS px. A canvas owns its backing store, so it
- *  passes a device-px scale and the floor is one DEVICE px - genuinely the
- *  finest mark the display can make, and on a 2x screen half as heavy as the
- *  editor has to draw it. */
+/**
+ * The floor: ONE DEVICE PIXEL, which is the finest mark a display can make.
+ *
+ * `scale` therefore has to be DEVICE pixels per print pixel, from every
+ * caller. This comment used to say the editor's SVG "can only address CSS
+ * px, so it passes a CSS-px scale" - which was wrong, and licensed the bug
+ * it describes. An SVG cannot ALIGN a mark to the device grid, but it can
+ * certainly be told how fine the grid is: multiply the zoom by
+ * devicePixelRatio and the floor lands where it was meant to.
+ *
+ * Left as it was, a 3x display floored every ruled line at one CSS pixel -
+ * THREE device pixels - of 35% grey, each on a different subpixel phase,
+ * beside stroked outlines the browser drew crisp at full ink. Reported as
+ * "some lines when at further zooms look blurry because they are wider
+ * versions that are grey while other lines show at skinny detailed lines".
+ *
+ * check:preview holds both halves: the arithmetic, and that the callers
+ * actually pass a device scale - a unit test cannot see the second, because
+ * a caller handing over the wrong unit uses the number exactly as
+ * documented.
+ */
 export const MIN_ONSCREEN_RECT_PX = 1.0;
 
 /** How faint the widened rule may get. Coverage below about a third washes
@@ -64,8 +79,9 @@ export type WidenedHairline = HairlineBox & {
  * would widen a border that was never at risk.
  *
  * @param box   the mark, in print px.
- * @param scale output units per print px - CSS px for the editor's SVG,
- *              device px for a canvas. Zero or less leaves the box alone.
+ * @param scale DEVICE pixels per print px, from every caller - the editor's
+ *              zoom times devicePixelRatio, a canvas's own backing store
+ *              over the page. Zero or less leaves the box alone.
  */
 export function widenHairline(box: HairlineBox, scale: number): WidenedHairline {
   const { x, y, width, height } = box;

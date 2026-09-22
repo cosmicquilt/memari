@@ -60,3 +60,45 @@ export const usePrefersHighContrast = () => useMediaQuery("(prefers-contrast: mo
  * keep the old behaviour there.
  */
 export const usePointerCanHover = () => useMediaQuery("(hover: hover)");
+
+/**
+ * How many DEVICE pixels the browser paints per CSS pixel.
+ *
+ * Needed wherever "the thinnest mark this display can draw" is the rule.
+ * A hairline floored at one CSS pixel is three device pixels on a 3x
+ * screen - three times thicker than the display can resolve - and a
+ * legibility floor that overshoots by 3x stops being a floor and becomes
+ * the thing you see. Measured in the editor at 28% zoom on a 3x display:
+ * every ruled line was 3 device pixels of 35% grey, each landing on a
+ * different subpixel phase, against crisp full-ink strokes beside them.
+ *
+ * `resolution` in a media query is the only way to be told when this
+ * changes - there is no devicePixelRatio event - and it does change, when a
+ * window is dragged between monitors.
+ */
+export function useDevicePixelRatio(): number {
+  const [ratio, setRatio] = useState(1);
+  useEffect(() => {
+    const sync = () => setRatio(window.devicePixelRatio || 1);
+    sync();
+    // The query has to be rebuilt for each new ratio: it asks "is it still
+    // this?", so it can only ever fire once.
+    let media = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    let cancelled = false;
+    const listen = () => {
+      media.addEventListener("change", onChange, { once: true });
+    };
+    const onChange = () => {
+      if (cancelled) return;
+      sync();
+      media = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      listen();
+    };
+    listen();
+    return () => {
+      cancelled = true;
+      media.removeEventListener("change", onChange);
+    };
+  }, []);
+  return ratio;
+}

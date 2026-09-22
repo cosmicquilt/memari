@@ -31,6 +31,7 @@ import {
 } from "@/lib/hairline";
 import { type PageGrid } from "@/lib/grid";
 import { FONT_SERIF } from "@/lib/theme";
+import { readFileSync } from "node:fs";
 
 const PAGE: PageGrid = {
   widthPx: 2175,
@@ -102,6 +103,55 @@ const fail = (message: string) => {
   if (atRatio.ink !== 1) fail("hairline: a box exactly at the aspect ratio was treated as a rule");
   const insideRatio = widenHairline({ x: 0, y: 0, width: 40, height: 40 * HAIRLINE_ASPECT_RATIO - 0.1 }, scale);
   if (insideRatio.ink === 1) fail("hairline: a box inside the aspect ratio was NOT treated as a rule");
+
+  // THE FLOOR IS ONE DEVICE PIXEL, AT ANY PIXEL RATIO.
+  //
+  // This is the rule the editor broke. `scale` is output units per print px,
+  // and the editor was passing CSS px per print px - so on a 3x display the
+  // floor was one CSS pixel, which is THREE device pixels. Measured in the
+  // editor at 28% zoom on a 3x screen: every ruled line 3 device pixels of
+  // 35% grey, each on a different subpixel phase, beside stroked outlines
+  // the browser drew crisp. Reported as lines that "look blurry because they
+  // are wider versions that are grey while other lines show at skinny
+  // detailed lines".
+  //
+  // Stated as the invariant rather than as one case: whatever the zoom and
+  // whatever the display, a widened rule is ONE device pixel on screen. Not
+  // two, not three.
+  for (const zoom of [0.28, 0.37, 0.5, 1]) {
+    for (const ratio of [1, 2, 3]) {
+      const deviceScale = zoom * ratio;
+      const HOUSE_HAIRLINE = 1.25;
+      const widened = widenHairline({ x: 0, y: 0, width: 600, height: HOUSE_HAIRLINE }, deviceScale);
+      const onScreenDevicePx = widened.height * deviceScale;
+      const natural = HOUSE_HAIRLINE * deviceScale;
+      const where = `${Math.round(zoom * 100)}% zoom at ${ratio}x`;
+      if (natural >= 1) {
+        // Already thick enough for this display: leave it alone entirely.
+        if (widened.height !== HOUSE_HAIRLINE || widened.ink !== 1) {
+          fail(`${where}: a rule already ${natural.toFixed(2)} device px was widened anyway`);
+        }
+      } else if (Math.abs(onScreenDevicePx - 1) > 1e-9) {
+        fail(`${where}: a widened rule is ${onScreenDevicePx.toFixed(3)} device px on screen, not 1`);
+      }
+    }
+  }
+  // The two ends of that, named, because they are the before and after of
+  // the report. At 28% a 1.25px rule needs help on a 1x screen and needs
+  // none on a 3x one - where it is already 1.05 device pixels.
+  {
+    const oneX = widenHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 0.28 * 1);
+    // Within float slop of the floor, not equal to it: the computed ink here
+    // is 1.25 x 0.28, which is 0.35000000000000003, and a strict === said the
+    // rule was broken when it was exactly right.
+    if (Math.abs(oneX.ink - MIN_ONSCREEN_INK) > 1e-9) {
+      fail(`28% at 1x: a 0.35 device px rule got ${oneX.ink} ink, not the ${MIN_ONSCREEN_INK} floor`);
+    }
+    const threeX = widenHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 0.28 * 3);
+    if (threeX.ink !== 1 || threeX.height !== 1.25) {
+      fail(`28% at 3x: a 1.05 device px rule was widened to ${threeX.height.toFixed(3)} at ${threeX.ink} ink`);
+    }
+  }
 
   // A vertical rule is the same rule on the other axis - column dividers in
   // the hourly grid are these, and an implementation that only handles the
@@ -286,6 +336,39 @@ if (counts.p === 0) {
 if (counts.p !== pathDElements) {
   fail(`${pathDElements} elements carry pathD but ${counts.p} path marks came out`);
 }
+
+// ---------------------------------------------------------------------
+// 3. The callers hand it a DEVICE scale.
+//
+// widenHairline's `scale` is output units per print px, and the floor is
+// meaningless if a caller passes the wrong unit. The editor passed CSS
+// pixels per print pixel: on a 3x display that floored every ruled line at
+// three device pixels of 35% grey, beside stroked outlines the browser drew
+// crisp at full ink. Reported as lines that "look blurry because they are
+// wider versions that are grey".
+//
+// A unit check cannot catch that - the function was handed a number and used
+// it exactly as documented. This reads the call sites instead.
+// ---------------------------------------------------------------------
+{
+  const editor = readFileSync("src/app/planner/PolotnoJsonRenderer.tsx", "utf8");
+  if (!/markGeometry\(element, originX, originY, scale \* dpr,/.test(editor)) {
+    fail(
+      "PolotnoJsonRenderer must pass scale * devicePixelRatio - a CSS scale floors every rule " +
+        "at one CSS pixel, which is three device pixels on a 3x display"
+    );
+  }
+  if (!/deviceScale: number/.test(editor)) {
+    fail("markGeometry's scale parameter must be named deviceScale, so a CSS scale reads as wrong where it is passed");
+  }
+  // The canvas previews size their own backing store in device pixels, so
+  // their scale already carries the ratio - see drawPreview.
+  const preview = readFileSync("src/app/planner/drawPreview.ts", "utf8");
+  if (!/const scale = Math\.min\(width \/ pageWidth, height \/ pageHeight\)/.test(preview)) {
+    fail("drawPreview must take its scale from the canvas's own device-pixel backing store");
+  }
+}
+
 
 if (failures > 0) {
   console.error(`\nPreview marks disagree with the drawing in ${failures} case(s).`);
