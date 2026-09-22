@@ -37,7 +37,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { ModulePlacementMode } from "@/generated/prisma/enums";
 import type { PageLevel } from "@/lib/pageLevels";
 import { moduleDefinition } from "@/lib/moduleRegistry";
-import { resolveFontFamily } from "@/lib/theme";
+import { fontFamilyFromTheme, resolveFontFamily } from "@/lib/theme";
 import type { PreviewMark } from "@/lib/previewMarks";
 import { pageThumbnail } from "./loadPlannerPages";
 
@@ -88,7 +88,7 @@ const sizeOf = (page: PageSize): PageSize => ({
   marginPx: page.marginPx,
 });
 
-const PAGE_SIZE_SELECT = {
+export const PAGE_SIZE_SELECT = {
   widthPx: true,
   heightPx: true,
   gridColumns: true,
@@ -617,4 +617,27 @@ export async function moveSavedItems(db: Db, fromOwner: string, toOwner: string)
     db.savedModule.updateMany({ where: { ownerId: fromOwner }, data: { ownerId: toOwner } }),
   ]);
   return pages.count + modules.count;
+}
+
+/**
+ * Saved > Pages and Saved > Modules as the editor wants them: drawn in this
+ * journal's font, each page marked with whether it fits this journal's size.
+ *
+ * Extracted from levelPage when the editor gained a way to refresh its saved
+ * items without reloading the document - saving a module to Saved has to put
+ * it in the palette, and that list does not come from loadLevel. Two places
+ * assembling the same three facts (font, fit, modules) is how the palette
+ * ends up disagreeing with the dialog about what you have saved.
+ */
+export async function savedItemsFor(
+  ownerId: string,
+  book: { theme: unknown; pages: PageSize[] }
+): Promise<{ pages: Array<SavedPageCard & { fits: boolean }>; modules: SavedModuleCard[] }> {
+  const fontFamily = fontFamilyFromTheme(book.theme);
+  const [pages, modules] = await Promise.all([savedPagesOf(ownerId, fontFamily), savedModulesOf(ownerId)]);
+  const journalPage = book.pages[0];
+  return {
+    pages: pages.map((card) => ({ ...card, fits: !journalPage || sameSize(card.size, journalPage) })),
+    modules,
+  };
 }

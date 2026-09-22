@@ -49,9 +49,11 @@ import {
   replacePagesWithSaved,
   saveModuleAs,
   savePagesAs,
+  savedItemsFor,
   savedModuleForAdd,
   spreadSavedModuleProps,
   syncLinkedPages,
+  PAGE_SIZE_SELECT,
 } from "./savedItems";
 import {
   renderContextForPage,
@@ -3448,4 +3450,28 @@ export async function renameSavedModule(savedModuleId: string, name: string): Pr
 
 export async function deleteSavedModule(savedModuleId: string): Promise<void> {
   await deleteSavedModuleFor(await requireOwner(), savedModuleId);
+}
+
+/**
+ * Saved > Pages and Saved > Modules again, for an editor that has changed
+ * one of them.
+ *
+ * loadLevel returns a journal's pages and its whole timeline, but NOT this -
+ * the palette's saved list comes from the owner, not the book - so saving a
+ * module to Saved used to reload the document simply to make the palette
+ * notice. Same assembly as the page's own, through savedItemsFor.
+ */
+export async function loadSavedItems(journalId: string) {
+  const userId = await currentOwnerId();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const book = await prisma.planner.findFirst({
+    where: journalWhere(userId, journalId),
+    select: { theme: true, pages: { select: PAGE_SIZE_SELECT } },
+  });
+  if (!book) {
+    throw new Error(JOURNAL_NOT_FOUND);
+  }
+  return savedItemsFor(userId, book);
 }

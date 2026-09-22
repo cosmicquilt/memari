@@ -34,6 +34,7 @@ import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm } from "./ModuleFieldsForm";
 import { saveModuleToSaved, updateModuleConfig } from "./actions";
 import { useAsyncAction } from "./useAsyncAction";
+import { useRefreshPages } from "./pagesRefreshContext";
 
 const ACCENT = "#4a5cff";
 const SURFACE = "#1c1c1e";
@@ -72,6 +73,7 @@ export function ModuleEditor({
   /** The committed props, so the page behind can redraw without a reload. */
   onSaved: (instanceId: string, propValues: Record<string, unknown>) => void;
 }) {
+  const refreshPages = useRefreshPages();
   const definition = moduleDefinition(editing.slug);
   const [draft, setDraft] = useState<Record<string, unknown>>(editing.propValues);
   const [pending, error, run] = useAsyncAction();
@@ -174,7 +176,7 @@ export function ModuleEditor({
       // The server has it right; the canvas and the timeline are showing the
       // old settings, so they are read again rather than patched one by one.
       if (result.otherUsesChanged) {
-        window.location.reload();
+        await refreshPages({ rebuild: true });
         return;
       }
       onSaved(editing.instanceId, cleaned);
@@ -188,7 +190,7 @@ export function ModuleEditor({
     run(async () => {
       if (dirty) await updateModuleConfig(editing.instanceId, cleanPropsForSave(editing.slug, draft));
       await saveModuleToSaved(editing.instanceId, name);
-      window.location.reload();
+      await refreshPages({ saved: true });
     });
 
   return (

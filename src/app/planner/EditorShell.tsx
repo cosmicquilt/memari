@@ -50,9 +50,10 @@ import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
+import { loadSavedItems } from "./actions";
 import { JournalProvider } from "./journalContext";
 import { SavedProvider, type SavedItems } from "./savedContext";
-import { PagesRefreshProvider } from "./pagesRefreshContext";
+import { PagesRefreshProvider, type RefreshPages } from "./pagesRefreshContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
@@ -68,7 +69,7 @@ export function EditorShell({
   initialDpr = 1,
   load = loadLevel,
   guest = false,
-  saved,
+  saved: initialSaved,
 }: {
   initial: LoadedPlanner & { level: PageLevel };
   initialViewport: ViewportSize | null;
@@ -92,6 +93,17 @@ export function EditorShell({
   // The drawer's SETTLED height - the canvas's room for it. Here rather than
   // in the editor because the drawer is here.
   const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
+  // STATE, not the prop passed straight through: saving a module to Saved
+  // has to put it in the palette, and that list does not come from loadLevel
+  // - see loadSavedItems. The prop is the server's first answer.
+  const [saved, setSaved] = useState(initialSaved);
+  // Bumped to make the editor REBUILD rather than re-render. Resetting to
+  // the template and changing the trim both need NativePlannerEditor's own
+  // client state - placements, moduleLookup, zoom - built again from the new
+  // data, which a prop change does not do. A key change does, and unlike the
+  // reload it replaces, it keeps the document: the drawer's scroll and its
+  // detent survive.
+  const [generation, setGeneration] = useState(0);
   // The open editor's view, as it last reported it. A ref, written from the
   // editor's report and read in the switch below - both outside rendering -
   // so reporting a zoom does not re-render this shell.
@@ -116,7 +128,14 @@ export function EditorShell({
    *   changed it. No card was clicked, so there is nothing to mark as
    *   chosen and nothing to wait for - see PagesRefreshProvider below.
    */
-  const openLevel = useCallback(async (level: PageLevel, variantKey: string | null, silent = false) => {
+  const openLevel = useCallback(async (
+    level: PageLevel,
+    variantKey: string | null,
+    silent = false,
+    /** Rebuild the editor rather than re-render it, IN THE SAME COMMIT as
+     *  the new pages - see the transition below. */
+    rebuild = false
+  ) => {
     const request = ++latest.current;
     const clickedAt = performance.now();
     if (!silent) setChoosing({ level, variantKey });
@@ -135,6 +154,13 @@ export function EditorShell({
       startTransition(() => {
         setOpen({ ...loaded, level, ui });
         setChoosing(null);
+        // TOGETHER WITH THE PAGES, not after them. setOpen is inside a
+        // transition, so it is low priority; bumping this outside flushed
+        // first and rebuilt the editor from the data it already had, and the
+        // change appeared one action late. Measured: clicking the serif/sans
+        // switch left the text in Newsreader, and it only became Hanken
+        // Grotesk when the NEXT setting was changed.
+        if (rebuild) setGeneration((n) => n + 1);
       });
     } catch (error) {
       // Stay on the layout that is showing, and put the timeline's selection
@@ -151,9 +177,14 @@ export function EditorShell({
   // pagesRefreshContext.tsx. Bound to whatever level is open NOW, so a
   // mutation made while the daily spread is showing comes back as the daily
   // spread rather than sending the editor somewhere else.
-  const refreshPages = useCallback(
-    () => openLevel(open.level, open.variantKey, true),
-    [openLevel, open.level, open.variantKey]
+  const refreshPages = useCallback<RefreshPages>(
+    async ({ saved: alsoSaved = false, rebuild = false } = {}) => {
+      await Promise.all([
+        openLevel(open.level, open.variantKey, true, rebuild),
+        alsoSaved ? loadSavedItems(journalId).then(setSaved) : Promise.resolve(),
+      ]);
+    },
+    [openLevel, open.level, open.variantKey, journalId]
   );
 
   // What the timeline shows as open: the one being opened, if any.
@@ -169,7 +200,7 @@ export function EditorShell({
   const editor = useMemo(
     () => (
       <NativePlannerEditor
-        key={`${open.level}:${open.variantKey ?? ""}`}
+        key={`${open.level}:${open.variantKey ?? ""}:${generation}`}
         pages={open.pages}
         term={open.term}
         weekSettings={open.weekSettings}
@@ -182,7 +213,10 @@ export function EditorShell({
         guest={guest}
       />
     ),
-    [open, initialViewport, drawerHeight, reportView, guest]
+    // `generation` is in the editor's key, so it MUST be here: a memo that
+    // does not watch it returns the same element and the rebuild never
+    // happens. Caught by the exhaustive-deps rule, which was right.
+    [open, initialViewport, drawerHeight, reportView, guest, generation]
   );
 
   return (

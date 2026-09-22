@@ -99,6 +99,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import Link from "next/link";
 import { useJournalId } from "./journalContext";
+import { useRefreshPages } from "./pagesRefreshContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
 import { computeLabeledBoxHeaderHeightPx, computeLabeledBoxHeadingFontSizePx } from "@/lib/modules/labeledBox";
@@ -3893,14 +3894,17 @@ function ModulePalette({
 // rendering "Aa" in its own real font so the choice is previewable
 // before clicking, not just a text label. Click applies immediately
 // (no separate Save button — matches "switch" semantics more than a
-// form) via updatePlannerFont, then reloads: same "infrequent,
-// deliberate action" tradeoff updateWeekSettings/WeekSettingsPanel
-// already established elsewhere in this app — a font change affects
-// every already-committed element on both pages at once, not one
-// live-patchable instance, so a full reload is simpler and more
-// reliable than hand-rolling a client-side re-render of locked content
-// that was never sent to the client in the first place.
+// form) via updatePlannerFont, then re-reads. A font change affects every
+// already-committed element on both pages at once, not one live-patchable
+// instance, so hand-rolling a client-side re-render of locked content -
+// which was never sent to the client in the first place - is not an option.
+//
+// This comment used to end "so a full reload is simpler and more reliable".
+// The premise was right and the conclusion did not follow: asking the server
+// again is not hand-rolling anything, and it keeps the document. See
+// pagesRefreshContext.
 function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
 
@@ -3908,7 +3912,7 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
     if (choice === fontChoice || pending) return;
     run(async () => {
       await updatePlannerFont(journalId, choice);
-      window.location.reload();
+      await refreshPages({ rebuild: true });
     });
   };
 
@@ -3957,6 +3961,7 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
  * the timeline's cog can offer - see occurrences().
  */
 function TermFields({ term }: { term: { start: string | null; end: string | null } }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const [start, setStart] = useState(term.start ?? "");
@@ -4002,7 +4007,7 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
               // Both or neither: a half-set term is not a shorter book, it is
               // one whose length nobody can compute.
               await setPlannerTerm(journalId, start || null, end || null);
-              window.location.reload();
+              await refreshPages({ rebuild: true });
             })
           }
           style={{
@@ -4037,6 +4042,7 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
 // A reload rather than a local state update, same as FontToggle: it changes
 // what every page draws, and the pages are shaped on the server.
 function DatesToggle({ dated }: { dated: boolean }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
 
@@ -4044,7 +4050,7 @@ function DatesToggle({ dated }: { dated: boolean }) {
     if (next === dated || pending) return;
     run(async () => {
       await setPlannerDated(journalId, next);
-      window.location.reload();
+      await refreshPages({ rebuild: true });
     });
   };
 
@@ -4085,6 +4091,7 @@ function DatesToggle({ dated }: { dated: boolean }) {
 // that reaches the page bottom, which is the same thing dragging its
 // bottom edge does. No confirmation needed, since nothing is discarded.
 function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
+  const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
   const current = trimKeyForWidth(pageGrid.widthPx);
@@ -4093,7 +4100,7 @@ function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
     if (key === current || pending) return;
     run(async () => {
       await setPlannerTrim(journalId, key);
-      window.location.reload();
+      await refreshPages({ rebuild: true });
     });
   };
 
@@ -4188,6 +4195,7 @@ function HoursForm({
   weekStartDay: number;
   rowHeightPt: number;
 }) {
+  const refreshPages = useRefreshPages();
   const [draftRowHeight, setDraftRowHeight] = useState<number>(rowHeightPt);
   const [draftStart, setDraftStart] = useState(startTime);
   const [draftEnd, setDraftEnd] = useState(endTime);
@@ -4242,7 +4250,7 @@ function HoursForm({
         }
         await save(true);
       }
-      window.location.reload();
+      await refreshPages({ rebuild: true });
     });
 
   const fieldStyle: CSSProperties = {
@@ -4704,6 +4712,7 @@ export function NativePlannerEditor({
    *  their work by signing in. See guest.ts. */
   guest?: boolean;
 }) {
+  const refreshPages = useRefreshPages();
   // Local, seeded from the server's copy. These used to be read straight
   // off the prop, which was fine only because every path that changed them
   // reloaded the page afterwards. The row-height drag handle commits
@@ -9494,11 +9503,15 @@ export function NativePlannerEditor({
   // rather than a live state patch the way every other action here is:
   // reconstructing placements/moduleLookup/every derived map for a
   // wipe-and-reseed would just be re-deriving what a fresh page load
-  // already does correctly. window.location.reload(), not
-  // router.refresh() — a Server Component refresh alone wouldn't reset
-  // NativePlannerEditor's own client state (placements, moduleLookup,
-  // zoom, ...), and this needs all of it rebuilt from scratch, not just
-  // the server data underneath it re-fetched.
+  // already does correctly.
+  //
+  // This used to say so and then reload the document, on the grounds that
+  // "a Server Component refresh alone wouldn't reset NativePlannerEditor's
+  // own client state (placements, moduleLookup, zoom, ...)". That part is
+  // still true, and it is why this passes `rebuild` - which throws the
+  // editor away and builds it again from the new data, exactly as the
+  // reload did. What it no longer throws away is the DOCUMENT: the drawer's
+  // scroll and detent survive. See pagesRefreshContext.
   const [isResettingPlanner, setIsResettingPlanner] = useState(false);
   const handleResetPlannerToTemplate = useCallback(async () => {
     const confirmed = window.confirm("Reset to original template?");
@@ -9506,12 +9519,12 @@ export function NativePlannerEditor({
     setIsResettingPlanner(true);
     try {
       await resetPlannerToTemplate(journalId);
-      window.location.reload();
+      await refreshPages({ rebuild: true });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setIsResettingPlanner(false);
     }
-  }, [journalId]);
+  }, [journalId, refreshPages]);
 
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
