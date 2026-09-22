@@ -275,6 +275,37 @@ export const DRAWER_COMPACT_HEIGHT =
 export const DRAWER_CLOSED_HEIGHT = GRABBER_BAND;
 
 /**
+ * Every detent, shortest first. One list, because it was written out twice -
+ * once as the state's type and once as the snap candidates - and two lists
+ * of the same five things is one edit away from disagreeing.
+ */
+export const DRAWER_DETENTS = ["closed", "compact", "resting", "middle", "expanded"] as const;
+
+export type DrawerDetent = (typeof DRAWER_DETENTS)[number];
+
+/**
+ * Is the drawer a TAB, or a full-width edge?
+ *
+ * BINARY, AND DELIBERATELY NOT ARITHMETIC. This used to interpolate the
+ * detent's height between closed and RESTING, which read as "how open is
+ * it". That was true only while resting was the shortest open detent. Adding
+ * the compact detent below it (2598cc1) left compact at 0.72 of the way
+ * open, so the tab sat at 74% of the window - reported as "at the smallest
+ * drawer size the tab shrinks maybe like 20% when it shouldn't" - and kept
+ * 2.8px of the rounded corners that belong to a closed tab.
+ *
+ * That is the THIRD thing that commit broke by assuming resting was the
+ * smallest open state; the first 500'd every journal page on production. So
+ * this is not a corrected denominator, which would break again the next time
+ * a detent is added underneath. There is no height in it at all: a drawer is
+ * open or it is not, and every open detent is equally open. The widening
+ * itself is a CSS transition on the width, which is where it belongs.
+ */
+export function tabOpenness(detent: DrawerDetent): 0 | 1 {
+  return detent === "closed" ? 0 : 1;
+}
+
+/**
  * How big a card is at a given drawer height.
  *
  * THIS IS WHAT THE HANDLE IS FOR. Expanding used to make the panel taller
@@ -529,9 +560,7 @@ export function TimelineDrawer({
   // Asked for directly: "I want to be able to close bottom timeline
   // seamlessly in the design." MIDDLE is halfway between resting and
   // expanded, asked for 2026-09-21: "we should add a level between the two".
-  const [detent, setDetent] = useState<"closed" | "compact" | "resting" | "middle" | "expanded">(
-    "resting"
-  );
+  const [detent, setDetent] = useState<DrawerDetent>("resting");
   // Which open detent a close should return to. A grabber that both drags
   // and toggles has to mean ONE thing when clicked, and "close / reopen" is
   // what it is for - the middle detent is reached by dragging, and clicking
@@ -652,10 +681,9 @@ export function TimelineDrawer({
     if (height === null) return;
     // Snap to whichever detent is nearest. Detents, not free resize: a panel
     // that can rest anywhere has no shape you can learn.
-    const candidates = ["closed", "compact", "resting", "middle", "expanded"] as const;
-    let nearest: typeof detent = "resting";
+    let nearest: DrawerDetent = "resting";
     let best = Infinity;
-    for (const candidate of candidates) {
+    for (const candidate of DRAWER_DETENTS) {
       const distance = Math.abs(heightOf(candidate) - height);
       if (distance < best) {
         best = distance;
@@ -825,15 +853,23 @@ export function TimelineDrawer({
   );
 
   /**
-   * How far from tab to panel, 0 to 1 - and it has to be CONTINUOUS.
+   * Tab or panel - see tabOpenness. The travel between them is a CSS
+   * transition on `width` and `border-radius` (phases.shape below), not a
+   * number computed per frame.
    *
-   * This was a boolean, flipped at a threshold four pixels above closed, and
+   * This line used to read "0 to 1 - and it has to be CONTINUOUS", which was
+   * a true lesson about the WRONG mechanism and outlived it. The original was
+   * a boolean flipped at a threshold four pixels above the closed height, and
    * it was wrong in both directions. Opening, the threshold was crossed on
    * the first frame, so the surface, the border and the corners all snapped
    * to their panel values at once and you saw a full-width bar appear before
    * the height had moved - "the tab instantly jumps to a bar then opens".
    * Closing, the same snap happened at the very end, so the panel vanished
    * from under its own contents instead of shrinking away with them.
+   *
+   * The fault there was the LIVE HEIGHT and the threshold in it, not the two
+   * values: reading the settled detent instead already made this a step, and
+   * the transition has been carrying the travel ever since.
    *
    * The lesson generalises past this drawer: BACKGROUND, BORDER AND RADIUS
    * CANNOT BE SWITCHED PART WAY THROUGH A MOVE. Either every property
@@ -857,14 +893,7 @@ export function TimelineDrawer({
    * schedule. The one exception is the previews, which are being sized BY the
    * drag and so have to follow it.
    */
-  const openness = Math.min(
-    1,
-    Math.max(
-      0,
-      (heightOf(detent) - DRAWER_CLOSED_HEIGHT) /
-        (DRAWER_RESTING_HEIGHT - DRAWER_CLOSED_HEIGHT)
-    )
-  );
+  const openness = tabOpenness(detent);
   /**
    * Which way it is going, so the close can be SEQUENCED.
    *
