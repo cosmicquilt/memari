@@ -27,7 +27,8 @@
     "check:print": "tsx scripts/check-print.mts",
     "check:contrast": "tsx scripts/check-contrast.mts",
     "check:preview": "tsx scripts/check-preview.mts",
-    "fold:books": "tsx scripts/fold-books.mts"
+    "fold:books": "tsx scripts/fold-books.mts",
+    "check:routes": "tsx scripts/check-routes.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.0",
