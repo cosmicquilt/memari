@@ -55,7 +55,7 @@ import { SavedProvider, type SavedItems } from "./savedContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
-import { usePrefersReducedMotion } from "./useMediaQuery";
+import { usePrefersReducedMotion, ServerDevicePixelRatio } from "./useMediaQuery";
 import { loadLevel } from "./loadLevel";
 
 /** A layout, and the view it opens with - the view the previous one left. */
@@ -64,12 +64,17 @@ type OpenLayout = LoadedPlanner & { level: PageLevel; ui: EditorUi | null };
 export function EditorShell({
   initial,
   initialViewport,
+  initialDpr = 1,
   load = loadLevel,
   guest = false,
   saved,
 }: {
   initial: LoadedPlanner & { level: PageLevel };
   initialViewport: ViewportSize | null;
+  /** The display's pixel ratio, from the same cookie the size comes from, so
+   *  the SERVER draws hairlines at the floor this display actually has. 1 on
+   *  a first visit, where the guard script hides the canvas anyway. */
+  initialDpr?: number;
   /** How a layout is fetched. Always loadLevel in the app; a stand-in lets a
    *  test drive the swap without a signed-in session. */
   load?: typeof loadLevel;
@@ -166,8 +171,9 @@ export function EditorShell({
   );
 
   return (
-    <JournalProvider value={journalId}>
-      <SavedProvider value={saved}>
+    <ServerDevicePixelRatio.Provider value={initialDpr}>
+      <JournalProvider value={journalId}>
+        <SavedProvider value={saved}>
         {editor}
         <TimelineDrawer
           pages={open.timeline}
@@ -184,7 +190,8 @@ export function EditorShell({
             void openLevel(next, nextVariant);
           }}
         />
-      </SavedProvider>
-    </JournalProvider>
+        </SavedProvider>
+      </JournalProvider>
+    </ServerDevicePixelRatio.Provider>
   );
 }

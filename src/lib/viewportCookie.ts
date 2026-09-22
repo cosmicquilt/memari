@@ -22,16 +22,40 @@
 export const VIEWPORT_COOKIE = "memari-viewport";
 
 export type ViewportSize = { width: number; height: number };
+/** The size AND the display's pixel ratio - see DPR_SCALE. */
+export type Viewport = ViewportSize & { dpr: number };
 
-const FORMAT = /^(\d{2,5})x(\d{2,5})$/;
+/**
+ * The ratio is carried as a whole number of hundredths (300 for a 3x
+ * display, 150 for a 1.5x one).
+ *
+ * The cookie is compared for equality by an inline script that has to be
+ * tiny, and comparing `2.25` as text is a trap - "2.250" and "2.25" are the
+ * same ratio and different strings. Integers cannot do that.
+ */
+const DPR_SCALE = 100;
+export const dprToCookie = (dpr: number) => Math.round((dpr || 1) * DPR_SCALE);
 
-export function parseViewportCookie(value: string | undefined | null): ViewportSize | null {
+const FORMAT = /^(\d{2,5})x(\d{2,5})@(\d{2,4})$/;
+
+/**
+ * NO RATIO, NO MATCH. A cookie written before the ratio was part of it
+ * parses as null, which is the same path as a first visit: the guard script
+ * flags the page and the canvas stays hidden until the editor measures. A
+ * default of 1 here would instead render a 3x display's hairlines at three
+ * device pixels and call it correct.
+ */
+export function parseViewportCookie(value: string | undefined | null): Viewport | null {
   const match = FORMAT.exec(value ?? "");
-  return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
+  return match
+    ? { width: Number(match[1]), height: Number(match[2]), dpr: Number(match[3]) / DPR_SCALE }
+    : null;
 }
 
-export function writeViewportCookie(size: ViewportSize): void {
-  document.cookie = `${VIEWPORT_COOKIE}=${size.width}x${size.height}; path=/; max-age=31536000; samesite=lax`;
+export function writeViewportCookie(size: ViewportSize, dpr: number): void {
+  document.cookie =
+    `${VIEWPORT_COOKIE}=${size.width}x${size.height}@${dprToCookie(dpr)}` +
+    `; path=/; max-age=31536000; samesite=lax`;
 }
 
 /** On <html> while the page on screen was rendered for some other window
@@ -45,6 +69,6 @@ export const VIEWPORT_UNMEASURED_ATTRIBUTE = "data-memari-viewport-unmeasured";
  * read - and flags the page if they differ or there was none.
  */
 export const VIEWPORT_GUARD_SCRIPT =
-  `(function(){var m=document.cookie.match(/(?:^|; )${VIEWPORT_COOKIE}=(\\d+)x(\\d+)(?:;|$)/);` +
-  `if(!m||+m[1]!==innerWidth||+m[2]!==innerHeight)` +
+  `(function(){var m=document.cookie.match(/(?:^|; )${VIEWPORT_COOKIE}=(\\d+)x(\\d+)@(\\d+)(?:;|$)/);` +
+  `if(!m||+m[1]!==innerWidth||+m[2]!==innerHeight||+m[3]!==Math.round((devicePixelRatio||1)*${DPR_SCALE}))` +
   `document.documentElement.setAttribute("${VIEWPORT_UNMEASURED_ATTRIBUTE}","")})()`;

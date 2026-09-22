@@ -5704,7 +5704,7 @@ export function NativePlannerEditor({
       setViewportSize((current) =>
         current.width === measured.width && current.height === measured.height ? current : measured
       );
-      writeViewportCookie(measured);
+      writeViewportCookie(measured, window.devicePixelRatio);
     };
     update();
     // In the same layout pass as the correction above, so the first frame

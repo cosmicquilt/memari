@@ -9,6 +9,9 @@
 //   - the timeline tab drew at 74% of the window at the compact detent. A
 //     unit test now pins the arithmetic, but not that CSS puts the element
 //     where the arithmetic says;
+//   - hairlines painted a frame or two too thick on every page change,
+//     because the device ratio arrived after the paint - a bug with no
+//     symptom at all on a 1x screen;
 //   - ruled lines came out blurry and grey on a 3x display. check:preview
 //     verifies snapHairline's numbers and then has to fall back to READING
 //     THE SOURCE of its callers, because a function handed the wrong unit
@@ -391,7 +394,116 @@ const hairlines: Probe = {
 };
 
 // ---------------------------------------------------------------------
-// 4. Nothing on the console.
+// 4. A page change never paints a wrong-ratio frame.
+//
+// Andrew: "when changing between pages or spreads in app. the split second
+// it loads in the lines look thicker before quickly jumping to their final
+// state." useDevicePixelRatio started at 1 and corrected in a useEffect,
+// which runs AFTER the paint, so every newly-mounted module drew a frame or
+// two of hairlines floored at one CSS pixel - three device pixels at 3x.
+//
+// ONLY OBSERVABLE ABOVE 1x, where one CSS pixel and one device pixel are the
+// same thing and the bug is invisible. That is the whole argument for the
+// harness carrying its own pixel ratios.
+//
+// The invariant is the hairline probe's, applied to every FRAME of a
+// transition rather than to the settled page: the thinnest rule on screen is
+// one device pixel. The dpr-1 floor puts the floor at `dpr` instead, so
+// during the flash there is no 1 at all.
+//
+// Sabotaged by putting the useEffect back: "after opening a timeline card: a
+// frame painted 348 rules with the thinnest at 3 device px". The FIRST LOAD
+// case stayed green under that sabotage, which is correct rather than a
+// miss - until the editor has measured the window the canvas is hidden
+// outright, so there is nothing to see whatever the ratio says.
+// ---------------------------------------------------------------------
+const pageChange: Probe = {
+  name: "page change",
+  ratios: [3],
+  run: async (page, { base, journalId, dpr }) => {
+    // INSTALLED WITH addInitScript, which runs on every new document before
+    // any page script does. Two reasons, and the second was a surprise:
+    // the flash is in the FIRST frames of a load, so a recorder started
+    // afterwards has already missed it - and opening a timeline card turns
+    // out to be a FULL DOCUMENT NAVIGATION, not a client-side transition.
+    // A recorder set with page.evaluate was wiped by it, and the first
+    // version of this probe reported "no card click changed the page"
+    // because its own state had gone with the document.
+    await page.addInitScript(`
+      window.__f = [];
+      requestAnimationFrame(function step() {
+        var rects = [].slice.call(document.querySelectorAll("svg rect")).filter(function (r) {
+          var f = r.getAttribute("fill"), sw = parseFloat(r.getAttribute("stroke-width") || "0");
+          if (!f || f === "none" || f === "transparent" || sw > 0) return false;
+          var h = +(r.getAttribute("height") || 0), w = +(r.getAttribute("width") || 0);
+          return h > 0 && w > 0 && h < w * 0.15;
+        });
+        if (rects.length) {
+          // CAPPED at 300. A weekly spread carries 3000 rects and measuring
+          // every one per frame slows the page down enough to change what is
+          // being measured. The wrong-ratio floor applies to every rule at
+          // once, so a sample answers the question.
+          var cap = Math.min(rects.length, 300);
+          var thin = Infinity;
+          for (var i = 0; i < cap; i++) {
+            var d = rects[i].getBoundingClientRect().height * window.devicePixelRatio;
+            if (d < thin) thin = d;
+          }
+          // HIDDEN FRAMES DO NOT COUNT. Until the editor has measured the
+          // window, VIEWPORT_GUARD_SCRIPT marks the document and globals.css
+          // puts the canvas at visibility:hidden - the marks still have
+          // geometry, so this probe read them and called a first load broken
+          // when nobody could see it. The check was wrong, not the app.
+          var hidden = document.documentElement.hasAttribute("data-memari-viewport-unmeasured");
+          window.__f.push({ n: rects.length, thinnest: +thin.toFixed(2), hidden: hidden });
+        }
+        if (window.__f.length < 400) requestAnimationFrame(step);
+      });`);
+
+    /** The worst frame that painted rules at the wrong floor. */
+    const worstOf = async (what: string) => {
+      const frames = ((await page.evaluate(`window.__f || []`)) ?? []) as {
+        n: number;
+        thinnest: number;
+        hidden: boolean;
+      }[];
+      const drawn = frames.filter((f) => f.n >= 20 && !f.hidden);
+      if (drawn.length === 0) {
+        fail("page change", `${what}: no frame drew any rules - nothing was measured`);
+        return;
+      }
+      let worst: { n: number; thinnest: number; hidden: boolean } | null = null;
+      for (const frame of drawn) {
+        if (Math.abs(frame.thinnest - 1) > 0.02 && (worst === null || frame.thinnest > worst.thinnest)) worst = frame;
+      }
+      if (worst) {
+        fail(
+          "page change",
+          `${dpr}x ${what}: a frame painted ${worst.n} rules with the thinnest at ${worst.thinnest} device px, ` +
+            `not 1 - the ratio had not arrived and the hairline floor was a CSS pixel`
+        );
+      } else {
+        note("page change", `${dpr}x ${what}: ${drawn.length} drawn frames, every one with a 1-device-px rule`);
+      }
+    };
+
+    await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(3000);
+    await worstOf("first load");
+
+    const cards = page.locator("button.memari-card");
+    if ((await cards.count()) < 2) {
+      fail("page change", "fewer than two timeline cards - nothing to switch between");
+      return;
+    }
+    await cards.nth(0).click();
+    await page.waitForTimeout(3000);
+    await worstOf("after opening a timeline card");
+  },
+};
+
+// ---------------------------------------------------------------------
+// 5. Nothing on the console.
 //
 // Cheap, and it catches the class the other three are specific instances of:
 // a page that renders but is complaining. Hydration mismatches show up here
@@ -427,7 +539,7 @@ const consoleClean: Probe = {
   },
 };
 
-const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, consoleClean];
+const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, consoleClean];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;
 if (PROBES.length === 0) {
   console.error(`No probe matches --only ${ONLY}. Try: ${ALL_PROBES.map((p) => p.name).join(", ")}`);

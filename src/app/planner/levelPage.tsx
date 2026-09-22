@@ -69,6 +69,7 @@ export async function renderEditor(journalId: string) {
     <EditorShell
       initial={{ ...loaded, level: opened.level }}
       initialViewport={initialViewport}
+      initialDpr={initialViewport?.dpr ?? 1}
       guest={owner.guest}
       saved={saved}
     />

@@ -30,12 +30,18 @@ export type RenderedElement = {
 };
 
 import { ptToPx } from "@/lib/print-spec";
+import { estimateTextWidthPx, truncateToWidth } from "@/lib/modules/textFit";
 import {
   NEAR_BLACK,
   RULE_WIDTH_PT,
   nearestLatticeYPx,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
+
+/** The title's size when the name fits, measured from the reference PDF. */
+const TITLE_PT = 19;
+/** How small it may get before the name is cut instead. */
+const TITLE_MIN_PT = 11;
 
 export function renderMonthTitle(
   geometry: { x: number; y: number; width: number; height: number },
@@ -72,8 +78,10 @@ export function renderMonthTitle(
   // Serif, same substitution every other renderer here already makes) —
   // so this trades a cosmetic flourish for a renderer that actually
   // displays the month name horizontally, which matters more.
-  const fontSize = ptToPx(19);
-  const textHeight = fontSize * 1.2;
+  // The size when the name fits. The dated branch scales DOWN from here when
+  // it does not; the undated branch uses it to place its rule, which must not
+  // move with a month name that is not there.
+  const fontSize = ptToPx(TITLE_PT);
 
   // Undated: the month name gives way to a rule, exactly as week-title's
   // date range does. See that file for why a rule and not underscores.
@@ -84,17 +92,53 @@ export function renderMonthTitle(
   const dated = (config.monthName ?? "").trim().length > 0;
 
   if (dated) {
+    // SCALED TO THE COLUMN, and centred over it.
+    //
+    // Asked for 2026-09-22: "the month should scale so that it doesn't over
+    // lap into the adjacent column, (which happens with november)". Measured
+    // against the shipped sidebar - 438 print px at a 24-column 7x10 page -
+    // FOUR of the twelve names ran past it at a flat 19pt:
+    //
+    //   FEBRUARY  462.3 px   24.3 over   (6%)
+    //   SEPTEMBER 520.1 px   82.1 over  (19%)
+    //   NOVEMBER  462.3 px   24.3 over   (6%)
+    //   DECEMBER  462.3 px   24.3 over   (6%)
+    //
+    // September is the worst and was not the one reported; November is
+    // simply the month it was noticed in.
+    //
+    // PER MONTH, NOT ONE SIZE FOR ALL TWELVE. Fitting every month to
+    // SEPTEMBER's requirement would put the whole book at about 15pt,
+    // shrinking the eight that were already fine. This keeps each title as
+    // large as its own name allows - so eight months are untouched at 19pt,
+    // three drop about a point, and only September moves visibly. The trade
+    // is that title size is no longer identical month to month; if that
+    // reads as sloppy when flipping through, the other choice is one size
+    // for the set and it belongs here rather than at the call site.
+    const estimated = estimateTextWidthPx(config.monthName, fontSize);
+    const scaled = estimated > geometry.width ? fontSize * (geometry.width / estimated) : fontSize;
+    // A floor, so narrowing the module cannot shrink the month to nothing.
+    // Below it the name is cut rather than scaled - at the shipped width
+    // this never binds, since September needs 15.4pt.
+    const titleFontSize = Math.max(ptToPx(TITLE_MIN_PT), scaled);
+    const text =
+      titleFontSize > scaled ? truncateToWidth(config.monthName, geometry.width, titleFontSize) : config.monthName;
     elements.push({
       id: id("title"),
       type: "text",
       x: geometry.x,
       y: geometry.y,
+      // CENTRED over the sidebar, not ranged left against its edge - asked
+      // for in the same breath ("dont seem to be centered in the ... side
+      // bar"). This is a deliberate departure from the reference PDF, whose
+      // title starts flush at the column's left edge; see the note at the
+      // top of this file on what was measured there.
       width: geometry.width,
-      height: textHeight,
-      text: config.monthName,
-      fontSize,
+      height: titleFontSize * 1.2,
+      text,
+      fontSize: titleFontSize,
       fontFamily: FONT_FAMILY,
-      align: "left",
+      align: "center",
     });
     return elements;
   }

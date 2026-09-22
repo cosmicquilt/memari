@@ -29,7 +29,8 @@
     "check:preview": "tsx scripts/check-preview.mts",
     "fold:books": "tsx scripts/fold-books.mts",
     "check:routes": "tsx scripts/check-routes.mts",
-    "check:browser": "tsx scripts/check-browser.mts"
+    "check:browser": "tsx scripts/check-browser.mts",
+    "check:all": "tsc --noEmit && eslint && npm test && npm run check:pdf && npm run check:print && npm run check:preview && npm run check:page && npm run check:layout && npm run check:levels && npm run check:contrast && npm run check:book && npm run check:gaps && npm run check:journals && npm run check:saved && npm run check:routes && npm run check:browser"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.0",
