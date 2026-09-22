@@ -78,6 +78,7 @@ import { useSavedItems, type SavedPageOption } from "./savedContext";
 import { SavedThumb } from "./SavedThumb";
 import { useAsyncAction } from "./useAsyncAction";
 import { PagePreview } from "./PagePreview";
+import { placeAnchoredPanel, type PanelPlacement } from "@/lib/anchoredPanel";
 
 // --- geometry, from the spec -----------------------------------------
 //
@@ -1762,7 +1763,7 @@ function AnchoredPanel({
   width?: number;
   children: React.ReactNode;
 }) {
-  const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
+  const [at, setAt] = useState<PanelPlacement | null>(null);
 
   // Before paint, so it never shows for a frame in the wrong place. Re-run on
   // scroll (capture: the filmstrip's own scroll does not bubble) and on
@@ -1771,13 +1772,12 @@ function AnchoredPanel({
     const place = () => {
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setAt({
-        // Right-aligned with the control, which for the cog sits in its box's
-        // top-right corner: the panel opens back over its own level rather
-        // than out over the next one. Kept on screen either way.
-        left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
-        bottom: window.innerHeight - rect.top + 10,
-      });
+      // The arithmetic lives in src/lib/anchoredPanel.ts, where a check can
+      // reach it - this panel has been invisible twice, once from a clip and
+      // once from being positioned off the top of the window.
+      setAt(
+        placeAnchoredPanel(rect, { width: window.innerWidth, height: window.innerHeight }, width)
+      );
     };
     place();
     window.addEventListener("scroll", place, true);
@@ -1813,10 +1813,12 @@ function AnchoredPanel({
         style={{
           position: "fixed",
           left: at.left,
-          bottom: at.bottom,
+          ...(at.place === "above" ? { bottom: at.offset } : { top: at.offset }),
           zIndex: 51,
           width,
-          maxHeight: 320,
+          // The room that side of the control actually has, not a constant.
+          // It scrolls, so a capped panel is short rather than cut off.
+          maxHeight: at.maxHeight,
           overflowY: "auto",
           background: "#1c1c1e",
           border: "1px solid rgba(255, 255, 255, 0.12)",
