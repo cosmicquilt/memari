@@ -562,8 +562,26 @@ export function TimelineDrawer({
   // resize would also flip the detent it had just been dragged away from.
   const movedRef = useRef(false);
 
+  // SERVER-SAFE, and it has to be stated rather than relied on.
+  //
+  // This reads window.innerHeight, and it used to be reachable only above
+  // the resting detent - which the server never renders, so the server never
+  // called it. That was an invariant held by one comparison somewhere else,
+  // and adding the compact detent moved that comparison: contentHeight went
+  // from `height <= RESTING` to `height <= COMPACT`, so the resting height
+  // the server DOES render stopped taking the constant branch and fell
+  // through to here. Every /app/j/<id> request then failed SSR with
+  // "window is not defined" - the page still appeared, because the client
+  // recovered, which is exactly why it was not noticed by looking at it.
+  //
+  // Half a window is unknowable without a window, and the resting height is
+  // the honest answer until there is one. No hydration mismatch comes of it:
+  // at rest the drawer is 247px either way, because the min() takes the
+  // height, not this.
   const expandedHeight = () =>
-    Math.max(DRAWER_RESTING_HEIGHT, Math.round(window.innerHeight * 0.5));
+    typeof window === "undefined"
+      ? DRAWER_RESTING_HEIGHT
+      : Math.max(DRAWER_RESTING_HEIGHT, Math.round(window.innerHeight * 0.5));
   const heightOf = (which: typeof detent) =>
     which === "closed"
       ? DRAWER_CLOSED_HEIGHT
