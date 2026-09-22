@@ -20,7 +20,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
-import { widenHairline, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
+import { snapHairline, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
 import { useDevicePixelRatio } from "./useMediaQuery";
 
 // NOTE: this file used to carry a large Firefox-specific workaround here
@@ -40,9 +40,12 @@ import { useDevicePixelRatio } from "./useMediaQuery";
 // used to sit here - why the floor goes on the ink as well as the width,
 // and what each of the two half-fixes broke - moved there with it.
 //
-// This layer addresses CSS pixels, so it passes a CSS-px scale and gets a
-// one-CSS-px floor. A canvas owns its backing store and passes a device-px
-// scale for a finer one.
+// Both surfaces pass a DEVICE-px scale: the editor's zoom times
+// devicePixelRatio, a canvas's backing store over the page. This comment
+// used to claim "this layer addresses CSS pixels, so it passes a CSS-px
+// scale" - the same wrong claim the shared file carried, left behind when
+// that one was corrected in e19143d. A comment that describes the bug as
+// the design is how the bug survives.
 
 // A resizing module's content (elements/origin) is frozen at whatever it
 // was last rendered for — see NativePlannerEditor's resizeFrozenSize
@@ -110,9 +113,9 @@ export type MarkGeometry = {
   y: number;
   width: number;
   height: number;
-  /** How much of its own ink a rule keeps after being widened to stay
-   *  visible - see MIN_ONSCREEN_RECT_PX. 1 for everything not widened, and
-   *  absent on geometry built for animation pairing, which does not care. */
+  /** How much of its own ink a rule carries once snapped to the device grid
+   *  - see snapHairline. 1 for everything left alone, and absent on geometry
+   *  built for animation pairing, which does not care. */
   ink?: number;
 };
 
@@ -284,8 +287,10 @@ function markGeometry(
   deviceScale: number,
   suppressOuterBorderSize: { width: number; height: number } | null
 ): MarkGeometry | null {
-  const left = (element.x ?? 0) - originX;
-  const top = (element.y ?? 0) - originY;
+  const pageX = element.x ?? 0;
+  const pageY = element.y ?? 0;
+  const left = pageX - originX;
+  const top = pageY - originY;
   const width = element.width ?? 0;
   const height = element.height ?? 0;
   const hasStroke = !!element.stroke && element.stroke !== "none" && (element.strokeWidth ?? 0) > 0;
@@ -311,12 +316,25 @@ function markGeometry(
   const strokeWidth = hasStroke ? element.strokeWidth ?? 0 : 0;
   const inset = strokeWidth / 2;
 
-  // Legibility floor for fill-only rules - see src/lib/hairline.ts. A
+  // Fill-only rules go on the device pixel grid - see src/lib/hairline.ts. A
   // stroked box is already a stroke and is left alone.
-  const rule =
+  //
+  // SNAPPED IN PAGE SPACE, then moved into the module's own frame. Snapping
+  // each module against its own origin would agree only within that module,
+  // and two modules at different fractional offsets would land their rules
+  // on two different phases - the same defect one level up. The page is the
+  // frame every module shares.
+  const snapped =
     hasFill && !hasStroke
-      ? widenHairline({ x: left, y: top, width, height }, deviceScale)
-      : { x: left, y: top, width, height, ink: 1 };
+      ? snapHairline({ x: pageX, y: pageY, width, height }, deviceScale)
+      : { x: pageX, y: pageY, width, height, ink: 1 };
+  const rule = {
+    x: snapped.x - originX,
+    y: snapped.y - originY,
+    width: snapped.width,
+    height: snapped.height,
+    ink: snapped.ink,
+  };
 
   return {
     x: rule.x + inset,

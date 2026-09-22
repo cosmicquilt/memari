@@ -23,12 +23,7 @@ import { REGISTERED_SLUGS, moduleDefinition } from "@/lib/moduleRegistry";
 import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
-import {
-  widenHairline,
-  MIN_ONSCREEN_INK,
-  MIN_ONSCREEN_RECT_PX,
-  HAIRLINE_ASPECT_RATIO,
-} from "@/lib/hairline";
+import { snapHairline, MIN_ONSCREEN_RECT_PX, MIN_ONSCREEN_INK, HAIRLINE_ASPECT_RATIO } from "@/lib/hairline";
 import { type PageGrid } from "@/lib/grid";
 import { FONT_SERIF } from "@/lib/theme";
 import { readFileSync } from "node:fs";
@@ -61,106 +56,143 @@ const fail = (message: string) => {
   // pixel on a 1x display is 2175/72 = 30.208 print px. A 1.25px rule (0.3pt
   // at 300 DPI, the house hairline) is far under that.
   const scale = 72 / 2175;
-  const needed = MIN_ONSCREEN_RECT_PX / scale;
-  if (Math.abs(needed - 30.2083) > 0.001) {
-    fail(`hairline maths: one device px at the resting card is ${needed.toFixed(4)} print px, expected 30.2083`);
+  const onePixel = MIN_ONSCREEN_RECT_PX / scale;
+  if (Math.abs(onePixel - 30.2083) > 0.001) {
+    fail(`hairline maths: one device px at the resting card is ${onePixel.toFixed(4)} print px, expected 30.2083`);
   }
 
-  const rule = widenHairline({ x: 100, y: 200, width: 600, height: 1.25 }, scale);
-  if (Math.abs(rule.height - needed) > 1e-9) {
+  const rule = snapHairline({ x: 100, y: 200, width: 600, height: 1.25 }, scale);
+  if (Math.abs(rule.height - onePixel) > 1e-9) {
     fail(`hairline: a 1.25px rule came out ${rule.height.toFixed(4)} print px, not one device pixel`);
   }
-  // 1.25 / 30.2083 = 0.0414, below the ink floor, so it clamps.
-  if (rule.ink !== MIN_ONSCREEN_INK) {
-    fail(`hairline: ink ${rule.ink} at the resting card, expected the ${MIN_ONSCREEN_INK} floor`);
+  // A RESTING CARD IS THE CASE THE INK FLOOR EXISTS FOR. True coverage here
+  // is 1.25 x 72/2175 = 0.0414 of a pixel - a rule nobody can see, and "0 of
+  // 54 rules resolvable at a resting card" is the defect the canvas preview
+  // work was done to fix. The floor holds it at 0.35.
+  const trueInk = 1.25 * scale;
+  if (trueInk >= MIN_ONSCREEN_INK) {
+    fail(`this case is meant to be BELOW the ink floor, but true coverage is ${trueInk.toFixed(4)}`);
   }
-  // Grown about its own centre: the rule must not MOVE. A rule that shifts
-  // as it thickens is a rule off the lattice.
-  const centreBefore = 200 + 1.25 / 2;
-  const centreAfter = rule.y + rule.height / 2;
-  if (Math.abs(centreBefore - centreAfter) > 1e-9) {
-    fail(`hairline: widening moved the rule's centre by ${(centreAfter - centreBefore).toFixed(4)}px`);
+  if (rule.ink !== MIN_ONSCREEN_INK) {
+    fail(`hairline: ink ${rule.ink.toFixed(5)} at the resting card, expected the ${MIN_ONSCREEN_INK} floor`);
+  }
+  // And a zoom where the rule really is dark enough gets its own ink, not
+  // the floor - otherwise the floor is just a constant and the "carries its
+  // true ink" half of this is untested.
+  const midZoom = snapHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 0.37);
+  const midTrue = 1.25 * 0.37;
+  if (Math.abs(midZoom.ink - midTrue) > 1e-9) {
+    fail(`hairline: at 37% a rule carrying ${midTrue.toFixed(4)} of ink got ${midZoom.ink.toFixed(4)}`);
   }
   if (rule.x !== 100 || rule.width !== 600) {
-    fail("hairline: widening touched the rule's LONG axis, which is its length, not its weight");
+    fail("hairline: snapping touched the rule's LONG axis, which is its length, not its weight");
   }
 
-  // The same rule zoomed in far enough needs no help at all.
-  const big = widenHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 1);
-  if (big.height !== 1.25 || big.ink !== 1) {
-    fail("hairline: a rule already thicker than a device pixel was widened anyway");
+  // ON THE GRID. This is the whole point, and the thing the old rule never
+  // did: the rule's near edge lands on a whole device pixel.
+  const edgeInDevicePx = rule.y * scale;
+  if (Math.abs(edgeInDevicePx - Math.round(edgeInDevicePx)) > 1e-9) {
+    fail(`hairline: the snapped edge sits at ${edgeInDevicePx.toFixed(4)} device px, not on a whole one`);
+  }
+
+  // AND IT BARELY MOVES. Snapping shifts a rule by at most half a device
+  // pixel; more than that would be a different rule, not a crisper one.
+  const moved = Math.abs(rule.y - 200) * scale;
+  if (moved > 0.5 + 1e-9) {
+    fail(`hairline: snapping moved the rule ${moved.toFixed(3)} device px, over the half-pixel bound`);
+  }
+
+  // EVERY RULE ON A REGULAR PITCH GETS THE SAME PHASE.
+  //
+  // THIS IS THE REPORTED DEFECT, stated as a property. 19 rules at the
+  // to-do's real 75 print px pitch: under the old widening each landed on a
+  // different sub-pixel phase and came out visibly unequal - measured at a
+  // 0.218 coefficient of variation in peak darkness, which is what "some
+  // lines show at skinny detailed lines" beside blurry grey ones actually
+  // is. Snapped, every one is on a whole device row, so there is no phase
+  // left to differ.
+  for (const zoom of [0.2, 0.28, 0.37, 0.5, 0.64]) {
+    for (const ratio of [1, 2, 3]) {
+      const deviceScale = zoom * ratio;
+      const phases = new Set<string>();
+      for (let i = 0; i < 19; i++) {
+        const snapped = snapHairline({ x: 0, y: 261.875 + i * 75, width: 600, height: 1.25 }, deviceScale);
+        const edge = snapped.y * deviceScale;
+        const phase = edge - Math.round(edge);
+        // Normalised, because a phase of -1e-17 and one of +1e-17 are the
+        // same phase but format as "-0.000000000" and "0.000000000". The
+        // first run of this check reported "2 phases, not 1" on four of the
+        // fifteen cases for exactly that and nothing else.
+        phases.add(Math.abs(phase) < 1e-9 ? "0" : phase.toFixed(9));
+        if (Math.abs(phase) > 1e-9) {
+          fail(`${Math.round(zoom * 100)}% at ${ratio}x: rule ${i} sits at phase ${phase.toFixed(4)}`);
+        }
+      }
+      if (phases.size !== 1) {
+        fail(`${Math.round(zoom * 100)}% at ${ratio}x: 19 rules on one pitch landed on ${phases.size} phases, not 1`);
+      }
+    }
+  }
+
+  // A WHOLE NUMBER OF DEVICE PIXELS THICK, AT ANY PIXEL RATIO, NEVER UNDER
+  // ONE. `scale` is output units per print px, and the editor once passed
+  // CSS px per print px - so on a 3x display a rule came out three device
+  // pixels wide. Stated as the invariant rather than as one case.
+  for (const zoom of [0.28, 0.37, 0.5, 1, 1.5]) {
+    for (const ratio of [1, 2, 3]) {
+      const deviceScale = zoom * ratio;
+      const HOUSE_HAIRLINE = 1.25;
+      const snapped = snapHairline({ x: 0, y: 0, width: 600, height: HOUSE_HAIRLINE }, deviceScale);
+      const onScreen = snapped.height * deviceScale;
+      const where = `${Math.round(zoom * 100)}% zoom at ${ratio}x`;
+      if (Math.abs(onScreen - Math.round(onScreen)) > 1e-9) {
+        fail(`${where}: a snapped rule is ${onScreen.toFixed(3)} device px, not a whole number`);
+      }
+      if (onScreen < 1 - 1e-9) {
+        fail(`${where}: a snapped rule came out ${onScreen.toFixed(3)} device px - under one, so it can vanish`);
+      }
+      // Ink times thickness is the ink the rule really has: snapping moves
+      // where the ink goes, never how much of it there is. Two cases are
+      // exempt and both are deliberate - a rule rounded DOWN would need more
+      // ink than a pixel has, and one under MIN_ONSCREEN_INK is held up on
+      // purpose so a thumbnail's rules stay visible.
+      const trueArea = HOUSE_HAIRLINE * deviceScale;
+      const roundedUp = Math.round(trueArea) >= trueArea;
+      const aboveFloor = trueArea / Math.max(1, Math.round(trueArea)) >= MIN_ONSCREEN_INK;
+      if (roundedUp && aboveFloor && Math.abs(snapped.ink * onScreen - trueArea) > 1e-9) {
+        fail(`${where}: snapping changed the ink from ${trueArea.toFixed(4)} to ${(snapped.ink * onScreen).toFixed(4)}`);
+      }
+    }
   }
 
   // A DATE BOX IS NOT A RULE. 40 x 30 is nowhere near the aspect ratio, and
-  // widening it would turn a small square into a bar.
-  const box = widenHairline({ x: 0, y: 0, width: 40, height: 30 }, scale);
+  // snapping it would move a small square off its own position.
+  const box = snapHairline({ x: 0, y: 0, width: 40, height: 30 }, scale);
   if (box.height !== 30 || box.width !== 40 || box.ink !== 1) {
     fail("hairline: a 40x30 box was treated as a rule");
   }
   // The boundary itself, stated: 40 x 6 is exactly at the ratio and must
   // NOT qualify; 40 x 5.9 is inside it and must.
-  const atRatio = widenHairline({ x: 0, y: 0, width: 40, height: 40 * HAIRLINE_ASPECT_RATIO }, scale);
-  if (atRatio.ink !== 1) fail("hairline: a box exactly at the aspect ratio was treated as a rule");
-  const insideRatio = widenHairline({ x: 0, y: 0, width: 40, height: 40 * HAIRLINE_ASPECT_RATIO - 0.1 }, scale);
+  const atRatio = snapHairline({ x: 7, y: 7, width: 40, height: 40 * HAIRLINE_ASPECT_RATIO }, scale);
+  if (atRatio.ink !== 1 || atRatio.y !== 7) {
+    fail("hairline: a box exactly at the aspect ratio was treated as a rule");
+  }
+  const insideRatio = snapHairline({ x: 7, y: 7, width: 40, height: 40 * HAIRLINE_ASPECT_RATIO - 0.1 }, scale);
   if (insideRatio.ink === 1) fail("hairline: a box inside the aspect ratio was NOT treated as a rule");
-
-  // THE FLOOR IS ONE DEVICE PIXEL, AT ANY PIXEL RATIO.
-  //
-  // This is the rule the editor broke. `scale` is output units per print px,
-  // and the editor was passing CSS px per print px - so on a 3x display the
-  // floor was one CSS pixel, which is THREE device pixels. Measured in the
-  // editor at 28% zoom on a 3x screen: every ruled line 3 device pixels of
-  // 35% grey, each on a different subpixel phase, beside stroked outlines
-  // the browser drew crisp. Reported as lines that "look blurry because they
-  // are wider versions that are grey while other lines show at skinny
-  // detailed lines".
-  //
-  // Stated as the invariant rather than as one case: whatever the zoom and
-  // whatever the display, a widened rule is ONE device pixel on screen. Not
-  // two, not three.
-  for (const zoom of [0.28, 0.37, 0.5, 1]) {
-    for (const ratio of [1, 2, 3]) {
-      const deviceScale = zoom * ratio;
-      const HOUSE_HAIRLINE = 1.25;
-      const widened = widenHairline({ x: 0, y: 0, width: 600, height: HOUSE_HAIRLINE }, deviceScale);
-      const onScreenDevicePx = widened.height * deviceScale;
-      const natural = HOUSE_HAIRLINE * deviceScale;
-      const where = `${Math.round(zoom * 100)}% zoom at ${ratio}x`;
-      if (natural >= 1) {
-        // Already thick enough for this display: leave it alone entirely.
-        if (widened.height !== HOUSE_HAIRLINE || widened.ink !== 1) {
-          fail(`${where}: a rule already ${natural.toFixed(2)} device px was widened anyway`);
-        }
-      } else if (Math.abs(onScreenDevicePx - 1) > 1e-9) {
-        fail(`${where}: a widened rule is ${onScreenDevicePx.toFixed(3)} device px on screen, not 1`);
-      }
-    }
-  }
-  // The two ends of that, named, because they are the before and after of
-  // the report. At 28% a 1.25px rule needs help on a 1x screen and needs
-  // none on a 3x one - where it is already 1.05 device pixels.
-  {
-    const oneX = widenHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 0.28 * 1);
-    // Within float slop of the floor, not equal to it: the computed ink here
-    // is 1.25 x 0.28, which is 0.35000000000000003, and a strict === said the
-    // rule was broken when it was exactly right.
-    if (Math.abs(oneX.ink - MIN_ONSCREEN_INK) > 1e-9) {
-      fail(`28% at 1x: a 0.35 device px rule got ${oneX.ink} ink, not the ${MIN_ONSCREEN_INK} floor`);
-    }
-    const threeX = widenHairline({ x: 0, y: 0, width: 600, height: 1.25 }, 0.28 * 3);
-    if (threeX.ink !== 1 || threeX.height !== 1.25) {
-      fail(`28% at 3x: a 1.05 device px rule was widened to ${threeX.height.toFixed(3)} at ${threeX.ink} ink`);
-    }
-  }
 
   // A vertical rule is the same rule on the other axis - column dividers in
   // the hourly grid are these, and an implementation that only handles the
   // horizontal case looks entirely correct on a weekly page until you look
   // for the verticals.
-  const vertical = widenHairline({ x: 100, y: 200, width: 1.25, height: 600 }, scale);
-  if (Math.abs(vertical.width - needed) > 1e-9 || vertical.height !== 600) {
-    fail("hairline: a VERTICAL rule was not widened on its thin axis");
+  const vertical = snapHairline({ x: 100, y: 200, width: 1.25, height: 600 }, scale);
+  if (Math.abs(vertical.width - onePixel) > 1e-9 || vertical.height !== 600) {
+    fail("hairline: a VERTICAL rule was not snapped on its thin axis");
   }
+  const verticalEdge = vertical.x * scale;
+  if (Math.abs(verticalEdge - Math.round(verticalEdge)) > 1e-9) {
+    fail("hairline: a VERTICAL rule's edge did not land on a whole device pixel");
+  }
+  if (vertical.y !== 200) fail("hairline: snapping moved a vertical rule along its length");
 }
 
 // ---------------------------------------------------------------------
@@ -340,12 +372,12 @@ if (counts.p !== pathDElements) {
 // ---------------------------------------------------------------------
 // 3. The callers hand it a DEVICE scale.
 //
-// widenHairline's `scale` is output units per print px, and the floor is
+// snapHairline's `scale` is output units per print px, and the snap is
 // meaningless if a caller passes the wrong unit. The editor passed CSS
-// pixels per print pixel: on a 3x display that floored every ruled line at
-// three device pixels of 35% grey, beside stroked outlines the browser drew
-// crisp at full ink. Reported as lines that "look blurry because they are
-// wider versions that are grey".
+// pixels per print pixel: on a 3x display that put every ruled line on a
+// three-device-pixel grid, beside stroked outlines the browser drew crisp at
+// full ink. Reported as lines that "look blurry because they are wider
+// versions that are grey".
 //
 // A unit check cannot catch that - the function was handed a number and used
 // it exactly as documented. This reads the call sites instead.
@@ -381,7 +413,8 @@ console.log(
     `${skippedTotal} skipped).`
 );
 console.log(
-  `Hairline floor verified at the resting card: a 1.25px rule widens to one device pixel ` +
-    `(${(MIN_ONSCREEN_RECT_PX / (72 / 2175)).toFixed(2)} print px) at ${MIN_ONSCREEN_INK} ink, ` +
-    `without moving and without touching its length.`
+  `Hairline snap verified at the resting card: a 1.25px rule lands on one whole device pixel ` +
+    `(${(MIN_ONSCREEN_RECT_PX / (72 / 2175)).toFixed(2)} print px) held at the ` +
+    `${MIN_ONSCREEN_INK} ink floor a thumbnail needs, and 19 rules on the to-do's 75px pitch share ` +
+    `one phase at every zoom and pixel ratio tested.`
 );

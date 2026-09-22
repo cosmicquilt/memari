@@ -32,7 +32,7 @@
 // job is to let you tell one page from another - the card itself is still a
 // real button with a real label, which is what a screen reader needs.
 
-import { widenHairline } from "@/lib/hairline";
+import { snapHairline } from "@/lib/hairline";
 import { FONT_SANS, FONT_SERIF } from "@/lib/theme";
 import type { PreviewMark } from "@/lib/previewMarks";
 
@@ -261,17 +261,22 @@ export function drawPreview(
   if (width <= 0 || height <= 0 || pageWidth <= 0 || pageHeight <= 0) return;
 
   // DEVICE px per print px. Everything below works in print px and lets the
-  // transform carry it, including the hairline floor - which is why the
-  // floor here is a real device pixel rather than the CSS pixel the editor's
-  // SVG has to settle for.
+  // transform carry it, including the hairline snap in src/lib/hairline.ts.
   const scale = Math.min(width / pageWidth, height / pageHeight);
+  // THE CENTRING OFFSET IS ROUNDED TO WHOLE DEVICE PIXELS. snapHairline puts
+  // every rule on an integer device row of THIS canvas's own grid; a
+  // fractional offset here would then shift the whole snapped set by the
+  // same fraction and spill each rule across two rows again - undoing the
+  // snap globally after doing it per mark. Half a pixel of centring is not
+  // worth that, and a canvas owns its backing store, so it is the one
+  // surface that can simply refuse the fraction.
   ctx.setTransform(
     scale,
     0,
     0,
     scale,
-    (width - pageWidth * scale) / 2,
-    (height - pageHeight * scale) / 2
+    Math.round((width - pageWidth * scale) / 2),
+    Math.round((height - pageHeight * scale) / 2)
   );
   ctx.lineJoin = "round";
 
@@ -334,7 +339,7 @@ export function drawPreview(
       // and the rasteriser's own hairline handling covers it.
       const box =
         filled && !stroked
-          ? widenHairline({ x: mark.x, y: mark.y, width: mark.w, height: mark.h }, scale)
+          ? snapHairline({ x: mark.x, y: mark.y, width: mark.w, height: mark.h }, scale)
           : { x: mark.x, y: mark.y, width: mark.w, height: mark.h, ink: 1 };
 
       if (mark.f !== undefined) {
