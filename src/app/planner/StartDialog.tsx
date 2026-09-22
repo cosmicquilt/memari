@@ -424,15 +424,52 @@ function useSectionPillTravel(section: SavedSection, showing: boolean) {
     // commit this effect sees, the new strip has no pill at all. Waiting is
     // the difference between animating and silently doing nothing.
     //
-    // A TIMEOUT, not requestAnimationFrame. A background tab pauses rAF
-    // entirely, so an rAF retry never fires there and the travel is silently
-    // skipped - which is exactly how this looked while being tested in a
-    // hidden pane: correct in every position, and never once moving.
+    // A MICROTASK, and the choice of clock is the whole bug here.
+    //
+    // NOT requestAnimationFrame: a background tab pauses rAF entirely, so an
+    // rAF retry never fires there and the travel is silently skipped - which
+    // is exactly how this looked while being tested in a hidden pane,
+    // correct in every position and never once moving.
+    //
+    // NOT setTimeout either, which is what it was, because a timeout RACES
+    // THE PAINT. The strip's setState puts the pill in the DOM at its
+    // destination before the browser paints; a `setTimeout(0)` scheduled
+    // from this effect sometimes runs before that paint and sometimes after
+    // it, and when it loses the pill is painted where it is going and only
+    // then does the animation start from where it came. Reported as "the
+    // highlight animation jumps... it jumps to final state then does the
+    // animation from the beginning", and measured frame by frame on a
+    // Journals -> Pages switch: 90, 3, 19.8, 36.5 ... 90, one whole painted
+    // frame at the destination before the travel began.
+    //
+    // A microtask cannot lose that race. Microtasks drain when the stack
+    // unwinds - after React has finished this commit INCLUDING the nested
+    // synchronous re-render that adds the pill, and before the browser gets
+    // a chance to render. It keeps the property the timeout was chosen for,
+    // since a hidden tab does not pause microtasks either.
     let timer = 0;
+    let cancelled = false;
+    // Bounded, because a retry that cannot succeed must stop rather than
+    // spin: if React ever defers that re-render behind its own microtask,
+    // ours runs first and needs another turn - but a pill that is never
+    // coming should not cost an endless queue. The old retry had no bound
+    // at all.
+    let attempts = 0;
+    const MICROTASK_RETRIES = 4;
     const play = () => {
+      if (cancelled) return;
       const pill = document.querySelector<HTMLElement>("[data-section-pill]");
       if (!pill) {
-        timer = window.setTimeout(play, 0);
+        if (attempts < MICROTASK_RETRIES) {
+          attempts++;
+          queueMicrotask(play);
+        } else if (attempts === MICROTASK_RETRIES) {
+          // One last go on the macrotask queue, after a paint. Late enough
+          // to show the jump, but a late travel beats none at all, and
+          // reaching here at all means the DOM is not what this expects.
+          attempts++;
+          timer = window.setTimeout(play, 0);
+        }
         return;
       }
       const left = Number(pill.style.transform.match(/translate\((-?[\d.]+)px/)?.[1]) || 0;
@@ -448,7 +485,10 @@ function useSectionPillTravel(section: SavedSection, showing: boolean) {
       );
     };
     play();
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [section, showing, reduceMotion]);
 }
 
