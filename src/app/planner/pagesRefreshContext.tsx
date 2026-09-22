@@ -4,9 +4,14 @@
 // document.
 //
 // Every structural change in the editor - adding a page, deleting one,
-// putting a saved page in its place, resetting to the template - ends by
-// calling `window.location.reload()`. Seventeen call sites at the time of
-// writing. The reasoning in each is sound and the same: the SERVER shapes
+// putting a saved page in its place, resetting to the template - ended by
+// calling `window.location.reload()`. SIXTEEN call sites; the eight in
+// TimelineDrawer now use this and eight remain, listed at the bottom of this
+// file. (An earlier draft of this comment said seventeen, having counted a
+// line that only mentions the call in prose. Counting by grep and reporting
+// the line count is how that happens.)
+//
+// The reasoning in each is sound and the same: the SERVER shapes
 // the pages, so re-deriving the drawer, the canvas and the routes on the
 // client would be a second description of what the server just did - this
 // project's oldest defect class.
@@ -45,3 +50,33 @@ export const PagesRefreshProvider = PagesRefreshContext.Provider;
 export function useRefreshPages(): RefreshPages {
   return useContext(PagesRefreshContext);
 }
+
+// THE EIGHT THAT STILL RELOAD, and why each was left for now. Not an
+// oversight list: TWO would take this hook as it stands, FOUR change the
+// journal rather than its pages, ONE needs data this does not fetch, and ONE
+// has a reasoned defence in its own comment. Line numbers are a hint and
+// will drift; each entry says what the call does, which will not.
+//
+// Would take refreshPages() unchanged:
+//   ModuleEditor:177          a saved module used elsewhere changed too
+//   NativePlannerEditor:4245  the hourly grid's row height, after a save
+//
+// Needs more than the open level. refreshPages() re-reads ONE level through
+// loadLevel; these change the whole book, and trim also changes page SIZE,
+// which the viewport cookie and the zoom are derived from:
+//   NativePlannerEditor:3911  the book's font
+//   NativePlannerEditor:4005  the term - pages appear and disappear at every level
+//   NativePlannerEditor:4047  dated <-> undated
+//   NativePlannerEditor:4096  the trim
+//
+// Needs something this does not do at all. loadLevel returns pages and the
+// timeline, NOT Saved > Modules, which the palette lists:
+//   ModuleEditor:191          saving a module to Saved
+//
+// Deliberate, and argued in place:
+//   NativePlannerEditor:9509  reset to template. Its comment is explicit
+//     that a Server Component refresh alone would not reset the editor's
+//     OWN client state - placements, moduleLookup, zoom - and that the reset
+//     needs all of it rebuilt rather than the data under it re-fetched.
+//     Worth re-testing against this hook rather than assumed, but not
+//     assumed to be wrong either.
