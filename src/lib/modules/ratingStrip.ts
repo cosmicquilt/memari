@@ -17,7 +17,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { glyphElement } from "@/lib/modules/glyphs";
-import { fitLabelSet } from "@/lib/modules/textFit";
+import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -170,7 +170,7 @@ export function renderRatingStrip(
       id: id(`scale${value}`),
       type: "text",
       x: centreOf(value) - step / 2,
-      y: headTop + (scaleHeadHeight - scaleFontSize * 1.2) / 2,
+      y: capCentredTextY(headTop, scaleHeadHeight, scaleFontSize, fontFamily),
       width: step,
       height: scaleFontSize * 1.2,
       text: String(value),
@@ -219,7 +219,7 @@ export function renderRatingStrip(
       id: id(`i${i}-label`),
       type: "text",
       x: geometry.x + padding,
-      y: rowTop + (rowHeight - label.fontSizePx * 1.2) / 2,
+      y: capCentredTextY(rowTop, rowHeight, label.fontSizePx, fontFamily),
       width: labelWidth,
       height: label.fontSizePx * 1.2,
       text: label.text,

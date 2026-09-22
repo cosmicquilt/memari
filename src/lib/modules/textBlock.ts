@@ -29,7 +29,7 @@
 // adds lines at the bottom and moves none of the ones above.
 
 import { ptToPx } from "@/lib/print-spec";
-import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
+import { SAFE_CHAR_WIDTH_RATIO, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -191,7 +191,7 @@ export function renderTextBlock(
       id: id(`line${i}`),
       type: "text",
       x: geometry.x + padding,
-      y: top + (lineHeight - bodyFontSize * 1.2) / 2,
+      y: capCentredTextY(top, lineHeight, bodyFontSize, fontFamily),
       width: usableWidth,
       height: bodyFontSize * 1.2,
       text: lines[i],
@@ -210,7 +210,7 @@ export function renderTextBlock(
         id: id("attribution"),
         type: "text",
         x: geometry.x + padding,
-        y: top + (lineHeight - attributionFontSize * 1.2) / 2,
+        y: capCentredTextY(top, lineHeight, attributionFontSize, fontFamily),
         width: usableWidth,
         height: attributionFontSize * 1.2,
         // An em dash is how an attribution is set, and the module owns

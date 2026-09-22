@@ -32,6 +32,7 @@ import {
   headerElements,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type ProgressMeterConfig = {
   heading: string;
@@ -171,7 +172,7 @@ export function renderProgressMeter(
           id: id(`mile${count}-label`),
           type: "text",
           x: blockLeft + (column + 1) * segment - segment,
-          y: top + (segment - milestoneFontSize * 1.2) / 2,
+          y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
           width: segment,
           height: milestoneFontSize * 1.2,
           text: String(count),

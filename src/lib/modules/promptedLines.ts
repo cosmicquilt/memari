@@ -19,7 +19,7 @@
 // starts.
 
 import { ptToPx } from "@/lib/print-spec";
-import { fitLabelSet } from "@/lib/modules/textFit";
+import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -145,7 +145,7 @@ export function renderPromptedLines(
       id: id(`p${p}-prompt`),
       type: "text",
       x: geometry.x + padding,
-      y: cursor + (promptHeight - prompt.fontSizePx * 1.2) / 2,
+      y: capCentredTextY(cursor, promptHeight, prompt.fontSizePx, fontFamily),
       width: geometry.width - padding * 2,
       height: prompt.fontSizePx * 1.2,
       text: prompt.text,

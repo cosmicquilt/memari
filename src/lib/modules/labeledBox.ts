@@ -66,7 +66,7 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // typeface belongs somewhere the other modules can reach it, and they
 // need it: nothing here can measure a string, so every module that has to
 // keep a label inside a box works from this same number.
-import { SAFE_CHAR_WIDTH_RATIO } from "@/lib/modules/textFit";
+import { SAFE_CHAR_WIDTH_RATIO, capCentredTextY } from "@/lib/modules/textFit";
 import {
   RULE_WIDTH_PT,
   contentTopAtLeastPx,
@@ -238,7 +238,7 @@ export function renderLabeledBox(
       id: id("heading"),
       type: "text",
       x: geometry.x + headingPadding,
-      y: geometry.y + (headerHeight - headingTextHeight) / 2,
+      y: capCentredTextY(geometry.y, headerHeight, headingFontSize, FONT_FAMILY),
       width: headingAvailableWidth,
       height: headingTextHeight,
       text: heading.toUpperCase(),

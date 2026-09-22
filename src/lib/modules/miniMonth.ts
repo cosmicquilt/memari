@@ -41,6 +41,7 @@ import {
   headerElements,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type MiniMonthConfig = {
   year: number;
@@ -171,7 +172,7 @@ export function renderMiniMonth(
       id: id(`weekday${c}`),
       type: "text",
       x: geometry.x + columnWidth * c,
-      y: stripTop + (stripHeight - weekdayFontSize * 1.2) / 2,
+      y: capCentredTextY(stripTop, stripHeight, weekdayFontSize, fontFamily),
       width: columnWidth,
       height: weekdayFontSize * 1.2,
       text: initial,
@@ -208,7 +209,7 @@ export function renderMiniMonth(
           id: id(`w${w}-d${c}-date`),
           type: "text",
           x: columnX,
-          y: rowTop + (dateBandHeight - dateFontSize * 1.2) / 2,
+          y: capCentredTextY(rowTop, dateBandHeight, dateFontSize, fontFamily),
           width: columnWidth,
           height: dateFontSize * 1.2,
           text: String(cell.date),

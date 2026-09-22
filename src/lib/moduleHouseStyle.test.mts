@@ -41,6 +41,7 @@ import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
 import { ruleAxisOf } from "./ruleMarks";
+import { textInkBand } from "@/lib/modules/textFit";
 
 const PAGE: PageGrid = {
   widthPx: 2175,
@@ -322,9 +323,14 @@ for (const slug of REGISTERED_SLUGS) {
               `outside the box ${left.toFixed(0)}..${right.toFixed(0)}`
           );
         }
-        if (y < top - slack || y + height > bottom + slack) {
+        // VERTICALLY, THE INK - not the line box. Most of a line box is
+        // empty (leading above, the whole descent under a capital), and
+        // nothing is painted there; see textInkBand, and the 48 cases that
+        // failed over marks that do not exist.
+        const ink = textInkBand(y, Number(element.fontSize ?? 0), String(element.fontFamily ?? ""), String(element.text ?? ""));
+        if (ink.top < top - slack || ink.bottom > bottom + slack) {
           fail(
-            `${where}: ${element.id} runs ${y.toFixed(0)}..${(y + height).toFixed(0)} ` +
+            `${where}: ${element.id} inks ${ink.top.toFixed(0)}..${ink.bottom.toFixed(0)} ` +
               `outside the box ${top.toFixed(0)}..${bottom.toFixed(0)}`
           );
         }

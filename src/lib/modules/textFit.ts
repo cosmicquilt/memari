@@ -348,3 +348,129 @@ function waterFill(totalWidthPx: number, weights: number[], needs: number[]): nu
   }
   return widths;
 }
+
+// ---------------------------------------------------------------------
+// VERTICAL metrics: where a line of text actually sits in its own box.
+//
+// Every consumer gives a text element a line height of 1.2 (see
+// PolotnoJsonRenderer, drawPreview and the PDF export), and twenty-two
+// places across twelve module renderers centre a label by centring that LINE
+// BOX in a band: `y = top + (band - fontSize * 1.2) / 2`.
+//
+// CENTRING THE LINE BOX IS NOT CENTRING THE INK. Where the glyphs sit inside
+// the box depends on the font's own ascent and descent, and the two fonts
+// this app ships disagree. Reported 2026-09-22: "with the serif font the
+// headers of modules do not look vertically centered." Measured in the
+// running editor, the uppercase ink centre against the line box centre:
+//
+//   Newsreader       -4.0px at 33.3px, -3.5 at 29.2, -3.0 at 25, -2.5 at 20.8
+//   Hanken Grotesk    0 at every size
+//
+// Every one of those is 16.7% of the cap height - a constant 0.12em - and
+// the sans is right by luck, not design.
+// ---------------------------------------------------------------------
+
+/** The line height every renderer gives a text element. */
+export const TEXT_LINE_HEIGHT = 1.2;
+
+/**
+ * Measured from the loaded faces in Chrome, in ems, at 100px:
+ * `measureText` for fontBoundingBoxAscent/Descent, and the actual ascent of
+ * "HELMO" for the cap height.
+ *
+ * Newsreader's ascent+descent is 1.01em, which sits INSIDE the 1.2em line
+ * box with positive half-leading; Hanken Grotesk's is 1.30em, which
+ * overflows it. That is the whole of the difference.
+ */
+const FONT_METRICS: Record<string, { ascent: number; descent: number; capHeight: number }> = {
+  Newsreader: { ascent: 0.74, descent: 0.27, capHeight: 0.71 },
+  "Hanken Grotesk": { ascent: 1.0, descent: 0.3, capHeight: 0.71 },
+};
+
+/** Newsreader's, so an unknown family lands on the app's default rather than
+ *  on no correction at all. */
+const DEFAULT_METRICS = FONT_METRICS.Newsreader;
+
+/**
+ * How far DOWN to move a line box so its capitals are centred where the box
+ * is, as a fraction of the font size.
+ *
+ * Derived, not tabulated: the browser centres the font's content area
+ * (ascent + descent) in the line box, which puts the baseline at
+ * `(1.2 - (a + d)) / 2 + a`; the cap band runs from there up by the cap
+ * height, so its centre is half a cap height above the baseline. The nudge
+ * is the difference between that and the line box's own centre. Newsreader
+ * comes out at 0.120em and Hanken Grotesk at 0.005em, which is what was
+ * measured on screen.
+ */
+export function capCentreNudgeEm(fontFamily: string): number {
+  const { ascent, descent, capHeight } = FONT_METRICS[fontFamily] ?? DEFAULT_METRICS;
+  const baseline = (TEXT_LINE_HEIGHT - (ascent + descent)) / 2 + ascent;
+  const capBandCentre = baseline - capHeight / 2;
+  return TEXT_LINE_HEIGHT / 2 - capBandCentre;
+}
+
+/**
+ * The `y` for a text element whose CAPITALS should sit in the middle of a
+ * band - the one description of vertically centred text in this app.
+ *
+ * Takes the band rather than returning an offset, because every caller was
+ * already writing the same subtraction and the point is that they stop.
+ *
+ * Cap-centred rather than ink-centred: these are labels - headings, day
+ * letters, column heads, times - and a label with a descender in it should
+ * not sit higher than the one beside it without. Centring the cap band is
+ * what makes a row of them line up.
+ */
+export function capCentredTextY(
+  bandTop: number,
+  bandHeight: number,
+  fontSizePx: number,
+  fontFamily: string
+): number {
+  return (
+    bandTop +
+    (bandHeight - fontSizePx * TEXT_LINE_HEIGHT) / 2 +
+    capCentreNudgeEm(fontFamily) * fontSizePx
+  );
+}
+
+/**
+ * Characters that actually put ink below the baseline.
+ *
+ * The five descending lowercase letters, plus the comma and semicolon that
+ * hang below it. Brackets and parentheses descend a little too, but no label
+ * in this app's modules is set in them, and listing them would be guessing at
+ * a case rather than covering one.
+ */
+const DESCENDERS = /[gjpqy,;]/;
+
+/**
+ * The band a string's INK occupies, given the top of its text element.
+ *
+ * A text element's own height is a LINE BOX - `fontSize * 1.2` - and most of
+ * a line box is empty: leading above the ascent, and the whole descent when
+ * the string is capitals. Nothing is painted there.
+ *
+ * moduleHouseStyle's "no mark escapes the module" rule used the line box for
+ * its vertical test, and that proxy held until text moved. Cap-centring a day
+ * letter in the bottom row of a bill-tracker pushed the empty bottom of its
+ * line box 3px past the module while the letter itself stayed 8px inside, and
+ * 48 cases failed for marks that are not there. The top is the cap height,
+ * since every label centred this way is set in capitals; the bottom is the
+ * baseline unless the string has something below it.
+ */
+export function textInkBand(
+  textY: number,
+  fontSizePx: number,
+  fontFamily: string,
+  text: string
+): { top: number; bottom: number } {
+  const { ascent, descent, capHeight } = FONT_METRICS[fontFamily] ?? DEFAULT_METRICS;
+  const lineBox = fontSizePx * TEXT_LINE_HEIGHT;
+  const baseline = textY + (lineBox - (ascent + descent) * fontSizePx) / 2 + ascent * fontSizePx;
+  return {
+    top: baseline - capHeight * fontSizePx,
+    bottom: baseline + (DESCENDERS.test(text) ? descent * fontSizePx : 0),
+  };
+}

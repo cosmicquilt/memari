@@ -26,7 +26,7 @@
 // the cell, so the pitch rule holds either way.
 
 import { ptToPx } from "@/lib/print-spec";
-import { fitLabelSet } from "@/lib/modules/textFit";
+import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -336,7 +336,7 @@ export function renderAxisMatrix(
       id: id(name),
       type: "text",
       x: x + padding,
-      y: bandTop + (axisBand - fitted.fontSizePx * 1.2) / 2,
+      y: capCentredTextY(bandTop, axisBand, fitted.fontSizePx, fontFamily),
       width: halfWidth - padding * 2,
       height: fitted.fontSizePx * 1.2,
       text: fitted.text,
@@ -521,7 +521,7 @@ export function renderAxisMatrix(
       type: "text",
       x: x + padding,
       // Centred both ways in the quadrant it names.
-      y: y + (halfHeightPlot - textHeight) / 2,
+      y: capCentredTextY(y, halfHeightPlot, fitted.fontSizePx, fontFamily),
       width: halfWidth - padding * 2,
       height: textHeight,
       text: fitted.text,

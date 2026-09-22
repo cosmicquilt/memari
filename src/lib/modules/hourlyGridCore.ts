@@ -12,6 +12,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
@@ -461,7 +462,7 @@ export function renderHourlyGridCore(
         id: id(`d${d}-name`),
         type: "text",
         x: dayX + nameLeftInset,
-        y: geometry.y + (headerHeight - nameTextHeight) / 2,
+        y: capCentredTextY(geometry.y, headerHeight, nameFontSize, FONT_FAMILY),
         width: dayColumnWidth - nameLeftInset - dateWidth,
         height: nameTextHeight,
         text: label.name,
@@ -485,7 +486,7 @@ export function renderHourlyGridCore(
         id: id(`d${d}-date`),
         type: "text",
         x: dayX + dayColumnWidth - dateWidth - dateRightInset,
-        y: geometry.y + (headerHeight - dateTextHeight) / 2,
+        y: capCentredTextY(geometry.y, headerHeight, dateFontSize, FONT_FAMILY),
         width: dateWidth,
         height: dateTextHeight,
         text: String(label.date),

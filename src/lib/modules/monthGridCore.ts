@@ -33,6 +33,7 @@
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type MonthGridCoreConfig = {
   dayCount: number; // 3 or 4, matching which half of the spread (same convention as hourly-grid-core)
@@ -161,7 +162,7 @@ export function renderMonthGridCore(
       id: id(`head-d${d}`),
       type: "text",
       x: dayX,
-      y: geometry.y + (headerHeight - textHeight) / 2,
+      y: capCentredTextY(geometry.y, headerHeight, fontSize, FONT_FAMILY),
       width: dayColumnWidth,
       height: textHeight,
       text: label.name,
@@ -242,7 +243,7 @@ export function renderMonthGridCore(
           id: id(`w${w}-d${d}-date`),
           type: "text",
           x: cellX,
-          y: rowY + (dateStripHeight - dateTextHeight) / 2,
+          y: capCentredTextY(rowY, dateStripHeight, dateFontSize, FONT_FAMILY),
           width: dateBoxWidth,
           height: dateTextHeight,
           text: String(cell.date),

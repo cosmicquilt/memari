@@ -7,6 +7,7 @@
 // existed rather than invented - see HEADING_SIZES_PT and CONTENT_TOP.
 
 import { ptToPx } from "@/lib/print-spec";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type FrameGeometry = { x: number; y: number; width: number; height: number };
 export type FrameLattice = {
@@ -244,7 +245,7 @@ export function headerElements(
       id: id("heading"),
       type: "text",
       x: geometry.x + padding,
-      y: geometry.y + (bandHeight - fontSize * 1.2) / 2,
+      y: capCentredTextY(geometry.y, bandHeight, fontSize, fontFamily),
       width: available,
       height: fontSize * 1.2,
       text,

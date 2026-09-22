@@ -23,6 +23,7 @@ import {
   RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
+import { capCentredTextY } from "@/lib/modules/textFit";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -234,7 +235,7 @@ export function renderTodoChecklist(
     id: id("heading"),
     type: "text",
     x: geometry.x,
-    y: contentY + (headerHeight - headerTextHeight) / 2,
+    y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
     width: geometry.width,
     height: headerTextHeight,
     text: (config.heading ?? "TO - DO").toUpperCase(),

@@ -32,7 +32,7 @@
 // tsx/actions.ts's getMinRowSpanForSlug) stay correct automatically
 // regardless of which zone a given instance ends up in.
 
-import { estimateTextWidthPx, fitLabel, fitLabelSet } from "./textFit";
+import { estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "./textFit";
 import { ptToPx } from "@/lib/print-spec";
 import {
   RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
@@ -311,7 +311,7 @@ export function renderHabitTracker(
     id: id("heading"),
     type: "text",
     x: geometry.x,
-    y: contentY + (headerHeight - headerTextHeight) / 2,
+    y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
     width: nameColumnWidth,
     height: headerTextHeight,
     text: (config.heading ?? "HABITS").toUpperCase(),
@@ -369,7 +369,7 @@ export function renderHabitTracker(
       id: id(`day${i}-letter`),
       type: "text",
       x: colX,
-      y: contentY + (headerHeight - dayLetterTextHeight) / 2,
+      y: capCentredTextY(contentY, headerHeight, dayLetterFontSize, FONT_FAMILY),
       width: dayColumnWidth,
       height: dayLetterTextHeight,
       text: letter,
@@ -444,7 +444,7 @@ rowY + rowHeight;
         id: id(`row${i}-name`),
         type: "text",
         x: geometry.x + 6,
-        y: rowY + (rowHeight - nameTextHeight) / 2,
+        y: capCentredTextY(rowY, rowHeight, nameFontSize, FONT_FAMILY),
         width: nameColumnWidth - 12,
         height: nameTextHeight,
         text: fitted.text,
@@ -529,7 +529,7 @@ function renderHabitTrackerCompact(
     id: id("heading"),
     type: "text",
     x: geometry.x,
-    y: contentY + (headerHeight - headerTextHeight) / 2,
+    y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
     width: geometry.width,
     height: headerTextHeight,
     text: (config.heading ?? "HABITS").toUpperCase(),
@@ -597,7 +597,7 @@ function renderHabitTrackerCompact(
       id: id(`pair${i}-name`),
       type: "text",
       x: geometry.x + 6,
-      y: pairTop + (actualNameRowHeight - nameTextHeight) / 2,
+      y: capCentredTextY(pairTop, actualNameRowHeight, nameFontSize, FONT_FAMILY),
       width: geometry.width - 12,
       height: nameTextHeight,
       text: rowName.text,
@@ -643,7 +643,7 @@ function renderHabitTrackerCompact(
         id: id(`pair${i}-day${d}-letter`),
         type: "text",
         x: colX,
-        y: squareRowTop + (squareSize - dayLetterTextHeight) / 2,
+        y: capCentredTextY(squareRowTop, squareSize, dayLetterFontSize, FONT_FAMILY),
         width: squareSize,
         height: dayLetterTextHeight,
         text: letter,

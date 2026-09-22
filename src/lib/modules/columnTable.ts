@@ -23,7 +23,7 @@
 // none of the ones above.
 
 import { ptToPx } from "@/lib/print-spec";
-import { columnWidthsForLabels, fitLabel, fitLabelSet } from "@/lib/modules/textFit";
+import { columnWidthsForLabels, fitLabel, fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -203,7 +203,7 @@ export function renderColumnTable(
         id: id(`c${c}-head`),
         type: "text",
         x: start + headPadding,
-        y: headsTop + (columnHeadHeight - headFontSize * 1.2) / 2,
+        y: capCentredTextY(headsTop, columnHeadHeight, headFontSize, fontFamily),
         width: end - start - headPadding * 2,
         height: headFontSize * 1.2,
         text: heads.texts[c],
@@ -302,7 +302,7 @@ export function renderColumnTable(
       id: id("totals-label"),
       type: "text",
       x: geometry.x + headPadding,
-      y: totalsTop + (totalsHeight - labelFontSize * 1.2) / 2,
+      y: capCentredTextY(totalsTop, totalsHeight, labelFontSize, fontFamily),
       width: bounds[0].end - bounds[0].start - headPadding * 2,
       height: labelFontSize * 1.2,
       text: totals.text,
