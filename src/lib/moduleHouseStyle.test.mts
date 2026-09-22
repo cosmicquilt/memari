@@ -40,6 +40,7 @@ import { HEADING_SIZES_PT } from "./modules/moduleFrame";
 import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
+import { ruleAxisOf } from "./ruleMarks";
 
 const PAGE: PageGrid = {
   widthPx: 2175,
@@ -367,15 +368,13 @@ for (const slug of REGISTERED_SLUGS) {
       if (isCompactException(slug, widthPx)) continue;
       const debt = LATTICE_DEBT[slug];
       const offsets = elements
-        .filter((e) => e.type === "figure" && e.subType === "rect" && e !== box)
-        .filter((e) => (e.height ?? 0) < (e.width ?? 0) / 4)
-        // Half the box's width, not all of it. This asked for full width,
-        // which quietly stopped checking the matrix's horizontal arm the
-        // moment its plot became square and narrower than its box - the
-        // rule was still written down and was measuring nothing. A to-do's
-        // per-column segments stay out at a third of the width; they are
-        // covered by modulePitch instead.
-        .filter((e) => (e.width ?? 0) > (box.width ?? 0) * 0.5)
+        // What a rule IS lives in ruleMarks.ts, shared with check:page -
+        // the two described it differently, and each missed what the other
+        // saw. This one used to ask for half the module's width, which left
+        // a to-do's per-column row segments unexamined; it also had no
+        // outline test, so it measured the module's own border against the
+        // lattice the border is defined by.
+        .filter((e) => e !== box && ruleAxisOf(e, PITCH) === "horizontal")
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
           const k = Math.round((centre - PAGE.marginPx) / PITCH);
@@ -385,9 +384,7 @@ for (const slug of REGISTERED_SLUGS) {
       // rather than portioning it must land on a lattice COLUMN.
       if (!WEIGHTED_COLUMNS.has(slug)) {
         const verticals = elements
-          .filter((e) => e.type === "figure" && e.subType === "rect" && e !== box)
-          .filter((e) => (e.width ?? 0) < (e.height ?? 0) / 4)
-          .filter((e) => (e.height ?? 0) > (box.height ?? 0) * 0.5)
+          .filter((e) => e !== box && ruleAxisOf(e, PITCH) === "vertical")
           .map((e) => {
             const centre = (e.x ?? 0) + (e.width ?? 0) / 2;
             const k = Math.round((centre - PAGE.marginPx) / PITCH);

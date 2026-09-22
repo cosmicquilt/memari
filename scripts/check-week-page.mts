@@ -15,6 +15,7 @@
 // and the monthly page carried a to-do lying across two boxes that this
 // check reports in one line - it had simply never been pointed there.
 import { readFileSync } from "node:fs";
+import { ruleAxisOf } from "@/lib/ruleMarks";
 
 for (const line of readFileSync(".env", "utf8").split("\n")) {
   const match = /^\s*([A-Z_]+)\s*=\s*"?([^"\n]*)"?\s*$/.exec(line);
@@ -214,11 +215,10 @@ for (const page of levelPages) {
       //        inset below a dot row, its height the reference header's.
       //      - it never looked at the weekly hour rules at all, each being
       //        one day wide and so under half the grid.
-      if (e.type !== "figure" || e.subType !== "rect" || e === box) continue;
-      const outline = (e.strokeWidth ?? 0) > 0 && (!e.fill || e.fill === "none" || e.fill === "transparent");
-      if (outline) continue;
-      if (h >= w / 4) continue;
-      if (w < PITCH) continue;
+      // What a rule IS lives in ruleMarks.ts, shared with
+      // moduleHouseStyle.test.mts. It used to be described here and there
+      // separately, and the two disagreed in both directions.
+      if (e === box || ruleAxisOf(e, PITCH) !== "horizontal") continue;
       // Modules written before the shared frame sit at a known offset -
       // the same list moduleHouseStyle.test.mts carries, and for the same
       // reason: the debt is visible rather than silently skipped.
