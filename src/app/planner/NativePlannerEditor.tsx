@@ -127,6 +127,7 @@ import {
   gravityRepackAfterDeparture,
   type GridRect,
   type PageGrid,
+  BOTTOM_ZONE_ROW_TOLERANCE,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import { resolvePairResize, pairResizeRange } from "@/lib/stackResize";
@@ -419,7 +420,6 @@ function computeDraggedTransformPagePx(
 // dropping right at the seam between the two should still register as
 // "targeting the bottom zone" rather than needing pixel-perfect
 // precision below it.
-const BOTTOM_ZONE_ROW_TOLERANCE = 2;
 
 // Module types offered in the drag-to-add palette (ModulePalette below)
 // — kept in sync by hand with prisma/seed.mts's own moduleTypes entries
@@ -6821,8 +6821,7 @@ export function NativePlannerEditor({
       // function on why the server passes Infinity instead.
       return resolveZone(
         hourlyGridPlacement ?? null,
-        { columnStart: targetColumnStart, rowStart: targetRowStart },
-        BOTTOM_ZONE_ROW_TOLERANCE
+        { columnStart: targetColumnStart, rowStart: targetRowStart }
       );
     },
     []

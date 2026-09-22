@@ -27,6 +27,7 @@ import {
   followerRowsAfterGrowth,
   rowsBelowHours,
   resolveZone,
+  BOTTOM_ZONE_ROW_TOLERANCE,
   packedTopEdge,
   type PageGrid,
   type GridRect,
@@ -1065,12 +1066,12 @@ console.log("All rowsBelowHours checks passed.");
 // Left page: hourly at columns 6-23, rows 0-19. Sidebar is 0-5.
 {
   const hourly = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
-  const below = resolveZone(hourly, { columnStart: 10, rowStart: 21 }, 0);
+  const below = resolveZone(hourly, { columnStart: 10, rowStart: 21 });
   assert(
     !!below && below.isBottomZone && below.columnStart === 6 && below.columnSpan === 18,
     `below the hours, in its columns, is the bottom zone (got ${JSON.stringify(below)})`
   );
-  const side = resolveZone(hourly, { columnStart: 2, rowStart: 5 }, 0);
+  const side = resolveZone(hourly, { columnStart: 2, rowStart: 5 });
   assert(
     !!side && !side.isBottomZone && side.columnStart === 0 && side.columnSpan === 6,
     `left of the hours is the sidebar, six columns wide (got ${JSON.stringify(side)})`
@@ -1079,16 +1080,38 @@ console.log("All rowsBelowHours checks passed.");
 // The row test is the client/server difference, carried as a parameter.
 {
   const hourly = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
-  const strict = resolveZone(hourly, { columnStart: 10, rowStart: 5 }, 0);
-  assert(!!strict && !strict.isBottomZone, "with no tolerance, above the hours is NOT the bottom zone");
-  const loose = resolveZone(hourly, { columnStart: 10, rowStart: 5 }, Number.POSITIVE_INFINITY);
-  assert(!!loose && loose.isBottomZone, "with infinite tolerance it is - the server's column-only behaviour");
+  // ONE ANSWER, because there is no longer a tolerance to pass.
+  //
+  // These two lines used to assert that the same cell resolved DIFFERENTLY
+  // depending on what a caller passed, and that was not a quirk being
+  // recorded - it was the editor's preview and the server's commit
+  // disagreeing, written down as intended behaviour. Measured before it was
+  // removed: 324 of a left page's 864 cells, every cell of the hourly block
+  // above its last two rows, previewing six columns wide and committing
+  // eighteen.
+  const overTheHours = resolveZone(hourly, { columnStart: 10, rowStart: 5 });
+  assert(
+    !!overTheHours && !overTheHours.isBottomZone && overTheHours.columnSpan === 6,
+    `above the hours, in its columns, is the SIDEBAR - it is the locked block, not a zone to drop into (got ${JSON.stringify(overTheHours)})`
+  );
+  // The tolerance itself, at its own boundary. The hours end at row 19, so
+  // row 18 is the first that counts as below them.
+  const firstBelow = hourly.rowStart + hourly.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE;
+  assert(
+    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow })?.isBottomZone === true,
+    `row ${firstBelow} is within the tolerance and IS the bottom zone`
+  );
+  assert(
+    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow - 1 })?.isBottomZone === false,
+    `row ${firstBelow - 1} is one row too high and is NOT the bottom zone`
+  );
+  assert(BOTTOM_ZONE_ROW_TOLERANCE === 2, `the bottom-zone tolerance is ${BOTTOM_ZONE_ROW_TOLERANCE}, not the 2 these rows are written for`);
 }
 // Right page: the hourly block spans the full width, so there is no sidebar.
 {
   const full = { columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan: 20 };
-  assert(resolveZone(full, { columnStart: 3, rowStart: 5 }, 0) === null, "a full-width page has no sidebar to fall back to");
-  const below = resolveZone(full, { columnStart: 3, rowStart: 21 }, 0);
+  assert(resolveZone(full, { columnStart: 3, rowStart: 5 }) === null, "a full-width page has no sidebar to fall back to");
+  const below = resolveZone(full, { columnStart: 3, rowStart: 21 });
   assert(!!below && below.isBottomZone && below.columnSpan === 24, "but it still has a bottom zone");
 }
 console.log("All resolveZone checks passed.");

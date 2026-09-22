@@ -908,16 +908,15 @@ export async function addPaletteModuleAt(
         // every existing sidebar box has always come from), and this
         // feature only ever needed to change what happens *in* the
         // bottom zone, not touch that.
-        // resolveZone (grid.ts) is the shared rule. Infinity for the row
-        // tolerance keeps this side's behaviour exactly as it was -
-        // column containment alone, no row test. See that function.
+        // resolveZone (grid.ts) is the shared rule, and it no longer takes
+        // a tolerance - this side used to pass Infinity, which disagreed
+        // with the editor's preview over a third of the page. See there.
         const zone =
           hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
             ? resolveZone(
                 { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
                   columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
-                { columnStart, rowStart },
-                Number.POSITIVE_INFINITY
+                { columnStart, rowStart }
               )
             : null;
         const inBottomZone = zone?.isBottomZone ?? false;
@@ -1390,14 +1389,13 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   const sourcePageGrid = pageGridFor(sourcePage);
   const targetPageGrid = pageGridFor(targetPage);
   const hourlyGrid = findSpine(targetPage.moduleInstances);
-  // Same shared rule, same Infinity tolerance - see resolveZone (grid.ts).
+  // The same shared rule the editor's preview uses - see resolveZone.
   const zone =
     hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
       ? resolveZone(
           { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
             columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
-          { columnStart, rowStart },
-          Number.POSITIVE_INFINITY
+          { columnStart, rowStart }
         )
       : null;
   const inBottomZone = zone?.isBottomZone ?? false;

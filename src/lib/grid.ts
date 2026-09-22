@@ -406,14 +406,23 @@ export function rowsBelowHours(
  * alone. So a target inside the day columns but ABOVE the hours resolves
  * to the sidebar on the client and to the bottom zone on the server.
  *
- * `bottomZoneRowTolerance` carries that difference explicitly rather than
- * papering over it: the editor passes its own tolerance, and the server
- * passes Infinity, which makes the row test vacuously true and preserves
- * its behaviour exactly. One function, one visible parameter, and the
- * disagreement is now a single number someone can decide about — rather
- * than two implementations that have to be read side by side to notice it
- * at all. The client's rule is almost certainly the correct one: above the
- * hourly block, within its columns, IS the hourly block, which is locked.
+ * **DECIDED 2026-09-22, and the parameter is gone.** It was a parameter so
+ * the disagreement would be visible rather than buried in two
+ * implementations - the editor passed 2, the server passed Infinity, which
+ * made the row test vacuously true. Measured on a real left page, that is
+ * 324 of the page's 864 cells: every cell of the hourly block above its
+ * last two rows previewed as the SIDEBAR and committed to the BOTTOM ZONE,
+ * six columns wide against eighteen. A module dropped over the hours
+ * changed size and place on release, which is the "preview lied" family
+ * this whole refactor exists to close.
+ *
+ * The client's rule was the correct one, for the reason its own comment
+ * gave: above the hourly block, within its columns, IS the hourly block,
+ * which is locked. There is nothing there to drop into.
+ *
+ * So there is no parameter now. Two callers cannot pass different numbers
+ * if there is no number to pass - the same move as making a unit a type
+ * rather than a convention.
  */
 export type ZoneResolution = {
   columnStart: number;
@@ -421,16 +430,22 @@ export type ZoneResolution = {
   isBottomZone: boolean;
 };
 
+/**
+ * How far ABOVE the hourly block's bottom edge still counts as the bottom
+ * zone. Two rows of slack, so a drop aimed just under the hours does not
+ * miss by a row and land in the sidebar instead.
+ */
+export const BOTTOM_ZONE_ROW_TOLERANCE = 2;
+
 export function resolveZone(
   hourly: GridRect | null | undefined,
-  target: { columnStart: number; rowStart: number },
-  bottomZoneRowTolerance: number
+  target: { columnStart: number; rowStart: number }
 ): ZoneResolution | null {
   if (
     hourly &&
     target.columnStart >= hourly.columnStart &&
     target.columnStart < hourly.columnStart + hourly.columnSpan &&
-    target.rowStart >= hourly.rowStart + hourly.rowSpan - bottomZoneRowTolerance
+    target.rowStart >= hourly.rowStart + hourly.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE
   ) {
     return { columnStart: hourly.columnStart, columnSpan: hourly.columnSpan, isBottomZone: true };
   }
