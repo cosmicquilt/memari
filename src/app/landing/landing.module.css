@@ -1,0 +1,440 @@
+/* memari.studio's landing page. Warm paper, ink-dark type, the app's own face
+   (Almarai), and room around everything. */
+
+.page {
+  --ink: #1c1917;
+  --muted: rgba(28, 25, 23, 0.66);
+  --paper: #f4f1ec;
+  --line: rgba(28, 25, 23, 0.1);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-almarai), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* --- nav ----------------------------------------------------------------- */
+
+.nav {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 20;
+  height: 56px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 0 max(16px, calc((100vw - 1120px) / 2));
+  background: rgba(244, 241, 236, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  justify-self: start;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand span {
+  margin-left: 0.3em;
+  font-weight: 200;
+  font-size: 0.8em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.links {
+  display: flex;
+  gap: 28px;
+}
+
+.links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 160ms ease-out;
+}
+
+.links a:hover,
+.links a:focus-visible {
+  color: var(--ink);
+}
+
+.actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.quiet {
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.primary,
+.primaryLarge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: transform 160ms ease-out, background 160ms ease-out;
+}
+
+.primary {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.primaryLarge {
+  padding: 15px 30px;
+  font-size: 17px;
+}
+
+.primary:hover,
+.primaryLarge:hover {
+  background: #33302c;
+}
+
+.primary:active,
+.primaryLarge:active {
+  transform: scale(0.97);
+}
+
+.links a:focus-visible,
+.quiet:focus-visible,
+.primary:focus-visible,
+.primaryLarge:focus-visible,
+.brand:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+@media (max-width: 760px) {
+  .nav {
+    grid-template-columns: 1fr auto;
+  }
+  .links {
+    display: none;
+  }
+  .quiet {
+    display: none;
+  }
+}
+
+/* --- hero ---------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  height: 100svh;
+  min-height: 640px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* What shows before the desk has loaded, and where WebGL is missing: the
+   same warm light over a wall and a wooden desk, as a gradient. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(120% 70% at 20% 10%, rgba(255, 226, 180, 0.8), rgba(255, 226, 180, 0) 60%),
+    linear-gradient(to bottom, #e9dcc5 0%, #e3d2b8 30%, #9c6b43 31%, #7d5033 100%);
+}
+
+.desk {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: opacity 1.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A little film grain and a vignette: the difference between a render and a
+   photograph is mostly what the camera adds. */
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 100% at 50% 40%, rgba(0, 0, 0, 0) 55%, rgba(30, 18, 8, 0.28) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: soft-light;
+  opacity: 0.55;
+}
+
+.title {
+  position: absolute;
+  top: calc(56px + 6.5vh);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  z-index: 2;
+}
+
+/* A breath of light behind the words, so they read over any desk. */
+.title::before {
+  content: "";
+  position: absolute;
+  inset: -30% -18%;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(250, 243, 232, 0.55), rgba(250, 243, 232, 0));
+  pointer-events: none;
+}
+
+.wordmark {
+  margin: 0;
+  /* The whole line is 7.1em wide; on a phone it takes the width there is. */
+  font-size: min(clamp(54px, 9vw, 124px), calc((100vw - 32px) / 7.3));
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.word {
+  display: inline-block;
+}
+
+.letters {
+  display: inline-block;
+}
+
+.dot {
+  display: inline-block;
+}
+
+.dotInk {
+  display: inline-block;
+  transform-origin: 50% 85%;
+}
+
+.studio {
+  display: inline-block;
+  margin-left: 0.28em;
+  font-weight: 200;
+  font-size: 0.8em;
+  letter-spacing: 0.1em;
+  /* The tracking after the last letter, which would push the line off
+     centre. */
+  margin-right: -0.1em;
+  text-transform: uppercase;
+}
+
+.tagline {
+  margin: 0.9em 0 0;
+  font-size: clamp(17px, 1.9vw, 24px);
+  color: rgba(28, 25, 23, 0.74);
+  letter-spacing: 0.01em;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+.section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 128px 24px 40px;
+  scroll-margin-top: 56px;
+}
+
+.sectionWide {
+  max-width: 1320px;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a5a3a;
+}
+
+.headline {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+}
+
+.lede {
+  margin: 22px 0 0;
+  max-width: 640px;
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.steps {
+  list-style: none;
+  margin: 64px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 40px;
+}
+
+.steps h3,
+.facts h3 {
+  margin: 16px 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.steps p,
+.facts p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.stepNumber {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.gallery {
+  margin-top: 56px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 40px 32px;
+}
+
+.spreadCard {
+  margin: 0;
+}
+
+.spreadPages {
+  display: flex;
+  gap: 1px;
+  background: #cfc9bd;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(40, 30, 20, 0.08),
+    0 18px 40px rgba(40, 30, 20, 0.14);
+}
+
+.spreadPage {
+  position: relative;
+  flex: 1 1 0;
+  aspect-ratio: 2175 / 3075;
+  background: #fbf8f0;
+}
+
+.spreadCard figcaption {
+  margin-top: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.spreadCard figcaption strong {
+  font-size: 17px;
+}
+
+.spreadCard figcaption span {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.facts {
+  list-style: none;
+  margin: 56px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px 56px;
+  max-width: 880px;
+}
+
+.closing {
+  padding: 160px 24px 140px;
+  display: grid;
+  justify-items: center;
+  gap: 32px;
+  text-align: center;
+}
+
+.small {
+  margin: -12px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.footer {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 28px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.footer nav {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+}
+
+.footer nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.footer nav a:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .steps,
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .section {
+    padding-top: 96px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk {
+    transition: none;
+  }
+}

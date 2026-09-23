@@ -1,19 +1,20 @@
-import { currentOwner, signInPath } from "@/lib/owner";
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { currentOwner } from "@/lib/owner";
+import { Landing } from "./landing/Landing";
 
-// memari.studio's front door, for now: sign in, then the planner. Asked for,
-// 2026-09-21 - "for now sign in, then editor. I have an idea for a landing
-// page but that works for now".
-//
-// It replaces the "pipeline check" that stood here through development,
-// which counted the user table and, whenever the database was unreachable,
-// printed the database's own error message on a public page.
-//
-// To /app, the editor's home - see src/app/app/page.tsx. Signing in from here
-// returns to "/", which lands there too. "/" itself is kept free for the
-// landing page Andrew has in mind.
+// memari.studio's front door: the landing page, for everyone (Andrew,
+// 2026-09-22 - signed-in visitors see it too, with "Open Memari" in place of
+// "Sign in" and "Start your planner"). It used to redirect straight to sign
+// in and then the editor, which it did "for now" until this existed.
+
+export const metadata: Metadata = {
+  title: "Memari Studio - a planner as unique as you",
+  description:
+    "Design each page of your planner once - hours, habits, lists, notes - and Memari lays out the whole book, dated and ready to print.",
+};
+
 export default async function Home() {
-  // A guest counts: they already chose to try it without an account.
-  if (!(await currentOwner())) redirect(signInPath("/app"));
-  redirect("/app");
+  // A guest counts as someone already using Memari: they get "Open Memari".
+  const owner = await currentOwner();
+  return <Landing signedIn={owner !== null} />;
 }
