@@ -120,7 +120,7 @@ check(
   for (const family of [FONT_SERIF, FONT_SANS]) {
     const size = 33.33;
     const y = capCentredTextY(band.top, band.height, size, family);
-    const element = { type: "text" as const, x: 0, y, width: 400, height: size * 1.2, text: "SUNDAY", fontSize: size, fontFamily: family };
+    const element = { id: "label", type: "text" as const, x: 0, y, width: 400, height: size * 1.2, text: "SUNDAY", fontSize: size, fontFamily: family };
     const svgBaseline = Number(/<text[^>]* y="([^"]+)"/.exec(toSvg(element))?.[1]);
     const marks = toPreviewMarks([element]).marks;
     const mark = marks.find((m) => m.k === "t");
