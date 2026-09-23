@@ -11,6 +11,7 @@
 
 import Link from "next/link";
 import { Hero } from "./Hero";
+import { VideoHero } from "./VideoHero";
 import { LayoutGallery } from "./LayoutGallery";
 import styles from "./landing.module.css";
 
@@ -22,7 +23,7 @@ function Brand() {
   );
 }
 
-export function Landing({ signedIn }: { signedIn: boolean }) {
+export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?: "desk" | "video" }) {
   return (
     <div className={styles.page}>
       <header className={styles.nav}>
@@ -51,7 +52,7 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
       </header>
 
       <main>
-        <Hero />
+        {hero === "video" ? <VideoHero /> : <Hero />}
 
         <section id="how" className={styles.section}>
           <p className={styles.eyebrow}>How it works</p>

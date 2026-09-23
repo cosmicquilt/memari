@@ -359,6 +359,79 @@
   animation: taglineIn 1s cubic-bezier(0.22, 1, 0.36, 1) 2.35s both;
 }
 
+/* --- the hero as a film (VideoHero) ----------------------------------------- */
+
+/* The clip and the drawing laid on its pages share one box, sized to cover
+   the hero as object-fit: cover would, so both are scaled and cropped
+   identically. The drawing is white where it draws nothing and is
+   multiplied onto the film. */
+.videoStage {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: max(100%, calc(max(100svh, 640px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  transform: translate(-50%, -50%);
+}
+
+.videoFrame,
+.videoDrawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.videoDrawing {
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* Upright phones cannot cover with a wide film and keep the spread whole:
+   the film is sized so the spread fills the width (it is 920 of the frame's
+   1920 px) and sits below the title, over a blurred, dimmed copy of its
+   first frame, its top and bottom edges faded into it. */
+.videoBackdrop {
+  display: none;
+}
+
+/* Higher than over the desk: the film's book starts a third of the way down
+   the frame, and on a 16:10 screen the tagline would sit on its pages. */
+.titleOverFilm {
+  top: calc(48px + 3vh);
+}
+
+/* A shade at the top, where the title is: the film's far desk is busy -
+   a laptop, a cream pencil case - and ivory needs something darker under
+   it to read. */
+.videoScrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(16, 10, 6, 0.55) 0%, rgba(16, 10, 6, 0.28) 26%, rgba(16, 10, 6, 0) 46%);
+}
+
+@media (max-aspect-ratio: 1/1) {
+  .videoStage {
+    width: calc(100vw * 1920 / 920);
+    top: 57%;
+    transform: translate(-50.1%, -58%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
+  }
+  .videoBackdrop {
+    display: block;
+    position: absolute;
+    inset: -60px;
+    z-index: -2;
+    background-size: cover;
+    background-position: center;
+    filter: blur(28px) brightness(0.55);
+  }
+}
+
 .srOnly {
   position: absolute;
   width: 1px;

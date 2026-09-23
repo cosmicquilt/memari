@@ -13,8 +13,11 @@ export const metadata: Metadata = {
     "Design each page of your planner once - hours, habits, lists, notes - and Memari lays out the whole book, dated and ready to print.",
 };
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   // A guest counts as someone already using Memari: they get "Open Memari".
   const owner = await currentOwner();
-  return <Landing signedIn={owner !== null} />;
+  // Two heroes to choose between (Andrew, 2026-09-23): the 3D desk, and
+  // the Veo film with the pages drawn onto it - ?hero=video shows the film.
+  const hero = (await searchParams).hero === "video" ? "video" : "desk";
+  return <Landing signedIn={owner !== null} hero={hero} />;
 }

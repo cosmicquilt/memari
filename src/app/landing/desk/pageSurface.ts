@@ -58,7 +58,13 @@ export class PageSurface {
   /** Where the ink is taken up by the paper's fibres before it lands. */
   private scratch: CanvasRenderingContext2D;
 
-  constructor(height: number) {
+  /** Bare: only what is printed and written, on white - for laying over a
+   *  photographed page (the video hero), whose own paper, light and gutter
+   *  show through where this is white. */
+  private readonly bare: boolean;
+
+  constructor(height: number, { bare = false }: { bare?: boolean } = {}) {
+    this.bare = bare;
     const width = Math.round((height * PAGE_W) / PAGE_H);
     this.scale = height / PAGE_H;
     this.canvas = canvas(width, height);
@@ -78,9 +84,9 @@ export class PageSurface {
   blank() {
     const b = this.base.getContext("2d")!;
     const { width, height } = this.base;
-    b.fillStyle = PAPER;
+    b.fillStyle = this.bare ? "#ffffff" : PAPER;
     b.fillRect(0, 0, width, height);
-    if (paperTile) {
+    if (paperTile && !this.bare) {
       const pattern = b.createPattern(paperTile, "repeat")!;
       pattern.setTransform(new DOMMatrix().scale(width / PAGE_IN / TILE_PX_PER_IN));
       b.save();
@@ -107,6 +113,15 @@ export class PageSurface {
     const layout = canvas(width, height);
     drawPreview(layout.getContext("2d")!, page.marks, PAGE_W, PAGE_H);
     const b = this.base.getContext("2d")!;
+    if (this.bare) {
+      b.save();
+      b.globalCompositeOperation = "multiply";
+      b.globalAlpha = 0.97;
+      b.drawImage(layout, 0, 0);
+      b.restore();
+      this.compose();
+      return;
+    }
     b.save();
     b.globalCompositeOperation = "multiply";
     // Show-through: the print on the other side of the leaf, mirrored and

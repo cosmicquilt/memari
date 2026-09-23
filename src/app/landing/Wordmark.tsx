@@ -31,7 +31,7 @@ import styles from "./landing.module.css";
  *  arrival, as it settles. Matches the tagline's animation-delay. */
 const OPEN_AFTER_MS = 2350 + 500;
 
-export function Wordmark({ onArrived }: { onArrived?: () => void }) {
+export function Wordmark({ onArrived, className }: { onArrived?: () => void; className?: string }) {
   const tagline = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export function Wordmark({ onArrived }: { onArrived?: () => void }) {
   }, [onArrived]);
 
   return (
-    <div className={styles.title}>
+    <div className={className ? `${styles.title} ${className}` : styles.title}>
       <h1 className={styles.wordmark} aria-label="memari. studio">
         <span className={styles.word} aria-hidden="true">
           <span className={styles.reveal}>
