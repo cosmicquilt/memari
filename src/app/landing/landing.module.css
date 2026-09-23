@@ -143,15 +143,16 @@
   isolation: isolate;
 }
 
-/* What shows before the desk has loaded, and where WebGL is missing: the
-   same warm light over a wall and a wooden desk, as a gradient. */
+/* What shows before the desk has loaded, where WebGL is missing, and if a
+   background tab's canvas is ever empty: warm late light over the dark
+   walnut desk, as a gradient - dark, so the ivory title reads on it too. */
 .backdrop {
   position: absolute;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(120% 70% at 20% 10%, rgba(255, 226, 180, 0.8), rgba(255, 226, 180, 0) 60%),
-    linear-gradient(to bottom, #e9dcc5 0%, #e3d2b8 30%, #9c6b43 31%, #7d5033 100%);
+    radial-gradient(110% 80% at 18% 12%, rgba(255, 186, 128, 0.32), rgba(255, 186, 128, 0) 60%),
+    linear-gradient(to bottom, #4a2e1c 0%, #3a2416 55%, #24160d 100%);
 }
 
 .desk {
@@ -372,6 +373,7 @@
 .videoStage {
   position: absolute;
   z-index: -1;
+  background: #24160d center / cover no-repeat;
   left: 50%;
   top: 50%;
   width: max(100%, calc(max(100svh, 640px) * 16 / 9));

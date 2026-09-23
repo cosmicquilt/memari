@@ -19,6 +19,10 @@ export function Hero() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const hero = useRef<HTMLElement>(null);
   const [ready, setReady] = useState(false);
+  /** Ready while the tab was in the background: appear without the fade,
+   *  which does not run there - a tab preview would find the desk still
+   *  invisible. */
+  const [readyHidden, setReadyHidden] = useState(false);
   const opener = useRef<{ open: () => void } | null>(null);
   const titleArrived = useRef(false);
 
@@ -74,7 +78,8 @@ export function Hero() {
       if (reduce) {
         director.still();
         desk.frame(0);
-        setReady(true);
+        setReadyHidden(document.hidden);
+      setReady(true);
         cleanup = () => {
           observer.disconnect();
           director.dispose();
@@ -107,7 +112,11 @@ export function Hero() {
         desk.lookToward(((event.clientX - box.left) / box.width) * 2 - 1, ((event.clientY - box.top) / box.height) * 2 - 1);
       };
       hero.current.addEventListener("pointermove", onPointer);
+      // One frame now, even in a background tab where the loop does not
+      // run yet - so a preview of the tab shows the desk, not an empty canvas.
+      desk.frame(now());
       raf = requestAnimationFrame(tick);
+      setReadyHidden(document.hidden);
       setReady(true);
       cleanup = () => {
         cancelAnimationFrame(raf);
@@ -128,7 +137,7 @@ export function Hero() {
   return (
     <section ref={hero} className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`} aria-label="Memari Studio">
       <div className={styles.backdrop} aria-hidden="true" />
-      <canvas ref={canvas} className={styles.desk} style={{ opacity: ready ? 1 : 0 }} aria-hidden="true" />
+      <canvas ref={canvas} className={styles.desk} style={{ opacity: ready ? 1 : 0, transition: readyHidden ? "none" : undefined }} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark onArrived={onArrived} />
       <PaceSlider />

@@ -130,7 +130,11 @@ function sheetGeometry(width: number, height: number, seed: number, corner: read
 type Spot = readonly [x: number, z: number, turn: number];
 
 export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: string): DeskScene {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: false });
+  // The drawing buffer is kept after each frame is shown. Otherwise, once
+  // the tab is in the background and the browser lets go of what the
+  // canvas last showed, a window or tab preview finds it blank - and shows
+  // the page behind it (Andrew, 2026-09-23: "the background is white").
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;

@@ -29,6 +29,8 @@ export function VideoHero() {
   const overlay = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState(false);
   const [still, setStill] = useState(false);
+  /** The clip has reached the frame the drawing is laid on. */
+  const [resting, setResting] = useState(false);
 
   useEffect(() => {
     const v = video.current;
@@ -53,6 +55,7 @@ export function VideoHero() {
       drawing = true;
       paint();
       setDrawn(true);
+      setResting(true);
       loop.start(now());
     };
     v.addEventListener("ended", begin);
@@ -143,7 +146,10 @@ export function VideoHero() {
   return (
     <section ref={hero} className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`} aria-label="Memari Studio">
       <div className={styles.videoBackdrop} style={{ backgroundImage: `url(${HERO_VIDEO.first})` }} aria-hidden="true" />
-      <div className={styles.videoStage} aria-hidden="true">
+      {/* Behind the clip, the still it is showing: its first frame, then its
+          last. A background tab may drop the video's picture, and a window
+          or tab preview then shows this instead of an empty page. */}
+      <div className={styles.videoStage} style={{ backgroundImage: `url(${resting ? HERO_VIDEO.last : HERO_VIDEO.first})` }} aria-hidden="true">
         <video
           ref={video}
           className={styles.videoFrame}

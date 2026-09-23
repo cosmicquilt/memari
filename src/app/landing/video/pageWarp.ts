@@ -79,8 +79,11 @@ export class PageWarp {
   ) {
     canvas.width = frame.width;
     canvas.height = frame.height;
-    const gl2 = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: true });
-    const gl = gl2 ?? canvas.getContext("webgl", { premultipliedAlpha: false, antialias: true });
+    // preserveDrawingBuffer: what was drawn stays drawn when the tab is in
+    // the background, for window and tab previews (see desk/scene.ts).
+    const options: WebGLContextAttributes = { premultipliedAlpha: false, antialias: true, preserveDrawingBuffer: true };
+    const gl2 = canvas.getContext("webgl2", options);
+    const gl = gl2 ?? canvas.getContext("webgl", options);
     if (!gl) throw new Error("no WebGL");
     this.gl = gl;
     // Mipmaps keep the fine ruled lines from shimmering where the page
