@@ -353,9 +353,10 @@
 }
 
 .tagline {
-  /* Close under the title ("bring tagline closer"): the title's line box
-     already leaves a fifth of its size below the letters. */
-  margin: 0.2em 0 0;
+  /* Close under the title ("bring tagline closer", then "a little
+     higher"): the title's line box already leaves a fifth of its size
+     below the letters, so the tagline tucks a little into it. */
+  margin: -0.15em 0 0;
   font-size: clamp(17px, 1.9vw, 24px);
   color: rgba(246, 240, 230, 0.9);
   text-shadow: 0 1px 12px rgba(20, 12, 6, 0.45);
