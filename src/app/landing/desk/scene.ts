@@ -16,7 +16,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Journal, PAGE_W } from "./journal";
-import { coverTextures, linenBump, notepaper, pageEdges, softDot, windowLight, woodTextures } from "./textures";
+import { contactShadow, coverTextures, notepaper, pageEdges, softDot, windowLight } from "./textures";
 import { HAND_FONTS } from "../handFonts";
 
 export type DeskScene = {
@@ -28,10 +28,96 @@ export type DeskScene = {
   resize(width: number, height: number): void;
   /** Where the pointer is over the hero, -1..1, for a little parallax. */
   lookToward(x: number, y: number): void;
+  /** Settles when the baked textures have arrived (or failed to - the desk
+   *  still draws, plainer). */
+  loaded: Promise<void>;
   dispose(): void;
 };
 
 const DESK_TOP = 0;
+/** The inches of desk one baked walnut tile covers (build-desk-textures). */
+const WOOD_TILE = 48;
+
+/**
+ * Chatoyancy - the shimmer figured wood has, bands of the grain brightening
+ * and dimming as you move your head (asked for 2026-09-22: "slight
+ * chatoyancy"). It comes from the fibres: in curly figure they dip into
+ * the surface and rise out of it again, and each little run of fibre
+ * throws light back hardest when it lies square to the halfway direction
+ * between the sun and the eye. So the brightness is a hair-like highlight
+ * (Kajiya-Kay) along each texel's fibre, tilted by the figure map's curl,
+ * applied to the wood's colour: it moves when the camera does - the pointer
+ * parallax and the slow sway of a seated head.
+ */
+function chatoyant(material: THREE.MeshPhysicalMaterial, figure: THREE.Texture, sun: THREE.Vector3, strength: number) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.figureMap = { value: figure };
+    shader.uniforms.sunDirection = { value: sun };
+    shader.uniforms.chatoyancy = { value: strength };
+    // Reachable for tuning (scene.getObjectByName("desk")).
+    material.userData.chatoyancy = shader.uniforms.chatoyancy;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vDeskWorld;")
+      .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvDeskWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vDeskWorld;\nuniform sampler2D figureMap;\nuniform vec3 sunDirection;\nuniform float chatoyancy;"
+      )
+      .replace(
+        "#include <map_fragment>",
+        /* glsl */ `#include <map_fragment>
+        {
+          // The figure map shares the colour map's tiling. Its R and G are
+          // the fibre's direction on the desk (image x is world x, image y
+          // world z), B its tilt out of the surface.
+          vec3 fig = texture2D(figureMap, vMapUv).rgb;
+          vec2 along = fig.rg * 2.0 - 1.0;
+          along /= max(length(along), 1e-3);
+          float tilt = (fig.b * 2.0 - 1.0) * 0.55;
+          vec3 fibre = vec3(along.x * cos(tilt), sin(tilt), along.y * cos(tilt));
+          vec3 toEye = normalize(cameraPosition - vDeskWorld);
+          vec3 halfway = normalize(sunDirection + toEye);
+          float c = dot(fibre, halfway);
+          float sheen = pow(max(0.0, 1.0 - c * c), 10.0);
+          diffuseColor.rgb *= 1.0 + chatoyancy * (sheen - 0.5);
+        }`
+      );
+  };
+}
+
+/** A soft dark patch under something resting on the desk, as a child of it. */
+function restOn(group: THREE.Object3D, width: number, depth: number, round: boolean, opacity: number) {
+  const margin = Math.min(width, depth) * 0.22 + 0.2;
+  const { texture, planeW, planeD } = contactShadow(width, depth, margin, round);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(planeW, planeD).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 })
+  );
+  mesh.position.y = 0.004;
+  mesh.renderOrder = -1;
+  group.add(mesh);
+}
+
+/**
+ * A loose sheet's surface. Paper never lies quite flat: it cockles a little
+ * all over, and a corner that has been handled lifts. `corner` is which one
+ * (+1/-1 in x, then z); `lift` how far, in inches.
+ */
+function sheetGeometry(width: number, height: number, seed: number, corner: readonly [number, number], lift: number) {
+  const geometry = new THREE.PlaneGeometry(width, height, 24, 32).rotateX(-Math.PI / 2);
+  const pos = geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const cockle = 0.02 * (1 + Math.sin(x * 1.3 + seed) * Math.sin(z * 0.9 + seed * 2));
+    const fromCorner = Math.hypot(1 - (corner[0] * x) / (width / 2), 1 - (corner[1] * z) / (height / 2));
+    const curl = Math.max(0, 1 - fromCorner / 0.6);
+    pos.setY(i, cockle + lift * curl * curl);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 function lathe(profile: Array<[number, number]>, segments = 48) {
   return new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
@@ -197,6 +283,23 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   scene.environment = environment;
   scene.environmentIntensity = 0.25;
 
+  // --- the baked textures (scripts/build-desk-textures.mts). Materials are
+  //     built with them at once - an image arriving later is uploaded then -
+  //     and `loaded` says when they all have.
+  let settle = () => {};
+  const loaded = new Promise<void>((resolve) => (settle = resolve));
+  const manager = new THREE.LoadingManager(() => settle());
+  const loader = new THREE.TextureLoader(manager);
+  const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const baked = (name: string, repeatX: number, repeatY: number, colour = false) => {
+    const texture = loader.load(`/landing/${name}`);
+    if (colour) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = anisotropy;
+    return texture;
+  };
+
   // --- camera: seated, looking down at the desk
   const camera = new THREE.PerspectiveCamera(27, 1, 0.1, 400);
   // Aimed above the book, so the book sits in the lower part of the frame
@@ -209,14 +312,25 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   /** Where the book's centre sits on an upright phone, from the top. */
   const PORTRAIT_BOOK_AT = 0.5;
 
-  // --- the desk and the wall behind it
-  const wood = woodTextures();
-  wood.map.repeat.set(3.4, 2.4);
-  wood.roughnessMap.repeat.set(3.4, 2.4);
-  const desk = new THREE.Mesh(
-    new THREE.PlaneGeometry(90, 62).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ map: wood.map, roughnessMap: wood.roughnessMap, roughness: 1, metalness: 0 })
-  );
+  // --- the desk and the wall behind it: figured black walnut, oiled, with a
+  //     thin satin coat over it. The plane is 90 x 62in at z -6, so the tile
+  //     lands where the bake placed its swirls, knots and the mug ring.
+  const SUN_AT = new THREE.Vector3(-30, 46, -42);
+  const SUN_AIM = new THREE.Vector3(3, 0, 1);
+  const wood = (name: string, colour = false) => baked(name, 90 / WOOD_TILE, 62 / WOOD_TILE, colour);
+  const woodSurface = wood("wood-surface.jpg");
+  const deskMaterial = new THREE.MeshPhysicalMaterial({
+    map: wood("wood.jpg", true),
+    roughnessMap: woodSurface,
+    roughness: 1,
+    bumpMap: woodSurface,
+    bumpScale: 0.6,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.32,
+  });
+  chatoyant(deskMaterial, wood("wood-figure.jpg"), SUN_AT.clone().sub(SUN_AIM).normalize(), 0.28);
+  const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, 62).rotateX(-Math.PI / 2), deskMaterial);
+  desk.name = "desk";
   desk.position.set(0, DESK_TOP, -6);
   desk.receiveShadow = true;
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(120, 50), new THREE.MeshStandardMaterial({ color: 0xe9dcc5, roughness: 0.97 }));
@@ -227,8 +341,8 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   // --- light: late sun through a window, and the room's bounce
   const windowPattern = windowLight();
   const sun = new THREE.SpotLight(0xffcf98, 7, 0, 0.36, 0.45, 0);
-  sun.position.set(-30, 46, -42);
-  sun.target.position.set(3, 0, 1);
+  sun.position.copy(SUN_AT);
+  sun.target.position.copy(SUN_AIM);
   sun.map = windowPattern;
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -243,8 +357,7 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   scene.add(sky, fill);
 
   // --- the journal
-  const linen = linenBump();
-  linen.repeat.set(3, 3);
+  const linen = baked("linen.jpg", 3, 3);
   const cover = coverTextures(wordmarkFamily);
   const cloth = new THREE.MeshStandardMaterial({ color: 0x2c2b2d, roughness: 0.9, bumpMap: linen, bumpScale: 0.5 });
   const coverMaterial = new THREE.MeshStandardMaterial({
@@ -260,6 +373,8 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     cover: coverMaterial,
     edges: new THREE.MeshStandardMaterial({ map: edgesMap, roughness: 0.95 }),
     ribbon: new THREE.MeshStandardMaterial({ color: 0x7c1f25, roughness: 0.45, side: THREE.DoubleSide }),
+    // The paper tile is 4in square; a page is 7 x 10.
+    paper: baked("paper.jpg", 7 / 4, 10 / 4),
   });
   journal.group.position.z = 0.4;
   scene.add(journal.group);
@@ -271,6 +386,10 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   const books = bookStack(edgesMap);
   books.rotation.y = 0.32;
   const penGroup = pen();
+  restOn(mugGroup, 2.9, 2.9, true, 0.55);
+  restOn(plantGroup, 3.1, 3.1, true, 0.55);
+  restOn(cup, 2.6, 2.6, true, 0.5);
+  restOn(books, 6.6, 9, false, 0.5);
   scene.add(mugGroup, plantGroup, cup, books, penGroup);
   // Around the book on a wide screen; on an upright phone the sides are out
   // of frame, so the tea and the pen come down in front of the book, and the
@@ -297,8 +416,10 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   // page on top of it.
   const notes = [
     {
-      at: [-11.3, 3.4, 0.16, 0.02],
+      // Resting on the letter sheet, so above its cockles.
+      at: [-11.3, 3.4, 0.16, 0.06],
       paper: [5.5, 8.5],
+      curl: [[1, 1], 0.2],
       ink: "#2a3a8a",
       face: HAND_FONTS.caveat,
       size: 40,
@@ -318,6 +439,7 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     {
       at: [-11.8, -3.2, -0.22, 0.012],
       paper: [8.5, 11],
+      curl: [[1, -1], 0.12],
       ink: "#1d1c21",
       face: HAND_FONTS.reenie,
       size: 46,
@@ -338,13 +460,23 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   for (const [i, note] of notes.entries()) {
     const [x, z, turn, y] = note.at;
     const sheet = notepaper(note.ink, [...note.lines], 11 + i * 7, note.paper);
+    const [width, height] = note.paper;
+    const [corner, lift] = note.curl;
     const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(...note.paper).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ map: sheet.texture, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1 })
+      sheetGeometry(width, height, i * 3.1, corner, lift),
+      new THREE.MeshStandardMaterial({
+        map: sheet.texture,
+        roughness: 0.92,
+        bumpMap: baked("paper.jpg", width / 4, height / 4),
+        bumpScale: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      })
     );
     mesh.position.set(x, DESK_TOP + y, z);
     mesh.rotation.y = turn;
     mesh.receiveShadow = true;
+    mesh.castShadow = true;
     scene.add(mesh);
     void document.fonts.load(`${note.size}px ${note.face}`).then(
       () => sheet.write(note.face, note.size),
@@ -374,7 +506,11 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     }
     look.x += (look.tx - look.x) * 0.05;
     look.y += (look.ty - look.y) * 0.05;
-    camera.position.set(home.x + look.x * 0.9, home.y - look.y * 0.5, home.z);
+    // A seated head is never quite still: a slow sway, which also keeps the
+    // walnut's shimmer moving when the pointer is not.
+    const swayX = Math.sin(seconds * 0.13) * 0.35;
+    const swayY = Math.sin(seconds * 0.09 + 1.3) * 0.2;
+    camera.position.set(home.x + look.x * 0.9 + swayX, home.y - look.y * 0.5 + swayY, home.z);
     camera.lookAt(target);
     renderer.render(scene, camera);
   }
@@ -418,6 +554,7 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
       look.tx = x;
       look.ty = y;
     },
+    loaded,
     dispose() {
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;

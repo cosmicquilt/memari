@@ -1,12 +1,16 @@
-// Procedural textures for the desk scene, drawn on canvases at load.
+// Textures for the desk scene that are drawn in the browser: the ones that
+// are cheap to draw (a few canvas operations) or that need the page's own
+// fonts. The expensive, per-pixel ones - the walnut, the paper fibre, the
+// linen - are baked by scripts/build-desk-textures.mts into public/landing/,
+// because drawing them here held the main thread for seconds while the
+// title was animating.
 //
-// Generated rather than shipped as images: a wood grain, a linen weave and a
-// window's leaf shadow are a few KB of code and cost nothing to download.
 // When photographs arrive (Andrew means to try Midjourney desks), the wood
 // and the wall are the pieces they replace; the journal stays procedural,
 // because its pages have to be the real layouts.
 
 import * as THREE from "three";
+import { fibreMask } from "../handwriting/paperInk";
 
 function canvas(w: number, h: number) {
   const c = document.createElement("canvas");
@@ -21,115 +25,29 @@ function hash(x: number, y: number, seed: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Tileable value noise: the lattice wraps every `period` cells. */
-function noise(x: number, y: number, period: number, seed: number): number {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const fx = x - x0;
-  const fy = y - y0;
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  const w = (v: number) => ((v % period) + period) % period;
-  const a = hash(w(x0), w(y0), seed);
-  const b = hash(w(x0 + 1), w(y0), seed);
-  const c = hash(w(x0), w(y0 + 1), seed);
-  const d = hash(w(x0 + 1), w(y0 + 1), seed);
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
-
-function fbm(x: number, y: number, period: number, seed: number, octaves = 4) {
-  let sum = 0;
-  let amp = 0.5;
-  let p = period;
-  let f = 1;
-  for (let i = 0; i < octaves; i++) {
-    sum += amp * noise(x * f, y * f, p, seed + i * 17);
-    amp *= 0.5;
-    f *= 2;
-    p *= 2;
-  }
-  return sum;
-}
-
-const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-
 /**
- * Oiled oak, planks running left to right. Growth lines are thin, uneven and
- * mostly straight - long streaks that drift and pinch rather than waves -
- * with open pores along them and each plank a slightly different tone.
- * Returns colour and a roughness map; the pores are a little rougher than
- * the oiled wood around them.
+ * A soft, cloudy unevenness laid over whatever is on the canvas: octaves of
+ * coarse noise, each a tiny canvas smoothed up to size and overlaid (mid grey
+ * changes nothing). A per-pixel loop over a big canvas costs a third of a
+ * second; this costs a few drawImage calls.
  */
-export function woodTextures(size = 1024) {
-  const color = canvas(size, size);
-  const rough = canvas(size, size);
-  const cctx = color.getContext("2d")!;
-  const rctx = rough.getContext("2d")!;
-  const cimg = cctx.createImageData(size, size);
-  const rimg = rctx.createImageData(size, size);
-  const planks = 4;
-  const light = [196, 156, 112];
-  const dark = [128, 86, 54];
-  for (let y = 0; y < size; y++) {
-    const v = y / size;
-    const p = Math.floor(v * planks);
-    const inPlank = v * planks - p;
-    const tone = [0.0, 0.07, -0.05, 0.04][p % 4];
-    for (let x = 0; x < size; x++) {
-      const u = x / size;
-      // Growth lines: across the plank, bent slowly along it.
-      const bend = fbm(u * 2, v * 3 + p * 5.3, 2, 31 + p, 3) * 1.6 + fbm(u * 8, v * 8, 8, 41 + p, 2) * 0.25;
-      const ring = (v * 26 + bend) % 1;
-      const line = Math.exp(-Math.pow((ring - 0.5) / 0.07, 2)) * (0.55 + 0.45 * fbm(u * 6, v * 20, 6, 51 + p, 2));
-      // Pores: short dark flecks strung along the grain.
-      const pore = Math.pow(noise(u * 256, v * 24, 256, 61 + p), 6) * 1.6;
-      // Slow colour drift within a plank.
-      const drift = fbm(u * 3, v * 6, 3, 71 + p, 3) - 0.5;
-      const seam = inPlank < 0.004 || inPlank > 0.996;
-      const k = Math.min(1, line * 0.55 + pore * 0.35 + 0.25 + drift * 0.3);
-      const i = (y * size + x) * 4;
-      const shade = (1 + tone) * (seam ? 0.5 : 1);
-      cimg.data[i] = mix(light[0], dark[0], k) * shade;
-      cimg.data[i + 1] = mix(light[1], dark[1], k) * shade;
-      cimg.data[i + 2] = mix(light[2], dark[2], k) * shade;
-      cimg.data[i + 3] = 255;
-      const rv = seam ? 255 : 130 + pore * 70 - line * 20;
-      rimg.data[i] = rimg.data[i + 1] = rimg.data[i + 2] = Math.max(0, Math.min(255, rv));
-      rimg.data[i + 3] = 255;
-    }
-  }
-  cctx.putImageData(cimg, 0, 0);
-  rctx.putImageData(rimg, 0, 0);
-  const map = new THREE.CanvasTexture(color);
-  map.colorSpace = THREE.SRGBColorSpace;
-  const roughnessMap = new THREE.CanvasTexture(rough);
-  for (const t of [map, roughnessMap]) {
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
-  }
-  return { map, roughnessMap };
-}
-
-/** A fine linen weave, as a bump map - the cloth the journal is bound in. */
-export function linenBump(size = 512) {
-  const c = canvas(size, size);
-  const ctx = c.getContext("2d")!;
-  const img = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const warp = Math.sin((x / size) * Math.PI * 2 * 128) * 0.5 + 0.5;
-      const weft = Math.sin((y / size) * Math.PI * 2 * 128) * 0.5 + 0.5;
-      const slub = noise((x / size) * 64, (y / size) * 8, 64, 7) * 0.5 + noise((x / size) * 8, (y / size) * 64, 64, 9) * 0.5;
-      const v = 255 * (0.35 * warp + 0.35 * weft + 0.3 * slub);
-      const i = (y * size + x) * 4;
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+function mottle(ctx: CanvasRenderingContext2D, width: number, height: number, octaves: ReadonlyArray<readonly [cells: number, alpha: number]>, seed: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  ctx.imageSmoothingQuality = "high";
+  for (const [cells, alpha] of octaves) {
+    const n = canvas(cells, Math.max(1, Math.round((cells * height) / width)));
+    const nctx = n.getContext("2d")!;
+    const img = nctx.createImageData(n.width, n.height);
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 64 + hash(seed++, 3, 21) * 128;
       img.data[i + 3] = 255;
     }
+    nctx.putImageData(img, 0, 0);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(n, 0, 0, width, height);
   }
-  ctx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return t;
+  ctx.restore();
 }
 
 /**
@@ -147,17 +65,16 @@ export function coverTextures(wordmarkFamily: string, width = 1024, height = 144
   // Cloth: a charcoal with a faint warm cast, mottled a little.
   c.fillStyle = "#2b2a2c";
   c.fillRect(0, 0, width, height);
-  const img = c.getImageData(0, 0, width, height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const n = fbm((x / width) * 8, (y / height) * 8, 8, 21, 3) - 0.5;
-      const i = (y * width + x) * 4;
-      img.data[i] += n * 14;
-      img.data[i + 1] += n * 13;
-      img.data[i + 2] += n * 12;
-    }
-  }
-  c.putImageData(img, 0, 0);
+  mottle(
+    c,
+    width,
+    height,
+    [
+      [8, 0.1],
+      [24, 0.05],
+    ],
+    21
+  );
   r.fillStyle = "#e0e0e0";
   r.fillRect(0, 0, width, height);
   b.fillStyle = "#808080";
@@ -249,7 +166,6 @@ export function windowLight(size = 1024) {
   return t;
 }
 
-/** A sheet of lined notepaper with a few lines already written on it. */
 /** A line on a loose sheet: `~` first strikes it through (done), and a
  *  leading "  " indents it. */
 export type NoteLine = string;
@@ -274,12 +190,24 @@ export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesW
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
 
+  // Cheap paper: a little cloudy where the pulp settled unevenly, and the
+  // rules printed a touch stronger and weaker from line to line.
   const paper = () => {
     ctx.fillStyle = "#f6f2e7";
     ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = "rgba(90, 130, 190, 0.35)";
+    mottle(
+      ctx,
+      width,
+      height,
+      [
+        [6, 0.09],
+        [40, 0.07],
+      ],
+      seed * 13
+    );
     ctx.lineWidth = 2;
-    for (let y = first; y < height - 30; y += rule) {
+    for (let y = first, n = 0; y < height - 30; y += rule, n++) {
+      ctx.strokeStyle = `rgba(90, 130, 190, ${0.28 + 0.12 * hash(n, seed, 5)})`;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
@@ -300,9 +228,14 @@ export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesW
       state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
       return state / 4294967296;
     };
-    ctx.fillStyle = ink;
-    ctx.strokeStyle = ink;
-    ctx.textBaseline = "alphabetic";
+    // Written on a layer of its own, then taken up by the paper's fibres and
+    // multiplied in - as the journal's ink is (PageSurface) - so the rules
+    // and the paper show through it.
+    const layer = canvas(width, height);
+    const pen = layer.getContext("2d")!;
+    pen.fillStyle = ink;
+    pen.strokeStyle = ink;
+    pen.textBaseline = "alphabetic";
     for (const [i, raw] of lines.entries()) {
       if (!raw) continue;
       const done = raw.startsWith("~");
@@ -315,28 +248,61 @@ export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesW
       let x = x0;
       for (const word of text.trim().split(" ")) {
         const fontSize = size * (0.96 + random() * 0.08);
-        ctx.font = `${fontSize}px ${family}`;
-        ctx.save();
-        ctx.globalAlpha = 0.8 + random() * 0.16;
-        ctx.translate(x, y + (x - x0) * slope + (random() - 0.5) * 3);
-        ctx.rotate((random() - 0.5) * 0.05);
-        ctx.fillText(word, 0, 0);
-        ctx.restore();
-        x += ctx.measureText(`${word} `).width * (0.94 + random() * 0.12);
+        pen.font = `${fontSize}px ${family}`;
+        pen.save();
+        pen.globalAlpha = 0.8 + random() * 0.16;
+        pen.translate(x, y + (x - x0) * slope + (random() - 0.5) * 3);
+        pen.rotate((random() - 0.5) * 0.05);
+        pen.fillText(word, 0, 0);
+        pen.restore();
+        x += pen.measureText(`${word} `).width * (0.94 + random() * 0.12);
       }
       if (done) {
-        ctx.globalAlpha = 0.85;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(x0 - 6, y - size * 0.22);
-        ctx.lineTo(x - 10, y - size * 0.26 + (random() - 0.5) * 4);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        pen.globalAlpha = 0.85;
+        pen.lineWidth = 3;
+        pen.beginPath();
+        pen.moveTo(x0 - 6, y - size * 0.22);
+        pen.lineTo(x - 10, y - size * 0.26 + (random() - 0.5) * 4);
+        pen.stroke();
+        pen.globalAlpha = 1;
       }
     }
+    pen.globalCompositeOperation = "destination-in";
+    pen.fillStyle = pen.createPattern(fibreMask(), "repeat")!;
+    pen.fillRect(0, 0, width, height);
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
     texture.needsUpdate = true;
   };
   return { texture, write };
+}
+
+/**
+ * The darkening where something sits on the desk - light from the room
+ * cannot get in under it. Its footprint (inches), blurred out over `margin`
+ * on every side: black, the softness in its alpha. Returns the texture and
+ * the size of the plane to stretch it over.
+ */
+export function contactShadow(width: number, depth: number, margin: number, round: boolean) {
+  const planeW = width + margin * 2;
+  const planeD = depth + margin * 2;
+  const perIn = 256 / Math.max(planeW, planeD);
+  const c = canvas(Math.round(planeW * perIn), Math.round(planeD * perIn));
+  const ctx = c.getContext("2d")!;
+  ctx.filter = `blur(${Math.max(1, Math.round(margin * perIn * 0.45))}px)`;
+  ctx.fillStyle = "#000";
+  const x = margin * perIn;
+  const y = margin * perIn;
+  ctx.beginPath();
+  if (round) ctx.ellipse(c.width / 2, c.height / 2, (width * perIn) / 2, (depth * perIn) / 2, 0, 0, Math.PI * 2);
+  else ctx.roundRect(x, y, width * perIn, depth * perIn, 0.15 * perIn);
+  ctx.fill();
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return { texture, planeW, planeD };
 }
 
 /** A plain soft round gradient - steam, and contact shadow under objects. */

@@ -43,7 +43,9 @@ export function Hero() {
       const desk = createDeskScene(canvas.current, almarai);
       const textureHeight = window.devicePixelRatio >= 2 && window.innerWidth > 900 ? 2048 : 1448;
       const director = new Director(desk, spreads, textureHeight);
-      await director.ready();
+      // The first spread printed, and the walnut and paper arrived - the desk
+      // fades in whole rather than as flat colour that then gains its grain.
+      await Promise.all([director.ready(), desk.loaded]);
       if (disposed) {
         desk.dispose();
         return;

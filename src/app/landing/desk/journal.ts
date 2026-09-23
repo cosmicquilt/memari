@@ -18,6 +18,7 @@
 // page.
 
 import * as THREE from "three";
+import { contactShadow } from "./textures";
 
 export const PAGE_W = 7;
 export const PAGE_H = 10;
@@ -43,10 +44,25 @@ export type JournalMaterials = {
   cover: THREE.Material;
   edges: THREE.Material;
   ribbon: THREE.Material;
+  /** The paper's fibre, as height, tiled to a page. */
+  paper: THREE.Texture;
 };
 
-function pageMaterial() {
-  return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0 });
+/** Uncoated paper: matte, and with a tooth the low sun picks out. */
+function pageMaterial(paper: THREE.Texture) {
+  return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, bumpMap: paper, bumpScale: 0.9 });
+}
+
+/** The dark where a board meets the desk, as a mesh lying on it. */
+function restingShadow() {
+  const { texture, planeW, planeD } = contactShadow(BOARD_W, BOARD_D, 0.45, false);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(planeW, planeD).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: 0.6, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 })
+  );
+  mesh.position.y = 0.004;
+  mesh.renderOrder = -1;
+  return mesh;
 }
 
 /** A block of pages: edges on every side but the one a page mesh covers -
@@ -61,12 +77,29 @@ function pageBlock(edges: THREE.Material, pageOn: "top" | "bottom") {
   return mesh;
 }
 
-/** A page's surface: a plane with enough columns to bend into the gutter. */
+/**
+ * A page's surface: a plane with enough columns to bend into the gutter, and
+ * rows enough for the rest of what a real page does - it is never quite
+ * flat (a slow unevenness the low sun shades), and its outer edge lifts a
+ * little off the pages under it.
+ */
 function pagePlane(flipForUnderside: boolean) {
-  const geometry = new THREE.PlaneGeometry(PAGE_W, PAGE_H, 36, 1);
+  const geometry = new THREE.PlaneGeometry(PAGE_W, PAGE_H, 36, 14);
   if (flipForUnderside) geometry.rotateX(Math.PI / 2).rotateY(Math.PI);
   else geometry.rotateX(-Math.PI / 2);
   geometry.translate(INSET + PAGE_W / 2, 0, 0);
+  // Up, off the page block, is +y for the right page and -y for the left,
+  // which lies face down in the half that swings over.
+  const up = flipForUnderside ? -1 : 1;
+  const pos = geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const fromGutter = pos.getX(i) - INSET;
+    const z = pos.getZ(i);
+    const uneven = 0.008 * Math.sin(fromGutter * 1.1 + z * 0.35) * Math.sin(z * 0.6 + 1);
+    const lift = 0.03 * smooth(clamp01((fromGutter - 5.6) / (PAGE_W - 5.6))) ** 2;
+    pos.setY(i, pos.getY(i) + up * (uneven + lift));
+  }
+  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -81,9 +114,18 @@ export class Journal {
   private readonly turnFront: THREE.Mesh;
   private readonly turnBack: THREE.Mesh;
   private readonly closedX: number;
+  /** Under the back board, always; under the front one once it has landed
+   *  beside it. */
+  private readonly restingLeft: THREE.Mesh;
 
   constructor(materials: JournalMaterials) {
-    const { cloth, cover, edges, ribbon } = materials;
+    const { cloth, cover, edges, ribbon, paper } = materials;
+
+    const restingRight = restingShadow();
+    restingRight.position.x = BOARD_W / 2;
+    this.restingLeft = restingShadow();
+    this.restingLeft.position.x = -BOARD_W / 2;
+    this.group.add(restingRight, this.restingLeft);
 
     // --- the half that stays: back board and the lower pages
     const back = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W, BOARD, BOARD_D), cloth);
@@ -91,7 +133,7 @@ export class Journal {
     back.castShadow = back.receiveShadow = true;
     const lower = pageBlock(edges, "top");
     lower.position.set(INSET + PAGE_W / 2, BOARD + HALF_BLOCK / 2, 0);
-    this.rightPage = new THREE.Mesh(pagePlane(false), pageMaterial());
+    this.rightPage = new THREE.Mesh(pagePlane(false), pageMaterial(paper));
     this.rightPage.position.y = HINGE_Y + 0.002;
     this.rightPage.receiveShadow = true;
     this.group.add(back, lower, this.rightPage);
@@ -107,7 +149,7 @@ export class Journal {
     const coverFace = new THREE.Mesh(new THREE.PlaneGeometry(BOARD_W, BOARD_D).rotateX(-Math.PI / 2), cover);
     coverFace.position.set(BOARD_W / 2, HALF_BLOCK + BOARD + 0.001, 0);
     coverFace.receiveShadow = true;
-    this.leftPage = new THREE.Mesh(pagePlane(true), pageMaterial());
+    this.leftPage = new THREE.Mesh(pagePlane(true), pageMaterial(paper));
     this.leftPage.position.y = -0.002;
     this.leftPage.receiveShadow = true;
     this.pivot.add(upper, front, coverFace, this.leftPage);
@@ -148,7 +190,7 @@ export class Journal {
         const uv = geometry.attributes.uv;
         for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i));
       }
-      const material = pageMaterial();
+      const material = pageMaterial(paper);
       material.side = side;
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
@@ -183,6 +225,9 @@ export class Journal {
     // open, the binding is under the pages, and its ends would show as two
     // dark bars up the gutter.
     this.spine.visible = swing < 0.55;
+    const landed = smooth(clamp01((swing - 0.85) / 0.15));
+    this.restingLeft.visible = landed > 0;
+    (this.restingLeft.material as THREE.MeshBasicMaterial).opacity = 0.6 * landed;
     this.group.position.x = this.closedX * (1 - smooth(t));
     this.group.rotation.y = 0.07 * (1 - smooth(t));
     // The pages settle into the gutter as the swing lands.

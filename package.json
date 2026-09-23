@@ -22,6 +22,7 @@
     "check:journals": "tsx scripts/check-journals.mts",
     "check:saved": "tsx scripts/check-saved.mts",
     "build:handwriting": "tsx scripts/build-handwriting-fonts.mts",
+    "build:desk-textures": "tsx scripts/build-desk-textures.mts",
     "check:gaps": "tsx scripts/check-gaps.mts",
     "check:levels": "tsx scripts/check-levels.mts",
     "check:book": "tsx scripts/check-book.mts",
@@ -58,6 +59,7 @@
     "fast-check": "^4.9.0",
     "playwright-core": "^1.63.0",
     "prisma": "^7.9.1",
+    "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.9",
     "typescript": "^5"

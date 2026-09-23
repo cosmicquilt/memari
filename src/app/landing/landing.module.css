@@ -209,21 +209,120 @@
   color: var(--ink);
 }
 
+/* The word's box holds the letters and, after them, room for the dot (the
+   full stop's advance in Almarai 700), which is positioned rather than
+   flowed so it can travel. */
 .word {
+  --dot: 0.24em;
+  --glide: cubic-bezier(0.65, 0, 0.35, 1);
   display: inline-block;
+  position: relative;
+  padding-right: var(--dot);
 }
 
-.letters {
+/* The window over the letters, and the letters counter-slid inside it: at
+   every instant the two offsets cancel, so the letters stand still while the
+   window's right edge crosses them. Padded top and bottom so the window
+   never trims an ascender or a descender. */
+.reveal {
   display: inline-block;
+  overflow: hidden;
+  padding: 0.25em 0;
+  margin: -0.25em 0;
+  animation: slideFromLeft 1.3s var(--glide) 0.7s both;
+}
+
+.revealInner {
+  display: inline-block;
+  animation: slideFromRight 1.3s var(--glide) 0.7s both;
+}
+
+/* The dot's rail is exactly as wide as the letters; the mover travels it on
+   the same curve as the window, and the dot sits just past its right end -
+   on the window's edge the whole way. */
+.dotRail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: var(--dot);
+}
+
+.dotMover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: slideFromLeft 1.3s var(--glide) 0.7s both;
 }
 
 .dot {
-  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  transform-origin: 50% 85%;
+  animation: dotIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
 }
 
-.dotInk {
-  display: inline-block;
-  transform-origin: 50% 85%;
+@keyframes slideFromLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes slideFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes dotIn {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes studioIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.1em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes taglineIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .studio {
@@ -236,6 +335,7 @@
      centre. */
   margin-right: -0.1em;
   text-transform: uppercase;
+  animation: studioIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) 1.9s both;
 }
 
 .tagline {
@@ -243,6 +343,8 @@
   font-size: clamp(17px, 1.9vw, 24px);
   color: rgba(28, 25, 23, 0.74);
   letter-spacing: 0.01em;
+  /* Its delay is OPEN_AFTER_MS's starting point in Wordmark.tsx. */
+  animation: taglineIn 1s cubic-bezier(0.22, 1, 0.36, 1) 2.35s both;
 }
 
 .srOnly {
@@ -436,5 +538,21 @@
 @media (prefers-reduced-motion: reduce) {
   .desk {
     transition: none;
+  }
+  .revealInner,
+  .dotMover {
+    animation: none;
+  }
+  .reveal,
+  .dot,
+  .studio,
+  .tagline {
+    animation: fadeIn 0.6s ease-out both;
+  }
+  .studio {
+    animation-delay: 0.25s;
+  }
+  .tagline {
+    animation-delay: 0.5s;
   }
 }

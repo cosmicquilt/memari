@@ -75,7 +75,7 @@ export class Director {
   private async print(spread: LandingSpread, pair: [number, number]) {
     for (const [i, page] of spread.pages.entries()) {
       const slot = this.slots[pair[i]];
-      await slot.surface.print(page, spread.fontFamily);
+      await slot.surface.print(page, spread.fontFamily, i === 0 ? "left" : "right");
       slot.texture.needsUpdate = true;
     }
   }
