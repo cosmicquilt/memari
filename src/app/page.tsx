@@ -8,7 +8,7 @@ import { Landing } from "./landing/Landing";
 // in and then the editor, which it did "for now" until this existed.
 
 export const metadata: Metadata = {
-  title: "Memari Studio - a planner as unique as you",
+  title: "Memari Studio - a journal as unique as you",
   description:
     "Design each page of your planner once - hours, habits, lists, notes - and Memari lays out the whole book, dated and ready to print.",
 };

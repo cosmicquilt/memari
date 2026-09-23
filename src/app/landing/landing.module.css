@@ -188,16 +188,6 @@
   z-index: 2;
 }
 
-/* A breath of light behind the words, so they read over any desk. */
-.title::before {
-  content: "";
-  position: absolute;
-  inset: -30% -18%;
-  z-index: -1;
-  background: radial-gradient(closest-side, rgba(250, 243, 232, 0.55), rgba(250, 243, 232, 0));
-  pointer-events: none;
-}
-
 .wordmark {
   margin: 0;
   /* The whole line is 7.1em wide; on a phone it takes the width there is. */
@@ -220,20 +210,35 @@
   padding-right: var(--dot);
 }
 
-/* The window over the letters, and the letters counter-slid inside it: at
-   every instant the two offsets cancel, so the letters stand still while the
-   window's right edge crosses them. Padded top and bottom so the window
-   never trims an ascender or a descender. */
+/* The letters' place in the line is held by an invisible copy of the word,
+   so the line is aligned by its text. Over it, the window, and the letters
+   counter-slid inside it: at every instant the two offsets cancel, so the
+   letters stand still while the window's right edge crosses them. The
+   window reaches a quarter em above and below so it never trims an ascender
+   or a descender, and is positioned rather than in the line - a box that
+   clips would be aligned by its bottom edge. */
 .reveal {
   display: inline-block;
+  position: relative;
+}
+
+.ghost {
+  visibility: hidden;
+}
+
+.window {
+  position: absolute;
+  top: -0.25em;
+  bottom: -0.25em;
+  left: 0;
+  right: 0;
+  padding-top: 0.25em;
   overflow: hidden;
-  padding: 0.25em 0;
-  margin: -0.25em 0;
   animation: slideFromLeft 1.3s var(--glide) 0.7s both;
 }
 
 .revealInner {
-  display: inline-block;
+  display: block;
   animation: slideFromRight 1.3s var(--glide) 0.7s both;
 }
 
@@ -539,6 +544,7 @@
   .desk {
     transition: none;
   }
+  .window,
   .revealInner,
   .dotMover {
     animation: none;

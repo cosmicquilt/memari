@@ -3,7 +3,8 @@
 // The title, arriving - asked for 2026-09-22: "first starting with a dot on
 // the left side of where the dot will slide to the right revealing 'memari.'
 // (all lower case). after studio should fade in same style as header of app.
-// and 'a planner as unique as you.' should also fade in below that."
+// and 'a planner as unique as you.' should also fade in below that." The
+// line became "a journal as unique as you." on 2026-09-23.
 //
 // The dot is the full stop of "memari." itself, set in the same face. It
 // appears where the "m" will begin, then slides to its place at the end of
@@ -17,6 +18,9 @@
 // a window sliding over the word while the word is slid back the same
 // distance inside it: two transforms on one curve, so the letters stand
 // still and the window's edge - where the dot rides - moves across them.
+// The window is laid OVER an invisible copy of the word, which is what sits
+// on the line: a box that clips is aligned by its bottom edge, not by its
+// text, and set in the line it lifted "memari." 0.18em above "STUDIO".
 //
 // Reduced motion: everything fades in, nothing slides.
 
@@ -46,7 +50,10 @@ export function Wordmark({ onArrived }: { onArrived?: () => void }) {
       <h1 className={styles.wordmark} aria-label="memari. studio">
         <span className={styles.word} aria-hidden="true">
           <span className={styles.reveal}>
-            <span className={styles.revealInner}>memari</span>
+            <span className={styles.ghost}>memari</span>
+            <span className={styles.window}>
+              <span className={styles.revealInner}>memari</span>
+            </span>
           </span>
           <span className={styles.dotRail}>
             <span className={styles.dotMover}>
@@ -59,7 +66,7 @@ export function Wordmark({ onArrived }: { onArrived?: () => void }) {
         </span>
       </h1>
       <p ref={tagline} className={styles.tagline}>
-        a planner as unique as you.
+        a journal as unique as you.
       </p>
     </div>
   );

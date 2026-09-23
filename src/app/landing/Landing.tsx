@@ -2,7 +2,7 @@
 //
 // Asked for 2026-09-22: an Apple-style hero that animates on load - a clear
 // nav; a desk in the lofi-study mood, seen from the chair; "memari." arriving
-// behind a sliding dot, then "studio", then "a planner as unique as you.";
+// behind a sliding dot, then "studio", then "a journal as unique as you.";
 // and below it a journal that opens to a week and is written in, one layout
 // after another. Then the sections the nav links to.
 //
@@ -114,7 +114,7 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
         </section>
 
         <section className={styles.closing}>
-          <h2 className={styles.headline}>A planner as unique as you.</h2>
+          <h2 className={styles.headline}>A journal as unique as you.</h2>
           <Link href="/app" className={styles.primaryLarge}>
             {signedIn ? "Open Memari" : "Start your planner"}
           </Link>
