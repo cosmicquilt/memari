@@ -7,9 +7,12 @@
 // file is not Veo's as it came: its start and end are eased to rest, the
 // output running longer than the take (6.35s against 4.5s), neighbouring
 // frames cross-faded where it is slow ("the last and beginning seconds are
-// not still ... ease both"). Made in the browser with WebCodecs and a small
-// MP4 writer - the tool, and the calls used, are in handoff/veo/tools/
-// (gitignored).
+// not still ... ease both"); and from the frame the layouts appear on, the
+// journal's own dot grid is taken off its pages ("once you start overlaying
+// ... cover the underlying dot grid"), keeping the paper's light and the
+// moving leaf shadows - so the layouts' grid is the only one. Made in the
+// browser with WebCodecs and a small MP4 writer - the tool, and the calls
+// used, are in handoff/veo/tools/ (gitignored).
 //
 // Measured from that frame (1920 x 1080): each page's outer and gutter
 // edges as straight lines, and its top and bottom edges sampled every 24px
@@ -32,10 +35,11 @@ export const HERO_VIDEO = {
   height: 1080,
   /** When the layouts appear, in the file's seconds: 1.3s of the take after
    *  the book has landed open ("after it is open a second or two of it
-   *  then start overlaying the pages") - the take's 3.8s, eased. Its pages
-   *  have not moved since 3.5s; the leaf shadows and the steam go on
-   *  moving under the drawing until the clip settles. */
-  drawFrom: 4.68,
+   *  then start overlaying the pages") - the take's 3.8s, eased, put on a
+   *  frame boundary: frame 112, the first with the dot grid cleaned off.
+   *  Its pages have not moved since the take's 3.5s; the leaf shadows and
+   *  the steam go on moving under the drawing until the clip settles. */
+  drawFrom: 112 / 24,
 };
 
 export type Point = readonly [x: number, y: number];
