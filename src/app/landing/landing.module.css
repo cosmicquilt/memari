@@ -196,7 +196,13 @@
   letter-spacing: -0.025em;
   line-height: 1;
   white-space: nowrap;
-  color: var(--ink);
+  /* Ivory on the walnut (Andrew, 2026-09-23, choosing it over dark text
+     once the glow behind the title was gone: about 8.7:1 on the wood).
+     The shadow is a filter on the whole heading, not a text-shadow: it is
+     drawn from what shows, so the reveal's clipping window cannot cut it
+     off square at the ends of the word. */
+  color: #f6f0e6;
+  filter: drop-shadow(0 1px 16px rgba(20, 12, 6, 0.4));
 }
 
 /* The word's box holds the letters and, after them, room for the dot (the
@@ -346,7 +352,8 @@
 .tagline {
   margin: 0.9em 0 0;
   font-size: clamp(17px, 1.9vw, 24px);
-  color: rgba(28, 25, 23, 0.74);
+  color: rgba(246, 240, 230, 0.9);
+  text-shadow: 0 1px 12px rgba(20, 12, 6, 0.45);
   letter-spacing: 0.01em;
   /* Its delay is OPEN_AFTER_MS's starting point in Wordmark.tsx. */
   animation: taglineIn 1s cubic-bezier(0.22, 1, 0.36, 1) 2.35s both;
