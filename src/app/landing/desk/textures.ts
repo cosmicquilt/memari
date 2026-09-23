@@ -12,14 +12,14 @@
 import * as THREE from "three";
 import { fibreMask } from "../handwriting/paperInk";
 
-function canvas(w: number, h: number) {
+export function canvas(w: number, h: number) {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   return c;
 }
 
-function hash(x: number, y: number, seed: number): number {
+export function hash(x: number, y: number, seed: number): number {
   let h = (x * 374761393 + y * 668265263 + seed * 1442695041) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -31,7 +31,7 @@ function hash(x: number, y: number, seed: number): number {
  * changes nothing). A per-pixel loop over a big canvas costs a third of a
  * second; this costs a few drawImage calls.
  */
-function mottle(ctx: CanvasRenderingContext2D, width: number, height: number, octaves: ReadonlyArray<readonly [cells: number, alpha: number]>, seed: number) {
+export function mottle(ctx: CanvasRenderingContext2D, width: number, height: number, octaves: ReadonlyArray<readonly [cells: number, alpha: number]>, seed: number) {
   ctx.save();
   ctx.globalCompositeOperation = "overlay";
   ctx.imageSmoothingQuality = "high";
@@ -175,7 +175,15 @@ export type NoteLine = string;
  * blank ruled paper until `write` is called with a loaded handwriting face -
  * the faces load after the scene is built.
  */
-export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesWide, inchesTall]: readonly [number, number]) {
+export function notepaper(
+  ink: string,
+  lines: NoteLine[],
+  seed: number,
+  [inchesWide, inchesTall]: readonly [number, number],
+  /** "ruled": a school pad, blue lines and a red margin. "letter": cream
+   *  writing paper with faint lines, like the letters in the lofi reference. */
+  look: "ruled" | "letter" = "ruled"
+) {
   // At 120px to the inch; wide ruled (11/32in), the first line and the
   // margin an inch and a quarter in on a letter sheet, less on a smaller one.
   const perInch = 120;
@@ -192,8 +200,9 @@ export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesW
 
   // Cheap paper: a little cloudy where the pulp settled unevenly, and the
   // rules printed a touch stronger and weaker from line to line.
+  const letter = look === "letter";
   const paper = () => {
-    ctx.fillStyle = "#f6f2e7";
+    ctx.fillStyle = letter ? "#f2e8d2" : "#f6f2e7";
     ctx.fillRect(0, 0, width, height);
     mottle(
       ctx,
@@ -207,12 +216,13 @@ export function notepaper(ink: string, lines: NoteLine[], seed: number, [inchesW
     );
     ctx.lineWidth = 2;
     for (let y = first, n = 0; y < height - 30; y += rule, n++) {
-      ctx.strokeStyle = `rgba(90, 130, 190, ${0.28 + 0.12 * hash(n, seed, 5)})`;
+      ctx.strokeStyle = letter ? `rgba(150, 118, 88, ${0.14 + 0.08 * hash(n, seed, 5)})` : `rgba(90, 130, 190, ${0.28 + 0.12 * hash(n, seed, 5)})`;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
       ctx.stroke();
     }
+    if (letter) return;
     ctx.strokeStyle = "rgba(200, 80, 80, 0.45)";
     ctx.beginPath();
     ctx.moveTo(margin, 0);

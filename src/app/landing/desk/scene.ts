@@ -1,21 +1,24 @@
 // The desk: a first-person view of a warm, sunlit study desk, and the
 // journal on it.
 //
-// The mood is the lofi study videos Andrew pointed to - late sun through a
-// window, a plant's shadow across the desk, tea, books, pencils - built
+// The mood is the lofi study picture Andrew chose (2026-09-23: "more like
+// this style just real", the objects moved around, the journal big and
+// thick, the angle more top down): seen from the chair, the desk's front
+// edge along the bottom of the picture, late peachy sun through a window
+// and a plant's shadow across the desk, a laptop, books, tea, a cup of
+// pencils, a pencil case like a sleepy animal, handwritten letters - built
 // photographically rather than drawn: physically based materials, a sun that
 // casts real shadows through a window-and-leaves pattern, filmic tone mapping.
-// Everything here is procedural so it costs almost nothing to download; when
-// photographs arrive, the desk, wall and props are what they replace (with
-// the renderer's clear set transparent and the journal's shadow caught on a
-// shadow-only plane), and the journal stays, because its pages have to be the
-// real layouts.
+// Everything here is procedural or baked small, so it costs little to
+// download; the journal is always procedural, because its pages have to be
+// the real layouts.
 //
 // No hands: the page is written on by an invisible pen.
 
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { Journal, PAGE_W } from "./journal";
+import { Journal } from "./journal";
+import { bookStack, laptop, mug, pen, pencilCase, pencilCup, pottedPlant } from "./props";
 import { contactShadow, coverTextures, notepaper, pageEdges, softDot, windowLight } from "./textures";
 import { HAND_FONTS } from "../handFonts";
 
@@ -37,6 +40,10 @@ export type DeskScene = {
 const DESK_TOP = 0;
 /** The inches of desk one baked walnut tile covers (build-desk-textures). */
 const WOOD_TILE = 48;
+/** The desk top's depth, back to front; its front edge moves with the frame. */
+const DESK_DEPTH = 60;
+/** Where the journal lies: its centre, z. */
+const BOOK_Z = -0.5;
 
 /**
  * Chatoyancy - the shimmer figured wood has, bands of the grain brightening
@@ -119,169 +126,25 @@ function sheetGeometry(width: number, height: number, seed: number, corner: read
   return geometry;
 }
 
-function lathe(profile: Array<[number, number]>, segments = 48) {
-  return new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
-}
-
-function shadowed<T extends THREE.Object3D>(o: T, cast = true, receive = true): T {
-  o.traverse((c) => {
-    if ((c as THREE.Mesh).isMesh) {
-      c.castShadow = cast;
-      c.receiveShadow = receive;
-    }
-  });
-  return o;
-}
-
-function mug() {
-  const g = new THREE.Group();
-  const glaze = new THREE.MeshPhysicalMaterial({ color: 0xefe6d8, roughness: 0.28, clearcoat: 0.7, clearcoatRoughness: 0.2 });
-  const body = new THREE.Mesh(
-    lathe([
-      [0, 0],
-      [1.45, 0],
-      [1.55, 0.12],
-      [1.62, 3.4],
-      [1.5, 3.5],
-      [1.48, 3.3],
-      [1.4, 0.35],
-      [0, 0.3],
-    ]),
-    glaze
-  );
-  const tea = new THREE.Mesh(new THREE.CircleGeometry(1.46, 40).rotateX(-Math.PI / 2), new THREE.MeshPhysicalMaterial({ color: 0x4a1e0c, roughness: 0.06, clearcoat: 1 }));
-  tea.position.y = 2.95;
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.17, 14, 28, Math.PI * 1.2), glaze);
-  handle.rotation.z = -Math.PI * 0.6;
-  handle.position.set(1.55, 1.8, 0);
-  g.add(body, tea, handle);
-  return shadowed(g);
-}
-
-function plant() {
-  const g = new THREE.Group();
-  const clay = new THREE.MeshStandardMaterial({ color: 0xb0613b, roughness: 0.88 });
-  g.add(
-    new THREE.Mesh(
-      lathe([
-        [0, 0],
-        [1.55, 0],
-        [2.05, 3.2],
-        [2.3, 3.25],
-        [2.3, 3.9],
-        [2.1, 3.9],
-        [2.05, 3.6],
-        [0, 3.5],
-      ]),
-      clay
-    )
-  );
-  const soil = new THREE.Mesh(new THREE.CircleGeometry(2.0, 32).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2e2118, roughness: 1 }));
-  soil.position.y = 3.6;
-  g.add(soil);
-  // Pothos-ish leaves on arching stems, some trailing over the rim.
-  const leafShape = new THREE.Shape();
-  leafShape.moveTo(0, 0);
-  leafShape.quadraticCurveTo(0.9, 0.6, 0, 2.2);
-  leafShape.quadraticCurveTo(-0.9, 0.6, 0, 0);
-  const leafGeometry = new THREE.ShapeGeometry(leafShape, 8);
-  // Cup each leaf a little along its midrib.
-  const lp = leafGeometry.attributes.position;
-  for (let i = 0; i < lp.count; i++) lp.setZ(i, Math.pow(lp.getX(i), 2) * 0.35);
-  leafGeometry.computeVertexNormals();
-  const greens = [0x3e6b34, 0x4c7c3c, 0x365f2e, 0x5a8a46];
-  for (let i = 0; i < 16; i++) {
-    const leaf = new THREE.Mesh(leafGeometry, new THREE.MeshStandardMaterial({ color: greens[i % greens.length], roughness: 0.5, side: THREE.DoubleSide }));
-    const around = (i / 16) * Math.PI * 2 + (i % 3) * 0.3;
-    const out = 0.6 + (i % 4) * 0.45;
-    const trailing = i % 5 === 0;
-    leaf.position.set(Math.cos(around) * out, 3.8 + (trailing ? -0.4 : (i % 3) * 0.9), Math.sin(around) * out);
-    leaf.rotation.set(trailing ? 1.9 : -0.6 - (i % 3) * 0.25, -around + Math.PI / 2, (i % 2 ? 1 : -1) * 0.3);
-    leaf.scale.setScalar(0.9 + (i % 3) * 0.2);
-    g.add(leaf);
-  }
-  return shadowed(g);
-}
-
-function pencilCup() {
-  const g = new THREE.Group();
-  const glaze = new THREE.MeshPhysicalMaterial({ color: 0xa3382f, roughness: 0.32, clearcoat: 0.6 });
-  g.add(
-    new THREE.Mesh(
-      lathe([
-        [0, 0],
-        [1.3, 0],
-        [1.35, 3.6],
-        [1.22, 3.6],
-        [1.2, 0.2],
-        [0, 0.2],
-      ]),
-      glaze
-    )
-  );
-  const colors = [0xe0b53a, 0x2f5d3a, 0x1d1c21, 0xc9c3b6, 0x3a4f8f];
-  for (let i = 0; i < 5; i++) {
-    const pencil = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 6.2, 6), new THREE.MeshStandardMaterial({ color: colors[i], roughness: 0.55 }));
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0xd9b48a, roughness: 0.8 }));
-    tip.position.y = 3.35;
-    pencil.add(body, tip);
-    pencil.position.set(Math.cos(i * 1.3) * 0.5, 3.4, Math.sin(i * 1.3) * 0.5);
-    pencil.rotation.set(Math.sin(i * 2.1) * 0.22, 0, Math.cos(i * 1.7) * 0.22);
-    g.add(pencil);
-  }
-  return shadowed(g);
-}
-
-function bookStack(edgesMap: THREE.Texture) {
-  const g = new THREE.Group();
-  const specs: Array<[number, number, number, number, number]> = [
-    // width, thickness, depth, cloth colour, twist
-    [6.4, 1.2, 9.0, 0xa4543a, 0],
-    [5.9, 0.9, 8.4, 0x7a8b67, 0.09],
-    [6.6, 0.75, 8.8, 0xd6c6a3, -0.06],
-  ];
-  let y = 0;
-  const edges = new THREE.MeshStandardMaterial({ map: edgesMap, roughness: 0.95 });
-  for (const [w, t, d, colour, twist] of specs) {
-    const cloth = new THREE.MeshStandardMaterial({ color: colour, roughness: 0.85 });
-    const book = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), [edges, cloth, cloth, cloth, edges, edges]);
-    book.position.y = y + t / 2;
-    book.rotation.y = twist;
-    y += t;
-    g.add(book);
-  }
-  return shadowed(g);
-}
-
-function pen() {
-  const g = new THREE.Group();
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 5.4, 20), new THREE.MeshStandardMaterial({ color: 0x1e1d22, roughness: 0.35 }));
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.55, 20), new THREE.MeshStandardMaterial({ color: 0xc8c8cc, metalness: 0.9, roughness: 0.25 }));
-  tip.position.y = -2.97;
-  tip.rotation.x = Math.PI;
-  const clip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.8, 0.12), new THREE.MeshStandardMaterial({ color: 0xc8c8cc, metalness: 0.9, roughness: 0.25 }));
-  clip.position.set(0, 1.6, 0.2);
-  g.add(barrel, tip, clip);
-  g.rotation.z = Math.PI / 2;
-  return shadowed(g);
-}
+/** Where a thing stands: x, z, and its turn about the vertical. */
+type Spot = readonly [x: number, z: number, turn: number];
 
 export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: string): DeskScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.9;
+  renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xe8dcc8);
+  // Past the desk's front edge: the dim of the room below it.
+  scene.background = new THREE.Color(0x1a110b);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environment = environment;
-  scene.environmentIntensity = 0.25;
+  scene.environmentIntensity = 0.3;
 
   // --- the baked textures (scripts/build-desk-textures.mts). Materials are
   //     built with them at once - an image arriving later is uploaded then -
@@ -300,27 +163,31 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     return texture;
   };
 
-  // --- camera: seated, looking down at the desk
-  const camera = new THREE.PerspectiveCamera(27, 1, 0.1, 400);
-  // Aimed above the book, so the book sits in the lower part of the frame
-  // with the title over the desk beyond it.
-  const target = new THREE.Vector3(0, 0, -2.6);
-  const BASE = new THREE.Vector3(0, 30, 21);
+  // --- camera: in the chair, looking down at the desk at about 60 degrees,
+  //     close enough that the open journal spans half the picture
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 400);
+  const target = new THREE.Vector3(0, 0, -2.4);
+  const ELEVATION = THREE.MathUtils.degToRad(60);
+  const DISTANCE = 27.5;
+  const BASE = target.clone().add(new THREE.Vector3(0, Math.sin(ELEVATION), Math.cos(ELEVATION)).multiplyScalar(DISTANCE));
   const home = BASE.clone();
   const look = { x: 0, y: 0, tx: 0, ty: 0 };
-  const BOOK_CENTRE = new THREE.Vector3(0, 0.4, 0.4);
+  const BOOK_CENTRE = new THREE.Vector3(0, 0.7, BOOK_Z);
   /** Where the book's centre sits on an upright phone, from the top. */
-  const PORTRAIT_BOOK_AT = 0.5;
+  const PORTRAIT_BOOK_AT = 0.52;
 
-  // --- the desk and the wall behind it: figured black walnut, oiled, with a
-  //     thin satin coat over it. The plane is 90 x 62in at z -6, so the tile
-  //     lands where the bake placed its swirls, knots and the mug ring.
+  // --- the desk: figured black walnut, oiled, with a thin satin coat over
+  //     it. The top runs from far behind to a rounded front edge, which is
+  //     placed for each frame (see resize) just above the bottom of the
+  //     picture, as the edge of a desk shows from its chair.
   const SUN_AT = new THREE.Vector3(-30, 46, -42);
   const SUN_AIM = new THREE.Vector3(3, 0, 1);
-  const wood = (name: string, colour = false) => baked(name, 90 / WOOD_TILE, 62 / WOOD_TILE, colour);
+  const wood = (name: string, colour = false) => baked(name, 90 / WOOD_TILE, DESK_DEPTH / WOOD_TILE, colour);
+  const woodMap = wood("wood.jpg", true);
   const woodSurface = wood("wood-surface.jpg");
+  const woodFigure = wood("wood-figure.jpg");
   const deskMaterial = new THREE.MeshPhysicalMaterial({
-    map: wood("wood.jpg", true),
+    map: woodMap,
     roughnessMap: woodSurface,
     roughness: 1,
     bumpMap: woodSurface,
@@ -328,19 +195,29 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     clearcoat: 0.3,
     clearcoatRoughness: 0.32,
   });
-  chatoyant(deskMaterial, wood("wood-figure.jpg"), SUN_AT.clone().sub(SUN_AIM).normalize(), 0.28);
-  const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, 62).rotateX(-Math.PI / 2), deskMaterial);
+  chatoyant(deskMaterial, woodFigure, SUN_AT.clone().sub(SUN_AIM).normalize(), 0.28);
+  const desk = new THREE.Mesh(new THREE.PlaneGeometry(90, DESK_DEPTH).rotateX(-Math.PI / 2), deskMaterial);
   desk.name = "desk";
-  desk.position.set(0, DESK_TOP, -6);
   desk.receiveShadow = true;
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(120, 50), new THREE.MeshStandardMaterial({ color: 0xe9dcc5, roughness: 0.97 }));
-  wall.position.set(0, 25, -37);
-  wall.receiveShadow = true;
-  scene.add(desk, wall);
+  const nose = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.75, 0.75, 90, 32, 1, true, 0, Math.PI).rotateZ(Math.PI / 2),
+    new THREE.MeshPhysicalMaterial({ color: 0x3e2517, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35 })
+  );
+  nose.receiveShadow = true;
+  scene.add(desk, nose);
+  const placeEdge = (edge: number) => {
+    desk.position.set(0, DESK_TOP, edge - DESK_DEPTH / 2);
+    nose.position.set(0, DESK_TOP - 0.75, edge);
+    // The bake placed its swirls, knots and mug ring by world position
+    // (toTile in build-desk-textures), for a top whose front edge was at
+    // z 25; shift the tiling so they stay where they were put.
+    for (const t of [woodMap, woodSurface, woodFigure]) t.offset.y = (25 - edge) / WOOD_TILE;
+  };
+  placeEdge(8);
 
-  // --- light: late sun through a window, and the room's bounce
+  // --- light: late peachy sun through a window, and the room's bounce
   const windowPattern = windowLight();
-  const sun = new THREE.SpotLight(0xffcf98, 7, 0, 0.36, 0.45, 0);
+  const sun = new THREE.SpotLight(0xffb98a, 8, 0, 0.36, 0.45, 0);
   sun.position.copy(SUN_AT);
   sun.target.position.copy(SUN_AIM);
   sun.map = windowPattern;
@@ -351,8 +228,8 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
   sun.shadow.bias = -0.00025;
   sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
-  const sky = new THREE.HemisphereLight(0xfff0dc, 0x6a4630, 0.75);
-  const fill = new THREE.DirectionalLight(0xffe2c0, 0.35);
+  const sky = new THREE.HemisphereLight(0xffe0c8, 0x4a2e1f, 0.62);
+  const fill = new THREE.DirectionalLight(0xffcfa8, 0.3);
   fill.position.set(8, 20, 30);
   scene.add(sky, fill);
 
@@ -368,98 +245,83 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     bumpScale: 1.2,
   });
   const edgesMap = pageEdges();
+  const edges = new THREE.MeshStandardMaterial({ map: edgesMap, roughness: 0.95 });
   const journal = new Journal({
     cloth,
     cover: coverMaterial,
-    edges: new THREE.MeshStandardMaterial({ map: edgesMap, roughness: 0.95 }),
+    edges,
     ribbon: new THREE.MeshStandardMaterial({ color: 0x7c1f25, roughness: 0.45, side: THREE.DoubleSide }),
     // The paper tile is 4in square; a page is 7 x 10.
     paper: baked("paper.jpg", 7 / 4, 10 / 4),
   });
-  journal.group.position.z = 0.4;
+  journal.group.position.z = BOOK_Z;
   scene.add(journal.group);
 
-  // --- the rest of the desk
-  const mugGroup = mug();
-  const plantGroup = plant();
-  const cup = pencilCup();
-  const books = bookStack(edgesMap);
-  books.rotation.y = 0.32;
-  const penGroup = pen();
-  restOn(mugGroup, 2.9, 2.9, true, 0.55);
-  restOn(plantGroup, 3.1, 3.1, true, 0.55);
-  restOn(cup, 2.6, 2.6, true, 0.5);
-  restOn(books, 6.6, 9, false, 0.5);
-  scene.add(mugGroup, plantGroup, cup, books, penGroup);
-  // Around the book on a wide screen; on an upright phone the sides are out
-  // of frame, so the tea and the pen come down in front of the book, and the
-  // plant and the pencils sit beyond it.
-  const arrange = (portrait: boolean) => {
-    if (portrait) {
-      mugGroup.position.set(4.9, DESK_TOP, 11.4);
-      penGroup.position.set(-2.8, DESK_TOP + 0.18, 8.7);
-      penGroup.rotation.y = 0.18;
-      plantGroup.position.set(10.2, DESK_TOP, -21);
-      cup.position.set(-9.6, DESK_TOP, -19);
-    } else {
-      mugGroup.position.set(PAGE_W + 3.6, DESK_TOP, 3.2);
-      penGroup.position.set(PAGE_W + 1.6, DESK_TOP + 0.18, -1.5);
-      penGroup.rotation.y = 0.9;
-      plantGroup.position.set(15.5, DESK_TOP, -10.5);
-      cup.position.set(-15.6, DESK_TOP, -11.2);
-    }
-    books.position.set(15.8, DESK_TOP, -1.2);
+  // --- the rest of the desk, in the manner of the lofi reference
+  const clothBump = baked("linen.jpg", 2, 2);
+  const props = {
+    laptop: laptop(),
+    plant: pottedPlant(),
+    case: pencilCase(clothBump),
+    cup: pencilCup(),
+    mug: mug(),
+    books: bookStack(edges, clothBump),
+    pen: pen(),
   };
-  arrange(false);
+  restOn(props.laptop, 12.3, 8.6, false, 0.5);
+  restOn(props.plant, 4.4, 4.4, true, 0.55);
+  restOn(props.case, 7.4, 1.9, true, 0.5);
+  restOn(props.cup, 2.7, 2.7, true, 0.55);
+  restOn(props.mug, 3.0, 3.0, true, 0.55);
+  restOn(props.books, 7.4, 9.8, false, 0.5);
+  scene.add(...Object.values(props));
 
-  // Loose notes in two other people's hands: a letter sheet, and a jotter
-  // page on top of it.
+  // Handwritten letters and lists, tucked under things as in the reference.
   const notes = [
     {
-      // Resting on the letter sheet, so above its cockles.
-      at: [-11.3, 3.4, 0.16, 0.06],
+      // Under the laptop's front.
+      paper: [8.5, 11],
+      look: "letter",
+      curl: [[1, 1], 0.14],
+      ink: "#4a3326",
+      face: HAND_FONTS.homemade,
+      size: 30,
+      lines: [
+        "Dear Mira,",
+        "the lemon tree finally",
+        "flowered this week - the",
+        "whole kitchen smells of it.",
+        "I wish you could see it.",
+        "Tell me about the new flat?",
+        "Send photos, all of them.",
+        "",
+        "love always,",
+        "      June",
+      ],
+    },
+    {
+      // Under the books.
       paper: [5.5, 8.5],
+      look: "ruled",
       curl: [[1, 1], 0.2],
       ink: "#2a3a8a",
       face: HAND_FONTS.caveat,
       size: 40,
-      lines: [
-        "Sat 26th",
-        "farmers market - 9am",
-        "call Mum back",
-        "  ask about Sunday lunch",
-        "pick up film from the lab",
-        "~book dentist",
-        "garden:",
-        "  tomatoes, basil, mint",
-        "  fix the side gate",
-        "return library books",
-      ],
+      lines: ["Sunday", "~laundry", "call grandma", "finish chapter 4", "water the plants", "buy stamps", "  + envelopes", "~return library books"],
     },
     {
-      at: [-11.8, -3.2, -0.22, 0.012],
-      paper: [8.5, 11],
-      curl: [[1, -1], 0.12],
+      // Under the cup of pencils.
+      paper: [6, 9],
+      look: "letter",
+      curl: [[-1, 1], 0.12],
       ink: "#1d1c21",
       face: HAND_FONTS.reenie,
       size: 46,
-      lines: [
-        "reading list",
-        "  Piranesi",
-        "~  The Overstory",
-        "  Braiding Sweetgrass",
-        "  A Psalm for the Wild-Built",
-        "",
-        "gift ideas for Jo",
-        "  ceramic mug",
-        "  pressed flower frame",
-        "  the good olive oil",
-      ],
+      lines: ["ideas for the market", "  pressed flower cards", "  linen gift wraps", "  a small zine about tea", "", "reading list", "  Piranesi", "~  The Overstory"],
     },
   ] as const;
-  for (const [i, note] of notes.entries()) {
-    const [x, z, turn, y] = note.at;
-    const sheet = notepaper(note.ink, [...note.lines], 11 + i * 7, note.paper);
+  const sheets = notes.map((note, i) => {
+    const sheet = notepaper(note.ink, [...note.lines], 11 + i * 7, note.paper, note.look);
     const [width, height] = note.paper;
     const [corner, lift] = note.curl;
     const mesh = new THREE.Mesh(
@@ -473,8 +335,7 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
         polygonOffsetFactor: -1,
       })
     );
-    mesh.position.set(x, DESK_TOP + y, z);
-    mesh.rotation.y = turn;
+    mesh.position.y = DESK_TOP + 0.012 + i * 0.004;
     mesh.receiveShadow = true;
     mesh.castShadow = true;
     scene.add(mesh);
@@ -482,7 +343,59 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
       () => sheet.write(note.face, note.size),
       () => {}
     );
-  }
+    return mesh;
+  });
+
+  // Around the book on a wide screen. An upright phone sees little beside
+  // the book and much above and below it, so there the laptop, plant and
+  // books go beyond it and the tea and the pen come round in front.
+  const LAYOUTS: Record<"wide" | "tall", { laptop: Spot; plant: Spot; case: Spot; cup: Spot; mug: Spot; books: Spot; pen: Spot; sheets: Spot[] }> = {
+    // The title lies over the far middle of the desk: only flat things
+    // there (paper), the tall ones out to the sides.
+    wide: {
+      laptop: [-16.6, -14.8, 0.42],
+      plant: [15.2, -13, 0],
+      case: [-13.2, -5.4, 0.3],
+      cup: [13.3, -3.6, 0.3],
+      mug: [11, 2.8, -0.4],
+      books: [-13.8, 2.2, 0.14],
+      pen: [9.4, -6, 1.1],
+      sheets: [
+        [-8.5, -9.8, 0.2],
+        [-14.2, 4.2, -0.3],
+        [13, -6.8, 0.12],
+      ],
+    },
+    tall: {
+      laptop: [-6, -28, 0.3],
+      plant: [7.8, -25, 0],
+      case: [-1.5, -10.4, -0.2],
+      cup: [7.4, -9.6, 0.3],
+      mug: [5.2, 10.6, -0.4],
+      books: [-6.2, 10.8, -0.22],
+      pen: [0.8, 8.2, 0.35],
+      sheets: [
+        [-7.5, -24.5, 0.2],
+        [-8.5, 3.5, -0.3],
+        [7.5, -7.5, 0.12],
+      ],
+    },
+  };
+  const arrange = (portrait: boolean) => {
+    const layout = LAYOUTS[portrait ? "tall" : "wide"];
+    for (const key of ["laptop", "plant", "case", "cup", "mug", "books", "pen"] as const) {
+      const [x, z, turn] = layout[key];
+      props[key].position.set(x, DESK_TOP, z);
+      props[key].rotation.y = turn;
+    }
+    sheets.forEach((sheet, i) => {
+      const [x, z, turn] = layout.sheets[i];
+      sheet.position.x = x;
+      sheet.position.z = z;
+      sheet.rotation.y = turn;
+    });
+  };
+  arrange(false);
 
   // --- steam off the tea
   const steamTexture = softDot();
@@ -498,9 +411,10 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     windowPattern.center.set(0.5, 0.5);
     windowPattern.rotation = Math.sin(seconds * 0.23) * 0.012;
     windowPattern.offset.set(Math.sin(seconds * 0.31) * 0.004, Math.cos(seconds * 0.27) * 0.004);
+    const tea = props.mug.position;
     for (const s of steam) {
       const life = (seconds * 0.16 + s.userData.phase) % 1;
-      s.position.set(mugGroup.position.x + Math.sin(seconds * 0.7 + s.userData.phase * 9) * 0.35 * life, 3.5 + life * 4.5, mugGroup.position.z + Math.cos(seconds * 0.5 + s.userData.phase * 7) * 0.2);
+      s.position.set(tea.x + Math.sin(seconds * 0.7 + s.userData.phase * 9) * 0.35 * life, 3.5 + life * 4.5, tea.z + Math.cos(seconds * 0.5 + s.userData.phase * 7) * 0.2);
       s.scale.setScalar(0.9 + life * 2.6);
       (s.material as THREE.SpriteMaterial).opacity = Math.sin(life * Math.PI) * 0.1;
     }
@@ -524,7 +438,7 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     // takes nearly the whole width there.
     const portrait = camera.aspect < 0.9;
     arrange(portrait);
-    const halfWidth = portrait ? 8.6 : 10.2;
+    const halfWidth = portrait ? 8.6 : 10.5;
     const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
     const needed = halfWidth / Math.tan(hfov / 2);
     const distance = BASE.distanceTo(target);
@@ -532,17 +446,32 @@ export function createDeskScene(canvas: HTMLCanvasElement, wordmarkFamily: strin
     home.copy(target).add(BASE.clone().sub(target).multiplyScalar(scale));
     camera.clearViewOffset();
     camera.updateProjectionMatrix();
+    camera.position.copy(home);
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
     // Stepping back shows a tall band of empty desk above and below the book;
     // shift the picture so the book sits just under the title instead of
     // below the middle.
     if (portrait) {
-      camera.position.copy(home);
-      camera.lookAt(target);
-      camera.updateMatrixWorld();
       const at = BOOK_CENTRE.clone().project(camera).y;
       const shift = ((1 - at) / 2 - PORTRAIT_BOOK_AT) * height;
       camera.setViewOffset(width, height, 0, shift, width, height);
+      camera.updateMatrixWorld();
     }
+    // The desk's front edge: where the desk meets a line a little above the
+    // bottom of the picture (found by halving - nearer the camera is lower
+    // in the frame), and never closer to the book than its ribbon reaches.
+    const probe = new THREE.Vector3();
+    const screenY = (z: number) => probe.set(0, DESK_TOP, z).project(camera).y;
+    let far = BOOK_Z + 7.2;
+    let near = home.z - 1;
+    if (screenY(far) < -0.86) near = far;
+    for (let i = 0; i < 30; i++) {
+      const mid = (far + near) / 2;
+      if (screenY(mid) > -0.86) far = mid;
+      else near = mid;
+    }
+    placeEdge(far);
   }
 
   return {

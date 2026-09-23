@@ -23,13 +23,20 @@ import { contactShadow } from "./textures";
 export const PAGE_W = 7;
 export const PAGE_H = 10;
 const OVERHANG = 0.12;
-const BOARD = 0.09;
-const HALF_BLOCK = 0.26;
+const BOARD = 0.1;
+/** Each half's block of pages. A thick, chunky journal like the one in the
+ *  lofi reference (Andrew, 2026-09-23: "not skinny like yours") - about an
+ *  inch and three quarters closed. */
+const HALF_BLOCK = 0.75;
 /** Mid-thickness: the axis the opening half swings about. */
 const HINGE_Y = BOARD + HALF_BLOCK;
-/** How far the pages dip into the gutter once the book lies open. */
-const GUTTER = 0.12;
-const GUTTER_REACH = 0.55;
+/** How far the pages dip into the gutter once the book lies open, and how
+ *  far across the page the dip reaches: a thick book's pages curve down
+ *  into its spine over an inch or more. */
+const GUTTER = 0.32;
+const GUTTER_REACH = 1.2;
+/** How far the ribbon trails onto the desk, from the book's tail. */
+const RIBBON_TRAIL = 1.6;
 /** The gap each half keeps from the spine line: small, so the open pages
  *  meet in the gutter rather than showing the binding between them. */
 const INSET = 0.012;
@@ -65,16 +72,81 @@ function restingShadow() {
   return mesh;
 }
 
-/** A block of pages: edges on every side but the one a page mesh covers -
- *  the top of the lower half, the underside of the half that swings over.
- *  BoxGeometry's groups are +x, -x, +y, -y, +z, -z. */
-function pageBlock(edges: THREE.Material, pageOn: "top" | "bottom") {
-  const hidden = new THREE.MeshBasicMaterial({ visible: false });
-  const faces = pageOn === "top" ? [edges, edges, hidden, edges, edges, edges] : [edges, edges, edges, hidden, edges, edges];
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(PAGE_W, HALF_BLOCK, PAGE_H), faces);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
+/**
+ * The edges of one half's block of pages - head, tail and fore-edge - as
+ * strips hung from the page lying on the block down to its board. They are
+ * the page's children and read its vertices, so as the page curves into
+ * the gutter when the book lands open the leaves' edges curve with it, which
+ * a box could not do. `down` is the board's height in the page's own space.
+ */
+class BlockEdges {
+  readonly mesh: THREE.Mesh;
+  /** Page vertex indices along the head, the tail and the fore-edge. */
+  private readonly strips: number[][];
+
+  constructor(
+    private readonly page: THREE.Mesh,
+    private readonly down: number,
+    edges: THREE.Material
+  ) {
+    const src = page.geometry.attributes.position;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    let maxX = -Infinity;
+    for (let i = 0; i < src.count; i++) {
+      minZ = Math.min(minZ, src.getZ(i));
+      maxZ = Math.max(maxZ, src.getZ(i));
+      maxX = Math.max(maxX, src.getX(i));
+    }
+    const all = Array.from({ length: src.count }, (_, i) => i);
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-4;
+    this.strips = [
+      all.filter((i) => near(src.getZ(i), minZ)).sort((a, b) => src.getX(a) - src.getX(b)),
+      all.filter((i) => near(src.getZ(i), maxZ)).sort((a, b) => src.getX(a) - src.getX(b)),
+      all.filter((i) => near(src.getX(i), maxX)).sort((a, b) => src.getZ(a) - src.getZ(b)),
+    ];
+    const count = this.strips.reduce((n, strip) => n + strip.length * 2, 0);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    const uv = new Float32Array(count * 2);
+    const index: number[] = [];
+    let base = 0;
+    for (const strip of this.strips) {
+      strip.forEach((_, k) => {
+        const u = (k / (strip.length - 1)) * 4;
+        uv.set([u, 1, u, 0], (base + k * 2) * 2);
+        if (k > 0) {
+          const [t0, b0, t1, b1] = [base + k * 2 - 2, base + k * 2 - 1, base + k * 2, base + k * 2 + 1];
+          index.push(t0, b0, t1, b0, b1, t1);
+        }
+      });
+      base += strip.length * 2;
+    }
+    geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    geometry.setIndex(index);
+    const material = edges.clone();
+    material.side = THREE.DoubleSide;
+    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.update();
+  }
+
+  /** Follow the page as it now lies. */
+  update() {
+    const src = this.page.geometry.attributes.position;
+    const pos = this.mesh.geometry.attributes.position;
+    let v = 0;
+    for (const strip of this.strips) {
+      for (const i of strip) {
+        pos.setXYZ(v++, src.getX(i), src.getY(i), src.getZ(i));
+        pos.setXYZ(v++, src.getX(i), this.down, src.getZ(i));
+      }
+    }
+    pos.needsUpdate = true;
+    this.mesh.geometry.computeVertexNormals();
+    this.mesh.geometry.computeBoundingSphere();
+  }
 }
 
 /**
@@ -117,6 +189,8 @@ export class Journal {
   /** Under the back board, always; under the front one once it has landed
    *  beside it. */
   private readonly restingLeft: THREE.Mesh;
+  private readonly leftEdges: BlockEdges;
+  private readonly rightEdges: BlockEdges;
 
   constructor(materials: JournalMaterials) {
     const { cloth, cover, edges, ribbon, paper } = materials;
@@ -131,18 +205,16 @@ export class Journal {
     const back = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W, BOARD, BOARD_D), cloth);
     back.position.set(BOARD_W / 2, BOARD / 2, 0);
     back.castShadow = back.receiveShadow = true;
-    const lower = pageBlock(edges, "top");
-    lower.position.set(INSET + PAGE_W / 2, BOARD + HALF_BLOCK / 2, 0);
     this.rightPage = new THREE.Mesh(pagePlane(false), pageMaterial(paper));
     this.rightPage.position.y = HINGE_Y + 0.002;
     this.rightPage.receiveShadow = true;
-    this.group.add(back, lower, this.rightPage);
+    this.rightEdges = new BlockEdges(this.rightPage, -(HALF_BLOCK + 0.002), edges);
+    this.rightPage.add(this.rightEdges.mesh);
+    this.group.add(back, this.rightPage);
 
     // --- the half that swings: upper pages and the front board, about the
     //     spine at mid-thickness
     this.pivot.position.set(0, HINGE_Y, 0);
-    const upper = pageBlock(edges, "bottom");
-    upper.position.set(INSET + PAGE_W / 2, HALF_BLOCK / 2, 0);
     const front = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W, BOARD, BOARD_D), cloth);
     front.position.set(BOARD_W / 2, HALF_BLOCK + BOARD / 2, 0);
     front.castShadow = front.receiveShadow = true;
@@ -152,7 +224,9 @@ export class Journal {
     this.leftPage = new THREE.Mesh(pagePlane(true), pageMaterial(paper));
     this.leftPage.position.y = -0.002;
     this.leftPage.receiveShadow = true;
-    this.pivot.add(upper, front, coverFace, this.leftPage);
+    this.leftEdges = new BlockEdges(this.leftPage, HALF_BLOCK + 0.002, edges);
+    this.leftPage.add(this.leftEdges.mesh);
+    this.pivot.add(front, coverFace, this.leftPage);
     this.group.add(this.pivot);
 
     this.leftBase = Float32Array.from(this.leftPage.geometry.attributes.position.array as Float32Array);
@@ -170,13 +244,16 @@ export class Journal {
     this.spine.castShadow = true;
     this.group.add(this.spine);
 
-    // --- a satin ribbon out of the bottom of the gutter, onto the desk
-    const ribbonGeometry = new THREE.PlaneGeometry(0.28, 3.2, 1, 16);
+    // --- a satin ribbon out of the bottom of the gutter, onto the desk.
+    //     It starts on the page where the page has dipped into the gutter.
+    const ribbonLength = RIBBON_TRAIL + 1.2;
+    const startY = HINGE_Y - GUTTER * Math.exp(-(0.35 - INSET) / GUTTER_REACH) + 0.006;
+    const ribbonGeometry = new THREE.PlaneGeometry(0.28, ribbonLength, 1, 16);
     const rp = ribbonGeometry.attributes.position;
     for (let i = 0; i < rp.count; i++) {
-      const along = (1.6 - rp.getY(i)) / 3.2; // 0 at the book, 1 at the tip
+      const along = (ribbonLength / 2 - rp.getY(i)) / ribbonLength; // 0 at the book, 1 at the tip
       const drop = Math.min(1, along * 3.2);
-      rp.setXYZ(i, 0.35 + rp.getX(i) + along * 0.5, HINGE_Y * (1 - drop * drop) + 0.004, PAGE_H / 2 - 0.2 + along * 3.0);
+      rp.setXYZ(i, 0.35 + rp.getX(i) + along * 0.4, startY * (1 - drop * drop) + 0.004, PAGE_H / 2 - 0.2 + along * (RIBBON_TRAIL + 0.3));
     }
     ribbonGeometry.computeVertexNormals();
     const ribbonMesh = new THREE.Mesh(ribbonGeometry, ribbon);
@@ -234,6 +311,8 @@ export class Journal {
     const settle = smooth(clamp01((t - 0.82) / 0.18));
     this.bendIntoGutter(this.rightPage, this.rightBase, settle, -1);
     this.bendIntoGutter(this.leftPage, this.leftBase, settle, 1);
+    this.rightEdges.update();
+    this.leftEdges.update();
   }
 
   private bendIntoGutter(mesh: THREE.Mesh, base: Float32Array, amount: number, dir: number) {
