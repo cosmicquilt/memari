@@ -37,6 +37,7 @@ export type RenderedElement = {
 };
 
 import { ptToPx } from "@/lib/print-spec";
+import { fitFontSizePx } from "@/lib/modules/textFit";
 import {
   NEAR_BLACK,
   RULE_WIDTH_PT,
@@ -96,6 +97,15 @@ export function renderWeekTitle(
   const dateRangeY = geometry.y + topOffset + smallLineHeight;
 
   if (dated) {
+    // 13pt as measured - UNLESS the range is wider than the title's column.
+    // "DEC 31 - JAN 6" (the reference's) fits; a week with two-digit dates
+    // at both ends, "SEP 24 - SEP 30", is 13px too wide and ran into the
+    // hours beside it in print, and wrapped in the editor. Reported
+    // 2026-09-22: "the weeks dates on the top left overlap into the
+    // adjacent columns of hours". It steps down half a point at a time, so
+    // most weeks lose half a point and none lose the date.
+    const dateRangeSizes = [13, 12.5, 12, 11.5, 11, 10.5, 10].map(ptToPx);
+    const dateRangeSize = fitFontSizePx(config.dateRangeLabel, geometry.width, dateRangeSizes);
     elements.push({
       id: id("date-range"),
       type: "text",
@@ -104,7 +114,7 @@ export function renderWeekTitle(
       width: geometry.width,
       height: dateRangeLineHeight,
       text: config.dateRangeLabel,
-      fontSize: ptToPx(13),
+      fontSize: dateRangeSize,
       fontFamily: FONT_FAMILY,
       align: "left",
     });

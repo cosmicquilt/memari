@@ -26,6 +26,7 @@ import {
 } from "./textFit";
 import { FONT_SANS, FONT_SERIF } from "@/lib/theme";
 import { toSvg } from "@/lib/proofSvg";
+import { renderWeekTitle } from "@/lib/modules/weekTitle";
 import { toPreviewMarks } from "@/lib/previewMarks";
 
 let failures = 0;
@@ -130,6 +131,21 @@ check(
     const middle = band.top + band.height / 2;
     check(Math.abs(capCentre(svgBaseline) - middle) < 0.1, `${family}: the proof sheet's capitals centre at ${capCentre(svgBaseline).toFixed(2)}, band middle ${middle.toFixed(2)}`);
     check(Math.abs(capCentre(canvasBaseline) - middle) < 0.1, `${family}: the previews' capitals centre at ${capCentre(canvasBaseline).toFixed(2)}, band middle ${middle.toFixed(2)}`);
+  }
+}
+
+// --- The week's date range fits its column -------------------------------
+//
+// "SEP 24 - SEP 30" - two-digit dates at both ends, the widest a range gets -
+// ran 13px past the week title's six columns at the measured 13pt and into
+// the hours. The title now fits it; checked at the column's real width.
+{
+  const width = 6 * 75 - 12;
+  for (const label of ["DEC 31 - JAN 6", "SEP 24 - SEP 30", "NOV 24 - NOV 30", "MAY 28 - JUN 3"]) {
+    const elements = renderWeekTitle({ x: 0, y: 0, width, height: 225 }, { weekNumber: 38, weekTotal: 52, dateRangeLabel: label }, "t", FONT_SERIF);
+    const range = elements.find((e) => e.id === "t-date-range");
+    const size = Number(range?.fontSize ?? 0);
+    check(estimateTextWidthPx(label, size) <= width + 1, `"${label}" is ${estimateTextWidthPx(label, size).toFixed(0)}px at ${size.toFixed(1)}px, its column ${width}px`);
   }
 }
 
