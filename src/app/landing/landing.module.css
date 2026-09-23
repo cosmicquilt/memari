@@ -432,6 +432,50 @@
   }
 }
 
+/* The writing-speed slider (PaceSlider): a small glass panel in the hero's
+   corner, for tuning. */
+.paceSlider {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  width: 230px;
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px 9px;
+  border-radius: 14px;
+  background: rgba(20, 14, 10, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f6f0e6;
+  font-size: 12px;
+}
+
+.paceSlider input {
+  width: 100%;
+  accent-color: #f6f0e6;
+}
+
+.paceLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.paceReading {
+  font-weight: 400;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.paceEnds {
+  display: flex;
+  justify-content: space-between;
+  opacity: 0.6;
+  font-size: 11px;
+}
+
 .srOnly {
   position: absolute;
   width: 1px;

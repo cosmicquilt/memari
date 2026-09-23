@@ -13,6 +13,7 @@ import type { LandingSpread } from "../spreads";
 import { PageSurface } from "../desk/pageSurface";
 import { familiesFor, planSpread } from "../handwriting/plan";
 import { inkTimeline, paintInk, type Timed } from "../handwriting/ink";
+import { InkClock } from "../pace";
 
 const BEFORE_WRITING = 0.4;
 const AFTER_WRITING = 1.8;
@@ -21,7 +22,7 @@ const WRITING_TARGET = 14;
 type Pair = [PageSurface, PageSurface];
 type Phase =
   | { name: "waiting" }
-  | { name: "writing"; since: number; timeline: Timed[]; duration: number }
+  | { name: "writing"; clock: InkClock; timeline: Timed[]; duration: number }
   | { name: "resting"; since: number };
 
 const idle = (fn: () => void) =>
@@ -92,14 +93,14 @@ export class PageLoop {
   /** The clip has stopped: the first layout is on the page; start writing. */
   start(now: number) {
     if (this.phase.name !== "waiting" || !this.nextTimeline) return;
-    this.phase = { name: "writing", since: now + BEFORE_WRITING, ...this.nextTimeline };
+    this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
     this.nextTimeline = null;
   }
 
   update(now: number) {
     const phase = this.phase;
     if (phase.name === "writing") {
-      const t = now - phase.since;
+      const t = phase.clock.advance(now);
       if (t < 0) return;
       const [left, right] = this.showing;
       const changed = paintInk(phase.timeline, t, [left.layers, right.layers], left.scale);
@@ -127,7 +128,7 @@ export class PageLoop {
       [this.showing, this.next] = [this.next, this.showing];
       this.cycle++;
       this.show();
-      this.phase = { name: "writing", since: now + BEFORE_WRITING, ...this.nextTimeline };
+      this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
       this.nextTimeline = null;
     }
   }

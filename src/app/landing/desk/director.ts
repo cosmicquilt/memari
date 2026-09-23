@@ -13,6 +13,7 @@ import { PageSurface } from "./pageSurface";
 import type { DeskScene } from "./scene";
 import { familiesFor, planSpread } from "../handwriting/plan";
 import { inkTimeline, paintInk, type Timed } from "../handwriting/ink";
+import { InkClock } from "../pace";
 
 const OPEN_SECONDS = 2.6;
 const BEFORE_WRITING = 0.5;
@@ -24,7 +25,7 @@ type Slot = { surface: PageSurface; texture: THREE.CanvasTexture };
 type Phase =
   | { name: "closed" }
   | { name: "opening"; since: number }
-  | { name: "writing"; since: number; timeline: Timed[]; duration: number }
+  | { name: "writing"; clock: InkClock; timeline: Timed[]; duration: number }
   | { name: "resting"; since: number }
   | { name: "turning"; since: number };
 
@@ -123,13 +124,13 @@ export class Director {
         const p = (now - phase.since) / OPEN_SECONDS;
         journal.setOpen(p);
         if (p >= 1 && this.nextTimeline) {
-          this.phase = { name: "writing", since: now + BEFORE_WRITING, ...this.nextTimeline };
+          this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
           this.nextTimeline = null;
         }
         return;
       }
       case "writing": {
-        const t = now - phase.since;
+        const t = phase.clock.advance(now);
         if (t < 0) return;
         const left = this.slots[this.showing[0]];
         const right = this.slots[this.showing[1]];
@@ -178,7 +179,7 @@ export class Director {
           journal.setTurn(null);
           this.cycle++;
           if (this.nextTimeline) {
-            this.phase = { name: "writing", since: now + BEFORE_WRITING, ...this.nextTimeline };
+            this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
             this.nextTimeline = null;
           }
         }
