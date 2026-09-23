@@ -190,8 +190,10 @@
 
 .wordmark {
   margin: 0;
-  /* The whole line is 7.1em wide; on a phone it takes the width there is. */
-  font-size: min(clamp(54px, 9vw, 124px), calc((100vw - 32px) / 7.3));
+  /* About 70% of what it first was (Andrew, 2026-09-23: "make memari.
+     studio main text smaller"). The whole line is 7.1em wide; on a phone
+     it takes at most the width there is. */
+  font-size: min(clamp(40px, 6.3vw, 88px), calc((100vw - 32px) / 7.3));
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -350,7 +352,9 @@
 }
 
 .tagline {
-  margin: 0.9em 0 0;
+  /* Close under the title ("bring tagline closer"): the title's line box
+     already leaves a fifth of its size below the letters. */
+  margin: 0.2em 0 0;
   font-size: clamp(17px, 1.9vw, 24px);
   color: rgba(246, 240, 230, 0.9);
   text-shadow: 0 1px 12px rgba(20, 12, 6, 0.45);
