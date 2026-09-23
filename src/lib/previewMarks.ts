@@ -44,7 +44,8 @@ export type PreviewMark =
   /** Text. `x`/`w` are its BOX; the painter derives the anchor from `a`, so
    *  the anchor rule lives with the drawing rather than being baked in here
    *  twice. `y` is the box top and `z` the font size - the baseline is
-   *  y + z, the same as the SVG serialiser writes. */
+   *  textBaselineY(y, z, ff), the same rule the editor, the SVG serialiser
+   *  and the PDF use. */
   | {
       k: "t";
       x: number;

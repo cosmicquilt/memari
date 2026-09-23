@@ -411,6 +411,25 @@ export function capCentreNudgeEm(fontFamily: string): number {
 }
 
 /**
+ * WHERE A TEXT ELEMENT'S BASELINE IS, given the top of its box - the one
+ * description every consumer of a text element uses.
+ *
+ * The editor puts a text element in a div with line-height 1.2, and the
+ * browser centres the font's content area (ascent + descent) in that line
+ * box, so the baseline is `(1.2 - (a + d)) / 2 + a` ems below the top. The
+ * PDF, the proof sheets and the canvas previews used to put it at exactly
+ * 1em instead - 0.165em lower for Newsreader - so print and previews sat
+ * lower than the editor showed. capCentredTextY then centred text for the
+ * editor, which left the day names 5.5 print px low in their tabs
+ * everywhere else. Reported 2026-09-22: "the days of the week aren't
+ * vertically centered". Every consumer now asks here.
+ */
+export function textBaselineY(textY: number, fontSizePx: number, fontFamily: string): number {
+  const { ascent, descent } = FONT_METRICS[fontFamily] ?? DEFAULT_METRICS;
+  return textY + ((TEXT_LINE_HEIGHT - (ascent + descent)) / 2 + ascent) * fontSizePx;
+}
+
+/**
  * The `y` for a text element whose CAPITALS should sit in the middle of a
  * band - the one description of vertically centred text in this app.
  *
@@ -466,9 +485,8 @@ export function textInkBand(
   fontFamily: string,
   text: string
 ): { top: number; bottom: number } {
-  const { ascent, descent, capHeight } = FONT_METRICS[fontFamily] ?? DEFAULT_METRICS;
-  const lineBox = fontSizePx * TEXT_LINE_HEIGHT;
-  const baseline = textY + (lineBox - (ascent + descent) * fontSizePx) / 2 + ascent * fontSizePx;
+  const { descent, capHeight } = FONT_METRICS[fontFamily] ?? DEFAULT_METRICS;
+  const baseline = textBaselineY(textY, fontSizePx, fontFamily);
   return {
     top: baseline - capHeight * fontSizePx,
     bottom: baseline + (DESCENDERS.test(text) ? descent * fontSizePx : 0),

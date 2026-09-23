@@ -33,6 +33,7 @@
 // real button with a real label, which is what a screen reader needs.
 
 import { snapHairline } from "@/lib/hairline";
+import { textBaselineY } from "@/lib/modules/textFit";
 import { FONT_SANS, FONT_SERIF } from "@/lib/theme";
 import type { PreviewMark } from "@/lib/previewMarks";
 
@@ -417,10 +418,9 @@ export function drawPreview(
     const wanted = fontString(mark.z, family);
     const letters = mark.ls ? `${mark.ls}px` : "0px";
     const x = mark.a === "c" ? mark.x + mark.w / 2 : mark.a === "r" ? mark.x + mark.w : mark.x;
-    // The baseline is the box top plus the font size, which is what the SVG
-    // serialiser writes and what pdfPlacement's baselines are checked
-    // against. Not a canvas convention - a shared one.
-    const baseline = mark.y + mark.z;
+    // Where the editor's own div puts it - the shared rule, which the SVG
+    // serialiser and the PDF use too. See textBaselineY.
+    const baseline = textBaselineY(mark.y, mark.z, mark.ff);
 
     if (mark.z * scale < GREEK_BELOW_DEVICE_PX) {
       const extent = extentOf(ctx, wanted, letters, mark.t, applyFont);

@@ -22,8 +22,11 @@ import {
   capCentredTextY,
   estimateTextWidthPx,
   fitFontSizePx,
+  textBaselineY,
 } from "./textFit";
 import { FONT_SANS, FONT_SERIF } from "@/lib/theme";
+import { toSvg } from "@/lib/proofSvg";
+import { toPreviewMarks } from "@/lib/previewMarks";
 
 let failures = 0;
 const check = (ok: boolean, message: string) => {
@@ -101,6 +104,34 @@ check(
   capCentreNudgeEm("Some Font That Is Not Installed") === capCentreNudgeEm(FONT_SERIF),
   "an unknown family should fall back to the serif's correction, not to zero"
 );
+
+// --- PRINT puts its baseline where the editor does -----------------------
+//
+// Centring for the editor is only half of it: the PDF, the proof sheets and
+// the canvas previews draw text themselves, and each used to put the
+// baseline at y + 1em - 0.165em below the editor's, in Newsreader - so text
+// centred on screen printed low. Reported as "the days of the week aren't
+// vertically centered". Each consumer is checked here by what it actually
+// DRAWS: the capitals of a cap-centred label must land in the middle of the
+// band on paper too.
+{
+  const band = { top: 194, height: 57.1 };
+  for (const family of [FONT_SERIF, FONT_SANS]) {
+    const size = 33.33;
+    const y = capCentredTextY(band.top, band.height, size, family);
+    const element = { type: "text" as const, x: 0, y, width: 400, height: size * 1.2, text: "SUNDAY", fontSize: size, fontFamily: family };
+    const svgBaseline = Number(/<text[^>]* y="([^"]+)"/.exec(toSvg(element))?.[1]);
+    const marks = toPreviewMarks([element]).marks;
+    const mark = marks.find((m) => m.k === "t");
+    const canvasBaseline = mark && mark.k === "t" ? textBaselineY(mark.y, mark.z, mark.ff) : NaN;
+    // Both faces' capitals are 0.71em tall (FONT_METRICS). The PDF is
+    // covered by pdfPlacement, which holds its baselines to the proof's.
+    const capCentre = (baseline: number) => baseline - (0.71 * size) / 2;
+    const middle = band.top + band.height / 2;
+    check(Math.abs(capCentre(svgBaseline) - middle) < 0.1, `${family}: the proof sheet's capitals centre at ${capCentre(svgBaseline).toFixed(2)}, band middle ${middle.toFixed(2)}`);
+    check(Math.abs(capCentre(canvasBaseline) - middle) < 0.1, `${family}: the previews' capitals centre at ${capCentre(canvasBaseline).toFixed(2)}, band middle ${middle.toFixed(2)}`);
+  }
+}
 
 // --- The horizontal half still works ---------------------------------------
 check(estimateTextWidthPx("HELLO", 100) > estimateTextWidthPx("hello", 100), "capitals are wider than lowercase");

@@ -11,6 +11,7 @@
 // can emit. See the renderer vocabulary note: anything else here would be
 // a promise the editor cannot keep.
 
+import { textBaselineY } from "@/lib/modules/textFit";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 import { cellHeightPx, type PageGrid } from "./grid";
 
@@ -85,7 +86,7 @@ export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {})
         ? (element.x ?? 0) + (element.width ?? 0)
         : element.x ?? 0;
     return (
-      `<text x="${x}" y="${(element.y ?? 0) + size}" font-size="${size}" ` +
+      `<text x="${x}" y="${textBaselineY(element.y ?? 0, size, String(element.fontFamily ?? ""))}" font-size="${size}" ` +
       `font-family="Newsreader, Georgia, serif" fill="${element.fill ?? "#000"}" ` +
       `text-anchor="${anchor}" opacity="${element.opacity ?? 1}"` +
       (element.letterSpacing ? ` letter-spacing="${element.letterSpacing}"` : "") +

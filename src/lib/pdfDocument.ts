@@ -18,6 +18,7 @@
 import { jsPDF, GState } from "jspdf";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 import { flatten } from "./proofSvg";
+import { textBaselineY } from "./modules/textFit";
 import type { PageGrid } from "./grid";
 
 /**
@@ -33,27 +34,13 @@ export function pxToPt(px: number): number {
   return px / PX_PER_PT;
 }
 
-/**
- * Where a line of text sits inside the box the renderer gave it.
- *
- * ONE constant, because this is the number that decides whether print
- * matches screen, and it is currently the one place the two disagree. A
- * renderer emits a text element as a BOX - x, y, width, and a height that
- * is almost always fontSize * 1.2 - and then leaves it to each consumer to
- * decide where in that box the glyphs go:
- *
- *   - the editor drops it into an HTML div with line-height 1.2, so CSS
- *     centres the font's own ascent+descent inside the box;
- *   - proofSvg puts the baseline at y + fontSize.
- *
- * Those are about a tenth of an em apart. This follows proofSvg, because
- * the proof sheets are what every module's spacing was actually tuned
- * against - the lattice checks, the label fitting, all of it - so matching
- * them is matching the design as approved. It is expressed as a multiple of
- * the font size rather than inlined so that when the two are reconciled,
- * this is the single number that moves.
- */
-export const TEXT_BASELINE_EM = 1;
+// WHERE A LINE OF TEXT SITS inside the box the renderer gave it is
+// textBaselineY (src/lib/modules/textFit.ts), shared with the editor, the
+// proof sheets and the canvas previews. This file used to carry its own
+// constant here - the baseline at y + 1em, following the proof sheets - and
+// said it was "the single number that moves" once print and screen were
+// reconciled. They were, on 2026-09-22: it moved to where the editor's own
+// div puts it, 0.165em higher in Newsreader.
 
 /** A hex colour as the 0-255 triple jsPDF wants. */
 export function hexToRgb(hex: string): [number, number, number] {
@@ -383,7 +370,7 @@ export function drawElement(
       doc.text(
         String(element.text ?? ""),
         pxToPt(anchorX),
-        pxToPt((element.y ?? 0) + size * TEXT_BASELINE_EM),
+        pxToPt(textBaselineY(element.y ?? 0, size, String(element.fontFamily ?? ""))),
         { align, baseline: "alphabetic" }
       );
       if (typeof element.letterSpacing === "number" && element.letterSpacing !== 0) {

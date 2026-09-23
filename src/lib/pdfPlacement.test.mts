@@ -187,7 +187,7 @@ for (const { slug, columnSpan, rowSpan } of CORPUS) {
   // Text baselines. Only the y: the proof anchors text and lets the
   // renderer resolve the alignment, while jsPDF resolves it to a left edge
   // before writing, so the x values are not the same quantity. The y is,
-  // and it is the one that carries both the page flip and TEXT_BASELINE_EM.
+  // and it is the one that carries both the page flip and textBaselineY.
   const wantY = svg.baselines.map(round).sort((a, b) => a - b);
   const gotY = pdf.baselines.map(round).sort((a, b) => a - b);
   if (wantY.length !== gotY.length) {
