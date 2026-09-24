@@ -20,22 +20,65 @@ import { noise1, rng as makeRng, type Rng } from "./rng";
 export type Path = number[];
 export type DoodleStroke = { path: Path; weight: number };
 
-type Pt = [number, number];
+export type Pt = [number, number];
 
-const DETAIL = 0.55;
+/** The weight of a doodle's detail lines against its outline's 1. */
+export const DETAIL = 0.55;
 const TAU = Math.PI * 2;
 
 /** A doodle's pen: unit coordinates in, strokes out, with the hand's tremor. */
-class Sketch {
-  readonly out: DoodleStroke[] = [];
+export class Sketch {
   private n = 0;
   constructor(
     private readonly x: number,
     private readonly y: number,
     private readonly s: number,
     readonly r: Rng,
-    private readonly seed: number
+    private readonly seed: number,
+    readonly out: DoodleStroke[] = []
   ) {}
+
+  /** A pen for the box at (u, v), `size` across, inside this one - its
+   *  strokes join this sketch's. */
+  within(u: number, v: number, size: number): Sketch {
+    return new Sketch(this.x + u * this.s, this.y + v * this.s, size * this.s, this.r, this.seed * 7 + ++this.n, this.out);
+  }
+
+  /** Another doodle, drawn in the box at (u, v), `size` across. */
+  prop(name: DoodleName, u: number, v: number, size: number) {
+    DRAW[name](this.within(u, v, size));
+  }
+
+  /**
+   * Something solid in front: hide what has been drawn so far where `shape`
+   * (unit points, closed) lies - a guitar over the legs holding it, a head
+   * over the sofa behind it. Draw the shape's own outline after.
+   */
+  cover(shape: Pt[]) {
+    const poly = shape.map((p) => this.at(p));
+    const inside = (x: number, y: number) => {
+      let yes = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i];
+        const [xj, yj] = poly[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) yes = !yes;
+      }
+      return yes;
+    };
+    const kept: DoodleStroke[] = [];
+    for (const stroke of this.out) {
+      let piece: Path = [];
+      for (let i = 0; i < stroke.path.length; i += 2) {
+        const [x, y] = [stroke.path[i], stroke.path[i + 1]];
+        if (inside(x, y)) {
+          if (piece.length >= 4) kept.push({ path: piece, weight: stroke.weight });
+          piece = [];
+        } else piece.push(x, y);
+      }
+      if (piece.length >= 4) kept.push({ path: piece, weight: stroke.weight });
+    }
+    this.out.splice(0, this.out.length, ...kept);
+  }
 
   /** Resample evenly and push sideways by smooth noise: drawn, not plotted. */
   private tremble(pts: Pt[], amount: number): Path {
