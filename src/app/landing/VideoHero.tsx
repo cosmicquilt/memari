@@ -6,14 +6,11 @@
 // turns. The title over it is the same Wordmark.
 //
 // Veo's take did not start or end at rest ("the last and beginning seconds
-// are not still ... if you can ease both"), and its tea steamed too hard
-// (a second take had none: "less visible but not invisible"). Both are
-// baked into the file (see heroVideo.ts): it rises from rest, settles to
-// rest on its final frame. It plays once and stays on that frame. The
-// layouts appear a moment after the book has landed open (drawFrom), mapped
-// onto the last frame's pages - the pages have stopped moving by then, and
-// the leaf shadows and steam go on drifting under the drawing until the
-// clip settles.
+// are not still ... if you can ease both"); the file is eased (see
+// heroVideo.ts): it rises from rest, settles to rest on its final frame. It
+// plays once and stays on that frame. The layouts appear as it comes to
+// rest, about a second after the book has landed open (drawFrom), mapped
+// onto the last frame's pages.
 
 import { useEffect, useRef, useState } from "react";
 import type { LandingSpread } from "./spreads";
@@ -90,8 +87,13 @@ export function VideoHero() {
       ]);
       if (disposed) return;
       let warp: InstanceType<typeof PageWarp>;
+      // As many pixels as the stage shows, at most the frame's.
+      const across = Math.min(HERO_VIDEO.width, Math.ceil((canvas.parentElement?.clientWidth ?? HERO_VIDEO.width) * window.devicePixelRatio));
       try {
-        warp = new PageWarp(canvas, [PAGE_OUTLINES.left, PAGE_OUTLINES.right], HERO_VIDEO);
+        warp = new PageWarp(canvas, [PAGE_OUTLINES.left, PAGE_OUTLINES.right], HERO_VIDEO, {
+          width: across,
+          height: Math.round((across * HERO_VIDEO.height) / HERO_VIDEO.width),
+        });
       } catch {
         // No WebGL: the clip plays and rests on its blank pages.
         return;
@@ -153,14 +155,18 @@ export function VideoHero() {
         <video
           ref={video}
           className={styles.videoFrame}
-          src={HERO_VIDEO.src}
           poster={HERO_VIDEO.first}
           muted
           playsInline
           preload="auto"
           disableRemotePlayback
           style={{ visibility: still ? "hidden" : "visible" }}
-        />
+        >
+          {/* The 4K film only where the screen has the pixels for it; the
+              browser takes the first source whose media matches. */}
+          <source src={HERO_VIDEO.src4k} type="video/mp4" media={HERO_VIDEO.media4k} />
+          <source src={HERO_VIDEO.src} type="video/mp4" />
+        </video>
         {still && (
           // The resting frame, for reduced motion - the page is drawn on it
           // without the clip ever playing.

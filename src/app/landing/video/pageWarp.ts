@@ -75,10 +75,13 @@ export class PageWarp {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     outlines: readonly [PageOutline, PageOutline],
-    frame: { width: number; height: number }
+    frame: { width: number; height: number },
+    /** The canvas's own size in pixels - the outlines stay in the frame's.
+     *  A 4K frame need not mean a 4K canvas on a phone. */
+    pixels: { width: number; height: number } = frame
   ) {
-    canvas.width = frame.width;
-    canvas.height = frame.height;
+    canvas.width = pixels.width;
+    canvas.height = pixels.height;
     // preserveDrawingBuffer: what was drawn stays drawn when the tab is in
     // the background, for window and tab previews (see desk/scene.ts).
     const options: WebGLContextAttributes = { premultipliedAlpha: false, antialias: true, preserveDrawingBuffer: true };

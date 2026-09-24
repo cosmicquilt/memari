@@ -421,11 +421,13 @@
   background: linear-gradient(to bottom, rgba(16, 10, 6, 0.55) 0%, rgba(16, 10, 6, 0.28) 26%, rgba(16, 10, 6, 0) 46%);
 }
 
+/* Portrait: the spread fills the width. From heroVideo.ts, in the 4K frame:
+   SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1920 x 1250 (50%, 58%). */
 @media (max-aspect-ratio: 1/1) {
   .videoStage {
-    width: calc(100vw * 1920 / 920);
+    width: calc(100vw * 3840 / 1840);
     top: 57%;
-    transform: translate(-50.1%, -58%);
+    transform: translate(-50%, -58%);
     mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
   }
   .videoBackdrop {

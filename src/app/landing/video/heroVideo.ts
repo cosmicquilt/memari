@@ -2,44 +2,51 @@
 // journal's pages lie in its last frame - the frame the layouts are drawn
 // onto once it has stopped.
 //
-// The take is the third (handoff/veo/output, ...133232.mp4: dot-grid pages,
-// "which is better"; its steam is already faint, as Andrew wanted it). The
-// file is not Veo's as it came: its start and end are eased to rest, the
-// output running longer than the take (6.35s against 4.5s), neighbouring
-// frames cross-faded where it is slow ("the last and beginning seconds are
-// not still ... ease both"); and from the frame the layouts appear on, the
-// journal's own dot grid is taken off its pages ("once you start overlaying
-// ... cover the underlying dot grid"), keeping the paper's light and the
-// moving leaf shadows - so the layouts' grid is the only one. Made in the
-// browser with WebCodecs and a small MP4 writer - the tool, and the calls
-// used, are in handoff/veo/tools/ (gitignored).
+// The take is "new 4" (handoff/veo/output/new): Veo's 720p output, upscaled
+// to 4K with SeedVR2 and given three FILM in-between frames per pair of
+// frames (handoff/veo/tools/memari_upscale.ipynb). The site's files are not
+// that as it came: its start and end are eased to rest, the output running
+// longer than the take (5.9s against 4s), the slow stretches drawn from the
+// in-between frames ("the last and beginning seconds are not still ... ease
+// both"); and on the frames the layouts are drawn over, the journal's own dot
+// grid is taken off its pages ("once you start overlaying ... cover the
+// underlying dot grid"), keeping the paper's light and the leaf shadows - so
+// the layouts' grid is the only one. Made in the browser with WebCodecs - the
+// tool, and the call used, are in handoff/veo/tools/ (gitignored).
 //
-// Measured from that frame (1920 x 1080): each page's outer and gutter
-// edges as straight lines, and its top and bottom edges sampled every 24px
-// - they arch, high mid-page and low at the corners and the gutter, as a
-// thick book's pages curve into its spine. The outer corners sit inside the
-// strip of page edges Veo drew beyond the right page, so nothing is drawn on
-// the stack's edge.
+// Two sizes of the same film: 2560 x 1440 for most screens, and 4K where the
+// screen has the pixels to show it (media4k). Everything below is measured in
+// the 4K frame's pixels.
 //
-// A new clip means new numbers: capture its last frame, scan each column
-// for where the bright page meets the wood (a pixel is paper where
-// min(R, G) > 160 and R + G + B > 480), and read the corners off a zoom.
+// Measured from its last frame: each page's outer and gutter edges as
+// straight lines, and its top and bottom edges sampled every 48px - they
+// arch, high mid-page and low at the corners and the gutter, as a thick
+// book's pages curve into its spine. Beyond the right page's outer edge is a
+// strip of page edges, about 50px wide; the outline stops at the page, so
+// nothing is drawn on the stack.
+//
+// A new clip means new numbers: capture its last frame and, per column, find
+// where the bright page begins (luminance over 130 and not wood-coloured:
+// (R - B) / R under 0.33), in a window about the edge - sunlit wood above the
+// pages can pass the test. The right edge is where the page's brightness
+// first dips, scanning in from the cover's dark board.
 
 export const HERO_VIDEO = {
   src: "/landing/hero-open.mp4",
+  src4k: "/landing/hero-open-4k.mp4",
+  /** Screens with the device pixels for the 4K film: about 2,900 across. */
+  media4k: "(min-width: 1450px) and (min-resolution: 2dppx), (min-width: 1930px) and (min-resolution: 1.5dppx), (min-width: 2900px)",
   /** Shown while the clip loads, and where it begins. */
   first: "/landing/hero-open-first.jpg",
   /** The resting frame: shown instead of the clip for reduced motion. */
   last: "/landing/hero-open-last.jpg",
-  width: 1920,
-  height: 1080,
-  /** When the layouts appear, in the file's seconds: 1.3s of the take after
-   *  the book has landed open ("after it is open a second or two of it
-   *  then start overlaying the pages") - the take's 3.8s, eased, put on a
-   *  frame boundary: frame 112, the first with the dot grid cleaned off.
-   *  Its pages have not moved since the take's 3.5s; the leaf shadows and
-   *  the steam go on moving under the drawing until the clip settles. */
-  drawFrom: 112 / 24,
+  width: 3840,
+  height: 2160,
+  /** When the layouts appear, in the file's seconds: as it comes to rest,
+   *  about a second after the book has landed open ("after it is open a
+   *  second or two of it then start overlaying the pages"). Frame 138 of
+   *  141, the first with the dot grid cleaned off. */
+  drawFrom: 138 / 24,
 };
 
 export type Point = readonly [x: number, y: number];
@@ -55,41 +62,42 @@ export type PageOutline = {
   bottom: Point[];
 };
 
-const GUTTER_TOP: Point = [961, 353];
-const GUTTER_BOTTOM: Point = [963, 911];
+const GUTTER_TOP: Point = [1920, 709];
+const GUTTER_BOTTOM: Point = [1921, 1825];
 
 export const PAGE_OUTLINES: { left: PageOutline; right: PageOutline } = {
   left: {
-    aTop: [542, 352],
-    aBottom: [511, 908],
+    aTop: [1083, 710],
+    aBottom: [1021, 1823],
     bTop: GUTTER_TOP,
     bBottom: GUTTER_BOTTOM,
     top: [
-      [560, 356], [584, 352], [608, 351], [632, 349], [656, 347], [680, 345], [704, 343], [728, 340], [752, 338],
-      [776, 336], [800, 335], [824, 334], [848, 334], [872, 334], [896, 336], [920, 340], [944, 346], [952, 349],
+      [1152, 705], [1200, 701], [1248, 698], [1296, 694], [1344, 690], [1392, 686], [1440, 681], [1488, 677], [1536, 673],
+      [1584, 669], [1632, 667], [1680, 666], [1728, 667], [1776, 669], [1824, 676], [1872, 686], [1896, 695],
     ],
     bottom: [
-      [560, 908], [584, 908], [608, 907], [632, 906], [656, 905], [680, 904], [704, 903], [728, 902], [752, 901],
-      [776, 900], [800, 900], [824, 899], [848, 899], [872, 900], [896, 901], [920, 903], [944, 907], [952, 908],
+      [1152, 1818], [1200, 1816], [1248, 1815], [1296, 1812], [1344, 1810], [1392, 1807], [1440, 1805], [1488, 1803], [1536, 1801],
+      [1584, 1799], [1632, 1798], [1680, 1798], [1728, 1799], [1776, 1801], [1824, 1805], [1872, 1811], [1896, 1816],
     ],
   },
   right: {
     aTop: GUTTER_TOP,
     aBottom: GUTTER_BOTTOM,
-    bTop: [1360, 349],
-    bBottom: [1388, 906],
+    bTop: [2718, 699],
+    bBottom: [2781, 1813],
     top: [
-      [970, 351], [994, 344], [1018, 339], [1042, 336], [1066, 335], [1090, 334], [1114, 334], [1138, 335], [1162, 337],
-      [1186, 339], [1210, 342], [1234, 344], [1258, 345], [1282, 346], [1306, 348], [1330, 348], [1350, 351],
+      [1944, 701], [1968, 692], [2016, 681], [2064, 674], [2112, 670], [2160, 669], [2208, 669], [2256, 670], [2304, 673],
+      [2352, 676], [2400, 679], [2448, 683], [2496, 686], [2544, 689], [2592, 691], [2640, 694], [2688, 697],
     ],
     bottom: [
-      [970, 910], [994, 905], [1018, 902], [1042, 900], [1066, 899], [1090, 898], [1114, 898], [1138, 899], [1162, 899],
-      [1186, 900], [1210, 901], [1234, 902], [1258, 903], [1282, 904], [1306, 904], [1330, 905], [1350, 905],
+      [1944, 1820], [1968, 1815], [2016, 1808], [2064, 1804], [2112, 1800], [2160, 1798], [2208, 1797], [2256, 1798], [2304, 1799],
+      [2352, 1801], [2400, 1802], [2448, 1804], [2496, 1806], [2544, 1807], [2592, 1809], [2640, 1811], [2688, 1812],
     ],
   },
 };
 
 /** The spread's middle, in the frame: where a phone centres the picture. */
-export const SPREAD_CENTRE: Point = [962, 628];
-/** How wide the spread is in the frame, cover to cover. */
-export const SPREAD_WIDTH = 920;
+export const SPREAD_CENTRE: Point = [1920, 1250];
+/** How much of the frame a phone fits across its width: the spread cover to
+ *  cover (about 1,795px) and a sliver of desk either side. */
+export const SPREAD_WIDTH = 1840;
