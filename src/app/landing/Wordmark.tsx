@@ -4,7 +4,8 @@
 // the left side of where the dot will slide to the right revealing 'memari.'
 // (all lower case). after studio should fade in same style as header of app.
 // and 'a planner as unique as you.' should also fade in below that." The
-// line became "a journal as unique as you." on 2026-09-23.
+// line became "a journal as unique as you." on 2026-09-23, its "you." in
+// script and the editor's blue (scriptFont.ts, .you).
 //
 // The dot is the full stop of "memari." itself, set in the same face. It
 // appears where the "m" will begin, then slides to its place at the end of
@@ -25,6 +26,7 @@
 // Reduced motion: everything fades in, nothing slides.
 
 import { useEffect, useRef } from "react";
+import { script } from "./scriptFont";
 import styles from "./landing.module.css";
 
 /** When the book may start to open: half a second into the tagline's
@@ -66,7 +68,7 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
         </span>
       </h1>
       <p ref={tagline} className={styles.tagline}>
-        a journal as unique as you.
+        a journal as unique as <span className={`${styles.you} ${script.className}`}>you.</span>
       </p>
     </div>
   );

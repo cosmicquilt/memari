@@ -365,6 +365,17 @@
   animation: taglineIn 1s cubic-bezier(0.22, 1, 0.36, 1) 2.35s both;
 }
 
+/* "you." in script and the editor's blue (ACCENT in planner/*). A script's
+   lowercase is small for its size, so it is set at twice the line's size to
+   stand as tall as the rest; line-height 0 keeps it from pushing the line
+   (and the tagline) down. */
+.you {
+  font-size: 2em;
+  line-height: 0;
+  letter-spacing: 0;
+  color: #4a5cff;
+}
+
 /* --- the hero as a film (VideoHero) ----------------------------------------- */
 
 /* The clip and the drawing laid on its pages share one box, sized to cover
