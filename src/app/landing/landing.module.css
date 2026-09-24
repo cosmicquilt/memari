@@ -382,6 +382,9 @@
   margin-left: 0.12em;
   letter-spacing: 0;
   color: #4a5cff;
+  /* Written in last: it fades in once the rest of the line has settled
+     (Andrew, 2026-09-24). */
+  animation: fadeIn 0.9s ease-out 3.15s both;
 }
 
 /* --- the hero as a film (VideoHero) ----------------------------------------- */
@@ -776,5 +779,8 @@
   }
   .tagline {
     animation-delay: 0.5s;
+  }
+  .you {
+    animation: fadeIn 0.6s ease-out 0.9s both;
   }
 }
