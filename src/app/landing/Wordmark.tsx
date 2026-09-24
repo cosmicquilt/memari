@@ -4,8 +4,8 @@
 // the left side of where the dot will slide to the right revealing 'memari.'
 // (all lower case). after studio should fade in same style as header of app.
 // and 'a planner as unique as you.' should also fade in below that." The
-// line became "a journal as unique as you." on 2026-09-23, its "you." in
-// script and the editor's blue (scriptFont.ts, .you).
+// line became "a journal as unique as you." on 2026-09-23, its "you."
+// handwritten in the editor's blue (scriptFont.ts, .you).
 //
 // The dot is the full stop of "memari." itself, set in the same face. It
 // appears where the "m" will begin, then slides to its place at the end of
