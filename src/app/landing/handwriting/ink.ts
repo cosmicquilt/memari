@@ -25,6 +25,7 @@ import { getStroke } from "perfect-freehand";
 import { noise1, rng as makeRng } from "./rng";
 import { paintGlyph, spriteOf, type Glyph, type GlyphRun } from "./glyphs";
 import { FEEL, grainAt } from "./paperInk";
+import { prepareArt, revealTo, type ArtRef, type ArtSprite } from "./art";
 import type { InkItem, Pen } from "./plan";
 
 export type TimedStroke = {
@@ -57,7 +58,24 @@ export type TimedGlyph = {
   drawn: number;
 };
 
-export type Timed = TimedStroke | TimedGlyph;
+/** A drawn doodle (art.ts), uncovered along its own lines. */
+export type TimedArt = {
+  kind: "art";
+  page: 0 | 1;
+  ref: ArtRef;
+  box: [number, number, number, number];
+  seed: number;
+  t0: number;
+  t1: number;
+  /** How far through, 0 to 1. */
+  drawn: number;
+  done: boolean;
+  /** Made by prepareInk; a doodle that failed to load stays null and is
+   *  simply not drawn. */
+  art: ArtSprite | null;
+};
+
+export type Timed = TimedStroke | TimedGlyph | TimedArt;
 
 /** Print px per second at a human pace, before the time-lapse. */
 const SPEED: Record<Pen["kind"], number> = { ink: 700, marker: 600, pencil: 650, highlighter: 1200 };
@@ -113,6 +131,18 @@ export function inkTimeline(items: InkItem[], targetSeconds: number, seed = 1): 
         out.push({ kind: "glyph", page: item.page, run: item.run, glyph, t0, t1: t, drawn: 0 });
         last = [glyph.x + glyph.right, glyph.y];
       }
+      continue;
+    }
+    if (item.kind === "art") {
+      // As long as a pen takes over a drawing this size - it is mostly line.
+      const [x, y, w, h] = item.box;
+      lift(x, y, itemPause);
+      const t0 = t;
+      const d = Math.max(0.3, ((w + h) * 3.2) / (SPEED[item.pen.kind] * r.range(0.85, 1.15)));
+      t += d;
+      down += d;
+      out.push({ kind: "art", page: item.page, ref: item.art, box: item.box, seed: r.int(1, 1e9), t0, t1: t, drawn: 0, done: false, art: null });
+      last = [x + w, y + h];
       continue;
     }
     const speed = SPEED[item.pen.kind] * r.range(0.85, 1.15);
@@ -288,6 +318,7 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
   const highlightDirty: [boolean, boolean] = [false, false];
   const wetDirty: [boolean, boolean] = [false, false];
   const wet: TimedStroke[] = [];
+  const wetArt: TimedArt[] = [];
   for (const s of timeline) {
     if (s.t0 > t) break;
     if (s.kind === "glyph") {
@@ -296,6 +327,27 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
       paintGlyph(layers[s.page].ink, s.run, s.glyph, s.drawn, p, scale);
       s.drawn = p;
       changed[s.page] = true;
+      continue;
+    }
+    if (s.kind === "art") {
+      if (s.done || !s.art) continue;
+      const u = Math.min(1, (t - s.t0) / Math.max(1e-6, s.t1 - s.t0));
+      if (u >= 1) {
+        // The pen has been along every line: the whole drawing goes down -
+        // its washes and fills with it.
+        layers[s.page].ink.drawImage(s.art.sprite, s.art.x, s.art.y);
+        s.drawn = 1;
+        s.done = true;
+        wetDirty[s.page] = changed[s.page] = true;
+        continue;
+      }
+      const eased = u * u * (3 - 2 * u) * 0.3 + u * 0.7;
+      if (eased > s.drawn + 0.002) {
+        s.drawn = eased;
+        revealTo(s.art, eased * s.art.length);
+        wetDirty[s.page] = changed[s.page] = true;
+      }
+      wetArt.push(s);
       continue;
     }
     if (s.done) continue;
@@ -327,6 +379,7 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
       const ctx = layers[page].wet;
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       for (const s of wet) if (s.page === page) fillStroke(ctx, s, s.drawn, scale, false);
+      for (const s of wetArt) if (s.page === page && s.art) ctx.drawImage(s.art.shown.canvas, s.art.x, s.art.y);
     }
     if (!highlightDirty[page]) continue;
     const ctx = layers[page].highlight;
@@ -355,6 +408,10 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
  * milliseconds a spread, which the frames that write must not pay.
  */
 export async function prepareInk(timeline: Timed[], scale: number) {
+  // The drawn doodles: fetched together, then each drawn into its sprite.
+  const arts = timeline.filter((s): s is TimedArt => s.kind === "art");
+  const made = await Promise.all(arts.map((a) => prepareArt(a.ref, a.box, scale, a.seed)));
+  arts.forEach((a, i) => (a.art = made[i]));
   const glyphs = timeline.filter((s): s is TimedGlyph => s.kind === "glyph");
   let at = 0;
   while (at < glyphs.length) {
@@ -378,5 +435,12 @@ export function resetInk(timeline: Timed[]) {
   for (const s of timeline) {
     s.drawn = 0;
     if (s.kind === "stroke") s.done = false;
+    if (s.kind === "art") {
+      s.done = false;
+      if (s.art) {
+        s.art.masked = 0;
+        s.art.mask.clearRect(0, 0, s.art.mask.canvas.width, s.art.mask.canvas.height);
+      }
+    }
   }
 }

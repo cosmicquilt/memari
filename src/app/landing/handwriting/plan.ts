@@ -21,6 +21,7 @@ import { HAND_FONTS, type HandFontKey } from "../handFonts";
 import { rng as makeRng } from "./rng";
 import { layoutGlyphs, type GlyphRun } from "./glyphs";
 import { doodle, type DoodleName } from "./doodles";
+import { artIndex, findArt, type ArtRef } from "./art";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
 
 export type Pen = {
@@ -32,7 +33,9 @@ export type Pen = {
 
 export type InkItem =
   | { kind: "strokes"; page: 0 | 1; paths: Path[]; pen: Pen; pause?: number }
-  | { kind: "glyphs"; page: 0 | 1; run: GlyphRun; pause?: number };
+  | { kind: "glyphs"; page: 0 | 1; run: GlyphRun; pause?: number }
+  /** A drawn doodle (art.ts) in a box, print px. */
+  | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; pen: Pen; pause?: number };
 
 /** A way of writing words: a handwriting font, or the stroke-drawn script. */
 type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
@@ -98,14 +101,44 @@ const HANDS: Record<string, Hand> = {
  * What each person doodles: their week's own things, big enough for a sketch
  * box, then small ones for beside the date.
  */
-const DOODLE_THEMES: Record<string, { big: DoodleName[]; small: DoodleName[] }> = {
-  classic: { big: ["mountains", "cup", "plane", "camera", "books"], small: ["star", "sun", "cloud", "sparkle"] },
-  wellness: { big: ["plant", "flower", "cup", "leaf"], small: ["heart", "sun", "sparkle", "flower"] },
-  focus: { big: ["bulb", "books", "cup", "envelope"], small: ["star", "lightning", "sparkle"] },
-  training: { big: ["mountains", "sun", "music", "cup"], small: ["lightning", "star", "sun"] },
-  money: { big: ["plant", "bulb", "envelope", "cup"], small: ["star", "sparkle", "heart"] },
-  creative: { big: ["music", "camera", "rainbow", "popcorn", "d20"], small: ["moon", "sparkle", "heart", "star"] },
+/**
+ * How each person doodles (Andrew, 2026-09-24: the generated drawings over
+ * the code-drawn ones) - a drawing style of their own - and what: their
+ * week's things, big enough for a sketch box, then small ones for beside
+ * the date. Subjects are the doodle library's (handoff/flow/labels.json).
+ */
+const DOODLE_THEMES: Record<string, { style: string; big: string[]; small: string[] }> = {
+  classic: { style: "minimal", big: ["mountains", "houseplant", "paperplane", "camera", "books"], small: ["star", "sun", "sparkle", "heart"] },
+  wellness: { style: "retro", big: ["houseplant", "sunflower", "tea", "meditating"], small: ["heart", "sun", "sparkle", "daisy"] },
+  focus: { style: "sketchnote", big: ["bulb", "books", "laptop", "coffee"], small: ["star", "lightning", "sparkle"] },
+  training: { style: "crayon", big: ["mountains", "sun", "running", "cycling"], small: ["lightning", "star", "sun"] },
+  money: { style: "pencil", big: ["houseplant", "bulb", "envelope", "coffee"], small: ["star", "sparkle", "heart"] },
+  creative: { style: "riso", big: ["painting", "guitar", "camera", "rainbow", "music", "movie"], small: ["moon", "sparkle", "heart", "star"] },
 };
+
+/** The code-drawn doodle to fall back on when the library has not loaded
+ *  (or has no drawing of a subject in a style). */
+const FALLBACK: Record<string, DoodleName> = {
+  star: "star", sparkle: "sparkle", heart: "heart", sun: "sun", moon: "moon", lightning: "lightning", cloud: "cloud",
+  mountains: "mountains", houseplant: "plant", sunflower: "flower", daisy: "flower", tea: "cup", coffee: "cup", cafe: "cup",
+  bulb: "bulb", books: "books", reading: "books", envelope: "envelope", camera: "camera", photo: "camera",
+  paperplane: "plane", music: "music", guitar: "music", singing: "music", rainbow: "rainbow", movie: "popcorn", dnd: "d20",
+  hiking: "mountains", meditating: "moon",
+};
+
+/** A doodle in an s x s box at (x, y): the person's drawing of it, fitted
+ *  to the box and sat on its base line - or the code-drawn one. */
+function doodleAt(page: 0 | 1, style: string, subject: string, x: number, y: number, size: number, seed: number, pen: Pen): InkItem[] {
+  const art: ArtRef | null = artIndex() ? findArt(style, subject, (seed % 997) / 997) : null;
+  if (art) {
+    const k = size / Math.max(art.w, art.h);
+    const w = art.w * k;
+    const h = art.h * k;
+    return [{ kind: "art", page, art, box: [x + (size - w) / 2, y + (size - h), w, h], pen }];
+  }
+  const name = FALLBACK[subject];
+  return name ? doodleItems(page, name, x, y, size, seed, pen) : [];
+}
 
 /** A doodle as ink: the outline in the pen, then its detail - hatching,
  *  veins, steam - in a lighter line of the same pen, the way one is drawn. */
@@ -162,20 +195,35 @@ const EVENT_TIMES: Array<[RegExp, number, number]> = [
  * 2026-09-23, of calendars imported later: "have doodles around them ...
  * them drawing in the fun stuff around the mundane".)
  */
-const EVENT_DOODLES: Array<[RegExp, DoodleName]> = [
-  [/film|movie/i, "popcorn"],
-  [/guitar|open mic|concert/i, "music"],
-  [/photo/i, "camera"],
-  [/hike/i, "mountains"],
-  [/coffee|tea w|brunch/i, "cup"],
-  [/book|read/i, "books"],
-  [/date night/i, "heart"],
-  [/d&d|game night/i, "d20"],
-  [/ship it/i, "plane"],
+const EVENT_DOODLES: Array<[RegExp, string]> = [
+  [/film|movie/i, "movie"],
+  [/guitar/i, "guitar"],
+  [/open mic|concert|karaoke/i, "singing"],
+  [/photo/i, "photo"],
+  [/hike/i, "hiking"],
+  [/coffee|tea w|brunch/i, "cafe"],
+  [/book club|bath \+ book/i, "reading"],
+  [/date night/i, "dancing"],
+  [/d&d|game night/i, "dnd"],
+  [/ship it/i, "paperplane"],
   [/emails|invoice/i, "envelope"],
-  [/farmers|walk/i, "sun"],
-  [/meditate|bed by/i, "moon"],
+  [/farmers/i, "picnic"],
+  [/long walk/i, "sun"],
+  [/meditate/i, "meditating"],
+  [/bed by/i, "moon"],
   [/payday/i, "sparkle"],
+  [/yoga|pilates/i, "yoga"],
+  [/swim/i, "swimming"],
+  [/5k|long run|intervals|run w\//i, "running"],
+  [/spin|sell bike/i, "cycling"],
+  [/legs|upper body|core/i, "weights"],
+  [/paint|sketch|life drawing/i, "painting"],
+  [/knit/i, "knitting"],
+  [/study/i, "studying"],
+  [/deep work|write draft|write 500w/i, "laptop"],
+  [/meal prep|cook/i, "cooking"],
+  [/pack!/i, "suitcase"],
+  [/vet /i, "dog"],
 ];
 
 /**
@@ -399,8 +447,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         const kind = EVENT_DOODLES.find(([re]) => re.test(text))?.[1];
         if (w && kind && r.chance(0.8)) {
           const dx = w.box[0] + w.box[2] + slotH * 0.5;
-          const size = Math.min(slotH * 2.3, ax + aw - 14 - dx);
-          if (size >= slotH * 1.5) items.push(...doodleItems(page, kind, dx, top + slotH * 0.5 - size * 0.5, size, nextSeed(), hand.accent));
+          const size = Math.min(slotH * 3, ax + aw - 14 - dx);
+          if (size >= slotH * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH * 0.9 - size * 0.62, size, nextSeed(), hand.accent));
         }
       }
     }
@@ -435,7 +483,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         const x = cx + (cw / n) * i + (cw / n - size) / 2 + r.range(-20, 20);
         const y = cy + (ch - size) / 2 + r.range(-30, 30);
         if (!clearOf(region.printed, x, x + size, y, y + size)) continue;
-        items.push(...doodleItems(page, keys[i % keys.length], x, y, size, nextSeed(), i === 0 ? hand.pen : hand.accent));
+        items.push(...doodleAt(page, theme.style, keys[i % keys.length], x, y, size, nextSeed(), i === 0 ? hand.pen : hand.accent));
       }
       return;
     }
@@ -601,7 +649,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const title = spread.pages[0].regions.find((reg): reg is Extract<Region, { kind: "title" }> => reg.kind === "title");
   if (title && r.chance(0.7)) {
     const [x, y, w] = title.box;
-    items.push(...doodleItems(0, r.pick(theme.small), x + w - 110, y + 10, 90, nextSeed(), hand.accent));
+    items.push(...doodleAt(0, theme.style, r.pick(theme.small), x + w - 120, y + 4, 100, nextSeed(), hand.accent));
   }
   return items;
 }

@@ -69,6 +69,10 @@ export type InkFeel = {
   pool: number;
   /** How much lighter a letter may come out than its neighbours. */
   pressure: number;
+  /** Keep the ink's own alpha - a drawing's washes, grain and pale
+   *  strokes - and only nudge it at the edge, instead of thresholding it
+   *  into a solid letter. */
+  soft?: boolean;
 };
 
 /** Per pen kind: a felt-tip bleeds, pools and is even; a ballpoint is crisp
@@ -127,7 +131,7 @@ export function roughen(ctx: CanvasRenderingContext2D, width: number, height: nu
       const a = d[(y * width + x) * 4 + 3] / 255;
       if (a === 0) continue;
       const fine = valueNoise(x, y, grain * 0.7, grain * 0.7, seed + 1) * 0.55 + valueNoise(x, y, grain * 1.8, grain * 1.8, seed + 4) * 0.45;
-      core[y * width + x] = smooth(0.25, 0.75, a + (fine - 0.5) * feel.edge);
+      core[y * width + x] = feel.soft ? Math.min(1, Math.max(0, a + (fine - 0.5) * feel.edge * Math.min(1, a * 3))) : smooth(0.25, 0.75, a + (fine - 0.5) * feel.edge);
     }
   }
   // One blur serves twice: how deep inside the line each texel is (1 in the
