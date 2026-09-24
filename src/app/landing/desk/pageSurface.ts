@@ -9,7 +9,7 @@
 import { drawPreview, resolveCanvasFamily } from "@/app/planner/drawPreview";
 import type { LandingPage } from "../spreads";
 import type { InkLayers } from "../handwriting/ink";
-import { fibreMask } from "../handwriting/paperInk";
+import { fibreMask, grainAt, printMask } from "../handwriting/paperInk";
 
 /** The page's own size in print px - see spreads.ts. */
 export const PAGE_W = 2175;
@@ -111,13 +111,18 @@ export class PageSurface {
     const { width, height } = this.base;
     const perIn = width / PAGE_IN;
     const layout = canvas(width, height);
-    drawPreview(layout.getContext("2d")!, page.marks, PAGE_W, PAGE_H);
+    const l = layout.getContext("2d")!;
+    drawPreview(l, page.marks, PAGE_W, PAGE_H);
+    // A press lays ink evenly, but not perfectly: a little cloudy, with a
+    // fine tooth where the paper's surface did not quite meet it.
+    l.setTransform(1, 0, 0, 1, 0, 0);
+    l.globalCompositeOperation = "destination-in";
+    l.fillStyle = l.createPattern(printMask(), "repeat")!;
+    l.fillRect(0, 0, width, height);
     const b = this.base.getContext("2d")!;
     if (this.bare) {
       b.save();
-      b.globalCompositeOperation = "multiply";
-      b.globalAlpha = 0.97;
-      b.drawImage(layout, 0, 0);
+      this.printLayout(b, layout);
       b.restore();
       this.compose();
       return;
@@ -133,9 +138,7 @@ export class PageSurface {
     b.drawImage(layout, 0, 0);
     b.setTransform(1, 0, 0, 1, 0, 0);
     b.filter = "none";
-    // Printed ink sits IN the paper: multiplied, and a touch short of black.
-    b.globalAlpha = 0.97;
-    b.drawImage(layout, 0, 0);
+    this.printLayout(b, layout);
     // The page curves down into the gutter, where less light reaches; and
     // its other edges are a shade darker from handling.
     b.globalAlpha = 1;
@@ -161,6 +164,19 @@ export class PageSurface {
     }
     b.restore();
     this.compose();
+  }
+
+  /** Printed ink sits IN the paper: multiplied, a touch short of black, and
+   *  spread a little into the sheet (dot gain) - a soft copy under the
+   *  crisp one - rather than cut out of it with a screen's hard edge. */
+  private printLayout(b: CanvasRenderingContext2D, layout: HTMLCanvasElement) {
+    b.globalCompositeOperation = "multiply";
+    b.filter = `blur(${(grainAt(this.scale) * 0.45).toFixed(2)}px)`;
+    b.globalAlpha = 0.4;
+    b.drawImage(layout, 0, 0);
+    b.filter = "none";
+    b.globalAlpha = 0.9;
+    b.drawImage(layout, 0, 0);
   }
 
   clearInk() {

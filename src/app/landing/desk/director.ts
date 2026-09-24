@@ -12,7 +12,7 @@ import type { LandingSpread } from "../spreads";
 import { PageSurface } from "./pageSurface";
 import type { DeskScene } from "./scene";
 import { familiesFor, planSpread } from "../handwriting/plan";
-import { inkTimeline, paintInk, type Timed } from "../handwriting/ink";
+import { inkTimeline, paintInk, prepareInk, type Timed } from "../handwriting/ink";
 import { InkClock } from "../pace";
 
 const OPEN_SECONDS = 2.6;
@@ -84,6 +84,7 @@ export class Director {
   private async prepareWriting(spread: LandingSpread) {
     await Promise.all(familiesFor(spread.key).map((family) => document.fonts.load(`40px ${family}`).catch(() => [])));
     const { strokes, duration } = inkTimeline(planSpread(spread, 1 + this.cycle * 7919 + Math.floor(Math.random() * 1000)), WRITING_TARGET, this.cycle + 1);
+    await prepareInk(strokes, this.slots[0].surface.scale);
     return { timeline: strokes, duration };
   }
 

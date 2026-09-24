@@ -16,7 +16,7 @@
 // written.
 
 import { noise1, rng as makeRng } from "./rng";
-import { FEEL, roughen, type InkFeel } from "./paperInk";
+import { FEEL, grainAt, roughen, type InkFeel } from "./paperInk";
 
 export type Glyph = {
   ch: string;
@@ -126,10 +126,13 @@ export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
 }
 
 /** Render a letter once at the canvas's scale, then roughen it into the
- *  paper (see paperInk.ts). Made on first use, kept on the glyph. */
-function spriteOf(run: GlyphRun, g: Glyph, scale: number) {
+ *  paper (see paperInk.ts). Made ahead of writing (ink.ts prepareInk) or on
+ *  first use, and kept on the glyph. */
+export function spriteOf(run: GlyphRun, g: Glyph, scale: number) {
   if (g.sprite && g.sprite.scale === scale) return g.sprite;
-  const pad = 3;
+  // Room round the letter for the ink that bleeds past it.
+  const grain = grainAt(scale);
+  const pad = 3 + Math.ceil(grain * 2.5);
   const ox = Math.ceil(g.left * scale) + pad;
   const oy = Math.ceil(run.size * 1.3 * scale) + pad;
   const canvas = document.createElement("canvas");
@@ -139,7 +142,7 @@ function spriteOf(run: GlyphRun, g: Glyph, scale: number) {
   ctx.font = `${run.weight} ${run.size * scale}px ${run.family}`;
   ctx.fillStyle = g.color;
   ctx.fillText(g.ch, ox, oy);
-  roughen(ctx, canvas.width, canvas.height, run.feel, g.seed);
+  roughen(ctx, canvas.width, canvas.height, run.feel, g.seed, grain);
   g.sprite = { canvas, scale, ox, oy };
   return g.sprite;
 }

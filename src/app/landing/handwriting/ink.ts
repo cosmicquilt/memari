@@ -23,7 +23,8 @@
 
 import { getStroke } from "perfect-freehand";
 import { noise1, rng as makeRng } from "./rng";
-import { paintGlyph, type Glyph, type GlyphRun } from "./glyphs";
+import { paintGlyph, spriteOf, type Glyph, type GlyphRun } from "./glyphs";
+import { FEEL, grainAt } from "./paperInk";
 import type { InkItem, Pen } from "./plan";
 
 export type TimedStroke = {
@@ -214,20 +215,33 @@ function fillStroke(ctx: CanvasRenderingContext2D, s: TimedStroke, length: numbe
   const points = pointsTo(s, length).map(([x, y, p]) => [x * scale, y * scale, p]);
   if (points.length < 2) return;
   const size = s.pen.width * scale * 1.15;
+  // A real pen keeps its width: a felt tip lays a blunt, even line, and a
+  // ballpoint or fine liner barely thins with pressure and ends round, with
+  // at most a short flick. (A line swelling with pressure and tapering to a
+  // point at both ends is a stylus's - Andrew, 2026-09-24: "look like
+  // written on ipad".) Pressure shows as density instead - see `flow`.
   const outline = getStroke(points, {
     size,
-    // A felt tip barely thins with pressure; a ballpoint and fine liner do.
-    thinning: s.pen.kind === "marker" ? 0.15 : 0.45,
+    thinning: s.pen.kind === "marker" ? 0.05 : s.pen.kind === "pencil" ? 0.25 : 0.14,
     smoothing: 0.55,
     streamline: 0.35,
     simulatePressure: false,
-    start: { taper: s.pen.kind === "marker" ? 0 : size * 1.5, cap: true },
-    end: { taper: finished && s.pen.kind !== "marker" ? size * 2 : 0, cap: true },
+    start: { taper: 0, cap: true },
+    end: { taper: finished && s.pen.kind !== "marker" ? size * 0.6 : 0, cap: true },
     last: finished,
   });
   if (outline.length < 3) return;
+  // Each line with its own ink flow, a little lighter or darker than the
+  // last - and, being short of opaque, darker where lines cross - bleeding
+  // a faint halo into the paper round it (see paperInk.ts).
+  const feel = FEEL[s.pen.kind] ?? FEEL.ink;
+  const flow = 1 - feel.pressure * 0.8 * unitHash(s.t0 * 1000 + s.pts[0]);
   ctx.fillStyle = s.pen.color;
-  ctx.globalAlpha = s.pen.kind === "pencil" ? 0.8 : 1;
+  ctx.globalAlpha = (s.pen.kind === "pencil" ? 0.8 : 0.9) * flow;
+  if (feel.bleed > 0) {
+    ctx.shadowColor = withAlpha(s.pen.color, feel.bleed * 1.6);
+    ctx.shadowBlur = grainAt(scale) * 1.6;
+  }
   ctx.beginPath();
   ctx.moveTo(outline[0][0], outline[0][1]);
   for (let i = 1; i < outline.length; i++) {
@@ -238,6 +252,21 @@ function fillStroke(ctx: CanvasRenderingContext2D, s: TimedStroke, length: numbe
   ctx.closePath();
   ctx.fill();
   ctx.globalAlpha = 1;
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+}
+
+/** A stable 0..1 from a number: the same line always gets the same flow,
+ *  in its wet frames and when it is laid down. */
+function unitHash(n: number) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** A #rrggbb colour at an alpha, as rgba(). */
+function withAlpha(hex: string, alpha: number) {
+  const n = Number.parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.min(1, alpha).toFixed(3)})`;
 }
 
 export type InkLayers = {
@@ -318,6 +347,30 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
     ctx.globalAlpha = 1;
   }
   return changed;
+}
+
+/**
+ * Make every letter's sprite before the writing starts, a slice at a time
+ * in idle moments: roughening letters into the paper takes a few hundred
+ * milliseconds a spread, which the frames that write must not pay.
+ */
+export async function prepareInk(timeline: Timed[], scale: number) {
+  const glyphs = timeline.filter((s): s is TimedGlyph => s.kind === "glyph");
+  let at = 0;
+  while (at < glyphs.length) {
+    await new Promise<void>((resolve) => {
+      const slice = (deadline?: IdleDeadline) => {
+        const until = performance.now() + (deadline ? Math.min(8, Math.max(4, deadline.timeRemaining())) : 8);
+        while (at < glyphs.length && performance.now() < until) {
+          spriteOf(glyphs[at].run, glyphs[at].glyph, scale);
+          at++;
+        }
+        resolve();
+      };
+      if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(slice, { timeout: 200 });
+      else window.setTimeout(slice, 0);
+    });
+  }
 }
 
 /** Forget what has been drawn, to write the same timeline again. */
