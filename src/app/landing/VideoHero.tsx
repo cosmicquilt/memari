@@ -15,7 +15,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
-import { PaceSlider } from "./PaceSlider";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
 import styles from "./landing.module.css";
@@ -178,7 +177,6 @@ export function VideoHero() {
       <div className={styles.videoScrim} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark className={styles.titleOverFilm} />
-      <PaceSlider />
       <p className={styles.srOnly}>
         A journal on a desk opens to a blank week; a planner layout appears on its pages and is written in by hand, then another
         layout takes its place.

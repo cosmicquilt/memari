@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
-import { PaceSlider } from "./PaceSlider";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import styles from "./landing.module.css";
 
@@ -140,7 +139,6 @@ export function Hero() {
       <canvas ref={canvas} className={styles.desk} style={{ opacity: ready ? 1 : 0, transition: readyHidden ? "none" : undefined }} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark onArrived={onArrived} />
-      <PaceSlider />
       <p className={styles.srOnly}>
         A journal on a desk opens to a week and is written in by hand, then turns to the next week - a different layout,
         written in by someone else.
