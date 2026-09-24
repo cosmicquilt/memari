@@ -18,7 +18,9 @@ import { noise1, rng as makeRng, type Rng } from "./rng";
 
 /** A polyline: x0, y0, x1, y1, ... */
 export type Path = number[];
-export type DoodleStroke = { path: Path; weight: number };
+/** A stroke of a doodle: its path, its weight (1 outline, less for detail),
+ *  and whether it is shading - a style may leave shading out. */
+export type DoodleStroke = { path: Path; weight: number; hatch?: boolean };
 
 export type Pt = [number, number];
 
@@ -35,13 +37,16 @@ export class Sketch {
     private readonly s: number,
     readonly r: Rng,
     private readonly seed: number,
-    readonly out: DoodleStroke[] = []
+    readonly out: DoodleStroke[] = [],
+    /** Every solid shape drawn (what `cover` was given), back to front, in
+     *  the caller's units - a style may fill them. */
+    readonly solids: Path[] = []
   ) {}
 
   /** A pen for the box at (u, v), `size` across, inside this one - its
    *  strokes join this sketch's. */
   within(u: number, v: number, size: number): Sketch {
-    return new Sketch(this.x + u * this.s, this.y + v * this.s, size * this.s, this.r, this.seed * 7 + ++this.n, this.out);
+    return new Sketch(this.x + u * this.s, this.y + v * this.s, size * this.s, this.r, this.seed * 7 + ++this.n, this.out, this.solids);
   }
 
   /** Another doodle, drawn in the box at (u, v), `size` across. */
@@ -56,6 +61,7 @@ export class Sketch {
    */
   cover(shape: Pt[]) {
     const poly = shape.map((p) => this.at(p));
+    this.solids.push(poly.flat());
     const inside = (x: number, y: number) => {
       let yes = false;
       for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -71,11 +77,11 @@ export class Sketch {
       for (let i = 0; i < stroke.path.length; i += 2) {
         const [x, y] = [stroke.path[i], stroke.path[i + 1]];
         if (inside(x, y)) {
-          if (piece.length >= 4) kept.push({ path: piece, weight: stroke.weight });
+          if (piece.length >= 4) kept.push({ ...stroke, path: piece });
           piece = [];
         } else piece.push(x, y);
       }
-      if (piece.length >= 4) kept.push({ path: piece, weight: stroke.weight });
+      if (piece.length >= 4) kept.push({ ...stroke, path: piece });
     }
     this.out.splice(0, this.out.length, ...kept);
   }
@@ -181,6 +187,7 @@ export class Sketch {
         if (b - a < gap * 0.8) continue;
         const at = (t: number): Pt => [nx * o + dx * t, ny * o + dy * t];
         this.line([at(a), at(b)], weight, 0.4);
+        this.out[this.out.length - 1].hatch = true;
       }
     }
   }

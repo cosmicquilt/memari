@@ -132,6 +132,8 @@ function shoe(k: Sketch, at: Pt, dir: number) {
  * detailed".)
  */
 function figure(k: Sketch, p: Pose) {
+  if (figureStyle === "stick") return stickFigure(k, p);
+  if (figureStyle === "bean") return beanFigure(k, p);
   const r = p.headR ?? HEAD;
   const facing = p.facing ?? 0;
   const side = p.facing === 1 || p.facing === -1;
@@ -188,6 +190,71 @@ function figure(k: Sketch, p: Pose) {
   const up = unit(p.neck, p.head);
   k.line([p.neck, add(p.head, [-up[0] * r * 0.8, -up[1] * r * 0.8])], DETAIL);
   head(k, p.head, r, p.facing, up);
+}
+
+/** Which person the scenes draw - see ActivityOptions. */
+let figureStyle: FigureStyle = "full";
+export type FigureStyle = "full" | "stick" | "bean";
+
+/** The first figure: single lines, a curl of hair, dots for eyes. */
+function stickFigure(k: Sketch, p: Pose) {
+  const r = p.headR ?? HEAD;
+  const shoulder = lerp(p.neck, p.hip, 0.14);
+  for (const arm of p.arms) if (arm) k.line(limb(shoulder, arm[0], arm[1]));
+  if (p.torso !== false) k.line(rounded([p.neck, add(lerp(p.neck, p.hip, 0.5), [0.006, 0]), p.hip], 1));
+  const facing = p.facing ?? 0;
+  for (const leg of p.legs) {
+    if (!leg) continue;
+    k.line(limb(p.hip, leg[0], leg[1]));
+    if (p.feet !== false) {
+      const dir = facing !== 0 ? facing : leg[1][0] < p.hip[0] ? -1 : 1;
+      k.line([leg[1], add(leg[1], [dir * 0.035, 0.002])]);
+    }
+  }
+  simpleHead(k, p, r);
+}
+
+/** A round head with a curl of hair and a dot-and-smile face. */
+function simpleHead(k: Sketch, p: Pose, r: number) {
+  const facing = p.facing ?? 0;
+  k.cover(circle(p.head, r * 1.05));
+  k.ring(p.head[0], p.head[1], r, r * 1.02);
+  const up = unit(p.neck, p.head);
+  const top = add(p.head, [up[0] * r, up[1] * r]);
+  const back: Pt = [-(facing || 0.4) * r * 0.5, 0];
+  k.line(k.bez(add(top, [back[0] * 0.2, 0]), add(top, [back[0] * 0.6 + up[0] * r * 0.5, up[1] * r * 0.5]), add(top, [back[0] * 1.6 + up[0] * r * 0.7, up[1] * r * 0.3]), add(top, [back[0] * 1.3, up[1] * -0.1 * r]), 8), DETAIL);
+  if (p.facing === null) return;
+  const eyes: Pt[] = facing === 0 ? [[-0.32, -0.12], [0.32, -0.12]] : [[facing * 0.42, -0.14]];
+  for (const [ex, ey] of eyes) k.dot(p.head[0] + ex * r, p.head[1] + ey * r, r * 0.13, DETAIL);
+  const sc: Pt = [p.head[0] + facing * 0.4 * r, p.head[1] + 0.28 * r];
+  k.line(k.arc(sc[0], sc[1], r * 0.28, r * 0.2, Math.PI * 0.15, Math.PI * 0.85, 8), DETAIL, 0.3);
+}
+
+/** A softer figure: a pill of a body, thick noodle limbs, a round head. */
+function beanFigure(k: Sketch, p: Pose) {
+  const r = (p.headR ?? HEAD) * 1.1;
+  const side = p.facing === 1 || p.facing === -1;
+  const spine = unit(p.neck, p.hip);
+  const across: Pt = [-spine[1], spine[0]];
+  const w = side ? 0.05 : 0.065;
+  const shoulder = lerp(p.neck, p.hip, 0.2);
+  const noodle = 1.6;
+  p.legs.forEach((leg) => {
+    if (!leg) return;
+    k.line(limb(p.hip, leg[0], leg[1]), noodle);
+    const dir = side ? (p.facing as number) : leg[1][0] < p.hip[0] ? -1 : 1;
+    if (p.feet !== false) k.line(k.arc(leg[1][0] + dir * 0.012, leg[1][1] + 0.004, 0.022, 0.012, 0, TAU, 10), 1);
+  });
+  if (p.torso !== false) {
+    const top = add(p.neck, [spine[0] * 0.01, spine[1] * 0.01]);
+    const bottom = add(p.hip, [spine[0] * 0.02, spine[1] * 0.02]);
+    const a0 = Math.atan2(across[1], across[0]);
+    const pill: Pt[] = [...k.arc(top[0], top[1], w, w, a0 + Math.PI, a0 + TAU, 10), ...k.arc(bottom[0], bottom[1], w, w, a0, a0 + Math.PI, 10)];
+    k.cover(pill);
+    k.line([...pill, pill[0], pill[1]]);
+  }
+  for (const arm of p.arms) if (arm) k.line(limb(shoulder, arm[0], arm[1]), noodle);
+  simpleHead(k, p, r);
 }
 
 /**
@@ -1014,13 +1081,28 @@ const SCENES = {
 export type ActivityName = keyof typeof SCENES;
 export const ACTIVITY_NAMES = Object.keys(SCENES) as ActivityName[];
 
-/**
- * An activity, stroke by stroke with each stroke's weight, in an s x s box
- * at (x, y) - with the person doing it, or (`person: false`) just its
- * things (Andrew, 2026-09-24: a version without the figure "for all").
- */
-export function activity(name: ActivityName, x: number, y: number, s: number, seed: number, { person = true }: { person?: boolean } = {}): DoodleStroke[] {
+export type ActivityOptions = {
+  /** Draw the person doing it; without, the scene is a still life of its
+   *  things (Andrew, 2026-09-24: a version without the figure "for all"). */
+  person?: boolean;
+  /** Which person: "full" (clothes, hair, a face), "stick" or "bean". */
+  figure?: FigureStyle;
+};
+
+/** An activity's strokes, and its solid shapes back to front - for styles
+ *  that fill them - in an s x s box at (x, y). */
+export function activityDrawing(name: ActivityName, x: number, y: number, s: number, seed: number, { person = true, figure = "full" }: ActivityOptions = {}) {
   const k = new Sketch(x, y, s, makeRng(seed * 7919 + name.length * 31), seed);
-  SCENES[name](k, person);
-  return k.out;
+  figureStyle = figure;
+  try {
+    SCENES[name](k, person);
+  } finally {
+    figureStyle = "full";
+  }
+  return { strokes: k.out, solids: k.solids };
+}
+
+/** An activity, stroke by stroke with each stroke's weight, in an s x s box at (x, y). */
+export function activity(name: ActivityName, x: number, y: number, s: number, seed: number, options: ActivityOptions = {}): DoodleStroke[] {
+  return activityDrawing(name, x, y, s, seed, options).strokes;
 }
