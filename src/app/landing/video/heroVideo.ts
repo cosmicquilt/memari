@@ -5,23 +5,30 @@
 // The take is "new 4" (handoff/veo/output/new): Veo's 720p output, upscaled
 // to 4K with SeedVR2 and given three FILM in-between frames per pair of
 // frames (handoff/veo/tools/memari_upscale.ipynb). The site's files are not
-// that as it came: its start and end are eased to rest, the output running
-// longer than the take (5.9s against 4s), the slow stretches drawn from the
-// in-between frames ("the last and beginning seconds are not still ... ease
-// both"); and on the frames the layouts are drawn over, the journal's own dot
-// grid is taken off its pages ("once you start overlaying ... cover the
-// underlying dot grid"), keeping the paper's light and the leaf shadows - so
-// the layouts' grid is the only one. Made in the browser with WebCodecs - the
-// tool, and the call used, are in handoff/veo/tools/ (gitignored).
+// that as it came:
+// - only its first 76 frames (3.17s): after them the left page slides into
+//   place ("trim the end ... to 3.18 s ... some unnatural movement of the
+//   book at the end");
+// - its start and end eased to rest, the output running longer than that
+//   (4.8s), the slow stretches drawn from the in-between frames ("the last
+//   and beginning seconds are not still ... ease both");
+// - the tea's steam taken down to about 15% ("make the vapor ... almost
+//   invisible"), against a steam-free plate of that corner;
+// - on the frames the layouts are drawn over, the journal's own dot grid
+//   taken off its pages ("once you start overlaying ... cover the
+//   underlying dot grid"), keeping the paper's light and the leaf shadows -
+//   so the layouts' grid is the only one.
+// Made in the browser with WebCodecs - the tool, and the call used, are in
+// handoff/veo/tools/ (gitignored).
 //
 // Two sizes of the same film: 2560 x 1440 for most screens, and 4K where the
 // screen has the pixels to show it (media4k). Everything below is measured in
 // the 4K frame's pixels.
 //
-// Measured from its last frame: each page's outer and gutter edges as
-// straight lines, and its top and bottom edges sampled every 48px - they
-// arch, high mid-page and low at the corners and the gutter, as a thick
-// book's pages curve into its spine. Beyond the right page's outer edge is a
+// Measured from its last frame (the take's frame 75): each page's outer and
+// gutter edges as straight lines, and its top and bottom edges sampled every
+// 48px - they arch, high mid-page and low at the corners and the gutter, as a
+// thick book's pages curve into its spine. Beyond the right page's outer edge is a
 // strip of page edges, about 50px wide; the outline stops at the page, so
 // nothing is drawn on the stack.
 //
@@ -42,11 +49,10 @@ export const HERO_VIDEO = {
   last: "/landing/hero-open-last.jpg",
   width: 3840,
   height: 2160,
-  /** When the layouts appear, in the file's seconds: as it comes to rest,
-   *  about a second after the book has landed open ("after it is open a
-   *  second or two of it then start overlaying the pages"). Frame 138 of
-   *  141, the first with the dot grid cleaned off. */
-  drawFrom: 138 / 24,
+  /** When the layouts appear, in the file's seconds: as it comes to rest
+   *  ("after it is open a second or two of it then start overlaying the
+   *  pages"). Frame 113 of 116, the first with the dot grid cleaned off. */
+  drawFrom: 113 / 24,
 };
 
 export type Point = readonly [x: number, y: number];
@@ -62,42 +68,42 @@ export type PageOutline = {
   bottom: Point[];
 };
 
-const GUTTER_TOP: Point = [1920, 709];
-const GUTTER_BOTTOM: Point = [1921, 1825];
+const GUTTER_TOP: Point = [1922, 708];
+const GUTTER_BOTTOM: Point = [1923, 1822];
 
 export const PAGE_OUTLINES: { left: PageOutline; right: PageOutline } = {
   left: {
-    aTop: [1083, 710],
-    aBottom: [1021, 1823],
+    aTop: [1092, 699],
+    aBottom: [1032, 1814],
     bTop: GUTTER_TOP,
     bBottom: GUTTER_BOTTOM,
     top: [
-      [1152, 705], [1200, 701], [1248, 698], [1296, 694], [1344, 690], [1392, 686], [1440, 681], [1488, 677], [1536, 673],
-      [1584, 669], [1632, 667], [1680, 666], [1728, 667], [1776, 669], [1824, 676], [1872, 686], [1896, 695],
+      [1152, 694], [1200, 690], [1248, 686], [1296, 680], [1344, 675], [1392, 671], [1440, 666], [1488, 661], [1536, 657],
+      [1584, 655], [1632, 653], [1680, 653], [1728, 654], [1776, 658], [1824, 666], [1872, 678], [1896, 690],
     ],
     bottom: [
-      [1152, 1818], [1200, 1816], [1248, 1815], [1296, 1812], [1344, 1810], [1392, 1807], [1440, 1805], [1488, 1803], [1536, 1801],
-      [1584, 1799], [1632, 1798], [1680, 1798], [1728, 1799], [1776, 1801], [1824, 1805], [1872, 1811], [1896, 1816],
+      [1152, 1809], [1200, 1807], [1248, 1805], [1296, 1802], [1344, 1800], [1392, 1797], [1440, 1795], [1488, 1793], [1536, 1792],
+      [1584, 1791], [1632, 1790], [1680, 1791], [1728, 1793], [1776, 1796], [1824, 1801], [1872, 1808], [1896, 1814],
     ],
   },
   right: {
     aTop: GUTTER_TOP,
     aBottom: GUTTER_BOTTOM,
-    bTop: [2718, 699],
-    bBottom: [2781, 1813],
+    bTop: [2721, 699],
+    bBottom: [2783, 1813],
     top: [
-      [1944, 701], [1968, 692], [2016, 681], [2064, 674], [2112, 670], [2160, 669], [2208, 669], [2256, 670], [2304, 673],
-      [2352, 676], [2400, 679], [2448, 683], [2496, 686], [2544, 689], [2592, 691], [2640, 694], [2688, 697],
+      [1944, 701], [1968, 692], [2016, 681], [2064, 675], [2112, 671], [2160, 669], [2208, 669], [2256, 670], [2304, 673],
+      [2352, 676], [2400, 679], [2448, 683], [2496, 687], [2544, 689], [2592, 692], [2640, 695], [2688, 697],
     ],
     bottom: [
-      [1944, 1820], [1968, 1815], [2016, 1808], [2064, 1804], [2112, 1800], [2160, 1798], [2208, 1797], [2256, 1798], [2304, 1799],
-      [2352, 1801], [2400, 1802], [2448, 1804], [2496, 1806], [2544, 1807], [2592, 1809], [2640, 1811], [2688, 1812],
+      [1944, 1820], [1968, 1815], [2016, 1807], [2064, 1802], [2112, 1799], [2160, 1797], [2208, 1796], [2256, 1796], [2304, 1797],
+      [2352, 1799], [2400, 1801], [2448, 1803], [2496, 1805], [2544, 1807], [2592, 1809], [2640, 1810], [2688, 1812],
     ],
   },
 };
 
 /** The spread's middle, in the frame: where a phone centres the picture. */
-export const SPREAD_CENTRE: Point = [1920, 1250];
+export const SPREAD_CENTRE: Point = [1922, 1250];
 /** How much of the frame a phone fits across its width: the spread cover to
  *  cover (about 1,795px) and a sliver of desk either side. */
 export const SPREAD_WIDTH = 1840;
