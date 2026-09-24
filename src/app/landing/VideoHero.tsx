@@ -19,6 +19,12 @@ import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
 import styles from "./landing.module.css";
 
+/** Seconds the first layout takes to fade onto the resting pages (Andrew,
+ *  2026-09-24: "when the very first layout comes onto the page ... fade it
+ *  in"). Writing starts once it is there. Later layouts replace the last
+ *  one outright, as asked for. */
+const LAYOUT_FADE = 1.2;
+
 export function VideoHero() {
   const hero = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -52,7 +58,7 @@ export function VideoHero() {
       paint();
       setDrawn(true);
       setResting(true);
-      loop.start(now());
+      loop.start(now() + LAYOUT_FADE);
     };
     v.addEventListener("ended", begin);
 
@@ -172,7 +178,11 @@ export function VideoHero() {
           // eslint-disable-next-line @next/next/no-img-element
           <img className={styles.videoFrame} src={HERO_VIDEO.last} alt="" />
         )}
-        <canvas ref={overlay} className={styles.videoDrawing} style={{ opacity: drawn ? 1 : 0 }} />
+        <canvas
+          ref={overlay}
+          className={styles.videoDrawing}
+          style={{ opacity: drawn ? 1 : 0, transition: still ? "none" : `opacity ${LAYOUT_FADE}s cubic-bezier(0.33, 0, 0.2, 1)` }}
+        />
       </div>
       <div className={styles.videoScrim} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
