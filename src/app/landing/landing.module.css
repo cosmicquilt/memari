@@ -6,10 +6,15 @@
   --muted: rgba(28, 25, 23, 0.66);
   --paper: #f4f1ec;
   --line: rgba(28, 25, 23, 0.1);
+  /* The editor's blue (ACCENT in planner/*), the tagline's "you." - and
+     every other mark made by hand on the page. */
+  --hand: #4a5cff;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-almarai), system-ui, sans-serif;
   min-height: 100vh;
+  /* Doodles in the margins never widen the page. */
+  overflow-x: clip;
 }
 
 /* --- nav ----------------------------------------------------------------- */
@@ -510,6 +515,7 @@
 /* --- sections ------------------------------------------------------------ */
 
 .section {
+  position: relative;
   max-width: 1120px;
   margin: 0 auto;
   padding: 128px 24px 40px;
@@ -569,15 +575,17 @@
   color: var(--muted);
 }
 
+/* The step's number, written by hand in a loop drawn round it. */
 .stepNumber {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ink);
-  font-weight: 700;
-  font-size: 15px;
+  font-family: var(--font-hand), cursive;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--hand);
 }
 
 .gallery {
@@ -646,6 +654,111 @@
   margin: -12px 0 0;
   font-size: 14px;
   color: var(--muted);
+}
+
+/* --- the hand: the tagline's "you." carried through the page --------------- */
+
+/* Words written rather than set: the handwriting face, a little larger so its
+   small lowercase stands as tall as the type around it; line-height 0 so it
+   never pushes its line. */
+.hand {
+  font-family: var(--font-hand), cursive;
+  font-weight: 400;
+  font-size: 1.18em;
+  letter-spacing: 0;
+  line-height: 0;
+  color: var(--hand);
+  /* The face starts right at its box; a heavy word before it would touch. */
+  margin-left: 0.22em;
+  /* A written phrase is one gesture: it moves to the next line whole. */
+  white-space: nowrap;
+}
+
+/* A word with a pen mark on it (Underlined, Circled). */
+.marked {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.underline,
+.underlineTwice,
+.circle {
+  position: absolute;
+  color: var(--hand);
+  pointer-events: none;
+}
+
+.underline {
+  left: -3%;
+  width: 106%;
+  bottom: -0.2em;
+  height: 0.34em;
+}
+
+.underlineTwice {
+  left: -3%;
+  width: 106%;
+  bottom: -0.36em;
+  height: 0.62em;
+}
+
+.circle {
+  left: -30%;
+  width: 160%;
+  top: -36%;
+  height: 172%;
+}
+
+/* Doodles in the margins: the journal's own, faint, in the same blue. */
+.doodle,
+.doodleBold,
+.arrow {
+  position: absolute;
+  color: var(--hand);
+  pointer-events: none;
+}
+
+.doodle {
+  opacity: 0.5;
+}
+
+/* Doodles out past the text column, in the page's side margins: only where
+   the screen is wide enough to have them. */
+.doodleOuter {
+  display: none;
+}
+
+@media (min-width: 1360px) {
+  .doodleOuter {
+    display: block;
+  }
+}
+
+/* The closing's line under its button, written with an arrow up to it. */
+.handNote {
+  position: relative;
+  margin: -6px 0 0;
+  font-family: var(--font-hand), cursive;
+  font-size: 22px;
+  color: var(--hand);
+  transform: rotate(-2deg);
+}
+
+@media (max-width: 760px) {
+  .doodle,
+  .doodleBold,
+  .arrow {
+    display: none;
+  }
+}
+
+/* Reduced motion: every pen mark is simply there, not written in. */
+@media (prefers-reduced-motion: reduce) {
+  .inkLine {
+    stroke-dashoffset: 0 !important;
+    transition: none !important;
+  }
 }
 
 .footer {

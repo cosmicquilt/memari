@@ -7,4 +7,6 @@
 
 import { Cedarville_Cursive } from "next/font/google";
 
-export const script = Cedarville_Cursive({ subsets: ["latin"], display: "swap", weight: "400" });
+// Also the hand the rest of the page is annotated in (ink/marks.tsx), through
+// the --font-hand variable its root carries.
+export const script = Cedarville_Cursive({ subsets: ["latin"], display: "swap", weight: "400", variable: "--font-hand" });
