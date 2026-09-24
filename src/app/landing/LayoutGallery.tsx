@@ -11,9 +11,9 @@ import styles from "./landing.module.css";
 
 const NAMES: Record<string, [string, string]> = {
   classic: ["The classic week", "Hours, gratitude, reminders, to-dos"],
-  wellness: ["A wellness week", "Mood, habits, meals and water"],
-  focus: ["A focus week", "Big three, brain dump, the matrix"],
-  training: ["A training week", "Workouts, runs, stretches, steps"],
+  wellness: ["A wellness week", "Mood, habits, meals and plants"],
+  focus: ["A focus week", "Big three, brain dump, Eisenhower"],
+  training: ["A training week", "Workouts, runs, stretches, sleep"],
   money: ["A money week", "Spending, budget, savings, bills"],
   creative: ["A creative week", "Sketches, prompts, a watchlist"],
 };

@@ -3,16 +3,17 @@
 // that cursive theme throughout the landing page with other text and
 // underlines and doodles in the background").
 //
-// The shapes are the journal's own (handwriting/strokes.ts: the doodles its
-// pages are drawn with, its underline and its loose circle), so the page and
-// the journal share one hand. Each polyline becomes the outline of a pen
+// The shapes are the journal's own (handwriting/doodles.ts, and its underline
+// and loose circle in handwriting/strokes.ts), so the page and the journal
+// share one hand. Each polyline becomes the outline of a pen
 // stroke - thicker where the pen presses, tapering where it lifts
 // (perfect-freehand) - and keeps its centre line too, which Ink draws along
 // to write the stroke in. Worked out on the server; the browser only gets
 // the paths.
 
 import { getStroke } from "perfect-freehand";
-import { circleAround, DOODLES, underline, wobble, type Path } from "../handwriting/strokes";
+import { doodle, type DoodleName } from "../handwriting/doodles";
+import { circleAround, underline, wobble, type Path } from "../handwriting/strokes";
 
 export type InkStroke = {
   /** The stroke's outline, filled. */
@@ -65,8 +66,11 @@ function toStroke(path: Path, pen: number): InkStroke {
   return { d, line, length };
 }
 
-function drawing(paths: Path[], box: Drawing["box"], pen: number): Drawing {
-  return { strokes: paths.filter((p) => p.length >= 4).map((p) => toStroke(p, pen)), box, pen };
+/** Strokes from paths; `pens` gives each its own width (a doodle's detail is
+ *  drawn lighter than its outline), and `pen` is the widest. */
+function drawing(paths: Path[], box: Drawing["box"], pen: number, pens?: number[]): Drawing {
+  const strokes = paths.map((p, i) => [p, pens?.[i] ?? pen] as const).filter(([p]) => p.length >= 4);
+  return { strokes: strokes.map(([p, w]) => toStroke(p, w)), box, pen };
 }
 
 /** A line under a word, in a 300 x 36 box, stretched to the word. */
@@ -79,11 +83,13 @@ export function circleDrawing(seed: number): Drawing {
   return drawing(circleAround(44, 30, 112, 60, seed), [0, 0, 200, 120], 5);
 }
 
-export type DoodleKind = keyof typeof DOODLES;
+export type DoodleKind = DoodleName;
 
-/** One of the journal's doodles, in a 100 x 100 box. */
+/** One of the journal's doodles, in a 100 x 100 box: outline 3.6, detail
+ *  a lighter 2.2. */
 export function doodleDrawing(kind: DoodleKind, seed: number): Drawing {
-  return drawing(DOODLES[kind](8, 8, 84, seed), [0, 0, 100, 100], 3.6);
+  const strokes = doodle(kind, 8, 8, 84, seed);
+  return drawing(strokes.map((st) => st.path), [0, 0, 100, 100], 3.6, strokes.map((st) => (st.weight >= 1 ? 3.6 : 2.2)));
 }
 
 /** A curved arrow from the top left of a 160 x 100 box towards its bottom

@@ -30,6 +30,13 @@ for (const spread of spreads) {
       days.every((d) => d.slots.length === 36 && d.label.length > 0),
       days.map((d) => `${d.label}:${d.slots.length}`).join(" ")
     );
+    // Each slot's time of day, read from its unmarked 12-hour label: what
+    // puts "bed by 10" at night and lunch at noon.
+    check(
+      `${spread.key} page ${index}: slot hours run 5:30 to 23:00`,
+      days.every((d) => d.hours.every((h, i) => h === 5.5 + i * 0.5)),
+      days.map((d) => `${d.label}:${d.hours[0]}..${d.hours[d.hours.length - 1]}`).join(" ")
+    );
     check(`${spread.key} page ${index}: something drawn`, page.marks.length > 100, `${page.marks.length} marks`);
   }
 }

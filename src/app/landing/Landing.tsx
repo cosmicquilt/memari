@@ -65,9 +65,9 @@ export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?:
         {hero === "video" ? <VideoHero /> : <Hero />}
 
         <section id="how" className={styles.section}>
-          <Doodle kind="sun" seed={11} style={{ top: 120, right: "6%", width: 92, transform: "rotate(-8deg)" }} />
+          <Doodle kind="bulb" seed={11} style={{ top: 112, right: "6%", width: 92, transform: "rotate(-8deg)" }} />
           <Doodle kind="sparkle" seed={12} style={{ top: 262, right: "17%", width: 40 }} delay={0.9} />
-          <Doodle kind="cloud" seed={13} style={{ top: 360, right: "3%", width: 104 }} delay={0.5} />
+          <Doodle kind="plane" seed={13} style={{ top: 350, right: "3%", width: 104 }} delay={0.5} />
           <Doodle kind="star" seed={14} style={{ top: 150, left: -118, width: 54, transform: "rotate(-10deg)" }} outer />
           <p className={styles.eyebrow}>How it works</p>
           <h2 className={styles.headline}>
@@ -108,9 +108,9 @@ export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?:
 
         <section id="layouts" className={`${styles.section} ${styles.sectionWide}`}>
           <Doodle kind="heart" seed={41} style={{ top: 96, right: "4%", width: 60, transform: "rotate(10deg)" }} />
-          <Doodle kind="flower" seed={42} style={{ top: 190, right: "10%", width: 70 }} delay={0.7} />
+          <Doodle kind="music" seed={42} style={{ top: 190, right: "10%", width: 70 }} delay={0.7} />
           <Doodle kind="sparkle" seed={43} style={{ top: 292, right: "21%", width: 32 }} delay={1} />
-          <Doodle kind="moon" seed={44} style={{ top: 120, left: -104, width: 60, transform: "rotate(-14deg)" }} outer />
+          <Doodle kind="camera" seed={44} style={{ top: 120, left: -108, width: 66, transform: "rotate(-10deg)" }} outer />
           <p className={styles.eyebrow}>Layouts</p>
           <h2 className={styles.headline}>
             Six weeks. Six different <Hand>people.</Hand>
@@ -125,7 +125,7 @@ export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?:
         <section id="print" className={styles.section}>
           <Doodle kind="cup" seed={51} style={{ top: 118, right: "8%", width: 96, transform: "rotate(-6deg)" }} />
           <Doodle kind="star" seed={52} style={{ top: 290, right: "24%", width: 38, transform: "rotate(12deg)" }} delay={0.8} />
-          <Doodle kind="leaf" seed={53} style={{ bottom: 40, right: "2%", width: 70, transform: "rotate(-20deg)" }} />
+          <Doodle kind="envelope" seed={53} style={{ bottom: 40, right: "2%", width: 76, transform: "rotate(-12deg)" }} />
           <Doodle kind="sparkle" seed={54} style={{ top: 310, left: -96, width: 42 }} outer />
           <p className={styles.eyebrow}>Print</p>
           <h2 className={styles.headline}>

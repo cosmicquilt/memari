@@ -23,7 +23,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import { gridCellToPixels, type PageGrid } from "@/lib/grid";
-import { MODULE_REGISTRY, getMinRowSpanForSlug } from "@/lib/moduleRegistry";
+import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily, type FontChoice } from "@/lib/theme";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
@@ -104,8 +104,11 @@ export const SPREAD_DEFS: SpreadDef[] = [
     belowLeft: [below("habit-tracker", 6, BELOW_ROW, 18, 15)],
     belowRight: [
       below("meal-planner", 0, BELOW_ROW, 24, 6),
-      below("water-week", 0, BELOW_ROW + 6, 24, 2),
-      below("labeled-box", 0, BELOW_ROW + 8, 24, 7, box("Notes", true)),
+      // Plants to water, named, a column a day. (The water strip stood
+      // here: its smallest size is two strips, two weeks, so a one-week
+      // spread printed "WATER" twice. Water is one of the habits instead.)
+      below("plant-care", 0, BELOW_ROW + 6, 16, 9),
+      below("labeled-box", 16, BELOW_ROW + 6, 8, 9, box("Notes", true)),
     ],
   },
   {
@@ -129,15 +132,17 @@ export const SPREAD_DEFS: SpreadDef[] = [
     weekStartsMonday: true,
     sidebar: [
       ["stretch-routine", 13],
-      ["energy-pain-scale", 8],
+      // One to five: ten circles do not fit a sidebar and overlap.
+      ["energy-pain-scale", 8, { scaleMax: 5 }],
       ["labeled-box", 12, box("Meals")],
     ],
     belowLeft: [below("workout-log", 6, BELOW_ROW, 18, 15)],
     belowRight: [
       below("weekly-workout-plan", 0, BELOW_ROW, 24, 7),
       below("run-log", 0, BELOW_ROW + 7, 12, 8),
-      below("step-counter", 12, BELOW_ROW + 7, 12, 4),
-      below("labeled-box", 12, BELOW_ROW + 11, 12, 4, box("Notes")),
+      // Recovery beside the runs. (A step counter stood here: a month of
+      // squares, 31, in a week, in a box it left three-quarters empty.)
+      below("sleep-log", 12, BELOW_ROW + 7, 12, 8),
     ],
   },
   {
@@ -182,7 +187,8 @@ export type Region =
       kind: "hours";
       /** Each day column: its header box, its writing area (right of the
        *  time labels) and the top of each half-hour slot. */
-      days: Array<{ label: string; header: Box; area: Box; slots: number[] }>;
+      /** `hours` is each slot's time of day, 24-hour (13.5 is 1:30pm). */
+      days: Array<{ label: string; header: Box; area: Box; slots: number[]; hours: number[] }>;
     }
   | {
       kind: "box";
@@ -200,6 +206,9 @@ export type Region =
       columns: number[];
       /** Every printed word inside the content, so ink never lands on one. */
       printed: Box[];
+      /** Small square cells to fill in - a progress meter's, a calendar's
+       *  day boxes - in reading order. */
+      cells: Box[];
     }
   | { kind: "title"; box: Box };
 
@@ -222,11 +231,21 @@ function hoursRegion(marks: PreviewMark[]): Region {
     .map((h) => {
       const label = texts.find((t) => t.x >= h.x - 2 && t.x < h.x + h.w && t.y >= h.y - 4 && t.y < h.y + h.h && /^[A-Z]+$/.test(t.t))?.t ?? "";
       const times = texts.filter((t) => /^\d{1,2}:\d{2}$/.test(t.t) && t.x >= h.x - 4 && t.x < h.x + h.w);
-      const slots = times.map((t) => t.y).sort((a, b) => a - b);
+      times.sort((a, b) => a.y - b.y);
+      const slots = times.map((t) => t.y);
+      // The labels are 12-hour and unmarked: past noon where the hour drops.
+      let pm = 0;
+      let prev = 0;
+      const hours = times.map((t) => {
+        const [hh, mm] = t.t.split(":").map(Number);
+        if (hh + mm / 60 + pm < prev) pm += 12;
+        prev = hh + mm / 60 + pm;
+        return prev;
+      });
       const labelRight = times.length ? Math.max(...times.map((t) => t.x + t.w)) + 6 : h.x;
       const bottom = slots.length ? slots[slots.length - 1] + (slots[1] - slots[0] || 37.5) : h.y + h.h;
       const area: Box = [labelRight, h.y + h.h, h.x + h.w - labelRight, bottom - (h.y + h.h)];
-      return { label, header: [h.x, h.y, h.w, h.h] as Box, area, slots };
+      return { label, header: [h.x, h.y, h.w, h.h] as Box, area, slots, hours };
     });
   return { kind: "hours", days };
 }
@@ -247,7 +266,12 @@ function boxRegion(slug: string, heading: string, rect: Box, marks: PreviewMark[
     .filter((m): m is Extract<PreviewMark, { k: "t" }> => m.k === "t")
     .filter((t) => t.y + t.z > top + 2 && t.y < y + h && t.x < x + w && t.x + t.w > x)
     .map((t) => [Math.round(t.x), Math.round(t.y), Math.round(t.w), Math.round(t.z * 1.25)] as Box);
-  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed };
+  const cells: Box[] = marks
+    .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && m.w >= 14 && m.w <= 64 && Math.abs(m.w - m.h) < 6)
+    .filter((m) => m.y >= top && m.y + m.h <= y + h && m.x >= x && m.x + m.w <= x + w)
+    .map((m) => [m.x, m.y, m.w, m.h] as Box)
+    .sort((a, b) => (Math.abs(a[1] - b[1]) > 4 ? a[1] - b[1] : a[0] - b[0]));
+  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells };
 }
 
 // ---------------------------------------------------------------- dates
@@ -300,13 +324,20 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
       props: { dayCount: 4, dayLabels: week.dayLabels.slice(3), ...HOURS, events: [] },
     },
   ];
+  // A module arrives the way the editor's palette drops it: filled with its
+  // catalogue entry's words (its heading, its labels, its rows), and then
+  // whatever the spread sets. Without the catalogue's, a preset draws as its
+  // bare primitive - an untitled box, a matrix labelled Q1 to Q4, a progress
+  // meter with nothing in it - which is what the spreads did until
+  // 2026-09-23 ("some don't have title ... drawing over a blank").
+  const filled = (slug: string, props?: Record<string, unknown>) => ({ ...moduleSchemaDefaults(slug), ...(props ?? {}) });
   let row = WEEK_TITLE_ROW_SPAN;
   for (const [slug, rowSpan, props] of def.sidebar) {
-    placed.push({ slug, page: 0, columnStart: 0, rowStart: row, columnSpan: 6, rowSpan, locked: false, props: props ?? {} });
+    placed.push({ slug, page: 0, columnStart: 0, rowStart: row, columnSpan: 6, rowSpan, locked: false, props: filled(slug, props) });
     row += rowSpan;
   }
-  for (const s of def.belowLeft) placed.push({ ...s, page: 0, locked: false, props: s.props ?? {} });
-  for (const s of def.belowRight) placed.push({ ...s, page: 1, locked: false, props: s.props ?? {} });
+  for (const s of def.belowLeft) placed.push({ ...s, page: 0, locked: false, props: filled(s.slug, s.props) });
+  for (const s of def.belowRight) placed.push({ ...s, page: 1, locked: false, props: filled(s.slug, s.props) });
   return placed;
 }
 
