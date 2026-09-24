@@ -343,7 +343,8 @@
   display: inline-block;
   margin-left: 0.28em;
   font-weight: 200;
-  font-size: 0.8em;
+  /* "a bit smaller" than the 0.8em it was (2026-09-23). */
+  font-size: 0.7em;
   letter-spacing: 0.1em;
   /* The tracking after the last letter, which would push the line off
      centre. */
