@@ -12,8 +12,9 @@
 // - its start and end eased to rest, the output running longer than that
 //   (4.8s), the slow stretches drawn from the in-between frames ("the last
 //   and beginning seconds are not still ... ease both");
-// - the tea's steam taken down to about 15% ("make the vapor ... almost
-//   invisible"), against a steam-free plate of that corner;
+// - the tea's steam taken out ("make the vapor ... almost invisible", then
+//   "make the steam fully invisible"), against a steam-free plate of that
+//   corner;
 // - on the frames the layouts are drawn over, the journal's own dot grid
 //   taken off its pages ("once you start overlaying ... cover the
 //   underlying dot grid"), keeping the paper's light and the leaf shadows -
