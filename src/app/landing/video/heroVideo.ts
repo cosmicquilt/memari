@@ -6,11 +6,12 @@
 // to 4K with SeedVR2 and given three FILM in-between frames per pair of
 // frames (handoff/veo/tools/memari_upscale.ipynb). The site's files are not
 // that as it came:
-// - only its first 76 frames (3.17s): after them the left page slides into
-//   place ("trim the end ... to 3.18 s ... some unnatural movement of the
-//   book at the end");
+// - only its first 71 frames (2.96s): the book drifts sideways into place
+//   over its last second ("trim the end ... to 3.18 s ... some unnatural
+//   movement of the book at the end", then "trim ... to 2.96, still some
+//   unnatural movement at end", 2026-09-25);
 // - its start and end eased to rest, the output running longer than that
-//   (4.8s), the slow stretches drawn from the in-between frames ("the last
+//   (4.6s), the slow stretches drawn from the in-between frames ("the last
 //   and beginning seconds are not still ... ease both");
 // - the tea's steam taken out ("make the vapor ... almost invisible", then
 //   "make the steam fully invisible"), against a steam-free plate of that
@@ -26,7 +27,8 @@
 // screen has the pixels to show it (media4k). Everything below is measured in
 // the 4K frame's pixels.
 //
-// Measured from its last frame (the take's frame 75): each page's outer and
+// Measured from its last frame (the take's frame 70 - moved there from frame
+// 75's outline by matching the image around each point): each page's outer and
 // gutter edges as straight lines, and its top and bottom edges sampled every
 // 48px - they arch, high mid-page and low at the corners and the gutter, as a
 // thick book's pages curve into its spine. Beyond the right page's outer edge is a
@@ -52,8 +54,8 @@ export const HERO_VIDEO = {
   height: 2160,
   /** When the layouts appear, in the file's seconds: as it comes to rest
    *  ("after it is open a second or two of it then start overlaying the
-   *  pages"). Frame 113 of 116, the first with the dot grid cleaned off. */
-  drawFrom: 113 / 24,
+   *  pages"). Frame 108 of 111, the first with the dot grid cleaned off. */
+  drawFrom: 108 / 24,
 };
 
 export type Point = readonly [x: number, y: number];
@@ -69,42 +71,42 @@ export type PageOutline = {
   bottom: Point[];
 };
 
-const GUTTER_TOP: Point = [1922, 708];
-const GUTTER_BOTTOM: Point = [1923, 1822];
+const GUTTER_TOP: Point = [1933, 706];
+const GUTTER_BOTTOM: Point = [1934, 1820];
 
 export const PAGE_OUTLINES: { left: PageOutline; right: PageOutline } = {
   left: {
-    aTop: [1092, 699],
-    aBottom: [1032, 1814],
+    aTop: [1102, 697],
+    aBottom: [1044, 1811],
     bTop: GUTTER_TOP,
     bBottom: GUTTER_BOTTOM,
     top: [
-      [1152, 694], [1200, 690], [1248, 686], [1296, 680], [1344, 675], [1392, 671], [1440, 666], [1488, 661], [1536, 657],
-      [1584, 655], [1632, 653], [1680, 653], [1728, 654], [1776, 658], [1824, 666], [1872, 678], [1896, 690],
+      [1162, 691], [1210, 687], [1258, 683], [1306, 678], [1354, 673], [1402, 669], [1450, 663], [1498, 657], [1547, 652],
+      [1595, 650], [1643, 648], [1691, 648], [1739, 649], [1787, 653], [1835, 662], [1883, 675], [1907, 687],
     ],
     bottom: [
-      [1152, 1809], [1200, 1807], [1248, 1805], [1296, 1802], [1344, 1800], [1392, 1797], [1440, 1795], [1488, 1793], [1536, 1792],
-      [1584, 1791], [1632, 1790], [1680, 1791], [1728, 1793], [1776, 1796], [1824, 1801], [1872, 1808], [1896, 1814],
+      [1164, 1806], [1212, 1804], [1260, 1801], [1308, 1798], [1356, 1796], [1404, 1794], [1452, 1792], [1499, 1790], [1547, 1789],
+      [1595, 1788], [1643, 1787], [1691, 1788], [1739, 1790], [1787, 1793], [1835, 1798], [1883, 1805], [1907, 1812],
     ],
   },
   right: {
     aTop: GUTTER_TOP,
     aBottom: GUTTER_BOTTOM,
-    bTop: [2721, 699],
-    bBottom: [2783, 1813],
+    bTop: [2733, 699],
+    bBottom: [2794, 1813],
     top: [
-      [1944, 701], [1968, 692], [2016, 681], [2064, 675], [2112, 671], [2160, 669], [2208, 669], [2256, 670], [2304, 673],
-      [2352, 676], [2400, 679], [2448, 683], [2496, 687], [2544, 689], [2592, 692], [2640, 695], [2688, 697],
+      [1955, 699], [1979, 691], [2027, 680], [2075, 675], [2123, 671], [2171, 669], [2219, 669], [2267, 670], [2315, 673],
+      [2364, 677], [2412, 680], [2460, 684], [2508, 687], [2556, 689], [2604, 692], [2652, 695], [2700, 697],
     ],
     bottom: [
-      [1944, 1820], [1968, 1815], [2016, 1807], [2064, 1802], [2112, 1799], [2160, 1797], [2208, 1796], [2256, 1796], [2304, 1797],
-      [2352, 1799], [2400, 1801], [2448, 1803], [2496, 1805], [2544, 1807], [2592, 1809], [2640, 1810], [2688, 1812],
+      [1955, 1818], [1979, 1813], [2027, 1806], [2075, 1801], [2123, 1798], [2171, 1796], [2219, 1796], [2267, 1796], [2315, 1796],
+      [2363, 1799], [2411, 1801], [2459, 1803], [2507, 1805], [2555, 1807], [2603, 1809], [2651, 1810], [2699, 1812],
     ],
   },
 };
 
 /** The spread's middle, in the frame: where a phone centres the picture. */
-export const SPREAD_CENTRE: Point = [1922, 1250];
+export const SPREAD_CENTRE: Point = [1933, 1248];
 /** How much of the frame a phone fits across its width: the spread cover to
  *  cover (about 1,795px) and a sliver of desk either side. */
 export const SPREAD_WIDTH = 1840;

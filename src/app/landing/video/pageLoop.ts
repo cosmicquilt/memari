@@ -17,7 +17,9 @@ import { loadArtIndex } from "../handwriting/art";
 import { InkClock } from "../pace";
 
 const BEFORE_WRITING = 0.4;
-const AFTER_WRITING = 1.8;
+/** Seconds a finished page rests before the next layout replaces it (1.8
+ *  until 2026-09-25: "switch to new layout a bit sooner"). */
+const AFTER_WRITING = 1.1;
 const WRITING_TARGET = 14;
 
 type Pair = [PageSurface, PageSurface];

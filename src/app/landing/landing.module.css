@@ -505,12 +505,13 @@
 }
 
 /* Portrait: the spread fills the width. From heroVideo.ts, in the 4K frame:
-   SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1920 x 1250 (50%, 58%). */
+   SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1933 x 1248 (50.34%,
+   57.78%). */
 @media (max-aspect-ratio: 1/1) {
   .videoStage {
     width: calc(100vw * 3840 / 1840);
     top: 57%;
-    transform: translate(-50%, -58%);
+    transform: translate(-50.34%, -57.78%);
     mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
   }
   .videoBackdrop {
