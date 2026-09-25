@@ -34,9 +34,8 @@
   align-items: center;
   gap: 16px;
   padding: 0 max(16px, calc((100vw - 1120px) / 2));
-  /* As little cream as still reads as a bar (2026-09-25: "min opacity
-     that is visible"): over the dark hero it is the blur and this tint
-     that show; over the cream page, the hairline under it. */
+  /* Below the hero: as little cream as still reads as a bar (2026-09-25:
+     "min opacity that is visible") - the blur and the hairline under it. */
   background: rgba(var(--cream-rgb), 0.3);
   /* backdrop-filter alone: the build adds the -webkit- copy Safari needs.
      Written both ways, it kept only the prefixed one, which Chrome and
@@ -49,7 +48,7 @@
     backdrop-filter 240ms ease-out;
 }
 
-/* The clear look, over the hero: no bar at all, cream type (SiteHeader). */
+/* Over the hero: no bar at all, cream type (SiteHeader). */
 .navClear {
   background: transparent;
   backdrop-filter: none;
@@ -80,50 +79,6 @@
 
 .navClear .primary:hover {
   background: #fff8ea;
-}
-
-/* The switch between the two, for comparing them (SiteHeader). */
-.lookSwitch {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 4px 4px 12px;
-  border-radius: 999px;
-  background: rgba(28, 25, 23, 0.78);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 6px 24px rgba(20, 12, 6, 0.25);
-  color: var(--cream);
-  font-size: 12px;
-}
-
-.lookLabel {
-  margin-right: 6px;
-  opacity: 0.7;
-}
-
-.lookSwitch button {
-  border: 0;
-  border-radius: 999px;
-  padding: 6px 12px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.lookSwitch button:focus-visible {
-  outline: 2px solid #4a5cff;
-  outline-offset: 1px;
-}
-
-.lookSwitch .lookOn {
-  background: var(--cream);
-  color: var(--ink);
 }
 
 .brand {

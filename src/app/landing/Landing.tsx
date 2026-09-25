@@ -34,7 +34,7 @@ function Brand() {
   );
 }
 
-export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?: "desk" | "video" }) {
+export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?: "desk" | "video" }) {
   return (
     <div className={`${styles.page} ${script.variable}`}>
       <SiteHeader signedIn={signedIn} />

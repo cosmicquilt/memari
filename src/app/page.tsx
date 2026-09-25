@@ -16,8 +16,10 @@ export const metadata: Metadata = {
 export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   // A guest counts as someone already using Memari: they get "Open Memari".
   const owner = await currentOwner();
-  // Two heroes to choose between (Andrew, 2026-09-23): the 3D desk, and
-  // the Veo film with the pages drawn onto it - ?hero=video shows the film.
-  const hero = (await searchParams).hero === "video" ? "video" : "desk";
+  // Two heroes were built to choose between (2026-09-23): the 3D desk, and
+  // the Veo film with the pages drawn onto it. Andrew chose the film
+  // (2026-09-25: "I like ... video hero best"); ?hero=desk still shows the
+  // desk.
+  const hero = (await searchParams).hero === "desk" ? "desk" : "video";
   return <Landing signedIn={owner !== null} hero={hero} />;
 }

@@ -4,9 +4,10 @@
 // 1 is the speed it was built at (a spread in 14-20 seconds). Andrew tuned
 // it with a slider (2026-09-23: "a slider from instant to its current
 // speed") and chose 20 times faster (2026-09-24: "I like 20x faster writing
-// speed you can get rid of slider"). One value for both heroes.
+// speed you can get rid of slider"), then 25 (2026-09-25). One value for
+// both heroes.
 
-export const PACE = 1 / 20;
+export const PACE = 1 / 25;
 
 /**
  * The pen's clock for one spread: how many seconds of handwriting are done,
