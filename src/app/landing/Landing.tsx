@@ -19,6 +19,8 @@ import Link from "next/link";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
 import { SiteHeader } from "./SiteHeader";
+import { ResizeDemo } from "./ResizeDemo";
+import { resizeDemo } from "./resizeDemoData";
 import { sans } from "./sansFont";
 import { LayoutGallery } from "./LayoutGallery";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
@@ -44,19 +46,25 @@ export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?
         {hero === "video" ? <VideoHero /> : <Hero />}
 
         <section id="how" className={styles.section}>
-          <Doodle kind="bulb" seed={11} style={{ top: 112, right: "6%", width: 92, transform: "rotate(-8deg)" }} />
-          <Doodle kind="sparkle" seed={12} style={{ top: 262, right: "17%", width: 40 }} delay={0.9} />
-          <Doodle kind="plane" seed={13} style={{ top: 350, right: "3%", width: 104 }} delay={0.5} />
           <Doodle kind="star" seed={14} style={{ top: 150, left: -118, width: 54, transform: "rotate(-10deg)" }} outer />
-          <p className={styles.eyebrow}>How it works</p>
-          <h2 className={styles.headline}>
-            Design a week <Underlined seed={21}>once</Underlined>.<br />
-            Memari makes <Hand>the rest.</Hand>
-          </h2>
-          <p className={styles.lede}>
-            A planner is a handful of pages you design - not hundreds you draw by hand. Choose what repeats, build each
-            page from pieces, and the whole book comes out ready to print.
-          </p>
+          <div className={styles.howIntro}>
+            <div>
+              <p className={styles.eyebrow}>How it works</p>
+              <h2 className={styles.headline}>
+                Design a week <Underlined seed={21}>once</Underlined>.<br />
+                Memari makes <Hand>the rest.</Hand>
+              </h2>
+              <p className={styles.lede}>
+                A planner is a handful of pages you design - not hundreds you draw by hand. Choose what repeats, build
+                each page from pieces, and the whole book comes out ready to print.
+              </p>
+              <Doodle kind="plane" seed={13} style={{ position: "relative", display: "block", marginTop: 36, width: 104 }} delay={0.5} />
+            </div>
+            <div className={styles.howDemo}>
+              <Doodle kind="sparkle" seed={12} style={{ top: -18, right: -22, width: 40 }} delay={0.9} />
+              <ResizeDemo data={resizeDemo()} />
+            </div>
+          </div>
           <ol className={styles.steps}>
             <li>
               <span className={styles.stepNumber}>

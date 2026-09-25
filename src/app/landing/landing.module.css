@@ -573,6 +573,58 @@
   color: var(--muted);
 }
 
+/* The intro and, beside it, the resize demo (ResizeDemo). */
+.howIntro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  gap: 56px;
+  align-items: start;
+}
+
+.howDemo {
+  position: relative;
+}
+
+@media (max-width: 900px) {
+  .howIntro {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .howDemo {
+    max-width: 380px;
+  }
+}
+
+.resizeDemo {
+  margin: 0;
+}
+
+/* A piece of a planner page: its paper, a soft shadow under it. */
+.resizeDemoPage {
+  position: relative;
+  width: 100%;
+  border-radius: 4px;
+  background: #fbf6ea;
+  box-shadow:
+    0 1px 2px rgba(40, 30, 20, 0.08),
+    0 18px 40px rgba(40, 30, 20, 0.14);
+  overflow: hidden;
+}
+
+.resizeDemoCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.resizeDemoCaption {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
 .steps {
   list-style: none;
   margin: 64px 0 0;
