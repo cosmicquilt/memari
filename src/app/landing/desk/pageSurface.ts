@@ -8,7 +8,7 @@
 
 import { drawPreview, resolveCanvasFamily } from "@/app/planner/drawPreview";
 import type { LandingPage } from "../spreads";
-import type { InkLayers } from "../handwriting/ink";
+import type { InkLayers, Rect } from "../handwriting/ink";
 import { fibreMask, grainAt, printMask } from "../handwriting/paperInk";
 
 /** The page's own size in print px - see spreads.ts. */
@@ -184,8 +184,38 @@ export class PageSurface {
     this.compose();
   }
 
-  compose() {
+  /**
+   * The page's picture from its layers - all of it, or only `areas` (canvas
+   * px), which is all a frame of writing changes. Every pass is the same,
+   * clipped to whole pixels, so the result is the same picture: what the
+   * clip saves is fill. A whole page is about 13ms of GPU work (Intel Iris
+   * Xe, 2026-09-25), both pages every writing frame more than a frame's
+   * budget - scrolling past the hero stuttered ("scrolling near the hero is
+   * laggy"); a word's area is well under 1ms.
+   */
+  compose(areas?: Rect[] | null) {
+    if (!areas) return this.composeIn(null);
+    const { width, height } = this.canvas;
+    for (const area of areas) {
+      const x0 = Math.max(0, Math.floor(area[0]));
+      const y0 = Math.max(0, Math.floor(area[1]));
+      const x1 = Math.min(width, Math.ceil(area[2]));
+      const y1 = Math.min(height, Math.ceil(area[3]));
+      if (x1 > x0 && y1 > y0) this.composeIn([x0, y0, x1 - x0, y1 - y0]);
+    }
+  }
+
+  private composeIn(clip: [number, number, number, number] | null) {
     const c = this.ctx;
+    const s = this.scratch;
+    if (clip) {
+      for (const g of [c, s]) {
+        g.save();
+        g.beginPath();
+        g.rect(...clip);
+        g.clip();
+      }
+    }
     c.globalCompositeOperation = "source-over";
     c.drawImage(this.base, 0, 0);
     c.globalCompositeOperation = "multiply";
@@ -198,6 +228,10 @@ export class PageSurface {
     c.drawImage(this.fibred(this.layers.wet.canvas), 0, 0);
     c.globalAlpha = 1;
     c.globalCompositeOperation = "source-over";
+    if (clip) {
+      c.restore();
+      s.restore();
+    }
   }
 
   /** A layer as the paper takes it up: masked by the fibre tile. */

@@ -23,7 +23,7 @@
 
 import { getStroke } from "perfect-freehand";
 import { noise1, rng as makeRng } from "./rng";
-import { paintGlyph, spriteOf, type Glyph, type GlyphRun } from "./glyphs";
+import { glyphBounds, paintGlyph, spriteOf, type Glyph, type GlyphRun } from "./glyphs";
 import { FEEL, grainAt } from "./paperInk";
 import { prepareArt, revealTo, type ArtRef, type ArtSprite } from "./art";
 import type { InkItem, Pen } from "./plan";
@@ -301,6 +301,51 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.min(1, alpha).toFixed(3)})`;
 }
 
+/** An area of a page, canvas px: x0, y0, x1, y1. */
+export type Rect = [number, number, number, number];
+
+const union = (a: Rect | null, b: Rect | null): Rect | null =>
+  !a ? b : !b ? a : [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+
+/** Add an area to a page's changed areas, merging any it overlaps: a frame
+ *  can touch a word at the top of a page and a line at the bottom, and one
+ *  box round both would be most of the page. */
+function addArea(areas: Rect[], r: Rect | null) {
+  if (!r) return;
+  let merged = r;
+  for (let i = areas.length - 1; i >= 0; i--) {
+    const q = areas[i];
+    if (q[0] <= merged[2] && merged[0] <= q[2] && q[1] <= merged[3] && merged[1] <= q[3]) {
+      merged = union(q, merged)!;
+      areas.splice(i, 1);
+      // The bigger box may now meet ones already passed over.
+      i = areas.length;
+    }
+  }
+  areas.push(merged);
+}
+
+/** Everything a stroke can put down, canvas px: its points, the pen's
+ *  width round them, and the halo its ink bleeds (shadowBlur reaches about
+ *  1.5 times its value; twice, to be sure). */
+function strokeBounds(s: TimedStroke, scale: number): Rect {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < s.pts.length; i += 2) {
+    x0 = Math.min(x0, s.pts[i]);
+    x1 = Math.max(x1, s.pts[i]);
+    y0 = Math.min(y0, s.pts[i + 1]);
+    y1 = Math.max(y1, s.pts[i + 1]);
+  }
+  const pad = s.pen.width * scale * 1.15 + grainAt(scale) * 1.6 * 2 + 2;
+  return [x0 * scale - pad, y0 * scale - pad, x1 * scale + pad, y1 * scale + pad];
+}
+
+const artBounds = (a: ArtSprite): Rect => [a.x, a.y, a.x + a.sprite.width, a.y + a.sprite.height];
+
+/** What each page's wet layer held after the last frame that drew it: the
+ *  layer is cleared whole, so those areas change too. */
+const wetWas = new WeakMap<CanvasRenderingContext2D, Rect[]>();
+
 export type InkLayers = {
   /** Pen ink laid down, kept between frames. */
   ink: CanvasRenderingContext2D;
@@ -312,11 +357,13 @@ export type InkLayers = {
 
 /**
  * Paint everything the pen has reached by time t. `scale` is canvas px per
- * print px. Returns which pages changed, so only their textures are sent to
- * the GPU again.
+ * print px. Returns the areas of each page that changed (null: unchanged),
+ * so only they are composited again and only changed pages are sent to the
+ * GPU.
  */
-export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLayers], scale: number): [boolean, boolean] {
-  const changed: [boolean, boolean] = [false, false];
+export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLayers], scale: number): [Rect[] | null, Rect[] | null] {
+  const areas: [Rect[], Rect[]] = [[], []];
+  const touch = (page: 0 | 1, r: Rect) => addArea(areas[page], r);
   const highlightDirty: [boolean, boolean] = [false, false];
   const wetDirty: [boolean, boolean] = [false, false];
   const wet: TimedStroke[] = [];
@@ -328,7 +375,7 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
       if (p <= s.drawn + 0.001) continue;
       paintGlyph(layers[s.page].ink, s.run, s.glyph, s.drawn, p, scale);
       s.drawn = p;
-      changed[s.page] = true;
+      touch(s.page, glyphBounds(s.run, s.glyph, scale));
       continue;
     }
     if (s.kind === "art") {
@@ -340,14 +387,16 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
         layers[s.page].ink.drawImage(s.art.sprite, s.art.x, s.art.y);
         s.drawn = 1;
         s.done = true;
-        wetDirty[s.page] = changed[s.page] = true;
+        wetDirty[s.page] = true;
+        touch(s.page, artBounds(s.art));
         continue;
       }
       const eased = u * u * (3 - 2 * u) * 0.3 + u * 0.7;
       if (eased > s.drawn + 0.002) {
         s.drawn = eased;
         revealTo(s.art, eased * s.art.length);
-        wetDirty[s.page] = changed[s.page] = true;
+        wetDirty[s.page] = true;
+        touch(s.page, artBounds(s.art));
       }
       wetArt.push(s);
       continue;
@@ -357,7 +406,8 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
     if (s.pen.kind === "highlighter") {
       if (reach > s.drawn + 0.01) {
         s.drawn = reach;
-        highlightDirty[s.page] = changed[s.page] = true;
+        highlightDirty[s.page] = true;
+        touch(s.page, strokeBounds(s, scale));
       }
       if (reach >= s.length) s.done = true;
       continue;
@@ -367,12 +417,14 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
       fillStroke(layers[s.page].ink, s, s.length, scale, true);
       s.drawn = s.length;
       s.done = true;
-      wetDirty[s.page] = changed[s.page] = true;
+      wetDirty[s.page] = true;
+      touch(s.page, strokeBounds(s, scale));
       continue;
     }
     if (reach > s.drawn + 0.01) {
       s.drawn = reach;
-      wetDirty[s.page] = changed[s.page] = true;
+      wetDirty[s.page] = true;
+      touch(s.page, strokeBounds(s, scale));
     }
     wet.push(s);
   }
@@ -380,8 +432,20 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
     if (wetDirty[page]) {
       const ctx = layers[page].wet;
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      for (const s of wet) if (s.page === page) fillStroke(ctx, s, s.drawn, scale, false);
-      for (const s of wetArt) if (s.page === page && s.art) ctx.drawImage(s.art.shown.canvas, s.art.x, s.art.y);
+      const now: Rect[] = [];
+      for (const s of wet) {
+        if (s.page !== page) continue;
+        fillStroke(ctx, s, s.drawn, scale, false);
+        now.push(strokeBounds(s, scale));
+      }
+      for (const s of wetArt) {
+        if (s.page !== page || !s.art) continue;
+        ctx.drawImage(s.art.shown.canvas, s.art.x, s.art.y);
+        now.push(artBounds(s.art));
+      }
+      // Cleared: whatever was wet before has changed as well.
+      for (const r of [...(wetWas.get(ctx) ?? []), ...now]) addArea(areas[page], r);
+      wetWas.set(ctx, now);
     }
     if (!highlightDirty[page]) continue;
     const ctx = layers[page].highlight;
@@ -401,7 +465,7 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
     }
     ctx.globalAlpha = 1;
   }
-  return changed;
+  return [areas[0].length ? areas[0] : null, areas[1].length ? areas[1] : null];
 }
 
 /**

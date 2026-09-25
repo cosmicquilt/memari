@@ -109,11 +109,11 @@ export class PageLoop {
       const [left, right] = this.showing;
       const changed = paintInk(phase.timeline, t, [left.layers, right.layers], left.scale);
       if (changed[0]) {
-        left.compose();
+        left.compose(changed[0]);
         this.changed(0, left.canvas);
       }
       if (changed[1]) {
-        right.compose();
+        right.compose(changed[1]);
         this.changed(1, right.canvas);
       }
       if (t > phase.duration + 0.2) {

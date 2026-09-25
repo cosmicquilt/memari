@@ -152,6 +152,22 @@ export function spriteOf(run: GlyphRun, g: Glyph, scale: number) {
  * strip, so a letter drawn over several frames is never painted twice where
  * it overlaps itself. `scale` is canvas px per print px.
  */
+/** Where a letter's sprite lands on the page, canvas px: x0, y0, x1, y1 -
+ *  its box turned, sheared and scaled as paintGlyph draws it. */
+export function glyphBounds(run: GlyphRun, g: Glyph, scale: number): [number, number, number, number] {
+  const sprite = spriteOf(run, g, scale);
+  const [cs, sn] = [Math.cos(g.rot), Math.sin(g.rot)];
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const u of [-sprite.ox, sprite.canvas.width - sprite.ox])
+    for (const v of [-sprite.oy, sprite.canvas.height - sprite.oy]) {
+      const [x, y] = [g.sx * u + g.shear * v, g.sy * v];
+      xs.push(g.x * scale + x * cs - y * sn);
+      ys.push(g.y * scale + x * sn + y * cs);
+    }
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
 export function paintGlyph(ctx: CanvasRenderingContext2D, run: GlyphRun, g: Glyph, from: number, to: number, scale: number) {
   if (to <= from) return;
   const sprite = spriteOf(run, g, scale);

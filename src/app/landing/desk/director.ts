@@ -138,11 +138,11 @@ export class Director {
         const right = this.slots[this.showing[1]];
         const changed = paintInk(phase.timeline, t, [left.surface.layers, right.surface.layers], left.surface.scale);
         if (changed[0]) {
-          left.surface.compose();
+          left.surface.compose(changed[0]);
           left.texture.needsUpdate = true;
         }
         if (changed[1]) {
-          right.surface.compose();
+          right.surface.compose(changed[1]);
           right.texture.needsUpdate = true;
         }
         if (t > phase.duration + 0.2) {
