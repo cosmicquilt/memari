@@ -483,15 +483,14 @@
 /* Higher than over the desk: the film's book starts a third of the way down
    the frame, and on a 16:10 screen the tagline would sit on its pages. */
 .titleOverFilm {
-  /* "a bit higher" (2026-09-25): the clear nav leaves the strip under it
-     free. */
-  top: calc(36px + 1.5vh);
+  /* "a bit higher", then "a little lower" (2026-09-25): between the two. */
+  top: calc(42px + 2.25vh);
 }
 
 /* A phone's nav is a button's height nearer: keep the title clear of it. */
 @media (max-width: 760px) {
   .titleOverFilm {
-    top: 62px;
+    top: 68px;
   }
 }
 
