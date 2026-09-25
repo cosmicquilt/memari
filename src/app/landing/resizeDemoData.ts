@@ -25,15 +25,19 @@ export type ResizeDemoData = {
   /** The strip's size with its margin, print px. */
   width: number;
   height: number;
-  /** The page's dot lattice under it: the first dot, and the spacing. */
-  dots: { x: number; y: number; dx: number; dy: number; cols: number; rows: number };
   /** The marks at each step - the habit tracker a row taller each time -
    *  in the strip's own coordinates. */
   steps: DemoMark[][];
   fontFamily: string;
 };
 
-const COLUMNS = 12;
+// Wide enough for the tracker's own layout - a name column and seven
+// one-dot day columns, every row one dot. Narrower than 250pt (1042px; 12
+// columns is 888) it switches to its sidebar layout, whose day squares are
+// a seventh of the width and whose name rows stretch to fill: rows of
+// three different heights (Andrew, 2026-09-25: "the days of the week row
+// is taller than it should be or the others are smaller").
+const COLUMNS = 15;
 const ROWS = 16;
 const HABIT = "habit-tracker";
 const TODO = "todo-checklist";
@@ -46,7 +50,7 @@ export function resizeDemo(): ResizeDemoData {
   const todoMin = getMinRowSpanForSlug(TODO, LANDING_PAGE_GRID, COLUMNS, todoProps);
   const origin = gridCellToPixels(LANDING_PAGE_GRID, { columnStart: 0, rowStart: 0, columnSpan: COLUMNS, rowSpan: ROWS });
   const one = gridCellToPixels(LANDING_PAGE_GRID, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
-  // Room round the strip for the selection outline and the cursor.
+  // Room round the strip for the cursor.
   const margin = Math.round(one.height * 1.2);
 
   const render = (id: string, slug: string, rowStart: number, rowSpan: number, props: unknown): DemoMark[] => {
@@ -76,7 +80,6 @@ export function resizeDemo(): ResizeDemoData {
   return {
     width: origin.width + margin * 2,
     height: origin.height + margin * 2,
-    dots: { x: margin, y: margin, dx: origin.width / COLUMNS, dy: origin.height / ROWS, cols: COLUMNS, rows: ROWS },
     steps,
     fontFamily,
   };

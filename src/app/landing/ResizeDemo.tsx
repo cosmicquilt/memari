@@ -2,12 +2,12 @@
 
 // A module being resized, as the editor does it (Andrew, 2026-09-25: "a cool
 // demo of maybe like a module resizing below near Design a week once"): a
-// cursor takes the habit tracker's bottom handle and drags it down, rows
+// cursor takes the habit tracker's bottom edge and drags it down, rows
 // arrive and the to-do list below gives up the space; then back. Drawn by
 // the editor's own painter from the editor's own renderers (resizeDemoData.ts),
 // and morphed between heights the way the editor morphs: an element with
 // the same id at both heights moves, one without fades. Visitors can take
-// the handle themselves; the demo carries on a few seconds after they let
+// the edge themselves; the demo carries on a few seconds after they let
 // go. Still, at a middle height, for reduced motion.
 
 import { useEffect, useRef } from "react";
@@ -15,7 +15,6 @@ import { drawPreview, resolveCanvasFamily } from "@/app/planner/drawPreview";
 import type { DemoMark, ResizeDemoData } from "./resizeDemoData";
 import styles from "./landing.module.css";
 
-const ACCENT = "#4a5cff";
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -128,40 +127,17 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
         ctx.restore();
       }
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
-      // The page's dot grid, behind the modules.
-      const { dots } = data;
-      ctx.globalCompositeOperation = "destination-over";
-      ctx.fillStyle = "rgba(28, 25, 23, 0.28)";
-      ctx.beginPath();
-      for (let r = 0; r <= dots.rows; r++)
-        for (let c = 0; c <= dots.cols; c++) {
-          ctx.moveTo(dots.x + c * dots.dx + 3.2, dots.y + r * dots.dy);
-          ctx.arc(dots.x + c * dots.dx, dots.y + r * dots.dy, 3.2, 0, Math.PI * 2);
-        }
-      ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
-      // The editor's selection: an outline just outside the module and its
-      // bottom handle.
-      const b = border(pose.p);
-      const pad = 6;
-      ctx.strokeStyle = ACCENT;
-      ctx.lineWidth = 2.5 / scale * 1.4;
-      ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
-      const [hx, hy] = handle(pose.p);
-      const r = (pose.down ? 13 : 11) / Math.sqrt(scale);
-      ctx.beginPath();
-      ctx.roundRect(hx - r * 2.2, hy + pad - r * 0.55, r * 4.4, r * 1.1, r * 0.55);
-      ctx.fillStyle = pose.down ? ACCENT : "#ffffff";
-      ctx.fill();
-      ctx.lineWidth = 2 / scale * 1.4;
-      ctx.stroke();
       if (pose.cursor) {
-        // A pointer, its tip on the handle.
+        // A pointer, its tip on the module's bottom edge.
         const [cx, cy] = pose.cursor;
         const k = 1.25 / scale;
         ctx.save();
-        ctx.translate(cx + 4 / scale, cy + pad + 2 / scale);
-        ctx.scale(k * 1.4, k * 1.4);
+        ctx.translate(cx, cy);
+        // Pressed, it sinks a little: the only sign of the grab. (No
+        // selection outline or handle - Andrew, 2026-09-25: "take away the
+        // blue highlight and bottom grab UI".)
+        const press = pose.down ? 0.88 : 1;
+        ctx.scale(k * 1.4 * press, k * 1.4 * press);
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.lineTo(0, 17);
@@ -202,14 +178,16 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
       }
       return last;
     };
+    // Anywhere along the habit tracker's bottom edge, as in the editor.
     const nearHandle = (e: { clientX: number; clientY: number }) => {
       const rect = canvas.getBoundingClientRect();
-      const [hx, hy] = handle(p);
+      const b = border(p);
       const k = rect.width / W;
-      return Math.hypot(e.clientX - rect.left - hx * k, e.clientY - rect.top - hy * k) < 30;
+      const [x, y] = [(e.clientX - rect.left) / k, (e.clientY - rect.top) / k];
+      return x > b.x - 8 / k && x < b.x + b.w + 8 / k && Math.abs(y - (b.y + b.h)) < 16 / k;
     };
     // On a phone the demo is most of the screen: a finger anywhere else on it
-    // scrolls the page as usual, and only one on the handle holds it still.
+    // scrolls the page as usual, and only one on the edge holds it still.
     const onTouch = (e: TouchEvent) => {
       if (e.touches.length === 1 && nearHandle(e.touches[0])) e.preventDefault();
     };
@@ -319,7 +297,7 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
   return (
     <figure className={styles.resizeDemo}>
       <div className={styles.resizeDemoPage} style={{ aspectRatio: `${data.width} / ${data.height}` }}>
-        <canvas ref={canvasRef} className={styles.resizeDemoCanvas} aria-label="A habit tracker being resized: rows are added as its handle is dragged down, and the to-do list below gives up the space." role="img" />
+        <canvas ref={canvasRef} className={styles.resizeDemoCanvas} aria-label="A habit tracker being resized: rows are added as its bottom edge is dragged down, and the to-do list below gives up the space." role="img" />
       </div>
       <figcaption className={styles.resizeDemoCaption}>Drag a module - everything around it makes room.</figcaption>
     </figure>
