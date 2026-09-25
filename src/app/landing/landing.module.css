@@ -1,5 +1,5 @@
 /* memari.studio's landing page. Warm paper, ink-dark type, the app's own face
-   (Almarai), and room around everything. */
+   (San Francisco, or Inter where there is none), and room around everything. */
 
 .page {
   --ink: #1c1917;
@@ -16,7 +16,9 @@
   --hand: #4a5cff;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-almarai), system-ui, sans-serif;
+  /* San Francisco where the system has it, Inter - the closest open face
+     - everywhere else (sansFont.ts; 2026-09-25). */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", var(--font-inter), system-ui, sans-serif;
   min-height: 100vh;
   /* Doodles in the margins never widen the page. */
   overflow-x: clip;
@@ -89,6 +91,11 @@
   font-size: 19px;
   letter-spacing: -0.01em;
   white-space: nowrap;
+}
+
+.brandMark {
+  font-size: 24px;
+  letter-spacing: -0.03em;
 }
 
 .brand span {
@@ -243,9 +250,9 @@
 .wordmark {
   margin: 0;
   /* About 70% of what it first was (Andrew, 2026-09-23: "make memari.
-     studio main text smaller"). The whole line is 7.1em wide; on a phone
-     it takes at most the width there is. */
-  font-size: min(clamp(40px, 6.3vw, 88px), calc((100vw - 32px) / 7.3));
+     studio main text smaller"). The whole line is 7.43em wide in Inter
+     (measured 2026-09-25); on a phone it takes at most the width there is. */
+  font-size: min(clamp(40px, 6.3vw, 88px), calc((100vw - 32px) / 7.6));
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -260,10 +267,10 @@
 }
 
 /* The word's box holds the letters and, after them, room for the dot (the
-   full stop's advance in Almarai 700), which is positioned rather than
+   full stop's advance in Inter 700, 0.31em), which is positioned rather than
    flowed so it can travel. */
 .word {
-  --dot: 0.24em;
+  --dot: 0.31em;
   --glide: cubic-bezier(0.65, 0, 0.35, 1);
   display: inline-block;
   position: relative;
@@ -394,9 +401,9 @@
   display: inline-block;
   margin-left: 0.28em;
   font-weight: 200;
-  /* "a bit smaller" than the 0.8em it was (2026-09-23), then "slightly
-     larger" (2026-09-24). */
-  font-size: 0.75em;
+  /* 0.8em, as it was first set - "restore the STUDIO in the hero title to
+     normal size" (2026-09-25), after 0.7 and 0.75. */
+  font-size: 0.8em;
   letter-spacing: 0.1em;
   /* The tracking after the last letter, which would push the line off
      centre. */
@@ -476,7 +483,16 @@
 /* Higher than over the desk: the film's book starts a third of the way down
    the frame, and on a 16:10 screen the tagline would sit on its pages. */
 .titleOverFilm {
-  top: calc(48px + 3vh);
+  /* "a bit higher" (2026-09-25): the clear nav leaves the strip under it
+     free. */
+  top: calc(36px + 1.5vh);
+}
+
+/* A phone's nav is a button's height nearer: keep the title clear of it. */
+@media (max-width: 760px) {
+  .titleOverFilm {
+    top: 62px;
+  }
 }
 
 /* A shade at the top, where the title is: the film's far desk is busy -

@@ -31,8 +31,9 @@ export function SiteHeader({ signedIn }: { signedIn: boolean }) {
   const clear = useSyncExternalStore(onOverHero, () => overHero, () => true);
   return (
     <header className={`${styles.nav} ${clear ? styles.navClear : ""}`}>
-      <Link href="/" className={styles.brand} aria-label="Memari Studio, home">
-        memari.<span>studio</span>
+      {/* The mark: "m." (2026-09-25). */}
+      <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home">
+        m.
       </Link>
       <nav className={styles.links} aria-label="Sections">
         <a href="#how">How it works</a>

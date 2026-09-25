@@ -19,6 +19,7 @@ import Link from "next/link";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
 import { SiteHeader } from "./SiteHeader";
+import { sans } from "./sansFont";
 import { LayoutGallery } from "./LayoutGallery";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
 import { Ink } from "./ink/Ink";
@@ -36,7 +37,7 @@ function Brand() {
 
 export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?: "desk" | "video" }) {
   return (
-    <div className={`${styles.page} ${script.variable}`}>
+    <div className={`${styles.page} ${script.variable} ${sans.variable}`}>
       <SiteHeader signedIn={signedIn} />
 
       <main>
