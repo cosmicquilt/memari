@@ -16,6 +16,7 @@
 // fills, washes, specks - is laid down.
 
 import { grainAt, roughen, type InkFeel } from "./paperInk";
+import { noise1 } from "./rng";
 
 export const DOODLE_STYLES = ["minimal", "retro", "sketchnote", "crayon", "pencil", "riso"] as const;
 export type DoodleStyle = (typeof DOODLE_STYLES)[number];
@@ -118,10 +119,11 @@ const canvas = (w: number, h: number) => {
 
 /**
  * Make a doodle ready to draw: load it, draw it into its box (print px) at
- * the canvas scale, roughen it into the paper, and put its reveal paths in
- * canvas px. Null if it could not be loaded.
+ * the canvas scale, turned by `angle` (radians) about the box's middle, lay
+ * a pen's pressure along its lines, roughen it into the paper, and put its
+ * reveal paths in canvas px. Null if it could not be loaded.
  */
-export async function prepareArt(ref: ArtRef, box: [number, number, number, number], scale: number, seed: number): Promise<ArtSprite | null> {
+export async function prepareArt(ref: ArtRef, box: [number, number, number, number], scale: number, seed: number, angle = 0): Promise<ArtSprite | null> {
   const got = await load(ref);
   if (!got) return null;
   const [bx, by, bw, bh] = box;
@@ -130,11 +132,21 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
   const h = bh * scale;
   const grain = grainAt(scale);
   const pad = Math.ceil(grain * 2.5) + 2;
-  const sprite = canvas(w + pad * 2, h + pad * 2);
+  // The turned drawing's bounds, and where a point of the drawing lands.
+  const [cs, sn] = [Math.cos(angle), Math.sin(angle)];
+  const tw = Math.abs(w * cs) + Math.abs(h * sn);
+  const th = Math.abs(w * sn) + Math.abs(h * cs);
+  const sprite = canvas(tw + pad * 2, th + pad * 2);
+  const [mx, my] = [sprite.width / 2, sprite.height / 2];
+  const place = (x: number, y: number): [number, number] => {
+    const [dx, dy] = [x - w / 2, y - h / 2];
+    return [mx + dx * cs - dy * sn, my + dx * sn + dy * cs];
+  };
   const g = sprite.getContext("2d", { willReadFrequently: true })!;
   g.imageSmoothingQuality = "high";
-  g.drawImage(got.img, pad, pad, w, h);
-  roughen(g, sprite.width, sprite.height, STYLE_FEEL[ref.style] ?? STYLE_FEEL.minimal, seed, grain);
+  g.setTransform(cs, sn, -sn, cs, mx, my);
+  g.drawImage(got.img, -w / 2, -h / 2, w, h);
+  g.setTransform(1, 0, 0, 1, 0, 0);
   const paths: number[][] = [];
   const cum: number[][] = [];
   let length = 0;
@@ -142,8 +154,7 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
     const pts: number[] = [];
     const c: number[] = [];
     for (let i = 0; i < p.length; i += 3) {
-      const x = pad + p[i] * k;
-      const y = pad + p[i + 1] * k;
+      const [x, y] = place(p[i] * k, p[i + 1] * k);
       if (pts.length) length += Math.hypot(x - pts[pts.length - 3], y - pts[pts.length - 2]);
       // (Half-widths are stored in half pixels.)
       pts.push(x, y, Math.max(0.8, (p[i + 2] / 2) * k));
@@ -157,10 +168,17 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
     paths.push(pts);
     cum.push(c);
   }
+  // The bigger the drawing, the more a flat, even line gives it away as
+  // made on a screen (Andrew, 2026-09-25: the large ones "still look written
+  // on ipad"): so the more its ink varies.
+  const big = Math.min(1, Math.max(0, (Math.max(w, h) - 70) / 180));
+  pressAlong(g, paths, cum, seed, 0.18 + 0.3 * big);
+  const feel = STYLE_FEEL[ref.style] ?? STYLE_FEEL.minimal;
+  roughen(g, sprite.width, sprite.height, { ...feel, edge: feel.edge * (1 + big), mottle: feel.mottle * (1 + 1.4 * big), bleed: feel.bleed * (1 + 0.6 * big) }, seed, grain);
   return {
     sprite,
-    x: bx * scale - pad,
-    y: by * scale - pad,
+    x: (bx + bw / 2) * scale - mx,
+    y: (by + bh / 2) * scale - my,
     mask: canvas(sprite.width, sprite.height).getContext("2d")!,
     shown: canvas(sprite.width, sprite.height).getContext("2d")!,
     paths,
@@ -168,6 +186,50 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
     length: Math.max(1, length),
     masked: 0,
   };
+}
+
+/**
+ * A pen's pressure along the drawing's lines: each line lighter and darker
+ * as it goes - slow, smooth swells, and a little lift at its ends - by up to
+ * `depth` of its ink. Washes and fills away from the lines keep theirs.
+ */
+function pressAlong(g: CanvasRenderingContext2D, paths: number[][], cum: number[][], seed: number, depth: number) {
+  const { width, height } = g.canvas;
+  // How much lighter each pixel is, as grey (white = none), taking the
+  // lightest line over it rather than adding them up: inside a filled shape
+  // many traced lines overlap, and summed they hollowed it out.
+  const press = canvas(width, height).getContext("2d", { willReadFrequently: true })!;
+  press.fillStyle = "#000";
+  press.fillRect(0, 0, width, height);
+  press.globalCompositeOperation = "lighten";
+  press.lineCap = "round";
+  paths.forEach((pts, s) => {
+    const c = cum[s];
+    if (pts.length < 6) return;
+    const swell = noise1(seed * 13 + s);
+    const start = c[0];
+    const end = c[c.length - 1];
+    for (let i = 1; i < c.length; i++) {
+      const along = (c[i - 1] + c[i]) / 2;
+      // Lighter where the pen lands and lifts, and in slow swells between.
+      const ends = Math.min(1, (along - start) / 14, (end - along) / 14);
+      const lift = 0.35 * (1 - Math.max(0, ends));
+      const light = Math.min(0.95, depth * (0.5 + 0.5 * swell(along / 55)) + lift * depth);
+      if (light <= 0.01) continue;
+      const v = Math.round(light * 255);
+      press.strokeStyle = `rgb(${v}, ${v}, ${v})`;
+      press.lineWidth = Math.max(pts[(i - 1) * 3 + 2], pts[i * 3 + 2]) * 3.4 + 3;
+      press.beginPath();
+      press.moveTo(pts[(i - 1) * 3], pts[(i - 1) * 3 + 1]);
+      press.lineTo(pts[i * 3], pts[i * 3 + 1]);
+      press.stroke();
+    }
+  });
+  const light = press.getImageData(0, 0, width, height).data;
+  const img = g.getImageData(0, 0, width, height);
+  const d = img.data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] && light[i - 3]) d[i] = Math.round(d[i] * (1 - light[i - 3] / 255));
+  g.putImageData(img, 0, 0);
 }
 
 /** Uncover the drawing along its paths up to `reach` (canvas px of path):

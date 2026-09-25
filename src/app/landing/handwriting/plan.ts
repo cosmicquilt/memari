@@ -35,7 +35,7 @@ export type InkItem =
   | { kind: "strokes"; page: 0 | 1; paths: Path[]; pen: Pen; pause?: number }
   | { kind: "glyphs"; page: 0 | 1; run: GlyphRun; pause?: number }
   /** A drawn doodle (art.ts) in a box, print px. */
-  | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; pen: Pen; pause?: number };
+  | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; angle?: number; pen: Pen; pause?: number };
 
 /** A way of writing words: a handwriting font, or the stroke-drawn script. */
 type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
@@ -476,14 +476,46 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // A sketch box: draw in it. (Only a box made for drawing - a doodle
     // across an empty Notes box read as drawing over a blank module.)
     if (region.slug === "sketch-box") {
-      const n = r.int(1, 3);
-      const size = Math.min(ch * 0.55, cw / (n + 0.5), 420);
+      // Scattered the way a page gets drawn on (Andrew, 2026-09-25: "vary
+      // the orientation, position, and size a bit more so it's more
+      // realistic", they were "right next to each other"): one large and
+      // the rest smaller, each at its own slant, somewhere in the box with
+      // room around it - and about half in pencil, as sketches among the
+      // pen drawings.
+      const n = r.chance(0.15) ? 1 : r.chance(0.5) ? 2 : 3;
       const keys = r.shuffle(theme.big);
+      const placed: Box[] = [];
+      const gap = Math.min(cw, ch) * 0.06;
+      // The first sets the scale; the others are a half to two thirds of it.
+      const lead = Math.min(ch * r.range(0.5, 0.74), 520);
       for (let i = 0; i < n; i++) {
-        const x = cx + (cw / n) * i + (cw / n - size) / 2 + r.range(-20, 20);
-        const y = cy + (ch - size) / 2 + r.range(-30, 30);
-        if (!clearOf(region.printed, x, x + size, y, y + size)) continue;
-        items.push(...doodleAt(page, theme.style, keys[i % keys.length], x, y, size, nextSeed(), i === 0 ? hand.pen : hand.accent));
+        const subject = keys[i % keys.length];
+        const seed = nextSeed();
+        const pick = (seed % 997) / 997;
+        const sketch = r.chance(0.5);
+        const art = artIndex() ? ((sketch ? findArt("pencil", subject, pick) : null) ?? findArt(theme.style, subject, pick)) : null;
+        const angle = r.range(-0.26, 0.26);
+        const aspect = art ? art.w / art.h : 1;
+        let h = i === 0 ? lead : lead * r.range(0.45, 0.7);
+        let w = h * aspect;
+        if (w > cw * 0.55) {
+          w = cw * 0.55;
+          h = w / aspect;
+        }
+        const [c, sn] = [Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle))];
+        const bw = w * c + h * sn;
+        const bh = w * sn + h * c;
+        for (let tries = 0; tries < 60; tries++) {
+          const x = cx + r.range(0, Math.max(0, cw - bw));
+          const y = cy + r.range(0, Math.max(0, ch - bh));
+          if (placed.some(([px, py, pw, ph]) => x < px + pw + gap && px < x + bw + gap && y < py + ph + gap && py < y + bh + gap)) continue;
+          if (!clearOf(region.printed, x, x + bw, y, y + bh)) continue;
+          placed.push([x, y, bw, bh]);
+          const pen = i === 0 ? hand.pen : hand.accent;
+          if (art) items.push({ kind: "art", page, art, box: [x + (bw - w) / 2, y + (bh - h) / 2, w, h], angle, pen });
+          else items.push(...doodleAt(page, theme.style, subject, x, y, Math.min(bw, bh), seed, pen));
+          break;
+        }
       }
       return;
     }

@@ -64,6 +64,8 @@ export type TimedArt = {
   page: 0 | 1;
   ref: ArtRef;
   box: [number, number, number, number];
+  /** Turned by this much, radians, about the box's middle. */
+  angle: number;
   seed: number;
   t0: number;
   t1: number;
@@ -141,7 +143,7 @@ export function inkTimeline(items: InkItem[], targetSeconds: number, seed = 1): 
       const d = Math.max(0.3, ((w + h) * 3.2) / (SPEED[item.pen.kind] * r.range(0.85, 1.15)));
       t += d;
       down += d;
-      out.push({ kind: "art", page: item.page, ref: item.art, box: item.box, seed: r.int(1, 1e9), t0, t1: t, drawn: 0, done: false, art: null });
+      out.push({ kind: "art", page: item.page, ref: item.art, box: item.box, angle: item.angle ?? 0, seed: r.int(1, 1e9), t0, t1: t, drawn: 0, done: false, art: null });
       last = [x + w, y + h];
       continue;
     }
@@ -410,7 +412,7 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
 export async function prepareInk(timeline: Timed[], scale: number) {
   // The drawn doodles: fetched together, then each drawn into its sprite.
   const arts = timeline.filter((s): s is TimedArt => s.kind === "art");
-  const made = await Promise.all(arts.map((a) => prepareArt(a.ref, a.box, scale, a.seed)));
+  const made = await Promise.all(arts.map((a) => prepareArt(a.ref, a.box, scale, a.seed, a.angle)));
   arts.forEach((a, i) => (a.art = made[i]));
   const glyphs = timeline.filter((s): s is TimedGlyph => s.kind === "glyph");
   let at = 0;
