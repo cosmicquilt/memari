@@ -18,6 +18,7 @@
 import Link from "next/link";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
+import { SiteHeader } from "./SiteHeader";
 import { LayoutGallery } from "./LayoutGallery";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
 import { Ink } from "./ink/Ink";
@@ -36,30 +37,7 @@ function Brand() {
 export function Landing({ signedIn, hero = "desk" }: { signedIn: boolean; hero?: "desk" | "video" }) {
   return (
     <div className={`${styles.page} ${script.variable}`}>
-      <header className={styles.nav}>
-        <Brand />
-        <nav className={styles.links} aria-label="Sections">
-          <a href="#how">How it works</a>
-          <a href="#layouts">Layouts</a>
-          <a href="#print">Print</a>
-        </nav>
-        <div className={styles.actions}>
-          {signedIn ? (
-            <Link href="/app" className={styles.primary}>
-              Open Memari
-            </Link>
-          ) : (
-            <>
-              <Link href="/sign-in?redirect_url=%2Fapp" className={styles.quiet}>
-                Sign in
-              </Link>
-              <Link href="/app" className={styles.primary}>
-                Start your planner
-              </Link>
-            </>
-          )}
-        </div>
-      </header>
+      <SiteHeader signedIn={signedIn} />
 
       <main>
         {hero === "video" ? <VideoHero /> : <Hero />}
