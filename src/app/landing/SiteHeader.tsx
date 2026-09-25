@@ -50,8 +50,9 @@ export function SiteHeader({ signedIn }: { signedIn: boolean }) {
             <Link href="/sign-in?redirect_url=%2Fapp" className={styles.quiet}>
               Sign in
             </Link>
+            {/* "Build for Free" (2026-09-25). */}
             <Link href="/app" className={styles.primary}>
-              Start your planner
+              Build for Free
             </Link>
           </>
         )}
