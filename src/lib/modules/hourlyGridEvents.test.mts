@@ -382,6 +382,106 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   check(toHsl(greyInk).s < 0.02, `a neutral fill's ink ${greyInk} is ${(toHsl(greyInk).s * 100).toFixed(0)}% saturated`);
 }
 
+// --- concurrent events stack horizontally ---------------------------------
+//
+// Andrew, 2026-09-27: "concurrent events should stack horizontally". Drawn
+// at full width in arrival order the later of two clashing events lies over
+// the earlier one and hides where it ends, which is what the proof showed.
+//
+// The two clauses that are easy to get wrong are the last two: touching is
+// not overlapping, and a cluster is not a day.
+{
+  const timed = (start: string, end: string, label: string) => ({
+    day: 0,
+    startTime: start,
+    endTime: end,
+    label,
+    source: "manual" as const,
+  });
+  const boxes = (events: HourlyGridEvent[]) =>
+    render(events)
+      .filter((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"))
+      .map((e) => ({ x: Number(e.x), w: Number(e.width) }))
+      .sort((a, b) => a.x - b.x);
+
+  const full = boxes([timed("09:00", "10:00", "Alone")])[0];
+
+  // Two that share half an hour: side by side, each about half the track.
+  const pair = boxes([timed("09:30", "11:00", "Studio"), timed("10:30", "12:00", "Advisor")]);
+  check(pair.length === 2, `expected 2 blocks, got ${pair.length}`);
+  check(
+    pair[0].w < full.w * 0.55 && pair[1].w < full.w * 0.55,
+    `clashing blocks should each take about half the track; got ${pair[0].w.toFixed(0)} and ` +
+      `${pair[1].w.toFixed(0)} against a full ${full.w.toFixed(0)}`
+  );
+  check(
+    pair[0].x + pair[0].w <= pair[1].x + 0.01,
+    `the two blocks overlap horizontally: ${pair[0].x.toFixed(0)}+${pair[0].w.toFixed(0)} runs into ${pair[1].x.toFixed(0)}`
+  );
+  check(pair[1].x > pair[0].x, "the second block should sit to the right of the first");
+
+  // Three at once: three columns, not two.
+  const triple = boxes([timed("09:00", "12:00", "A"), timed("09:30", "10:30", "B"), timed("10:00", "11:00", "C")]);
+  check(triple.length === 3 && triple[2].w < full.w * 0.4, `three clashing events should give three columns`);
+
+  // TOUCHING IS NOT OVERLAPPING. One ending at 10:00 and one starting at
+  // 10:00 share no minute, and halving both for that would punish a day of
+  // back-to-back meetings - the commonest shape there is.
+  //
+  // TWO GUARDS SIT BEHIND THIS, IN SERIES, and it matters for anyone
+  // sabotaging it later: the cluster split (`span.from >= clusterEnd`)
+  // separates consecutive events before the column assignment ever sees
+  // them, and the column assignment (`end <= span.from`) would reuse the
+  // column anyway. Breaking EITHER one alone leaves this green - verified,
+  // both ways. Breaking both together reports "consecutive events were
+  // split: widths 254, 258 against a full 517". The assertion is on the
+  // outcome, which is the thing worth holding; it just cannot tell you which
+  // of the two is carrying it.
+  const consecutive = boxes([timed("09:00", "10:00", "A"), timed("10:00", "11:00", "B")]);
+  check(
+    consecutive.every((b) => Math.abs(b.w - full.w) < 0.01),
+    `consecutive events were split: widths ${consecutive.map((b) => b.w.toFixed(0)).join(", ")} against a full ${full.w.toFixed(0)}`
+  );
+
+  // A CLUSTER IS NOT A DAY. A morning clash must not narrow an unrelated
+  // afternoon event.
+  const mixed = boxes([timed("09:00", "10:00", "A"), timed("09:30", "10:30", "B"), timed("12:00", "12:30", "Solo")]);
+  const widest = mixed.reduce((a, b) => (b.w > a.w ? b : a));
+  check(
+    Math.abs(widest.w - full.w) < 0.01,
+    `the afternoon event was narrowed by a morning clash: ${widest.w.toFixed(0)} against a full ${full.w.toFixed(0)}`
+  );
+}
+
+// --- the hour-line margin, when it is asked for ---------------------------
+//
+// A candidate rather than a decision - the events proof draws it beside the
+// flush version. Zero by default, so no stored instance moves.
+{
+  const one = [{ day: 0, startTime: "09:00", endTime: "09:30", label: "Standup", source: "manual" as const }];
+  const flush = render(one).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+  const held = flat(
+    renderHourlyGridCore(GEOMETRY, { ...BASE, eventVerticalMarginPt: 1.44, events: one } as never, "t", FONT_SERIF) as unknown as El[]
+  ).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+
+  check(Number(held?.y) > Number(flush?.y), "the margin did not move the block off the hour line");
+  check(
+    Math.abs((Number(held?.y) - Number(flush?.y)) - (Number(flush?.height) - Number(held?.height)) / 2) < 0.01,
+    "the margin should be equal above and below"
+  );
+  // Never more than a third of the block, or a quarter-hour event would be
+  // margin with nothing inside it.
+  const tiny = flat(
+    renderHourlyGridCore(
+      GEOMETRY,
+      { ...BASE, eventVerticalMarginPt: 20, events: [{ ...one[0], endTime: "09:15" }] } as never,
+      "t",
+      FONT_SERIF
+    ) as unknown as El[]
+  ).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+  check(Number(tiny?.height) > 0, `an absurd margin left a block of ${Number(tiny?.height).toFixed(1)}px`);
+}
+
 if (failures > 0) {
   console.error(`\nHourly grid events: ${failures} problem(s).`);
   process.exit(1);

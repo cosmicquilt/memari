@@ -24,7 +24,7 @@
 // size they print so the choice is made by looking, not by naming a hex.
 //
 // TRUE SIZE MEANS TRUE SIZE - 300px to the inch drawn at 96 CSS px to the
-// inch. The second row repeats everything at 3x because a 6pt label and a
+// inch. The second row repeats everything at 3x because a 5pt label and a
 // 0.3pt rule are both under a device pixel at true size, and a weight you
 // cannot see is a weight you cannot judge (the same reason undatedProof has
 // its magnified row).
@@ -46,7 +46,17 @@ const DAYS = 3;
 const BLOCK_W = 4.5 * PX_PER_IN;
 const BLOCK_H = 1.6 * PX_PER_IN;
 
-type Treatment = { key: string; label: string; blurb: string; recolour?: string };
+type Treatment = { key: string; label: string; blurb: string; recolour?: string; verticalMarginPt?: number };
+
+/**
+ * Half the distance between two adjacent modules, as points.
+ *
+ * A module's ink box is inset boxInsetPx from its allocation on every side,
+ * so two neighbours sit 2 x boxInsetPx apart and half of that is boxInsetPx
+ * itself. Derived rather than typed as 1.44pt, because the number that
+ * matters is "the same air the page already leaves between things".
+ */
+const HALF_MODULE_GAP_PT = (6 / PX_PER_IN) * 72;
 
 const TREATMENTS: Treatment[] = [
   {
@@ -62,6 +72,14 @@ const TREATMENTS: Treatment[] = [
   { key: "grey-light", label: "Grey, light", blurb: "#ececec - a 4.1% tint. Considered and rejected: reads as nothing.", recolour: "#ececec" },
   { key: "grey-chosen", label: "Grey, CHOSEN", blurb: `${EVENT_PRINT_GREY} - a 5.4% tint. "in between but closer to the light grey".`, recolour: EVENT_PRINT_GREY },
   { key: "grey-dark", label: "Grey, darker", blurb: "#d8d8d8 - an 8.4% tint. Considered and rejected: a slab.", recolour: "#d8d8d8" },
+  {
+    key: "margin",
+    label: "Colour, held off the hour lines",
+    blurb:
+      `the same blocks with ${HALF_MODULE_GAP_PT.toFixed(2)}pt of air above and below - half the distance ` +
+      `the page already leaves between two adjacent modules. Compare with Colour, where they sit flush.`,
+    verticalMarginPt: HALF_MODULE_GAP_PT,
+  },
 ];
 
 /** A realistic week: a holiday, a day with two all-day things, and timed
@@ -104,6 +122,7 @@ function block(treatment: Treatment): { elements: RenderedPolotnoElement[]; w: n
       intervalMinutes: 30,
       intervalMode: "on",
       hourLineStyle: "low-transparency",
+      eventVerticalMarginPt: treatment.verticalMarginPt ?? 0,
       events: eventsFor(treatment),
     } as never,
     `ev-${treatment.key}`,
@@ -126,7 +145,7 @@ function svg(drawing: { elements: RenderedPolotnoElement[]; w: number; h: number
 
 const ZOOMS = [
   { mag: 1, note: "true size - this is what it measures on paper" },
-  { mag: 3, note: "3x - a 6pt label is under a device pixel at true size" },
+  { mag: 3, note: "3x - a 5pt label is under a device pixel at true size" },
 ];
 
 const sections = ZOOMS.map(

@@ -42,6 +42,11 @@ export type HourlyGridCoreConfig = {
   hourLineStyle: "full" | "low-transparency" | "gone";
   dayBorder: boolean;
   events: HourlyGridEvent[];
+  /** How far an event block is held off the hour rules above and below it,
+   *  in points. A candidate rather than a decision - see the events proof,
+   *  which draws it beside the flush version. Optional and zero by default,
+   *  so every stored instance keeps the geometry it has. */
+  eventVerticalMarginPt?: number;
   // "off" replaces the ruled hour-rows with blank, height-adjustable
   // space (see renderHourlyGridCore's own branch below) — a materially
   // different layout from hourLineStyle:"gone", which still allocates
@@ -568,6 +573,65 @@ function eventInk(fill: string): string {
  *  the event's own colour. */
 const eventBorder = (fill: string) => atLightness(fill, 0.65);
 
+/**
+ * Where each of a day's timed events sits when some of them clash.
+ *
+ * CONCURRENT EVENTS STACK HORIZONTALLY (Andrew, 2026-09-27). Drawn at full
+ * width in arrival order, the later of two overlapping events simply lies
+ * over the earlier one and hides where it ends - which is what the proof
+ * sheet showed.
+ *
+ * Returns, per event, which column it takes and how many columns its CLUSTER
+ * needs. A cluster is a run of events connected by overlap, and the count is
+ * per cluster rather than per day on purpose: a morning clash should not
+ * narrow an unrelated afternoon event to half a column.
+ *
+ * Columns are assigned greedily in start order, taking the first that is
+ * free - the usual calendar layout, and the one Google and Apple both use.
+ */
+function concurrencyColumns(events: HourlyGridEvent[]): Map<HourlyGridEvent, { column: number; of: number }> {
+  const placed = new Map<HourlyGridEvent, { column: number; of: number }>();
+  const spans = events
+    .map((event) => ({ event, from: timeToMinutes(event.startTime), to: timeToMinutes(event.endTime) }))
+    .sort((a, b) => a.from - b.from || b.to - a.to);
+
+  let cluster: typeof spans = [];
+  let clusterEnd = -Infinity;
+
+  const close = () => {
+    if (cluster.length === 0) return;
+    // Within the cluster, first free column in start order.
+    const columnEnds: number[] = [];
+    const assigned = new Map<HourlyGridEvent, number>();
+    for (const span of cluster) {
+      let column = columnEnds.findIndex((end) => end <= span.from);
+      if (column === -1) {
+        column = columnEnds.length;
+        columnEnds.push(span.to);
+      } else {
+        columnEnds[column] = span.to;
+      }
+      assigned.set(span.event, column);
+    }
+    const of = columnEnds.length;
+    for (const span of cluster) placed.set(span.event, { column: assigned.get(span.event)!, of });
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const span of spans) {
+    // A new cluster starts where nothing before it is still running. Touching
+    // is not overlapping: an event ending at 10:00 and one starting at 10:00
+    // are consecutive, and splitting the column for them would halve two
+    // events that never share a minute.
+    if (span.from >= clusterEnd) close();
+    cluster.push(span);
+    clusterEnd = Math.max(clusterEnd, span.to);
+  }
+  close();
+  return placed;
+}
+
 /** The corner radius an event block can actually take: the house radius, or
  *  half the shorter side if the block is smaller than that. A 15-minute event
  *  is a few pixels tall, and an unclamped radius turns it into a lozenge. */
@@ -960,9 +1024,10 @@ export function renderHourlyGridCore(
     // skipped entirely in "off" mode. Low-risk today (see
     // src/lib/weekDays.ts's identical note): events is always seeded
     // empty, nothing writes into it yet.
-    for (const event of config.intervalMode === "off"
-      ? []
-      : config.events.filter((e) => e.day === d && !e.allDay)) {
+    const timedToday =
+      config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d && !e.allDay);
+    const stacking = concurrencyColumns(timedToday);
+    for (const event of timedToday) {
       const evStart = timeToMinutes(event.startTime);
       const evEnd = timeToMinutes(event.endTime);
       const evY = gridTop + ((evStart - startMinutes) / intervalMinutes) * rowHeight;
@@ -971,16 +1036,32 @@ export function renderHourlyGridCore(
       // HELD OFF THE TIME LABELS - see EVENT_LEFT_INSET_PT. Drawn from the
       // column's left edge, the block and its own label sat on top of
       // "8:30".
-      const eventX = dayX + ptToPx(EVENT_LEFT_INSET_PT);
-      const eventWidth = dayColumnWidth - ptToPx(EVENT_LEFT_INSET_PT) - 2;
-      const eventHeight = Math.max(evHeight, 4);
+      const trackX = dayX + ptToPx(EVENT_LEFT_INSET_PT);
+      const trackWidth = dayColumnWidth - ptToPx(EVENT_LEFT_INSET_PT) - 2;
+      // Its share of the track, if anything else is running at the same time.
+      const { column, of } = stacking.get(event) ?? { column: 0, of: 1 };
+      const share = trackWidth / of;
+      const eventX = trackX + share * column;
+      // A hair between neighbours so two blocks read as two, not as one wide
+      // one with a line down it. Only between them - the last column keeps
+      // the track's full right edge.
+      const eventWidth = share - (column < of - 1 ? ptToPx(1) : 0);
+      // MARGIN FROM THE HOUR LINES, when asked for - see
+      // EVENT_VERTICAL_MARGIN_PT. Never more than a third of the block, or a
+      // 15-minute event would be margin with nothing inside it.
+      const margin = Math.min(
+        ptToPx(config.eventVerticalMarginPt ?? 0),
+        Math.max(0, evHeight) / 3
+      );
+      const eventY = evY + margin;
+      const eventHeight = Math.max(evHeight - margin * 2, 4);
       const eventFill = event.colour ?? (event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3");
       elements.push({
         id: id(`d${d}-ev${event.startTime}-box`),
         type: "figure",
         subType: "rect",
         x: eventX,
-        y: evY,
+        y: eventY,
         width: eventWidth,
         height: eventHeight,
         fill: eventFill,
@@ -1001,7 +1082,7 @@ export function renderHourlyGridCore(
         // company on a three-hour block, where centring in the block would
         // put the title halfway down a tall empty rectangle; this keeps it
         // in the row the event starts in, which is where the eye goes.
-        y: capCentredTextY(evY, Math.min(eventHeight, rowHeight), eventFontSize, FONT_FAMILY),
+        y: capCentredTextY(eventY, Math.min(eventHeight, rowHeight), eventFontSize, FONT_FAMILY),
         width: eventWidth - ptToPx(EVENT_TEXT_PADDING_PT) * 2,
         height: eventFontSize * 1.2,
         text: event.label,
