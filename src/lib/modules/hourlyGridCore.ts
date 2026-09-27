@@ -161,6 +161,26 @@ const ALL_DAY_BAND_HEIGHT_PT = 14;
 const EVENT_CORNER_RADIUS_PT = 4;
 const EVENT_OPACITY = 0.55;
 
+/**
+ * What an event block is filled with IN PRINT.
+ *
+ * Colour on screen, grey on paper (Andrew, 2026-09-26) - colour pages cost
+ * money. The weight was chosen by looking at three greys at true size:
+ * #ececec read as nothing, #d8d8d8 as a slab, and the answer was "in between
+ * but closer to the light grey".
+ *
+ * IT IS A 5.4% TINT, not a 10% one. At EVENT_OPACITY over white this lands
+ * at 241/255, and a press holds about 3-5% reliably - so this sits just
+ * inside what paper can be relied on to show, and the Lulu test print is
+ * what settles it. If it drops out, the fix is the OPACITY rather than the
+ * grey: at full strength the same colour is a 10% tint.
+ *
+ * Applied where events are put INTO the config for the book, not here - the
+ * editor, the previews and the PDF all read one element list, and the block
+ * does not know which of them is asking. See generateBook.
+ */
+export const EVENT_PRINT_GREY = "#e6e6e6";
+
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
 // row labels, but that does not divide the 1/4in dot pitch (18pt), so the
 // rules drift off the lattice down the page. 9pt is two slots per dot, and

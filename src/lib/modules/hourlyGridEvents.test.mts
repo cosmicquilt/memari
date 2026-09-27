@@ -16,7 +16,7 @@
 //
 //   npx tsx src/lib/modules/hourlyGridEvents.test.mts
 
-import { renderHourlyGridCore, type HourlyGridEvent } from "./hourlyGridCore";
+import { renderHourlyGridCore, EVENT_PRINT_GREY, type HourlyGridEvent } from "./hourlyGridCore";
 import { capCentreNudgeEm, TEXT_LINE_HEIGHT } from "./textFit";
 import { ptToPx } from "@/lib/print-spec";
 import { FONT_SERIF } from "@/lib/theme";
@@ -235,6 +235,37 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   check(
     Number(band?.opacity) === Number(longBox?.opacity),
     `the band is ${band?.opacity} and a timed event ${longBox?.opacity}; they should match`
+  );
+}
+
+// --- the print grey survives a press -------------------------------------
+//
+// EVENT_PRINT_GREY and the opacity an event is drawn at are set in different
+// places and neither means anything alone: what a press has to hold is the
+// COMPOSITE. #e6e6e6 at full strength is a 10% tint and unremarkable; at the
+// 0.55 the blocks are drawn at it is 5.4%, which is near the bottom of what
+// offset reliably reproduces.
+//
+// So this reads the opacity off a real element rather than importing a
+// constant, and checks the tint that lands on paper. Drop the opacity to
+// make the blocks subtler on screen and this says what it cost in print.
+{
+  const marks = render([{ day: 0, startTime: "09:00", endTime: "10:00", label: "Call home", source: "manual" }]);
+  const box = marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+  const opacity = Number(box?.opacity);
+  const grey = parseInt(EVENT_PRINT_GREY.slice(1, 3), 16);
+  const onWhite = 255 - opacity * (255 - grey);
+  const tint = (100 * (255 - onWhite)) / 255;
+
+  check(opacity > 0 && opacity <= 1, `an event block's opacity is ${opacity}`);
+  check(
+    tint >= 4,
+    `the print grey lands as a ${tint.toFixed(1)}% tint, under the ~4% an offset press holds - it can drop out ` +
+      `entirely. Raise EVENT_OPACITY or darken EVENT_PRINT_GREY.`
+  );
+  check(
+    tint <= 12,
+    `the print grey lands as a ${tint.toFixed(1)}% tint, heavy enough to read as a slab under handwriting`
   );
 }
 

@@ -28,7 +28,7 @@
 //
 //   npm run check:events   ->   public/events-proof.html
 import { writeFileSync } from "node:fs";
-import { renderHourlyGridCore, type HourlyGridEvent } from "./modules/hourlyGridCore.js";
+import { renderHourlyGridCore, EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore.js";
 import { toSvg, escapeXml, PROOF_FONT_LINK, PROOF_FONT_STYLE } from "./proofSvg.js";
 import type { RenderedPolotnoElement } from "./renderModuleInstance.js";
 
@@ -52,8 +52,13 @@ const TREATMENTS: Treatment[] = [
     blurb: "the control - a week with nothing all-day must be identical to one drawn before the band existed",
   },
   { key: "colour", label: "Colour", blurb: "what the editor shows: the calendar's own colour" },
-  { key: "grey-light", label: "Grey, light", blurb: "print at #ececec - does it survive the press, or disappear?", recolour: "#ececec" },
-  { key: "grey-dark", label: "Grey, darker", blurb: "print at #d8d8d8 - readable, or a slab the writing cannot sit on?", recolour: "#d8d8d8" },
+  // The bracket the choice was made from, and the choice, so it can be
+  // confirmed in context rather than in isolation. The percentages are the
+  // EFFECTIVE tint on white once EVENT_OPACITY is applied - which is what a
+  // press actually has to hold, and is not what the hex says.
+  { key: "grey-light", label: "Grey, light", blurb: "#ececec - a 4.1% tint. Considered and rejected: reads as nothing.", recolour: "#ececec" },
+  { key: "grey-chosen", label: "Grey, CHOSEN", blurb: `${EVENT_PRINT_GREY} - a 5.4% tint. "in between but closer to the light grey".`, recolour: EVENT_PRINT_GREY },
+  { key: "grey-dark", label: "Grey, darker", blurb: "#d8d8d8 - an 8.4% tint. Considered and rejected: a slab.", recolour: "#d8d8d8" },
 ];
 
 /** A realistic week: a holiday, a day with two all-day things, and timed
