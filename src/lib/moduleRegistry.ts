@@ -31,7 +31,7 @@ import {
   MONTH_NAMES,
   WEEKDAY_NAMES,
   dateRangeLabel,
-  dayNamed,
+  columnDates,
   type OccurrenceContext,
 } from "@/lib/pageLevels";
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
@@ -527,17 +527,24 @@ const PRIMITIVES = {
     // MONDAY because a template has to say something, and this copy might be
     // a Thursday. So a daily takes consecutive days from the occurrence's
     // own start and renames as well as dates them.
-    dated: (props, at) => ({
-      ...props,
-      dayLabels: ((props.dayLabels as Array<Record<string, unknown>>) ?? []).map((d, index) => {
-        if (at.level === "DAILY") {
-          const day = new Date(at.start.getTime() + index * 86_400_000);
-          return { ...d, name: WEEKDAY_NAMES[day.getUTCDay()], date: day.getUTCDate() };
-        }
-        const day = dayNamed(at.start, d.name);
-        return { ...d, date: day ? day.getUTCDate() : null };
-      }),
-    }),
+    //
+    // WHICH date each column is comes from columnDates, which calendar
+    // events also read - the number in the tab and the column an event
+    // lands in are then one answer rather than two that agree today.
+    dated: (props, at) => {
+      const labels = (props.dayLabels as Array<Record<string, unknown>>) ?? [];
+      const dates = columnDates(at.level, at.start, labels);
+      return {
+        ...props,
+        dayLabels: labels.map((d, index) => {
+          const day = dates[index];
+          if (!day) return { ...d, date: null };
+          return at.level === "DAILY"
+            ? { ...d, name: WEEKDAY_NAMES[day.getUTCDay()], date: day.getUTCDate() }
+            : { ...d, date: day.getUTCDate() };
+        }),
+      };
+    },
     // Increments off is a blank height-adjustable field, so it scales and
     // the clip serves. Increments on draws ruled rows whose count and
     // pitch both follow the box, so it has to be redrawn. The editor adds

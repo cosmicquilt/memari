@@ -202,6 +202,8 @@ export function EditorShell({
       <NativePlannerEditor
         key={`${open.level}:${open.variantKey ?? ""}:${generation}`}
         pages={open.pages}
+        events={open.events}
+        calendars={open.calendars}
         term={open.term}
         weekSettings={open.weekSettings}
         pageSettings={open.pageSettings}

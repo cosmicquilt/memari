@@ -21,9 +21,11 @@
 // and applied by another. The page load, the editor and the server actions
 // all call these two; none of them decides what a page is dated as.
 
+import { eventsForDays, type StoredEvent } from "./calendarEvents";
 import type { PageGrid } from "./grid";
+import type { HourlyGridEvent } from "./modules/hourlyGridCore";
 import { withDates, withoutDates } from "./moduleRegistry";
-import { occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
+import { columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
 import {
   renderModuleInstance,
   type ModuleInstanceForRender,
@@ -40,6 +42,18 @@ export type PageRenderContext = {
   /** The day columns this page's hourly grid shows, rotated to the book's
    *  week start. Null on a page with no hourly grid. */
   dayLabels: DayLabel[] | null;
+  /** The calendar events falling on this page's columns, already indexed to
+   *  them. Null when nothing was passed in, when the page has no hours, and
+   *  on an undated book - a book with no dates cannot carry dated marks. */
+  events: HourlyGridEvent[] | null;
+  /** WHICH DAY EACH COLUMN IS, as "YYYY-MM-DD", in the same order as
+   *  `dayLabels`. Null on a page with no hours or no dates, and per entry for
+   *  a column whose head is not a weekday.
+   *
+   *  Carried rather than left to the browser to work out: the editor turns a
+   *  click into an instant, and it must land on the day the tab shows. This
+   *  is the same columnDates call the tab's own number comes from. */
+  columnDates: Array<string | null> | null;
 };
 
 /** The parts of a book this needs - structural, so a Prisma row with its
@@ -67,7 +81,15 @@ export type RenderContextBook = {
  * of the page's spread (left three days, right four), because the rotation
  * needs all seven at once.
  */
-export function renderContextForPage(book: RenderContextBook, pageId: string): PageRenderContext | null {
+export function renderContextForPage(
+  book: RenderContextBook,
+  pageId: string,
+  /** The owner's stored events, unfiltered. Placing them is this function's
+   *  job because only it knows which occurrence the page is drawn as and in
+   *  what order its columns ended up. Omit it and the page draws none, which
+   *  is what every caller did before events existed. */
+  events?: StoredEvent[]
+): PageRenderContext | null {
   const page = book.pages.find((p) => p.id === pageId);
   if (!page) return null;
   const weekStartDay = (book.theme as { weekStartDay?: number } | null | undefined)?.weekStartDay ?? 0;
@@ -94,7 +116,20 @@ export function renderContextForPage(book: RenderContextBook, pageId: string): P
   const hasHours = page.moduleInstances.some((mi) => mi.moduleType.slug === "hourly-grid-core");
   const dayLabels = !hasHours ? null : spread.indexOf(page) === 0 ? rotated.left : rotated.right;
 
-  return { dated, occurrence, dayLabels };
+  // EVENTS ARE DATED THINGS, so they need all three: a real occurrence to be
+  // dated against, columns to sit in, and a book that admits dates at all.
+  // columnDates is the same rule the day tab's own number comes from, so an
+  // event cannot land under a date the tab does not show.
+  const grid = dated && occurrence && dayLabels ? columnDates(page.level, occurrence.start, dayLabels) : null;
+  const placed = grid && events ? eventsForDays(events, grid.map((date) => ({ date }))) : null;
+
+  return {
+    dated,
+    occurrence,
+    dayLabels,
+    events: placed,
+    columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
+  };
 }
 
 /**
@@ -107,9 +142,16 @@ export function propsForRender(
   context: PageRenderContext | null | undefined
 ): unknown {
   if (!context) return propValues;
+  // The events go in beside the rotated day labels, not after the dating
+  // hook: they are already placed against the columns this context describes,
+  // and `withDates` only ever rewrites those labels.
   const rotated =
-    slug === "hourly-grid-core" && context.dayLabels
-      ? { ...((propValues ?? {}) as object), dayLabels: context.dayLabels }
+    slug === "hourly-grid-core" && (context.dayLabels || context.events)
+      ? {
+          ...((propValues ?? {}) as object),
+          ...(context.dayLabels ? { dayLabels: context.dayLabels } : {}),
+          ...(context.events ? { events: context.events } : {}),
+        }
       : propValues;
   if (!context.dated) return withoutDates(slug, rotated);
   return context.occurrence ? withDates(slug, rotated, context.occurrence) : rotated;

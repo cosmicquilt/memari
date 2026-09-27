@@ -33,6 +33,7 @@ import { gridCellToPixels, type PageGrid, type GridRect } from "@/lib/grid";
 import { type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
+import { calendarsFor, eventsForJournal, type EditableEvent } from "./calendarStore";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 /** What a thumbnail is drawn from: a page's size and its modules. A journal's
@@ -173,6 +174,27 @@ export type LoadedPlanner = {
   term: { start: string | null; end: string | null };
   weekSettings: WeekSettings;
   pageSettings: PageSettings;
+  /** The owner's events, as stored - the editor needs the rows themselves to
+   *  put one in a popup, where the drawn marks in `renderContext` have
+   *  already been reduced to rectangles on a column. ISO strings, because
+   *  this crosses into a client component. */
+  events: SerialisedEvent[];
+  /** The owner's calendars, and whether this journal shows each one. A person
+   *  has one until something is imported; the editor only offers a choice
+   *  once there is more than one. */
+  calendars: Array<{ id: string; name: string; colour: string; source: string | null; visible: boolean }>;
+};
+
+/** A stored event as it crosses to the browser. */
+export type SerialisedEvent = {
+  id: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  rrule: string | null;
+  calendarId: string;
+  colour: string | null;
 };
 
 /**
@@ -209,6 +231,17 @@ export async function loadPlannerPages(
   const resolvedVariantKey = variantKey !== null && at(variantKey).length === 0 ? null : variantKey;
   const levelPages = at(resolvedVariantKey);
 
+  // THE OWNER'S EVENTS, once for the whole load. Fetched here rather than by
+  // the three callers because this is already the one place that turns a
+  // planner row into pages, and an event placed by one caller and not another
+  // is the same "two descriptions" problem the render context was built to
+  // stop. A journal with no events costs one indexed query returning nothing.
+  const [events, calendars]: [EditableEvent[], Awaited<ReturnType<typeof calendarsFor>>] =
+    await Promise.all([
+      eventsForJournal(planner.ownerId, planner.id),
+      calendarsFor(planner.ownerId, planner.id),
+    ]);
+
   const theme = planner.theme as PlannerTheme | null;
   // Not from the theme blob: `dated` is a real column, because it is
   // structural rather than presentational - it says what kind of planner
@@ -235,8 +268,10 @@ export async function loadPlannerPages(
     // Which occurrence this page is edited AS, its day columns rotated to
     // the book's week start, dated or not - one function, shared with the
     // editor and the server actions, so a module drawn later is dated the
-    // way it was drawn here.
-    const renderContext = renderContextForPage(planner, page.id);
+    // way it was drawn here. The events go in here too, so THE CANVAS, THE
+    // TIMELINE THUMBNAILS AND THE PDF all get them from one call rather than
+    // three places each deciding which week an event belongs to.
+    const renderContext = renderContextForPage(planner, page.id, events);
 
     const moduleInstances: LoadedModuleInstance[] = [];
     for (const instance of page.moduleInstances) {
@@ -330,7 +365,7 @@ export async function loadPlannerPages(
     )
     .map((page) => {
       // Its own page's context, so a card is dated the way its page is.
-      const previewMarks = pageThumbnail(page, fontFamily, renderContextForPage(planner, page.id));
+      const previewMarks = pageThumbnail(page, fontFamily, renderContextForPage(planner, page.id, events));
       return {
         pageId: page.id,
         level: page.level,
@@ -387,6 +422,17 @@ export async function loadPlannerPages(
       end: (planner as { endDate?: Date | null }).endDate?.toISOString().slice(0, 10) ?? null,
     },
     weekSettings,
+    events: events.map((e) => ({
+      id: e.id,
+      title: e.title,
+      startsAt: e.startsAt.toISOString(),
+      endsAt: e.endsAt.toISOString(),
+      allDay: e.allDay,
+      rrule: e.rrule,
+      calendarId: e.calendarId,
+      colour: e.calendar?.colour ?? null,
+    })),
+    calendars,
     pageSettings: {
       fontFamily: fontChoice,
       dated,

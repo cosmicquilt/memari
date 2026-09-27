@@ -306,6 +306,36 @@ export function dayNamed(start: Date, name: unknown): Date | null {
   return new Date(start.getTime() + offset * 86_400_000);
 }
 
+/**
+ * WHAT DATE EACH COLUMN OF AN HOURLY GRID IS, for one occurrence.
+ *
+ * THE ONE DESCRIPTION. Two things need this answer and they must agree: the
+ * registry's `dated` hook, which writes the number into the day tab, and
+ * calendar events, which have to land in the column whose date they fall on.
+ * A second copy of the rule is exactly the "two descriptions of one geometry"
+ * defect this project keeps meeting - it would show up as an event drawn
+ * under the wrong date number, on a page where both look plausible.
+ *
+ * The two levels differ, and deliberately:
+ *   WEEKLY - each column already NAMES its weekday, so the date follows from
+ *            the week being printed, whichever half of the spread it is on.
+ *   DAILY  - the name itself is a template's guess (MONDAY, because it had to
+ *            say something), so consecutive days are taken from the
+ *            occurrence's own start and the name is recomputed with them.
+ *
+ * Null for a column whose name is not a weekday: a module free-texting its
+ * own heads gets no date and no events, rather than taking the page down.
+ */
+export function columnDates(
+  level: PageLevel,
+  start: Date,
+  dayLabels: ReadonlyArray<{ name?: unknown }>
+): Array<Date | null> {
+  return dayLabels.map((d, index) =>
+    level === "DAILY" ? new Date(start.getTime() + index * 86_400_000) : dayNamed(start, d.name)
+  );
+}
+
 /** "DEC 31 - JAN 6", the form the week title was measured in. */
 export function dateRangeLabel(start: Date, end: Date): string {
   const part = (d: Date) => `${MONTH_NAMES[d.getUTCMonth()].slice(0, 3).toUpperCase()} ${d.getUTCDate()}`;

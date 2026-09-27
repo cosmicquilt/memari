@@ -1,0 +1,613 @@
+"use client";
+
+// Adding and editing calendar events, on the hourly grid itself.
+//
+// WHERE THE INTERACTION LIVES. Not in a sidebar list: a week of hours is
+// already a picture of when things are, and both references Andrew looked at
+// (Google and iCloud) do the same thing - "within it the event adders are
+// popups". So this is a transparent sheet over the drawn grid that turns a
+// click or a drag into a time, and a small popup that edits the row.
+//
+// WHAT IT DOES NOT DO. It does not draw events. Those are drawn by
+// renderHourlyGridCore, from rows the server placed through
+// renderContextForPage, exactly as they will print - so what is on screen
+// while editing is the page, not a picture of it. The only marks this adds
+// are the drag's own preview, which is not a page element and never prints.
+//
+// HOW IT KNOWS WHERE ANYTHING IS. Two pure functions, both reading the
+// renderer's own geometry rather than guessing at it: hourlyGridGeometry for
+// the rows and columns, and drawnEventBoxes, which reads the hit areas OFF
+// THE MARKS. See src/lib/hourlyGridHit.ts - a second copy of the placement
+// maths would be the "two descriptions of one geometry" defect that has cost
+// this project more than any other.
+
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  hourlyGridGeometry,
+  type HourlyGridCoreConfig,
+} from "@/lib/modules/hourlyGridCore";
+import {
+  boxAt,
+  drawnEventBoxes,
+  endMinutesForDrag,
+  hhmmOf,
+  slotAt,
+  type DrawnEventBox,
+  type SlotHit,
+} from "@/lib/hourlyGridHit";
+import { placeAnchoredPanel } from "@/lib/anchoredPanel";
+import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import type { SerialisedEvent } from "./loadPlannerPages";
+import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from "./actions";
+import { useJournalId } from "./journalContext";
+import { useRefreshPages } from "./pagesRefreshContext";
+
+/** One of the owner's calendars, as the page loaded it. */
+export type CalendarChoice = { id: string; name: string; colour: string; visible: boolean };
+
+/** What the Repeat row offers. Kept to the rules calendarEvents.ts actually
+ *  draws: an option that stored a rule this app cannot expand would save
+ *  happily and then show nothing, which reads as a broken save. */
+const REPEATS: Array<{ label: string; rrule: string | null }> = [
+  { label: "Never", rrule: null },
+  { label: "Every day", rrule: "FREQ=DAILY" },
+  { label: "Every week", rrule: "FREQ=WEEKLY" },
+  { label: "Every weekday", rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
+  { label: "Every 2 weeks", rrule: "FREQ=WEEKLY;INTERVAL=2" },
+];
+
+const PANEL_WIDTH = 268;
+
+/** The event being edited, as the popup holds it. A new one has no id. */
+type Draft = {
+  id: string | null;
+  title: string;
+  /** "YYYY-MM-DD" - the column's own day. */
+  date: string;
+  /** "HH:MM". */
+  start: string;
+  end: string;
+  allDay: boolean;
+  rrule: string | null;
+  /** WHICH CALENDAR, because that is what carries the colour and what a
+   *  future sync pushes to. Null lets the server use the owner's default,
+   *  which it makes on first use. */
+  calendarId: string | null;
+  /** Where the popup points, in viewport coordinates. */
+  anchor: { top: number; bottom: number; right: number };
+};
+
+export function EventLayer({
+  elements,
+  propValues,
+  geometry,
+  lattice,
+  originX,
+  originY,
+  scale,
+  columnDates,
+  events,
+  calendars,
+}: {
+  /** The marks this module drew. The hit areas are read from them. */
+  elements: ReadonlyArray<RenderedPolotnoElement>;
+  /** The props it was drawn from - already dated and rotated. */
+  propValues: unknown;
+  geometry: { x: number; y: number; width: number; height: number };
+  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number };
+  /** The module box's own print-space origin, which is what the DOM box's
+   *  top-left corresponds to. */
+  originX: number;
+  originY: number;
+  /** CSS px per print px. */
+  scale: number;
+  /** Which day each column is, "YYYY-MM-DD", or null for a dateless one. */
+  columnDates: Array<string | null>;
+  /** The owner's stored rows, for filling the popup when one is clicked. */
+  events: SerialisedEvent[];
+  /** The owner's calendars. One is the ordinary case and the popup does not
+   *  ask; an imported calendar makes it a choice. */
+  calendars: CalendarChoice[];
+}) {
+  const journalId = useJournalId();
+  const refreshPages = useRefreshPages();
+  const surface = useRef<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [dragging, setDragging] = useState<{ from: SlotHit; toSlot: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const grid = useMemo(
+    () => hourlyGridGeometry(geometry, propValues as HourlyGridCoreConfig, lattice),
+    [geometry, propValues, lattice]
+  );
+  const boxes = useMemo(() => drawnEventBoxes(elements), [elements]);
+  const byId = useMemo(() => new Map(events.map((e) => [e.id, e])), [events]);
+
+  /** A pointer event's position in the drawing's own print px. */
+  const pointAt = useCallback(
+    (e: { clientX: number; clientY: number }) => {
+      const rect = surface.current?.getBoundingClientRect();
+      if (!rect) return null;
+      return {
+        x: originX + (e.clientX - rect.left) / scale,
+        y: originY + (e.clientY - rect.top) / scale,
+      };
+    },
+    [originX, originY, scale]
+  );
+
+  /** A print-space rectangle, as a viewport rectangle - what the popup needs
+   *  to point at the block it is editing. */
+  const anchorOf = useCallback(
+    (box: { x: number; y: number; width: number; height: number }) => {
+      const rect = surface.current?.getBoundingClientRect();
+      if (!rect) return { top: 0, bottom: 0, right: 0 };
+      const top = rect.top + (box.y - originY) * scale;
+      const left = rect.left + (box.x - originX) * scale;
+      return { top, bottom: top + box.height * scale, right: left + box.width * scale };
+    },
+    [originX, originY, scale]
+  );
+
+  const openExisting = useCallback(
+    (hit: DrawnEventBox) => {
+      // THE BAND IS ONE BOX FOR A WHOLE DAY however many all-day things are
+      // in it, and it labels the first with "+N" - see ALL_DAY_BAND_HEIGHT_PT.
+      // So a click on it edits that first one, which is the one it names.
+      const id =
+        hit.eventId ??
+        events.find((e) => e.allDay && e.startsAt.slice(0, 10) === columnDates[hit.day])?.id ??
+        null;
+      const row = id ? byId.get(id) : undefined;
+      const date = columnDates[hit.day];
+      if (!row || !date) return;
+      setDraft({
+        id: row.id,
+        title: row.title,
+        date,
+        start: row.startsAt.slice(11, 16),
+        end: row.endsAt.slice(11, 16),
+        allDay: row.allDay,
+        rrule: row.rrule,
+        calendarId: row.calendarId,
+        anchor: anchorOf(hit),
+      });
+    },
+    [anchorOf, byId, columnDates, events]
+  );
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const p = pointAt(e);
+      if (!p) return;
+
+      const onBlock = boxAt(boxes, p);
+      if (onBlock) {
+        e.stopPropagation();
+        openExisting(onBlock);
+        return;
+      }
+
+      const slot = slotAt(grid, p);
+      // A MISS DOES NOTHING, and deliberately does not fall through to the
+      // nearest slot - see slotAt. It also does not stop propagation, so a
+      // click on the day tab or in the gutter still reaches whatever else
+      // wanted it.
+      if (!slot) return;
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDraft(null);
+      setDragging({ from: slot, toSlot: slot.slot });
+    },
+    [boxes, grid, openExisting, pointAt]
+  );
+
+  const onPointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!dragging) return;
+      const p = pointAt(e);
+      if (!p) return;
+      // Only the ROW follows the pointer. Dragging sideways onto another day
+      // would make one gesture mean two things, and a diagonal drag would
+      // then land somewhere neither end of it pointed at.
+      const rowsHigh = p.y - grid.gridTop;
+      const toSlot = Math.max(0, Math.min(grid.rowCount - 1, Math.floor(rowsHigh / grid.rowHeight)));
+      if (toSlot !== dragging.toSlot) setDragging({ ...dragging, toSlot });
+    },
+    [dragging, grid, pointAt]
+  );
+
+  const onPointerUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!dragging) return;
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+      const { from, toSlot } = dragging;
+      setDragging(null);
+      const date = columnDates[from.day];
+      // NO DATE, NO EVENT. An undated book has no day for a column, so there
+      // is no instant to store - and storing one anyway would put a date on a
+      // planner whose whole point is not having them.
+      if (!date) return;
+      const endMinutes = endMinutesForDrag(grid, from, toSlot);
+      setDraft({
+        id: null,
+        title: "",
+        date,
+        start: hhmmOf(from.startMinutes),
+        end: hhmmOf(endMinutes),
+        allDay: false,
+        rrule: null,
+        calendarId: calendars.find((c) => c.visible)?.id ?? null,
+        anchor: anchorOf({
+          x: grid.columnX[from.day],
+          y: grid.gridTop + from.slot * grid.rowHeight,
+          width: grid.dayColumnWidth,
+          height: (Math.abs(toSlot - from.slot) + 1) * grid.rowHeight,
+        }),
+      });
+    },
+    [anchorOf, calendars, columnDates, dragging, grid]
+  );
+
+  const save = useCallback(async () => {
+    if (!draft || saving) return;
+    setSaving(true);
+    try {
+      // ALL-DAY IS A WHOLE DAY, not 00:00-23:59 typed by hand: the band draws
+      // from the flag, and the instants are what a future sync sends.
+      const input = {
+        title: draft.title,
+        startsAt: draft.allDay ? `${draft.date}T00:00:00.000Z` : `${draft.date}T${draft.start}:00.000Z`,
+        endsAt: draft.allDay ? `${draft.date}T23:59:00.000Z` : `${draft.date}T${draft.end}:00.000Z`,
+        allDay: draft.allDay,
+        rrule: draft.rrule,
+        calendarId: draft.calendarId,
+      };
+      if (draft.id) await updateCalendarEvent(draft.id, input);
+      else await createCalendarEvent(journalId, input);
+      setDraft(null);
+      // REBUILT, not just re-rendered. An event is DRAWN CONTENT, and the
+      // editor seeds the locked modules' marks from its first props - the
+      // same reason the font switch and the trim toggle pass this. A rebuild
+      // keeps the zoom, the palette and the drawer where they were; see
+      // pagesRefreshContext.
+      await refreshPages({ rebuild: true });
+    } catch (error) {
+      console.error("Could not save that event:", error);
+      setSaving(false);
+    }
+  }, [draft, journalId, refreshPages, saving]);
+
+  const remove = useCallback(async () => {
+    if (!draft?.id || saving) return;
+    setSaving(true);
+    try {
+      await deleteCalendarEvent(draft.id);
+      setDraft(null);
+      await refreshPages({ rebuild: true });
+    } catch (error) {
+      console.error("Could not delete that event:", error);
+      setSaving(false);
+    }
+  }, [draft, refreshPages, saving]);
+
+  // Escape closes, which is the one keyboard affordance a popup like this
+  // must have - there is no other way out of it without saving.
+  useEffect(() => {
+    if (!draft) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDraft(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draft]);
+
+  const dragPreview = dragging
+    ? {
+        left: (grid.columnX[dragging.from.day] - originX) * scale,
+        top: (grid.gridTop + Math.min(dragging.from.slot, dragging.toSlot) * grid.rowHeight - originY) * scale,
+        width: grid.dayColumnWidth * scale,
+        height: (Math.abs(dragging.toSlot - dragging.from.slot) + 1) * grid.rowHeight * scale,
+      }
+    : null;
+
+  return (
+    <>
+      <div
+        ref={surface}
+        data-event-layer
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => setDragging(null)}
+        style={{
+          position: "absolute",
+          inset: 0,
+          // Above the drawing, which is pointerEvents:none, and below the
+          // module's own controls, which sit outside the box.
+          zIndex: 1,
+          cursor: "cell",
+          touchAction: "none",
+        }}
+      >
+        {dragPreview ? (
+          <div
+            style={{
+              position: "absolute",
+              ...dragPreview,
+              background: "rgba(40, 90, 170, 0.18)",
+              border: "1px solid rgba(40, 90, 170, 0.55)",
+              borderRadius: 3,
+              pointerEvents: "none",
+            }}
+          />
+        ) : null}
+      </div>
+      {draft ? (
+        <EventPopup
+          draft={draft}
+          calendars={calendars}
+          saving={saving}
+          onChange={setDraft}
+          onClose={() => setDraft(null)}
+          onSave={save}
+          onDelete={remove}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The popup. A portal to the body, not a child of the module.
+ *
+ * It has to be: every module sits inside the canvas's zoom wrapper, which is
+ * a CSS transform, and a transform makes its element the containing block for
+ * anything fixed inside it - so a popup rendered in place would be scaled by
+ * the zoom and clipped by the page. Out here it is at 100%, over everything,
+ * wherever the block it belongs to happens to be on screen.
+ */
+function EventPopup({
+  draft,
+  calendars,
+  saving,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  draft: Draft;
+  calendars: CalendarChoice[];
+  saving: boolean;
+  onChange: (draft: Draft) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  const title = useRef<HTMLInputElement | null>(null);
+  const place = placeAnchoredPanel(
+    draft.anchor,
+    { width: window.innerWidth, height: window.innerHeight },
+    PANEL_WIDTH
+  );
+
+  // Before the first paint, so the caret is in the title field by the time
+  // the popup is visible rather than one frame later.
+  useLayoutEffect(() => {
+    title.current?.focus();
+    title.current?.select();
+  }, []);
+
+  const field: React.CSSProperties = {
+    font: "13px/1.3 ui-sans-serif, system-ui, sans-serif",
+    color: "#1a1a1a",
+    background: "#ffffff",
+    border: "1px solid #d5d3cd",
+    borderRadius: 6,
+    padding: "6px 8px",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+  const label: React.CSSProperties = {
+    font: "11px/1 ui-sans-serif, system-ui, sans-serif",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: "#7a7871",
+  };
+
+  return createPortal(
+    <>
+      {/* A click anywhere else closes it without saving. Escape does too -
+          see the handler in EventLayer. */}
+      <div
+        onPointerDown={onClose}
+        style={{ position: "fixed", inset: 0, zIndex: 60 }}
+      />
+      <div
+        role="dialog"
+        aria-label={draft.id ? "Edit event" : "New event"}
+        style={{
+          position: "fixed",
+          left: place.left,
+          ...(place.place === "above" ? { bottom: place.offset } : { top: place.offset }),
+          width: PANEL_WIDTH,
+          maxHeight: Math.max(place.maxHeight, 240),
+          overflowY: "auto",
+          zIndex: 61,
+          background: "#faf9f6",
+          border: "1px solid #ddd9d1",
+          borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+          padding: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <input
+          ref={title}
+          value={draft.title}
+          placeholder="Event"
+          onChange={(e) => onChange({ ...draft, title: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+          }}
+          style={{ ...field, font: "14px/1.3 ui-sans-serif, system-ui, sans-serif" }}
+        />
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, ...label, textTransform: "none", fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={draft.allDay}
+            onChange={(e) => onChange({ ...draft, allDay: e.target.checked })}
+          />
+          All day
+        </label>
+
+        {/* THE DATE IS THE COLUMN'S, not a field. The event was put on a day
+            by being drawn there; offering a date box as well would let the two
+            disagree, and the one on screen would be wrong. Moving an event to
+            another day is a drag, which is not built yet. */}
+        <div style={label}>{draft.date}</div>
+
+        {draft.allDay ? null : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...label, marginBottom: 4 }}>Starts</div>
+              <input
+                type="time"
+                value={draft.start}
+                step={300}
+                onChange={(e) => onChange({ ...draft, start: e.target.value })}
+                style={field}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ ...label, marginBottom: 4 }}>Ends</div>
+              <input
+                type="time"
+                value={draft.end}
+                step={300}
+                onChange={(e) => onChange({ ...draft, end: e.target.value })}
+                style={field}
+              />
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ ...label, marginBottom: 4 }}>Repeat</div>
+          <select
+            value={draft.rrule ?? ""}
+            onChange={(e) => onChange({ ...draft, rrule: e.target.value || null })}
+            style={field}
+          >
+            {REPEATS.map((r) => (
+              <option key={r.label} value={r.rrule ?? ""}>
+                {r.label}
+              </option>
+            ))}
+            {/* An imported rule this app does not expand is kept rather than
+                silently rewritten - see recursOn. It shows here so editing
+                the title of such an event cannot quietly turn it into a
+                weekly one. */}
+            {draft.rrule && !REPEATS.some((r) => r.rrule === draft.rrule) ? (
+              <option value={draft.rrule}>Custom ({draft.rrule})</option>
+            ) : null}
+          </select>
+        </div>
+
+        {/* CALENDAR - only when there is a choice to make. A person with one
+            calendar has nothing to pick, and a select with a single option is
+            a control that does nothing; the server files the event on the
+            owner's default, which it makes on first use. The row appears by
+            itself the moment a second calendar exists, which is what
+            importing a Google or holiday calendar will do.
+
+            The colour belongs to the CALENDAR, not to the event, and it is a
+            SCREEN affordance either way - print takes grey, because colour
+            pages cost money. Recolouring or renaming a calendar is not here
+            yet; it belongs wherever calendars are listed and toggled. */}
+        {calendars.length > 1 ? (
+          <div>
+            <div style={{ ...label, marginBottom: 4 }}>Calendar</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                aria-hidden
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: "50%",
+                  flex: "0 0 auto",
+                  background:
+                    calendars.find((c) => c.id === draft.calendarId)?.colour ?? calendars[0].colour,
+                  border: "1px solid #cfccc4",
+                }}
+              />
+              <select
+                value={draft.calendarId ?? calendars[0].id}
+                onChange={(e) => onChange({ ...draft, calendarId: e.target.value })}
+                style={field}
+              >
+                {calendars.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            style={{
+              flex: 1,
+              font: "13px/1 ui-sans-serif, system-ui, sans-serif",
+              padding: "8px 10px",
+              borderRadius: 7,
+              border: "1px solid #2f2d29",
+              background: saving ? "#8b8880" : "#2f2d29",
+              color: "#ffffff",
+              cursor: saving ? "default" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : draft.id ? "Save" : "Add"}
+          </button>
+          {draft.id ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={saving}
+              style={{
+                font: "13px/1 ui-sans-serif, system-ui, sans-serif",
+                padding: "8px 10px",
+                borderRadius: 7,
+                border: "1px solid #d5d3cd",
+                background: "#ffffff",
+                color: "#a3352f",
+                cursor: saving ? "default" : "pointer",
+              }}
+            >
+              Delete
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}

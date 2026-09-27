@@ -81,7 +81,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
-import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -92,11 +92,13 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { LoadedPage, PageSettings } from "./loadPlannerPages";
+import type { LoadedPage, PageSettings, SerialisedEvent } from "./loadPlannerPages";
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
+import { EventLayer, type CalendarChoice } from "./EventLayer";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
-import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
+import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
+import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
 import { useJournalId } from "./journalContext";
 import { useRefreshPages } from "./pagesRefreshContext";
@@ -823,6 +825,7 @@ function NativeModule({
   boxWidthPx,
   boxHeightPx,
   fontFamily,
+  overlay,
 }: {
   instanceId: string;
   locked: boolean;
@@ -981,6 +984,12 @@ function NativeModule({
   // actually rendering in (previously hardcoded to "Georgia, 'Newsreader',
   // serif" regardless of the real committed font).
   fontFamily: string;
+  /** Something interactive laid over this module's drawing - today only the
+   *  hourly grid's event sheet. It goes AFTER the drawing, which is
+   *  pointerEvents:none, and inside the box, so it shares the module's own
+   *  coordinate space. Passed in rather than built here, so this component
+   *  stays a box with a drawing in it. */
+  overlay?: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
   // Held down but not necessarily dragging yet — dnd-kit's own
@@ -1330,6 +1339,7 @@ function NativeModule({
           textEaseMs={clipToBox ? easeMs : 0}
         />
       </div>
+      {overlay}
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
           individually deletable). stopPropagation on pointerdown keeps
@@ -1690,6 +1700,8 @@ function NativePage({
   onHoverEnd,
   scale,
   fontFamily,
+  events,
+  calendars,
 }: {
   page: LoadedPage;
   // Which instance ids actually live on this page right now — see
@@ -1787,6 +1799,11 @@ function NativePage({
   // re-render (contentIsLive below) and NativeModule's inline edit
   // overlays render in the same font as everything already committed.
   fontFamily: string;
+  /** The owner's stored events and calendars, for the event sheet over the
+   *  hourly grid. The MARKS come from the server like every other module's;
+   *  these are the rows behind them, which the popup edits. */
+  events: SerialisedEvent[];
+  calendars: CalendarChoice[];
 }) {
   return (
     <div
@@ -2080,6 +2097,53 @@ function NativePage({
             boxWidthPx={gridCellToPixels(page.pageGrid, placement).width}
             boxHeightPx={gridCellToPixels(page.pageGrid, placement).height}
             fontFamily={fontFamily}
+            overlay={
+              // EVENTS ARE EDITED ON THE HOURS THEMSELVES, and only where a
+              // column has a date to put one on: an undated book has no
+              // instant to store. Not during a resize or a drag either -
+              // those are other gestures, and a pointerdown must not mean two
+              // things at once.
+              info.slug === "hourly-grid-core" &&
+              page.renderContext?.columnDates &&
+              !(resizingIds?.has(id) ?? false) &&
+              activeId === null
+                ? (() => {
+                    // THE SAME THREE ARGUMENTS THE MARKS WERE DRAWN FROM -
+                    // propsForRender then drawingInputsFor, which is exactly
+                    // what renderOnPage does. Deriving the box or the props
+                    // any other way is how a click lands on a different
+                    // minute than the block it was aimed at.
+                    const inputs = drawingInputsFor(
+                      {
+                        id,
+                        locked: info.locked,
+                        columnStart: placement.columnStart,
+                        rowStart: placement.rowStart,
+                        columnSpan: placement.columnSpan,
+                        rowSpan: placement.rowSpan,
+                        propValues: propsForRender(info.slug, info.propValues, page.renderContext),
+                        moduleType: { slug: info.slug },
+                      },
+                      page.pageGrid
+                    );
+                    if (!inputs) return null;
+                    return (
+                      <EventLayer
+                        elements={elements}
+                        propValues={inputs.propValues}
+                        geometry={inputs.geometry}
+                        lattice={inputs.lattice}
+                        originX={info.originX}
+                        originY={info.originY}
+                        scale={scale}
+                        columnDates={page.renderContext.columnDates}
+                        events={events}
+                        calendars={calendars}
+                      />
+                    );
+                  })()
+                : undefined
+            }
           />
         );
       })}
@@ -4674,6 +4738,8 @@ export type EditorUi = {
 
 export function NativePlannerEditor({
   pages,
+  events,
+  calendars,
   term,
   pageSettings: initialPageSettings,
   initialViewport,
@@ -4684,6 +4750,11 @@ export function NativePlannerEditor({
   guest = false,
 }: {
   pages: LoadedPage[];
+  /** The owner's stored events and calendars. The events are ALREADY DRAWN on
+   *  the pages above, placed by the server; these are the rows behind those
+   *  marks, which the popup over the hourly grid edits. */
+  events: SerialisedEvent[];
+  calendars: CalendarChoice[];
   /** What stretch of time the book covers, as ISO dates - for Page
    *  Settings. (The timeline, which also reads it, lives in EditorShell.) */
   term: { start: string | null; end: string | null };
@@ -10032,6 +10103,8 @@ export function NativePlannerEditor({
                     onHoverEnd={handleHoverEnd}
                     scale={scale}
                     fontFamily={fontFamily}
+                    events={events}
+                    calendars={calendars}
                   />
                 ))}
               </div>

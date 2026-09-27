@@ -27,6 +27,12 @@ export type HourlyGridEvent = {
   allDay?: boolean;
   /** The calendar's colour. Absent falls back to the source default. */
   colour?: string;
+  /** THE STORED EVENT THIS IS, when there is one. It goes into the drawn
+   *  element's own id, which is how the editor knows which row a block on
+   *  screen belongs to - see EventLayer. Absent in a proof sheet or a test,
+   *  where the start time serves; an id is never invented here, because two
+   *  marks with the same id would break morph pairing silently. */
+  id?: string;
 };
 
 export type HourlyGridCoreConfig = {
@@ -654,26 +660,40 @@ function eventCornerRadiusPx(width: number, height: number): number {
   return Math.min(ptToPx(EVENT_CORNER_RADIUS_PT), width / 2, height / 2);
 }
 
-export function renderHourlyGridCore(
+/**
+ * WHERE AN HOURLY GRID PUTS THINGS, before anything is drawn.
+ *
+ * Pulled out of renderHourlyGridCore because a second thing now needs the
+ * answer: the editor, which turns a click at some (x, y) inside the module
+ * back into a day column and a time. Working that out from the module box
+ * and the config independently is the "two descriptions of one geometry"
+ * defect this project keeps meeting - it would show as an event saved at
+ * 10:30 and drawn at 10:00, on a page where each half looks right.
+ *
+ * Everything here is in the SAME coordinate space the elements come out in
+ * (print px, module-absolute), so a caller holding a pointer position in
+ * that space can compare against it directly.
+ */
+export type HourlyGridGeometry = {
+  startMinutes: number;
+  endMinutes: number;
+  intervalMinutes: number;
+  rowCount: number;
+  rowHeight: number;
+  headerHeight: number;
+  /** y of the first ruled row - the top of slot 0. */
+  gridTop: number;
+  columnGutter: number;
+  dayColumnWidth: number;
+  /** Each day column's left edge, dayCount long. */
+  columnX: number[];
+};
+
+export function hourlyGridGeometry(
   geometry: { x: number; y: number; width: number; height: number },
   config: HourlyGridCoreConfig,
-  idPrefix: string,
-  fontFamily: string,
-  // The page's 1/4in dot lattice. Only used when increments are off, where
-  // the block becomes free space and the dots are what makes it writable -
-  // see that branch. Optional so a caller without a page grid (a preview,
-  // a test) still renders everything else.
   lattice?: { pitchPx: number; originX: number; originY: number; insetPx: number }
-): RenderedElement[] {
-  const elements: RenderedElement[] = [];
-  // Semantic, not positional — see todoChecklist.ts. Ids here name a day
-  // column, a row within it, or a lattice position, so changing the hour
-  // range or turning the dot field on does not renumber everything else.
-  const id = (name: string) => `${idPrefix}-${name}`;
-  // Page Settings' font switch (Planner.theme) — aliased to the name
-  // already used everywhere below rather than touching every reference.
-  const FONT_FAMILY = fontFamily;
-
+): HourlyGridGeometry {
   // See hoursOrDefaults: this renderer is total in its config like every
   // other one here, which it had not been.
   const { startMinutes, endMinutes, intervalMinutes } = hoursOrDefaults(config);
@@ -729,13 +749,63 @@ export function renderHourlyGridCore(
     ? dayAllocationWidth - columnGutter
     : (geometry.width - columnGutter * (config.dayCount - 1)) / config.dayCount;
 
+  const columnX = Array.from({ length: config.dayCount }, (_, d) =>
+    lattice
+      ? allocationX + d * dayAllocationWidth + columnGutter / 2
+      : geometry.x + d * (dayColumnWidth + columnGutter)
+  );
+
+  return {
+    startMinutes,
+    endMinutes,
+    intervalMinutes,
+    rowCount,
+    rowHeight,
+    headerHeight,
+    gridTop,
+    columnGutter,
+    dayColumnWidth,
+    columnX,
+  };
+}
+
+export function renderHourlyGridCore(
+  geometry: { x: number; y: number; width: number; height: number },
+  config: HourlyGridCoreConfig,
+  idPrefix: string,
+  fontFamily: string,
+  // The page's 1/4in dot lattice. Only used when increments are off, where
+  // the block becomes free space and the dots are what makes it writable -
+  // see that branch. Optional so a caller without a page grid (a preview,
+  // a test) still renders everything else.
+  lattice?: { pitchPx: number; originX: number; originY: number; insetPx: number }
+): RenderedElement[] {
+  const elements: RenderedElement[] = [];
+  // Semantic, not positional — see todoChecklist.ts. Ids here name a day
+  // column, a row within it, or a lattice position, so changing the hour
+  // range or turning the dot field on does not renumber everything else.
+  const id = (name: string) => `${idPrefix}-${name}`;
+  // Page Settings' font switch (Planner.theme) — aliased to the name
+  // already used everywhere below rather than touching every reference.
+  const FONT_FAMILY = fontFamily;
+
+  const {
+    startMinutes,
+    intervalMinutes,
+    rowCount,
+    rowHeight,
+    headerHeight,
+    gridTop,
+    columnGutter,
+    dayColumnWidth,
+    columnX,
+  } = hourlyGridGeometry(geometry, config, lattice);
+
   const lineOpacity =
     config.hourLineStyle === "full" ? 1 : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
 
   for (let d = 0; d < config.dayCount; d++) {
-    const dayX = lattice
-      ? allocationX + d * dayAllocationWidth + columnGutter / 2
-      : geometry.x + d * (dayColumnWidth + columnGutter);
+    const dayX = columnX[d];
     const label = config.dayLabels[d];
 
     // Header tab: bordered box, day name at the left edge, date at the
@@ -1072,7 +1142,12 @@ export function renderHourlyGridCore(
       const eventHeight = Math.max(evHeight - margin * 2, 4);
       const eventFill = event.colour ?? (event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3");
       elements.push({
-        id: id(`d${d}-ev${event.startTime}-box`),
+        // KEYED BY THE EVENT, not by its time: two events starting at the
+        // same minute in one day would otherwise share an id, and the editor
+        // reads this id to know which row was clicked. Falls back to the
+        // start time for a caller with no stored rows behind it (the proof
+        // sheet, the tests), which is what it always was.
+        id: id(`d${d}-ev${event.id ?? event.startTime}-box`),
         type: "figure",
         subType: "rect",
         x: eventX,
@@ -1087,7 +1162,7 @@ export function renderHourlyGridCore(
       });
       const eventFontSize = ptToPx(EVENT_LABEL_PT);
       elements.push({
-        id: id(`d${d}-ev${event.startTime}-label`),
+        id: id(`d${d}-ev${event.id ?? event.startTime}-label`),
         type: "text",
         x: eventX + ptToPx(EVENT_TEXT_PADDING_PT),
         // CENTRED IN ITS FIRST ROW, not in the whole block. Asked for as

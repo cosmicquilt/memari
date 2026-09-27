@@ -60,6 +60,13 @@ import {
   renderOnPage,
   type PageRenderContext,
 } from "@/lib/renderContext";
+import {
+  calendarsFor,
+  createEventFor,
+  deleteEventFor,
+  updateEventFor,
+  type EventInput,
+} from "./calendarStore";
 import { weekSidebarBoxes, weekTodoPlacements, weekHourlyPlacements } from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
@@ -3474,4 +3481,40 @@ export async function loadSavedItems(journalId: string) {
     throw new Error(JOURNAL_NOT_FOUND);
   }
   return savedItemsFor(userId, book);
+}
+
+// --- CALENDAR EVENTS -------------------------------------------------------
+//
+// Thin, like the saved-item wrappers above: the rules are in calendarStore.ts
+// and the placement is in src/lib/calendarEvents.ts. What these add is the
+// identity check - requireOwner, once per call - and nothing else, so there
+// is no second copy of "is this yours" to keep in step.
+//
+// None of them returns the page. The caller refreshes through
+// pagesRefreshContext, which re-runs loadPlannerPages and therefore re-places
+// every event through the same renderContextForPage the first load used.
+
+/** The owner's calendars, with whether this journal shows each one. */
+export async function loadCalendars(journalId: string) {
+  const userId = await requireOwner();
+  const planner = await prisma.planner.findFirst({
+    where: journalWhere(userId, journalId),
+    select: { id: true },
+  });
+  if (!planner) throw new Error(JOURNAL_NOT_FOUND);
+  return calendarsFor(userId, planner.id);
+}
+
+export async function createCalendarEvent(journalId: string, input: EventInput): Promise<string> {
+  const userId = await requireOwner();
+  const event = await createEventFor(userId, journalId, input);
+  return event.id;
+}
+
+export async function updateCalendarEvent(eventId: string, input: EventInput): Promise<void> {
+  await updateEventFor(await requireOwner(), eventId, input);
+}
+
+export async function deleteCalendarEvent(eventId: string): Promise<void> {
+  await deleteEventFor(await requireOwner(), eventId);
 }

@@ -98,6 +98,62 @@ function renderBySlug(
 // constructing it is silently ignored. Span-aware resize (snapping
 // width/height to whole columns/rows) isn't built yet, only position, so
 // this keeps Polotno's own free-form resize handles from appearing.
+/** What a renderer is handed: the box, the props it actually draws, and the
+ *  page's dot lattice. */
+export type DrawingInputs = {
+  geometry: { x: number; y: number; width: number; height: number };
+  propValues: unknown;
+  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number };
+};
+
+/**
+ * THE THREE ARGUMENTS EVERY MODULE IS DRAWN FROM, worked out once.
+ *
+ * Exported because the editor needs them without drawing anything: to turn a
+ * click inside the hourly grid back into a day and a time it has to know the
+ * same box, the same props and the same lattice the marks were placed from.
+ * Deriving those a second time in the browser is how a click at 10:30 ends up
+ * saved as 10:00 - see hourlyGridGeometry's own note.
+ *
+ * Null for an instance with no placement, which is what the render returned
+ * for one before this was pulled out.
+ */
+export function drawingInputsFor(
+  instance: ModuleInstanceForRender,
+  pageGrid: PageGrid
+): DrawingInputs | null {
+  if (instance.columnStart === null || instance.rowStart === null) return null;
+  const geometry = gridCellToPixels(pageGrid, {
+    columnStart: instance.columnStart,
+    rowStart: instance.rowStart,
+    columnSpan: instance.columnSpan,
+    rowSpan: instance.rowSpan,
+  });
+  const cell = gridCellToAllocation(pageGrid, {
+    columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
+  });
+  // Facts that are consequences of the geometry rather than settings are
+  // recomputed here from the box about to be drawn, so no caller can hand a
+  // renderer a prop that disagrees with the size it passed. See the
+  // registry's derivedProps for the reasoning and for which modules have any.
+  const propValues = withDerivedProps(
+    instance.moduleType.slug,
+    pageGrid,
+    { columnSpan: instance.columnSpan, rowSpan: instance.rowSpan },
+    instance.propValues
+  );
+  return {
+    geometry,
+    propValues,
+    lattice: {
+      pitchPx: cell.width,
+      originX: pageGrid.marginPx,
+      originY: pageGrid.marginPx,
+      insetPx: pageGrid.boxInsetPx,
+    },
+  };
+}
+
 export function renderModuleInstance(
   instance: ModuleInstanceForRender,
   pageGrid: PageGrid,
@@ -108,38 +164,18 @@ export function renderModuleInstance(
     return props.polotnoElement ? [props.polotnoElement] : [];
   }
 
-  if (instance.columnStart === null || instance.rowStart === null) {
+  const inputs = drawingInputsFor(instance, pageGrid);
+  if (!inputs) {
     return [];
   }
-  const geometry = gridCellToPixels(pageGrid, {
-    columnStart: instance.columnStart,
-    rowStart: instance.rowStart,
-    columnSpan: instance.columnSpan,
-    rowSpan: instance.rowSpan,
-  });
-
-  const cell = gridCellToAllocation(pageGrid, {
-    columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1,
-  });
-
-  // Facts that are consequences of the geometry rather than settings are
-  // recomputed here from the box about to be drawn, so no caller can hand
-  // this a prop that disagrees with the size it passed. See the registry's
-  // derivedProps for the reasoning and for which modules have any.
-  const propValues = withDerivedProps(
-    instance.moduleType.slug,
-    pageGrid,
-    { columnSpan: instance.columnSpan, rowSpan: instance.rowSpan },
-    instance.propValues
-  );
 
   const elements = renderBySlug(
     instance.moduleType.slug,
-    geometry,
-    propValues,
+    inputs.geometry,
+    inputs.propValues,
     instance.id,
     fontFamily,
-    { pitchPx: cell.width, originX: pageGrid.marginPx, originY: pageGrid.marginPx, insetPx: pageGrid.boxInsetPx }
+    inputs.lattice
   );
   if (!elements.length) {
     return elements;

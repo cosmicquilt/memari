@@ -539,7 +539,7 @@ function modulePreview(slug: string, propValues: unknown, columnSpan: number, ro
     // A saved module is not on a page, so there is no occurrence to date it
     // as. `dated: false` keeps a saved module's own dates out of its card,
     // which is what it drew before.
-    { dated: false, occurrence: null, dayLabels: null }
+    { dated: false, occurrence: null, dayLabels: null, events: null, columnDates: null }
   );
   return { marks, ...size };
 }
@@ -565,7 +565,7 @@ function previewsOf(saved: { content: Prisma.JsonValue } & PageSize, fontFamily:
       fontFamily,
       // Undated: a saved page belongs to no term, so it is shown as the
       // template it is rather than filled in for some week.
-      { dated: false, occurrence: null, dayLabels: null }
+      { dated: false, occurrence: null, dayLabels: null, events: null, columnDates: null }
     )
   );
 }

@@ -15,8 +15,10 @@ import type { HourlyGridEvent } from "./modules/hourlyGridCore";
 
 /** The columns of one page's hourly grid, as real dates. */
 export type GridDay = {
-  /** Midnight UTC of the day this column is. */
-  date: Date;
+  /** Midnight UTC of the day this column is, or null for a column that has
+   *  no date - an undated book, or a head that is not a weekday name. A
+   *  dateless column draws no events rather than borrowing its neighbour's. */
+  date: Date | null;
 };
 
 /** What this needs from a CalendarEvent row - structural, so a Prisma row
@@ -125,6 +127,7 @@ export function eventsForDays(events: StoredEvent[], days: GridDay[]): HourlyGri
   const out: HourlyGridEvent[] = [];
 
   days.forEach((day, index) => {
+    if (!day.date) return;
     const dayStart = utcMidnight(day.date);
     const dayEnd = dayStart + DAY_MS;
 
@@ -152,6 +155,7 @@ export function eventsForDays(events: StoredEvent[], days: GridDay[]): HourlyGri
       }
 
       out.push({
+        id: event.id,
         day: index,
         startTime: event.allDay ? "00:00" : hhmm(start),
         endTime: event.allDay ? "23:59" : hhmm(end),
