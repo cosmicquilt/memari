@@ -64,31 +64,27 @@ const ACCENT = "#4a5cff";
 const SEGMENT_PADDING = 3;
 
 /**
- * Behind the dialog: near-black, with a hint of granite.
+ * Behind the dialog: the landing page's cream, on paper.
  *
- * It was #111113 - a flat fill with a little BLUE in it, which is the
- * default-feeling neutral this project's design language warns about. Asked
- * for 2026-09-22: "black and white maybe a very little hint of brown
- * granite".
+ * Asked for 2026-09-27: "make the background the cream white color from the
+ * landing page ... would you also be able to make it paper textured". It was
+ * near-black with a faint granite speckle ("black and white maybe a very
+ * little hint of brown granite", 2026-09-22).
  *
- * So the ground is a true neutral near-black and the speckle is the only
- * colour in it, warm rather than blue. Three layers of fine dots on
- * co-prime tile sizes (37/41, 53/61, 71/67 px): co-prime so the three
- * patterns do not come back into step and print a visible grid, which is
- * what a single tiled layer does. Alphas are 0.05 and under - at full
- * strength this reads as dirt on the screen rather than stone.
- *
- * Pure CSS rather than an image: it covers the whole window at any size,
- * costs no request, and cannot be the thing that has not loaded yet behind a
- * dialog that is the first thing anyone sees.
+ * The cream is the landing page's --cream, so leaving memari.studio for the
+ * app is one continuous surface. The texture is the journal pages' own fibre
+ * tile (/landing/paper.jpg - mid-grey, so an overlay blend leaves the colour
+ * alone and only the fibres lighten and darken it), drawn at 256px so a
+ * 2x screen shows it at its own resolution. At full strength: washed back
+ * by a third with the cream, it measured nearly flat at true size (a
+ * luminance spread of 1.6 against 2.3) and read as plain colour, not paper.
+ * The colour is there before the tile loads, so the first frame is cream,
+ * never blank.
  */
-const BACKDROP_BASE = "#0c0c0c";
-const BACKDROP_GRANITE = [
-  "radial-gradient(circle at 30% 40%, rgba(150, 126, 104, 0.05) 0 0.9px, transparent 1.6px)",
-  "radial-gradient(circle at 70% 20%, rgba(168, 148, 128, 0.035) 0 0.8px, transparent 1.5px)",
-  "radial-gradient(circle at 45% 75%, rgba(120, 104, 90, 0.045) 0 1.1px, transparent 1.9px)",
-].join(", ");
-const BACKDROP_GRANITE_SIZE = "37px 41px, 53px 61px, 71px 67px";
+const BACKDROP_BASE = "#f5ead5";
+const BACKDROP_PAPER = "url(/landing/paper.jpg)";
+const BACKDROP_PAPER_SIZE = "256px 256px";
+const BACKDROP_PAPER_BLEND = "overlay";
 const DANGER = "#d92d20";
 const ERROR_TEXT = "#ff8f5c";
 
@@ -176,8 +172,9 @@ export function StartDialog({
         position: "fixed",
         inset: 0,
         backgroundColor: BACKDROP_BASE,
-        backgroundImage: BACKDROP_GRANITE,
-        backgroundSize: BACKDROP_GRANITE_SIZE,
+        backgroundImage: BACKDROP_PAPER,
+        backgroundSize: BACKDROP_PAPER_SIZE,
+        backgroundBlendMode: BACKDROP_PAPER_BLEND,
         display: "grid",
         placeItems: "center",
         padding: 16,
