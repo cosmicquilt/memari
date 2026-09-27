@@ -158,7 +158,7 @@ const ALL_DAY_BAND_HEIGHT_PT = 14;
  * 15-minute event is a few pixels tall and a 4pt radius on a 4px box is not
  * a rounded rectangle, it is a lozenge.
  */
-const EVENT_CORNER_RADIUS_PT = 4;
+const EVENT_CORNER_RADIUS_PT = 3;
 const EVENT_OPACITY = 0.55;
 /** The block's own writing is held off its edge by this much. */
 const EVENT_TEXT_PADDING_PT = 3;
@@ -171,6 +171,8 @@ const EVENT_TEXT_PADDING_PT = 3;
  * line box (6pt) leaves 1.5pt of air above and below when centred.
  */
 const EVENT_LABEL_PT = 5;
+/** WCAG AA for normal text. See eventInk - this is a floor, not a taste. */
+const EVENT_INK_CONTRAST = 4.5;
 /**
  * The block's edge weight: the house hairline, the same 0.3pt the hour rules
  * and every module border are drawn at. Asked for as "thinnest border".
@@ -539,22 +541,32 @@ function eventBackdrop(fill: string): number[] {
  * Asked for 2026-09-27 - "make it a darker version of the background color".
  * A fixed factor would be a guess that happens to work for the two pastels
  * shipped today and fails on whatever colour somebody's calendar turns out
- * to be, so this DARKENS UNTIL IT MEETS A RATIO instead. 7:1 rather than
- * WCAG's 4.5, because this is 6pt type on paper: AAA for body text, and the
- * margin is cheap here since the alternative is only a darker blue.
+ * to be, so this DARKENS UNTIL IT MEETS A RATIO instead.
+ *
+ * 4.5:1 - WCAG AA for normal text, and the FLOOR rather than a preference.
+ * It was 7:1 (AAA) on the argument that 5pt type on paper deserves the
+ * margin, and at 7:1 the blue lands at L34% and the amber at L21%, which
+ * reads as near-black rather than as the event's own colour: "make the dark
+ * color closer to the event color". 4.5 puts them at L46% and L28%.
+ *
+ * Measured, so the cost of going further is on the record: 4:1 would give
+ * L49%, and 3.5:1 L54% - but 4.5 is where a printed label stops being
+ * something this app can defend, so that is where it stops.
  */
 function eventInk(fill: string): string {
   const backdrop = eventBackdrop(fill);
-  for (let lightness = 0.55; lightness > 0.05; lightness -= 0.02) {
+  for (let lightness = 0.7; lightness > 0.05; lightness -= 0.01) {
     const candidate = atLightness(fill, lightness);
-    if (contrast(hexToRgb(candidate), backdrop) >= 7) return candidate;
+    if (contrast(hexToRgb(candidate), backdrop) >= EVENT_INK_CONTRAST) return candidate;
   }
   return atLightness(fill, 0.08);
 }
 
 /** The block's edge: the same colour, dark enough to define it and light
- *  enough not to compete with the writing inside. */
-const eventBorder = (fill: string) => atLightness(fill, 0.55);
+ *  enough not to compete with the writing inside. Raised from 55% with the
+ *  ink, for the same reason - at 55% it read as a dark outline rather than as
+ *  the event's own colour. */
+const eventBorder = (fill: string) => atLightness(fill, 0.65);
 
 /** The corner radius an event block can actually take: the house radius, or
  *  half the shorter side if the block is smaller than that. A 15-minute event
