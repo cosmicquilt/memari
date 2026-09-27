@@ -149,6 +149,18 @@ const HEADER_TO_GRID_GAP_PT = 22.3;
  * without a config flag or a default to get wrong.
  */
 const ALL_DAY_BAND_HEIGHT_PT = 14;
+/**
+ * How an event block is drawn, in the band and over the hours alike - they
+ * are one visual family and reading as two would be the defect.
+ *
+ * Asked for 2026-09-27: "make them more rounded and lower opacity". The
+ * radius is CLAMPED to half the shorter side at the point of use, because a
+ * 15-minute event is a few pixels tall and a 4pt radius on a 4px box is not
+ * a rounded rectangle, it is a lozenge.
+ */
+const EVENT_CORNER_RADIUS_PT = 4;
+const EVENT_OPACITY = 0.55;
+
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
 // row labels, but that does not divide the 1/4in dot pitch (18pt), so the
 // rules drift off the lattice down the page. 9pt is two slots per dot, and
@@ -175,6 +187,20 @@ const DATE_RIGHT_INSET_PT = 6.9;
 // row's ruled line — measured from a sample vector rect: ~14pt wide,
 // ~8.9pt tall, 0.1pt near-black stroke.
 const TIME_LABEL_BOX_WIDTH_PT = 14;
+/**
+ * How far a TIMED event is held off the left edge of its day.
+ *
+ * The time-of-day labels live in a box TIME_LABEL_BOX_WIDTH_PT wide at the
+ * column's left edge, and an event drawn from dayX + 2 covered them - its
+ * own label started at dayX + 6, on top of "8:30". Reported 2026-09-27:
+ * "indent the ones over the hours to make it so their text doesn't over lap
+ * with the time of day text."
+ *
+ * The all-day band is NOT indented: there are no time labels beside it, and
+ * holding it off the edge would just make it look misaligned with the day
+ * tab above it.
+ */
+const EVENT_LEFT_INSET_PT = TIME_LABEL_BOX_WIDTH_PT + 1.5;
 const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
 const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
@@ -375,6 +401,13 @@ export function getHourlyGridCoreContentHeightPx(
 // than everything else's, not "around the same."
 export function getHourlyGridCoreOffModeMinHeightPx(): number {
   return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT);
+}
+
+/** The corner radius an event block can actually take: the house radius, or
+ *  half the shorter side if the block is smaller than that. A 15-minute event
+ *  is a few pixels tall, and an unclamped radius turns it into a lozenge. */
+function eventCornerRadiusPx(width: number, height: number): number {
+  return Math.min(ptToPx(EVENT_CORNER_RADIUS_PT), width / 2, height / 2);
 }
 
 export function renderHourlyGridCore(
@@ -733,10 +766,10 @@ export function renderHourlyGridCore(
           height: bandHeight,
           fill: first.colour ?? (first.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3"),
           stroke: "none",
-          opacity: 0.8,
+          opacity: EVENT_OPACITY,
           // Proved to survive to paper - see pdfDocument.test.mts, which
           // reads the file back and counts the bezier curves.
-          cornerRadius: ptToPx(2),
+          cornerRadius: eventCornerRadiusPx(dayColumnWidth - 4, bandHeight),
         });
         const labelFontSize = ptToPx(6);
         elements.push({
@@ -768,27 +801,35 @@ export function renderHourlyGridCore(
       const evY = gridTop + ((evStart - startMinutes) / intervalMinutes) * rowHeight;
       const evHeight = ((evEnd - evStart) / intervalMinutes) * rowHeight;
 
+      // HELD OFF THE TIME LABELS - see EVENT_LEFT_INSET_PT. Drawn from the
+      // column's left edge, the block and its own label sat on top of
+      // "8:30".
+      const eventX = dayX + ptToPx(EVENT_LEFT_INSET_PT);
+      const eventWidth = dayColumnWidth - ptToPx(EVENT_LEFT_INSET_PT) - 2;
+      const eventHeight = Math.max(evHeight, 4);
       elements.push({
         id: id(`d${d}-ev${event.startTime}-box`),
         type: "figure",
         subType: "rect",
-        x: dayX + 2,
+        x: eventX,
         y: evY,
-        width: dayColumnWidth - 4,
-        height: Math.max(evHeight, 4),
-        fill: event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3",
+        width: eventWidth,
+        height: eventHeight,
+        fill: event.colour ?? (event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3"),
         stroke: "none",
-        opacity: 0.8,
+        opacity: EVENT_OPACITY,
+        cornerRadius: eventCornerRadiusPx(eventWidth, eventHeight),
       });
+      const eventFontSize = ptToPx(6);
       elements.push({
         id: id(`d${d}-ev${event.startTime}-label`),
         type: "text",
-        x: dayX + 6,
+        x: eventX + 4,
         y: evY + 1,
-        width: dayColumnWidth - 12,
-        height: Math.max(evHeight, 4),
+        width: eventWidth - 8,
+        height: eventFontSize * 1.2,
         text: event.label,
-        fontSize: ptToPx(6),
+        fontSize: eventFontSize,
         fontFamily: FONT_FAMILY,
         fill: "#333333",
         align: "left",

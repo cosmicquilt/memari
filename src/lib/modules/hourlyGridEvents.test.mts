@@ -40,6 +40,12 @@ const BASE = {
   startTime: "06:00",
   endTime: "24:00",
   intervalMinutes: 30,
+  // The shipped planner's own setting (HOUR_DEFAULTS in pageLayouts). Without
+  // it the time-label boxes are not drawn at all, and the overlap assertion
+  // below has nothing to measure against - which is how it first reported
+  // "no time labels were drawn, so this proves nothing" rather than passing
+  // vacuously.
+  hourLineStyle: "full",
 };
 
 type El = Record<string, number | string | undefined> & { id: string; children?: El[] };
@@ -171,6 +177,65 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   check(String(band?.fill) === "#ffd8d8", `the calendar's colour should reach the fill, got ${band?.fill}`);
   const fallback = render([allDay(0, "Thanksgiving")]).find((e) => e.id === "t-d0-allday-box");
   check(String(fallback?.fill) === "#ffe9b3", `without a colour a manual event takes the manual fill, got ${fallback?.fill}`);
+}
+
+// --- a timed event clears the time-of-day labels --------------------------
+//
+// Reported 2026-09-27: "indent the ones over the hours to make it so their
+// text doesn't over lap with the time of day text". The block was drawn from
+// the column's left edge, and the time labels live in a box
+// TIME_LABEL_BOX_WIDTH_PT wide at exactly that edge - so the event, and its
+// own 6pt label four pixels further in, sat on top of "8:30".
+//
+// Stated against the LABEL BOX the grid actually draws rather than against
+// the inset constant, so it stays true if either moves.
+{
+  const marks = render([
+    { day: 1, startTime: "09:00", endTime: "10:30", label: "Office Hours", source: "manual" },
+  ]);
+  const labelBoxes = marks.filter((e) => /d1-r\d+-label-box$/.test(String(e.id)));
+  const timeTexts = marks.filter((e) => /d1-r\d+-time$/.test(String(e.id)));
+  const box = marks.find((e) => String(e.id).includes("d1-ev") && String(e.id).endsWith("-box"));
+  const label = marks.find((e) => String(e.id).includes("d1-ev") && String(e.id).endsWith("-label"));
+
+  check(labelBoxes.length > 0 && timeTexts.length > 0, "no time labels were drawn, so this proves nothing");
+  if (box && labelBoxes.length > 0) {
+    const labelRight = Math.max(...labelBoxes.map((e) => Number(e.x) + Number(e.width)));
+    check(
+      Number(box.x) >= labelRight,
+      `the event block starts at ${Number(box.x).toFixed(1)}, inside the time-label column that ends at ${labelRight.toFixed(1)}`
+    );
+    const textRight = Math.max(...timeTexts.map((e) => Number(e.x) + Number(e.width)));
+    check(
+      Number(label?.x) >= textRight,
+      `the event's own label starts at ${Number(label?.x).toFixed(1)}, over time text ending at ${textRight.toFixed(1)}`
+    );
+    // And it still has somewhere to say its name.
+    check(Number(box.width) > 200, `the indent left only ${Number(box.width).toFixed(0)}px for the event`);
+  }
+}
+
+// --- every event block is rounded, and never a lozenge ---------------------
+{
+  const long = render([{ day: 0, startTime: "09:00", endTime: "12:00", label: "Studio", source: "manual" }]);
+  const short = render([{ day: 0, startTime: "09:00", endTime: "09:15", label: "Standup", source: "manual" }]);
+  const boxOf = (marks: El[]) => marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+  const longBox = boxOf(long);
+  const shortBox = boxOf(short);
+
+  check(Number(longBox?.cornerRadius) > 0, "a timed event has square corners");
+  check(
+    Number(shortBox?.cornerRadius) <= Number(shortBox?.height) / 2 + 0.001,
+    `a ${Number(shortBox?.height).toFixed(1)}px event took a ${Number(shortBox?.cornerRadius).toFixed(1)}px radius - ` +
+      `more than half its height, which is a lozenge rather than a rounded rectangle`
+  );
+  // The band and the hours are one visual family: same radius rule, same
+  // opacity. Reading as two treatments would be the defect.
+  const band = render([allDay(0, "Thanksgiving")]).find((e) => e.id === "t-d0-allday-box");
+  check(
+    Number(band?.opacity) === Number(longBox?.opacity),
+    `the band is ${band?.opacity} and a timed event ${longBox?.opacity}; they should match`
+  );
 }
 
 if (failures > 0) {
