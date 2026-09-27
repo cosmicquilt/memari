@@ -45,7 +45,7 @@ enum PageLevel {
 // prebuilt starter planners (weekly/monthly/quarterly/yearly "bases")
 // that get cloned into a new owned Planner when a user starts fresh.
 model Planner {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   // Clerk user ID. Not an FK yet — syncing Clerk users into our own
   // `User` table via webhook is a later task, not a blocker for this.
   ownerId    String
@@ -59,7 +59,7 @@ model Planner {
   // Defaults true: every planner that existed before this column did was a
   // dated one, and a default that silently blanked them would be a migration
   // that deleted content.
-  dated      Boolean  @default(true)
+  dated      Boolean   @default(true)
   // What term this book covers. Sequence generation turns the templates
   // into pages by walking this range - so many weeks, so many days.
   // Nullable: every planner that existed before this was a single spread
@@ -67,11 +67,11 @@ model Planner {
   // somebody built.
   startDate  DateTime?
   endDate    DateTime?
-  isTemplate Boolean  @default(false)
+  isTemplate Boolean   @default(false)
   theme      Json?
   pages      Page[]
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([ownerId])
 }
@@ -160,16 +160,16 @@ model Page {
 // than fixed columns. default{Width,Height} are the freeform-page
 // fallback size; default{ColumnSpan,RowSpan} are the grid-page fallback.
 model ModuleType {
-  id                 String           @id @default(cuid())
-  slug               String           @unique
-  name               String
-  configSchema       Json
-  defaultWidth       Float
-  defaultHeight      Float
-  defaultColumnSpan  Int              @default(1)
-  defaultRowSpan     Int              @default(1)
-  instances          ModuleInstance[]
-  savedModules       SavedModule[]
+  id                String           @id @default(cuid())
+  slug              String           @unique
+  name              String
+  configSchema      Json
+  defaultWidth      Float
+  defaultHeight     Float
+  defaultColumnSpan Int              @default(1)
+  defaultRowSpan    Int              @default(1)
+  instances         ModuleInstance[]
+  savedModules      SavedModule[]
 }
 
 enum ModulePlacementMode {
@@ -182,11 +182,11 @@ enum ModulePlacementMode {
 // instance — independent of other instances on the same page, so a page
 // can mix grid-placed and free-placed modules.
 model ModuleInstance {
-  id            String              @id @default(cuid())
-  pageId        String
-  page          Page                @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  moduleTypeId  String
-  moduleType    ModuleType          @relation(fields: [moduleTypeId], references: [id])
+  id           String     @id @default(cuid())
+  pageId       String
+  page         Page       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  moduleTypeId String
+  moduleType   ModuleType @relation(fields: [moduleTypeId], references: [id])
 
   placementMode ModulePlacementMode @default(GRID)
   // "Core" blocks (hourly-grid-core, month-calendar-core) are locked by
@@ -196,26 +196,26 @@ model ModuleInstance {
   locked        Boolean             @default(false)
 
   // Used when placementMode = FREE.
-  x             Float?
-  y             Float?
-  width         Float?
-  height        Float?
+  x      Float?
+  y      Float?
+  width  Float?
+  height Float?
 
   // Used when placementMode = GRID (0-indexed).
-  columnStart   Int?
-  rowStart      Int?
-  columnSpan    Int                 @default(1)
-  rowSpan       Int                 @default(1)
+  columnStart Int?
+  rowStart    Int?
+  columnSpan  Int  @default(1)
+  rowSpan     Int  @default(1)
 
-  zIndex        Int                 @default(0)
-  propValues    Json                @default("{}")
+  zIndex     Int  @default(0)
+  propValues Json @default("{}")
 
   // A LINKED use of a saved module: its settings are the saved module's,
   // and changing them here changes every use. Placement stays this
   // instance's own - one saved tracker can sit in a sidebar here and full
   // width there. See src/app/planner/savedItems.ts.
   savedModuleId String?
-  savedModule   SavedModule?        @relation(fields: [savedModuleId], references: [id], onDelete: SetNull)
+  savedModule   SavedModule? @relation(fields: [savedModuleId], references: [id], onDelete: SetNull)
 
   @@index([pageId])
   @@index([savedModuleId])
@@ -270,4 +270,127 @@ model SavedModule {
   updatedAt    DateTime         @updatedAt
 
   @@index([ownerId])
+}
+
+// --- Calendars and events --------------------------------------------------
+//
+// PER OWNER, NOT PER JOURNAL (Andrew, 2026-09-26). Your calendar is yours: a
+// dentist appointment should appear in whichever journal covers that week,
+// and importing the same Google calendar once per journal would be absurd.
+// A journal chooses which calendars it SHOWS - see HiddenCalendar.
+//
+// The book is derived from templates and never stored (see
+// memari-sequence-generation), and a module dates itself through the
+// registry's `dated(props, at)` hook. An event is dated, so it cannot live in
+// a template's propValues; it lives here, and hourly-grid-core's hook fills
+// its `events` for the occurrence being drawn.
+//
+// Both models must be added to claimGuestWork, or a guest who signs in loses
+// their calendar.
+
+/// How an event came to be here. Sync must never push back something it just
+/// read, and a photo import has to be reviewable as a batch.
+enum EventOrigin {
+  TYPED
+  IMPORTED
+  PHOTO
+}
+
+model Calendar {
+  id         String           @id @default(cuid())
+  /// Clerk user id, or `guest:<32 hex>` - see src/lib/owner.ts.
+  ownerId    String
+  name       String
+  /// Drawn on screen; print takes grey (Andrew, 2026-09-26) - colour pages
+  /// cost money, so the colour is a screen affordance until asked for.
+  colour     String
+  /// Where it came from: google | icloud | outlook | ics. Null means it was
+  /// made here.
+  source     String?
+  /// The provider's own id for this calendar, and its sync cursor.
+  externalId String?
+  syncToken  String?
+  events     CalendarEvent[]
+  hiddenIn   HiddenCalendar[]
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([ownerId, source, externalId])
+  @@index([ownerId])
+}
+
+model CalendarEvent {
+  id         String   @id @default(cuid())
+  ownerId    String
+  calendarId String
+  calendar   Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  title    String
+  /// UTC instants. `timeZone` is the zone the event was AUTHORED in, kept
+  /// because a weekly recurrence has to stay at 9am across a DST boundary -
+  /// storing only the instant silently shifts a whole term.
+  startsAt DateTime
+  endsAt   DateTime
+  timeZone String   @default("UTC")
+  /// Drawn in the banner row above the hours, with holidays - which are
+  /// themselves just an imported calendar of all-day events.
+  allDay   Boolean  @default(false)
+
+  /// RFC 5545. Null for a one-off. Kept as the rule rather than expanded into
+  /// rows so that editing one instance of an imported series does not explode
+  /// it into fifty-two rows that then fight the server's copy.
+  rrule String?
+
+  origin       EventOrigin @default(TYPED)
+  /// The provider's id and version, for a round trip without duplication.
+  externalId   String?
+  etag         String?
+  lastSyncedAt DateTime?
+
+  /// SYNC CARGO: stored so a round trip does not wipe it, never shown and
+  /// never printed. Andrew, 2026-09-26: "we dont need location for our, I
+  /// want it to be simplistic."
+  location String?
+
+  /// A tombstone, not a delete. Without it a local deletion is invisible to
+  /// sync and the event returns on the next pull.
+  deletedAt DateTime?
+
+  overrides CalendarEventOverride[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@unique([calendarId, externalId])
+  @@index([ownerId, startsAt])
+  @@index([calendarId])
+}
+
+/// One instance of a recurring event moved, retitled or cancelled.
+model CalendarEventOverride {
+  id           String        @id @default(cuid())
+  eventId      String
+  event        CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// The instance's ORIGINAL start, which is how RFC 5545 names an instance.
+  recurrenceId DateTime
+  cancelled    Boolean       @default(false)
+  title        String?
+  startsAt     DateTime?
+  endsAt       DateTime?
+
+  @@unique([eventId, recurrenceId])
+}
+
+/// Which calendars a journal does NOT show.
+///
+/// Presence means hidden; absence means shown. That way a calendar added or
+/// imported later appears in every journal at once instead of being invisible
+/// until you go and tick it in each one - the same discipline as undated
+/// being the absence of the date values rather than a flag.
+model HiddenCalendar {
+  plannerId  String
+  calendarId String
+  calendar   Calendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@id([plannerId, calendarId])
+  @@index([calendarId])
 }

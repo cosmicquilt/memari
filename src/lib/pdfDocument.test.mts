@@ -24,6 +24,7 @@ import {
 import { glyphElement, type GlyphShape } from "./modules/glyphs";
 import { PROOF_PAGE } from "./proofSvg";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
+import { readDrawingOps } from "./pdfContentStream";
 
 let failures = 0;
 const fail = (message: string) => {
@@ -270,6 +271,52 @@ for (const shape of SHAPES) {
   const odd = drawElement.length >= 0 ? emptyReport() : emptyReport();
   drawElement(doc, { id: "x", type: "video", x: 0, y: 0, width: 10, height: 10 }, font, odd);
   if (odd.skipped !== 1) fail(`an unknown element type must be reported as skipped, got ${odd.skipped}`);
+}
+
+// --- rounded corners actually reach the paper --------------------------
+//
+// Calendar events are drawn as translucent ROUNDED rectangles, in the editor,
+// the previews and in print. The exporter has honoured `cornerRadius` since
+// it was added - pdfDocument's drawRect calls doc.roundedRect when the radius
+// is over zero - but nothing proved it: the one rounded rect in the totality
+// page above is only COUNTED, and `report.rects` is 2 either way. Delete the
+// branch and that check still passes.
+//
+// So read the file back. jsPDF draws a rounded rect as lines and four bezier
+// curves and emits NO `re` operator; a plain rect is a single `re` and no
+// curves. The two are distinguishable in the bytes, which is the only place
+// that settles what a printer will see.
+{
+  const square = createPdf(PROOF_PAGE);
+  drawPage(
+    square,
+    [{ id: "sq", type: "figure", subType: "rect", x: 100, y: 100, width: 80, height: 40, fill: "#231F20" }],
+    installFont(square, "Newsreader"),
+    emptyReport()
+  );
+  const squareOps = readDrawingOps(square.output("arraybuffer"));
+
+  const rounded = createPdf(PROOF_PAGE);
+  drawPage(
+    rounded,
+    [{ id: "rd", type: "figure", subType: "rect", x: 100, y: 100, width: 80, height: 40, fill: "#231F20", cornerRadius: 6 }],
+    installFont(rounded, "Newsreader"),
+    emptyReport()
+  );
+  const roundedOps = readDrawingOps(rounded.output("arraybuffer"));
+
+  if (squareOps.rects !== 1 || squareOps.curves !== 0) {
+    fail(`a square rect should be 1 re and no curves, got ${squareOps.rects} re and ${squareOps.curves} curves`);
+  }
+  if (roundedOps.curves < 4) {
+    fail(
+      `a rounded rect should reach the file as at least 4 bezier curves - one per corner - ` +
+        `got ${roundedOps.curves}. cornerRadius is being dropped between the element and the page.`
+    );
+  }
+  if (roundedOps.rects !== 0) {
+    fail(`a rounded rect should emit no plain re operator, got ${roundedOps.rects}`);
+  }
 }
 
 if (failures > 0) {

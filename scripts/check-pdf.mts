@@ -112,42 +112,11 @@ console.log(`Or from the editor: the Export PDF button, which serves /app/export
 // in them, so "897 marks drawn" means 897 marks are IN THE FILE. A library
 // quietly dropping a call is exactly the kind of failure that would
 // otherwise be found by a printer.
-const { inflateSync } = await import("node:zlib");
-const buffer = Buffer.from(bytes);
-let ops = { text: 0, rects: 0, curves: 0, lines: 0 };
-let streams = 0;
-for (let at = buffer.indexOf("stream"); at !== -1; at = buffer.indexOf("stream", at + 6)) {
-  // Skip the "endstream" keyword, which also contains "stream".
-  if (at >= 3 && buffer.subarray(at - 3, at + 6).toString("latin1") === "endstream") continue;
-  let start = at + "stream".length;
-  if (buffer[start] === 0x0d) start++;
-  if (buffer[start] === 0x0a) start++;
-  const end = buffer.indexOf("endstream", start);
-  if (end === -1) continue;
-  let body: string;
-  try {
-    body = inflateSync(buffer.subarray(start, end)).toString("latin1");
-  } catch {
-    continue; // not a deflated content stream (font files, metadata)
-  }
-  // A page's content stream, as opposed to the embedded font file or the
-  // metadata. Identified by carrying a drawing operator - and NOT by a bare
-  // `c`, which was the first attempt and matched a stray byte inside the
-  // font program, so the font counted as a third page.
-  if (!/\bTj\b/.test(body) && !/^[^\n]*\bre\b/m.test(body)) continue;
-  streams++;
-  // BOTH text forms. jsPDF writes `(text) Tj` with a standard face and
-  // `<hex> Tj` once a font is embedded, because the glyphs are then
-  // addressed by CID rather than by character - so a verifier that knows
-  // only the literal form reports zero text on exactly the documents that
-  // are correct, which is what it did.
-  ops = {
-    text: ops.text + (body.match(/[)>]\s*Tj/g) ?? []).length,
-    rects: ops.rects + (body.match(/^[^\n]*\bre\b/gm) ?? []).length,
-    curves: ops.curves + (body.match(/^[^\n]*\bc\b\s*$/gm) ?? []).length,
-    lines: ops.lines + (body.match(/^[^\n]*\bl\b\s*$/gm) ?? []).length,
-  };
-}
+// The reading itself is in src/lib/pdfContentStream.ts, so the focused
+// rounded-corner proof in pdfDocument.test.mts uses the same one.
+const { readDrawingOps } = await import("../src/lib/pdfContentStream.js");
+const { streams, ...ops } = readDrawingOps(bytes);
+
 console.log(
   `read back from the file: ${streams} content stream(s), ${ops.text} text ops, ` +
     `${ops.rects} rect ops, ${ops.curves} curve ops, ${ops.lines} line ops`
@@ -165,7 +134,7 @@ let problems = 0;
 // only counts if it is in the file. A printer that infers differently, and
 // scales the sheet to fit 7x10 instead of cutting it, puts every measurement
 // in the book out by 3.4%.
-const pdfText = buffer.toString("latin1");
+const pdfText = Buffer.from(bytes).toString("latin1");
 // Parsed by hand rather than with a regex built from a string: PDF boxes
 // are `/MediaBox [0 0 522. 738.]`, and the bracket-and-backslash soup a
 // constructed RegExp needs for that is exactly the kind of thing that goes
