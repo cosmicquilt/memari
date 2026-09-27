@@ -60,10 +60,22 @@ export async function ensureServer(explicitBase?: string): Promise<AppServer> {
   if (await answers(running)) return { base: running, started: false, stop: () => {} };
 
   const base = `http://localhost:${OWN_PORT}`;
+  // `shell: true` ON WINDOWS, and it is not optional. Node 20 stopped
+  // spawning `.cmd` files directly (the fix for CVE-2024-27980) and throws
+  // EINVAL instead, so this whole branch failed the first time it ever ran -
+  // every earlier run found a dev server already on :3000 and returned above
+  // without reaching it. A fallback nobody has taken is a fallback nobody has
+  // tested. The arguments here are fixed literals, so the usual objection to
+  // a shell - that an argument could carry one - does not apply.
   const server: ChildProcess = spawn(
     process.platform === "win32" ? "npx.cmd" : "npx",
     ["next", "dev", "--port", String(OWN_PORT)],
-    { stdio: "ignore", detached: process.platform !== "win32", env: process.env }
+    {
+      stdio: "ignore",
+      detached: process.platform !== "win32",
+      shell: process.platform === "win32",
+      env: process.env,
+    }
   );
 
   // `next dev` runs its compiler in a child, and on Windows killing only the

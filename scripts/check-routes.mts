@@ -89,10 +89,13 @@ async function main() {
   const journal = { id: guest.journalId };
 
   const routes: Expectation[] = [
-    // "/" is a redirect on purpose and always has been - src/app/page.tsx
-    // sends everyone to /app or to sign-in, and is kept free for the landing
-    // page Andrew has in mind. 200 here would mean someone built one.
-    { path: "/", expect: [307, 302, 303], as: "nobody", what: "the front door redirects" },
+    // "/" IS the landing page now, for everyone, signed in or not (the
+    // landing session, 2026-09-25). It used to redirect to sign-in and this
+    // row used to expect that, with a comment saying "200 here would mean
+    // someone built one". Someone did, and this is the row that noticed -
+    // the first time the check ever started its own dev server, since every
+    // run before that had found one already on :3000.
+    { path: "/", expect: [200], as: "nobody", what: "the landing page" },
     { path: "/privacy", expect: [200], as: "nobody", what: "privacy (Google fetches this one itself)" },
     { path: "/terms", expect: [200], as: "nobody", what: "terms" },
     { path: "/sign-in", expect: [200], as: "nobody", what: "sign-in" },

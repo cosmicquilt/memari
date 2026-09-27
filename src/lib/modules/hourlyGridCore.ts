@@ -20,6 +20,13 @@ export type HourlyGridEvent = {
   endTime: string; // "HH:MM", 24-hour
   label: string;
   source: "manual" | "google-calendar";
+  /** Drawn in the banner band above the hours instead of against a time -
+   *  see ALL_DAY_BAND_HEIGHT_PT. A holiday is one of these: Google and
+   *  iCloud both publish holidays as a calendar of all-day events, so the
+   *  band serves both and there is no second concept. */
+  allDay?: boolean;
+  /** The calendar's colour. Absent falls back to the source default. */
+  colour?: string;
 };
 
 export type HourlyGridCoreConfig = {
@@ -123,6 +130,25 @@ const HEADER_BORDER_WIDTH_PT = 0.5;
 // 36.3pt, the block rounds to 21 dots instead of 20, and a quarter inch
 // comes off the bottom zone for the sake of three tenths of a point.
 const HEADER_TO_GRID_GAP_PT = 22.3;
+/**
+ * The all-day band, between the day tab and the first ruled row.
+ *
+ * Asked for 2026-09-26: all-day events and holidays sit "between day of week
+ * at top and hourly section". It fits INSIDE the 22.3pt gap that is already
+ * there, which is why nothing else on the page moves: the block stays 20
+ * dots, its rowSpan stays 21, and the to-do below it keeps all fifteen rows.
+ * Growing the block by a dot instead would have cost the to-do a row on every
+ * weekly spread, to buy space that was already sitting empty.
+ *
+ * 14pt leaves 4.15pt of gap above and below, so the tab does not sit on the
+ * band and the band does not sit on the grid.
+ *
+ * AND IT DRAWS ONLY WHEN SOMETHING IS IN IT. A week with no all-day events
+ * is identical to one drawn before this existed - no empty band, no band
+ * rule, nothing. That is what makes this safe for every stored instance
+ * without a config flag or a default to get wrong.
+ */
+const ALL_DAY_BAND_HEIGHT_PT = 14;
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
 // row labels, but that does not divide the 1/4in dot pitch (18pt), so the
 // rules drift off the lattice down the page. 9pt is two slots per dot, and
@@ -676,12 +702,67 @@ export function renderHourlyGridCore(
       });
     }
 
+    // ALL-DAY EVENTS AND HOLIDAYS, in the band between the day tab and the
+    // first ruled row - see ALL_DAY_BAND_HEIGHT_PT.
+    //
+    // Measured against what is actually drawn rather than against the
+    // nominal 22.3pt: the header box starts at geometry.y, the grid starts
+    // at gridTop, and on a lattice those are not the same distance apart as
+    // the two constants say - gridTop is measured from the ALLOCATION's top,
+    // six pixels above the ink box. Centring in the real gap keeps the band
+    // off both neighbours whichever frame is in force.
+    const allDay = config.events.filter((e) => e.day === d && e.allDay);
+    if (allDay.length > 0 && config.intervalMode !== "off") {
+      const bandHeight = Math.min(ptToPx(ALL_DAY_BAND_HEIGHT_PT), gridTop - (geometry.y + headerHeight));
+      if (bandHeight > 0) {
+        const bandTop = geometry.y + headerHeight + (gridTop - (geometry.y + headerHeight) - bandHeight) / 2;
+        const first = allDay[0];
+        // ONE LINE, and the rest counted. The band is a single 14pt line -
+        // stacking a second item inside it would set two labels at 3pt, which
+        // is under this app's own legibility floor. A day with a holiday AND
+        // an all-day event reads "Thanksgiving +1", which is true and
+        // readable, rather than two things neither of which is.
+        const label = allDay.length > 1 ? `${first.label} +${allDay.length - 1}` : first.label;
+        elements.push({
+          id: id(`d${d}-allday-box`),
+          type: "figure",
+          subType: "rect",
+          x: dayX + 2,
+          y: bandTop,
+          width: dayColumnWidth - 4,
+          height: bandHeight,
+          fill: first.colour ?? (first.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3"),
+          stroke: "none",
+          opacity: 0.8,
+          // Proved to survive to paper - see pdfDocument.test.mts, which
+          // reads the file back and counts the bezier curves.
+          cornerRadius: ptToPx(2),
+        });
+        const labelFontSize = ptToPx(6);
+        elements.push({
+          id: id(`d${d}-allday-label`),
+          type: "text",
+          x: dayX + 6,
+          y: capCentredTextY(bandTop, bandHeight, labelFontSize, FONT_FAMILY),
+          width: dayColumnWidth - 12,
+          height: labelFontSize * 1.2,
+          text: label,
+          fontSize: labelFontSize,
+          fontFamily: FONT_FAMILY,
+          fill: "#333333",
+          align: "left",
+        });
+      }
+    }
+
     // Synced/manual events for this day, positioned by time — has no
     // well-defined position without a ruled grid to place it against, so
     // skipped entirely in "off" mode. Low-risk today (see
     // src/lib/weekDays.ts's identical note): events is always seeded
     // empty, nothing writes into it yet.
-    for (const event of config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d)) {
+    for (const event of config.intervalMode === "off"
+      ? []
+      : config.events.filter((e) => e.day === d && !e.allDay)) {
       const evStart = timeToMinutes(event.startTime);
       const evEnd = timeToMinutes(event.endTime);
       const evY = gridTop + ((evStart - startMinutes) / intervalMinutes) * rowHeight;
