@@ -269,6 +269,51 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   );
 }
 
+// --- an event's writing can be read on its own block ----------------------
+//
+// "make it a darker version of the background color" - so the ink is the
+// fill taken toward black, which keeps the hue but is only legible if it
+// goes far enough. eventInk darkens UNTIL it meets a ratio rather than
+// applying a fixed factor, because a fixed one that suits the two pastels
+// shipped today would fail on whatever colour somebody's calendar turns out
+// to be. This checks the ratio it promises, against the backdrop the block
+// actually composites to - the fill at its own opacity over paper, not the
+// fill itself.
+{
+  const PAPER = [253, 252, 249];
+  const lum = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a: number[], b: number[]) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+  for (const fill of ["#cfe3ff", "#ffe9b3", "#e6e6e6", "#ffd8d8", "#d4f7d4"]) {
+    const marks = render([
+      { day: 0, startTime: "09:00", endTime: "10:00", label: "Call home", source: "manual", colour: fill },
+    ]);
+    const box = marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+    const label = marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-label"));
+    const opacity = Number(box?.opacity);
+    const backdrop = rgb(fill).map((v, i) => opacity * v + (1 - opacity) * PAPER[i]);
+    const got = ratio(rgb(String(label?.fill)), backdrop);
+    check(
+      got >= 7,
+      `${fill}: its ink ${label?.fill} reads at ${got.toFixed(1)}:1 on its own block, under the 7:1 promised`
+    );
+    check(
+      String(box?.stroke) !== "none" && String(box?.stroke) !== String(label?.fill),
+      `${fill}: the border should be its own weight, not "none" and not the same as the ink`
+    );
+  }
+}
+
 if (failures > 0) {
   console.error(`\nHourly grid events: ${failures} problem(s).`);
   process.exit(1);

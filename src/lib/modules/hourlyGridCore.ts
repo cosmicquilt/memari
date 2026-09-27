@@ -158,8 +158,29 @@ const ALL_DAY_BAND_HEIGHT_PT = 14;
  * 15-minute event is a few pixels tall and a 4pt radius on a 4px box is not
  * a rounded rectangle, it is a lozenge.
  */
-const EVENT_CORNER_RADIUS_PT = 4;
+const EVENT_CORNER_RADIUS_PT = 6;
 const EVENT_OPACITY = 0.55;
+/** The block's own writing is held off its edge by this much. */
+const EVENT_TEXT_PADDING_PT = 3;
+/**
+ * An event's own label.
+ *
+ * 5pt, asked for 2026-09-27. Not the smallest this app sets - the water-week
+ * strip goes to 4.5 - and it matches the time labels in the column beside
+ * it, which are 5 and 5.5. At 30-minute intervals a row is 9pt, so a 5pt
+ * line box (6pt) leaves 1.5pt of air above and below when centred.
+ */
+const EVENT_LABEL_PT = 5;
+/**
+ * The block's edge weight: the house hairline, the same 0.3pt the hour rules
+ * and every module border are drawn at. Asked for as "thinnest border".
+ *
+ * Note this is a STROKE, so it is not snapped to the device grid the way a
+ * fill-only rule is - see src/lib/hairline.ts, which skips stroked boxes
+ * because the rasteriser's own hairline handling already applies to them.
+ * That is why a module outline reads crisp where a ruled line needs help.
+ */
+const EVENT_BORDER_WIDTH_PT = RULE_WIDTH_PT;
 
 /**
  * What an event block is filled with IN PRINT.
@@ -422,6 +443,67 @@ export function getHourlyGridCoreContentHeightPx(
 export function getHourlyGridCoreOffModeMinHeightPx(): number {
   return ptToPx(HEADER_HEIGHT_PT) + ptToPx(HEADER_TO_GRID_GAP_PT);
 }
+
+/** The paper the blocks are drawn on - what an event fill composites over. */
+const PAPER = [253, 252, 249] as const;
+
+const hexToRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
+const rgbToHex = (rgb: number[]) =>
+  "#" + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+
+/** Scaled toward black, which keeps the hue: a blue event gets a dark blue
+ *  edge and dark blue writing, not a grey one. */
+const scale = (hex: string, factor: number) => rgbToHex(hexToRgb(hex).map((v) => v * factor));
+
+const luminance = (rgb: readonly number[]) => {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: readonly number[], b: readonly number[]) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+/**
+ * What an event block's fill looks like once it is drawn: the colour at
+ * EVENT_OPACITY over the paper. This, not the fill, is what its own writing
+ * has to be read against.
+ */
+function eventBackdrop(fill: string): number[] {
+  const rgb = hexToRgb(fill);
+  return rgb.map((v, i) => EVENT_OPACITY * v + (1 - EVENT_OPACITY) * PAPER[i]);
+}
+
+/**
+ * Writing for an event block: the same colour, taken down until it can be
+ * read on top of itself.
+ *
+ * Asked for 2026-09-27 - "make it a darker version of the background color".
+ * A fixed factor would be a guess that happens to work for the two pastels
+ * shipped today and fails on whatever colour somebody's calendar turns out
+ * to be, so this DARKENS UNTIL IT MEETS A RATIO instead. 7:1 rather than
+ * WCAG's 4.5, because this is 6pt type on paper: AAA for body text, and the
+ * margin is cheap here since the alternative is only a darker blue.
+ */
+function eventInk(fill: string): string {
+  const backdrop = eventBackdrop(fill);
+  for (let factor = 0.85; factor > 0.04; factor -= 0.05) {
+    const candidate = scale(fill, factor);
+    if (contrast(hexToRgb(candidate), backdrop) >= 7) return candidate;
+  }
+  return "#1a1a1a";
+}
+
+/** The block's edge: the same colour taken down enough to define it without
+ *  competing with the writing inside. */
+const eventBorder = (fill: string) => scale(fill, 0.62);
 
 /** The corner radius an event block can actually take: the house radius, or
  *  half the shorter side if the block is smaller than that. A 15-minute event
@@ -776,6 +858,7 @@ export function renderHourlyGridCore(
         // an all-day event reads "Thanksgiving +1", which is true and
         // readable, rather than two things neither of which is.
         const label = allDay.length > 1 ? `${first.label} +${allDay.length - 1}` : first.label;
+        const bandFill = first.colour ?? (first.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3");
         elements.push({
           id: id(`d${d}-allday-box`),
           type: "figure",
@@ -784,25 +867,26 @@ export function renderHourlyGridCore(
           y: bandTop,
           width: dayColumnWidth - 4,
           height: bandHeight,
-          fill: first.colour ?? (first.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3"),
-          stroke: "none",
+          fill: bandFill,
+          stroke: eventBorder(bandFill),
+          strokeWidth: ptToPx(EVENT_BORDER_WIDTH_PT),
           opacity: EVENT_OPACITY,
           // Proved to survive to paper - see pdfDocument.test.mts, which
           // reads the file back and counts the bezier curves.
           cornerRadius: eventCornerRadiusPx(dayColumnWidth - 4, bandHeight),
         });
-        const labelFontSize = ptToPx(6);
+        const labelFontSize = ptToPx(EVENT_LABEL_PT);
         elements.push({
           id: id(`d${d}-allday-label`),
           type: "text",
-          x: dayX + 6,
+          x: dayX + 2 + ptToPx(EVENT_TEXT_PADDING_PT),
           y: capCentredTextY(bandTop, bandHeight, labelFontSize, FONT_FAMILY),
-          width: dayColumnWidth - 12,
+          width: dayColumnWidth - 4 - ptToPx(EVENT_TEXT_PADDING_PT) * 2,
           height: labelFontSize * 1.2,
           text: label,
           fontSize: labelFontSize,
           fontFamily: FONT_FAMILY,
-          fill: "#333333",
+          fill: eventInk(bandFill),
           align: "left",
         });
       }
@@ -827,6 +911,7 @@ export function renderHourlyGridCore(
       const eventX = dayX + ptToPx(EVENT_LEFT_INSET_PT);
       const eventWidth = dayColumnWidth - ptToPx(EVENT_LEFT_INSET_PT) - 2;
       const eventHeight = Math.max(evHeight, 4);
+      const eventFill = event.colour ?? (event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3");
       elements.push({
         id: id(`d${d}-ev${event.startTime}-box`),
         type: "figure",
@@ -835,23 +920,31 @@ export function renderHourlyGridCore(
         y: evY,
         width: eventWidth,
         height: eventHeight,
-        fill: event.colour ?? (event.source === "google-calendar" ? "#cfe3ff" : "#ffe9b3"),
-        stroke: "none",
+        fill: eventFill,
+        stroke: eventBorder(eventFill),
+        strokeWidth: ptToPx(EVENT_BORDER_WIDTH_PT),
         opacity: EVENT_OPACITY,
         cornerRadius: eventCornerRadiusPx(eventWidth, eventHeight),
       });
-      const eventFontSize = ptToPx(6);
+      const eventFontSize = ptToPx(EVENT_LABEL_PT);
       elements.push({
         id: id(`d${d}-ev${event.startTime}-label`),
         type: "text",
-        x: eventX + 4,
-        y: evY + 1,
-        width: eventWidth - 8,
+        x: eventX + ptToPx(EVENT_TEXT_PADDING_PT),
+        // CENTRED IN ITS FIRST ROW, not in the whole block. Asked for as
+        // "the text sits in the middle vertically of its row in 30 min
+        // events" - and a 30-minute event IS one row, so centring in the
+        // block and centring in the row are the same thing there. They part
+        // company on a three-hour block, where centring in the block would
+        // put the title halfway down a tall empty rectangle; this keeps it
+        // in the row the event starts in, which is where the eye goes.
+        y: capCentredTextY(evY, Math.min(eventHeight, rowHeight), eventFontSize, FONT_FAMILY),
+        width: eventWidth - ptToPx(EVENT_TEXT_PADDING_PT) * 2,
         height: eventFontSize * 1.2,
         text: event.label,
         fontSize: eventFontSize,
         fontFamily: FONT_FAMILY,
-        fill: "#333333",
+        fill: eventInk(eventFill),
         align: "left",
       });
     }
