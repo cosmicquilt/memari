@@ -6,6 +6,9 @@
 //
 // Four blocks, and the first is the point of the exercise:
 //
+// The Tuesday carries two PARTIALLY CONCURRENT events - see eventsFor - so
+// every treatment below shows what a clash looks like today.
+//
 //   1. no events   - the control. The all-day band draws only when something
 //                    is in it, so this must be identical to a week drawn
 //                    before any of this existed. If block 1 differs from what
@@ -74,7 +77,15 @@ function eventsFor(treatment: Treatment): HourlyGridEvent[] {
     { day: 1, startTime: "00:00", endTime: "23:59", label: "Bin day", source: "manual", allDay: true, colour: colour("#ffe9b3") },
     { day: 1, startTime: "08:30", endTime: "10:00", label: "Office Hours", source: "google-calendar", colour: colour("#cfe3ff") },
     { day: 1, startTime: "11:00", endTime: "11:30", label: "Dentist", source: "manual", colour: colour("#ffe9b3") },
-    { day: 2, startTime: "09:30", endTime: "12:00", label: "MAE342 studio", source: "google-calendar", colour: colour("#cfe3ff") },
+    // TWO PARTIALLY CONCURRENT EVENTS, on the Tuesday. They overlap from
+    // 10:30 to 11:00, and nothing in the renderer knows that: both are drawn
+    // at the full column width, so the later one lies over the earlier one
+    // and the shared half hour is the two fills composited. Here to be
+    // looked at rather than because it is right - how a clash should be
+    // drawn is still open, and Google's answer (split the column) sets both
+    // labels in half the width, which at 5pt is not obviously better.
+    { day: 2, startTime: "09:30", endTime: "11:00", label: "MAE342 studio", source: "google-calendar", colour: colour("#cfe3ff") },
+    { day: 2, startTime: "10:30", endTime: "12:00", label: "Advisor 1:1", source: "manual", colour: colour("#ffe9b3") },
   ];
 }
 
