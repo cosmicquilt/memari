@@ -453,22 +453,36 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   );
 }
 
-// --- the hour-line margin, when it is asked for ---------------------------
+// --- blocks are held off the hour lines, by default ----------------------
 //
-// A candidate rather than a decision - the events proof draws it beside the
-// flush version. Zero by default, so no stored instance moves.
+// Chosen 2026-09-27 by drawing it beside the flush version at true size.
+// The margin is half the distance the page already leaves between two
+// adjacent modules - every ink box is inset 6px from its allocation, so
+// neighbours sit 12px apart and half of that is 6px = 1.44pt at 300dpi.
+//
+// Asserted as the DEFAULT rather than as an option, because that is the
+// decision: a caller has to pass zero to get the old flush blocks.
 {
-  const one = [{ day: 0, startTime: "09:00", endTime: "09:30", label: "Standup", source: "manual" as const }];
-  const flush = render(one).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
-  const held = flat(
-    renderHourlyGridCore(GEOMETRY, { ...BASE, eventVerticalMarginPt: 1.44, events: one } as never, "t", FONT_SERIF) as unknown as El[]
+  const one = [{ day: 0, startTime: "09:00", endTime: "10:00", label: "Standup", source: "manual" as const }];
+  const withMargin = render(one).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+  const flush = flat(
+    renderHourlyGridCore(GEOMETRY, { ...BASE, eventVerticalMarginPt: 0, events: one } as never, "t", FONT_SERIF) as unknown as El[]
   ).find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
 
-  check(Number(held?.y) > Number(flush?.y), "the margin did not move the block off the hour line");
   check(
-    Math.abs((Number(held?.y) - Number(flush?.y)) - (Number(flush?.height) - Number(held?.height)) / 2) < 0.01,
+    Number(withMargin?.y) > Number(flush?.y),
+    "the default should hold a block off the hour line; it is drawn flush"
+  );
+  const gap = Number(withMargin?.y) - Number(flush?.y);
+  check(
+    Math.abs(gap - 6) < 0.01,
+    `the margin should be 6px - half the 12px between two adjacent modules - and is ${gap.toFixed(2)}px`
+  );
+  check(
+    Math.abs(gap - (Number(flush?.height) - Number(withMargin?.height)) / 2) < 0.01,
     "the margin should be equal above and below"
   );
+
   // Never more than a third of the block, or a quarter-hour event would be
   // margin with nothing inside it.
   const tiny = flat(

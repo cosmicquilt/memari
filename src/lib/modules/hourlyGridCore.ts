@@ -43,9 +43,9 @@ export type HourlyGridCoreConfig = {
   dayBorder: boolean;
   events: HourlyGridEvent[];
   /** How far an event block is held off the hour rules above and below it,
-   *  in points. A candidate rather than a decision - see the events proof,
-   *  which draws it beside the flush version. Optional and zero by default,
-   *  so every stored instance keeps the geometry it has. */
+   *  in points. Optional; EVENT_VERTICAL_MARGIN_PT by default, which is what
+   *  was chosen. Zero puts the block flush against the lines, which is what
+   *  the proof draws for comparison. */
   eventVerticalMarginPt?: number;
   // "off" replaces the ruled hour-rows with blank, height-adjustable
   // space (see renderHourlyGridCore's own branch below) — a materially
@@ -163,7 +163,7 @@ const ALL_DAY_BAND_HEIGHT_PT = 14;
  * 15-minute event is a few pixels tall and a 4pt radius on a 4px box is not
  * a rounded rectangle, it is a lozenge.
  */
-const EVENT_CORNER_RADIUS_PT = 3;
+export const EVENT_CORNER_RADIUS_PT = 2;
 const EVENT_OPACITY = 0.55;
 /** The block's own writing is held off its edge by this much. */
 const EVENT_TEXT_PADDING_PT = 3;
@@ -179,6 +179,21 @@ const EVENT_LABEL_PT = 5;
 /** WCAG AA for normal text. See eventInk - this is a floor, not a taste. */
 const EVENT_INK_CONTRAST = 4.5;
 /**
+ * Air between an event block and the hour rules above and below it.
+ *
+ * HALF THE DISTANCE THE PAGE ALREADY LEAVES BETWEEN TWO ADJACENT MODULES.
+ * Every module's ink box is inset 6px from its allocation on all four sides,
+ * so two neighbours sit 12px apart; half of that is 6px, which at 300px to
+ * the inch is 1.44pt. Chosen by drawing it beside the flush version at true
+ * size (Andrew, 2026-09-27: "held of hour lines").
+ *
+ * The number is written out rather than read from the lattice because the
+ * inset is 6 everywhere in this app - twenty definitions, all of them - and
+ * taking a page property in here to re-derive a constant would be coupling
+ * for its own sake.
+ */
+export const EVENT_VERTICAL_MARGIN_PT = (6 / 300) * 72;
+/**
  * The block's edge weight: the house hairline, the same 0.3pt the hour rules
  * and every module border are drawn at. Asked for as "thinnest border".
  *
@@ -193,21 +208,21 @@ const EVENT_BORDER_WIDTH_PT = RULE_WIDTH_PT;
  * What an event block is filled with IN PRINT.
  *
  * Colour on screen, grey on paper (Andrew, 2026-09-26) - colour pages cost
- * money. The weight was chosen by looking at three greys at true size:
- * #ececec read as nothing, #d8d8d8 as a slab, and the answer was "in between
- * but closer to the light grey".
+ * money. Settled over two passes at true size: #ececec read as nothing and
+ * #d8d8d8 as a slab, so the answer was "in between but closer to the light
+ * grey" (#e6e6e6), and then between that and the light one again.
  *
- * IT IS A 5.4% TINT, not a 10% one. At EVENT_OPACITY over white this lands
- * at 241/255, and a press holds about 3-5% reliably - so this sits just
- * inside what paper can be relied on to show, and the Lulu test print is
- * what settles it. If it drops out, the fix is the OPACITY rather than the
- * grey: at full strength the same colour is a 10% tint.
+ * IT IS A 4.7% TINT. At EVENT_OPACITY over white this lands at 242.9/255,
+ * and a press holds about 3-5% reliably - so this is now at the BOTTOM of
+ * that band rather than inside it, and the Lulu test print is what settles
+ * whether it holds. If it drops out the fix is the OPACITY, not the grey:
+ * the same colour at full strength is an 8.6% tint.
  *
  * Applied where events are put INTO the config for the book, not here - the
  * editor, the previews and the PDF all read one element list, and the block
  * does not know which of them is asking. See generateBook.
  */
-export const EVENT_PRINT_GREY = "#e6e6e6";
+export const EVENT_PRINT_GREY = "#e9e9e9";
 
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
 // row labels, but that does not divide the 1/4in dot pitch (18pt), so the
@@ -1050,7 +1065,7 @@ export function renderHourlyGridCore(
       // EVENT_VERTICAL_MARGIN_PT. Never more than a third of the block, or a
       // 15-minute event would be margin with nothing inside it.
       const margin = Math.min(
-        ptToPx(config.eventVerticalMarginPt ?? 0),
+        ptToPx(config.eventVerticalMarginPt ?? EVENT_VERTICAL_MARGIN_PT),
         Math.max(0, evHeight) / 3
       );
       const eventY = evY + margin;

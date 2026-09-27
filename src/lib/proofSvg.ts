@@ -71,6 +71,16 @@ export type SvgOptions = {
   /** Set by a caller drawing for a screen. Rules thinner than one device
    *  pixel at this scale get the hairline treatment. */
   hairlineScale?: number;
+  /**
+   * Carry each element's own id onto the mark.
+   *
+   * Renderers emit SEMANTIC ids - d2-row7, not counter-N - so a proof that
+   * keeps them can be inspected and driven in the browser; the events
+   * proof's corner-radius slider selects its blocks this way. OPT-IN
+   * because it is not free: emitting them from every proof added 25KB to
+   * docs/index.html, which is committed and served by Pages.
+   */
+  withIds?: boolean;
 };
 
 /** One rendered element as SVG. */
@@ -136,8 +146,9 @@ export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {})
     typeof element.cornerRadius === "number" && element.cornerRadius > 0
       ? ` rx="${element.cornerRadius}"`
       : "";
+  const identity = options.withIds && element.id ? ` id="${escapeXml(String(element.id))}"` : "";
   return (
-    `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}"${radius} ` +
+    `<rect${identity} x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}"${radius} ` +
     `fill="${hasFill ? element.fill : "none"}" ` +
     (hasStroke ? `stroke="${element.stroke}" stroke-width="${element.strokeWidth}" ` : "") +
     `opacity="${element.opacity ?? 1}" />`

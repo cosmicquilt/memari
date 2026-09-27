@@ -31,7 +31,12 @@
 //
 //   npm run check:events   ->   public/events-proof.html
 import { writeFileSync } from "node:fs";
-import { renderHourlyGridCore, EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore.js";
+import {
+  renderHourlyGridCore,
+  EVENT_PRINT_GREY,
+  EVENT_CORNER_RADIUS_PT,
+  type HourlyGridEvent,
+} from "./modules/hourlyGridCore.js";
 import { toSvg, escapeXml, PROOF_FONT_LINK, PROOF_FONT_STYLE } from "./proofSvg.js";
 import type { RenderedPolotnoElement } from "./renderModuleInstance.js";
 
@@ -48,38 +53,30 @@ const BLOCK_H = 1.6 * PX_PER_IN;
 
 type Treatment = { key: string; label: string; blurb: string; recolour?: string; verticalMarginPt?: number };
 
-/**
- * Half the distance between two adjacent modules, as points.
- *
- * A module's ink box is inset boxInsetPx from its allocation on every side,
- * so two neighbours sit 2 x boxInsetPx apart and half of that is boxInsetPx
- * itself. Derived rather than typed as 1.44pt, because the number that
- * matters is "the same air the page already leaves between things".
- */
-const HALF_MODULE_GAP_PT = (6 / PX_PER_IN) * 72;
-
 const TREATMENTS: Treatment[] = [
   {
     key: "none",
     label: "No events",
     blurb: "the control - a week with nothing all-day must be identical to one drawn before the band existed",
   },
-  { key: "colour", label: "Colour", blurb: "what the editor shows: the calendar's own colour" },
-  // The bracket the choice was made from, and the choice, so it can be
-  // confirmed in context rather than in isolation. The percentages are the
-  // EFFECTIVE tint on white once EVENT_OPACITY is applied - which is what a
-  // press actually has to hold, and is not what the hex says.
-  { key: "grey-light", label: "Grey, light", blurb: "#ececec - a 4.1% tint. Considered and rejected: reads as nothing.", recolour: "#ececec" },
-  { key: "grey-chosen", label: "Grey, CHOSEN", blurb: `${EVENT_PRINT_GREY} - a 5.4% tint. "in between but closer to the light grey".`, recolour: EVENT_PRINT_GREY },
-  { key: "grey-dark", label: "Grey, darker", blurb: "#d8d8d8 - an 8.4% tint. Considered and rejected: a slab.", recolour: "#d8d8d8" },
+  { key: "colour", label: "Colour", blurb: "what the editor shows: the calendar's own colour, held off the hour lines" },
   {
-    key: "margin",
-    label: "Colour, held off the hour lines",
-    blurb:
-      `the same blocks with ${HALF_MODULE_GAP_PT.toFixed(2)}pt of air above and below - half the distance ` +
-      `the page already leaves between two adjacent modules. Compare with Colour, where they sit flush.`,
-    verticalMarginPt: HALF_MODULE_GAP_PT,
+    key: "flush",
+    label: "Colour, flush",
+    blurb: "the same blocks sitting ON the hour lines - the comparison the margin was chosen against",
+    verticalMarginPt: 0,
   },
+  // The bracket the print grey was narrowed through, twice. Percentages are
+  // the EFFECTIVE tint once EVENT_OPACITY is applied - what a press has to
+  // hold, and not what the hex says.
+  { key: "grey-light", label: "Grey, light", blurb: "#ececec - a 4.1% tint. Rejected: reads as nothing.", recolour: "#ececec" },
+  {
+    key: "grey-chosen",
+    label: "Grey, CHOSEN",
+    blurb: `${EVENT_PRINT_GREY} - a 4.7% tint, between the two below it. At the BOTTOM of what a press holds.`,
+    recolour: EVENT_PRINT_GREY,
+  },
+  { key: "grey-prev", label: "Grey, one step darker", blurb: "#e6e6e6 - a 5.4% tint. The previous choice, for comparison.", recolour: "#e6e6e6" },
 ];
 
 /** A realistic week: a holiday, a day with two all-day things, and timed
@@ -138,7 +135,7 @@ function svg(drawing: { elements: RenderedPolotnoElement[]; w: number; h: number
   return (
     `<svg class="sheet" width="${cssW.toFixed(1)}" height="${cssH.toFixed(1)}" ` +
     `viewBox="0 0 ${drawing.w} ${drawing.h}">` +
-    drawing.elements.map((e) => toSvg(e)).join("") +
+    drawing.elements.map((e) => toSvg(e, { withIds: true })).join("") +
     `</svg>`
   );
 }
@@ -176,13 +173,66 @@ const html =
    figcaption { margin: 0 0 8px; }
    .sheet { background: #fdfcf9; box-shadow: 0 1px 3px rgba(0,0,0,0.18); display: block; }
    code { background: #e9e8e4; padding: 1px 5px; border-radius: 3px; }
+   .control { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+     background: #efeee9; border: 1px solid #ddd; border-radius: 8px;
+     padding: 10px 14px; margin: 14px 0 6px; position: sticky; top: 0; z-index: 2; }
+   .control label { font-weight: 600; }
+   .control input[type=range] { width: 260px; }
+   .control output { color: #555; font-variant-numeric: tabular-nums; }
   </style>` +
   `<h1>Calendar events</h1>` +
+  // THE SLIDER DRIVES THE DRAWN SVG, it does not re-render it. Every event
+  // block carries its own id (renderers emit semantic ones), so setting rx
+  // and ry on them is the whole mechanism - no bundler, no second copy of
+  // the renderer in the browser, and every view on the page moves together.
+  //
+  // SVG clamps rx to half the width and ry to half the height itself, which
+  // is the same rule eventCornerRadiusPx applies - so what the slider shows
+  // at the top of its range is what a 30-minute block would really do, not
+  // an approximation of it.
+  `<div class="control">
+     <label for="r">Corner radius</label>
+     <input id="r" type="range" min="0" max="9" step="0.5" value="${EVENT_CORNER_RADIUS_PT}">
+     <output id="rv"></output>
+   </div>`
+  +
   `<p class="lede">The real renderer, at the size it prints. The band for all-day events and holidays sits in the ` +
   `22.3pt gap that was already between the day tab and the first ruled row, so nothing else on the page moves — ` +
   `compare <b>No events</b> with a week on paper today and they should be the same drawing.</p>` +
   `<p class="note">${escapeXml(counts)}</p>` +
-  sections;
+  sections +
+  // AT THE END, after the sections. It was directly under the <h1>, where it
+  // ran before a single SVG existed and captured an empty list - the slider
+  // moved and nothing happened, while the readout still looked correct.
+  `<script>
+     (function () {
+       var PX_PER_PT = ${PX_PER_IN} / 72;
+       var blocks = [].slice.call(document.querySelectorAll('rect[id$="-box"]')).filter(function (r) {
+         return /-ev|-allday-/.test(r.id);
+       });
+       var shortest = Math.min.apply(null, blocks.map(function (r) {
+         return Math.min(+r.getAttribute("width"), +r.getAttribute("height"));
+       }));
+       var slider = document.getElementById("r");
+       var out = document.getElementById("rv");
+       function apply() {
+         var pt = +slider.value;
+         var px = pt * PX_PER_PT;
+         blocks.forEach(function (r) {
+           r.setAttribute("rx", px);
+           r.setAttribute("ry", px);
+         });
+         var clampedAt = shortest / 2;
+         out.textContent =
+           pt.toFixed(1) + "pt = " + px.toFixed(1) + "px" +
+           (px > clampedAt
+             ? "  —  clamped to " + clampedAt.toFixed(1) + "px on the shortest block (" + shortest.toFixed(0) + "px), so its ends are semicircular"
+             : "");
+       }
+       slider.addEventListener("input", apply);
+       apply();
+     })();
+   </script>`;
 
 writeFileSync("public/events-proof.html", html);
 console.log("public/events-proof.html");
