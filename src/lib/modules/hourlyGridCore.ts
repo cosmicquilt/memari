@@ -158,7 +158,7 @@ const ALL_DAY_BAND_HEIGHT_PT = 14;
  * 15-minute event is a few pixels tall and a 4pt radius on a 4px box is not
  * a rounded rectangle, it is a lozenge.
  */
-const EVENT_CORNER_RADIUS_PT = 6;
+const EVENT_CORNER_RADIUS_PT = 4;
 const EVENT_OPACITY = 0.55;
 /** The block's own writing is held off its edge by this much. */
 const EVENT_TEXT_PADDING_PT = 3;
@@ -455,9 +455,60 @@ const hexToRgb = (hex: string): [number, number, number] => [
 const rgbToHex = (rgb: number[]) =>
   "#" + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
 
-/** Scaled toward black, which keeps the hue: a blue event gets a dark blue
- *  edge and dark blue writing, not a grey one. */
-const scale = (hex: string, factor: number) => rgbToHex(hexToRgb(hex).map((v) => v * factor));
+/**
+ * DARKENED IN HSL, NOT BY SCALING RGB.
+ *
+ * Multiplying a colour toward black preserves its channel RATIOS and throws
+ * its saturation away, and for a pale tint that is most of the colour.
+ * #cfe3ff is a FULLY saturated blue that happens to be very light - H 215,
+ * S 100%, L 90.6% - and scaling it to 35% lands on (72,79,89), which is
+ * S 10.6%: a grey. Reported 2026-09-27: "text and border dont look like
+ * event color but darker". They did not, and this is why.
+ *
+ * Keeping the hue and the saturation and moving only the lightness gives
+ * what was actually asked for - the same colour, darker.
+ */
+function rgbToHsl([r, g, b]: readonly number[]): [number, number, number] {
+  const [rn, gn, bn] = [r / 255, g / 255, b / 255];
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const hue =
+    max === rn ? (gn - bn) / d + (gn < bn ? 6 : 0) : max === gn ? (bn - rn) / d + 2 : (rn - gn) / d + 4;
+  return [hue / 6, sat, l];
+}
+
+function hslToRgb([h, sat, l]: readonly number[]): number[] {
+  if (sat === 0) return [l * 255, l * 255, l * 255];
+  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+  const p = 2 * l - q;
+  const channel = (t: number) => {
+    let x = t;
+    if (x < 0) x += 1;
+    if (x > 1) x -= 1;
+    if (x < 1 / 6) return p + (q - p) * 6 * x;
+    if (x < 1 / 2) return q;
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+    return p;
+  };
+  return [channel(h + 1 / 3) * 255, channel(h) * 255, channel(h - 1 / 3) * 255];
+}
+
+/**
+ * The same colour at a different lightness - hue and saturation untouched.
+ *
+ * NO SATURATION FLOOR. The first version raised it to 5% so a near-grey
+ * would still "read as deliberate", which put a red cast on the print grey:
+ * a neutral fill has hue 0 by convention, not by choice, and 5% of hue 0 is
+ * pink. A grey event should have grey writing.
+ */
+function atLightness(hex: string, lightness: number): string {
+  const [h, sat] = rgbToHsl(hexToRgb(hex));
+  return rgbToHex(hslToRgb([h, sat, lightness]));
+}
 
 const luminance = (rgb: readonly number[]) => {
   const [r, g, b] = rgb.map((v) => {
@@ -494,16 +545,16 @@ function eventBackdrop(fill: string): number[] {
  */
 function eventInk(fill: string): string {
   const backdrop = eventBackdrop(fill);
-  for (let factor = 0.85; factor > 0.04; factor -= 0.05) {
-    const candidate = scale(fill, factor);
+  for (let lightness = 0.55; lightness > 0.05; lightness -= 0.02) {
+    const candidate = atLightness(fill, lightness);
     if (contrast(hexToRgb(candidate), backdrop) >= 7) return candidate;
   }
-  return "#1a1a1a";
+  return atLightness(fill, 0.08);
 }
 
-/** The block's edge: the same colour taken down enough to define it without
- *  competing with the writing inside. */
-const eventBorder = (fill: string) => scale(fill, 0.62);
+/** The block's edge: the same colour, dark enough to define it and light
+ *  enough not to compete with the writing inside. */
+const eventBorder = (fill: string) => atLightness(fill, 0.55);
 
 /** The corner radius an event block can actually take: the house radius, or
  *  half the shorter side if the block is smaller than that. A 15-minute event

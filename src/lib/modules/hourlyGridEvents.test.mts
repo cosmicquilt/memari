@@ -314,6 +314,70 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   }
 }
 
+// --- the ink and the border are the SAME COLOUR, darker ------------------
+//
+// THIS IS THE ASSERTION THE SUITE WAS MISSING. Andrew: "text and border dont
+// look like event color but darker". They did not - the first version
+// darkened by multiplying the channels toward black, which preserves their
+// RATIOS and throws saturation away. #cfe3ff is a fully saturated blue that
+// happens to be very light (H 215, S 100%, L 90.6%); scaled to 35% it lands
+// at S 10.6%, a grey.
+//
+// And every test passed. The contrast check was satisfied - a grey meets 7:1
+// perfectly well - so the whole suite was green on a defect a glance caught.
+// Restoring the scaling sabotage now fails here and nowhere else.
+{
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const toHsl = (hex: string) => {
+    const [r, g, b] = rgb(hex);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    const h = (max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4) / 6;
+    return { h: h * 360, s, l };
+  };
+  /** Hue is circular: 359 and 1 are two degrees apart, not 358. */
+  const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+
+  for (const fill of ["#cfe3ff", "#ffe9b3", "#ffd8d8", "#d4f7d4"]) {
+    const marks = render([
+      { day: 0, startTime: "09:00", endTime: "10:00", label: "Call home", source: "manual", colour: fill },
+    ]);
+    const box = marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-box"));
+    const label = marks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-label"));
+    const source = toHsl(fill);
+    for (const [what, hex] of [["ink", String(label?.fill)], ["border", String(box?.stroke)]] as const) {
+      const derived = toHsl(hex);
+      check(
+        hueGap(derived.h, source.h) < 2,
+        `${fill}: its ${what} ${hex} is hue ${derived.h.toFixed(0)}, not the fill's ${source.h.toFixed(0)} - ` +
+          `it is a different colour rather than a darker one`
+      );
+      check(
+        derived.s >= source.s * 0.9,
+        `${fill}: its ${what} ${hex} is ${(derived.s * 100).toFixed(0)}% saturated against the fill's ` +
+          `${(source.s * 100).toFixed(0)}% - darkening has washed the colour out to grey`
+      );
+      check(
+        derived.l < source.l,
+        `${fill}: its ${what} ${hex} is lighter than the fill, not darker`
+      );
+    }
+  }
+
+  // A NEUTRAL fill stays neutral. An early saturation floor put a red cast on
+  // the print grey: hue 0 is what a grey reports by convention, not a choice,
+  // and 5% of hue 0 is pink.
+  const greyMarks = render([
+    { day: 0, startTime: "09:00", endTime: "10:00", label: "Call home", source: "manual", colour: "#e6e6e6" },
+  ]);
+  const greyInk = String(greyMarks.find((e) => String(e.id).includes("-ev") && String(e.id).endsWith("-label"))?.fill);
+  check(toHsl(greyInk).s < 0.02, `a neutral fill's ink ${greyInk} is ${(toHsl(greyInk).s * 100).toFixed(0)}% saturated`);
+}
+
 if (failures > 0) {
   console.error(`\nHourly grid events: ${failures} problem(s).`);
   process.exit(1);
