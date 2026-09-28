@@ -67,19 +67,103 @@ export async function defaultCalendarFor(ownerId: string): Promise<{ id: string;
   });
 }
 
+/**
+ * The owner's calendars, and whether this journal shows each one.
+ *
+ * `externalId` IS DELIBERATELY NOT SELECTED. For a subscription it holds the
+ * feed's URL, and a secret calendar address is the whole of its
+ * authentication - anyone holding it can read the calendar. It never goes to
+ * the browser and never appears in an error message.
+ */
 export async function calendarsFor(ownerId: string, plannerId?: string) {
   const [calendars, hidden] = await Promise.all([
     prisma.calendar.findMany({
       where: { ownerId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, colour: true, source: true },
+      select: {
+        id: true,
+        name: true,
+        colour: true,
+        source: true,
+        _count: { select: { events: { where: { deletedAt: null } } } },
+      },
     }),
     plannerId
       ? prisma.hiddenCalendar.findMany({ where: { plannerId }, select: { calendarId: true } })
       : Promise.resolve([]),
   ]);
   const hiddenIds = new Set(hidden.map((h) => h.calendarId));
-  return calendars.map((c) => ({ ...c, visible: !hiddenIds.has(c.id) }));
+  return calendars.map(({ _count, ...c }) => ({
+    ...c,
+    visible: !hiddenIds.has(c.id),
+    eventCount: _count.events,
+  }));
+}
+
+/**
+ * Show or hide a calendar ON THIS JOURNAL.
+ *
+ * Per journal, not per owner, because that is the shape Andrew asked for: a
+ * calendar is the owner's and "togglable", so the work calendar can be on the
+ * work planner and off the personal one without two copies of it.
+ */
+export async function setCalendarVisibleFor(
+  ownerId: string,
+  plannerId: string,
+  calendarId: string,
+  visible: boolean
+): Promise<void> {
+  const owned = await prisma.calendar.findFirst({ where: { id: calendarId, ownerId }, select: { id: true } });
+  if (!owned) throw new Error("Calendar not found");
+  await assertOwnsJournal(ownerId, plannerId);
+  if (visible) {
+    await prisma.hiddenCalendar.deleteMany({ where: { plannerId, calendarId } });
+  } else {
+    // Idempotent: hiding an already-hidden calendar is not an error, and a
+    // double click must not throw on the unique key.
+    await prisma.hiddenCalendar.upsert({
+      where: { plannerId_calendarId: { plannerId, calendarId } },
+      create: { plannerId, calendarId },
+      update: {},
+    });
+  }
+}
+
+const CALENDAR_NAME_MAX = 60;
+
+export async function renameCalendarFor(ownerId: string, calendarId: string, name: string): Promise<string> {
+  const clean = String(name ?? "").trim().slice(0, CALENDAR_NAME_MAX);
+  if (!clean) throw new Error("A calendar needs a name.");
+  const { count } = await prisma.calendar.updateMany({ where: { id: calendarId, ownerId }, data: { name: clean } });
+  if (count === 0) throw new Error("Calendar not found");
+  return clean;
+}
+
+export async function recolourCalendarFor(ownerId: string, calendarId: string, colour: string): Promise<string> {
+  // ONE OF THE OFFERED COLOURS, not any hex. The ink and the border are
+  // derived from this by darkening it until it clears 4.5:1 (see eventInk),
+  // which only reads as the same hue on a light ground - a dark colour here
+  // gives dark text on dark, and the swatches are the set that was checked.
+  const chosen = CALENDAR_COLOURS.find((c) => c.toLowerCase() === String(colour ?? "").toLowerCase());
+  if (!chosen) throw new Error("That is not one of the colours.");
+  const { count } = await prisma.calendar.updateMany({ where: { id: calendarId, ownerId }, data: { colour: chosen } });
+  if (count === 0) throw new Error("Calendar not found");
+  return chosen;
+}
+
+/**
+ * Remove a calendar and everything on it.
+ *
+ * A REAL DELETE, unlike an event's. An event is tombstoned so a future sync
+ * knows it went; a calendar being removed means the person no longer wants it
+ * at all, and its events cascade. Nothing is left to sync.
+ *
+ * The owner is not left without one: defaultCalendarFor makes a calendar on
+ * first use, so typing an event after deleting the last one simply makes
+ * another.
+ */
+export async function deleteCalendarFor(ownerId: string, calendarId: string): Promise<void> {
+  await prisma.calendar.deleteMany({ where: { id: calendarId, ownerId } });
 }
 
 /**

@@ -34,6 +34,7 @@ import { type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { calendarsFor, eventsForJournal, type EditableEvent } from "./calendarStore";
+import { syncDueSubscriptions } from "./calendarSubscriptions";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 /** What a thumbnail is drawn from: a page's size and its modules. A journal's
@@ -182,7 +183,31 @@ export type LoadedPlanner = {
   /** The owner's calendars, and whether this journal shows each one. A person
    *  has one until something is imported; the editor only offers a choice
    *  once there is more than one. */
-  calendars: Array<{ id: string; name: string; colour: string; source: string | null; visible: boolean }>;
+  calendars: LoadedCalendar[];
+};
+
+/**
+ * One of the owner's calendars, as the browser gets it.
+ *
+ * THE ONE SHAPE. Both things that read it - the popup's Calendar row
+ * (EventLayer) and the settings list (CalendarsPanel) - import this rather
+ * than declaring their own, because two descriptions of one row is how a
+ * field ends up populated on one side and absent on the other.
+ *
+ * `externalId` IS ABSENT BY CONSTRUCTION: for a subscription it holds the
+ * feed's secret URL, which is that calendar's whole authentication. See
+ * calendarsFor.
+ */
+export type LoadedCalendar = {
+  id: string;
+  name: string;
+  colour: string;
+  /** Null for a calendar made here. Anything else names the kind of feed it
+   *  syncs from, and its events are read-only. */
+  source: string | null;
+  /** Shown on THIS journal - the calendar itself is the owner's. */
+  visible: boolean;
+  eventCount: number;
 };
 
 /** A stored event as it crosses to the browser. */
@@ -195,6 +220,10 @@ export type SerialisedEvent = {
   rrule: string | null;
   calendarId: string;
   colour: string | null;
+  /** WHERE IT CAME FROM. Null for one typed here. Anything else means it
+   *  belongs to a feed, and the editor shows it read-only rather than letting
+   *  an edit be quietly overwritten by the next sync. */
+  source: string | null;
 };
 
 /**
@@ -230,6 +259,13 @@ export async function loadPlannerPages(
   // the truth rather than an error.
   const resolvedVariantKey = variantKey !== null && at(variantKey).length === 0 ? null : variantKey;
   const levelPages = at(resolvedVariantKey);
+
+  // SUBSCRIBED CALENDARS ARE READ AGAIN FIRST, but only the ones that are
+  // due - see SYNC_INTERVAL_MS. Here rather than on a timer because this app
+  // has no background worker, and a feed nobody is looking at does not need
+  // reading. It swallows its own failures: a calendar that is down must not
+  // stop a journal from opening.
+  await syncDueSubscriptions(planner.ownerId);
 
   // THE OWNER'S EVENTS, once for the whole load. Fetched here rather than by
   // the three callers because this is already the one place that turns a
@@ -431,6 +467,7 @@ export async function loadPlannerPages(
       rrule: e.rrule,
       calendarId: e.calendarId,
       colour: e.calendar?.colour ?? null,
+      source: e.calendar?.source ?? null,
     })),
     calendars,
     pageSettings: {

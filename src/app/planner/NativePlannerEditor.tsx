@@ -96,6 +96,7 @@ import type { LoadedPage, PageSettings, SerialisedEvent } from "./loadPlannerPag
 import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { EventLayer, type CalendarChoice } from "./EventLayer";
+import { CalendarsPanel, type CalendarRow } from "./CalendarsPanel";
 import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { drawingInputsFor } from "@/lib/renderModuleInstance";
@@ -3500,8 +3501,11 @@ function ModulePalette({
   fontFamily,
   showHours,
   term,
+  calendars,
 }: {
   activeId: string | null;
+  /** The owner's calendars, for the Calendars section - see CalendarsPanel. */
+  calendars: CalendarRow[];
   activeDelta: { x: number; y: number };
   open: boolean;
   // True for the whole of a palette drag, including after it has handed
@@ -3826,6 +3830,16 @@ function ModulePalette({
             />
           </div>
           )}
+          {/* CALENDARS. Below Hours because that is what they are drawn on,
+              and inside Page Settings because the switch beside each one is a
+              property of THIS book - the calendar itself belongs to the
+              person and follows them to their other journals. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Calendars
+            </div>
+            <CalendarsPanel calendars={calendars} />
+          </div>
         </div>
       </PaletteCollapse>
 
@@ -10121,6 +10135,7 @@ export function NativePlannerEditor({
               fontFamily={fontFamily}
               showHours={showHoursSettings}
               term={term}
+              calendars={calendars}
             />
           </DndContext>
         </div>

@@ -63,10 +63,22 @@ import {
 import {
   calendarsFor,
   createEventFor,
+  deleteCalendarFor,
   deleteEventFor,
+  recolourCalendarFor,
+  renameCalendarFor,
+  setCalendarVisibleFor,
   updateEventFor,
   type EventInput,
 } from "./calendarStore";
+import {
+  subscribeToIcs,
+  syncSubscription,
+  unsubscribeFrom,
+  assertNotSubscribed,
+  ICS_SOURCE,
+} from "./calendarSubscriptions";
+import { IcsFetchError } from "@/lib/icsFetch";
 import { weekSidebarBoxes, weekTodoPlacements, weekHourlyPlacements } from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
@@ -3512,9 +3524,106 @@ export async function createCalendarEvent(journalId: string, input: EventInput):
 }
 
 export async function updateCalendarEvent(eventId: string, input: EventInput): Promise<void> {
-  await updateEventFor(await requireOwner(), eventId, input);
+  const userId = await requireOwner();
+  await assertNotSubscribed(eventId);
+  await updateEventFor(userId, eventId, input);
 }
 
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
-  await deleteEventFor(await requireOwner(), eventId);
+  const userId = await requireOwner();
+  // A SUBSCRIBED EVENT CANNOT BE DELETED HERE either: the next sync reads the
+  // feed again and puts it straight back, so the deletion would appear to
+  // work and then undo itself. Hide the whole calendar instead, or remove it
+  // where it lives.
+  await assertNotSubscribed(eventId);
+  await deleteEventFor(userId, eventId);
+}
+
+// --- CALENDARS -------------------------------------------------------------
+
+/** The journal this calendar action is for, confirmed as the caller's. */
+async function ownedJournal(userId: string, journalId: string): Promise<string> {
+  const planner = await prisma.planner.findFirst({
+    where: journalWhere(userId, journalId),
+    select: { id: true },
+  });
+  if (!planner) throw new Error(JOURNAL_NOT_FOUND);
+  return planner.id;
+}
+
+export async function setCalendarVisible(journalId: string, calendarId: string, visible: boolean): Promise<void> {
+  const userId = await requireOwner();
+  await setCalendarVisibleFor(userId, await ownedJournal(userId, journalId), calendarId, visible);
+}
+
+export async function renameCalendar(calendarId: string, name: string): Promise<string> {
+  return renameCalendarFor(await requireOwner(), calendarId, name);
+}
+
+export async function recolourCalendar(calendarId: string, colour: string): Promise<string> {
+  return recolourCalendarFor(await requireOwner(), calendarId, colour);
+}
+
+/** Remove a calendar. A subscription is unsubscribed; one made here is
+ *  deleted with its events. Both end the same way, so the UI has one button. */
+export async function removeCalendar(calendarId: string): Promise<void> {
+  const userId = await requireOwner();
+  const calendar = await prisma.calendar.findFirst({
+    where: { id: calendarId, ownerId: userId },
+    select: { source: true },
+  });
+  if (!calendar) return;
+  if (calendar.source === ICS_SOURCE) await unsubscribeFrom(userId, calendarId);
+  else await deleteCalendarFor(userId, calendarId);
+}
+
+/** What the subscribe and refresh actions hand back - a sentence to show, and
+ *  whether the page needs redrawing. */
+export type SubscribeResult = { ok: true; message: string } | { ok: false; message: string };
+
+/**
+ * Subscribe to an .ics feed.
+ *
+ * ERRORS COME BACK AS A MESSAGE, not as a throw. Every other failure in this
+ * file is a bug and should be loud; this one is ordinary - a typo, a feed
+ * that is down, an address that is not public. A thrown server action reaches
+ * the browser as a digest with the text stripped in production, which is
+ * exactly the wrong shape for "check the address".
+ */
+export async function subscribeCalendar(journalId: string, url: string, name?: string): Promise<SubscribeResult> {
+  const userId = await requireOwner();
+  await ownedJournal(userId, journalId);
+  try {
+    const result = await subscribeToIcs(userId, url, name);
+    const parts = [`${result.added} event${result.added === 1 ? "" : "s"} from ${result.name}`];
+    if (result.updated > 0) parts.push(`${result.updated} updated`);
+    if (result.skipped > 0) parts.push(`${result.skipped} this reader could not place`);
+    return { ok: true, message: parts.join(", ") + "." };
+  } catch (error) {
+    if (error instanceof IcsFetchError) return { ok: false, message: error.message };
+    console.error("Could not subscribe to that calendar:", error);
+    return { ok: false, message: "That calendar could not be added." };
+  }
+}
+
+/** Read a subscribed calendar again now, rather than waiting for its
+ *  interval. */
+export async function refreshCalendar(calendarId: string): Promise<SubscribeResult> {
+  const userId = await requireOwner();
+  try {
+    const result = await syncSubscription(userId, calendarId, true);
+    if (!result) return { ok: false, message: "That calendar is not a subscription." };
+    const changed = result.added + result.updated + result.removed;
+    return {
+      ok: true,
+      message:
+        changed === 0
+          ? "Already up to date."
+          : `${result.added} added, ${result.updated} updated, ${result.removed} gone.`,
+    };
+  } catch (error) {
+    if (error instanceof IcsFetchError) return { ok: false, message: error.message };
+    console.error("Could not refresh that calendar:", error);
+    return { ok: false, message: "That calendar could not be refreshed." };
+  }
 }

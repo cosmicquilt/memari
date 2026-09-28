@@ -46,13 +46,13 @@ import {
 } from "@/lib/hourlyGridHit";
 import { placeAnchoredPanel } from "@/lib/anchoredPanel";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
-import type { SerialisedEvent } from "./loadPlannerPages";
+import type { LoadedCalendar, SerialisedEvent } from "./loadPlannerPages";
 import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from "./actions";
 import { useJournalId } from "./journalContext";
 import { useRefreshPages } from "./pagesRefreshContext";
 
-/** One of the owner's calendars, as the page loaded it. */
-export type CalendarChoice = { id: string; name: string; colour: string; visible: boolean };
+// Same shape the settings list uses, from the server - see LoadedCalendar.
+export type { LoadedCalendar as CalendarChoice } from "./loadPlannerPages";
 
 /** What the Repeat row offers. Kept to the rules calendarEvents.ts actually
  *  draws: an option that stored a rule this app cannot expand would save
@@ -82,6 +82,10 @@ type Draft = {
    *  future sync pushes to. Null lets the server use the owner's default,
    *  which it makes on first use. */
   calendarId: string | null;
+  /** WHERE IT CAME FROM. Non-null means it belongs to a feed, and the next
+   *  sync reads that feed again - so an edit here would be silently undone.
+   *  The popup shows it, and says why, rather than letting that happen. */
+  source: string | null;
   /** Where the popup points, in viewport coordinates. */
   anchor: { top: number; bottom: number; right: number };
 };
@@ -116,7 +120,7 @@ export function EventLayer({
   events: SerialisedEvent[];
   /** The owner's calendars. One is the ordinary case and the popup does not
    *  ask; an imported calendar makes it a choice. */
-  calendars: CalendarChoice[];
+  calendars: LoadedCalendar[];
 }) {
   const journalId = useJournalId();
   const refreshPages = useRefreshPages();
@@ -179,6 +183,7 @@ export function EventLayer({
         allDay: row.allDay,
         rrule: row.rrule,
         calendarId: row.calendarId,
+        source: row.source,
         anchor: anchorOf(hit),
       });
     },
@@ -247,7 +252,11 @@ export function EventLayer({
         end: hhmmOf(endMinutes),
         allDay: false,
         rrule: null,
-        calendarId: calendars.find((c) => c.visible)?.id ?? null,
+        calendarId: calendars.find((c) => c.visible && !c.source)?.id ?? null,
+        // A NEW event is always this app's own. It is never put on a
+        // subscribed calendar, because the next sync would notice a row the
+        // feed has no UID for and tombstone it.
+        source: null,
         anchor: anchorOf({
           x: grid.columnX[from.day],
           y: grid.gridTop + from.slot * grid.rowHeight,
@@ -387,7 +396,7 @@ function EventPopup({
   onDelete,
 }: {
   draft: Draft;
-  calendars: CalendarChoice[];
+  calendars: LoadedCalendar[];
   saving: boolean;
   onChange: (draft: Draft) => void;
   onClose: () => void;
@@ -395,6 +404,10 @@ function EventPopup({
   onDelete: () => void;
 }) {
   const title = useRef<HTMLInputElement | null>(null);
+  // AN EVENT FROM A FEED IS NOT OURS TO CHANGE. The next sync overwrites it,
+  // so an editable field here is a field whose edits quietly vanish - which
+  // is worse than not offering one. Shown, explained, and left alone.
+  const readOnly = draft.source !== null;
   const place = placeAnchoredPanel(
     draft.anchor,
     { width: window.innerWidth, height: window.innerHeight },
@@ -458,17 +471,23 @@ function EventPopup({
           ref={title}
           value={draft.title}
           placeholder="Event"
+          readOnly={readOnly}
           onChange={(e) => onChange({ ...draft, title: e.target.value })}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onSave();
+            if (e.key === "Enter" && !readOnly) onSave();
           }}
-          style={{ ...field, font: "14px/1.3 ui-sans-serif, system-ui, sans-serif" }}
+          style={{
+            ...field,
+            font: "14px/1.3 ui-sans-serif, system-ui, sans-serif",
+            ...(readOnly ? { background: "#f1efea", color: "#55534e" } : {}),
+          }}
         />
 
         <label style={{ display: "flex", alignItems: "center", gap: 8, ...label, textTransform: "none", fontSize: 12 }}>
           <input
             type="checkbox"
             checked={draft.allDay}
+            disabled={readOnly}
             onChange={(e) => onChange({ ...draft, allDay: e.target.checked })}
           />
           All day
@@ -488,6 +507,7 @@ function EventPopup({
                 type="time"
                 value={draft.start}
                 step={300}
+                disabled={readOnly}
                 onChange={(e) => onChange({ ...draft, start: e.target.value })}
                 style={field}
               />
@@ -498,6 +518,7 @@ function EventPopup({
                 type="time"
                 value={draft.end}
                 step={300}
+                disabled={readOnly}
                 onChange={(e) => onChange({ ...draft, end: e.target.value })}
                 style={field}
               />
@@ -509,6 +530,7 @@ function EventPopup({
           <div style={{ ...label, marginBottom: 4 }}>Repeat</div>
           <select
             value={draft.rrule ?? ""}
+            disabled={readOnly}
             onChange={(e) => onChange({ ...draft, rrule: e.target.value || null })}
             style={field}
           >
@@ -569,6 +591,12 @@ function EventPopup({
           </div>
         ) : null}
 
+        {readOnly ? (
+          <div style={{ fontSize: 11, lineHeight: 1.45, color: "#6b6b6b", marginTop: 2 }}>
+            This event comes from a subscribed calendar. Change it where it lives and it will follow
+            on the next read.
+          </div>
+        ) : (
         <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
           <button
             type="button"
@@ -606,6 +634,7 @@ function EventPopup({
             </button>
           ) : null}
         </div>
+        )}
       </div>
     </>,
     document.body
