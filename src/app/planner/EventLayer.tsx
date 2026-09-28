@@ -274,6 +274,8 @@ export function EventLayer({
       const onBlock = boxAt(boxes, p);
       if (onBlock) {
         e.stopPropagation();
+        // No text selection from this press - see below.
+        e.preventDefault();
         openExisting(onBlock);
         return;
       }
@@ -285,6 +287,12 @@ export function EventLayer({
       // wanted it.
       if (!slot) return;
       e.stopPropagation();
+      // A PRESS THAT STARTS A DRAG IS NOT THE START OF A TEXT SELECTION. Left
+      // to its default, the browser anchored a selection here, and dragging
+      // across the preview stretched it over "Untitled" - reported
+      // 2026-09-28. Not on a miss: a press on the day tab or in the gutter is
+      // left alone for whatever else wants it.
+      e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       setDraft(null);
       setDragging({ from: slot, toSlot: slot.slot });
@@ -509,6 +517,10 @@ export function EventLayer({
           zIndex: 1,
           cursor: "cell",
           touchAction: "none",
+          // And nothing in the sheet - the preview's label included - can be
+          // selected at all, whichever way a gesture reaches it.
+          userSelect: "none",
+          WebkitUserSelect: "none",
         }}
       >
         {previewMarks && previewMarks.length > 0 ? (

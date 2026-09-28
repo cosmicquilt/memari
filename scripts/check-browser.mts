@@ -821,6 +821,56 @@ const eventDrag: Probe = {
       }
     }
 
+    // --- 3. A REAL MOUSE DRAG SELECTS NO TEXT ----------------------------
+    //
+    // Reported 2026-09-28: dragging to create an event also highlighted the
+    // "Untitled" in its preview - the browser's own text selection, which is
+    // what a mouse drag does by default. Everything above dispatches
+    // synthetic pointer events, and a synthetic event never triggers a
+    // default action, so none of it could see this. Playwright's mouse sends
+    // real input, which does.
+    //
+    // Read DURING the drag, which is when it shows: once the popup opens, it
+    // selects its own title field, and a selection inside an input is not
+    // what the person was complaining about.
+    {
+      const at = (await page.evaluate(`(() => {
+        const layer = document.querySelectorAll("[data-event-layer]")[0];
+        const L = layer.getBoundingClientRect();
+        const tab = window.__probe.tabsOf(layer)[0];
+        return { x: tab.left + tab.width / 2, y: Math.max(L.top + L.height * 0.3, 80) };
+      })()`)) as { x: number; y: number };
+      await page.evaluate(`window.getSelection()?.removeAllRanges()`);
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      // Down, then back up over the first row - where the preview's label is,
+      // which is what a person's hand does and what my first version did not.
+      for (let step = 1; step <= 8; step++) await page.mouse.move(at.x, at.y + step * 6);
+      for (let step = 7; step >= 0; step--) await page.mouse.move(at.x + (step % 2 ? 3 : -3), at.y + step * 6);
+      await page.waitForTimeout(200);
+      // ANY SELECTION INSIDE THE LAYER COUNTS, even a collapsed caret. That
+      // caret is where the highlight grows from: measured in the in-app
+      // browser, a real press on the hours put one inside the event layer,
+      // and a slower drag stretched it across "Untitled". The first version
+      // of this clause read only the selected TEXT, and passed.
+      const selected = (await page.evaluate(`(() => {
+        const s = window.getSelection();
+        const text = s?.toString() ?? "";
+        const inside = (n) => !!(n && (n.nodeType === 1 ? n : n.parentElement)?.closest?.("[data-event-layer]"));
+        const anchored = !!s && s.rangeCount > 0 && (inside(s.anchorNode) || inside(s.focusNode));
+        return text.trim() || (anchored ? "(a selection anchored inside the event layer)" : "");
+      })()`)) as string;
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+      if (selected.trim().length > 0) {
+        fail("event drag", `${dpr}x: a real mouse drag selected text - "${selected.trim().slice(0, 40)}"`);
+      } else {
+        note("event drag", `${dpr}x: a real mouse drag selects no text`);
+      }
+    }
+
     page.off("console", onConsole);
     if (loops.length > 0) fail("event drag", `${dpr}x: ${loops.length} update-loop error(s) during the gesture - "${loops[0]}"`);
   },
