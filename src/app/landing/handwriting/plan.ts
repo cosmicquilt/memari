@@ -21,7 +21,8 @@ import { HAND_FONTS, type HandFontKey } from "../handFonts";
 import { rng as makeRng } from "./rng";
 import { layoutGlyphs, type GlyphRun } from "./glyphs";
 import { doodle, type DoodleName } from "./doodles";
-import { artIndex, findArt, type ArtRef } from "./art";
+import { artById, artIndex, findArt, subjectOf, type ArtRef } from "./art";
+import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
 
 export type Pen = {
@@ -480,10 +481,30 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // the orientation, position, and size a bit more so it's more
       // realistic", they were "right next to each other"): one large and
       // the rest smaller, each at its own slant, somewhere in the box with
-      // room around it - and about half in pencil, as sketches among the
-      // pen drawings.
+      // room around it.
+      //
+      // WHICH drawings: the ones switched on for the sketch box in the
+      // control panel (/dev/doodles, saved to doodleChoices.json - asked for
+      // 2026-09-27, "switch which drawing show up ... in the hero large
+      // within the sketch modules"). A spread favours its own person's
+      // things when any of those are on - the first drawing always, the
+      // rest more often than not - and anything switched on can appear.
+      // Its defaults are what this drew before: each person's subjects, in
+      // their style and in pencil.
       const n = r.chance(0.15) ? 1 : r.chance(0.5) ? 2 : 3;
       const keys = r.shuffle(theme.big);
+      const allowed = artIndex() ? choices.sketchBox.map(artById).filter((a): a is ArtRef => a !== null) : [];
+      const own = allowed.filter((a) => theme.big.includes(subjectOf(a)));
+      const used = new Set<ArtRef>();
+      const choose = (first: boolean): ArtRef | null => {
+        const mine = own.filter((a) => !used.has(a));
+        const any = allowed.filter((a) => !used.has(a));
+        const from = mine.length && (first || r.chance(0.6)) ? mine : any;
+        if (!from.length) return null;
+        const art = r.pick(from);
+        used.add(art);
+        return art;
+      };
       const placed: Box[] = [];
       const gap = Math.min(cw, ch) * 0.06;
       // The first sets the scale; the others are a half to two thirds of it.
@@ -491,9 +512,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       for (let i = 0; i < n; i++) {
         const subject = keys[i % keys.length];
         const seed = nextSeed();
-        const pick = (seed % 997) / 997;
-        const sketch = r.chance(0.5);
-        const art = artIndex() ? ((sketch ? findArt("pencil", subject, pick) : null) ?? findArt(theme.style, subject, pick)) : null;
+        // Nothing switched on (or the library not loaded): the code-drawn
+        // doodle of the person's own subject, as before the library.
+        const art = choose(i === 0);
         const angle = r.range(-0.26, 0.26);
         const aspect = art ? art.w / art.h : 1;
         let h = i === 0 ? lead : lead * r.range(0.45, 0.7);

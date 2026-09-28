@@ -44,6 +44,19 @@ export function artIndex(): Index | null {
 
 export type ArtRef = { style: string; id: string; w: number; h: number };
 
+/** A drawing by its full id, "style/subject-n" - the form the control
+ *  panel's choices use (doodleChoices.json) - or null if the library does
+ *  not have it (or has not loaded). */
+export function artById(full: string): ArtRef | null {
+  const [style, id] = full.split("/");
+  const subject = id?.replace(/-\d+$/, "");
+  const hit = subject ? index?.[style]?.[subject]?.find(([i]) => i === id) : undefined;
+  return hit ? { style, id: hit[0], w: hit[1], h: hit[2] } : null;
+}
+
+/** What a drawing is of: "bear" for bear-2. */
+export const subjectOf = (art: ArtRef) => art.id.replace(/-\d+$/, "");
+
 /** A drawing of `subject` in `style`, chosen by `pick` (0 to 1), or null. */
 export function findArt(style: string, subject: string, pick: number): ArtRef | null {
   const list = index?.[style]?.[subject];
