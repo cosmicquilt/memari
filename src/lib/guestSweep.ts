@@ -17,7 +17,13 @@
 import { prisma } from "@/lib/prisma";
 import { GUEST_IDLE_DAYS, GUEST_OWNER_PREFIX } from "@/lib/guest";
 
-export type SweepResult = { journals: number; savedPages: number; savedModules: number; calendars: number };
+export type SweepResult = {
+  journals: number;
+  savedPages: number;
+  savedModules: number;
+  calendars: number;
+  settings: number;
+};
 
 export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResult> {
   const cutoff = new Date(now.getTime() - GUEST_IDLE_DAYS * 24 * 60 * 60 * 1000);
@@ -34,9 +40,14 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
       ...(await prisma.savedPage.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
       ...(await prisma.savedModule.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
       ...(await prisma.calendar.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
+      // OwnerSettings, added 2026-09-28 - the second kind of row this sweep
+      // had to be told about, one day after calendars. check:guest-sweep
+      // names each kind for exactly this reason.
+      ...(await prisma.ownerSettings.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
     ].map((row) => row.ownerId)
   );
-  if (owners.size === 0) return { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0 };
+  const nothing = { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0, settings: 0 };
+  if (owners.size === 0) return nothing;
 
   const active = await prisma.planner.findMany({
     where: { ownerId: { in: [...owners] } },
@@ -44,14 +55,15 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
     distinct: ["ownerId"],
   });
   for (const row of active) owners.delete(row.ownerId);
-  if (owners.size === 0) return { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0 };
+  if (owners.size === 0) return nothing;
 
   const gone = { ...idleGuest, ownerId: { in: [...owners] } };
   // The events cascade with their calendar, so nothing of the feed is left.
-  const [savedPages, savedModules, calendars] = await prisma.$transaction([
+  const [savedPages, savedModules, calendars, settings] = await prisma.$transaction([
     prisma.savedPage.deleteMany({ where: gone }),
     prisma.savedModule.deleteMany({ where: gone }),
     prisma.calendar.deleteMany({ where: gone }),
+    prisma.ownerSettings.deleteMany({ where: gone }),
   ]);
 
   return {
@@ -59,5 +71,6 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
     savedPages: savedPages.count,
     savedModules: savedModules.count,
     calendars: calendars.count,
+    settings: settings.count,
   };
 }

@@ -72,6 +72,10 @@ async function main() {
     await prisma.$executeRaw`UPDATE "Calendar" SET "updatedAt" = ${when} WHERE id = ${row.id}`;
     return row;
   };
+  const settings = async (ownerId: string, when: Date) => {
+    await prisma.ownerSettings.create({ data: { ownerId, timeZone: "America/New_York" } });
+    await prisma.$executeRaw`UPDATE "OwnerSettings" SET "updatedAt" = ${when} WHERE "ownerId" = ${ownerId}`;
+  };
   const savedPage = async (ownerId: string, when: Date) => {
     const row = await prisma.savedPage.create({
       data: { ownerId, name: "Sweep test", content: [], ...page },
@@ -85,6 +89,7 @@ async function main() {
     await planner(abandoned, old);
     const goneCalendar = await calendar(abandoned, old);
     const goneSaved = await savedPage(abandoned, old);
+    await settings(abandoned, old);
 
     // ACTIVE: an idle calendar and saved page, but a journal still in use.
     // The rule is "no journals left", so both must stay - a guest who is
@@ -93,6 +98,7 @@ async function main() {
     await planner(active, new Date());
     const keptCalendar = await calendar(active, old);
     const keptSaved = await savedPage(active, old);
+    await settings(active, old);
 
     // FRESH: everything recent. Nothing goes.
     const freshCalendar = await calendar(fresh, new Date());
@@ -102,6 +108,7 @@ async function main() {
     // paying customers' work.
     const accountCalendar = await calendar(account, old);
     await savedPage(account, old);
+    await settings(account, old);
 
     const result = await sweepIdleGuests();
     console.log(`  swept: ${JSON.stringify(result)}`);
@@ -123,6 +130,22 @@ async function main() {
       "and the events on them go with them, rather than being orphaned"
     );
 
+    // SETTINGS - the second kind of row the sweep had to be told about, the
+    // day after calendars. A default time zone is not sensitive the way a
+    // feed address is, but a row nobody will ever read again is still one to
+    // clear, and the rule is the same for every kind or it is no rule.
+    check(
+      (await prisma.ownerSettings.findUnique({ where: { ownerId: abandoned } })) === null,
+      "AND THEIR SETTINGS GO"
+    );
+    check(
+      (await prisma.ownerSettings.findUnique({ where: { ownerId: active } })) !== null,
+      "a guest still using their journals keeps their settings"
+    );
+    check(
+      (await prisma.ownerSettings.findUnique({ where: { ownerId: account } })) !== null,
+      "an account keeps its settings, however idle"
+    );
     check(await exists("calendar", keptCalendar.id), "a guest still using their journals keeps an untouched calendar");
     check(await exists("savedPage", keptSaved.id), "and their untouched saved pages");
     check(await exists("calendar", freshCalendar.id), "a brand new guest's calendar is left alone");
@@ -144,6 +167,7 @@ async function main() {
       await prisma.savedPage.deleteMany({ where: { ownerId } });
       await prisma.savedModule.deleteMany({ where: { ownerId } });
       await prisma.planner.deleteMany({ where: { ownerId } });
+      await prisma.ownerSettings.deleteMany({ where: { ownerId } });
     }
     await prisma.$disconnect();
   }
@@ -160,6 +184,7 @@ try {
 //
 //   * drop calendars from the sweep (what the code did until 2026-09-28)
 //     -> "AND THEIR CALENDARS GO"
+//   * drop OwnerSettings from it -> "AND THEIR SETTINGS GO"
 //   * sweep on idleness alone, without the no-journals-left test
 //     -> the "still using their journals" cases
 //   * drop the `startsWith(GUEST_OWNER_PREFIX)` filter

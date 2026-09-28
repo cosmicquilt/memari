@@ -50,7 +50,7 @@ import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
-import { loadSavedItems, setPlannerTimeZone } from "./actions";
+import { loadSavedItems, seedDefaultTimeZone } from "./actions";
 import { JournalProvider } from "./journalContext";
 import { SavedProvider, type SavedItems } from "./savedContext";
 import { PagesRefreshProvider, type RefreshPages } from "./pagesRefreshContext";
@@ -187,27 +187,29 @@ export function EditorShell({
     [openLevel, open.level, open.variantKey, journalId]
   );
 
-  // A BOOK FROM BEFORE BOOKS HAD ZONES gets the browser's, once, on open.
+  // A PERSON WITH NO DEFAULT ZONE gets the browser's, once.
   //
-  // Automatic rather than asked, because the browser's zone is right for
-  // almost everyone and there is nothing to decide - and asking would leave
-  // every existing book drawing imported events in UTC until somebody found
-  // the setting. It moves nothing that was typed: those events were marked
-  // floating by the migration, and a floating time is drawn at its wall time
-  // in any zone. What it does move is anything imported with a real zone,
-  // onto the right hour.
+  // The PERSON's, not this book's. An earlier version filled in the book's
+  // own zone here, which would have pinned every existing book to whatever
+  // zone it happened to be opened in and stopped it following the default -
+  // the opposite of what a default is for. Books stay null and follow.
+  //
+  // Automatic rather than asked: the browser's zone is right for almost
+  // everyone, and asking would leave every existing book drawing in UTC until
+  // somebody found the setting. It moves nothing typed before zones existed -
+  // the migration marked those floating, drawn at their wall time anywhere.
   //
   // A ref, not state, so the rebuild this causes cannot fire it twice.
-  const zoneFilled = useRef(false);
-  const bookZone = open.pageSettings.timeZone;
+  const zoneSeeded = useRef(false);
+  const defaultZone = open.pageSettings.defaultTimeZone;
   useEffect(() => {
-    if (bookZone || zoneFilled.current) return;
-    zoneFilled.current = true;
+    if (defaultZone || zoneSeeded.current) return;
+    zoneSeeded.current = true;
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    void setPlannerTimeZone(journalId, zone)
-      .then(() => refreshPages({ rebuild: true }))
-      .catch((error) => console.error("Could not give this book a time zone:", error));
-  }, [bookZone, journalId, refreshPages]);
+    void seedDefaultTimeZone(zone)
+      .then((seeded) => (seeded ? refreshPages({ rebuild: true }) : undefined))
+      .catch((error) => console.error("Could not seed a default time zone:", error));
+  }, [defaultZone, refreshPages]);
 
   // What the timeline shows as open: the one being opened, if any.
   const shownLevel = choosing?.level ?? open.level;

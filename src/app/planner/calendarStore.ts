@@ -18,7 +18,8 @@
 
 import { prisma } from "@/lib/prisma";
 import type { StoredEvent } from "@/lib/calendarEvents";
-import { DEFAULT_ZONE, instantFromWall, isTimeZone } from "@/lib/timeZone";
+import { DEFAULT_ZONE, instantFromWall } from "@/lib/timeZone";
+import { zoneForBook } from "./ownerSettings";
 
 /** What a new calendar is drawn in until someone changes it. Screen only -
  *  print takes grey, decided 2026-09-26, because colour pages cost money. */
@@ -234,15 +235,10 @@ export type EventInput = {
 const TITLE_MAX = 200;
 const DAY_MS = 86_400_000;
 
-/** The book's zone, for turning what was typed into an instant. */
-async function zoneOfJournal(ownerId: string, journalId: string): Promise<string> {
-  const book = await prisma.planner.findFirst({
-    where: { id: journalId, ownerId },
-    select: { timeZone: true },
-  });
-  if (!book) throw new Error("Journal not found");
-  return isTimeZone(book.timeZone) ? book.timeZone : DEFAULT_ZONE;
-}
+/** The zone the book's page reads - its own, or the owner's default - for
+ *  turning what was typed into an instant. zoneForBook resolves it through
+ *  the same effectiveZone the page does, so the two cannot disagree. */
+const zoneOfJournal = zoneForBook;
 
 function parse(input: EventInput, zone: string) {
   const title = String(input.title ?? "").trim().slice(0, TITLE_MAX);

@@ -80,6 +80,7 @@ import {
 } from "./calendarSubscriptions";
 import { IcsFetchError } from "@/lib/icsFetch";
 import { isTimeZone } from "@/lib/timeZone";
+import { seedOwnerDefaultZone, setOwnerDefaultZone } from "./ownerSettings";
 import { weekSidebarBoxes, weekTodoPlacements, weekHourlyPlacements } from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
@@ -403,6 +404,11 @@ export async function createJournal(input: unknown): Promise<string> {
       );
     }
   }
+  // A FIRST JOURNAL IS WHERE A DEFAULT ZONE COMES FROM, if the person has
+  // none - so the book they are about to open draws in their zone on its
+  // very first render, rather than in UTC and then again once the editor
+  // notices. Never overwrites a default they chose.
+  await seedOwnerDefaultZone(userId, valid.browserTimeZone);
   const journal = await createBookFor(userId, valid);
   return journal.id;
 }
@@ -3538,14 +3544,29 @@ export async function updateCalendarEvent(journalId: string, eventId: string, in
  * So changing a travel journal to London moves a New York meeting from 9am
  * to 2pm on its pages, which is when it happens there.
  */
-export async function setPlannerTimeZone(journalId: string, timeZone: string): Promise<void> {
+export async function setPlannerTimeZone(journalId: string, timeZone: string | null): Promise<void> {
   const userId = await requireOwner();
-  if (!isTimeZone(timeZone)) throw new Error("That is not a time zone.");
+  // NULL IS A CHOICE, not a missing value: "follow my default".
+  if (timeZone !== null && !isTimeZone(timeZone)) throw new Error("That is not a time zone.");
   const { count } = await prisma.planner.updateMany({
     where: journalWhere(userId, journalId),
     data: { timeZone },
   });
   if (count === 0) throw new Error(JOURNAL_NOT_FOUND);
+}
+
+/** The person's default zone. Every book that follows it redraws. */
+export async function setDefaultTimeZone(timeZone: string): Promise<void> {
+  await setOwnerDefaultZone(await requireOwner(), timeZone);
+}
+
+/**
+ * Seed the person's default from the browser, if they have none. Never
+ * overwrites one they chose. Returns whether it did anything, so the editor
+ * only redraws when something moved.
+ */
+export async function seedDefaultTimeZone(timeZone: string): Promise<boolean> {
+  return seedOwnerDefaultZone(await requireOwner(), timeZone);
 }
 
 export async function deleteCalendarEvent(eventId: string): Promise<void> {

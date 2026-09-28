@@ -55,6 +55,16 @@ export async function claimGuestWork(userId: string): Promise<number> {
     prisma.calendar.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.calendarEvent.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
   ]);
+  // SETTINGS: the account keeps its own if it has any - a default time zone
+  // somebody chose on their account is not replaced by one a guest cookie
+  // picked up. Otherwise the guest's come with them. Not in the transaction
+  // above because it is a choice between two writes, not one more write.
+  const accountSettings = await prisma.ownerSettings.findUnique({ where: { ownerId: userId } });
+  if (accountSettings) {
+    await prisma.ownerSettings.deleteMany({ where: { ownerId: guestOwner } });
+  } else {
+    await prisma.ownerSettings.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
+  }
   return journals.count + pages.count + modules.count + calendars.count + events.count;
 }
 

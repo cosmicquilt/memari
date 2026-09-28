@@ -24,11 +24,26 @@
  *  goes in CalendarEvent.timeZone. */
 export const FLOATING = "floating";
 
-/** The zone a book falls back to before it has one of its own. Every book
- *  that existed before zones did has none until it is next opened, when the
- *  editor gives it the browser's; until then this draws it exactly as it
- *  always was drawn. */
+/** The last resort: a book that follows its owner's default, whose owner
+ *  has never opened the editor to have one seeded. Draws it exactly as every
+ *  book was drawn before zones existed. */
 export const DEFAULT_ZONE = "UTC";
+
+/**
+ * THE ZONE A BOOK'S PAGE READS - its own if it has one, else its owner's
+ * default, else UTC.
+ *
+ * THE ONE PLACE THESE ARE COMBINED. The page draws with this and the editor
+ * saves what was typed with this, and if the two ever resolved differently a
+ * 9:30 typed on the page would be stored in one zone and drawn in another -
+ * the same "two descriptions" defect the rest of the calendar work is built
+ * to avoid. So neither reads the two columns itself.
+ */
+export function effectiveZone(bookZone: string | null | undefined, ownerZone: string | null | undefined): string {
+  if (isTimeZone(bookZone)) return bookZone;
+  if (isTimeZone(ownerZone)) return ownerZone;
+  return DEFAULT_ZONE;
+}
 
 /** Is this an IANA zone the platform knows? Checked before a name is stored,
  *  because a zone that `Intl` rejects later would make every event in the

@@ -35,6 +35,7 @@ import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/the
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { calendarsFor, eventsForJournal, type EditableEvent } from "./calendarStore";
 import { syncDueSubscriptions } from "./calendarSubscriptions";
+import { ownerDefaultZone } from "./ownerSettings";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
 /** What a thumbnail is drawn from: a page's size and its modules. A journal's
@@ -104,9 +105,12 @@ export type PageSettings = {
   /** False on a planner you write the dates into yourself. */
   dated: boolean;
   weekStartDay: number; // 0=Sun..6=Sat
-  /** The zone this book's clock reads, or null for a book made before books
-   *  had zones - which the editor then fills in from the browser. */
+  /** The book's OWN zone, or null when it follows the owner's default. */
   timeZone: string | null;
+  /** The owner's default - what a book with no zone of its own reads, and
+   *  what a new book follows. Null only until the editor seeds it from the
+   *  browser. */
+  defaultTimeZone: string | null;
   startTime: string;
   endTime: string;
   intervalMinutes: number;
@@ -275,11 +279,18 @@ export async function loadPlannerPages(
   // planner row into pages, and an event placed by one caller and not another
   // is the same "two descriptions" problem the render context was built to
   // stop. A journal with no events costs one indexed query returning nothing.
-  const [events, calendars]: [EditableEvent[], Awaited<ReturnType<typeof calendarsFor>>] =
-    await Promise.all([
-      eventsForJournal(planner.ownerId, planner.id),
-      calendarsFor(planner.ownerId, planner.id),
-    ]);
+  const [events, calendars, ownerTimeZone]: [
+    EditableEvent[],
+    Awaited<ReturnType<typeof calendarsFor>>,
+    string | null,
+  ] = await Promise.all([
+    eventsForJournal(planner.ownerId, planner.id),
+    calendarsFor(planner.ownerId, planner.id),
+    ownerDefaultZone(planner.ownerId),
+  ]);
+  // The book as the render context wants it: its own zone and the owner's
+  // default side by side, combined by effectiveZone and nowhere else.
+  const book = { ...planner, ownerTimeZone };
 
   const theme = planner.theme as PlannerTheme | null;
   // Not from the theme blob: `dated` is a real column, because it is
@@ -310,7 +321,7 @@ export async function loadPlannerPages(
     // way it was drawn here. The events go in here too, so THE CANVAS, THE
     // TIMELINE THUMBNAILS AND THE PDF all get them from one call rather than
     // three places each deciding which week an event belongs to.
-    const renderContext = renderContextForPage(planner, page.id, events);
+    const renderContext = renderContextForPage(book, page.id, events);
 
     const moduleInstances: LoadedModuleInstance[] = [];
     for (const instance of page.moduleInstances) {
@@ -404,7 +415,7 @@ export async function loadPlannerPages(
     )
     .map((page) => {
       // Its own page's context, so a card is dated the way its page is.
-      const previewMarks = pageThumbnail(page, fontFamily, renderContextForPage(planner, page.id, events));
+      const previewMarks = pageThumbnail(page, fontFamily, renderContextForPage(book, page.id, events));
       return {
         pageId: page.id,
         level: page.level,
@@ -478,6 +489,7 @@ export async function loadPlannerPages(
       dated,
       weekStartDay,
       timeZone: planner.timeZone ?? null,
+      defaultTimeZone: ownerTimeZone,
       startTime: hourlyProps?.startTime ?? "05:30",
       endTime: hourlyProps?.endTime ?? "23:30",
       intervalMinutes: hourlyProps?.intervalMinutes ?? 30,

@@ -998,9 +998,9 @@ function CreateJournal({
         dated,
         weekStartDay,
         font,
-        // THE BROWSER'S ZONE becomes the book's. It is the one place that
-        // knows where the person is, and a planner is printed for a place.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        // THE BROWSER'S ZONE, to seed the person's default if they have
+        // none. The book itself follows that default - see OwnerSettings.
+        browserTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       onCreated(id);
     } catch (e) {

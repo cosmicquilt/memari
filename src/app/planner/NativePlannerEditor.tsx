@@ -159,6 +159,7 @@ import {
   setPlannerTrim,
   setPlannerDated,
   setPlannerTimeZone,
+  setDefaultTimeZone,
   setPlannerTerm,
   updateHourlySettings,
   resizeHourlyGridCore,
@@ -3808,7 +3809,7 @@ function ModulePalette({
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Time zone
             </div>
-            <TimeZoneField timeZone={pageSettings.timeZone} />
+            <TimeZoneField timeZone={pageSettings.timeZone} defaultTimeZone={pageSettings.defaultTimeZone} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
@@ -4174,64 +4175,128 @@ function DatesToggle({ dated }: { dated: boolean }) {
 
 // Page Settings > Time zone. What this book's clock reads.
 //
-// PER BOOK, as Andrew asked: a planner is printed for a place. Changing it
-// rewrites nothing - an event is an instant, and the page simply reads it in
-// the new zone - so a New York meeting moves from 9am to 2pm in a book set to
-// London, which is when it happens there. A floating event (no zone of its
-// own) stays at its wall time in every book.
+// TWO SETTINGS, deliberately kept apart. A book either FOLLOWS the person's
+// default - the first option, and what every book does unless told otherwise
+// - or has a zone of its own, which a travel journal kept in London time
+// would. Changing the default moves every book that follows it; a book with
+// its own zone stays put. Andrew, 2026-09-28: "per book", then "should also
+// have a user default though and be able to be changed".
 //
-// A plain select over every zone the browser knows. Four hundred options is a
-// long list, but it is a list people search by typing the city, which a
-// native select already does, and anything cleverer is a component to build
-// for a setting most people will never touch - the browser's zone is filled
-// in for them.
-function TimeZoneField({ timeZone }: { timeZone: string | null }) {
+// Nothing stored changes either way: an event is an instant and the page
+// just reads it on another clock. A floating event stays at its wall time.
+//
+// Plain selects over every zone the browser knows. Four hundred options is a
+// long list, but a native select finds "New_York" by typing it, and the
+// browser's zone is filled in for people who never open this.
+const zoneLabel = (zone: string) => zone.replace(/_/g, " ");
+/** Just the city - "Los Angeles" - for the one label that has to fit in the
+ *  select's own width. "Your default (America/Los Angeles)" was clipped to
+ *  "(America/Los Angel" in the 209px panel; the list below keeps the full
+ *  names, where the region is what tells two Portlands apart. */
+const zoneCity = (zone: string) => zoneLabel(zone.split("/").pop() ?? zone);
+
+function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null; defaultTimeZone: string | null }) {
   const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
+  const [changingDefault, setChangingDefault] = useState(false);
   const zones = useMemo(() => {
     const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
     const all = supported ? supported("timeZone") : [];
-    // The current value, and UTC, are always offered: Chrome leaves "UTC" out
+    // The values in use, and UTC, are always offered: Chrome leaves "UTC" out
     // of its own list, and a book set to it must not show a blank select.
-    const extra = [timeZone, "UTC"].filter((z): z is string => Boolean(z) && !all.includes(z as string));
+    const extra = [timeZone, defaultTimeZone, "UTC"].filter(
+      (z, i, list): z is string => Boolean(z) && !all.includes(z as string) && list.indexOf(z) === i
+    );
     return [...extra, ...all];
-  }, [timeZone]);
+  }, [timeZone, defaultTimeZone]);
+
+  const selectStyle: CSSProperties = {
+    font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
+    color: PANEL_TEXT,
+    background: PANEL_BG,
+    border: `1px solid ${PANEL_EDGE}`,
+    borderRadius: 8,
+    padding: "6px 8px",
+    opacity: pending ? 0.6 : 1,
+    width: "100%",
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <select
-        aria-label="Time zone"
+        aria-label="This journal's time zone"
         value={timeZone ?? ""}
-        disabled={pending || zones.length === 0}
+        disabled={pending}
         onChange={(e) => {
-          const next = e.target.value;
-          if (!next || next === timeZone) return;
+          const next = e.target.value || null;
+          if (next === timeZone) return;
           run(async () => {
             await setPlannerTimeZone(journalId, next);
             await refreshPages({ rebuild: true });
           });
         }}
-        style={{
-          font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
-          color: PANEL_TEXT,
-          background: PANEL_BG,
-          border: `1px solid ${PANEL_EDGE}`,
-          borderRadius: 8,
-          padding: "6px 8px",
-          opacity: pending ? 0.6 : 1,
-        }}
+        style={selectStyle}
       >
-        {timeZone === null ? <option value="">Setting…</option> : null}
+        <option value="">
+          {defaultTimeZone ? `Your default (${zoneCity(defaultTimeZone)})` : "Your default"}
+        </option>
         {zones.map((zone) => (
           <option key={zone} value={zone}>
-            {zone.replace(/_/g, " ")}
+            {zoneLabel(zone)}
           </option>
         ))}
       </select>
-      <span style={{ fontSize: 9.5, color: PANEL_FAINT, lineHeight: 1.4 }}>
-        Events print at this zone&rsquo;s clock.
-      </span>
+
+      {changingDefault ? (
+        <select
+          aria-label="Your default time zone"
+          autoFocus
+          value={defaultTimeZone ?? ""}
+          disabled={pending}
+          onBlur={() => setChangingDefault(false)}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (!next || next === defaultTimeZone) return;
+            run(async () => {
+              await setDefaultTimeZone(next);
+              setChangingDefault(false);
+              await refreshPages({ rebuild: true });
+            });
+          }}
+          style={selectStyle}
+        >
+          {defaultTimeZone === null ? <option value="">Choose a default</option> : null}
+          {zones.map((zone) => (
+            <option key={zone} value={zone}>
+              {zoneLabel(zone)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span style={{ fontSize: 9.5, color: PANEL_FAINT, lineHeight: 1.45 }}>
+          Your default is {defaultTimeZone ? zoneLabel(defaultTimeZone) : "not set yet"}.{" "}
+          <button
+            type="button"
+            onClick={() => setChangingDefault(true)}
+            style={{
+              font: "inherit",
+              color: PANEL_MUTED,
+              background: "none",
+              border: "none",
+              padding: 0,
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
+          >
+            Change
+          </button>
+          <br />
+          {timeZone
+            ? "This journal keeps its own zone."
+            : "Journals follow it unless they choose their own."}
+        </span>
+      )}
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>
   );

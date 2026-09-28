@@ -72,9 +72,13 @@ model Planner {
   // person, because a planner is printed for a place: a travel journal for a
   // term in London reads London time wherever its owner lives. Andrew,
   // 2026-09-28: "per book".
-  // Null for a book made before zones existed; the editor gives it the
-  // browser's zone the next time it is opened, and until then it draws in
-  // UTC, which is exactly how it drew before.
+  // NULL MEANS "FOLLOW MY DEFAULT" - OwnerSettings.timeZone. Andrew,
+  // 2026-09-28: the zone should also "have a user default though and be able
+  // to be changed". So a book either follows the person's default, and moves
+  // when they change it, or has a zone of its own and stays put. Every book
+  // made before zones existed follows the default, which is what it would
+  // have chosen. See effectiveZone in src/lib/timeZone.ts - the one place
+  // the two are combined.
   timeZone   String?
   isTemplate Boolean   @default(false)
   theme      Json?
@@ -405,4 +409,19 @@ model HiddenCalendar {
 
   @@id([plannerId, calendarId])
   @@index([calendarId])
+}
+
+/// Per-person settings, keyed by the same ownerId journals are: a Clerk user
+/// id, or `guest:<32 hex>` - see src/lib/owner.ts. There is no User table
+/// (Clerk holds the account), so this is where a preference that belongs to
+/// the PERSON rather than to one book lives.
+model OwnerSettings {
+  ownerId   String   @id
+  /// The zone every book follows unless it has one of its own. STORED, not
+  /// read from the browser each time: the PDF is drawn on the server, which
+  /// has no browser, and two devices in two zones must not print the same
+  /// book two ways. Seeded from the browser the first time it is missing.
+  timeZone  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

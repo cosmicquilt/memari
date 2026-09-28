@@ -303,7 +303,14 @@ async function main() {
     // Read off `renderContext.events`: the placed events every mark on the
     // page is drawn from, so a time here is the time the page shows.
     {
-      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: "America/New_York" } });
+      // THE BOOK FOLLOWS ITS OWNER'S DEFAULT - no zone of its own. That is
+      // how every book is made, and every book that existed before zones.
+      await prisma.ownerSettings.upsert({
+        where: { ownerId: guest.ownerId },
+        create: { ownerId: guest.ownerId, timeZone: "America/New_York" },
+        update: { timeZone: "America/New_York" },
+      });
+      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: null } });
       const { createEventFor } = await import("../src/app/planner/calendarStore.js");
 
       // The first week of this book is late December: New York is on EST,
@@ -386,8 +393,8 @@ async function main() {
         `a floating 8am is NOT converted - it prints at 08:00 (${shown(floating.id)})`
       );
 
-      // THE SAME BOOK IN LONDON. Nothing stored changes; every zoned event
-      // moves to London's clock and the floating one stays put.
+      // THE SAME BOOK GIVEN ITS OWN ZONE, LONDON. Nothing stored changes;
+      // every zoned event moves to London's clock and the floating one stays.
       await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: "Europe/London" } });
       const london = await weekly();
       const inLondon = (id: string) => {
@@ -406,9 +413,56 @@ async function main() {
         `while the floating 8am stays at 08:00 (${inLondon(floating.id)})`
       );
       check(
-        ny.pageSettings.timeZone === "America/New_York",
-        `the editor is told the book's zone, for the Time zone field (${ny.pageSettings.timeZone})`
+        ny.pageSettings.timeZone === null && ny.pageSettings.defaultTimeZone === "America/New_York",
+        `the editor is told the book FOLLOWS a New York default (own: ${ny.pageSettings.timeZone}, default: ${ny.pageSettings.defaultTimeZone})`
       );
+
+      // CHANGING THE DEFAULT MOVES A BOOK THAT FOLLOWS IT, and not one that
+      // keeps its own. This is the whole difference between the two, and the
+      // reason a book's own zone is null rather than a copy of the default.
+      await prisma.ownerSettings.update({ where: { ownerId: guest.ownerId }, data: { timeZone: "Asia/Tokyo" } });
+      // Still London: the book has its own zone.
+      const stillLondon = await weekly();
+      const at = (loaded: Loaded, id: string) => {
+        for (const page of loaded.pages) {
+          const hit = (page.renderContext?.events ?? []).find((e) => e.id === id);
+          if (hit) return `${page.renderContext?.columnDates?.[hit.day]} ${hit.startTime}`;
+        }
+        return "not drawn";
+      };
+      check(
+        at(stillLondon, imported.id) === `${timedDay} 14:00`,
+        `a book with its OWN zone ignores a change of default (${at(stillLondon, imported.id)})`
+      );
+      // Back to following: now it is Tokyo. 9am New York is 14:00Z, which is
+      // 23:00 the same day in Tokyo (UTC+9).
+      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: null } });
+      const tokyo = await weekly();
+      check(
+        at(tokyo, imported.id) === `${timedDay} 23:00`,
+        `a book that FOLLOWS the default moves with it - 9am New York is 23:00 in Tokyo (${at(tokyo, imported.id)})`
+      );
+      check(
+        at(tokyo, floating.id) === `${timedDay} 08:00`,
+        `and the floating 8am still does not move (${at(tokyo, floating.id)})`
+      );
+
+      // THE SAVE PATH AGREES WITH THE PAGE. "10:30" typed in a book that
+      // follows a Tokyo default is 01:30Z - resolved through the same
+      // effectiveZone the page uses.
+      const typedInTokyo = await createEventFor(guest.ownerId, guest.journalId, {
+        title: "Typed at 10:30 Tokyo",
+        date: timedDay,
+        start: "10:30",
+        end: "11:00",
+        allDay: false,
+        rrule: null,
+      });
+      check(
+        typedInTokyo.startsAt.toISOString() === `${timedDay}T01:30:00.000Z` && typedInTokyo.timeZone === "Asia/Tokyo",
+        `"10:30" typed in a book following Tokyo is 01:30Z, zone Tokyo (${typedInTokyo.startsAt.toISOString()}, ${typedInTokyo.timeZone})`
+      );
+      await prisma.ownerSettings.deleteMany({ where: { ownerId: guest.ownerId } });
     }
   } finally {
     await prisma.calendar.deleteMany({ where: { ownerId: guest.ownerId } });

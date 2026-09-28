@@ -298,10 +298,11 @@ export type NewJournal = {
   dated: boolean;
   weekStartDay: number;
   font: FontChoice;
-  /** The zone this book's clock reads - the browser's, when made from the
-   *  start dialog. Null when the caller does not know one (a script); the
-   *  editor fills it in on the first open. */
-  timeZone: string | null;
+  /** The BROWSER's zone, sent so that a person who has never had a default
+   *  gets one seeded from it. NOT the book's zone: a new book follows its
+   *  owner's default (Planner.timeZone null), so changing the default moves
+   *  it. Null when the caller does not know one - a script. */
+  browserTimeZone: string | null;
 };
 
 export const JOURNAL_TITLE_MAX = 80;
@@ -336,7 +337,7 @@ export function validateNewJournal(input: unknown): NewJournal {
     // A name the platform does not know is dropped rather than refused: it
     // came from a browser's own Intl, so an unknown one means an odd browser,
     // not a bad request, and the editor will offer the zone again on open.
-    timeZone: isTimeZone(raw.timeZone) ? raw.timeZone : null,
+    browserTimeZone: isTimeZone(raw.browserTimeZone) ? raw.browserTimeZone : null,
   };
 }
 
@@ -356,7 +357,7 @@ export async function createBookFor(ownerId: string, input: NewJournal): Promise
       dated: input.dated,
       startDate: term?.start ?? null,
       endDate: term?.end ?? null,
-      timeZone: input.timeZone,
+      // No zone of its own: it follows its owner's default. See OwnerSettings.
       theme: theme as Prisma.InputJsonValue,
     },
     include: WITH_PAGES,

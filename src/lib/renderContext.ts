@@ -26,7 +26,7 @@ import type { PageGrid } from "./grid";
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
 import { withDates, withoutDates } from "./moduleRegistry";
 import { columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
-import { DEFAULT_ZONE } from "./timeZone";
+import { effectiveZone } from "./timeZone";
 import {
   renderModuleInstance,
   type ModuleInstanceForRender,
@@ -61,9 +61,12 @@ export type PageRenderContext = {
  *  pages and instances fits, and so does a test's plain object. */
 export type RenderContextBook = {
   dated?: boolean | null;
-  /** The zone the book's clock reads - see Planner.timeZone. Null draws in
-   *  UTC, which is how every book drew before books had zones. */
+  /** The book's OWN zone - null when it follows its owner's default. */
   timeZone?: string | null;
+  /** The owner's default, which a book with no zone of its own follows. Not
+   *  a column on the book: the caller looks it up and hands it in, so this
+   *  stays a pure function of what it is given. */
+  ownerTimeZone?: string | null;
   startDate?: Date | null;
   endDate?: Date | null;
   theme?: unknown;
@@ -131,7 +134,7 @@ export function renderContextForPage(
   // comes through this call, so none of them can disagree about the clock.
   const placed =
     grid && events
-      ? eventsForDays(events, grid.map((date) => ({ date })), book.timeZone ?? DEFAULT_ZONE)
+      ? eventsForDays(events, grid.map((date) => ({ date })), effectiveZone(book.timeZone, book.ownerTimeZone))
       : null;
 
   return {
