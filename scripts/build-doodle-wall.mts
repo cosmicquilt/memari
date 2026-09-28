@@ -1,5 +1,6 @@
-// The start dialog's backdrop: a wall of little drawings in blue pen on the
-// cream paper, baked once into public/landing/doodle-wall.webp.
+// The start dialog's backdrops with doodles: walls of little drawings in
+// blue pen, baked into public/landing/doodle-walls/ - WALL_VARIANTS walls for
+// each theme (light-0.webp ... dark-5.webp), one of which each load shows.
 //
 //   npm run build:doodle-wall
 //
@@ -16,14 +17,14 @@
 // because it needs a canvas: drawings turned, tinted and packed by their
 // actual ink, not their boxes.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright-core";
-import { packWall, wallClassOf, WALL_CLASSES, WALL_INK, WALL_PAPER, WALL_TILE } from "../src/app/landing/doodleWall";
+import { packWall, wallClassOf, wallPath, wallSeed, WALL_CLASSES, WALL_THEMES, WALL_TILE, WALL_VARIANTS, type WallTheme } from "../src/app/landing/doodleWall";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DOODLES = path.join(ROOT, "public/landing/doodles");
-const OUT = path.join(ROOT, "public/landing/doodle-wall.webp");
+const PUBLIC = path.join(ROOT, "public");
 const choices = JSON.parse(readFileSync(path.join(ROOT, "src/app/landing/doodleChoices.json"), "utf8")) as { wall: string[] };
 
 // Each chosen drawing as a data URL (a page given file:// images could not
@@ -48,20 +49,26 @@ const page = await browser.newPage();
 // the page, where the helper does not exist (see check-browser.mts). So the
 // page gets a do-nothing one - as a string, which nothing compiles.
 await page.evaluate("window.__name = (f) => f");
-const result = await page.evaluate(packWall, {
-  drawings,
-  classes: WALL_CLASSES,
-  tile: WALL_TILE,
-  ink: WALL_INK,
-  paper: WALL_PAPER,
-  seed: 20260927,
-});
+mkdirSync(path.join(PUBLIC, "landing/doodle-walls"), { recursive: true });
+// The one wall there was before the themes.
+rmSync(path.join(PUBLIC, "landing/doodle-wall.webp"), { force: true });
+for (const theme of Object.keys(WALL_THEMES) as WallTheme[]) {
+  const sizes: number[] = [];
+  for (let variant = 0; variant < WALL_VARIANTS; variant++) {
+    const result = await page.evaluate(packWall, {
+      drawings,
+      classes: WALL_CLASSES,
+      tile: WALL_TILE,
+      ink: WALL_THEMES[theme].ink,
+      paper: WALL_THEMES[theme].paper,
+      seed: wallSeed(variant),
+    });
+    const bytes = Buffer.from(result.url.split(",")[1], "base64");
+    writeFileSync(path.join(PUBLIC, wallPath(theme, variant)), bytes);
+    sizes.push(Math.round(bytes.length / 1024));
+    if (theme === "light") console.log(`  ${theme}-${variant}: placed ${result.counts.join(" + ")} (big, middle, small), ${(result.covered * 100).toFixed(0)}% of the tile`);
+  }
+  console.log(`${theme}: ${WALL_VARIANTS} walls, ${sizes.join(", ")} KB`);
+}
 await browser.close();
-
-const bytes = Buffer.from(result.url.split(",")[1], "base64");
-writeFileSync(OUT, bytes);
-console.log(
-  `doodle-wall.webp: ${WALL_TILE.w * WALL_TILE.scale}x${WALL_TILE.h * WALL_TILE.scale}, ${(bytes.length / 1024).toFixed(0)} KB; ` +
-    `${drawings.length} drawings chosen; placed ${result.counts.join(" + ")} (big, middle, small); ` +
-    `${(result.covered * 100).toFixed(0)}% of the tile inked or reserved`
-);
+console.log(`${drawings.length} drawings chosen`);

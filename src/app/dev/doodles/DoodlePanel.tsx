@@ -6,7 +6,7 @@
 // and Save writes both lists and the wall (save/route.ts).
 
 import { useMemo, useState } from "react";
-import { packWall, wallClassOf, WALL_CLASSES, WALL_INK, WALL_PAPER, WALL_TILE } from "@/app/landing/doodleWall";
+import { packWall, wallClassOf, wallSeed, WALL_CLASSES, WALL_THEMES, WALL_TILE, WALL_VARIANTS, type WallTheme } from "@/app/landing/doodleWall";
 
 type Index = Record<string, Record<string, Array<[string, number, number]>>>;
 type Choices = { wall: string[]; sketchBox: string[] };
@@ -16,11 +16,14 @@ const ACCENT = "#4a5cff";
 const INK = "#1c1917";
 const MUTED = "#6b6259";
 const LINE = "rgba(28, 25, 23, 0.12)";
-/** The seed the build script uses, so a preview here is the wall it bakes. */
-const WALL_SEED = 20260927;
+const GROUNDS = Object.keys(WALL_THEMES) as WallTheme[];
 
 const MODES: Array<{ key: Mode; label: string; note: string }> = [
-  { key: "wall", label: "Wall", note: "Behind the start dialog, all in blue. People and animals big, small things fill the gaps." },
+  {
+    key: "wall",
+    label: "Wall",
+    note: `Behind the start dialog in its doodle themes, in blue pen. People and animals big, small things fill the gaps; each load shows one of ${WALL_VARIANTS} arrangements.`,
+  },
   {
     key: "sketchBox",
     label: "Sketch boxes",
@@ -38,7 +41,7 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
   const [style, setStyle] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [onlyOn, setOnlyOn] = useState(false);
-  const [preview, setPreview] = useState<{ url: string; of: string; counts: number[] } | null>(null);
+  const [preview, setPreview] = useState<{ urls: Record<WallTheme, string>; of: string; counts: number[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -84,21 +87,26 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
     set(next);
   };
 
-  const drawWall = async () => {
+  // A wall as the build script bakes it: the same packing, drawings, seed.
+  const drawWall = async (ground: WallTheme, variant: number) => {
     const drawings = sorted(chosen.wall).map((full) => {
       const [s, id] = full.split("/");
       return { src: `/landing/doodles/${s}/${id}.webp`, cls: wallClassOf(id.replace(/-\d+$/, "")) };
     });
-    const out = await packWall({ drawings, classes: WALL_CLASSES, tile: WALL_TILE, ink: WALL_INK, paper: WALL_PAPER, seed: WALL_SEED });
-    const next = { url: out.url, of: wallKey, counts: out.counts };
-    setPreview(next);
-    return next;
+    return packWall({ drawings, classes: WALL_CLASSES, tile: WALL_TILE, ...WALL_THEMES[ground], seed: wallSeed(variant) });
   };
 
   const onPreview = async () => {
     setBusy("Drawing the wall...");
     try {
-      await drawWall();
+      const urls = {} as Record<WallTheme, string>;
+      let counts: number[] = [];
+      for (const ground of GROUNDS) {
+        const out = await drawWall(ground, 0);
+        urls[ground] = out.url;
+        counts = out.counts;
+      }
+      setPreview({ urls, of: wallKey, counts });
     } finally {
       setBusy(null);
     }
@@ -108,25 +116,27 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
     setBusy("Saving...");
     setMessage(null);
     try {
-      // The wall is baked: redraw it if what is on it changed.
-      const wallChanged = !sameSet(chosen.wall, saved.wall);
-      let wallImage: string | undefined;
-      if (wallChanged) {
-        setBusy("Drawing the wall...");
-        wallImage = (preview?.of === wallKey ? preview : await drawWall()).url;
+      // The walls are baked: every one is redrawn if what is on them changed.
+      const walls: Array<{ name: string; image: string }> = [];
+      if (!sameSet(chosen.wall, saved.wall)) {
+        for (const ground of GROUNDS)
+          for (let variant = 0; variant < WALL_VARIANTS; variant++) {
+            setBusy(`Drawing walls, ${walls.length + 1} of ${GROUNDS.length * WALL_VARIANTS}...`);
+            walls.push({ name: `${ground}-${variant}`, image: (await drawWall(ground, variant)).url });
+          }
         setBusy("Saving...");
       }
       const res = await fetch("/dev/doodles/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), wallImage }),
+        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), walls }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? res.statusText);
       setSaved({ wall: new Set(chosen.wall), sketchBox: new Set(chosen.sketchBox) });
       setMessage(
         `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes` +
-          (result.wallBytes ? `, wall redrawn (${Math.round(result.wallBytes / 1024)} KB)` : "") +
+          (result.walls ? `, ${result.walls} walls redrawn (${Math.round(result.wallBytes / 1024)} KB)` : "") +
           ". Reload the app or the landing page to see it; commit and push to put it live."
       );
     } catch (error) {
@@ -184,11 +194,16 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
       {mode === "wall" && preview && (
         <section style={{ padding: "14px 24px 0" }}>
           <div className="dp-muted" style={{ marginBottom: 6 }}>
-            Preview{preview.of === wallKey ? "" : " (out of date - preview again)"}: {preview.counts[0]} big, {preview.counts[1]} middle,{" "}
-            {preview.counts[2]} small placed. Save bakes exactly this.
+            Preview{preview.of === wallKey ? "" : " (out of date - preview again)"}: the first of {WALL_VARIANTS} walls per theme,{" "}
+            {preview.counts[0]} big, {preview.counts[1]} middle, {preview.counts[2]} small. Save bakes all {WALL_VARIANTS * GROUNDS.length} the
+            same way.
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview.url} alt="The wall as it would be baked" style={{ width: "100%", maxWidth: 1400, borderRadius: 6, border: `1px solid ${LINE}` }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {GROUNDS.map((ground) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={ground} src={preview.urls[ground]} alt={`The ${ground} wall as it would be baked`} style={{ width: "100%", borderRadius: 6, border: `1px solid ${LINE}` }} />
+            ))}
+          </div>
         </section>
       )}
 

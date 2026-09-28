@@ -11,16 +11,41 @@
  *  wall away from itself. */
 export const WALL_TILE = { w: 1400, h: 1000, scale: 2 };
 
-/** Ballpoint blue, and how much of it: the wall sits behind the dialog, so
- *  it is quieter than ink on a page. */
-export const WALL_INK = { color: "#3448ce", alpha: 0.42 };
+/**
+ * The two grounds a wall is drawn on, each with its ink - the backdrop
+ * themes that have doodles (StartDialog.tsx; Andrew, 2026-09-27: "dark,
+ * dark (doodles), light, light (doodles)").
+ *
+ * The paper is baked in rather than left transparent - a transparent WebP
+ * keeps its alpha losslessly, and the fine pencil grain made that 2.5MB; on
+ * its ground the same wall is about 380KB. So each `paper` must be the
+ * colour StartDialog paints under that theme, or the backdrop changes colour
+ * as the wall arrives.
+ *
+ * Light: ballpoint blue on the landing page's cream, quieter than ink on a
+ * page since it sits behind the dialog. Dark: the same blue pen lifted to
+ * periwinkle, on the near-black granite ground - cream and chalk-white were
+ * tried and all but vanished at the strength that keeps the dialog in front.
+ */
+export const WALL_THEMES = {
+  light: { paper: "#f5ead5", ink: { color: "#3448ce", alpha: 0.42 } },
+  dark: { paper: "#0c0c0c", ink: { color: "#8b96ff", alpha: 0.32 } },
+} as const;
+export type WallTheme = keyof typeof WALL_THEMES;
 
-/** The paper it is drawn on: StartDialog.tsx's BACKDROP_BASE, the landing
- *  page's --cream. Baked in rather than left transparent - a transparent
- *  WebP keeps its alpha losslessly, and the fine pencil grain made that
- *  2.5MB; on the cream the same wall is about 380KB. So the two must match,
- *  or the backdrop changes colour as the wall arrives. */
-export const WALL_PAPER = "#f5ead5";
+/**
+ * How many walls each theme has. Each load shows one at random (asked for
+ * 2026-09-27: "make the wall rotate random drawings on each load") - baked
+ * ahead rather than packed on the spot, because packing means downloading
+ * every drawing and a second or two of work on the app's first screen. Each
+ * is its own arrangement (its own seed), and a screen only shows the parts
+ * of it round the dialog, so no two loads in a row look alike.
+ */
+export const WALL_VARIANTS = 6;
+
+/** Where a wall is served from, and the seed that draws it. */
+export const wallPath = (theme: WallTheme, variant: number) => `/landing/doodle-walls/${theme}-${variant}.webp`;
+export const wallSeed = (variant: number) => 20260927 + variant * 7919;
 
 /** Sizes, biggest first: the longer side in CSS px, and how many of each at
  *  most (so one size cannot take the room the next needs). */

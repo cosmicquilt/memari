@@ -44,6 +44,8 @@ import {
   renameSavedPage,
 } from "./actions";
 import { PagePreview } from "./PagePreview";
+import { wallPath, WALL_THEMES, WALL_TILE, type WallTheme } from "@/app/landing/doodleWall";
+import { BACKDROP_THEMES, writeBackdropCookie, type BackdropTheme } from "@/lib/backdropCookie";
 import { SavedThumb } from "./SavedThumb";
 import type { SavedModuleCard, SavedPageCard } from "./savedItems";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
@@ -64,35 +66,73 @@ const ACCENT = "#4a5cff";
 const SEGMENT_PADDING = 3;
 
 /**
- * Behind the dialog: the landing page's cream, on paper.
+ * Behind the dialog: one of four backgrounds, chosen in the header's
+ * background menu and remembered per browser (backdropCookie.ts). Asked for
+ * 2026-09-27: "one of four themes, so far, dark (what it was before), dark
+ * (doodles), light, light (doodles) (current)" - and "they should all have
+ * that underlying paper texture".
  *
- * Asked for 2026-09-27: "make the background the cream white color from the
- * landing page ... would you also be able to make it paper textured". It was
- * near-black with a faint granite speckle ("black and white maybe a very
- * little hint of brown granite", 2026-09-22).
+ * LIGHT is the landing page's --cream, so leaving memari.studio for the app
+ * is one continuous surface ("make the background the cream white color
+ * from the landing page ... paper textured"). DARK is what the dialog had
+ * first: a true neutral near-black with a hint of warm granite ("black and
+ * white maybe a very little hint of brown granite", 2026-09-22) - three
+ * layers of fine dots on co-prime tiles (37/41, 53/61, 71/67px) so they never
+ * come back into step and print a grid, at alphas of 0.05 and under.
  *
- * The cream is the landing page's --cream, so leaving memari.studio for the
- * app is one continuous surface. The texture is the journal pages' own fibre
- * tile (/landing/paper.jpg - mid-grey, so an overlay blend leaves the colour
- * alone and only the fibres lighten and darken it), drawn at 256px so a
- * 2x screen shows it at its own resolution. At full strength: washed back
- * by a third with the cream, it measured nearly flat at true size (a
- * luminance spread of 1.6 against 2.3) and read as plain colour, not paper.
- * The colour is there before the tile loads, so the first frame is cream,
- * never blank.
+ * All four are on paper: the journal pages' own fibre tile
+ * (/landing/paper.jpg - mid-grey, so an overlay blend leaves the colour alone
+ * and only the fibres lighten and darken it), at 256px so a 2x screen shows
+ * it at its own resolution, and at full strength - washed back by a third it
+ * measured nearly flat on the cream. An overlay scales with what is under
+ * it, so on the near-black one layer all but vanished (a luminance spread
+ * of 1.4 on a ground of 12); the dark grounds stack the same tile three
+ * times - one download - which reads as black card (4.3) and leaves the
+ * black where it was (12.5).
  *
- * And on the paper, a wall of doodles in blue pen (2026-09-27: "sketched in
- * blue pen in the background cute characters and animals"): the doodle
- * library's pencil sketches packed edge to edge, baked by
- * scripts/build-doodle-wall.mts (npm run build:doodle-wall) onto this same
- * cream - so the cream here and PAPER there must match - as one seamless
- * 1400 x 1000 tile. The fibre is overlaid on top of it, ink and all, the way
- * paper shows through a pen line.
+ * THE DOODLES are a wall of the library's pencil sketches in blue pen
+ * ("sketched in blue pen in the background cute characters and animals"),
+ * baked by scripts/build-doodle-wall.mts onto each ground - so each ground
+ * here must be its WALL_THEMES paper there - in WALL_VARIANTS arrangements,
+ * one picked at random for each load by the page ("rotate random drawings
+ * on each load"). The fibre is overlaid on top of the wall, ink and all.
+ *
+ * The colour is there before any image loads, so the first frame is the
+ * right colour, never blank.
  */
-const BACKDROP_BASE = "#f5ead5";
-const BACKDROP_PAPER = "url(/landing/paper.jpg), url(/landing/doodle-wall.webp)";
-const BACKDROP_PAPER_SIZE = "256px 256px, 1400px 1000px";
-const BACKDROP_PAPER_BLEND = "overlay, normal";
+const BACKDROP_GRANITE = [
+  "radial-gradient(circle at 30% 40%, rgba(150, 126, 104, 0.05) 0 0.9px, transparent 1.6px)",
+  "radial-gradient(circle at 70% 20%, rgba(168, 148, 128, 0.035) 0 0.8px, transparent 1.5px)",
+  "radial-gradient(circle at 45% 75%, rgba(120, 104, 90, 0.045) 0 1.1px, transparent 1.9px)",
+];
+const BACKDROP_GRANITE_SIZE: Array<[number, number]> = [
+  [37, 41],
+  [53, 61],
+  [71, 67],
+];
+const BACKDROP_LABELS: Record<BackdropTheme, string> = {
+  dark: "Dark",
+  "dark-doodles": "Dark with doodles",
+  light: "Light",
+  "light-doodles": "Light with doodles",
+};
+
+/** The CSS background of a backdrop theme, with its wall if it has one -
+ *  at `scale` for the menu's swatches. */
+function backdropStyle(theme: BackdropTheme, variant: number, scale = 1): CSSProperties {
+  const ground: WallTheme = theme.startsWith("dark") ? "dark" : "light";
+  const px = (w: number, h: number) => `${w * scale}px ${h * scale}px`;
+  const paper: [string, string, string] = ["url(/landing/paper.jpg)", px(256, 256), "overlay"];
+  const layers: Array<[image: string, size: string, blend: string]> = ground === "dark" ? [paper, paper, paper] : [paper];
+  if (ground === "dark") BACKDROP_GRANITE.forEach((g, i) => layers.push([g, px(...BACKDROP_GRANITE_SIZE[i]), "normal"]));
+  if (theme.endsWith("doodles")) layers.push([`url(${wallPath(ground, variant)})`, px(WALL_TILE.w, WALL_TILE.h), "normal"]);
+  return {
+    backgroundColor: WALL_THEMES[ground].paper,
+    backgroundImage: layers.map((l) => l[0]).join(", "),
+    backgroundSize: layers.map((l) => l[1]).join(", "),
+    backgroundBlendMode: layers.map((l) => l[2]).join(", "),
+  };
+}
 const DANGER = "#d92d20";
 const ERROR_TEXT = "#ff8f5c";
 
@@ -132,6 +172,7 @@ export function StartDialog({
   templates,
   defaultTerm,
   guest,
+  backdrop,
 }: {
   journals: JournalCard[];
   savedPages: SavedPageCard[];
@@ -141,6 +182,9 @@ export function StartDialog({
   defaultTerm: { start: string; end: string };
   /** Set for someone using Memari without an account - see guest.ts. */
   guest: { journalLimit: number; idleDays: number } | null;
+  /** The background this browser chose, and which of the walls this load
+   *  shows (the page picks it, so the server and the first frame agree). */
+  backdrop: { theme: BackdropTheme; variant: number };
 }) {
   const router = useRouter();
   const [journals, setJournals] = useState(initialJournals);
@@ -154,6 +198,7 @@ export function StartDialog({
   const [selectedId, setSelectedId] = useState<string | null>(lastJournalId ?? initialJournals[0]?.id ?? null);
   const [backTo, setBackTo] = useState<string | null>(lastJournalId);
   const [leaving, setLeaving] = useState(false);
+  const [theme, setTheme] = useState(backdrop.theme);
 
   const open = useCallback(
     (id: string) => {
@@ -179,10 +224,7 @@ export function StartDialog({
       style={{
         position: "fixed",
         inset: 0,
-        backgroundColor: BACKDROP_BASE,
-        backgroundImage: BACKDROP_PAPER,
-        backgroundSize: BACKDROP_PAPER_SIZE,
-        backgroundBlendMode: BACKDROP_PAPER_BLEND,
+        ...backdropStyle(theme, backdrop.variant),
         display: "grid",
         placeItems: "center",
         padding: 16,
@@ -225,7 +267,15 @@ export function StartDialog({
               </button>
             ))}
           </TabStrip>
-          <div style={{ justifySelf: "end", alignSelf: "center" }}>
+          <div style={{ justifySelf: "end", alignSelf: "center", display: "flex", gap: 4 }}>
+            <BackdropMenu
+              theme={theme}
+              variant={backdrop.variant}
+              onChange={(next) => {
+                setTheme(next);
+                writeBackdropCookie(next);
+              }}
+            />
             {backTo && (
               <button type="button" className="sd-x" onClick={close} aria-label="Close and go back to your journal" title="Back to your journal">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1128,6 +1178,11 @@ const STYLES = `
 .sd-tabs:not([data-measured]) .sd-tab[aria-selected="true"] { border-bottom-color: #fff; }
 .sd-x { width: 32px; height: 32px; display: grid; place-items: center; background: none; border: none; color: ${DIM}; border-radius: 8px; cursor: pointer; }
 .sd-x:hover { color: #fff; background: ${CONTROL}; }
+.sd-x[aria-expanded="true"] { color: #fff; background: ${CONTROL}; }
+.sd-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; width: 240px; padding: 8px 6px 6px; background: #242426; border: 1px solid ${LINE}; border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); display: grid; gap: 2px; }
+.sd-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; border-radius: 6px; color: #f2f2f2; font: inherit; font-size: 13.5px; text-align: left; padding: 6px 8px; cursor: pointer; min-height: 40px; }
+.sd-menu-item:hover, .sd-menu-item:focus-visible { background: ${CONTROL}; outline: none; }
+.sd-swatch { width: 44px; height: 30px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); background-position: center; }
 .sd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
 .sd-card { background: ${CONTROL}; border: none; border-radius: 8px; padding: 10px 10px 12px; color: #f2f2f2; text-align: left; font: inherit; cursor: pointer; display: grid; gap: 6px; opacity: 0.6; outline: 2px solid transparent; outline-offset: 2px; transition: opacity 120ms ease-out; }
 .sd-card:hover { opacity: 0.85; }
@@ -1238,6 +1293,68 @@ function useSlidingHighlight(active: string, selectedSelector: string) {
  * resize and once the fonts have loaded (a label's width changes when its
  * face arrives). Under reduced motion it moves without sliding.
  */
+/**
+ * The header's background menu: which backdrop sits behind the dialog, each
+ * shown as a swatch of itself. It stays open while one is picked, so they
+ * can be compared behind it; Escape or a click elsewhere closes it (Escape
+ * here does not also close the dialog).
+ */
+function BackdropMenu({ theme, variant, onChange }: { theme: BackdropTheme; variant: number; onChange: (next: BackdropTheme) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  return (
+    <div
+      ref={ref}
+      style={{ position: "relative" }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="sd-x"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Background"
+        title="Background"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth={2} />
+          <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+        </svg>
+      </button>
+      {open && (
+        <div role="menu" aria-label="Background" className="sd-menu">
+          <div className="sd-label" style={{ padding: "2px 8px 6px" }}>
+            Background
+          </div>
+          {BACKDROP_THEMES.map((t) => (
+            <button key={t} type="button" role="menuitemradio" aria-checked={t === theme} className="sd-menu-item" onClick={() => onChange(t)}>
+              <span className="sd-swatch" style={backdropStyle(t, variant, 0.18)} aria-hidden="true" />
+              <span style={{ flex: 1 }}>{BACKDROP_LABELS[t]}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ opacity: t === theme ? 1 : 0 }}>
+                <path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactNode }) {
   const { strip, box } = useSlidingHighlight(tab, '[aria-selected="true"]');
   const reduceMotion = usePrefersReducedMotion();

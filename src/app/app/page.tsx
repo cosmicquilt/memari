@@ -6,6 +6,8 @@ import { journalsOf, templatePreviews } from "@/app/planner/journals";
 import { StartDialog } from "@/app/planner/StartDialog";
 import { savedModulesOf, savedPagesOf } from "@/app/planner/savedItems";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
+import { BACKDROP_COOKIE, parseBackdropCookie } from "@/lib/backdropCookie";
+import { WALL_VARIANTS } from "@/app/landing/doodleWall";
 
 // memari.studio/app - the start dialog: open one of your journals, or create
 // one. Asked for 2026-09-21, modelled on Photoshop's New Document dialog. A
@@ -21,7 +23,8 @@ export default async function AppPage() {
     savedPagesOf(owner.id),
     savedModulesOf(owner.id),
   ]);
-  const remembered = parseLastJournalCookie((await cookies()).get(LAST_JOURNAL_COOKIE)?.value);
+  const jar = await cookies();
+  const remembered = parseLastJournalCookie(jar.get(LAST_JOURNAL_COOKIE)?.value);
   // Only if it is still one of theirs: a deleted journal, or another
   // person's id in a shared browser, is simply not preselected.
   const lastJournalId = journals.some((j) => j.id === remembered) ? remembered : null;
@@ -35,8 +38,16 @@ export default async function AppPage() {
       templates={templatePreviews()}
       defaultTerm={nextQuarter(new Date())}
       guest={owner.guest ? { journalLimit: GUEST_JOURNAL_LIMIT, idleDays: GUEST_IDLE_DAYS } : null}
+      backdrop={{ theme: parseBackdropCookie(jar.get(BACKDROP_COOKIE)?.value), variant: pickWall() }}
     />
   );
+}
+
+/** Which of the doodle walls this load shows ("rotate random drawings on
+ *  each load"). Picked here, on the server, so the first frame is already
+ *  the wall the page will keep. */
+function pickWall() {
+  return Math.floor(Math.random() * WALL_VARIANTS);
 }
 
 /** A new journal's term to start from: three months from the first of next
