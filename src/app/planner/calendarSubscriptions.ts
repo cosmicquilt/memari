@@ -29,6 +29,7 @@ import type { Override } from "@/lib/calendarEvents";
 import { fetchIcs, IcsFetchError } from "@/lib/icsFetch";
 import { isGuestOwner } from "@/lib/guest";
 import { CALENDAR_COLOURS } from "./calendarStore";
+import { readToken } from "./syncToken";
 
 /** What `source` says for a feed this app reads itself, as opposed to one
  *  pulled through a provider's API later. */
@@ -81,24 +82,9 @@ export type SyncResult = {
  * events is one insert.
  */
 
-/** What Calendar.syncToken holds. A string column, so this is JSON rather
- *  than new columns - a migration for a cache key is not worth Andrew having
- *  to run one. Old rows hold a bare timestamp; `readToken` accepts both. */
-type SyncToken = { at: number; hash?: string };
-
-function readToken(raw: string | null): SyncToken {
-  if (!raw) return { at: 0 };
-  try {
-    const parsed = JSON.parse(raw) as SyncToken;
-    if (typeof parsed?.at === "number") return parsed;
-  } catch {
-    // The first format: a bare epoch. Left readable rather than migrated.
-  }
-  const at = Number(raw);
-  return { at: Number.isFinite(at) ? at : 0 };
-}
-
-const bodyHash = (text: string) => createHash("sha256").update(text).digest("hex");
+/** The feed's body, as the key that lets an unchanged feed skip everything.
+ *  Stored in Calendar.syncToken - see syncToken.ts. */
+const bodyHash =(text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The next colour that is not already in use, so two calendars do not arrive
  *  the same shade and become impossible to tell apart on the page. */
@@ -169,7 +155,13 @@ export async function syncSubscription(ownerId: string, calendarId: string, forc
     if (Date.now() - at < SYNC_INTERVAL_MS) return null;
   }
 
-  const feed = await fetchIcs(calendar.externalId);
+  let feed;
+  try {
+    feed = await fetchIcs(calendar.externalId);
+  } catch (error) {
+    await recordFailure(calendar.id, calendar.syncToken, error);
+    throw error;
+  }
 
   // THE BODY IS BYTE-IDENTICAL TO LAST TIME. Nothing can have changed, so
   // nothing is read and nothing is written - just the clock, so the interval
@@ -188,21 +180,52 @@ export async function syncSubscription(ownerId: string, calendarId: string, forc
   return applyFeed(ownerId, calendar.id, calendar.name, parseIcs(feed.text), hash);
 }
 
-/** Every subscription of this owner's that is due. Failures are swallowed: a
- *  feed that is down must not stop a journal from opening. */
-export async function syncDueSubscriptions(ownerId: string): Promise<void> {
-  const due = await prisma.calendar.findMany({
+/**
+ * A FAILED READ IS STILL A READ, for the interval's purposes.
+ *
+ * It was not recorded at first, so a feed that was down stayed "due" and
+ * every single journal open retried it - measured at 11 seconds an open with
+ * one dead feed, 22 with two. Now the attempt is stamped like a success, the
+ * next try waits out the interval, and the reason is kept so the Calendars
+ * panel can say "could not be read" instead of the feed silently going stale.
+ */
+async function recordFailure(calendarId: string, token: string | null, error: unknown): Promise<void> {
+  const previous = readToken(token);
+  const failed = error instanceof IcsFetchError ? error.message : "That calendar could not be read.";
+  await prisma.calendar.update({
+    where: { id: calendarId },
+    data: { syncToken: JSON.stringify({ at: Date.now(), ...(previous.hash ? { hash: previous.hash } : {}), failed }) },
+  });
+}
+
+/**
+ * Every subscription of this owner's that is due, read AT ONCE rather than in
+ * turn, so the time taken is the slowest feed's and not the sum of them.
+ *
+ * NOT ON THE PAGE PATH. It used to run inside loadPlannerPages, which put
+ * somebody else's server between a person and their own journal: one feed
+ * that did not answer made every open take 11 seconds, and two took 22 -
+ * past what a serverless function is given, at which point the journal
+ * simply does not open. The page now draws what is stored, and the editor
+ * calls this once it is on screen (see syncCalendars in actions.ts).
+ *
+ * @returns whether anything the page draws changed, so the editor only
+ *   redraws when there is something to show.
+ */
+export async function syncDueSubscriptions(ownerId: string): Promise<{ changed: boolean; failed: number }> {
+  const calendars = await prisma.calendar.findMany({
     where: { ownerId, source: ICS_SOURCE },
     select: { id: true, syncToken: true },
   });
-  for (const calendar of due) {
-    if (Date.now() - readToken(calendar.syncToken).at < SYNC_INTERVAL_MS) continue;
-    try {
-      await syncSubscription(ownerId, calendar.id);
-    } catch {
-      // Left for the next load. The page is what matters, not the feed.
-    }
+  const due = calendars.filter((c) => Date.now() - readToken(c.syncToken).at >= SYNC_INTERVAL_MS);
+  const results = await Promise.allSettled(due.map((c) => syncSubscription(ownerId, c.id)));
+  let changed = false;
+  let failed = 0;
+  for (const result of results) {
+    if (result.status === "rejected") failed++;
+    else if (result.value && result.value.added + result.value.updated + result.value.removed > 0) changed = true;
   }
+  return { changed, failed };
 }
 
 /** A set of changed occurrences as one comparable string - order-free, and

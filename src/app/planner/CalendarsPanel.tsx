@@ -127,6 +127,15 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
                 {calendar.eventCount} event{calendar.eventCount === 1 ? "" : "s"}
                 {calendar.source ? " · subscribed" : ""}
               </div>
+              {/* A FEED THAT COULD NOT BE READ says so, in words fetchIcs
+                  chose for a person. Silent, it would just go stale - the
+                  page keeps drawing the last good copy, which looks exactly
+                  like a calendar with nothing new in it. */}
+              {calendar.problem ? (
+                <div style={{ fontSize: 10, color: "#a3352f", lineHeight: 1.35, marginTop: 1 }}>
+                  Could not be read: {calendar.problem}
+                </div>
+              ) : null}
             </div>
             {/* SHOWN ON THIS JOURNAL. Not a delete and not a per-owner
                 setting: the same calendar can be on one book and off another. */}

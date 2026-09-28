@@ -75,6 +75,7 @@ import {
 } from "./calendarStore";
 import {
   subscribeToIcs,
+  syncDueSubscriptions,
   syncSubscription,
   unsubscribeFrom,
   assertNotSubscribed,
@@ -3665,6 +3666,24 @@ export async function subscribeCalendar(journalId: string, url: string, name?: s
     if (error instanceof IcsFetchError) return { ok: false, message: error.message };
     console.error("Could not subscribe to that calendar:", error);
     return { ok: false, message: "That calendar could not be added." };
+  }
+}
+
+/**
+ * Read this person's due subscriptions - called by the editor ONCE IT IS ON
+ * SCREEN, never by the page render. Returns whether anything drawn changed,
+ * so the editor redraws only when there is something new to show.
+ *
+ * Never throws: a feed that is down is recorded against its calendar and
+ * shown in the Calendars panel, not surfaced as an error on opening a book.
+ */
+export async function syncCalendars(): Promise<boolean> {
+  const userId = await requireOwner();
+  try {
+    return (await syncDueSubscriptions(userId)).changed;
+  } catch (error) {
+    console.error("Calendar sync failed:", error);
+    return false;
   }
 }
 

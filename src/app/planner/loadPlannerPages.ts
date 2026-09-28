@@ -34,7 +34,6 @@ import { type ModuleInstanceForRender, type RenderedPolotnoElement } from "@/lib
 import { resolveFontFamily, type FontChoice, type PlannerTheme } from "@/lib/theme";
 import { renderContextForPage, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { calendarsFor, eventsForJournal, type EditableEvent } from "./calendarStore";
-import { syncDueSubscriptions } from "./calendarSubscriptions";
 import { ownerDefaultZone } from "./ownerSettings";
 import type { WeekSettings } from "./WeekSettingsPanel";
 
@@ -215,6 +214,8 @@ export type LoadedCalendar = {
   /** Shown on THIS journal - the calendar itself is the owner's. */
   visible: boolean;
   eventCount: number;
+  /** Why a subscription could not be read last time, or null. */
+  problem: string | null;
 };
 
 /** A stored event as it crosses to the browser. */
@@ -267,12 +268,11 @@ export async function loadPlannerPages(
   const resolvedVariantKey = variantKey !== null && at(variantKey).length === 0 ? null : variantKey;
   const levelPages = at(resolvedVariantKey);
 
-  // SUBSCRIBED CALENDARS ARE READ AGAIN FIRST, but only the ones that are
-  // due - see SYNC_INTERVAL_MS. Here rather than on a timer because this app
-  // has no background worker, and a feed nobody is looking at does not need
-  // reading. It swallows its own failures: a calendar that is down must not
-  // stop a journal from opening.
-  await syncDueSubscriptions(planner.ownerId);
+  // NO FEED IS READ HERE. The page draws what is stored; the editor reads
+  // any due subscriptions once it is on screen and redraws only if one
+  // changed. A fetch here put somebody else's server between a person and
+  // their journal - one unreachable feed measured an 11-second open, two
+  // took 22. See syncDueSubscriptions.
 
   // THE OWNER'S EVENTS, once for the whole load. Fetched here rather than by
   // the three callers because this is already the one place that turns a

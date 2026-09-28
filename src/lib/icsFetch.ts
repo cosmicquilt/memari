@@ -35,7 +35,12 @@ import { lookup } from "node:dns/promises";
 /** A feed is text. Anything larger than this is not one, and reading it would
  *  be someone using this as a way to make the server download a film. */
 export const MAX_ICS_BYTES = 8 * 1024 * 1024;
-export const FETCH_TIMEOUT_MS = 15_000;
+/** THE WHOLE EXCHANGE, per hop - headers AND body. It covered only the
+ *  headers at first, so a server that answered and then trickled its body
+ *  could hold a request open for ever. And it was 15s, which with a dead
+ *  feed measured as an 11-second journal open; the sync no longer blocks a
+ *  page, but it still should not sit on a connection nobody is answering. */
+export const FETCH_TIMEOUT_MS = 8_000;
 const MAX_REDIRECTS = 3;
 
 export class IcsFetchError extends Error {}
@@ -120,50 +125,65 @@ export async function fetchIcs(raw: string): Promise<FetchedIcs> {
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let response: Response;
     try {
-      response = await fetch(url, {
-        redirect: "manual",
-        signal: controller.signal,
-        headers: { accept: "text/calendar, text/plain;q=0.9, */*;q=0.1", "user-agent": "Memari/1.0 (+https://memari.studio)" },
-      });
+      return await oneHop(url, controller.signal);
     } catch (error) {
+      if (error instanceof Redirect) {
+        url = await assertFetchable(error.to);
+        continue;
+      }
+      if (error instanceof IcsFetchError) throw error;
+      throw new IcsFetchError(
+        controller.signal.aborted ? "That calendar took too long to answer." : "That calendar could not be reached."
+      );
+    } finally {
+      // Cleared only once the BODY is in, or the hop failed - the timer is
+      // what bounds a server that sends headers and then stalls.
       clearTimeout(timer);
-      throw new IcsFetchError(
-        (error as Error).name === "AbortError" ? "That calendar took too long to answer." : "That calendar could not be reached."
-      );
     }
-    clearTimeout(timer);
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) throw new IcsFetchError("That calendar redirected to nowhere.");
-      url = await assertFetchable(new URL(location, url).toString());
-      continue;
-    }
-    if (!response.ok) {
-      throw new IcsFetchError(
-        response.status === 404
-          ? "There is no calendar at that address."
-          : response.status === 401 || response.status === 403
-            ? "That calendar would not let us in - check the address is the secret one."
-            : `That calendar answered ${response.status}.`
-      );
-    }
-
-    // The header is a hint, not a promise, so the body is capped as it
-    // arrives as well.
-    const declared = Number(response.headers.get("content-length") ?? NaN);
-    if (Number.isFinite(declared) && declared > MAX_ICS_BYTES) {
-      throw new IcsFetchError("That calendar is too large to read.");
-    }
-    const text = await readCapped(response, MAX_ICS_BYTES);
-    if (!/BEGIN:VCALENDAR/i.test(text)) {
-      throw new IcsFetchError("That address answered, but it is not a calendar feed.");
-    }
-    return { text, url: url.toString() };
   }
   throw new IcsFetchError("That calendar redirected too many times.");
+}
+
+/** A redirect, handed back to the loop so the next hop is checked like the
+ *  first. Thrown rather than returned so oneHop keeps a single result type. */
+class Redirect {
+  constructor(readonly to: string) {}
+}
+
+async function oneHop(url: URL, signal: AbortSignal): Promise<FetchedIcs> {
+  const response = await fetch(url, {
+    redirect: "manual",
+    signal,
+    headers: { accept: "text/calendar, text/plain;q=0.9, */*;q=0.1", "user-agent": "Memari/1.0 (+https://memari.studio)" },
+  });
+
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location");
+    if (!location) throw new IcsFetchError("That calendar redirected to nowhere.");
+    throw new Redirect(new URL(location, url).toString());
+  }
+  if (!response.ok) {
+    throw new IcsFetchError(
+      response.status === 404
+        ? "There is no calendar at that address."
+        : response.status === 401 || response.status === 403
+          ? "That calendar would not let us in - check the address is the secret one."
+          : `That calendar answered ${response.status}.`
+    );
+  }
+
+  // The header is a hint, not a promise, so the body is capped as it
+  // arrives as well.
+  const declared = Number(response.headers.get("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > MAX_ICS_BYTES) {
+    throw new IcsFetchError("That calendar is too large to read.");
+  }
+  const text = await readCapped(response, MAX_ICS_BYTES);
+  if (!/BEGIN:VCALENDAR/i.test(text)) {
+    throw new IcsFetchError("That address answered, but it is not a calendar feed.");
+  }
+  return { text, url: url.toString() };
 }
 
 /** The body, stopped at `limit` bytes - read as it arrives rather than with

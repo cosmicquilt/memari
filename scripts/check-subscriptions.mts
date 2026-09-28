@@ -342,6 +342,54 @@ END:VEVENT
       threw = true;
     }
     check(!threw, "an event typed here is still editable");
+
+    // --- A FEED THAT DOES NOT ANSWER ---------------------------------------
+    //
+    // 203.0.113.1 is TEST-NET-3 (RFC 5737): public, so the SSRF guard lets it
+    // through, and routed nowhere, so a connection to it hangs - a feed server
+    // that is down. MEASURED BEFORE THE FIX: a journal with one of these took
+    // 11 seconds to open, two took 22, and because a failed read was never
+    // recorded, EVERY open retried it.
+    {
+      const { syncDueSubscriptions } = await import("../src/app/planner/calendarSubscriptions.js");
+      const { FETCH_TIMEOUT_MS } = await import("../src/lib/icsFetch.js");
+      // TWO of them, so the sync's time says whether they were read at once
+      // (one deadline) or in turn (two).
+      const dead = await prisma.calendar.create({
+        data: { ownerId: guest.ownerId, name: "Down", colour: "#d6f0d8", source: ICS_SOURCE, externalId: "https://203.0.113.1/down.ics" },
+      });
+      const alsoDead = await prisma.calendar.create({
+        data: { ownerId: guest.ownerId, name: "Also down", colour: "#f7d6e0", source: ICS_SOURCE, externalId: "https://203.0.113.2/down.ics" },
+      });
+
+      // THE PAGE DOES NOT WAIT FOR IT. It draws what is stored.
+      let t = Date.now();
+      await weekly();
+      const openMs = Date.now() - t;
+      check(openMs < 2000, `a journal with an unreachable feed opens without waiting for it (${openMs} ms)`);
+
+      // The sync, run as the editor runs it, gives up within its deadline...
+      t = Date.now();
+      const first = await syncDueSubscriptions(guest.ownerId);
+      const syncMs = Date.now() - t;
+      check(first.failed === 2 && !first.changed, `both dead feeds are counted as failed (${JSON.stringify(first)})`);
+      check(
+        syncMs < FETCH_TIMEOUT_MS + 3000,
+        `and they cost ONE deadline, not two - read at once (${syncMs} ms, deadline ${FETCH_TIMEOUT_MS} ms each)`
+      );
+
+      // ...and RECORDS that it tried, so the next open does not try again.
+      t = Date.now();
+      await syncDueSubscriptions(guest.ownerId);
+      const againMs = Date.now() - t;
+      check(againMs < 1500, `a second sync straight after does not retry the dead feed (${againMs} ms)`);
+
+      // The Calendars panel is told why, in words, and never the address.
+      const shown = (await weekly()).calendars.find((c) => c.id === dead.id);
+      check(Boolean(shown?.problem), `the panel is told the feed could not be read ("${shown?.problem}")`);
+      check(!(shown?.problem ?? "").includes("203.0.113.1"), "and the reason does not contain the feed's address");
+      await prisma.calendar.deleteMany({ where: { id: { in: [dead.id, alsoDead.id] } } });
+    }
   } finally {
     await prisma.calendar.deleteMany({ where: { ownerId: guest.ownerId } });
     await guest.remove();

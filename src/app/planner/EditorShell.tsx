@@ -50,7 +50,7 @@ import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
 import { writeOpenLevelCookie } from "@/lib/openLevelCookie";
 import { writeLastJournalCookie } from "@/lib/lastJournalCookie";
-import { loadSavedItems, seedDefaultTimeZone } from "./actions";
+import { loadSavedItems, seedDefaultTimeZone, syncCalendars } from "./actions";
 import { JournalProvider } from "./journalContext";
 import { SavedProvider, type SavedItems } from "./savedContext";
 import { PagesRefreshProvider, type RefreshPages } from "./pagesRefreshContext";
@@ -210,6 +210,43 @@ export function EditorShell({
       .then((seeded) => (seeded ? refreshPages({ rebuild: true }) : undefined))
       .catch((error) => console.error("Could not seed a default time zone:", error));
   }, [defaultZone, refreshPages]);
+
+  // SUBSCRIBED CALENDARS ARE READ HERE, once the journal is on screen - and
+  // again whenever the tab comes back into view, which is when someone who
+  // added a meeting on their phone would look for it.
+  //
+  // Never during the page render: that put somebody else's server between a
+  // person and their journal, and one feed that did not answer made every
+  // open take 11 seconds. The server skips feeds read in the last fifteen
+  // minutes, so coming back to the tab often costs one indexed query.
+  //
+  // It redraws ONLY IF A FEED CHANGED. A rebuild remounts the editor, which
+  // would drop an open popup or a drag in progress, so it happens only when
+  // there is something new to show - rare, and at a moment (just opened,
+  // just come back) when nothing is usually in hand.
+  //
+  // The refresh function through a ref: it changes identity with the open
+  // level, and this effect must not re-run - and re-sync - for that.
+  const refreshRef = useRef(refreshPages);
+  useEffect(() => {
+    refreshRef.current = refreshPages;
+  }, [refreshPages]);
+  useEffect(() => {
+    let alive = true;
+    const sync = async () => {
+      if (!(await syncCalendars().catch(() => false)) || !alive) return;
+      await refreshRef.current({ rebuild: true });
+    };
+    void sync();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [journalId]);
 
   // What the timeline shows as open: the one being opened, if any.
   const shownLevel = choosing?.level ?? open.level;

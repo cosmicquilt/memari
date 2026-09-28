@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import type { StoredEvent } from "@/lib/calendarEvents";
 import { DEFAULT_ZONE, FLOATING, instantFromWall, toWallTime, wallDate } from "@/lib/timeZone";
 import { zoneForBook } from "./ownerSettings";
+import { readToken } from "./syncToken";
 
 /** What a new calendar is drawn in until someone changes it. Screen only -
  *  print takes grey, decided 2026-09-26, because colour pages cost money. */
@@ -97,6 +98,7 @@ export async function calendarsFor(ownerId: string, plannerId?: string) {
         name: true,
         colour: true,
         source: true,
+        syncToken: true,
         _count: { select: { events: { where: { deletedAt: null } } } },
       },
     }),
@@ -105,10 +107,14 @@ export async function calendarsFor(ownerId: string, plannerId?: string) {
       : Promise.resolve([]),
   ]);
   const hiddenIds = new Set(hidden.map((h) => h.calendarId));
-  return calendars.map(({ _count, ...c }) => ({
+  return calendars.map(({ _count, syncToken, ...c }) => ({
     ...c,
     visible: !hiddenIds.has(c.id),
     eventCount: _count.events,
+    // WHY A SUBSCRIPTION IS STALE, if it is - the last read's failure in the
+    // words fetchIcs chose for a person, never the address. syncToken itself
+    // is not passed on.
+    problem: c.source ? (readToken(syncToken).failed ?? null) : null,
   }));
 }
 
