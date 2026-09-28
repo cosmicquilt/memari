@@ -22,6 +22,7 @@
 // edit that silently undid itself. The editor refuses before that can happen;
 // see `assertNotSubscribed`.
 
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { parseIcs } from "@/lib/ics";
 import { fetchIcs, IcsFetchError } from "@/lib/icsFetch";
@@ -48,11 +49,55 @@ export type SyncResult = {
   calendarId: string;
   name: string;
   added: number;
+  /** Rows that REALLY CHANGED. Not "rows seen" - see applyFeed. */
   updated: number;
+  /** Rows already identical to the feed, so nothing was written for them.
+   *  This is the number that matters for cost: on a calendar nobody has
+   *  touched it should be all of them. */
+  unchanged: number;
   removed: number;
   /** Events the reader would have had to guess at - see ParsedCalendar. */
   skipped: number;
 };
+
+/**
+ * WHAT THE SYNC IS ALLOWED TO COST, and why this is not a micro-optimisation.
+ *
+ * Measured 2026-09-28 against Google's US holiday feed, 317 events: the first
+ * version took 8.1 SECONDS, and took the same 8.1 seconds on a re-read where
+ * NOTHING HAD CHANGED - 317 sequential round trips to Neon, one per event.
+ * This runs inside loadPlannerPages, on the page-load path. A serverless
+ * function gets ten seconds; two subscribed calendars would have blown
+ * straight through it and the journal page would simply have failed to
+ * render, for everyone, with the cause a page or two away from the symptom.
+ *
+ * Three things fix it, in order of how much they save:
+ *   1. THE BODY HASH. A feed that has not changed is not looked at again.
+ *   2. ROW COMPARISON. A row identical to the feed is not written.
+ *   3. BATCHING. What is left goes in a createMany and one transaction
+ *      instead of a round trip each.
+ * After all three: an unchanged feed is two queries, and a first read of 317
+ * events is one insert.
+ */
+
+/** What Calendar.syncToken holds. A string column, so this is JSON rather
+ *  than new columns - a migration for a cache key is not worth Andrew having
+ *  to run one. Old rows hold a bare timestamp; `readToken` accepts both. */
+type SyncToken = { at: number; hash?: string };
+
+function readToken(raw: string | null): SyncToken {
+  if (!raw) return { at: 0 };
+  try {
+    const parsed = JSON.parse(raw) as SyncToken;
+    if (typeof parsed?.at === "number") return parsed;
+  } catch {
+    // The first format: a bare epoch. Left readable rather than migrated.
+  }
+  const at = Number(raw);
+  return { at: Number.isFinite(at) ? at : 0 };
+}
+
+const bodyHash = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The next colour that is not already in use, so two calendars do not arrive
  *  the same shade and become impossible to tell apart on the page. */
@@ -101,7 +146,7 @@ export async function subscribeToIcs(ownerId: string, rawUrl: string, chosenName
         select: { id: true, name: true },
       });
 
-  return applyFeed(ownerId, calendar.id, calendar.name, parsed);
+  return applyFeed(ownerId, calendar.id, calendar.name, parsed, bodyHash(feed.text));
 }
 
 /**
@@ -119,12 +164,27 @@ export async function syncSubscription(ownerId: string, calendarId: string, forc
   if (!calendar?.externalId) return null;
 
   if (!force) {
-    const last = Number(calendar.syncToken ?? 0);
-    if (Number.isFinite(last) && Date.now() - last < SYNC_INTERVAL_MS) return null;
+    const { at } = readToken(calendar.syncToken);
+    if (Date.now() - at < SYNC_INTERVAL_MS) return null;
   }
 
   const feed = await fetchIcs(calendar.externalId);
-  return applyFeed(ownerId, calendar.id, calendar.name, parseIcs(feed.text));
+
+  // THE BODY IS BYTE-IDENTICAL TO LAST TIME. Nothing can have changed, so
+  // nothing is read and nothing is written - just the clock, so the interval
+  // starts again. This is the case that matters: a holiday calendar is the
+  // same file for a year at a time.
+  const hash = bodyHash(feed.text);
+  if (readToken(calendar.syncToken).hash === hash) {
+    await prisma.calendar.update({
+      where: { id: calendar.id },
+      data: { syncToken: JSON.stringify({ at: Date.now(), hash }) },
+    });
+    const unchanged = await prisma.calendarEvent.count({ where: { calendarId: calendar.id, deletedAt: null } });
+    return { calendarId: calendar.id, name: calendar.name, added: 0, updated: 0, unchanged, removed: 0, skipped: 0 };
+  }
+
+  return applyFeed(ownerId, calendar.id, calendar.name, parseIcs(feed.text), hash);
 }
 
 /** Every subscription of this owner's that is due. Failures are swallowed: a
@@ -135,8 +195,7 @@ export async function syncDueSubscriptions(ownerId: string): Promise<void> {
     select: { id: true, syncToken: true },
   });
   for (const calendar of due) {
-    const last = Number(calendar.syncToken ?? 0);
-    if (Number.isFinite(last) && Date.now() - last < SYNC_INTERVAL_MS) continue;
+    if (Date.now() - readToken(calendar.syncToken).at < SYNC_INTERVAL_MS) continue;
     try {
       await syncSubscription(ownerId, calendar.id);
     } catch {
@@ -150,60 +209,121 @@ export async function applyFeed(
   ownerId: string,
   calendarId: string,
   name: string,
-  parsed: ReturnType<typeof parseIcs>
+  parsed: ReturnType<typeof parseIcs>,
+  /** The feed's body hash, so the next read can skip it entirely. Omitted by
+   *  the check, which has no body. */
+  hash?: string
 ): Promise<SyncResult> {
+  // EVERY FIELD THE FEED OWNS is read back, not just the ids: a row can only
+  // be left alone if it is known to match, and "matches" has to be decided on
+  // the values themselves.
   const here = await prisma.calendarEvent.findMany({
     where: { calendarId },
-    select: { id: true, externalId: true, deletedAt: true },
+    select: {
+      id: true,
+      externalId: true,
+      title: true,
+      startsAt: true,
+      endsAt: true,
+      allDay: true,
+      rrule: true,
+      timeZone: true,
+      deletedAt: true,
+    },
   });
   const byUid = new Map(here.filter((e) => e.externalId).map((e) => [e.externalId as string, e]));
 
-  let added = 0;
-  let updated = 0;
+  const inserts: Array<{
+    ownerId: string;
+    calendarId: string;
+    externalId: string;
+    title: string;
+    startsAt: Date;
+    endsAt: Date;
+    allDay: boolean;
+    rrule: string | null;
+    timeZone: string;
+    deletedAt: Date | null;
+    lastSyncedAt: Date;
+    origin: "IMPORTED";
+  }> = [];
+  const updates: Array<ReturnType<typeof prisma.calendarEvent.update>> = [];
+  let unchanged = 0;
   const seen = new Set<string>();
+  const now = new Date();
 
   for (const event of parsed.events) {
     seen.add(event.uid);
     const row = byUid.get(event.uid);
-    const data = {
+    const fields = {
       title: event.title,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
       allDay: event.allDay,
       rrule: event.rrule,
       timeZone: event.timeZone,
-      lastSyncedAt: new Date(),
-      // A CANCELLED event in the feed is a tombstone here, and an event that
-      // comes back un-cancelled is untombstoned. Both directions, so a
-      // meeting reinstated on a phone reappears on the page.
-      deletedAt: event.cancelled ? new Date() : null,
+      // A CANCELLED event in the feed is a tombstone here, and one that comes
+      // back un-cancelled is untombstoned. Both directions, so a meeting
+      // reinstated on a phone reappears on the page.
+      deletedAt: event.cancelled ? now : null,
     };
-    if (row) {
-      await prisma.calendarEvent.update({ where: { id: row.id }, data });
-      updated++;
-    } else {
-      await prisma.calendarEvent.create({
-        data: { ...data, ownerId, calendarId, externalId: event.uid, origin: "IMPORTED" },
-      });
-      added++;
+
+    if (!row) {
+      inserts.push({ ...fields, ownerId, calendarId, externalId: event.uid, lastSyncedAt: now, origin: "IMPORTED" });
+      continue;
     }
+
+    // ALREADY RIGHT? Then do not write it. `deletedAt` is compared as a
+    // PRESENCE, not as an instant: re-tombstoning an already-tombstoned event
+    // would change the timestamp and so count as a change every single time,
+    // which is the whole 8 seconds back again for any cancelled event.
+    const same =
+      row.title === fields.title &&
+      row.startsAt.getTime() === fields.startsAt.getTime() &&
+      row.endsAt.getTime() === fields.endsAt.getTime() &&
+      row.allDay === fields.allDay &&
+      row.rrule === fields.rrule &&
+      row.timeZone === fields.timeZone &&
+      (row.deletedAt === null) === (fields.deletedAt === null);
+    if (same) {
+      unchanged++;
+      continue;
+    }
+    // lastSyncedAt is written only with a real change, so it means "when this
+    // row last moved", not "when we last looked" - which is the more useful
+    // of the two and the only one that is free.
+    updates.push(prisma.calendarEvent.update({ where: { id: row.id }, data: { ...fields, lastSyncedAt: now } }));
   }
 
   // GONE FROM THE FEED. Tombstoned, not deleted - see the note at the top.
   const vanished = here.filter((e) => e.externalId && !seen.has(e.externalId) && !e.deletedAt);
+
+  // ONE ROUND TRIP EACH, rather than one per event. createMany inserts the
+  // lot; the updates are pipelined through a single transaction. See the note
+  // on SyncToken for what this replaced and what it cost.
+  if (inserts.length > 0) await prisma.calendarEvent.createMany({ data: inserts, skipDuplicates: true });
+  if (updates.length > 0) await prisma.$transaction(updates);
   if (vanished.length > 0) {
     await prisma.calendarEvent.updateMany({
       where: { id: { in: vanished.map((e) => e.id) } },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: now },
     });
   }
 
   await prisma.calendar.update({
     where: { id: calendarId },
-    data: { syncToken: String(Date.now()) },
+    data: { syncToken: JSON.stringify({ at: Date.now(), ...(hash ? { hash } : {}) }) },
   });
 
-  return { calendarId, name, added, updated, removed: vanished.length, skipped: parsed.skipped.length };
+  return {
+    calendarId,
+    name,
+    added: inserts.length,
+    updated: updates.length,
+    unchanged,
+    removed: vanished.length,
+    skipped: parsed.skipped.length,
+  };
 }
 
 /**

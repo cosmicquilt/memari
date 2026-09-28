@@ -120,7 +120,16 @@ ${extra}END:VEVENT
     // four rows, draw the week twice over itself, and hand every event a new
     // id - which breaks the editor's hit areas, since those are keyed by it.
     const again = await applyFeed(guest.ownerId, calendar.id, "Work", build(standup(dayA) + review(dayB)));
-    check(again.added === 0 && again.removed === 0, `an unchanged re-read should add and remove nothing, got ${JSON.stringify(again)}`);
+    check(again.added === 0 && again.removed === 0, `an unchanged re-read adds and removes nothing, got ${JSON.stringify(again)}`);
+    // AND WRITES NOTHING AT ALL. Not a nicety: the first version rewrote
+    // every row every time, which on a 317-event holiday feed measured 8.1
+    // SECONDS, on the page-load path, inside a ten-second serverless budget.
+    // `updated` counts rows that really changed, so this is the clause that
+    // stops that coming back.
+    check(
+      again.updated === 0 && again.unchanged === 2,
+      `an unchanged re-read must write NOTHING - ${again.updated} row(s) rewritten, ${again.unchanged} left alone`
+    );
     const afterAgain = await rows();
     check(afterAgain.length === 2, `still two rows after a re-read, got ${afterAgain.length}`);
     check(
@@ -145,6 +154,14 @@ END:VEVENT
       `the time should follow the feed, got ${standupRow.startsAt.toISOString()}`
     );
     check(standupRow.id === afterFirst.find((r) => r.externalId === "standup@example.com")!.id, "and it kept its id");
+    // The other direction of the clause above: "write nothing" must not be
+    // how it passes. One row moved, so exactly one row is written and the
+    // other is left alone.
+    const movedResult = await applyFeed(guest.ownerId, calendar.id, "Work", build(moved + review(dayB)));
+    check(
+      movedResult.updated === 0 && movedResult.unchanged === 2,
+      `re-reading the same changed feed should settle to no writes, got ${JSON.stringify(movedResult)}`
+    );
 
     // --- GONE FROM THE FEED IS GONE FROM THE PAGE, BUT NOT FROM THE TABLE -
     const dropped = await applyFeed(guest.ownerId, calendar.id, "Work", build(moved));
@@ -168,7 +185,17 @@ END:VEVENT
     );
 
     // --- STATUS:CANCELLED IS A TOMBSTONE ---------------------------------
-    await applyFeed(guest.ownerId, calendar.id, "Work", build(moved + review(dayB, "STATUS:CANCELLED\n")));
+    const cancelling = await applyFeed(guest.ownerId, calendar.id, "Work", build(moved + review(dayB, "STATUS:CANCELLED\n")));
+    check(cancelling.updated === 1, `cancelling one event should write one row, got ${cancelling.updated}`);
+    // AN ALREADY-CANCELLED EVENT IS NOT A CHANGE. deletedAt is compared as a
+    // presence, not as an instant - comparing the timestamp would make every
+    // cancelled event count as changed on every sync for ever, which is the
+    // 8 seconds back for any calendar with a cancellation in it.
+    const cancelledAgain = await applyFeed(guest.ownerId, calendar.id, "Work", build(moved + review(dayB, "STATUS:CANCELLED\n")));
+    check(
+      cancelledAgain.updated === 0,
+      `re-reading an already-cancelled event must write nothing, got ${cancelledAgain.updated}`
+    );
     const cancelled = (await rows()).find((r) => r.externalId === "review@example.com")!;
     check(cancelled.deletedAt !== null, "a CANCELLED event should be tombstoned rather than left on the page");
     check(
@@ -265,10 +292,16 @@ try {
 //   * select externalId in calendarsFor              -> the secret-URL case
 //   * make assertNotSubscribed a no-op               -> the refusal case
 //   * make it throw for everything                   -> the typed-event case
+//   * write every row instead of comparing first     -> the writes-nothing
+//     cases. That is the 8-second regression, and it is the only one of these
+//     that a reader would not think to look for - the page still works, it
+//     just quietly stops rendering in production once there are two feeds.
+//   * compare deletedAt as an instant, not a presence -> the already-cancelled
+//     case
 
 console.log(
   failures === 0
-    ? "\nA subscribed feed syncs onto a real journal: re-reads keep every id, changes follow, gone and cancelled events are tombstoned and stop printing, a returning one comes back, and the feed's secret URL never leaves the server."
+    ? "\nA subscribed feed syncs onto a real journal: re-reads keep every id AND write nothing, changes follow, gone and cancelled events are tombstoned and stop printing, a returning one comes back, and the feed's secret URL never leaves the server."
     : `\n${failures} problem(s).`
 );
 process.exit(failures === 0 ? 0 : 1);

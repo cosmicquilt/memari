@@ -28,14 +28,14 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="22 September 2026">
+    <LegalPage title="Privacy" updated="28 September 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
-          an account, your sign-in details sit with our authentication provider. There is no
-          advertising, no tracking, no analytics of any kind, and nothing is sold or shared for
-          marketing. You can use it without an account at all. The detail below is what actually
-          binds.
+          an account, your sign-in details sit with our authentication provider. If you point it at
+          a calendar, it reads that calendar and never writes to it. There is no advertising, no
+          tracking, no analytics of any kind, and nothing is sold or shared for marketing. You can
+          use it without an account at all. The detail below is what actually binds.
         </P>
       </Summary>
 
@@ -52,6 +52,31 @@ export default function PrivacyPage() {
         planner is a personal thing, and its contents can be too. We treat everything you type as
         yours and private. It is stored so we can show it back to you and print it; we do not read
         it, mine it, or train anything on it.
+      </P>
+
+      <P>
+        <strong>Events you write.</strong> An event on a page is stored with its title, its start
+        and end, whether it repeats, and which of your calendars it belongs to. Delete one you
+        typed and the record is removed, not hidden.
+      </P>
+
+      <P>
+        <strong>If you subscribe to a calendar.</strong> You can give Memari the address of a
+        calendar feed &mdash; the secret <code>.ics</code> address Google, Apple and Microsoft each
+        offer. We store that address, because we need it to read the feed again, and we fetch the
+        feed from our server rather than from your browser. It is a secret: we never show it back
+        to you, never put it in an error message, and never send it to anyone else. We read the
+        feed while you have the journal open, at most every fifteen minutes, and we store the
+        events it contains &mdash; their titles, times and repeat rules, and the identifiers the
+        provider uses, so that reading it again updates what is there instead of duplicating it.
+        We do not write anything back to your calendar. Remove the subscription and the address and
+        its events go with it.
+      </P>
+
+      <P>
+        <strong>An event removed at the far end</strong> leaves a marker here recording that it was
+        removed, so the next read does not bring it back. That marker keeps the event&rsquo;s
+        details until the subscription is removed, which deletes them.
       </P>
 
       <P>
@@ -85,6 +110,10 @@ export default function PrivacyPage() {
         </LI>
         <LI>We do not sell your information, and we do not share it for anyone else&rsquo;s marketing.</LI>
         <LI>We do not use what you write to train machine-learning models.</LI>
+        <LI>
+          We do not write to, change or delete anything in a calendar you subscribe to. Reading is
+          all we do.
+        </LI>
       </UL>
 
       <H2>Cookies</H2>
@@ -149,6 +178,11 @@ export default function PrivacyPage() {
           <strong>Account journals are kept until you delete them.</strong> Deleting a journal
           removes its pages and modules.
         </LI>
+        <LI>
+          <strong>Calendars are kept until you remove them.</strong> They belong to you rather than
+          to one journal, so removing a journal leaves them; removing a calendar deletes its
+          address and every event on it. A guest&rsquo;s calendars go when their journals do.
+        </LI>
         <LI>Server logs are kept for a short period by our host, on their schedule.</LI>
       </UL>
 
@@ -166,6 +200,10 @@ export default function PrivacyPage() {
       <UL>
         <LI>Use the app as a guest, and give us no personal details at all.</LI>
         <LI>Delete any journal, saved page or saved module from inside the app.</LI>
+        <LI>
+          Turn a calendar off for one journal without removing it, or remove it entirely, under
+          Page Settings &rarr; Calendars.
+        </LI>
         <LI>Export your work as a PDF at any time.</LI>
         <LI>
           Ask us for a copy of what we hold about you, or ask us to delete it, by writing to{" "}

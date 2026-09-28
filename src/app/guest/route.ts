@@ -6,22 +6,21 @@
 // keeps its id - pressing the button twice must not orphan the journals the
 // first press made.
 //
-// Also where abandoned guest work is cleared: guest journals nobody has
-// opened for GUEST_IDLE_DAYS (and then their saved items), deleted whenever
-// someone starts as a guest. A few indexed queries, and no scheduled job.
+// Also where abandoned guest work is cleared, whenever someone starts as a
+// guest. The sweep itself is in src/lib/guestSweep.ts - it moved there so a
+// check can drive it, which is how it was noticed that calendars had never
+// been added to it.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import {
   GUEST_COOKIE,
   GUEST_COOKIE_MAX_AGE,
-  GUEST_IDLE_DAYS,
-  GUEST_OWNER_PREFIX,
   guestCookieValue,
   guestIdFromCookie,
   guestModeAvailable,
   newGuestId,
 } from "@/lib/guest";
+import { sweepIdleGuests } from "@/lib/guestSweep";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,29 +33,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const cutoff = new Date(Date.now() - GUEST_IDLE_DAYS * 24 * 60 * 60 * 1000);
-  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX }, updatedAt: { lt: cutoff } };
-  await prisma.planner.deleteMany({ where: idleGuest });
-  // A guest's saved items go once the guest has no journals left and the
-  // item itself has sat as long. Not on idleness alone: a saved page is only
-  // touched when it is edited, and a guest still using their journals would
-  // otherwise lose it from Saved.
-  const savedOwners = new Set(
-    [
-      ...(await prisma.savedPage.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
-      ...(await prisma.savedModule.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
-    ].map((row) => row.ownerId)
-  );
-  if (savedOwners.size > 0) {
-    const active = await prisma.planner.findMany({
-      where: { ownerId: { in: [...savedOwners] } },
-      select: { ownerId: true },
-      distinct: ["ownerId"],
-    });
-    for (const row of active) savedOwners.delete(row.ownerId);
-    const gone = { ...idleGuest, ownerId: { in: [...savedOwners] } };
-    await prisma.$transaction([prisma.savedPage.deleteMany({ where: gone }), prisma.savedModule.deleteMany({ where: gone })]);
-  }
+  await sweepIdleGuests();
 
   const id = guestIdFromCookie(request.cookies.get(GUEST_COOKIE)?.value) ?? newGuestId();
   const value = guestCookieValue(id)!;

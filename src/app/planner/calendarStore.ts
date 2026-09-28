@@ -267,14 +267,31 @@ export async function updateEventFor(
 }
 
 /**
- * A TOMBSTONE, not a delete.
+ * Delete an event. A TOMBSTONE only where one is needed.
  *
- * Without one a local deletion is invisible to a future sync and the event
- * comes straight back on the next pull. The row costs nothing and every read
- * above filters it out, so this is the cheap half of two-way sync bought now.
+ * The rule is whether ANYTHING OUTSIDE knows about this event, which is
+ * exactly what `externalId` records:
+ *
+ *   IT CAME FROM A FEED, or has been pushed to one - tombstoned. Without the
+ *   row, a deletion here is invisible to the next sync and the event comes
+ *   straight back on the next pull. The row is the cheap half of two-way sync
+ *   bought now.
+ *
+ *   IT WAS ONLY EVER TYPED HERE - really deleted. Nothing can re-create it,
+ *   so a tombstone would keep the title and times of something a person asked
+ *   to be rid of, for a feature that does not exist, and the privacy page
+ *   would have to say so. When push does exist, it will only ever need a
+ *   tombstone for events the far end has heard of - which is this same test.
  */
 export async function deleteEventFor(ownerId: string, eventId: string): Promise<void> {
-  const existing = await prisma.calendarEvent.findFirst({ where: { id: eventId, ownerId }, select: { id: true } });
+  const existing = await prisma.calendarEvent.findFirst({
+    where: { id: eventId, ownerId },
+    select: { id: true, externalId: true },
+  });
   if (!existing) return;
-  await prisma.calendarEvent.update({ where: { id: eventId }, data: { deletedAt: new Date() } });
+  if (existing.externalId) {
+    await prisma.calendarEvent.update({ where: { id: eventId }, data: { deletedAt: new Date() } });
+  } else {
+    await prisma.calendarEvent.delete({ where: { id: eventId } });
+  }
 }

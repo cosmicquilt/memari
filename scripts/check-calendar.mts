@@ -217,10 +217,56 @@ async function main() {
       afterDelete.some((id) => id.includes(`-ev${repeating.id}-box`)),
       "and the others are untouched"
     );
+    // The row above was tombstoned DIRECTLY, to test the drawing. It is
+    // still there because nothing deleted it.
     check(
       (await prisma.calendarEvent.findUnique({ where: { id: timed.id } })) !== null,
-      "the tombstoned ROW is still there, which is what a future sync reads"
+      "a tombstoned row still exists - the mark going is a render decision, not a delete"
     );
+
+    // --- BUT DELETING A TYPED EVENT REALLY DELETES IT --------------------
+    //
+    // Through deleteEventFor, which is what the editor calls. No externalId
+    // means nothing outside can re-create it, so a tombstone would keep the
+    // title and times of something a person asked to be rid of, for a feature
+    // that does not exist - and the privacy page would have to say so. A
+    // feed's event IS still tombstoned; that half is in check:subscriptions,
+    // which is where a row with an externalId lives.
+    {
+      const { deleteEventFor } = await import("../src/app/planner/calendarStore.js");
+      const doomed = await prisma.calendarEvent.create({
+        data: {
+          ownerId: guest.ownerId,
+          calendarId: calendar.id,
+          title: "Typed then deleted",
+          startsAt: new Date(`${timedDay}T18:00:00.000Z`),
+          endsAt: new Date(`${timedDay}T19:00:00.000Z`),
+        },
+      });
+      await deleteEventFor(guest.ownerId, doomed.id);
+      check(
+        (await prisma.calendarEvent.findUnique({ where: { id: doomed.id } })) === null,
+        "deleting an event that was only ever typed here removes the row, not just the mark"
+      );
+
+      // And the other direction, so "delete everything" is not how it passes.
+      const fromAFeed = await prisma.calendarEvent.create({
+        data: {
+          ownerId: guest.ownerId,
+          calendarId: calendar.id,
+          title: "From a feed",
+          startsAt: new Date(`${timedDay}T20:00:00.000Z`),
+          endsAt: new Date(`${timedDay}T21:00:00.000Z`),
+          externalId: "known-to-the-outside@example.com",
+        },
+      });
+      await deleteEventFor(guest.ownerId, fromAFeed.id);
+      const still = await prisma.calendarEvent.findUnique({ where: { id: fromAFeed.id } });
+      check(
+        still !== null && still.deletedAt !== null,
+        "deleting one the outside world knows about leaves a tombstone, so the next sync learns of it"
+      );
+    }
 
     // --- SOMEONE ELSE'S EVENTS ARE NOT ON THIS PAGE ----------------------
     const stranger = await prisma.calendar.create({
