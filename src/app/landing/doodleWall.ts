@@ -79,6 +79,9 @@ export type WallInput = {
   ink: { color: string; alpha: number };
   paper: string;
   seed: number;
+  /** Whether the tile wraps (a wall that repeats) - or every drawing stays
+   *  whole inside it (a sheet of paper). Wraps unless false. */
+  wrap?: boolean;
 };
 
 export type WallOutput = { url: string; counts: number[]; covered: number };
@@ -91,7 +94,8 @@ export type WallOutput = { url: string; counts: number[]; covered: number };
  * ring touches the most ink wins) rather than scattered; then the middle
  * ones in the gaps; then the small. Nothing overlaps. Every drawing of a
  * size is used once before any is used twice. The tile wraps, so it
- * repeats with no seam. Seeded: the same input gives the same wall.
+ * repeats with no seam - unless `wrap` is false, when nothing may cross its
+ * edge. Seeded: the same input gives the same wall.
  *
  * SELF-CONTAINED - no imports, no module-level names - because the script
  * hands this function's source to a browser page (page.evaluate), where
@@ -99,6 +103,7 @@ export type WallOutput = { url: string; counts: number[]; covered: number };
  */
 export async function packWall(input: WallInput): Promise<WallOutput> {
   const { drawings, classes, tile, ink, paper } = input;
+  const wrap = input.wrap !== false;
   let seed = input.seed >>> 0;
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -170,8 +175,14 @@ export async function packWall(input: WallInput): Promise<WallOutput> {
     }
     return { bodyCells, ringCells };
   };
-  const at = (cx: number, cy: number, dx: number, dy: number) =>
-    ((((cy + dy) % GH) + GH) % GH) * GW + ((((cx + dx) % GW) + GW) % GW);
+  // A cell's index - wrapped round the tile, or -1 off its edge.
+  const at = (cx: number, cy: number, dx: number, dy: number) => {
+    const [x, y] = [cx + dx, cy + dy];
+    if (!wrap) return x < 0 || y < 0 || x >= GW || y >= GH ? -1 : y * GW + x;
+    return (((y % GH) + GH) % GH) * GW + (((x % GW) + GW) % GW);
+  };
+  // Taken: inked already, or off the edge of a tile that does not wrap.
+  const taken = (i: number) => (i < 0 ? 1 : occ[i]);
   // A spot to try: a free cell, so a crowded wall still finds its gaps.
   const freeSpot = () => {
     for (let t = 0; t < 40; t++) {
@@ -208,10 +219,13 @@ export async function packWall(input: WallInput): Promise<WallOutput> {
       for (let t = 0; t < 250; t++) {
         const [cx, cy] = freeSpot();
         let hit = 0;
-        for (let i = 0; i < bodyCells.length && hit === 0; i += 2) hit = occ[at(cx, cy, bodyCells[i], bodyCells[i + 1])];
+        for (let i = 0; i < bodyCells.length && hit === 0; i += 2) hit = taken(at(cx, cy, bodyCells[i], bodyCells[i + 1]));
         if (hit) continue;
         let score = 0;
-        for (let i = 0; i < ringCells.length; i += 2) score += occ[at(cx, cy, ringCells[i], ringCells[i + 1])];
+        for (let i = 0; i < ringCells.length; i += 2) {
+          const r = at(cx, cy, ringCells[i], ringCells[i + 1]);
+          if (r >= 0) score += occ[r];
+        }
         // The first drawings have nothing to touch; after that, the one
         // that nestles in closest wins.
         score += rand() * 0.5;
@@ -249,8 +263,8 @@ export async function packWall(input: WallInput): Promise<WallOutput> {
     tg.fillStyle = ink.color;
     tg.fillRect(0, 0, tint.width, tint.height);
     const reach = Math.hypot(p.w, p.h) / 2;
-    for (const ox of [-tile.w, 0, tile.w])
-      for (const oy of [-tile.h, 0, tile.h]) {
+    for (const ox of wrap ? [-tile.w, 0, tile.w] : [0])
+      for (const oy of wrap ? [-tile.h, 0, tile.h] : [0]) {
         const x = p.x + ox;
         const y = p.y + oy;
         if (x + reach < 0 || y + reach < 0 || x - reach > tile.w || y - reach > tile.h) continue;

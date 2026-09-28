@@ -1,15 +1,20 @@
 "use client";
 
-// Every drawing in the doodle library, and two switches on each: on the
-// start dialog's wall, and in the hero's sketch boxes. The wall can be
-// previewed as it will be baked (the same packWall the build script runs),
-// and Save writes both lists and the wall (save/route.ts).
+// Every drawing in the doodle library, and a switch on each for three places:
+// the start dialog's wall, the hero's sketch boxes, and the hero's two loose
+// sheets (one list for both - 2026-09-28: "add them as one switch"). The wall
+// and the sheets can be previewed as they will be baked (the same packWall
+// and bakeSheet the build script runs), and Save writes the lists and bakes
+// what changed (save/route.ts).
 
 import { useMemo, useState } from "react";
 import { packWall, wallClassOf, wallSeed, WALL_CLASSES, WALL_THEMES, WALL_TILE, WALL_VARIANTS, type WallTheme } from "@/app/landing/doodleWall";
+import { bakeSheet, shareSheets, sheetBakeInput, SHEET_CLASSES, SHEET_INK, SHEET_SEEDS, SHEET_TILE } from "@/app/landing/doodleSheets";
+import { BOOK_ON_SHEETS, SHEET_IDS, SHEETS, sheetShows, type SheetId } from "@/app/landing/video/sheets";
+import { HERO_VIDEO } from "@/app/landing/video/heroVideo";
 
 type Index = Record<string, Record<string, Array<[string, number, number]>>>;
-type Choices = { wall: string[]; sketchBox: string[] };
+type Choices = { wall: string[]; sketchBox: string[]; sheets: string[] };
 type Mode = keyof Choices;
 
 const ACCENT = "#4a5cff";
@@ -29,26 +34,40 @@ const MODES: Array<{ key: Mode; label: string; note: string }> = [
     label: "Sketch boxes",
     note: "Drawn large in the hero's sketch boxes. Each spread favours its own person's things when any are on; anything on can appear.",
   },
+  {
+    key: "sheets",
+    label: "Loose sheets",
+    note: "The two sheets on the desk in the hero film, in blue pen, shared between them so each is its own drawing. All off leaves plain paper (with its texture).",
+  },
 ];
+const MARKS: Array<[Mode, string, string]> = [
+  ["wall", "W", "On the wall"],
+  ["sketchBox", "S", "In sketch boxes"],
+  ["sheets", "L", "On the loose sheets"],
+];
+const classOf = (full: string) => wallClassOf(full.split("/")[1].replace(/-\d+$/, ""));
+const asSets = (c: Choices) => ({ wall: new Set(c.wall), sketchBox: new Set(c.sketchBox), sheets: new Set(c.sheets ?? []) });
 
 const sorted = (s: Set<string>) => [...s].sort();
 const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
 
 export function DoodlePanel({ index, initial }: { index: Index; initial: Choices }) {
-  const [chosen, setChosen] = useState({ wall: new Set(initial.wall), sketchBox: new Set(initial.sketchBox) });
-  const [saved, setSaved] = useState({ wall: new Set(initial.wall), sketchBox: new Set(initial.sketchBox) });
+  const [chosen, setChosen] = useState(() => asSets(initial));
+  const [saved, setSaved] = useState(() => asSets(initial));
   const [mode, setMode] = useState<Mode>("wall");
   const [style, setStyle] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [onlyOn, setOnlyOn] = useState(false);
   const [preview, setPreview] = useState<{ urls: Record<WallTheme, string>; of: string; counts: number[] } | null>(null);
+  const [sheetPreview, setSheetPreview] = useState<{ url: string; of: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const styles = Object.keys(index);
   const current = chosen[mode];
-  const dirty = !sameSet(chosen.wall, saved.wall) || !sameSet(chosen.sketchBox, saved.sketchBox);
+  const dirty = MODES.some((m) => !sameSet(chosen[m.key], saved[m.key]));
   const wallKey = sorted(chosen.wall).join("|");
+  const sheetKey = sorted(chosen.sheets).join("|");
 
   // The drawings to show: by style, then subject, filtered.
   const sections = useMemo(() => {
@@ -112,6 +131,61 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
     }
   };
 
+  // Both sheets as the build script bakes them: shared out, packed whole
+  // inside the paper, laid into the film.
+  const drawSheets = async () => {
+    const shared = shareSheets(sorted(chosen.sheets), classOf);
+    const out = {} as Record<SheetId, string>;
+    for (const id of SHEET_IDS) {
+      const drawings = shared[id].map((full) => ({ src: `/landing/doodles/${full}.webp`, cls: classOf(full) }));
+      const packed = await packWall({ drawings, classes: SHEET_CLASSES, tile: SHEET_TILE, ink: SHEET_INK, paper: "#ffffff", seed: SHEET_SEEDS[id], wrap: false });
+      out[id] = await bakeSheet(sheetBakeInput(id, packed.url, (p) => p));
+    }
+    return out;
+  };
+
+  const onPreviewSheets = async () => {
+    setBusy("Drawing the sheets...");
+    try {
+      const baked = await drawSheets();
+      // On the film's resting frame (1920 across: half the 4K frame the
+      // sheets are measured in), multiplied and clipped to the book as the
+      // hero does.
+      const load = (src: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+      const frame = await load(HERO_VIDEO.last);
+      const c = document.createElement("canvas");
+      c.width = frame.width;
+      c.height = frame.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(frame, 0, 0);
+      g.globalCompositeOperation = "multiply";
+      const k = frame.width / HERO_VIDEO.width;
+      const rest = BOOK_ON_SHEETS.right.length - 1;
+      for (const id of SHEET_IDS) {
+        const [x, y, w, h] = SHEETS[id].box;
+        const shows = sheetShows(id, rest);
+        g.save();
+        if (shows) {
+          g.beginPath();
+          shows.forEach(([X, Y], i) => (i ? g.lineTo(X * k, Y * k) : g.moveTo(X * k, Y * k)));
+          g.closePath();
+          g.clip();
+        }
+        g.drawImage(await load(baked[id]), x * k, y * k, w * k, h * k);
+        g.restore();
+      }
+      setSheetPreview({ url: c.toDataURL("image/jpeg", 0.9), of: sheetKey });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const onSave = async () => {
     setBusy("Saving...");
     setMessage(null);
@@ -126,17 +200,26 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
           }
         setBusy("Saving...");
       }
+      // So are the sheets.
+      const sheets: Array<{ name: string; image: string }> = [];
+      if (!sameSet(chosen.sheets, saved.sheets)) {
+        setBusy("Drawing the sheets...");
+        const baked = await drawSheets();
+        for (const id of SHEET_IDS) sheets.push({ name: id, image: baked[id] });
+        setBusy("Saving...");
+      }
       const res = await fetch("/dev/doodles/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), walls }),
+        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), walls, sheetImages: sheets }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? res.statusText);
-      setSaved({ wall: new Set(chosen.wall), sketchBox: new Set(chosen.sketchBox) });
+      setSaved(asSets({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets) }));
       setMessage(
-        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes` +
+        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes, ${result.sheets} for the loose sheets` +
           (result.walls ? `, ${result.walls} walls redrawn (${Math.round(result.wallBytes / 1024)} KB)` : "") +
+          (result.sheetImages ? `, both sheets redrawn` : "") +
           ". Reload the app or the landing page to see it; commit and push to put it live."
       );
     } catch (error) {
@@ -178,6 +261,11 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
             Preview wall
           </button>
         )}
+        {mode === "sheets" && (
+          <button className="dp-btn" onClick={onPreviewSheets} disabled={!!busy}>
+            Preview sheets
+          </button>
+        )}
         <button className="dp-btn dp-primary" onClick={onSave} disabled={!!busy || !dirty}>
           Save
         </button>
@@ -207,6 +295,17 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
         </section>
       )}
 
+      {mode === "sheets" && sheetPreview && (
+        <section style={{ padding: "14px 24px 0" }}>
+          <div className="dp-muted" style={{ marginBottom: 6 }}>
+            Preview{sheetPreview.of === sheetKey ? "" : " (out of date - preview again)"}: the film&rsquo;s resting frame, the sheets as Save
+            bakes them.
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={sheetPreview.url} alt="The loose sheets on the film's resting frame" style={{ width: "100%", maxWidth: 1400, borderRadius: 6, border: `1px solid ${LINE}` }} />
+        </section>
+      )}
+
       {sections.map((section) => (
         <section key={section.style} style={{ padding: "18px 24px 0" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
@@ -231,12 +330,11 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
                   <img src={`/landing/doodles/${full}.webp`} alt="" loading="lazy" />
                   <span className="dp-name">{id}</span>
                   <span className="dp-marks">
-                    <span data-on={chosen.wall.has(full)} title="On the wall">
-                      W
-                    </span>
-                    <span data-on={chosen.sketchBox.has(full)} title="In sketch boxes">
-                      S
-                    </span>
+                    {MARKS.map(([key, letter, label]) => (
+                      <span key={key} data-on={chosen[key].has(full)} title={label}>
+                        {letter}
+                      </span>
+                    ))}
                   </span>
                 </button>
               );
@@ -268,7 +366,7 @@ const CSS = `
 .dp-card:hover { opacity: 0.85; }
 .dp-card[data-on="true"]:hover { opacity: 1; }
 .dp-card img { width: 100%; aspect-ratio: 1; object-fit: contain; }
-.dp-name { font-size: 12px; color: ${MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 30px; }
+.dp-name { font-size: 12px; color: ${MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 48px; }
 .dp-marks { position: absolute; right: 6px; bottom: 5px; display: flex; gap: 3px; }
 .dp-marks span { font-size: 10px; font-weight: 700; width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; background: rgba(28,25,23,0.08); color: rgba(28,25,23,0.35); }
 .dp-marks span[data-on="true"] { background: ${ACCENT}; color: #fff; }

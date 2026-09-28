@@ -472,6 +472,14 @@
   pointer-events: none;
 }
 
+/* A loose sheet's drawings, placed on its box in the frame (VideoHero). */
+.videoSheet {
+  position: absolute;
+  display: block;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
 /* Upright phones cannot cover with a wide film and keep the spread whole:
    the film is sized so the spread fills the width (it is 920 of the frame's
    1920 px) and sits below the title, over a blurred, dimmed copy of its

@@ -17,6 +17,7 @@ import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
+import { BOOK_ON_SHEETS, filmFrame, sheetClip, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
 import styles from "./landing.module.css";
 
 /** Seconds the first layout takes to fade onto the resting pages (Andrew,
@@ -29,6 +30,7 @@ export function VideoHero() {
   const hero = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
+  const sheets = useRef<Array<HTMLImageElement | null>>([]);
   const [drawn, setDrawn] = useState(false);
   const [still, setStill] = useState(false);
   /** The clip has reached the frame the drawing is laid on. */
@@ -62,10 +64,24 @@ export function VideoHero() {
     };
     v.addEventListener("ended", begin);
 
+    // The loose sheets' drawings go under the book as it opens over them:
+    // each is clipped to where the book is in the frame on screen.
+    let sheetFrame = 0;
+    const clipSheets = (frame: number) => {
+      if (frame === sheetFrame) return;
+      sheetFrame = frame;
+      SHEET_IDS.forEach((id, i) => {
+        const img = sheets.current[i];
+        if (img) img.style.clipPath = sheetClip(id, frame);
+      });
+    };
+    if (reduce) clipSheets(BOOK_ON_SHEETS.right.length - 1);
+
     let visible = true;
     const tick = () => {
       raf = 0;
       if (!visible || document.hidden) return;
+      clipSheets(v.ended ? BOOK_ON_SHEETS.right.length - 1 : filmFrame(v.currentTime));
       if (!drawing && v.currentTime >= HERO_VIDEO.drawFrom) begin();
       if (drawing && loop) {
         loop.update(now());
@@ -183,6 +199,35 @@ export function VideoHero() {
           className={styles.videoDrawing}
           style={{ opacity: drawn ? 1 : 0, transition: still ? "none" : `opacity ${LAYOUT_FADE}s cubic-bezier(0.33, 0, 0.2, 1)` }}
         />
+        {/* The loose sheets on the desk, drawn on (2026-09-28: "add two
+            unique doodle wall drawings and paper texture to the two loose
+            papers") - baked pictures of each sheet's box, multiplied like the
+            pages, there from the first frame ("dont make it fade in") and
+            clipped to the book as it opens across them. See video/sheets.ts. */}
+        {SHEET_IDS.map((id, i) => {
+          const [x, y, w, h] = SHEETS[id].box;
+          return (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={id}
+              ref={(el) => {
+                sheets.current[i] = el;
+              }}
+              src={sheetPath(id)}
+              alt=""
+              fetchPriority="high"
+              className={styles.videoSheet}
+              style={{
+                left: `${(x / HERO_VIDEO.width) * 100}%`,
+                top: `${(y / HERO_VIDEO.height) * 100}%`,
+                width: `${(w / HERO_VIDEO.width) * 100}%`,
+                height: `${(h / HERO_VIDEO.height) * 100}%`,
+                // The first frame's; the film's own frames take over as it plays.
+                clipPath: sheetClip(id, 0),
+              }}
+            />
+          );
+        })}
       </div>
       <div className={styles.videoScrim} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
