@@ -364,12 +364,20 @@ export function EventLayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [draft]);
 
+  // IN THE MODULE'S OWN PRINT PX, NOT SCREEN PX. This sheet sits inside the
+  // module box, which is laid out at print size and shrunk by the canvas's
+  // zoom transform - so the zoom is applied once, by the browser. It was
+  // multiplied in here as well, which applied it twice: at 28% every preview
+  // landed at 28% of its distance from the module's corner, at 28% of its
+  // size, all of them stacked in the first day at the top. Reported
+  // 2026-09-28. (pointAt and anchorOf DO use the zoom - they convert to and
+  // from the screen, where the transform has already been applied.)
   const dragPreview = dragging
     ? {
-        left: (grid.columnX[dragging.from.day] - originX) * scale,
-        top: (grid.gridTop + Math.min(dragging.from.slot, dragging.toSlot) * grid.rowHeight - originY) * scale,
-        width: grid.dayColumnWidth * scale,
-        height: (Math.abs(dragging.toSlot - dragging.from.slot) + 1) * grid.rowHeight * scale,
+        left: grid.columnX[dragging.from.day] - originX,
+        top: grid.gridTop + Math.min(dragging.from.slot, dragging.toSlot) * grid.rowHeight - originY,
+        width: grid.dayColumnWidth,
+        height: (Math.abs(dragging.toSlot - dragging.from.slot) + 1) * grid.rowHeight,
       }
     : null;
 
@@ -398,8 +406,11 @@ export function EventLayer({
               position: "absolute",
               ...dragPreview,
               background: "rgba(40, 90, 170, 0.18)",
-              border: "1px solid rgba(40, 90, 170, 0.55)",
-              borderRadius: 3,
+              // One SCREEN pixel of border and 3 of radius: the zoom shrinks
+              // everything in here, so they are divided by it to survive it.
+              border: `${1 / scale}px solid rgba(40, 90, 170, 0.55)`,
+              borderRadius: 3 / scale,
+              boxSizing: "border-box",
               pointerEvents: "none",
             }}
           />

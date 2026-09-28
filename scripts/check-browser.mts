@@ -622,7 +622,104 @@ const noReload: Probe = {
   },
 };
 
-const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, noReload, consoleClean];
+// ---------------------------------------------------------------------
+// EVENT DRAG: the live preview sits under the pointer, in the right day.
+//
+// Reported 2026-09-28: dragging to create an event showed its preview "in
+// the wrong place at the wrong size... each day next to each other within
+// the first day of the week at the top". The preview is drawn inside the
+// module, which is laid out at PRINT size and shrunk by the canvas zoom; it
+// also multiplied by the zoom itself, so the zoom applied twice.
+//
+// Why only a browser can see it: every number in the code was right in its
+// own space. The unit tests check hourlyGridGeometry and slotAt, which were
+// correct; what was wrong was which coordinate space the preview's CSS was
+// in, and that only exists once a real transform is applied. My first check
+// of it compared a layer-local number with an on-screen width and passed.
+//
+// So this compares ON-SCREEN RECTANGLES only: for every day column on both
+// pages, press in the middle of that day's drawn tab, drag down, and the
+// preview must contain the pointer and line up with the tab. At two zooms,
+// because the error scaled with the zoom - fit-width, and zoomed in twice.
+//
+// Sabotaged by putting `* scale` back on the preview's four numbers: all
+// seven columns miss, as 35x9 boxes at the top-left of each page - the
+// report, exactly.
+// ---------------------------------------------------------------------
+const eventDrag: Probe = {
+  name: "event drag",
+  ratios: [1, 2],
+  run: async (page, { base, journalId, dpr }) => {
+    await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(2500);
+
+    const measure = async () =>
+      (await page.evaluate(`(async () => {
+        const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+        const out = [];
+        for (const layer of document.querySelectorAll("[data-event-layer]")) {
+          const L = layer.getBoundingClientRect();
+          layer.setPointerCapture = () => {};
+          layer.releasePointerCapture = () => {};
+          const send = (type, x, y) => layer.dispatchEvent(new PointerEvent(type, {
+            clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1,
+            button: 0, buttons: type === "pointerup" ? 0 : 1, isPrimary: true }));
+          // The drawn day tabs: the wide rects on the module's first row.
+          const rects = [...layer.parentElement.querySelectorAll("svg rect")];
+          const top = Math.min(...rects.map((r) => +r.getAttribute("y")));
+          const tabs = rects
+            .filter((r) => Math.abs(+r.getAttribute("y") - top) < 0.5 && +r.getAttribute("width") > 200)
+            .map((r) => r.getBoundingClientRect())
+            .sort((a, b) => a.left - b.left);
+          for (const tab of tabs) {
+            const x = tab.left + tab.width / 2;
+            const y0 = Math.min(L.top + L.height * 0.35, innerHeight - 60);
+            const y1 = y0 + 20;
+            if (y0 < 0 || y1 > innerHeight) continue;
+            send("pointerdown", x, y0); await tick(120);
+            send("pointermove", x, y1); await tick(120);
+            const p = layer.querySelector("div");
+            const P = p ? p.getBoundingClientRect() : null;
+            out.push(P ? {
+              under: P.left <= x && x <= P.right && P.top <= y0 + 1 && y1 - 1 <= P.bottom,
+              aligned: Math.abs(P.left - tab.left) < 2 && Math.abs(P.width - tab.width) < 2,
+              where: Math.round(P.left) + "," + Math.round(P.top) + " " + Math.round(P.width) + "x" + Math.round(P.height),
+              tab: Math.round(tab.left) + " w" + Math.round(tab.width),
+            } : { under: false, aligned: false, where: "no preview", tab: "" });
+            layer.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 }));
+            await tick(80);
+          }
+        }
+        return out;
+      })()`)) as Array<{ under: boolean; aligned: boolean; where: string; tab: string }>;
+
+    for (const zoom of ["fit width", "zoomed in"]) {
+      if (zoom === "zoomed in") {
+        const zoomIn = page.locator('button[title="Zoom in"]');
+        await zoomIn.click();
+        await zoomIn.click();
+        await page.waitForTimeout(800);
+      }
+      const columns = await measure();
+      if (columns.length < 3) {
+        fail("event drag", `${dpr}x ${zoom}: found ${columns.length} day columns to drag in, expected at least 3`);
+        continue;
+      }
+      const bad = columns.filter((c) => !c.under || !c.aligned);
+      if (bad.length > 0) {
+        fail(
+          "event drag",
+          `${dpr}x ${zoom}: ${bad.length}/${columns.length} previews not under the pointer in their own day - ` +
+            bad.slice(0, 3).map((c) => `${c.where} (tab ${c.tab})`).join("; ")
+        );
+      } else {
+        note("event drag", `${dpr}x ${zoom}: ${columns.length}/${columns.length} previews under the pointer, aligned with their day`);
+      }
+    }
+  },
+};
+
+const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, noReload, eventDrag, consoleClean];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;
 if (PROBES.length === 0) {
   console.error(`No probe matches --only ${ONLY}. Try: ${ALL_PROBES.map((p) => p.name).join(", ")}`);
