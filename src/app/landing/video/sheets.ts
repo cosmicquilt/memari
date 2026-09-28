@@ -13,16 +13,17 @@
 // picture is clipped to it frame by frame (BOOK_ON_SHEETS, sheetClip).
 //
 // Corners are the sheet's own top-left, top-right, bottom-right, bottom-left
-// - its drawings are upright on the sheet, so they lean as it does. Measured
-// on 40px grids over the 1920 stills (hence even numbers): the left sheet from
-// the FIRST frame, before the book covers it; the right from the last, its
-// bottom corner (at the mug) and left corner (under the book) where its
-// visible edges meet. The masks are the sheet less the cup (by its red: the
-// paper beside it reflects some, but nothing like the cup's own) and the mug
-// (traced on a 10px grid: it is as white as the paper). They follow the
-// objects exactly - taken in by a margin, they left a strip of bare paper
-// that read as a bad cut-out ("edge detection not good"). (The tool that
-// made them: handoff/veo/tools/sheet_masks.py.)
+// - its drawings are upright on the sheet, so they lean as it does. The left
+// sheet measured on a 40px grid over the FIRST frame, before the book covers
+// it; the right sheet's right and bottom edges fitted to where its paper
+// meets the wood in the last 4K frame (eyeballed, the right edge sat 24px
+// inside the paper and its texture stopped short). The masks, made in the 4K
+// frame, are the sheet less the cup - the convex outline of its red, ended at
+// its base's rim line - and the mug, traced from the image: its ceramic is a
+// little whiter and brighter than the paper. They follow the objects exactly;
+// every margin or eyeballed outline showed as a strip of bare paper or ink on
+// the object, and Andrew circled each one. (The tool that made them:
+// handoff/veo/tools/sheet_masks.py.)
 //
 // The baked picture of each (public/landing/sheets/<id>.webp) covers exactly
 // `box`, and is multiplied onto the film there - white leaves it alone.
@@ -46,16 +47,16 @@ export const SHEETS: Record<SheetId, Sheet> = {
       [1326, 1986],
       [404, 2162],
     ],
-    box: [266, 1016, 1068, 1144],
+    box: [270, 1020, 1060, 1140],
   },
   right: {
     corners: [
       [3026, 680],
-      [3730, 966],
-      [3318, 1700],
-      [2614, 1414],
+      [3736.8, 968.8],
+      [3372.2, 1748.7],
+      [2621.9, 1399.9],
     ],
-    box: [2606, 672, 1132, 1036],
+    box: [2617, 676, 1124, 1077],
   },
 };
 
