@@ -292,6 +292,124 @@ async function main() {
       (await weekly()).calendars.some((c) => c.id === calendar.id && c.visible),
       "the owner's calendar reaches the editor, visible"
     );
+
+    // --- A NEW YORK BOOK PRINTS NEW YORK TIME ----------------------------
+    //
+    // Everything above runs in a book with no zone, which draws in UTC - where
+    // an instant and its wall clock read the same, and where the bug this
+    // section is about could not be seen. A 9am New York meeting printed in
+    // the 1pm row until 2026-09-28.
+    //
+    // Read off `renderContext.events`: the placed events every mark on the
+    // page is drawn from, so a time here is the time the page shows.
+    {
+      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: "America/New_York" } });
+      const { createEventFor } = await import("../src/app/planner/calendarStore.js");
+
+      // The first week of this book is late December: New York is on EST,
+      // UTC-5. So 9am New York is 14:00Z.
+      const imported = await prisma.calendarEvent.create({
+        data: {
+          ownerId: guest.ownerId,
+          calendarId: calendar.id,
+          title: "Imported 9am New York",
+          startsAt: new Date(`${timedDay}T14:00:00.000Z`),
+          endsAt: new Date(`${timedDay}T15:00:00.000Z`),
+          timeZone: "America/New_York",
+          externalId: "ny-nine@example.com",
+        },
+      });
+      // 9pm New York is 02:00Z THE NEXT DAY - which is the case that used to
+      // move columns as well as rows.
+      const late = await prisma.calendarEvent.create({
+        data: {
+          ownerId: guest.ownerId,
+          calendarId: calendar.id,
+          title: "Imported 9pm New York",
+          startsAt: new Date(new Date(`${timedDay}T02:00:00.000Z`).getTime() + 86_400_000),
+          endsAt: new Date(new Date(`${timedDay}T03:00:00.000Z`).getTime() + 86_400_000),
+          timeZone: "America/New_York",
+          externalId: "ny-late@example.com",
+        },
+      });
+      // What a person TYPES: a date and two clock readings, which the server
+      // turns into an instant in the book's zone.
+      const typed = await createEventFor(guest.ownerId, guest.journalId, {
+        title: "Typed at 10:30",
+        date: timedDay,
+        start: "10:30",
+        end: "11:15",
+        allDay: false,
+        rrule: null,
+      });
+      // A FLOATING time - what the migration made of everything typed before
+      // books had zones. It must NOT be converted.
+      const floating = await prisma.calendarEvent.create({
+        data: {
+          ownerId: guest.ownerId,
+          calendarId: calendar.id,
+          title: "Floating 8am",
+          startsAt: new Date(`${timedDay}T08:00:00.000Z`),
+          endsAt: new Date(`${timedDay}T08:30:00.000Z`),
+          timeZone: "floating",
+        },
+      });
+
+      const ny = await weekly();
+      const shown = (id: string) => {
+        for (const page of ny.pages) {
+          const hit = (page.renderContext?.events ?? []).find((e) => e.id === id);
+          if (hit) return `${page.renderContext?.columnDates?.[hit.day]} ${hit.startTime}-${hit.endTime}`;
+        }
+        return "not drawn";
+      };
+
+      check(
+        shown(imported.id) === `${timedDay} 09:00-10:00`,
+        `a 9am New York event prints at 09:00 in a New York book (${shown(imported.id)})`
+      );
+      check(
+        shown(late.id) === `${timedDay} 21:00-22:00`,
+        `a 9pm New York event stays on its own day at 21:00 (${shown(late.id)})`
+      );
+      check(
+        typed.startsAt.toISOString() === `${timedDay}T15:30:00.000Z`,
+        `"10:30" typed in a New York book is stored as the instant 15:30Z (${typed.startsAt.toISOString()})`
+      );
+      check(typed.timeZone === "America/New_York", `and records the zone it was typed in (${typed.timeZone})`);
+      check(
+        shown(typed.id) === `${timedDay} 10:30-11:15`,
+        `and prints where it was typed (${shown(typed.id)})`
+      );
+      check(
+        shown(floating.id) === `${timedDay} 08:00-08:30`,
+        `a floating 8am is NOT converted - it prints at 08:00 (${shown(floating.id)})`
+      );
+
+      // THE SAME BOOK IN LONDON. Nothing stored changes; every zoned event
+      // moves to London's clock and the floating one stays put.
+      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: "Europe/London" } });
+      const london = await weekly();
+      const inLondon = (id: string) => {
+        for (const page of london.pages) {
+          const hit = (page.renderContext?.events ?? []).find((e) => e.id === id);
+          if (hit) return `${page.renderContext?.columnDates?.[hit.day]} ${hit.startTime}`;
+        }
+        return "not drawn";
+      };
+      check(
+        inLondon(imported.id) === `${timedDay} 14:00`,
+        `the same meeting prints at 14:00 once the book is set to London (${inLondon(imported.id)})`
+      );
+      check(
+        inLondon(floating.id) === `${timedDay} 08:00`,
+        `while the floating 8am stays at 08:00 (${inLondon(floating.id)})`
+      );
+      check(
+        ny.pageSettings.timeZone === "America/New_York",
+        `the editor is told the book's zone, for the Time zone field (${ny.pageSettings.timeZone})`
+      );
+    }
   } finally {
     await prisma.calendar.deleteMany({ where: { ownerId: guest.ownerId } });
     await guest.remove();

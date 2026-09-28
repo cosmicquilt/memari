@@ -26,6 +26,7 @@ import type { PageGrid } from "./grid";
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
 import { withDates, withoutDates } from "./moduleRegistry";
 import { columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
+import { DEFAULT_ZONE } from "./timeZone";
 import {
   renderModuleInstance,
   type ModuleInstanceForRender,
@@ -60,6 +61,9 @@ export type PageRenderContext = {
  *  pages and instances fits, and so does a test's plain object. */
 export type RenderContextBook = {
   dated?: boolean | null;
+  /** The zone the book's clock reads - see Planner.timeZone. Null draws in
+   *  UTC, which is how every book drew before books had zones. */
+  timeZone?: string | null;
   startDate?: Date | null;
   endDate?: Date | null;
   theme?: unknown;
@@ -121,7 +125,14 @@ export function renderContextForPage(
   // columnDates is the same rule the day tab's own number comes from, so an
   // event cannot land under a date the tab does not show.
   const grid = dated && occurrence && dayLabels ? columnDates(page.level, occurrence.start, dayLabels) : null;
-  const placed = grid && events ? eventsForDays(events, grid.map((date) => ({ date }))) : null;
+  // In the BOOK's zone: an event is an instant, and the page prints the
+  // wall-clock time here. This one argument is the whole of the fix for a
+  // 9am New York meeting printing in the 1pm row - every drawing of a page
+  // comes through this call, so none of them can disagree about the clock.
+  const placed =
+    grid && events
+      ? eventsForDays(events, grid.map((date) => ({ date })), book.timeZone ?? DEFAULT_ZONE)
+      : null;
 
   return {
     dated,

@@ -67,6 +67,15 @@ model Planner {
   // somebody built.
   startDate  DateTime?
   endDate    DateTime?
+  // The zone this book's clock reads (an IANA name). Every event is an
+  // INSTANT, and a page draws it at its wall-clock time here - a book, not a
+  // person, because a planner is printed for a place: a travel journal for a
+  // term in London reads London time wherever its owner lives. Andrew,
+  // 2026-09-28: "per book".
+  // Null for a book made before zones existed; the editor gives it the
+  // browser's zone the next time it is opened, and until then it draws in
+  // UTC, which is exactly how it drew before.
+  timeZone   String?
   isTemplate Boolean   @default(false)
   theme      Json?
   pages      Page[]
@@ -329,6 +338,9 @@ model CalendarEvent {
   /// UTC instants. `timeZone` is the zone the event was AUTHORED in, kept
   /// because a weekly recurrence has to stay at 9am across a DST boundary -
   /// storing only the instant silently shifts a whole term.
+  /// "floating" is iCalendar's time with no zone - "9am wherever you are" -
+  /// and is drawn at that wall time in every book. Typed events from before
+  /// books had zones were migrated to it, because that is what they were.
   startsAt DateTime
   endsAt   DateTime
   timeZone String   @default("UTC")

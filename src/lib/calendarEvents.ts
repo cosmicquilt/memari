@@ -10,8 +10,16 @@
 // machine it runs on. The same function answers for the editor's canvas, the
 // timeline previews and the printed book, which is the one-description rule
 // this project keeps coming back to.
+//
+// TIME ZONES. An event is an INSTANT and a book has a ZONE; this draws each
+// instant at its wall-clock time in the book's zone. It did not, at first: it
+// read getUTCHours straight off the stored instant, so a 9am New York meeting
+// printed in the 1pm row and a 9pm one moved to the next day's column. Found
+// by running a New York feed through it, 2026-09-28 - every test until then
+// used UTC times, where the two readings agree.
 
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
+import { DEFAULT_ZONE, FLOATING, isTimeZone, toWallTime, wallTimeToUtc } from "./timeZone";
 
 /** The columns of one page's hourly grid, as real dates. */
 export type GridDay = {
@@ -30,6 +38,10 @@ export type StoredEvent = {
   endsAt: Date;
   allDay: boolean;
   rrule: string | null;
+  /** The zone it was authored in: an IANA name, "UTC", or FLOATING for a
+   *  wall time with no zone. Absent is read as "UTC", which is what every
+   *  stored instant with no zone recorded really is. */
+  timeZone?: string | null;
   deletedAt?: Date | null;
   calendar?: { colour?: string | null; source?: string | null } | null;
 };
@@ -123,49 +135,114 @@ function recursOn(event: StoredEvent, dayStart: number): boolean {
  * rather than split across two columns: a column is a day, and half an event
  * appearing at the top of the next one reads as a second event.
  */
-export function eventsForDays(events: StoredEvent[], days: GridDay[]): HourlyGridEvent[] {
+export function eventsForDays(
+  events: StoredEvent[],
+  days: GridDay[],
+  /** The BOOK's zone - what the page's clock reads. See the header. */
+  bookZone: string = DEFAULT_ZONE
+): HourlyGridEvent[] {
   const out: HourlyGridEvent[] = [];
+  const zone = isTimeZone(bookZone) ? bookZone : DEFAULT_ZONE;
 
   days.forEach((day, index) => {
     if (!day.date) return;
     const dayStart = utcMidnight(day.date);
-    const dayEnd = dayStart + DAY_MS;
 
     for (const event of events) {
       if (event.deletedAt) continue;
 
-      let start: Date;
-      let end: Date;
-      if (event.rrule) {
-        if (!recursOn(event, dayStart)) continue;
-        // An instance keeps the series' time of day and its length.
-        const offsetIntoDay = event.startsAt.getTime() - utcMidnight(event.startsAt);
-        const length = event.endsAt.getTime() - event.startsAt.getTime();
-        start = new Date(dayStart + offsetIntoDay);
-        end = new Date(start.getTime() + length);
-      } else {
-        const startsOnThisDay = event.startsAt.getTime() >= dayStart && event.startsAt.getTime() < dayEnd;
-        // An ALL-DAY event is a span, not an instant: it belongs to every day
-        // it covers, so a three-day trip bands all three.
-        const coversThisDay =
-          event.allDay && event.startsAt.getTime() < dayEnd && event.endsAt.getTime() > dayStart;
-        if (!startsOnThisDay && !coversThisDay) continue;
-        start = event.startsAt;
-        end = event.endsAt;
+      for (const [start, end] of occurrencesOn(event, dayStart, zone)) {
+        out.push({
+          id: event.id,
+          day: index,
+          startTime: event.allDay ? "00:00" : hhmm(start),
+          endTime: event.allDay ? "23:59" : hhmm(end),
+          label: event.title,
+          source: event.calendar?.source ? "google-calendar" : "manual",
+          ...(event.allDay ? { allDay: true } : {}),
+          ...(event.calendar?.colour ? { colour: event.calendar.colour } : {}),
+        });
       }
-
-      out.push({
-        id: event.id,
-        day: index,
-        startTime: event.allDay ? "00:00" : hhmm(start),
-        endTime: event.allDay ? "23:59" : hhmm(end),
-        label: event.title,
-        source: event.calendar?.source ? "google-calendar" : "manual",
-        ...(event.allDay ? { allDay: true } : {}),
-        ...(event.calendar?.colour ? { colour: event.calendar.colour } : {}),
-      });
     }
   });
 
   return out;
+}
+
+/** Candidate days either side of a column, for a series authored in another
+ *  zone: an instance's date can differ by up to a day between two zones -
+ *  two, between the extremes of UTC-12 and UTC+14. */
+const NEIGHBOURS = [-2, -1, 0, 1, 2];
+
+/**
+ * The occurrences of `event` that fall on the column starting `dayStart`, as
+ * [start, end] in the BOOK's wall clock (encoded as UTC - see toWallTime).
+ * Usually none or one; a series cannot land twice in a day because its rules
+ * are daily at the finest.
+ *
+ * THREE KINDS, three rules:
+ *
+ *   ALL-DAY - a DATE, not an instant. The 26th is the 26th in every zone, so
+ *   nothing is converted. A span bands every day it covers.
+ *
+ *   FLOATING - a wall time with no zone. Drawn at that wall time in every
+ *   book, exactly as stored.
+ *
+ *   ZONED - an instant. Converted to the book's wall clock, and placed on the
+ *   day it STARTS there: a column is a day, and half an event at the top of
+ *   the next column reads as a second event.
+ */
+function occurrencesOn(event: StoredEvent, dayStart: number, bookZone: string): Array<[Date, Date]> {
+  const dayEnd = dayStart + DAY_MS;
+
+  if (event.allDay || event.timeZone === FLOATING) {
+    // Both are already in the frame the page reads, so the rules are the ones
+    // this always used.
+    if (event.rrule) {
+      if (!recursOn(event, dayStart)) return [];
+      const offsetIntoDay = event.startsAt.getTime() - utcMidnight(event.startsAt);
+      const length = event.endsAt.getTime() - event.startsAt.getTime();
+      const start = new Date(dayStart + offsetIntoDay);
+      return [[start, new Date(start.getTime() + length)]];
+    }
+    const startsOnThisDay = event.startsAt.getTime() >= dayStart && event.startsAt.getTime() < dayEnd;
+    // An ALL-DAY event is a span, not an instant: it belongs to every day it
+    // covers, so a three-day trip bands all three.
+    const coversThisDay = event.allDay && event.startsAt.getTime() < dayEnd && event.endsAt.getTime() > dayStart;
+    return startsOnThisDay || coversThisDay ? [[event.startsAt, event.endsAt]] : [];
+  }
+
+  if (!event.rrule) {
+    const start = toWallTime(event.startsAt, bookZone);
+    if (utcMidnight(start) !== dayStart) return [];
+    return [[start, toWallTime(event.endsAt, bookZone)]];
+  }
+
+  // A SERIES IS EXPANDED IN THE ZONE IT WAS WRITTEN IN, then each instance is
+  // converted. "Every Monday at 9am New York" stays at 9am in New York across
+  // daylight saving - and so moves by an hour, for a couple of weeks a year,
+  // in a London book, because the two countries change their clocks on
+  // different dates. Expanding it in the book's zone instead would pin it to
+  // 2pm in London and put it an hour wrong in New York for those weeks, which
+  // is the zone it actually happens in.
+  const ruleZone = isTimeZone(event.timeZone) ? event.timeZone : DEFAULT_ZONE;
+  const inRuleZone: StoredEvent = {
+    ...event,
+    startsAt: toWallTime(event.startsAt, ruleZone),
+    endsAt: toWallTime(event.endsAt, ruleZone),
+  };
+  const offsetIntoDay = inRuleZone.startsAt.getTime() - utcMidnight(inRuleZone.startsAt);
+  const length = event.endsAt.getTime() - event.startsAt.getTime();
+
+  const found: Array<[Date, Date]> = [];
+  for (const shift of NEIGHBOURS) {
+    const ruleDay = dayStart + shift * DAY_MS;
+    if (!recursOn(inRuleZone, ruleDay)) continue;
+    const instant = wallTimeToUtc(ruleDay + offsetIntoDay, ruleZone);
+    if (instant === null) continue;
+    const start = toWallTime(new Date(instant), bookZone);
+    if (utcMidnight(start) !== dayStart) continue;
+    found.push([start, toWallTime(new Date(instant + length), bookZone)]);
+  }
+  return found;
 }

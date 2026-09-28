@@ -7,6 +7,7 @@
 // then call in. It lives apart from them so a script can exercise it against
 // a throwaway planner without a session - see scripts/check-journals.mts.
 
+import { isTimeZone } from "@/lib/timeZone";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { PageLevel } from "@/generated/prisma/enums";
@@ -297,6 +298,10 @@ export type NewJournal = {
   dated: boolean;
   weekStartDay: number;
   font: FontChoice;
+  /** The zone this book's clock reads - the browser's, when made from the
+   *  start dialog. Null when the caller does not know one (a script); the
+   *  editor fills it in on the first open. */
+  timeZone: string | null;
 };
 
 export const JOURNAL_TITLE_MAX = 80;
@@ -328,6 +333,10 @@ export function validateNewJournal(input: unknown): NewJournal {
     dated: raw.dated !== false,
     weekStartDay,
     font,
+    // A name the platform does not know is dropped rather than refused: it
+    // came from a browser's own Intl, so an unknown one means an odd browser,
+    // not a bad request, and the editor will offer the zone again on open.
+    timeZone: isTimeZone(raw.timeZone) ? raw.timeZone : null,
   };
 }
 
@@ -347,6 +356,7 @@ export async function createBookFor(ownerId: string, input: NewJournal): Promise
       dated: input.dated,
       startDate: term?.start ?? null,
       endDate: term?.end ?? null,
+      timeZone: input.timeZone,
       theme: theme as Prisma.InputJsonValue,
     },
     include: WITH_PAGES,

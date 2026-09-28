@@ -145,6 +145,150 @@ for (const rule of ["FREQ=MONTHLY;BYMONTHDAY=22", "FREQ=YEARLY", "FREQ=HOURLY", 
   check(own.source === "manual", `a typed event should be manual, got ${own.source}`);
 }
 
+// ===========================================================================
+// TIME ZONES
+//
+// An event is an INSTANT; a book has a ZONE; the page draws the wall-clock
+// time in the book's zone. Everything above is in UTC, where the instant and
+// the wall clock read the same - which is exactly why none of it noticed that
+// a 9am New York meeting was printing in the 1pm row.
+// ===========================================================================
+
+/** Sun 27 Sep - Sat 3 Oct 2026, and any other week by its Sunday. */
+const weekFrom = (y: number, m: number, d: number): GridDay[] =>
+  Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.UTC(y, m - 1, d + i)) }));
+const LATE_SEP = weekFrom(2026, 9, 27);
+const placed = (events: StoredEvent[], days: GridDay[], zone: string) =>
+  eventsForDays(events, days, zone).map(
+    (e) => `${days[e.day].date!.toISOString().slice(0, 10)} ${e.startTime}-${e.endTime}`
+  );
+
+// --- THE BUG: a New York meeting in a New York book -----------------------
+{
+  // 9am New York on Mon 28 Sep is 13:00Z (EDT, UTC-4).
+  const nine = event({
+    startsAt: at("2026-09-28T13:00:00.000"),
+    endsAt: at("2026-09-28T14:00:00.000"),
+    timeZone: "America/New_York",
+  });
+  check(
+    placed([nine], LATE_SEP, "America/New_York").join() === "2026-09-28 09:00-10:00",
+    `9am New York should print at 09:00 on the 28th; got ${placed([nine], LATE_SEP, "America/New_York")}`
+  );
+
+  // 9pm New York is 01:00Z THE NEXT DAY. Read in UTC it moved columns.
+  const evening = event({
+    startsAt: at("2026-09-29T01:00:00.000"),
+    endsAt: at("2026-09-29T02:00:00.000"),
+    timeZone: "America/New_York",
+  });
+  check(
+    placed([evening], LATE_SEP, "America/New_York").join() === "2026-09-28 21:00-22:00",
+    `9pm New York should stay on the 28th at 21:00; got ${placed([evening], LATE_SEP, "America/New_York")}`
+  );
+
+  // THE SAME INSTANT IN A LONDON BOOK is 2pm - London is BST (UTC+1) in late
+  // September. An instant is an instant; the book decides the clock.
+  check(
+    placed([nine], LATE_SEP, "Europe/London").join() === "2026-09-28 14:00-15:00",
+    `the same meeting in a London book should be 14:00; got ${placed([nine], LATE_SEP, "Europe/London")}`
+  );
+}
+
+// --- FLOATING TIMES ARE NOT CONVERTED -------------------------------------
+//
+// "9am wherever you are" - an imported event with no zone, and everything
+// typed before books had zones. Converting it from UTC would print it at 5am
+// in New York.
+{
+  const floating = event({
+    startsAt: at("2026-09-28T09:00:00.000"),
+    endsAt: at("2026-09-28T10:00:00.000"),
+    timeZone: "floating",
+  });
+  for (const zone of ["America/New_York", "Europe/London", "Asia/Tokyo"]) {
+    check(
+      placed([floating], LATE_SEP, zone).join() === "2026-09-28 09:00-10:00",
+      `a floating 9am should be 9am in ${zone}; got ${placed([floating], LATE_SEP, zone)}`
+    );
+  }
+}
+
+// --- ALL-DAY IS A DATE, NOT AN INSTANT ------------------------------------
+{
+  // Stored as UTC midnight of its date. Converted to Tokyo (UTC+9) it would
+  // still be the 26th; converted to New York (UTC-4/5) it would become the
+  // 25th - which is exactly the mistake an all-day event must not make.
+  const thanksgiving = event({
+    allDay: true,
+    startsAt: at("2026-11-26T00:00:00.000"),
+    endsAt: at("2026-11-27T00:00:00.000"),
+    timeZone: "UTC",
+  });
+  const nov = weekFrom(2026, 11, 22);
+  for (const zone of ["America/Los_Angeles", "America/New_York", "Asia/Tokyo"]) {
+    check(
+      eventsForDays([thanksgiving], nov, zone).map((e) => e.day).join() === "4",
+      `Thanksgiving is the 26th in ${zone} too; got column ${eventsForDays([thanksgiving], nov, zone).map((e) => e.day)}`
+    );
+  }
+}
+
+// --- A SERIES HOLDS ITS WALL TIME ACROSS DAYLIGHT SAVING ------------------
+//
+// "Every Monday at 9am New York", started in September (EDT). The clocks go
+// back on 1 Nov; after that 9am is 14:00Z, not 13:00Z. Expanding the rule on
+// the stored UTC instant keeps 13:00Z and prints it at 8am all winter.
+{
+  const standup = event({
+    startsAt: at("2026-09-07T13:00:00.000"),
+    endsAt: at("2026-09-07T13:30:00.000"),
+    rrule: "FREQ=WEEKLY;BYDAY=MO",
+    timeZone: "America/New_York",
+  });
+  const before = placed([standup], weekFrom(2026, 10, 25), "America/New_York");
+  const after = placed([standup], weekFrom(2026, 11, 1), "America/New_York");
+  check(before.join() === "2026-10-26 09:00-09:30", `26 Oct (EDT) should be 09:00; got ${before}`);
+  check(after.join() === "2026-11-02 09:00-09:30", `2 Nov (EST) should STILL be 09:00; got ${after}`);
+
+  // AND IN A LONDON BOOK it moves by an hour for one week, because the UK
+  // changes its clocks on 25 Oct and the US on 1 Nov. That is correct - the
+  // meeting happens in New York, at 9am New York - and it is the case that
+  // proves the series is expanded in ITS zone rather than the book's.
+  const london = (y: number, m: number, d: number) => placed([standup], weekFrom(y, m, d), "Europe/London").join();
+  check(london(2026, 10, 18) === "2026-10-19 14:00-14:30", `19 Oct in London (both on summer time) should be 14:00; got ${london(2026, 10, 18)}`);
+  check(london(2026, 10, 25) === "2026-10-26 13:00-13:30", `26 Oct in London (UK back, US not yet) should be 13:00; got ${london(2026, 10, 25)}`);
+  check(london(2026, 11, 1) === "2026-11-02 14:00-14:30", `2 Nov in London (both back) should be 14:00; got ${london(2026, 11, 1)}`);
+}
+
+// --- A SERIES WHOSE INSTANCES LAND ON A DIFFERENT DATE --------------------
+//
+// Mondays at 9pm in Honolulu (UTC-10) are Tuesdays at 9pm in Kiritimati
+// (UTC+14): a whole day apart. A placement that only looked for the rule on
+// the column's own date would never find it.
+{
+  const late = event({
+    startsAt: at("2026-09-08T07:00:00.000"), // Mon 7 Sep, 21:00 Honolulu
+    endsAt: at("2026-09-08T08:00:00.000"),
+    rrule: "FREQ=WEEKLY;BYDAY=MO",
+    timeZone: "Pacific/Honolulu",
+  });
+  check(
+    placed([late], LATE_SEP, "Pacific/Kiritimati").join() === "2026-09-29 21:00-22:00",
+    `Monday 9pm Honolulu is Tuesday 9pm in Kiritimati; got ${placed([late], LATE_SEP, "Pacific/Kiritimati")}`
+  );
+  check(
+    placed([late], LATE_SEP, "Pacific/Honolulu").join() === "2026-09-28 21:00-22:00",
+    `and Monday 9pm in its own zone; got ${placed([late], LATE_SEP, "Pacific/Honolulu")}`
+  );
+}
+
+// --- AN UNKNOWN BOOK ZONE STILL DRAWS -------------------------------------
+check(
+  placed([event()], WEEK, "Not/AZone").join() === "2026-09-22 09:00-10:00",
+  `an unknown book zone should fall back to UTC rather than throw; got ${placed([event()], WEEK, "Not/AZone")}`
+);
+
 if (failures > 0) {
   console.error(`\nCalendar events: ${failures} problem(s).`);
   process.exit(1);

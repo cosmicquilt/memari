@@ -34,6 +34,7 @@ import { createPortal } from "react-dom";
 import {
   hourlyGridGeometry,
   type HourlyGridCoreConfig,
+  type HourlyGridEvent,
 } from "@/lib/modules/hourlyGridCore";
 import {
   boxAt,
@@ -100,6 +101,7 @@ export function EventLayer({
   scale,
   columnDates,
   events,
+  placed,
   calendars,
 }: {
   /** The marks this module drew. The hit areas are read from them. */
@@ -116,8 +118,13 @@ export function EventLayer({
   scale: number;
   /** Which day each column is, "YYYY-MM-DD", or null for a dateless one. */
   columnDates: Array<string | null>;
-  /** The owner's stored rows, for filling the popup when one is clicked. */
+  /** The owner's stored rows, for the fields a drawing does not carry - the
+   *  repeat rule, the calendar, where it came from. */
   events: SerialisedEvent[];
+  /** THIS PAGE'S EVENTS AS DRAWN - day, start and end already in the book's
+   *  zone, by the one function that placed them. The popup reads its times
+   *  here and nowhere else. */
+  placed: HourlyGridEvent[];
   /** The owner's calendars. One is the ordinary case and the popup does not
    *  ask; an imported calendar makes it a choice. */
   calendars: LoadedCalendar[];
@@ -167,19 +174,25 @@ export function EventLayer({
       // THE BAND IS ONE BOX FOR A WHOLE DAY however many all-day things are
       // in it, and it labels the first with "+N" - see ALL_DAY_BAND_HEIGHT_PT.
       // So a click on it edits that first one, which is the one it names.
-      const id =
-        hit.eventId ??
-        events.find((e) => e.allDay && e.startsAt.slice(0, 10) === columnDates[hit.day])?.id ??
-        null;
-      const row = id ? byId.get(id) : undefined;
+      //
+      // WHAT WAS DRAWN, not the stored row, says what the popup shows. The
+      // placer already worked out this column's instance in the book's zone -
+      // its day, its start, its end - and reading the row's startsAt instead
+      // gave the UTC clock: a 9am New York meeting opened as "13:00". It also
+      // missed the second and third days of a multi-day all-day event, whose
+      // stored start is only the first.
+      const drawn = hit.eventId
+        ? placed.find((e) => e.id === hit.eventId && e.day === hit.day)
+        : placed.find((e) => e.allDay && e.day === hit.day);
+      const row = drawn?.id ? byId.get(drawn.id) : undefined;
       const date = columnDates[hit.day];
-      if (!row || !date) return;
+      if (!drawn || !row || !date) return;
       setDraft({
         id: row.id,
         title: row.title,
         date,
-        start: row.startsAt.slice(11, 16),
-        end: row.endsAt.slice(11, 16),
+        start: drawn.startTime,
+        end: drawn.endTime,
         allDay: row.allDay,
         rrule: row.rrule,
         calendarId: row.calendarId,
@@ -187,7 +200,7 @@ export function EventLayer({
         anchor: anchorOf(hit),
       });
     },
-    [anchorOf, byId, columnDates, events]
+    [anchorOf, byId, columnDates, placed]
   );
 
   const onPointerDown = useCallback(
@@ -272,17 +285,20 @@ export function EventLayer({
     if (!draft || saving) return;
     setSaving(true);
     try {
-      // ALL-DAY IS A WHOLE DAY, not 00:00-23:59 typed by hand: the band draws
-      // from the flag, and the instants are what a future sync sends.
+      // WALL-CLOCK TIMES, sent as what they are. This used to glue a Z on -
+      // "2026-09-28T09:00:00.000Z" - which is an instant in UTC nobody meant.
+      // The server knows the book's zone and turns these into an instant
+      // there, in one place. See EventInput.
       const input = {
         title: draft.title,
-        startsAt: draft.allDay ? `${draft.date}T00:00:00.000Z` : `${draft.date}T${draft.start}:00.000Z`,
-        endsAt: draft.allDay ? `${draft.date}T23:59:00.000Z` : `${draft.date}T${draft.end}:00.000Z`,
+        date: draft.date,
+        start: draft.start,
+        end: draft.end,
         allDay: draft.allDay,
         rrule: draft.rrule,
         calendarId: draft.calendarId,
       };
-      if (draft.id) await updateCalendarEvent(draft.id, input);
+      if (draft.id) await updateCalendarEvent(journalId, draft.id, input);
       else await createCalendarEvent(journalId, input);
       setDraft(null);
       // REBUILT, not just re-rendered. An event is DRAWN CONTENT, and the

@@ -15,7 +15,14 @@
 // checks a page that looks right.
 //
 // Pure: no network, no clock, no machine time zone. `fetchIcs` in
-// icsFetch.ts does the network half, and the store writes the rows.
+// icsFetch.ts does the network half, and the store writes the rows. The zone
+// maths is in timeZone.ts, shared with the page that draws what this reads.
+
+import { FLOATING, wallTimeToUtc } from "./timeZone";
+
+// Re-exported: the test pins it, and it is the reader's concern as much as
+// anyone's - an unknown zone is what makes this skip an event.
+export { zoneOffsetMs } from "./timeZone";
 
 /** One VEVENT, as this app stores events. */
 export type ParsedEvent = {
@@ -31,7 +38,9 @@ export type ParsedEvent = {
    *  draw yet survives a re-read, and survives a round trip back one day. */
   rrule: string | null;
   /** The zone the event was authored in, for CalendarEvent.timeZone. "UTC"
-   *  when the feed gave an instant rather than a wall time. */
+   *  when the feed gave an instant (a trailing Z), and FLOATING when it gave
+   *  a wall time with no zone at all - which is drawn at that wall time in
+   *  every book, rather than converted from a zone nobody named. */
   timeZone: string;
   /** CANCELLED events are tombstoned rather than dropped, so a cancellation
    *  in the feed removes the mark instead of leaving it there for ever. */
@@ -103,55 +112,6 @@ function unescapeText(value: string): string {
   return value.replace(/\\([nN,;\\])/g, (_, c: string) => (c === "n" || c === "N" ? "\n" : c));
 }
 
-/**
- * THE ZONE OFFSET, asked of the platform rather than carried in a table.
- *
- * A feed writes `TZID=America/New_York:20260928T090000` - a WALL TIME, not an
- * instant. Turning it into one needs the zone's offset ON THAT DAY, which
- * moves with daylight saving: an event stored at the wrong offset is a whole
- * term of 9am meetings sitting at 8am for half the year.
- *
- * `Intl` knows every IANA zone, so the offset is read off it instead. Null
- * for a zone the platform does not recognise - Microsoft still writes its own
- * names ("Eastern Standard Time") in some feeds - and the event is then
- * skipped rather than placed an hour or five out.
- */
-export function zoneOffsetMs(timeZone: string, utcGuess: number): number | null {
-  let parts;
-  try {
-    parts = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).formatToParts(new Date(utcGuess));
-  } catch {
-    return null;
-  }
-  const at = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? NaN);
-  // `hour12: false` renders midnight as 24 in some runtimes.
-  const hour = at("hour") % 24;
-  const asUtc = Date.UTC(at("year"), at("month") - 1, at("day"), hour, at("minute"), at("second"));
-  return Number.isNaN(asUtc) ? null : asUtc - utcGuess;
-}
-
-/** A wall time in `timeZone`, as an instant. */
-function wallTimeToUtc(wall: number, timeZone: string): number | null {
-  // Two passes. The first offset is read at the wrong instant - the guess -
-  // which lands on the wrong side of a DST change for events within an hour
-  // of it. Reading it again at the corrected instant fixes those, and a third
-  // pass changes nothing.
-  const first = zoneOffsetMs(timeZone, wall);
-  if (first === null) return null;
-  const second = zoneOffsetMs(timeZone, wall - first);
-  if (second === null) return null;
-  return wall - second;
-}
-
 type Stamp = { at: Date; allDay: boolean; timeZone: string } | null;
 
 /** DTSTART / DTEND, in any of the three forms a feed uses. */
@@ -174,8 +134,11 @@ function parseStamp(value: string, params: Record<string, string>): Stamp {
   }
   // NO ZONE AT ALL is a "floating" time - 9am wherever you happen to be. A
   // paper planner is the one place that is exactly right: the page says 9am
-  // and the person reading it is wherever they are. Kept as written.
-  return { at: new Date(wall), allDay: false, timeZone: "UTC" };
+  // and the person reading it is wherever they are. Kept as written, and
+  // MARKED as floating so the page does not convert it from UTC - it was
+  // marked "UTC" at first, which is indistinguishable from a real UTC instant
+  // and would have drawn it five hours early in New York.
+  return { at: new Date(wall), allDay: false, timeZone: FLOATING };
 }
 
 /** Everything this reader understands, from one feed. */

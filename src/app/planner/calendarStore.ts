@@ -18,6 +18,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { StoredEvent } from "@/lib/calendarEvents";
+import { DEFAULT_ZONE, instantFromWall, isTimeZone } from "@/lib/timeZone";
 
 /** What a new calendar is drawn in until someone changes it. Screen only -
  *  print takes grey, decided 2026-09-26, because colour pages cost money. */
@@ -43,6 +44,12 @@ const EVENT_SELECT = {
   endsAt: true,
   allDay: true,
   rrule: true,
+  // WITHOUT THIS every event reaches the placer with no zone and is read as
+  // a UTC instant. For a real instant that happens to be right; for a
+  // FLOATING one - everything typed before books had zones - it is wrong by
+  // the book's whole offset, and a 9am dentist prints at 4am. Measured by
+  // deleting this line: check:calendar's floating clause goes red.
+  timeZone: true,
   deletedAt: true,
   calendarId: true,
   calendar: { select: { colour: true, source: true } },
@@ -203,24 +210,64 @@ async function assertOwnsJournal(ownerId: string, journalId: string): Promise<vo
   if (!owned) throw new Error("Journal not found");
 }
 
+/**
+ * What the editor sends: WALL-CLOCK TIMES, not instants.
+ *
+ * It used to send "2026-09-28T09:00:00.000Z" - the wall time with a Z stuck on
+ * the end - which is an instant in UTC that nobody meant. The editor knows a
+ * DATE (the column) and two CLOCK READINGS (the rows); only the server knows
+ * which zone the book is in, so the server is where they become an instant.
+ * One place, rather than every client doing its own zone maths.
+ */
 export type EventInput = {
   title: string;
-  /** ISO instants. The client sends strings; the server action boundary is
-   *  not a place to rely on a Date surviving as a Date. */
-  startsAt: string;
-  endsAt: string;
+  /** "YYYY-MM-DD" - the column's date. */
+  date: string;
+  /** "HH:MM", in the book's zone. Ignored for an all-day event. */
+  start: string;
+  end: string;
   allDay: boolean;
   rrule: string | null;
   calendarId?: string | null;
 };
 
 const TITLE_MAX = 200;
+const DAY_MS = 86_400_000;
 
-function parse(input: EventInput) {
+/** The book's zone, for turning what was typed into an instant. */
+async function zoneOfJournal(ownerId: string, journalId: string): Promise<string> {
+  const book = await prisma.planner.findFirst({
+    where: { id: journalId, ownerId },
+    select: { timeZone: true },
+  });
+  if (!book) throw new Error("Journal not found");
+  return isTimeZone(book.timeZone) ? book.timeZone : DEFAULT_ZONE;
+}
+
+function parse(input: EventInput, zone: string) {
   const title = String(input.title ?? "").trim().slice(0, TITLE_MAX);
-  const startsAt = new Date(input.startsAt);
-  let endsAt = new Date(input.endsAt);
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) throw new Error("Bad date");
+  const allDay = Boolean(input.allDay);
+
+  if (allDay) {
+    // A DATE, not an instant - midnight UTC of the day, which is how the .ics
+    // reader stores one too, and it ends at the next midnight (iCalendar's
+    // exclusive end). It used to end at 23:59, which drew the same but would
+    // have gone to Google as a one-day event lasting 23 hours 59 minutes.
+    const day = instantFromWall(input.date, "00:00", DEFAULT_ZONE);
+    if (!day) throw new Error("Bad date");
+    return {
+      title: title || "Untitled",
+      startsAt: day,
+      endsAt: new Date(day.getTime() + DAY_MS),
+      allDay: true,
+      rrule: input.rrule || null,
+      timeZone: zone,
+    };
+  }
+
+  const startsAt = instantFromWall(input.date, input.start, zone);
+  let endsAt = instantFromWall(input.date, input.end, zone);
+  if (!startsAt || !endsAt) throw new Error("Bad date");
   // AN END BEFORE ITS START draws a block of negative height, which the
   // renderer clamps to nothing - so the event would save and then be
   // invisible, which reads as "it did not save". Pin it to the start instead.
@@ -229,8 +276,12 @@ function parse(input: EventInput) {
     title: title || "Untitled",
     startsAt,
     endsAt,
-    allDay: Boolean(input.allDay),
+    allDay: false,
     rrule: input.rrule || null,
+    // THE BOOK'S ZONE, recorded. A weekly series is expanded in the zone it
+    // was written in, so "every Monday at 9am" stays at 9am across daylight
+    // saving - see occurrencesOn.
+    timeZone: zone,
   };
 }
 
@@ -239,29 +290,37 @@ export async function createEventFor(
   journalId: string,
   input: EventInput
 ): Promise<EditableEvent> {
-  await assertOwnsJournal(ownerId, journalId);
+  const zone = await zoneOfJournal(ownerId, journalId);
   const calendarId = input.calendarId
     ? (await prisma.calendar.findFirstOrThrow({ where: { id: input.calendarId, ownerId }, select: { id: true } })).id
     : (await defaultCalendarFor(ownerId)).id;
   return prisma.calendarEvent.create({
-    data: { ownerId, calendarId, ...parse(input) },
+    data: { ownerId, calendarId, ...parse(input, zone) },
     select: EVENT_SELECT,
   });
 }
 
+/**
+ * @param journalId the book it was edited IN. Events belong to the owner, not
+ *   to a book, so the book is named explicitly: its zone is what the times in
+ *   `input` are read in. An event edited in a London book is saved in London
+ *   time, which is what the person editing it was looking at.
+ */
 export async function updateEventFor(
   ownerId: string,
+  journalId: string,
   eventId: string,
   input: EventInput
 ): Promise<EditableEvent> {
   const existing = await prisma.calendarEvent.findFirst({ where: { id: eventId, ownerId }, select: { id: true } });
   if (!existing) throw new Error("Event not found");
+  const zone = await zoneOfJournal(ownerId, journalId);
   const calendarId = input.calendarId
     ? (await prisma.calendar.findFirstOrThrow({ where: { id: input.calendarId, ownerId }, select: { id: true } })).id
     : undefined;
   return prisma.calendarEvent.update({
     where: { id: eventId },
-    data: { ...parse(input), ...(calendarId ? { calendarId } : {}) },
+    data: { ...parse(input, zone), ...(calendarId ? { calendarId } : {}) },
     select: EVENT_SELECT,
   });
 }

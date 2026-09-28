@@ -79,6 +79,7 @@ import {
   ICS_SOURCE,
 } from "./calendarSubscriptions";
 import { IcsFetchError } from "@/lib/icsFetch";
+import { isTimeZone } from "@/lib/timeZone";
 import { weekSidebarBoxes, weekTodoPlacements, weekHourlyPlacements } from "@/lib/pageLayouts";
 import {
   getHourlyGridCoreContentHeightPx,
@@ -3523,10 +3524,28 @@ export async function createCalendarEvent(journalId: string, input: EventInput):
   return event.id;
 }
 
-export async function updateCalendarEvent(eventId: string, input: EventInput): Promise<void> {
+export async function updateCalendarEvent(journalId: string, eventId: string, input: EventInput): Promise<void> {
   const userId = await requireOwner();
   await assertNotSubscribed(eventId);
-  await updateEventFor(userId, eventId, input);
+  await updateEventFor(userId, journalId, eventId, input);
+}
+
+/**
+ * Set the zone a book's clock reads.
+ *
+ * Nothing stored changes: an event is an instant, and the page simply reads
+ * it in the new zone. A floating event stays at its wall time, as it should.
+ * So changing a travel journal to London moves a New York meeting from 9am
+ * to 2pm on its pages, which is when it happens there.
+ */
+export async function setPlannerTimeZone(journalId: string, timeZone: string): Promise<void> {
+  const userId = await requireOwner();
+  if (!isTimeZone(timeZone)) throw new Error("That is not a time zone.");
+  const { count } = await prisma.planner.updateMany({
+    where: journalWhere(userId, journalId),
+    data: { timeZone },
+  });
+  if (count === 0) throw new Error(JOURNAL_NOT_FOUND);
 }
 
 export async function deleteCalendarEvent(eventId: string): Promise<void> {

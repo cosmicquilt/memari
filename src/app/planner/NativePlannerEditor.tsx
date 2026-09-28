@@ -158,6 +158,7 @@ import {
   updatePlannerFont,
   setPlannerTrim,
   setPlannerDated,
+  setPlannerTimeZone,
   setPlannerTerm,
   updateHourlySettings,
   resizeHourlyGridCore,
@@ -2139,6 +2140,7 @@ function NativePage({
                         scale={scale}
                         columnDates={page.renderContext.columnDates}
                         events={events}
+                        placed={page.renderContext.events ?? []}
                         calendars={calendars}
                       />
                     );
@@ -3804,6 +3806,12 @@ function ModulePalette({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
+              Time zone
+            </div>
+            <TimeZoneField timeZone={pageSettings.timeZone} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
               Font
             </div>
             <FontToggle fontChoice={pageSettings.fontFamily} />
@@ -4159,6 +4167,71 @@ function DatesToggle({ dated }: { dated: boolean }) {
           <span style={{ fontSize: 9.5, color: PANEL_FAINT }}>you write them</span>
         </button>
       </div>
+      {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
+    </div>
+  );
+}
+
+// Page Settings > Time zone. What this book's clock reads.
+//
+// PER BOOK, as Andrew asked: a planner is printed for a place. Changing it
+// rewrites nothing - an event is an instant, and the page simply reads it in
+// the new zone - so a New York meeting moves from 9am to 2pm in a book set to
+// London, which is when it happens there. A floating event (no zone of its
+// own) stays at its wall time in every book.
+//
+// A plain select over every zone the browser knows. Four hundred options is a
+// long list, but it is a list people search by typing the city, which a
+// native select already does, and anything cleverer is a component to build
+// for a setting most people will never touch - the browser's zone is filled
+// in for them.
+function TimeZoneField({ timeZone }: { timeZone: string | null }) {
+  const refreshPages = useRefreshPages();
+  const journalId = useJournalId();
+  const [pending, error, run] = useAsyncAction();
+  const zones = useMemo(() => {
+    const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+    const all = supported ? supported("timeZone") : [];
+    // The current value, and UTC, are always offered: Chrome leaves "UTC" out
+    // of its own list, and a book set to it must not show a blank select.
+    const extra = [timeZone, "UTC"].filter((z): z is string => Boolean(z) && !all.includes(z as string));
+    return [...extra, ...all];
+  }, [timeZone]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <select
+        aria-label="Time zone"
+        value={timeZone ?? ""}
+        disabled={pending || zones.length === 0}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (!next || next === timeZone) return;
+          run(async () => {
+            await setPlannerTimeZone(journalId, next);
+            await refreshPages({ rebuild: true });
+          });
+        }}
+        style={{
+          font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
+          color: PANEL_TEXT,
+          background: PANEL_BG,
+          border: `1px solid ${PANEL_EDGE}`,
+          borderRadius: 8,
+          padding: "6px 8px",
+          opacity: pending ? 0.6 : 1,
+        }}
+      >
+        {timeZone === null ? <option value="">Setting…</option> : null}
+        {zones.map((zone) => (
+          <option key={zone} value={zone}>
+            {zone.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
+      <span style={{ fontSize: 9.5, color: PANEL_FAINT, lineHeight: 1.4 }}>
+        Events print at this zone&rsquo;s clock.
+      </span>
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>
   );

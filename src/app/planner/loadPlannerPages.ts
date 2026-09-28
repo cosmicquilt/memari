@@ -104,6 +104,9 @@ export type PageSettings = {
   /** False on a planner you write the dates into yourself. */
   dated: boolean;
   weekStartDay: number; // 0=Sun..6=Sat
+  /** The zone this book's clock reads, or null for a book made before books
+   *  had zones - which the editor then fills in from the browser. */
+  timeZone: string | null;
   startTime: string;
   endTime: string;
   intervalMinutes: number;
@@ -474,6 +477,7 @@ export async function loadPlannerPages(
       fontFamily: fontChoice,
       dated,
       weekStartDay,
+      timeZone: planner.timeZone ?? null,
       startTime: hourlyProps?.startTime ?? "05:30",
       endTime: hourlyProps?.endTime ?? "23:30",
       intervalMinutes: hourlyProps?.intervalMinutes ?? 30,
