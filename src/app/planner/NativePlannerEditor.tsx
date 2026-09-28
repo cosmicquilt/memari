@@ -991,10 +991,33 @@ function NativeModule({
    *  hourly grid's event sheet. It goes AFTER the drawing, which is
    *  pointerEvents:none, and inside the box, so it shares the module's own
    *  coordinate space. Passed in rather than built here, so this component
-   *  stays a box with a drawing in it. */
-  overlay?: ReactNode;
+   *  stays a box with a drawing in it.
+   *
+   *  A function when the overlay needs to SET ASIDE some of the drawing's own
+   *  marks while it shows its own in their place - the event preview does,
+   *  so a new event dragged across an existing one shows both sharing the
+   *  column, as they will once saved, rather than the old one still full
+   *  width underneath. */
+  overlay?: ReactNode | ((setAside: (ids: ReadonlySet<string> | null) => void) => ReactNode);
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: instanceId, disabled: locked });
+  // Marks the overlay is standing in for, for the moment - see `overlay`.
+  const [setAside, setSetAside] = useState<ReadonlySet<string> | null>(null);
+  // ONLY A CHANGE OF CONTENTS re-renders. The overlay hands over a new Set
+  // each time it draws; accepting every one re-rendered this module, which
+  // called the overlay again, which drew again - "Maximum update depth
+  // exceeded", and the editor stuck mid-save. Measured, 2026-09-28.
+  const setAsideIfChanged = useCallback((ids: ReadonlySet<string> | null) => {
+    setSetAside((previous) => {
+      const same =
+        (previous?.size ?? 0) === (ids?.size ?? 0) && [...(ids ?? [])].every((id) => previous?.has(id));
+      return same ? previous : ids;
+    });
+  }, []);
+  const shownElements = useMemo(
+    () => (setAside && setAside.size > 0 ? elements.filter((e) => !setAside.has(e.id)) : elements),
+    [elements, setAside]
+  );
   // Held down but not necessarily dragging yet — dnd-kit's own
   // activationConstraint (5px, see sensors below) means isDragged/
   // onDragStart don't fire until the pointer has actually moved that
@@ -1330,7 +1353,7 @@ function NativeModule({
         }}
       >
         <PolotnoJsonRenderer
-          elements={elements}
+          elements={shownElements}
           textElements={textElements}
           textSizePx={textSizePx}
           originX={originX}
@@ -1342,7 +1365,7 @@ function NativeModule({
           textEaseMs={clipToBox ? easeMs : 0}
         />
       </div>
-      {overlay}
+      {typeof overlay === "function" ? overlay(setAsideIfChanged) : overlay}
       {/* Gray circle, darker gray ×, fades in on hover — not rendered at
           all for a locked module (week-title/hourly-grid-core aren't
           individually deletable). stopPropagation on pointerdown keeps
@@ -2111,6 +2134,11 @@ function NativePage({
               !(resizingIds?.has(id) ?? false) &&
               activeId === null
                 ? (() => {
+                    // Narrowed here, where the check above still holds, and
+                    // captured - the layer is built in a callback, and
+                    // narrowing does not follow a property into one.
+                    const context = page.renderContext;
+                    const columnDates = page.renderContext.columnDates;
                     // THE SAME THREE ARGUMENTS THE MARKS WERE DRAWN FROM -
                     // propsForRender then drawingInputsFor, which is exactly
                     // what renderOnPage does. Deriving the box or the props
@@ -2124,12 +2152,17 @@ function NativePage({
                         rowStart: placement.rowStart,
                         columnSpan: placement.columnSpan,
                         rowSpan: placement.rowSpan,
-                        propValues: propsForRender(info.slug, info.propValues, page.renderContext),
+                        propValues: propsForRender(info.slug, info.propValues, context),
                         moduleType: { slug: info.slug },
                       },
                       page.pageGrid
                     );
-                    if (!inputs) return null;
+                    if (!inputs) return undefined;
+                    // Worked out ONCE here, outside the function the module
+                    // calls: built inside it, every call made new objects,
+                    // and the layer took each as a change - part of the loop
+                    // described at setAsideIfChanged.
+                    return function eventLayer(setAside: (ids: ReadonlySet<string> | null) => void) {
                     return (
                       <EventLayer
                         elements={elements}
@@ -2139,12 +2172,15 @@ function NativePage({
                         originX={info.originX}
                         originY={info.originY}
                         scale={scale}
-                        columnDates={page.renderContext.columnDates}
+                        columnDates={columnDates}
                         events={events}
-                        placed={page.renderContext.events ?? []}
+                        placed={context.events ?? []}
+                        fontFamily={fontFamily}
                         calendars={calendars}
+                        setAside={setAside}
                       />
                     );
+                    };
                   })()
                 : undefined
             }

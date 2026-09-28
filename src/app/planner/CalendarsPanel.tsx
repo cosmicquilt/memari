@@ -28,13 +28,12 @@ import {
 } from "./actions";
 import { useJournalId } from "./journalContext";
 import type { LoadedCalendar } from "./loadPlannerPages";
+import { CALENDAR_COLOURS } from "@/lib/calendarColours";
 import { useRefreshPages } from "./pagesRefreshContext";
 
-/** Mirrors CALENDAR_COLOURS in calendarStore.ts, which cannot be imported
- *  into a client component - that file reads the database. The server checks
- *  the value against its own list, so a stale copy here is refused rather
- *  than stored. */
-const COLOURS = ["#cfe3ff", "#ffe9b3", "#d6f0d8", "#f7d6e0", "#e4dcf7", "#ffd9c2"];
+/** The one list - see src/lib/calendarColours.ts. It was a hand copy here
+ *  until the drag preview became a third reader. */
+const COLOURS: readonly string[] = CALENDAR_COLOURS;
 
 // The row's shape is the server's - see LoadedCalendar. Declaring it again
 // here is how a field ends up set on one side and read on the other.

@@ -21,6 +21,12 @@
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
 import { DEFAULT_ZONE, FLOATING, isTimeZone, toWallTime, wallTimeToUtc } from "./timeZone";
 
+/** What an event with no title is called - by the server when it saves one,
+ *  and by the drag preview, which has to look like what will be saved. One
+ *  constant, so the preview cannot read "New event" over a block that then
+ *  saves as something else. */
+export const UNTITLED_EVENT = "Untitled";
+
 /** The columns of one page's hourly grid, as real dates. */
 export type GridDay = {
   /** Midnight UTC of the day this column is, or null for a column that has

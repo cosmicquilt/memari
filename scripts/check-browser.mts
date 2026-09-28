@@ -645,53 +645,87 @@ const noReload: Probe = {
 // Sabotaged by putting `* scale` back on the preview's four numbers: all
 // seven columns miss, as 35x9 boxes at the top-left of each page - the
 // report, exactly.
+//
+// Part 2 checks the preview IS the final version - the second report, the
+// same day - including across an existing event. See the notes in it.
 // ---------------------------------------------------------------------
 const eventDrag: Probe = {
   name: "event drag",
   ratios: [1, 2],
   run: async (page, { base, journalId, dpr }) => {
+    // ANY update loop during the gesture is a failure. One shipped for an
+    // hour on 2026-09-28: setting the day's marks aside re-rendered the
+    // module, which re-drew the preview, which set them aside again - and
+    // the editor stuck mid-save with "Maximum update depth exceeded".
+    const loops: string[] = [];
+    const onConsole = (m: { type(): string; text(): string }) => {
+      if (m.type() === "error" && /Maximum update depth/i.test(m.text())) loops.push(m.text().slice(0, 80));
+    };
+    page.on("console", onConsole);
     await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2500);
 
-    const measure = async () =>
+    // Shared helpers, installed once in the page.
+    await page.evaluate(`(() => {
+      const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+      const r4 = (b) => ({ left: +b.left.toFixed(1), top: +b.top.toFixed(1), width: +b.width.toFixed(1), height: +b.height.toFixed(1) });
+      const send = (layer, type, x, y) => {
+        layer.setPointerCapture = () => {};
+        layer.releasePointerCapture = () => {};
+        layer.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true,
+          pointerId: 1, button: 0, buttons: type === "pointerup" ? 0 : 1, isPrimary: true }));
+      };
+      const tabsOf = (layer) => {
+        const rects = [...layer.parentElement.querySelectorAll("svg rect")];
+        const top = Math.min(...rects.map((r) => +r.getAttribute("y")));
+        return rects
+          .filter((r) => Math.abs(+r.getAttribute("y") - top) < 0.5 && +r.getAttribute("width") > 200)
+          .map((r) => r.getBoundingClientRect())
+          .sort((a, b) => a.left - b.left);
+      };
+      const previewBlocks = (layer) =>
+        [...layer.querySelectorAll("[data-event-preview] svg rect")].map((r) => ({ ...r4(r.getBoundingClientRect()),
+          stroke: r.getAttribute("stroke-width"), rx: r.getAttribute("rx") })).sort((a, b) => a.left - b.left);
+      const savedBlocks = (layer) =>
+        [...layer.parentElement.querySelectorAll("svg rect")]
+          .filter((r) => (r.getAttribute("opacity") === "0.55") && !r.closest("[data-event-preview]"))
+          .map((r) => ({ ...r4(r.getBoundingClientRect()), stroke: r.getAttribute("stroke-width"), rx: r.getAttribute("rx") }))
+          .sort((a, b) => a.left - b.left);
+      window.__probe = { tick, r4, send, tabsOf, previewBlocks, savedBlocks };
+    })()`);
+
+    // --- 1. EVERY COLUMN: the preview is under the pointer, in its own day --
+    const perColumn = async () =>
       (await page.evaluate(`(async () => {
-        const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+        const { tick, send, tabsOf, previewBlocks } = window.__probe;
         const out = [];
         for (const layer of document.querySelectorAll("[data-event-layer]")) {
           const L = layer.getBoundingClientRect();
-          layer.setPointerCapture = () => {};
-          layer.releasePointerCapture = () => {};
-          const send = (type, x, y) => layer.dispatchEvent(new PointerEvent(type, {
-            clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1,
-            button: 0, buttons: type === "pointerup" ? 0 : 1, isPrimary: true }));
-          // The drawn day tabs: the wide rects on the module's first row.
-          const rects = [...layer.parentElement.querySelectorAll("svg rect")];
-          const top = Math.min(...rects.map((r) => +r.getAttribute("y")));
-          const tabs = rects
-            .filter((r) => Math.abs(+r.getAttribute("y") - top) < 0.5 && +r.getAttribute("width") > 200)
-            .map((r) => r.getBoundingClientRect())
-            .sort((a, b) => a.left - b.left);
-          for (const tab of tabs) {
+          for (const tab of tabsOf(layer)) {
             const x = tab.left + tab.width / 2;
-            const y0 = Math.min(L.top + L.height * 0.35, innerHeight - 60);
+            // High in the column, clear of the events part 2 makes lower down.
+            const y0 = Math.max(L.top + L.height * 0.2, 60);
             const y1 = y0 + 20;
-            if (y0 < 0 || y1 > innerHeight) continue;
-            send("pointerdown", x, y0); await tick(120);
-            send("pointermove", x, y1); await tick(120);
-            const p = layer.querySelector("div");
-            const P = p ? p.getBoundingClientRect() : null;
+            if (y1 > innerHeight) continue;
+            send(layer, "pointerdown", x, y0); await tick(120);
+            send(layer, "pointermove", x, y1); await tick(120);
+            // THE BLOCK AT THE POINTER - by both coordinates. The preview draws
+            // the whole day's events (so a clash shows both), and a column that
+            // already holds some has other blocks under the same x.
+            const P = previewBlocks(layer).find(
+              (p) => p.left <= x && x <= p.left + p.width && p.top <= y1 && y0 <= p.top + p.height
+            );
             out.push(P ? {
-              under: P.left <= x && x <= P.right && P.top <= y0 + 1 && y1 - 1 <= P.bottom,
-              aligned: Math.abs(P.left - tab.left) < 2 && Math.abs(P.width - tab.width) < 2,
-              where: Math.round(P.left) + "," + Math.round(P.top) + " " + Math.round(P.width) + "x" + Math.round(P.height),
-              tab: Math.round(tab.left) + " w" + Math.round(tab.width),
-            } : { under: false, aligned: false, where: "no preview", tab: "" });
+              under: P.top <= y0 + 3 && y1 - 3 <= P.top + P.height,
+              inOwnDay: P.left >= tab.left - 0.5 && P.left + P.width <= tab.right + 0.5,
+              where: P.left + "," + P.top + " " + P.width + "x" + P.height,
+            } : { under: false, inOwnDay: false, where: "no preview under the pointer" });
             layer.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 }));
             await tick(80);
           }
         }
         return out;
-      })()`)) as Array<{ under: boolean; aligned: boolean; where: string; tab: string }>;
+      })()`)) as Array<{ under: boolean; inOwnDay: boolean; where: string }>;
 
     for (const zoom of ["fit width", "zoomed in"]) {
       if (zoom === "zoomed in") {
@@ -700,22 +734,95 @@ const eventDrag: Probe = {
         await zoomIn.click();
         await page.waitForTimeout(800);
       }
-      const columns = await measure();
+      const columns = await perColumn();
+      const bad = columns.filter((c) => !c.under || !c.inOwnDay);
       if (columns.length < 3) {
         fail("event drag", `${dpr}x ${zoom}: found ${columns.length} day columns to drag in, expected at least 3`);
-        continue;
-      }
-      const bad = columns.filter((c) => !c.under || !c.aligned);
-      if (bad.length > 0) {
-        fail(
-          "event drag",
-          `${dpr}x ${zoom}: ${bad.length}/${columns.length} previews not under the pointer in their own day - ` +
-            bad.slice(0, 3).map((c) => `${c.where} (tab ${c.tab})`).join("; ")
-        );
+      } else if (bad.length > 0) {
+        fail("event drag", `${dpr}x ${zoom}: ${bad.length}/${columns.length} previews not under the pointer in their own day - ${bad.slice(0, 3).map((c) => c.where).join("; ")}`);
       } else {
-        note("event drag", `${dpr}x ${zoom}: ${columns.length}/${columns.length} previews under the pointer, aligned with their day`);
+        note("event drag", `${dpr}x ${zoom}: ${columns.length}/${columns.length} previews under the pointer, in their own day`);
       }
     }
+
+    // --- 2. THE PREVIEW IS THE FINAL VERSION ----------------------------
+    //
+    // Reported 2026-09-28: the preview had "the wrong border thickness", was
+    // "too wide and extends over the time of day text", and "disappears when
+    // even creation popup window appears". It was a hand-styled box; it is
+    // now drawn by the same renderer as the saved event. So: make an event,
+    // read the preview with the popup open, save, and the saved blocks must
+    // be the same rectangles, border and corners. Then drag a second across
+    // it - a clash - and BOTH must match, split as the saved page splits
+    // them. At fit width, in a column of its own per ratio.
+    await page.locator('button[title^="Fill screen with page width"]').click();
+    await page.waitForTimeout(800);
+    const roundTrip = async (title: string, over: "empty" | "clash") =>
+      (await page.evaluate(`(async () => {
+        const { tick, send, tabsOf, previewBlocks, savedBlocks } = window.__probe;
+        const layer = () => document.querySelectorAll("[data-event-layer]")[0];
+        const L = layer().getBoundingClientRect();
+        const tab = tabsOf(layer())[${dpr}];
+        const x = tab.left + tab.width / 2;
+        let y0 = L.top + L.height * 0.55, y1 = y0 + 22;
+        if (${JSON.stringify(over)} === "clash") {
+          const mine = savedBlocks(layer()).find((b) => b.left >= tab.left - 1 && b.left < tab.right);
+          if (!mine) return { error: "no event to clash with" };
+          y0 = mine.top + mine.height + 8; y1 = mine.top + 4;  // below it, dragging up across it
+        }
+        send(layer(), "pointerdown", x, y0); await tick(150);
+        send(layer(), "pointermove", x, y1); await tick(300);
+        const dragging = previewBlocks(layer());
+        send(layer(), "pointerup", x, y1); await tick(400);
+        const dialog = document.querySelector("[role=dialog]");
+        if (!dialog) return { error: "no popup opened" };
+        const input = dialog.querySelector("input");
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ${JSON.stringify(title)});
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await tick(250);
+        const withPopup = previewBlocks(layer());
+        [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "Add").click();
+        for (let i = 0; i < 60 && layer()?.querySelector("[data-event-preview]"); i++) await tick(250);
+        await tick(500);
+        const saved = savedBlocks(layer()).filter((b) => b.left >= tab.left - 1 && b.left < tab.right);
+        return { dragging, withPopup, saved };
+      })()`)) as {
+        error?: string;
+        dragging: Array<Record<string, number | string>>;
+        withPopup: Array<Record<string, number | string>>;
+        saved: Array<Record<string, number | string>>;
+      };
+
+    for (const over of ["empty", "clash"] as const) {
+      const r = await roundTrip(`Probe ${over} ${dpr}x`, over);
+      const label = `${dpr}x ${over === "empty" ? "a new event" : "a new event across an existing one"}`;
+      if (r.error) {
+        fail("event drag", `${label}: ${r.error}`);
+        continue;
+      }
+      if (r.withPopup.length === 0) {
+        fail("event drag", `${label}: the preview disappeared when the popup opened`);
+        continue;
+      }
+      const expected = over === "empty" ? 1 : 2;
+      const same = (a: Record<string, number | string>, b: Record<string, number | string>) =>
+        Math.max(...(["left", "top", "width", "height"] as const).map((k) => Math.abs(Number(a[k]) - Number(b[k])))) <= 1 &&
+        a.stroke === b.stroke &&
+        a.rx === b.rx;
+      if (r.withPopup.length !== expected || r.saved.length !== expected) {
+        fail("event drag", `${label}: preview showed ${r.withPopup.length} block(s), the page saved ${r.saved.length}, expected ${expected}`);
+      } else if (!r.withPopup.every((p, i) => same(p, r.saved[i]))) {
+        fail(
+          "event drag",
+          `${label}: the preview is not the saved event - preview ${JSON.stringify(r.withPopup)} saved ${JSON.stringify(r.saved)}`
+        );
+      } else {
+        note("event drag", `${label}: preview and saved result identical (${expected} block${expected === 1 ? "" : "s"}, border and corners included)`);
+      }
+    }
+
+    page.off("console", onConsole);
+    if (loops.length > 0) fail("event drag", `${dpr}x: ${loops.length} update-loop error(s) during the gesture - "${loops[0]}"`);
   },
 };
 

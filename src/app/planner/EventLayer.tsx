@@ -33,9 +33,13 @@ import {
 import { createPortal } from "react-dom";
 import {
   hourlyGridGeometry,
+  renderHourlyGridCore,
   type HourlyGridCoreConfig,
   type HourlyGridEvent,
 } from "@/lib/modules/hourlyGridCore";
+import { UNTITLED_EVENT } from "@/lib/calendarEvents";
+import { DEFAULT_CALENDAR_COLOUR } from "@/lib/calendarColours";
+import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import {
   boxAt,
   drawnEventBoxes,
@@ -73,6 +77,10 @@ const REPEATS: Array<{ label: string; rrule: string | null }> = [
 ];
 
 const PANEL_WIDTH = 268;
+
+/** The drawn preview's own event id - never a stored row's, so its marks can
+ *  be picked out of a render that also holds the page's real events. */
+const PREVIEW_ID = "preview";
 
 /** The event being edited, as the popup holds it. A new one has no id. */
 type Draft = {
@@ -119,6 +127,8 @@ export function EventLayer({
   events,
   placed,
   calendars,
+  fontFamily,
+  setAside,
 }: {
   /** The marks this module drew. The hit areas are read from them. */
   elements: ReadonlyArray<RenderedPolotnoElement>;
@@ -144,6 +154,12 @@ export function EventLayer({
   /** The owner's calendars. One is the ordinary case and the popup does not
    *  ask; an imported calendar makes it a choice. */
   calendars: LoadedCalendar[];
+  /** The book's font - the preview is drawn by the same renderer as the
+   *  saved event, and that renderer sets the label in it. */
+  fontFamily: string;
+  /** Ask the module to set some of its own marks aside while the preview
+   *  draws them re-laid-out - see previewMarks. */
+  setAside?: (ids: ReadonlySet<string> | null) => void;
 }) {
   const journalId = useJournalId();
   const refreshPages = useRefreshPages();
@@ -151,10 +167,35 @@ export function EventLayer({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [dragging, setDragging] = useState<{ from: SlotHit; toSlot: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  /** A new event just SAVED, still drawn as a preview until the rebuild puts
+   *  the real one there. Without it the block vanished for the length of the
+   *  round trip and then reappeared, which reads as the save having failed. */
+  const [landing, setLanding] = useState<Draft | null>(null);
 
   const grid = useMemo(
     () => hourlyGridGeometry(geometry, propValues as HourlyGridCoreConfig, lattice),
     [geometry, propValues, lattice]
+  );
+
+  /**
+   * WHAT A DRAG COVERS, whichever way it went - read by the preview AND by the
+   * event it creates, so the two cannot disagree. They did: the save counted
+   * from where the drag STARTED, so dragging upward previewed three rows and
+   * saved one.
+   */
+  const spanOf = useCallback(
+    (drag: { from: SlotHit; toSlot: number }) => {
+      const top = Math.min(drag.from.slot, drag.toSlot);
+      const bottom = Math.max(drag.from.slot, drag.toSlot);
+      return {
+        day: drag.from.day,
+        top,
+        bottom,
+        start: grid.startMinutes + top * grid.intervalMinutes,
+        end: endMinutesForDrag(grid, { ...drag.from, slot: top }, bottom),
+      };
+    },
+    [grid]
   );
   const boxes = useMemo(() => drawnEventBoxes(elements), [elements]);
   const byId = useMemo(() => new Map(events.map((e) => [e.id, e])), [events]);
@@ -270,20 +311,19 @@ export function EventLayer({
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (!dragging) return;
       e.currentTarget.releasePointerCapture?.(e.pointerId);
-      const { from, toSlot } = dragging;
+      const span = spanOf(dragging);
       setDragging(null);
-      const date = columnDates[from.day];
+      const date = columnDates[span.day];
       // NO DATE, NO EVENT. An undated book has no day for a column, so there
       // is no instant to store - and storing one anyway would put a date on a
       // planner whose whole point is not having them.
       if (!date) return;
-      const endMinutes = endMinutesForDrag(grid, from, toSlot);
       setDraft({
         id: null,
         title: "",
         date,
-        start: hhmmOf(from.startMinutes),
-        end: hhmmOf(endMinutes),
+        start: hhmmOf(span.start),
+        end: hhmmOf(span.end),
         allDay: false,
         rrule: null,
         calendarId: calendars.find((c) => c.visible && !c.source)?.id ?? null,
@@ -295,14 +335,14 @@ export function EventLayer({
         seriesRule: null,
         scope: "all",
         anchor: anchorOf({
-          x: grid.columnX[from.day],
-          y: grid.gridTop + from.slot * grid.rowHeight,
+          x: grid.columnX[span.day],
+          y: grid.gridTop + span.top * grid.rowHeight,
           width: grid.dayColumnWidth,
-          height: (Math.abs(toSlot - from.slot) + 1) * grid.rowHeight,
+          height: (span.bottom - span.top + 1) * grid.rowHeight,
         }),
       });
     },
-    [anchorOf, calendars, columnDates, dragging, grid]
+    [anchorOf, calendars, columnDates, dragging, grid, spanOf]
   );
 
   const save = useCallback(async () => {
@@ -326,6 +366,7 @@ export function EventLayer({
         await updateCalendarOccurrence(journalId, draft.id, draft.occurrence, input);
       } else if (draft.id) await updateCalendarEvent(journalId, draft.id, input);
       else await createCalendarEvent(journalId, input);
+      if (!draft.id) setLanding(draft);
       setDraft(null);
       // REBUILT, not just re-rendered. An event is DRAWN CONTENT, and the
       // editor seeds the locked modules' marks from its first props - the
@@ -364,22 +405,92 @@ export function EventLayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [draft]);
 
-  // IN THE MODULE'S OWN PRINT PX, NOT SCREEN PX. This sheet sits inside the
-  // module box, which is laid out at print size and shrunk by the canvas's
-  // zoom transform - so the zoom is applied once, by the browser. It was
-  // multiplied in here as well, which applied it twice: at 28% every preview
-  // landed at 28% of its distance from the module's corner, at 28% of its
-  // size, all of them stacked in the first day at the top. Reported
-  // 2026-09-28. (pointAt and anchorOf DO use the zoom - they convert to and
-  // from the screen, where the transform has already been applied.)
-  const dragPreview = dragging
-    ? {
-        left: grid.columnX[dragging.from.day] - originX,
-        top: grid.gridTop + Math.min(dragging.from.slot, dragging.toSlot) * grid.rowHeight - originY,
-        width: grid.dayColumnWidth,
-        height: (Math.abs(dragging.toSlot - dragging.from.slot) + 1) * grid.rowHeight,
-      }
-    : null;
+  // THE EVENT BEING MADE, as the event it will be - while dragging, while
+  // the popup is open (it disappeared then, reported 2026-09-28), and for the
+  // moment between Add and the saved one arriving. An existing event being
+  // edited has no preview: it is already drawn.
+  const previewEvent: HourlyGridEvent | null = useMemo(() => {
+    const colourOf = (calendarId: string | null) =>
+      calendars.find((c) => c.id === calendarId)?.colour ?? calendars.find((c) => !c.source)?.colour ?? DEFAULT_CALENDAR_COLOUR;
+    if (dragging) {
+      const span = spanOf(dragging);
+      return {
+        id: PREVIEW_ID,
+        day: span.day,
+        startTime: hhmmOf(span.start),
+        endTime: hhmmOf(span.end),
+        label: UNTITLED_EVENT,
+        source: "manual",
+        colour: colourOf(calendars.find((c) => c.visible && !c.source)?.id ?? null),
+      };
+    }
+    const making = draft && !draft.id ? draft : landing;
+    if (!making) return null;
+    const day = columnDates.indexOf(making.date);
+    if (day < 0) return null;
+    return {
+      id: PREVIEW_ID,
+      day,
+      startTime: making.allDay ? "00:00" : making.start,
+      endTime: making.allDay ? "23:59" : making.end,
+      label: making.title.trim() || UNTITLED_EVENT,
+      source: "manual",
+      colour: colourOf(making.calendarId),
+      ...(making.allDay ? { allDay: true } : {}),
+    };
+  }, [dragging, draft, landing, calendars, columnDates, spanOf]);
+
+  // DRAWN BY THE RENDERER, not styled to resemble it. The preview used to be
+  // a hand-made box - its own border, its own width, its own colour - and was
+  // wrong in each: a heavier border, the full column width over the time
+  // labels. A second description of what an event looks like will always
+  // drift from the first; the only preview that looks like the final version
+  // is the final version's own drawing. So the grid is drawn with this event
+  // added - alongside the page's real ones, so a clash splits the column
+  // exactly as it will once saved - and only this event's marks are kept.
+  //
+  // In the module's own print px, like every other mark in it: this sheet
+  // sits inside the module box, which the canvas zoom shrinks. (Scaling it
+  // here as well is what put every preview in the first day at the top.)
+  //
+  // THE WHOLE DAY, not just the new event. A new event dragged across an
+  // existing one splits the column between them once saved; drawing only the
+  // new one showed it at half width with the old one still full width
+  // underneath, which is not what the page will look like. So every event
+  // of that kind on that day is drawn from this render, and the module sets
+  // its own copies of them aside for the moment (see `setAside`). The all-
+  // day band works the same way: it is one box per day, so the new event's
+  // band replaces the old one, "+1" and all.
+  const dayOf = previewEvent?.day ?? null;
+  const allDay = Boolean(previewEvent?.allDay);
+  const inPreviewDay = useCallback(
+    (id: string) =>
+      dayOf !== null && (allDay ? id.includes(`-d${dayOf}-allday-`) : id.includes(`-d${dayOf}-ev`)),
+    [dayOf, allDay]
+  );
+  const previewMarks = useMemo(() => {
+    if (!previewEvent) return null;
+    const config = propValues as HourlyGridCoreConfig;
+    const marks = renderHourlyGridCore(
+      geometry,
+      { ...config, events: [...(config.events ?? []), previewEvent] },
+      "event-preview",
+      fontFamily,
+      lattice
+    );
+    return marks.filter((m) => inPreviewDay(m.id));
+  }, [previewEvent, propValues, geometry, lattice, fontFamily, inPreviewDay]);
+
+  // The module's own marks for that day, set aside while the preview stands
+  // in for them - and handed back the moment there is no preview.
+  const standingIn = useMemo(
+    () => (previewMarks ? new Set(elements.map((e) => e.id).filter(inPreviewDay)) : null),
+    [previewMarks, elements, inPreviewDay]
+  );
+  useEffect(() => {
+    setAside?.(standingIn);
+  }, [setAside, standingIn]);
+  useEffect(() => () => setAside?.(null), [setAside]);
 
   return (
     <>
@@ -400,20 +511,16 @@ export function EventLayer({
           touchAction: "none",
         }}
       >
-        {dragPreview ? (
-          <div
-            style={{
-              position: "absolute",
-              ...dragPreview,
-              background: "rgba(40, 90, 170, 0.18)",
-              // One SCREEN pixel of border and 3 of radius: the zoom shrinks
-              // everything in here, so they are divided by it to survive it.
-              border: `${1 / scale}px solid rgba(40, 90, 170, 0.55)`,
-              borderRadius: 3 / scale,
-              boxSizing: "border-box",
-              pointerEvents: "none",
-            }}
-          />
+        {previewMarks && previewMarks.length > 0 ? (
+          <div data-event-preview style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+            <PolotnoJsonRenderer
+              elements={previewMarks}
+              originX={originX}
+              originY={originY}
+              scale={scale}
+              suppressOuterBorderSize={null}
+            />
+          </div>
         ) : null}
       </div>
       {draft ? (

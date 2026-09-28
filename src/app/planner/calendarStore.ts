@@ -17,27 +17,16 @@
 // to belong to whoever sent it.
 
 import { prisma } from "@/lib/prisma";
-import type { StoredEvent } from "@/lib/calendarEvents";
+import { UNTITLED_EVENT, type StoredEvent } from "@/lib/calendarEvents";
 import { DEFAULT_ZONE, FLOATING, instantFromWall, toWallTime, wallDate } from "@/lib/timeZone";
 import { zoneForBook } from "./ownerSettings";
 import { readToken } from "./syncToken";
 
-/** What a new calendar is drawn in until someone changes it. Screen only -
- *  print takes grey, decided 2026-09-26, because colour pages cost money. */
-export const DEFAULT_CALENDAR_COLOUR = "#cfe3ff";
+// The colours live in src/lib/calendarColours.ts, where a component can
+// import them too. Re-exported so this file's readers are unchanged.
+import { CALENDAR_COLOURS, DEFAULT_CALENDAR_COLOUR } from "@/lib/calendarColours";
+export { CALENDAR_COLOURS, DEFAULT_CALENDAR_COLOUR };
 export const DEFAULT_CALENDAR_NAME = "My Calendar";
-
-/** The colours the editor offers. Light enough that 5pt text darkened to a
- *  4.5:1 contrast off them is still recognisably the same hue - see eventInk
- *  in hourlyGridCore.ts, which is what actually does the darkening. */
-export const CALENDAR_COLOURS = [
-  "#cfe3ff", // blue
-  "#ffe9b3", // amber
-  "#d6f0d8", // green
-  "#f7d6e0", // pink
-  "#e4dcf7", // violet
-  "#ffd9c2", // orange
-] as const;
 
 const EVENT_SELECT = {
   id: true,
@@ -262,7 +251,7 @@ function parse(input: EventInput, zone: string) {
     const day = instantFromWall(input.date, "00:00", DEFAULT_ZONE);
     if (!day) throw new Error("Bad date");
     return {
-      title: title || "Untitled",
+      title: title || UNTITLED_EVENT,
       startsAt: day,
       endsAt: new Date(day.getTime() + DAY_MS),
       allDay: true,
@@ -279,7 +268,7 @@ function parse(input: EventInput, zone: string) {
   // invisible, which reads as "it did not save". Pin it to the start instead.
   if (endsAt.getTime() < startsAt.getTime()) endsAt = startsAt;
   return {
-    title: title || "Untitled",
+    title: title || UNTITLED_EVENT,
     startsAt,
     endsAt,
     allDay: false,
