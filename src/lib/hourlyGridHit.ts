@@ -68,6 +68,8 @@ export type DrawnEventBox = {
   /** The stored event's id, for a timed block. Null for the all-day band,
    *  which draws ONE box for a day however many things are in it. */
   eventId: string | null;
+  /** Which occurrence, for a block from a repeating event - see eventKey. */
+  occurrence: string | null;
   day: number;
   allDay: boolean;
   x: number;
@@ -106,8 +108,10 @@ export function drawnEventBoxes(
       const band = /-d(\d+)-allday-box$/.exec(el.id);
       const match = timed ?? band;
       if (!match) continue;
+      const [eventId, occurrence] = timed ? timed[2].split("@") : [null, null];
       out.push({
-        eventId: timed ? timed[2] : null,
+        eventId: eventId ?? null,
+        occurrence: occurrence ?? null,
         day: Number(match[1]),
         allDay: !timed,
         x: el.x ?? 0,

@@ -48,7 +48,13 @@ import {
 import { placeAnchoredPanel } from "@/lib/anchoredPanel";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import type { LoadedCalendar, SerialisedEvent } from "./loadPlannerPages";
-import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from "./actions";
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  deleteCalendarOccurrence,
+  updateCalendarEvent,
+  updateCalendarOccurrence,
+} from "./actions";
 import { useJournalId } from "./journalContext";
 import { useRefreshPages } from "./pagesRefreshContext";
 
@@ -87,6 +93,16 @@ type Draft = {
    *  sync reads that feed again - so an edit here would be silently undone.
    *  The popup shows it, and says why, rather than letting that happen. */
   source: string | null;
+  /** WHICH WEEK, when this is one occurrence of a repeating event - its
+   *  original start in ms, as the placer drew it. Null for a one-off. */
+  occurrence: string | null;
+  /** The series' own rule as stored, so the popup knows it is one - `rrule`
+   *  above is what the person is editing it TO. */
+  seriesRule: string | null;
+  /** "one": only this week. "all": the whole series. Google asks the same
+   *  question and defaults the same way - the week you clicked is the one
+   *  you were looking at. */
+  scope: "one" | "all";
   /** Where the popup points, in viewport coordinates. */
   anchor: { top: number; bottom: number; right: number };
 };
@@ -182,7 +198,9 @@ export function EventLayer({
       // missed the second and third days of a multi-day all-day event, whose
       // stored start is only the first.
       const drawn = hit.eventId
-        ? placed.find((e) => e.id === hit.eventId && e.day === hit.day)
+        ? placed.find(
+            (e) => e.id === hit.eventId && e.day === hit.day && (e.occurrence ?? null) === hit.occurrence
+          )
         : placed.find((e) => e.allDay && e.day === hit.day);
       const row = drawn?.id ? byId.get(drawn.id) : undefined;
       const date = columnDates[hit.day];
@@ -197,6 +215,9 @@ export function EventLayer({
         rrule: row.rrule,
         calendarId: row.calendarId,
         source: row.source,
+        occurrence: drawn.occurrence ?? null,
+        seriesRule: row.rrule,
+        scope: row.rrule && drawn.occurrence ? "one" : "all",
         anchor: anchorOf(hit),
       });
     },
@@ -270,6 +291,9 @@ export function EventLayer({
         // subscribed calendar, because the next sync would notice a row the
         // feed has no UID for and tombstone it.
         source: null,
+        occurrence: null,
+        seriesRule: null,
+        scope: "all",
         anchor: anchorOf({
           x: grid.columnX[from.day],
           y: grid.gridTop + from.slot * grid.rowHeight,
@@ -298,7 +322,9 @@ export function EventLayer({
         rrule: draft.rrule,
         calendarId: draft.calendarId,
       };
-      if (draft.id) await updateCalendarEvent(journalId, draft.id, input);
+      if (draft.id && draft.scope === "one" && draft.occurrence) {
+        await updateCalendarOccurrence(journalId, draft.id, draft.occurrence, input);
+      } else if (draft.id) await updateCalendarEvent(journalId, draft.id, input);
       else await createCalendarEvent(journalId, input);
       setDraft(null);
       // REBUILT, not just re-rendered. An event is DRAWN CONTENT, and the
@@ -317,7 +343,8 @@ export function EventLayer({
     if (!draft?.id || saving) return;
     setSaving(true);
     try {
-      await deleteCalendarEvent(draft.id);
+      if (draft.scope === "one" && draft.occurrence) await deleteCalendarOccurrence(draft.id, draft.occurrence);
+      else await deleteCalendarEvent(draft.id);
       setDraft(null);
       await refreshPages({ rebuild: true });
     } catch (error) {
@@ -424,6 +451,11 @@ function EventPopup({
   // so an editable field here is a field whose edits quietly vanish - which
   // is worse than not offering one. Shown, explained, and left alone.
   const readOnly = draft.source !== null;
+  // ONE WEEK OF A SERIES: its time and title can change, its rule and its
+  // all-day-ness cannot - those are the series', and changing them for a
+  // single week is what "all events" is for.
+  const oneWeek = draft.scope === "one";
+  const isSeries = Boolean(draft.seriesRule && draft.occurrence);
   const place = placeAnchoredPanel(
     draft.anchor,
     { width: window.innerWidth, height: window.innerHeight },
@@ -503,7 +535,7 @@ function EventPopup({
           <input
             type="checkbox"
             checked={draft.allDay}
-            disabled={readOnly}
+            disabled={readOnly || oneWeek}
             onChange={(e) => onChange({ ...draft, allDay: e.target.checked })}
           />
           All day
@@ -546,7 +578,7 @@ function EventPopup({
           <div style={{ ...label, marginBottom: 4 }}>Repeat</div>
           <select
             value={draft.rrule ?? ""}
-            disabled={readOnly}
+            disabled={readOnly || oneWeek}
             onChange={(e) => onChange({ ...draft, rrule: e.target.value || null })}
             style={field}
           >
@@ -604,6 +636,47 @@ function EventPopup({
                 ))}
               </select>
             </div>
+          </div>
+        ) : null}
+
+        {isSeries && !readOnly ? (
+          <div
+            role="radiogroup"
+            aria-label="Change which"
+            style={{ display: "flex", gap: 2, background: "#efede8", borderRadius: 8, padding: 2 }}
+          >
+            {(
+              [
+                ["one", "This event"],
+                ["all", "All events"],
+              ] as const
+            ).map(([value, text]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={draft.scope === value}
+                onClick={() =>
+                  // Back to the series' own rule when widening to all events:
+                  // a rule edited while it was greyed out cannot have moved,
+                  // but a stale one must not ride along either.
+                  onChange({ ...draft, scope: value, rrule: draft.seriesRule })
+                }
+                style={{
+                  flex: 1,
+                  font: "12px/1 ui-sans-serif, system-ui, sans-serif",
+                  padding: "6px 0",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: draft.scope === value ? "#ffffff" : "transparent",
+                  color: draft.scope === value ? "#1a1a1a" : "#7a7871",
+                  boxShadow: draft.scope === value ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
+                }}
+              >
+                {text}
+              </button>
+            ))}
           </div>
         ) : null}
 

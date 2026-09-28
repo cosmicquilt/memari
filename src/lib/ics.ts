@@ -19,6 +19,7 @@
 // maths is in timeZone.ts, shared with the page that draws what this reads.
 
 import { FLOATING, wallTimeToUtc } from "./timeZone";
+import type { Override } from "./calendarEvents";
 
 // Re-exported: the test pins it, and it is the reader's concern as much as
 // anyone's - an unknown zone is what makes this skip an event.
@@ -45,6 +46,10 @@ export type ParsedEvent = {
   /** CANCELLED events are tombstoned rather than dropped, so a cancellation
    *  in the feed removes the mark instead of leaving it there for ever. */
   cancelled: boolean;
+  /** THE SERIES' OWN CHANGED OCCURRENCES - weeks the feed moved, renamed or
+   *  deleted - gathered from EXDATE lines and from the separate VEVENTs that
+   *  carry a RECURRENCE-ID. Empty for a one-off. See Override. */
+  overrides: Override[];
 };
 
 export type ParsedCalendar = {
@@ -52,6 +57,11 @@ export type ParsedCalendar = {
    *  something the caller chooses - never to the URL, which for a secret
    *  address is a credential. */
   name: string | null;
+  /** One per UID. A moved or deleted occurrence is NOT here - it is in its
+   *  series' `overrides`. It used to be here as an event of its own, sharing
+   *  the series' UID, and the sync (which matches by UID) let it overwrite
+   *  the whole series: one rescheduled standup and every other week of it
+   *  vanished. Measured on a Google-shaped feed, 2026-09-28. */
   events: ParsedEvent[];
   /** Events this reader would have had to guess at. Counted rather than
    *  swallowed: "47 of 300 could not be read" is something a person can act
@@ -148,6 +158,12 @@ export function parseIcs(text: string): ParsedCalendar {
   let name: string | null = null;
 
   let current: Record<string, { params: Record<string, string>; value: string }> | null = null;
+  // EXDATE is the one property that legitimately REPEATS in a VEVENT - one
+  // line per deleted occurrence, as Google writes it - so it is gathered
+  // rather than overwritten like the rest.
+  let exdates: Array<{ params: Record<string, string>; value: string }> = [];
+  // Every VEVENT read, before series and their exceptions are paired up.
+  const read: Array<ReturnType<typeof finish>> = [];
   // A VEVENT may contain a VALARM, which has its own properties - including
   // a TRIGGER that looks enough like a time to matter. Anything nested is
   // ignored, and only the VEVENT's own properties are read.
@@ -160,6 +176,7 @@ export function parseIcs(text: string): ParsedCalendar {
 
     if (key === "BEGIN" && value.toUpperCase() === "VEVENT") {
       current = {};
+      exdates = [];
       depth = 0;
       continue;
     }
@@ -172,27 +189,62 @@ export function parseIcs(text: string): ParsedCalendar {
       continue;
     }
     if (key === "END" && value.toUpperCase() === "VEVENT") {
-      const event = finish(current ?? {});
-      if ("why" in event) skipped.push(event);
-      else events.push(event);
+      read.push(finish(current ?? {}, exdates));
       current = null;
       continue;
     }
     if (current) {
-      if (depth === 0) current[key] = { params, value };
+      if (depth === 0 && key === "EXDATE") exdates.push({ params, value });
+      else if (depth === 0) current[key] = { params, value };
       continue;
     }
     if (key === "X-WR-CALNAME") name = unescapeText(value).trim() || null;
   }
 
+  // PAIR EACH EXCEPTION WITH ITS SERIES. An exception is a VEVENT with a
+  // RECURRENCE-ID; it names the occurrence it replaces, and it belongs in
+  // that series' overrides - never in `events`, where it would share a UID
+  // with the series and the sync would treat the two as one row.
+  const series = new Map<string, ParsedEvent>();
+  const exceptions: Exception[] = [];
+  for (const item of read) {
+    if ("why" in item) skipped.push(item);
+    else if ("recurrenceId" in item) exceptions.push(item);
+    else if (!series.has(item.uid)) series.set(item.uid, item);
+  }
+  for (const exception of exceptions) {
+    const owner = series.get(exception.uid);
+    if (owner?.rrule) {
+      owner.overrides.push({
+        recurrenceId: exception.recurrenceId,
+        cancelled: exception.event.cancelled,
+        title: exception.event.title,
+        startsAt: exception.event.startsAt,
+        endsAt: exception.event.endsAt,
+      });
+    } else {
+      // AN ORPHAN: an occurrence whose series is not in this feed - which
+      // happens when someone is invited to one week of a meeting. It is
+      // still something on their calendar, so it is kept as a one-off, under
+      // a UID of its own so it cannot collide with anything.
+      const uid = `${exception.uid}#${exception.recurrenceId.toISOString()}`;
+      if (!series.has(uid)) series.set(uid, { ...exception.event, uid, rrule: null, overrides: [] });
+    }
+  }
+  events.push(...series.values());
+
   return { name, events, skipped };
 }
+
+/** A VEVENT that replaces one occurrence of a series. */
+type Exception = { uid: string; recurrenceId: Date; event: ParsedEvent };
 
 const DAY_MS = 86_400_000;
 
 function finish(
-  props: Record<string, { params: Record<string, string>; value: string }>
-): ParsedEvent | { uid: string; why: string } {
+  props: Record<string, { params: Record<string, string>; value: string }>,
+  exdateLines: Array<{ params: Record<string, string>; value: string }> = []
+): ParsedEvent | Exception | { uid: string; why: string } {
   const uid = props.UID?.value?.trim() || "";
   if (!uid) return { uid: "(no UID)", why: "no UID, so a re-read could not tell it from a new event" };
 
@@ -220,7 +272,20 @@ function finish(
     };
   }
 
-  return {
+  // DELETED OCCURRENCES, as cancelled overrides. Named by the same kind of
+  // stamp as DTSTART - a date, a zoned wall time or a UTC instant - so each
+  // lands in the frame the series itself is stored in, which is how the
+  // placer matches them. A value it cannot read is dropped, not guessed: the
+  // cost is one extra occurrence drawn, not a real one hidden.
+  const overrides: Override[] = [];
+  for (const line of exdateLines) {
+    for (const one of line.value.split(",")) {
+      const at = parseStamp(one.trim(), line.params);
+      if (at) overrides.push({ recurrenceId: at.at, cancelled: true });
+    }
+  }
+
+  const event: ParsedEvent = {
     uid,
     title: unescapeText(props.SUMMARY?.value ?? "").trim() || "Untitled",
     startsAt: start.at,
@@ -234,7 +299,19 @@ function finish(
     rrule: props.RRULE ? props.RRULE.value.trim().toUpperCase() : null,
     timeZone: start.timeZone,
     cancelled: (props.STATUS?.value ?? "").toUpperCase() === "CANCELLED",
+    overrides,
   };
+
+  // AN EXCEPTION names the occurrence it replaces. Paired with its series in
+  // parseIcs; a RECURRENCE-ID this reader cannot read is skipped and
+  // counted, since attaching it to the wrong week would be worse than
+  // missing it.
+  if (props["RECURRENCE-ID"]) {
+    const recurrence = parseStamp(props["RECURRENCE-ID"].value, props["RECURRENCE-ID"].params);
+    if (!recurrence) return { uid, why: "a RECURRENCE-ID this reader cannot place" };
+    return { uid, recurrenceId: recurrence.at, event };
+  }
+  return event;
 }
 
 /** An ISO 8601 duration, the subset iCalendar allows: P[n]DT[n]H[n]M[n]S. */

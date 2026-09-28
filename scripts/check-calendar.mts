@@ -166,7 +166,11 @@ async function main() {
     const after = await weekly();
     const drawn = markIds(after);
     check(drawn.some((id) => id.includes(`-ev${timed.id}-box`)), "a stored timed event is drawn");
-    check(drawn.some((id) => id.includes(`-ev${repeating.id}-box`)), "a weekly series started before the book still recurs into it");
+    // A SERIES' marks carry WHICH OCCURRENCE too - `-ev<id>@<ms>-box` - so two
+    // weeks of one series moved into one column cannot share an id. See
+    // eventKey in hourlyGridCore.ts.
+    const seriesMark = (eventId: string) => new RegExp(`-ev${eventId}@\\d+-box$`);
+    check(drawn.some((id) => seriesMark(repeating.id).test(id)), "a weekly series started before the book still recurs into it");
     check(drawn.some((id) => /-allday-box$/.test(id)), "an all-day event fills the band");
 
     check(
@@ -174,8 +178,8 @@ async function main() {
       `the timed event drew on the day it was written for (${timedDay}, drew on ${dateDrawnOn(after, new RegExp(`-d(\\d+)-ev${timed.id}-box$`))})`
     );
     check(
-      dateDrawnOn(after, new RegExp(`-d(\\d+)-ev${repeating.id}-box$`)) === timedDay,
-      `the series recurred onto the right column (${timedDay}, drew on ${dateDrawnOn(after, new RegExp(`-d(\\d+)-ev${repeating.id}-box$`))})`
+      dateDrawnOn(after, new RegExp(`-d(\\d+)-ev${repeating.id}@\\d+-box$`)) === timedDay,
+      `the series recurred onto the right column (${timedDay}, drew on ${dateDrawnOn(after, new RegExp(`-d(\\d+)-ev${repeating.id}@\\d+-box$`))})`
     );
     check(
       dateDrawnOn(after, /-d(\d+)-allday-box$/) === bandDay,
@@ -214,7 +218,7 @@ async function main() {
       "a tombstoned event stops being drawn"
     );
     check(
-      afterDelete.some((id) => id.includes(`-ev${repeating.id}-box`)),
+      afterDelete.some((id) => seriesMark(repeating.id).test(id)),
       "and the others are untouched"
     );
     // The row above was tombstoned DIRECTLY, to test the drawing. It is
@@ -463,6 +467,89 @@ async function main() {
         `"10:30" typed in a book following Tokyo is 01:30Z, zone Tokyo (${typedInTokyo.startsAt.toISOString()}, ${typedInTokyo.timeZone})`
       );
       await prisma.ownerSettings.deleteMany({ where: { ownerId: guest.ownerId } });
+    }
+
+    // --- ONLY THIS WEEK OF A SERIES YOU TYPED ----------------------------
+    //
+    // Through the functions the popup's actions call. Weeks other than the
+    // first are read through eventsForDays on the STORED rows - the book's
+    // editor only ever shows its first week - which is the same placer the
+    // page uses, fed the same select.
+    {
+      await prisma.planner.update({ where: { id: guest.journalId }, data: { timeZone: "America/New_York" } });
+      const { createEventFor, updateEventFor, updateOccurrenceFor, deleteOccurrenceFor, eventsForJournal } =
+        await import("../src/app/planner/calendarStore.js");
+      const { eventsForDays } = await import("../src/lib/calendarEvents.js");
+      const plus = (iso: string, days: number) =>
+        new Date(new Date(`${iso}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+      const typedInput = (over: Partial<Parameters<typeof createEventFor>[2]> = {}) => ({
+        title: "Seminar",
+        date: timedDay,
+        start: "09:00",
+        end: "10:00",
+        allDay: false,
+        rrule: "FREQ=WEEKLY",
+        ...over,
+      });
+      const seminar = await createEventFor(guest.ownerId, guest.journalId, typedInput());
+      /** The seminar as drawn on the day `weeksOn` weeks after the first. */
+      const onWeek = async (weeksOn: number) => {
+        const rows = (await eventsForJournal(guest.ownerId, guest.journalId)).filter((e) => e.id === seminar.id);
+        const day = plus(timedDay, weeksOn * 7);
+        return eventsForDays(rows, [{ date: new Date(`${day}T00:00:00.000Z`) }], "America/New_York")
+          .map((e) => `${e.startTime} ${e.label}`)
+          .join(" | ");
+      };
+      check((await onWeek(1)) === "09:00 Seminar", `the control: week 2 at 09:00 (${await onWeek(1)})`);
+
+      // THE OCCURRENCE IS NAMED BY WHAT THE PLACER DREW - exactly what the
+      // popup is handed. Week 2's original start, 9am New York.
+      const week2 = new Date(`${plus(timedDay, 7)}T14:00:00.000Z`).getTime(); // EST, UTC-5
+
+      // Move week 2 to 11:00, and only week 2.
+      await updateOccurrenceFor(guest.ownerId, guest.journalId, seminar.id, week2, typedInput({ date: plus(timedDay, 7), start: "11:00", end: "12:00" }));
+      check((await onWeek(1)) === "11:00 Seminar", `week 2 moved to 11:00, drawn once (${await onWeek(1)})`);
+      check((await onWeek(2)) === "09:00 Seminar", `week 3 untouched (${await onWeek(2)})`);
+      check((await onWeek(0)) === "09:00 Seminar", `week 1 untouched (${await onWeek(0)})`);
+
+      // Delete week 3, and only week 3.
+      await deleteOccurrenceFor(guest.ownerId, seminar.id, new Date(`${plus(timedDay, 14)}T14:00:00.000Z`).getTime());
+      check((await onWeek(2)) === "", `week 3 deleted (${await onWeek(2)})`);
+      check((await onWeek(3)) === "09:00 Seminar", `week 4 untouched (${await onWeek(3)})`);
+
+      // A rename at the same time is a RENAME, not a move to the same place.
+      const week4 = new Date(`${plus(timedDay, 21)}T14:00:00.000Z`).getTime();
+      await updateOccurrenceFor(guest.ownerId, guest.journalId, seminar.id, week4, typedInput({ date: plus(timedDay, 21), title: "Seminar (guest talk)" }));
+      const renamedRow = await prisma.calendarEventOverride.findFirst({ where: { eventId: seminar.id, recurrenceId: new Date(week4) } });
+      check(
+        renamedRow?.title === "Seminar (guest talk)" && renamedRow.startsAt === null,
+        `a same-time change is stored as a rename (startsAt ${renamedRow?.startsAt?.toISOString() ?? "null"})`
+      );
+      check((await onWeek(3)) === "09:00 Seminar (guest talk)", `and drawn at its own time with its own title (${await onWeek(3)})`);
+
+      // EDITING THE SERIES FROM ITS FIFTH WEEK keeps its start. The popup
+      // sends the column's date; used as the start, it deleted weeks 1-4 on
+      // a title change. Measured before the fix, so pinned now.
+      await updateEventFor(guest.ownerId, guest.journalId, seminar.id, typedInput({ date: plus(timedDay, 28), title: "Seminar series" }));
+      const afterTitle = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: seminar.id } });
+      check(
+        afterTitle.startsAt.toISOString() === `${timedDay}T14:00:00.000Z`,
+        `a series retitled from its fifth week still starts on its first (${afterTitle.startsAt.toISOString()})`
+      );
+      check((await onWeek(0)) === "09:00 Seminar series", `so week 1 is still there (${await onWeek(0)})`);
+      check(
+        (await prisma.calendarEventOverride.count({ where: { eventId: seminar.id } })) === 3,
+        "and a RENAME of the series keeps its changed weeks"
+      );
+
+      // But MOVING the whole series drops them: they are named by where the
+      // old rule put them, and would otherwise strand or silently return.
+      await updateEventFor(guest.ownerId, guest.journalId, seminar.id, typedInput({ start: "13:00", end: "14:00", title: "Seminar series" }));
+      check(
+        (await prisma.calendarEventOverride.count({ where: { eventId: seminar.id } })) === 0,
+        "moving the whole series clears its changed weeks"
+      );
+      check((await onWeek(2)) === "13:00 Seminar series", `and every week follows the new time (${await onWeek(2)})`);
     }
   } finally {
     await prisma.calendar.deleteMany({ where: { ownerId: guest.ownerId } });

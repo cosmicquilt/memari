@@ -25,6 +25,7 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { parseIcs } from "@/lib/ics";
+import type { Override } from "@/lib/calendarEvents";
 import { fetchIcs, IcsFetchError } from "@/lib/icsFetch";
 import { isGuestOwner } from "@/lib/guest";
 import { CALENDAR_COLOURS } from "./calendarStore";
@@ -204,6 +205,23 @@ export async function syncDueSubscriptions(ownerId: string): Promise<void> {
   }
 }
 
+/** A set of changed occurrences as one comparable string - order-free, and
+ *  blind to nothing that would change the drawing. */
+function signature(list: ReadonlyArray<Override> | null | undefined): string {
+  return (list ?? [])
+    .map((o) =>
+      [
+        o.recurrenceId.getTime(),
+        o.cancelled ? 1 : 0,
+        o.title ?? "",
+        o.startsAt?.getTime() ?? "",
+        o.endsAt?.getTime() ?? "",
+      ].join("|")
+    )
+    .sort()
+    .join(";");
+}
+
 /** The upsert. Exported for the check, which drives it without a network. */
 export async function applyFeed(
   ownerId: string,
@@ -229,9 +247,16 @@ export async function applyFeed(
       rrule: true,
       timeZone: true,
       deletedAt: true,
+      overrides: { select: { recurrenceId: true, cancelled: true, title: true, startsAt: true, endsAt: true } },
     },
   });
   const byUid = new Map(here.filter((e) => e.externalId).map((e) => [e.externalId as string, e]));
+
+  // THE SERIES' CHANGED OCCURRENCES, which the feed owns outright - a moved
+  // or deleted week is whatever the feed currently says it is. Rewritten
+  // only when the set actually differs, for the same reason rows are: an
+  // unchanged read must write nothing (see SyncResult).
+  const overridesToWrite = new Map<string, Override[]>();
 
   const inserts: Array<{
     ownerId: string;
@@ -249,6 +274,8 @@ export async function applyFeed(
   }> = [];
   const updates: Array<ReturnType<typeof prisma.calendarEvent.update>> = [];
   let unchanged = 0;
+  /** Events whose row was right but whose changed weeks were not. */
+  let weeksOnly = 0;
   const seen = new Set<string>();
   const now = new Date();
 
@@ -270,8 +297,12 @@ export async function applyFeed(
 
     if (!row) {
       inserts.push({ ...fields, ownerId, calendarId, externalId: event.uid, lastSyncedAt: now, origin: "IMPORTED" });
+      if (event.overrides.length > 0) overridesToWrite.set(event.uid, event.overrides);
       continue;
     }
+
+    const overridesChanged = signature(row.overrides) !== signature(event.overrides);
+    if (overridesChanged) overridesToWrite.set(event.uid, event.overrides);
 
     // ALREADY RIGHT? Then do not write it. `deletedAt` is compared as a
     // PRESENCE, not as an instant: re-tombstoning an already-tombstoned event
@@ -286,7 +317,10 @@ export async function applyFeed(
       row.timeZone === fields.timeZone &&
       (row.deletedAt === null) === (fields.deletedAt === null);
     if (same) {
-      unchanged++;
+      // The row itself is right; a changed week of it still counts as a
+      // change to the event, and is written below.
+      if (overridesChanged) weeksOnly++;
+      else unchanged++;
       continue;
     }
     // lastSyncedAt is written only with a real change, so it means "when this
@@ -303,6 +337,41 @@ export async function applyFeed(
   // on SyncToken for what this replaced and what it cost.
   if (inserts.length > 0) await prisma.calendarEvent.createMany({ data: inserts, skipDuplicates: true });
   if (updates.length > 0) await prisma.$transaction(updates);
+
+  if (overridesToWrite.size > 0) {
+    // createMany does not return ids, so events just inserted are looked up
+    // - once, and only when one of them has a changed week to attach.
+    const ids = new Map(here.filter((e) => e.externalId).map((e) => [e.externalId as string, e.id]));
+    const missing = [...overridesToWrite.keys()].filter((uid) => !ids.has(uid));
+    if (missing.length > 0) {
+      for (const row of await prisma.calendarEvent.findMany({
+        where: { calendarId, externalId: { in: missing } },
+        select: { id: true, externalId: true },
+      })) {
+        ids.set(row.externalId as string, row.id);
+      }
+    }
+    const eventIds = [...overridesToWrite.keys()].map((uid) => ids.get(uid)).filter((id): id is string => Boolean(id));
+    const rows = [...overridesToWrite.entries()].flatMap(([uid, list]) => {
+      const eventId = ids.get(uid);
+      if (!eventId) return [];
+      // One per occurrence: a feed that names the same week twice keeps the
+      // last, rather than failing the unique key and the whole sync with it.
+      const byWeek = new Map(list.map((o) => [o.recurrenceId.getTime(), o]));
+      return [...byWeek.values()].map((o) => ({
+        eventId,
+        recurrenceId: o.recurrenceId,
+        cancelled: o.cancelled,
+        title: o.title ?? null,
+        startsAt: o.startsAt ?? null,
+        endsAt: o.endsAt ?? null,
+      }));
+    });
+    await prisma.$transaction([
+      prisma.calendarEventOverride.deleteMany({ where: { eventId: { in: eventIds } } }),
+      prisma.calendarEventOverride.createMany({ data: rows }),
+    ]);
+  }
   if (vanished.length > 0) {
     await prisma.calendarEvent.updateMany({
       where: { id: { in: vanished.map((e) => e.id) } },
@@ -319,7 +388,7 @@ export async function applyFeed(
     calendarId,
     name,
     added: inserts.length,
-    updated: updates.length,
+    updated: updates.length + weeksOnly,
     unchanged,
     removed: vanished.length,
     skipped: parsed.skipped.length,

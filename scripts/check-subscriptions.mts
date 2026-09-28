@@ -203,6 +203,84 @@ END:VEVENT
       "and it should stop being drawn"
     );
 
+    // --- ONE WEEK OF A SERIES MOVED, ANOTHER DELETED ---------------------
+    //
+    // What Google writes for a repeating meeting rescheduled once and
+    // cancelled once. THIS IS THE CASE THAT BROKE: before the reader paired
+    // exceptions with their series, the moved week came back as a second
+    // event with the series' UID, and on the SECOND sync it overwrote the
+    // whole series - rrule gone, every other week gone. So it is synced twice
+    // here, on purpose, and the second sync is the one that matters.
+    {
+      const dayOf = (iso: string) => iso.replace(/-/g, "");
+      const next = (iso: string, days: number) =>
+        new Date(new Date(`${iso}T00:00:00.000Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
+      const series = `BEGIN:VEVENT
+UID:weekly@example.com
+DTSTART:${dayOf(dayA)}T080000Z
+DTEND:${dayOf(dayA)}T083000Z
+RRULE:FREQ=WEEKLY
+EXDATE:${dayOf(next(dayA, 7))}T080000Z
+SUMMARY:Weekly
+END:VEVENT
+BEGIN:VEVENT
+UID:weekly@example.com
+RECURRENCE-ID:${dayOf(dayA)}T080000Z
+DTSTART:${dayOf(dayA)}T100000Z
+DTEND:${dayOf(dayA)}T103000Z
+SUMMARY:Weekly (moved)
+END:VEVENT
+`;
+      const withSeries = build(moved + review(dayB) + series);
+      await applyFeed(guest.ownerId, calendar.id, "Work", withSeries);
+      const secondSync = await applyFeed(guest.ownerId, calendar.id, "Work", withSeries);
+
+      const stored = await prisma.calendarEvent.findFirst({
+        where: { calendarId: calendar.id, externalId: "weekly@example.com" },
+        include: { overrides: true },
+      });
+      check(
+        stored?.rrule === "FREQ=WEEKLY" && stored.title === "Weekly",
+        `AFTER A SECOND SYNC the series is still the series - rule ${stored?.rrule}, title "${stored?.title}"`
+      );
+      check(stored?.overrides.length === 2, `and carries its two changed weeks, got ${stored?.overrides.length}`);
+      check(
+        secondSync.updated === 0,
+        `a second read of the same feed writes nothing, changed weeks included - rewrote ${secondSync.updated}`
+      );
+
+      // On the page: moved to 10:00, not at 08:00 as well.
+      const onPage = (await weekly()).pages.flatMap((p) =>
+        (p.renderContext?.events ?? [])
+          .filter((e) => e.id === stored!.id)
+          .map((e) => `${p.renderContext?.columnDates?.[e.day]} ${e.startTime} ${e.label}`)
+      );
+      check(
+        onPage.join() === `${dayA} 10:00 Weekly (moved)`,
+        `this week's occurrence is drawn where it was MOVED, once: ${onPage.join(" | ") || "nothing"}`
+      );
+
+      // Un-moving it in the feed puts it back - the feed owns its weeks.
+      const restoredWeek = await applyFeed(
+        guest.ownerId,
+        calendar.id,
+        "Work",
+        build(moved + review(dayB) + series.slice(0, series.indexOf("BEGIN:VEVENT", 10)))
+      );
+      const afterRestore = await prisma.calendarEvent.findFirst({
+        where: { calendarId: calendar.id, externalId: "weekly@example.com" },
+        include: { overrides: true },
+      });
+      check(
+        restoredWeek.updated === 1 && afterRestore?.overrides.length === 1 && afterRestore.overrides[0].cancelled,
+        `when the feed stops moving a week, only its deletion is left (${afterRestore?.overrides.length} change(s), updated ${restoredWeek.updated})`
+      );
+
+      // Put the feed back as the clauses below expect it: the moved standup
+      // live, the review cancelled, and this series gone from it.
+      await applyFeed(guest.ownerId, calendar.id, "Work", build(moved + review(dayB, "STATUS:CANCELLED\n")));
+    }
+
     // --- HIDING THE SUBSCRIPTION ------------------------------------------
     await prisma.hiddenCalendar.create({ data: { plannerId: guest.journalId, calendarId: calendar.id } });
     check(

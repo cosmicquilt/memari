@@ -317,6 +317,119 @@ END:VEVENT`)
   check(iso(e?.startsAt) === "2026-07-01T13:00:00.000Z", `a quoted TZID came out ${iso(e?.startsAt)}`);
 }
 
+// --- A SERIES WITH ONE WEEK MOVED AND ONE DELETED -------------------------
+//
+// EXACTLY WHAT GOOGLE WRITES for a repeating meeting somebody rescheduled
+// once and cancelled once: the series with an EXDATE line, and a SEPARATE
+// VEVENT with the same UID and a RECURRENCE-ID for the moved week.
+//
+// Measured before this existed: the reader returned the moved week as a
+// second event with the series' UID, the sync matches by UID, and on the
+// second read the moved week OVERWROTE THE WHOLE SERIES - rrule gone, every
+// other Monday gone. The deleted week was never removed at all.
+{
+  const google = feed(`BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:standup@google.com
+DTSTART;TZID=America/New_York:20260907T090000
+DTEND;TZID=America/New_York:20260907T093000
+RRULE:FREQ=WEEKLY;BYDAY=MO
+EXDATE;TZID=America/New_York:20260921T090000
+SUMMARY:Standup
+END:VEVENT
+BEGIN:VEVENT
+UID:standup@google.com
+RECURRENCE-ID;TZID=America/New_York:20260928T090000
+DTSTART;TZID=America/New_York:20260928T110000
+DTEND;TZID=America/New_York:20260928T113000
+SUMMARY:Standup (moved)
+END:VEVENT
+END:VCALENDAR`);
+  const parsed = parseIcs(google);
+  check(parsed.events.length === 1, `one series should come back as ONE event, got ${parsed.events.length}`);
+  const series = parsed.events[0];
+  check(series.rrule === "FREQ=WEEKLY;BYDAY=MO", `the series keeps its rule, got ${series.rrule}`);
+  check(series.overrides.length === 2, `it should carry two changed occurrences, got ${series.overrides.length}`);
+
+  const deleted = series.overrides.find((o) => o.cancelled);
+  check(
+    deleted?.recurrenceId.toISOString() === "2026-09-21T13:00:00.000Z",
+    `the EXDATE names 9am New York on the 21st (13:00Z), got ${deleted?.recurrenceId.toISOString()}`
+  );
+  const moved = series.overrides.find((o) => !o.cancelled);
+  check(
+    moved?.recurrenceId.toISOString() === "2026-09-28T13:00:00.000Z" && moved?.startsAt?.toISOString() === "2026-09-28T15:00:00.000Z",
+    `the moved week is named by its ORIGINAL 9am and moved to 11am; got ${moved?.recurrenceId.toISOString()} -> ${moved?.startsAt?.toISOString()}`
+  );
+
+  // AND IT DRAWS RIGHT - which is the point. Through the real placer.
+  const row = {
+    id: "s",
+    title: series.title,
+    startsAt: series.startsAt,
+    endsAt: series.endsAt,
+    allDay: series.allDay,
+    rrule: series.rrule,
+    timeZone: series.timeZone,
+    overrides: series.overrides,
+  };
+  const week = (d: number) => Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.UTC(2026, 8, d + i)) }));
+  const shown = (d: number) =>
+    eventsForDays([row], week(d), "America/New_York").map((e) => `${e.startTime} ${e.label}`).join(" | ");
+  check(shown(13) === "09:00 Standup", `the week of the 13th is untouched; got ${shown(13)}`);
+  check(shown(20) === "", `the week of the 20th was deleted; got "${shown(20)}"`);
+  check(shown(27) === "11:00 Standup (moved)", `the week of the 27th was moved to 11am; got ${shown(27)}`);
+}
+
+// --- EXDATE IN ITS OTHER SHAPES -------------------------------------------
+{
+  // Comma-separated, and in UTC.
+  const commas = parseIcs(
+    feed(`BEGIN:VEVENT\nUID:c@example.com\nDTSTART:20260907T130000Z\nRRULE:FREQ=WEEKLY\nEXDATE:20260914T130000Z,20260921T130000Z\nSUMMARY:x\nEND:VEVENT`)
+  ).events[0];
+  check(commas.overrides.filter((o) => o.cancelled).length === 2, `comma-separated EXDATEs should both count, got ${commas.overrides.length}`);
+  // ONE LINE PER DELETION, which is how Google writes several. EXDATE is the
+  // one property allowed to repeat; read like the others - last one wins -
+  // only the final deletion survives. Measured: that sabotage passed every
+  // case above, because none of them had two lines.
+  const lines = parseIcs(
+    feed(`BEGIN:VEVENT\nUID:l@example.com\nDTSTART:20260907T130000Z\nRRULE:FREQ=WEEKLY\nEXDATE:20260914T130000Z\nEXDATE:20260921T130000Z\nEXDATE:20260928T130000Z\nSUMMARY:x\nEND:VEVENT`)
+  ).events[0];
+  check(
+    lines.overrides.filter((o) => o.cancelled).length === 3,
+    `three EXDATE lines should delete three weeks, got ${lines.overrides.filter((o) => o.cancelled).length}`
+  );
+  // An all-day series deletes by DATE.
+  const allDay = parseIcs(
+    feed(`BEGIN:VEVENT\nUID:d@example.com\nDTSTART;VALUE=DATE:20260907\nRRULE:FREQ=WEEKLY\nEXDATE;VALUE=DATE:20260914\nSUMMARY:Bins\nEND:VEVENT`)
+  ).events[0];
+  check(
+    allDay.overrides[0]?.recurrenceId.toISOString() === "2026-09-14T00:00:00.000Z",
+    `an all-day EXDATE names midnight of its date, got ${allDay.overrides[0]?.recurrenceId.toISOString()}`
+  );
+  // A cancelled exception is a deleted occurrence too.
+  const cancelledException = parseIcs(
+    feed(`BEGIN:VEVENT\nUID:e@example.com\nDTSTART:20260907T130000Z\nRRULE:FREQ=WEEKLY\nSUMMARY:x\nEND:VEVENT\nBEGIN:VEVENT\nUID:e@example.com\nRECURRENCE-ID:20260914T130000Z\nDTSTART:20260914T130000Z\nSTATUS:CANCELLED\nSUMMARY:x\nEND:VEVENT`)
+  ).events;
+  check(
+    cancelledException.length === 1 && cancelledException[0].overrides[0]?.cancelled === true,
+    "a cancelled RECURRENCE-ID should become a cancelled occurrence of its series"
+  );
+}
+
+// --- AN ORPHANED OCCURRENCE IS KEPT, ON ITS OWN ---------------------------
+//
+// Invited to one week of somebody else's series: the feed has the occurrence
+// and not the series. It is still on the person's calendar, so it is kept -
+// as a one-off, under a UID of its own so it cannot collide with anything.
+{
+  const orphan = parseIcs(
+    feed(`BEGIN:VEVENT\nUID:theirs@example.com\nRECURRENCE-ID:20260928T130000Z\nDTSTART:20260928T150000Z\nDTEND:20260928T160000Z\nSUMMARY:Guest spot\nEND:VEVENT`)
+  ).events;
+  check(orphan.length === 1 && orphan[0].rrule === null, "an orphaned occurrence should be kept as a one-off");
+  check(orphan[0]?.uid !== "theirs@example.com", "and under a UID of its own, not the series'");
+}
+
 // --- AN EMPTY OR JUNK FEED DOES NOT THROW ---------------------------------
 for (const junk of ["", "not an ics file at all", "BEGIN:VCALENDAR\r\nEND:VCALENDAR"]) {
   const parsed = parseIcs(junk);

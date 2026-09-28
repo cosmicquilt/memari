@@ -33,6 +33,10 @@ export type HourlyGridEvent = {
    *  where the start time serves; an id is never invented here, because two
    *  marks with the same id would break morph pairing silently. */
   id?: string;
+  /** WHICH OCCURRENCE of a repeating event this is - its original start in
+   *  ms (RFC 5545's RECURRENCE-ID). Part of the marks' ids, since one series
+   *  can put two blocks in one column once an occurrence has been moved. */
+  occurrence?: string;
 };
 
 export type HourlyGridCoreConfig = {
@@ -229,6 +233,13 @@ const EVENT_BORDER_WIDTH_PT = RULE_WIDTH_PT;
  * does not know which of them is asking. See generateBook.
  */
 export const EVENT_PRINT_GREY = "#e9e9e9";
+
+/** What a drawn event is keyed by: its row, and which occurrence of it. The
+ *  "@" cannot appear in a cuid, so hourlyGridHit splits it back apart. */
+export function eventKey(event: Pick<HourlyGridEvent, "id" | "occurrence" | "startTime">): string {
+  if (!event.id) return event.startTime;
+  return event.occurrence ? `${event.id}@${event.occurrence}` : event.id;
+}
 
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
 // row labels, but that does not divide the 1/4in dot pitch (18pt), so the
@@ -1147,7 +1158,7 @@ export function renderHourlyGridCore(
         // reads this id to know which row was clicked. Falls back to the
         // start time for a caller with no stored rows behind it (the proof
         // sheet, the tests), which is what it always was.
-        id: id(`d${d}-ev${event.id ?? event.startTime}-box`),
+        id: id(`d${d}-ev${eventKey(event)}-box`),
         type: "figure",
         subType: "rect",
         x: eventX,
@@ -1162,7 +1173,7 @@ export function renderHourlyGridCore(
       });
       const eventFontSize = ptToPx(EVENT_LABEL_PT);
       elements.push({
-        id: id(`d${d}-ev${event.id ?? event.startTime}-label`),
+        id: id(`d${d}-ev${eventKey(event)}-label`),
         type: "text",
         x: eventX + ptToPx(EVENT_TEXT_PADDING_PT),
         // CENTRED IN ITS FIRST ROW, not in the whole block. Asked for as

@@ -65,6 +65,8 @@ import {
   createEventFor,
   deleteCalendarFor,
   deleteEventFor,
+  deleteOccurrenceFor,
+  updateOccurrenceFor,
   recolourCalendarFor,
   renameCalendarFor,
   setCalendarVisibleFor,
@@ -3534,6 +3536,26 @@ export async function updateCalendarEvent(journalId: string, eventId: string, in
   const userId = await requireOwner();
   await assertNotSubscribed(eventId);
   await updateEventFor(userId, journalId, eventId, input);
+}
+
+/** One week of a repeating event, changed. `occurrence` is its original
+ *  start in ms, exactly as the placer drew it - see updateOccurrenceFor. */
+export async function updateCalendarOccurrence(
+  journalId: string,
+  eventId: string,
+  occurrence: string,
+  input: EventInput
+): Promise<void> {
+  const userId = await requireOwner();
+  await assertNotSubscribed(eventId);
+  await updateOccurrenceFor(userId, journalId, eventId, Number(occurrence), input);
+}
+
+/** One week of a repeating event, deleted. */
+export async function deleteCalendarOccurrence(eventId: string, occurrence: string): Promise<void> {
+  const userId = await requireOwner();
+  await assertNotSubscribed(eventId);
+  await deleteOccurrenceFor(userId, eventId, Number(occurrence));
 }
 
 /**

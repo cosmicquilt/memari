@@ -44,6 +44,38 @@ export type StoredEvent = {
   timeZone?: string | null;
   deletedAt?: Date | null;
   calendar?: { colour?: string | null; source?: string | null } | null;
+  /** ONE OCCURRENCE OF A SERIES, changed - see Override. Ignored on a
+   *  one-off event, which has no occurrences to name. */
+  overrides?: Override[] | null;
+};
+
+/**
+ * A single occurrence of a repeating event, changed: cancelled, moved, or
+ * renamed. RFC 5545's RECURRENCE-ID, and what CalendarEventOverride stores.
+ *
+ * `recurrenceId` names the occurrence by WHERE THE RULE PUT IT - its original
+ * start - in the same frame as the series' own startsAt: an instant for a
+ * zoned series, the wall time for a floating one, midnight for an all-day
+ * one. That is how an occurrence stays identifiable after it has been moved
+ * somewhere the rule would never put it.
+ */
+export type Override = {
+  recurrenceId: Date;
+  cancelled: boolean;
+  title?: string | null;
+  /** Set when the occurrence was MOVED. Same frame as recurrenceId. */
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+};
+
+/** One drawn occurrence, before it becomes a mark. */
+type Occurrence = {
+  start: Date;
+  end: Date;
+  /** A renamed occurrence's own title. */
+  title?: string | null;
+  /** Its recurrenceId in ms, for a series; absent for a one-off. */
+  occurrence?: number;
 };
 
 const DAY_MS = 86_400_000;
@@ -151,13 +183,18 @@ export function eventsForDays(
     for (const event of events) {
       if (event.deletedAt) continue;
 
-      for (const [start, end] of occurrencesOn(event, dayStart, zone)) {
+      for (const { start, end, title, occurrence } of occurrencesOn(event, dayStart, zone)) {
         out.push({
           id: event.id,
+          // WHICH OCCURRENCE, for a series: it keys the marks - a daily series
+          // with one day moved onto the next puts two blocks of one event in
+          // one column - and it tells the popup which week "only this one"
+          // means.
+          ...(occurrence !== undefined ? { occurrence: String(occurrence) } : {}),
           day: index,
           startTime: event.allDay ? "00:00" : hhmm(start),
           endTime: event.allDay ? "23:59" : hhmm(end),
-          label: event.title,
+          label: title || event.title,
           source: event.calendar?.source ? "google-calendar" : "manual",
           ...(event.allDay ? { allDay: true } : {}),
           ...(event.calendar?.colour ? { colour: event.calendar.colour } : {}),
@@ -175,10 +212,10 @@ export function eventsForDays(
 const NEIGHBOURS = [-2, -1, 0, 1, 2];
 
 /**
- * The occurrences of `event` that fall on the column starting `dayStart`, as
- * [start, end] in the BOOK's wall clock (encoded as UTC - see toWallTime).
- * Usually none or one; a series cannot land twice in a day because its rules
- * are daily at the finest.
+ * The occurrences of `event` that fall on the column starting `dayStart`, in
+ * the BOOK's wall clock (encoded as UTC - see toWallTime). Usually none or
+ * one. Two only when a series has an occurrence moved onto a day it already
+ * has one, which a daily series can.
  *
  * THREE KINDS, three rules:
  *
@@ -192,57 +229,87 @@ const NEIGHBOURS = [-2, -1, 0, 1, 2];
  *   day it STARTS there: a column is a day, and half an event at the top of
  *   the next column reads as a second event.
  */
-function occurrencesOn(event: StoredEvent, dayStart: number, bookZone: string): Array<[Date, Date]> {
+function occurrencesOn(event: StoredEvent, dayStart: number, bookZone: string): Occurrence[] {
   const dayEnd = dayStart + DAY_MS;
 
-  if (event.allDay || event.timeZone === FLOATING) {
-    // Both are already in the frame the page reads, so the rules are the ones
-    // this always used.
-    if (event.rrule) {
-      if (!recursOn(event, dayStart)) return [];
-      const offsetIntoDay = event.startsAt.getTime() - utcMidnight(event.startsAt);
-      const length = event.endsAt.getTime() - event.startsAt.getTime();
-      const start = new Date(dayStart + offsetIntoDay);
-      return [[start, new Date(start.getTime() + length)]];
-    }
-    const startsOnThisDay = event.startsAt.getTime() >= dayStart && event.startsAt.getTime() < dayEnd;
-    // An ALL-DAY event is a span, not an instant: it belongs to every day it
-    // covers, so a three-day trip bands all three.
-    const coversThisDay = event.allDay && event.startsAt.getTime() < dayEnd && event.endsAt.getTime() > dayStart;
-    return startsOnThisDay || coversThisDay ? [[event.startsAt, event.endsAt]] : [];
-  }
-
+  // A ONE-OFF is simple, and has no occurrences to override.
   if (!event.rrule) {
+    if (event.allDay || event.timeZone === FLOATING) {
+      const startsOnThisDay = event.startsAt.getTime() >= dayStart && event.startsAt.getTime() < dayEnd;
+      // An ALL-DAY event is a span, not an instant: it belongs to every day
+      // it covers, so a three-day trip bands all three.
+      const coversThisDay =
+        event.allDay && event.startsAt.getTime() < dayEnd && event.endsAt.getTime() > dayStart;
+      return startsOnThisDay || coversThisDay ? [{ start: event.startsAt, end: event.endsAt }] : [];
+    }
     const start = toWallTime(event.startsAt, bookZone);
     if (utcMidnight(start) !== dayStart) return [];
-    return [[start, toWallTime(event.endsAt, bookZone)]];
+    return [{ start, end: toWallTime(event.endsAt, bookZone) }];
   }
 
-  // A SERIES IS EXPANDED IN THE ZONE IT WAS WRITTEN IN, then each instance is
-  // converted. "Every Monday at 9am New York" stays at 9am in New York across
-  // daylight saving - and so moves by an hour, for a couple of weeks a year,
-  // in a London book, because the two countries change their clocks on
-  // different dates. Expanding it in the book's zone instead would pin it to
-  // 2pm in London and put it an hour wrong in New York for those weeks, which
-  // is the zone it actually happens in.
-  const ruleZone = isTimeZone(event.timeZone) ? event.timeZone : DEFAULT_ZONE;
-  const inRuleZone: StoredEvent = {
-    ...event,
-    startsAt: toWallTime(event.startsAt, ruleZone),
-    endsAt: toWallTime(event.endsAt, ruleZone),
-  };
-  const offsetIntoDay = inRuleZone.startsAt.getTime() - utcMidnight(inRuleZone.startsAt);
+  // A SERIES: what the rule generates, minus the occurrences that were
+  // cancelled or moved away, plus the ones moved HERE from elsewhere.
+  const overrides = new Map((event.overrides ?? []).map((o) => [o.recurrenceId.getTime(), o]));
   const length = event.endsAt.getTime() - event.startsAt.getTime();
+  const found: Occurrence[] = [];
 
-  const found: Array<[Date, Date]> = [];
-  for (const shift of NEIGHBOURS) {
-    const ruleDay = dayStart + shift * DAY_MS;
-    if (!recursOn(inRuleZone, ruleDay)) continue;
-    const instant = wallTimeToUtc(ruleDay + offsetIntoDay, ruleZone);
-    if (instant === null) continue;
-    const start = toWallTime(new Date(instant), bookZone);
+  /** `original` in the series' own frame; `start` in the book's wall clock. */
+  const keep = (original: number, start: Date) => {
+    const change = overrides.get(original);
+    // CANCELLED: gone. MOVED: drawn where it went, below - not here.
+    if (change?.cancelled || change?.startsAt) return;
+    found.push({ start, end: new Date(start.getTime() + length), title: change?.title, occurrence: original });
+  };
+
+  if (event.allDay || event.timeZone === FLOATING) {
+    // Already in the frame the page reads, so the rule runs as it always did.
+    if (recursOn(event, dayStart)) {
+      const offsetIntoDay = event.startsAt.getTime() - utcMidnight(event.startsAt);
+      keep(dayStart + offsetIntoDay, new Date(dayStart + offsetIntoDay));
+    }
+  } else {
+    // A SERIES IS EXPANDED IN THE ZONE IT WAS WRITTEN IN, then each instance
+    // is converted. "Every Monday at 9am New York" stays at 9am in New York
+    // across daylight saving - and so moves by an hour, for a couple of weeks
+    // a year, in a London book, because the two countries change their
+    // clocks on different dates. Expanding it in the book's zone instead
+    // would put it an hour wrong in New York for those weeks, which is the
+    // zone it actually happens in.
+    const ruleZone = isTimeZone(event.timeZone) ? event.timeZone : DEFAULT_ZONE;
+    const inRuleZone: StoredEvent = {
+      ...event,
+      startsAt: toWallTime(event.startsAt, ruleZone),
+      endsAt: toWallTime(event.endsAt, ruleZone),
+    };
+    const offsetIntoDay = inRuleZone.startsAt.getTime() - utcMidnight(inRuleZone.startsAt);
+    for (const shift of NEIGHBOURS) {
+      const ruleDay = dayStart + shift * DAY_MS;
+      if (!recursOn(inRuleZone, ruleDay)) continue;
+      const instant = wallTimeToUtc(ruleDay + offsetIntoDay, ruleZone);
+      if (instant === null) continue;
+      const start = toWallTime(new Date(instant), bookZone);
+      if (utcMidnight(start) !== dayStart) continue;
+      keep(instant, start);
+    }
+  }
+
+  // MOVED HERE. An occurrence moved to another time is drawn at that time,
+  // wherever it landed - which can be a day the rule never touches, so it
+  // is found by its own start rather than by running the rule. It keeps its
+  // ORIGINAL recurrenceId, which is how the popup still knows which week of
+  // the series it is.
+  for (const change of overrides.values()) {
+    if (change.cancelled || !change.startsAt) continue;
+    const movedEnd = change.endsAt ?? new Date(change.startsAt.getTime() + length);
+    const floatingFrame = event.allDay || event.timeZone === FLOATING;
+    const start = floatingFrame ? change.startsAt : toWallTime(change.startsAt, bookZone);
     if (utcMidnight(start) !== dayStart) continue;
-    found.push([start, toWallTime(new Date(instant + length), bookZone)]);
+    found.push({
+      start,
+      end: floatingFrame ? movedEnd : toWallTime(movedEnd, bookZone),
+      title: change.title,
+      occurrence: change.recurrenceId.getTime(),
+    });
   }
   return found;
 }

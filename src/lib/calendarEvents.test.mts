@@ -283,6 +283,123 @@ const placed = (events: StoredEvent[], days: GridDay[], zone: string) =>
   );
 }
 
+// ===========================================================================
+// ONE OCCURRENCE OF A SERIES, CHANGED
+//
+// An occurrence is named by where the rule put it - its original start - so
+// it can still be found after it has been moved somewhere the rule would
+// never put it. These are the cases a Google feed writes for every
+// rescheduled or cancelled week of a repeating meeting, and the ones a person
+// makes by editing "only this week".
+// ===========================================================================
+{
+  // Mondays 9am New York (13:00Z in September, EDT).
+  const series = (overrides: StoredEvent["overrides"]) =>
+    event({
+      id: "standup",
+      startsAt: at("2026-09-07T13:00:00.000"),
+      endsAt: at("2026-09-07T13:30:00.000"),
+      rrule: "FREQ=WEEKLY;BYDAY=MO",
+      timeZone: "America/New_York",
+      overrides,
+    });
+  const monday28 = at("2026-09-28T13:00:00.000"); // the occurrence on the 28th
+
+  // Untouched, for the control.
+  check(
+    placed([series([])], LATE_SEP, "America/New_York").join() === "2026-09-28 09:00-09:30",
+    `the control: Monday the 28th at 09:00; got ${placed([series([])], LATE_SEP, "America/New_York")}`
+  );
+
+  // CANCELLED: that week, and only that week, is gone.
+  const cancelled = series([{ recurrenceId: monday28, cancelled: true }]);
+  check(placed([cancelled], LATE_SEP, "America/New_York").length === 0, "a cancelled occurrence was still drawn");
+  check(
+    placed([cancelled], weekFrom(2026, 10, 4), "America/New_York").join() === "2026-10-05 09:00-09:30",
+    `and the week after is untouched; got ${placed([cancelled], weekFrom(2026, 10, 4), "America/New_York")}`
+  );
+
+  // MOVED to 11am the same day: drawn at 11, NOT also at 9.
+  const movedLater = series([
+    { recurrenceId: monday28, cancelled: false, startsAt: at("2026-09-28T15:00:00.000"), endsAt: at("2026-09-28T15:30:00.000") },
+  ]);
+  check(
+    placed([movedLater], LATE_SEP, "America/New_York").join() === "2026-09-28 11:00-11:30",
+    `moved to 11am, it should draw once at 11:00; got ${placed([movedLater], LATE_SEP, "America/New_York")}`
+  );
+
+  // MOVED TO ANOTHER DAY - Wednesday - which the rule never touches. Found by
+  // its own start, and gone from Monday.
+  const movedDay = series([
+    { recurrenceId: monday28, cancelled: false, startsAt: at("2026-09-30T13:00:00.000"), endsAt: at("2026-09-30T13:30:00.000") },
+  ]);
+  check(
+    placed([movedDay], LATE_SEP, "America/New_York").join() === "2026-09-30 09:00-09:30",
+    `moved to Wednesday, it should draw on Wednesday and not Monday; got ${placed([movedDay], LATE_SEP, "America/New_York")}`
+  );
+
+  // RENAMED only: same time, its own title.
+  const renamed = series([{ recurrenceId: monday28, cancelled: false, title: "Standup (with Dana)" }]);
+  const renamedDrawn = eventsForDays([renamed], LATE_SEP, "America/New_York");
+  check(
+    renamedDrawn.length === 1 && renamedDrawn[0].label === "Standup (with Dana)",
+    `a renamed occurrence should keep its time and take its own title; got ${renamedDrawn.map((e) => e.label)}`
+  );
+  check(
+    eventsForDays([renamed], weekFrom(2026, 10, 4), "America/New_York")[0]?.label === "Thing",
+    "the rename should touch only that week"
+  );
+
+  // EVERY DRAWN OCCURRENCE SAYS WHICH ONE IT IS - the original start, even
+  // once moved. It keys the marks and tells the popup which week "only this
+  // one" means.
+  const movedKey = eventsForDays([movedDay], LATE_SEP, "America/New_York")[0];
+  check(
+    movedKey?.occurrence === String(monday28.getTime()),
+    `a moved occurrence should still be named by its ORIGINAL start; got ${movedKey?.occurrence}`
+  );
+  check(
+    eventsForDays([event()], WEEK)[0].occurrence === undefined,
+    "a one-off has no occurrence to name"
+  );
+
+  // A DAILY SERIES WITH ONE DAY MOVED ONTO THE NEXT puts two blocks of one
+  // event in one column - which is why the occurrence is part of the key.
+  const daily = event({
+    id: "daily",
+    startsAt: at("2026-09-28T13:00:00.000"),
+    endsAt: at("2026-09-28T13:30:00.000"),
+    rrule: "FREQ=DAILY",
+    timeZone: "America/New_York",
+    overrides: [
+      { recurrenceId: at("2026-09-28T13:00:00.000"), cancelled: false, startsAt: at("2026-09-29T18:00:00.000"), endsAt: at("2026-09-29T18:30:00.000") },
+    ],
+  });
+  const tuesday = eventsForDays([daily], LATE_SEP, "America/New_York").filter((e) => e.day === 2);
+  check(
+    tuesday.map((e) => e.startTime).sort().join() === "09:00,14:00",
+    `Tuesday should hold its own 9am and Monday's, moved to 2pm; got ${tuesday.map((e) => e.startTime)}`
+  );
+  check(
+    new Set(tuesday.map((e) => e.occurrence)).size === 2,
+    "and the two must be told apart by their occurrence"
+  );
+
+  // AN ALL-DAY SERIES' occurrence is named by its date at midnight.
+  const weeklyHoliday = event({
+    id: "bins",
+    allDay: true,
+    startsAt: at("2026-09-07T00:00:00.000"),
+    endsAt: at("2026-09-08T00:00:00.000"),
+    rrule: "FREQ=WEEKLY",
+    overrides: [{ recurrenceId: at("2026-09-28T00:00:00.000"), cancelled: true }],
+  });
+  check(
+    eventsForDays([weeklyHoliday], LATE_SEP, "America/New_York").length === 0,
+    "a cancelled all-day occurrence was still drawn"
+  );
+}
+
 // --- AN UNKNOWN BOOK ZONE STILL DRAWS -------------------------------------
 check(
   placed([event()], WEEK, "Not/AZone").join() === "2026-09-22 09:00-10:00",

@@ -18,7 +18,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { StoredEvent } from "@/lib/calendarEvents";
-import { DEFAULT_ZONE, instantFromWall } from "@/lib/timeZone";
+import { DEFAULT_ZONE, FLOATING, instantFromWall, toWallTime, wallDate } from "@/lib/timeZone";
 import { zoneForBook } from "./ownerSettings";
 
 /** What a new calendar is drawn in until someone changes it. Screen only -
@@ -54,6 +54,10 @@ const EVENT_SELECT = {
   deletedAt: true,
   calendarId: true,
   calendar: { select: { colour: true, source: true } },
+  // THE CHANGED WEEKS OF A SERIES. Without this every moved or deleted
+  // occurrence draws where the rule put it - the sync would store them
+  // correctly and the page would ignore them.
+  overrides: { select: { recurrenceId: true, cancelled: true, title: true, startsAt: true, endsAt: true } },
 } as const;
 
 /** A row as both the placer and the editor want it: StoredEvent plus the
@@ -308,16 +312,117 @@ export async function updateEventFor(
   eventId: string,
   input: EventInput
 ): Promise<EditableEvent> {
-  const existing = await prisma.calendarEvent.findFirst({ where: { id: eventId, ownerId }, select: { id: true } });
+  const existing = await prisma.calendarEvent.findFirst({
+    where: { id: eventId, ownerId },
+    select: { id: true, startsAt: true, endsAt: true, allDay: true, rrule: true, timeZone: true },
+  });
   if (!existing) throw new Error("Event not found");
   const zone = await zoneOfJournal(ownerId, journalId);
   const calendarId = input.calendarId
     ? (await prisma.calendar.findFirstOrThrow({ where: { id: input.calendarId, ownerId }, select: { id: true } })).id
     : undefined;
-  return prisma.calendarEvent.update({
-    where: { id: eventId },
-    data: { ...parse(input, zone), ...(calendarId ? { calendarId } : {}) },
-    select: EVENT_SELECT,
+
+  // A SERIES EDITED AS A SERIES KEEPS ITS OWN FIRST DATE.
+  //
+  // The popup sends the date of the COLUMN it was opened from, which for a
+  // weekly event opened in its fifth week is the fifth week. Used as the
+  // series' start, it silently deleted the four weeks before it - on a
+  // title change. So the series keeps its start date and takes only the new
+  // time of day. Turning a one-off into a series, or a series into a
+  // one-off, still uses the column: that occurrence is the one being meant.
+  const keepsItsStart = Boolean(existing.rrule && input.rrule);
+  const floatingFrame = existing.allDay || existing.timeZone === FLOATING;
+  const firstDate = wallDate(floatingFrame ? existing.startsAt : toWallTime(existing.startsAt, zone));
+  const data = parse(keepsItsStart ? { ...input, date: firstDate } : input, zone);
+
+  // A SERIES WHOSE TIMES OR RULE CHANGED LOSES ITS CHANGED WEEKS. They are
+  // named by where the old rule put them; after the series moves, a deleted
+  // week would silently come back (its name no longer matches anything) and
+  // a moved one would be stranded at a time nobody remembers setting. A
+  // rename keeps them - the weeks still mean what they meant.
+  const reshaped =
+    existing.rrule !== null &&
+    (data.startsAt.getTime() !== existing.startsAt.getTime() ||
+      data.endsAt.getTime() !== existing.endsAt.getTime() ||
+      data.allDay !== existing.allDay ||
+      data.rrule !== existing.rrule);
+
+  const [updated] = await prisma.$transaction([
+    prisma.calendarEvent.update({
+      where: { id: eventId },
+      data: { ...data, ...(calendarId ? { calendarId } : {}) },
+      select: EVENT_SELECT,
+    }),
+    ...(reshaped ? [prisma.calendarEventOverride.deleteMany({ where: { eventId } })] : []),
+  ]);
+  return updated as EditableEvent;
+}
+
+/**
+ * ONE WEEK OF A SERIES, changed - "only this event".
+ *
+ * @param occurrence the occurrence's original start in ms - its
+ *   RECURRENCE-ID, which the placer hands the popup with every drawn block.
+ *
+ * Stored as an override in the series' own frame, so the placer matches it:
+ * an instant for a zoned series, a wall time for a floating one. If the
+ * times are unchanged it is a RENAME (startsAt left null), not a move to
+ * the same place - which draws the same today but would stop the week
+ * following the series if the series were later moved.
+ */
+export async function updateOccurrenceFor(
+  ownerId: string,
+  journalId: string,
+  eventId: string,
+  occurrence: number,
+  input: EventInput
+): Promise<void> {
+  const series = await prisma.calendarEvent.findFirst({
+    where: { id: eventId, ownerId },
+    select: { id: true, startsAt: true, endsAt: true, allDay: true, rrule: true, timeZone: true },
+  });
+  if (!series?.rrule) throw new Error("That is not a repeating event.");
+  const recurrenceId = new Date(occurrence);
+  if (Number.isNaN(recurrenceId.getTime())) throw new Error("No such occurrence.");
+
+  const zone = await zoneOfJournal(ownerId, journalId);
+  const floatingFrame = series.allDay || series.timeZone === FLOATING;
+  const length = series.endsAt.getTime() - series.startsAt.getTime();
+  const title = String(input.title ?? "").trim().slice(0, TITLE_MAX) || null;
+
+  // An all-day week can be renamed; its times are the day itself.
+  let startsAt: Date | null = null;
+  let endsAt: Date | null = null;
+  if (!series.allDay) {
+    const frame = floatingFrame ? DEFAULT_ZONE : zone;
+    startsAt = instantFromWall(input.date, input.start, frame);
+    endsAt = instantFromWall(input.date, input.end, frame);
+    if (!startsAt || !endsAt) throw new Error("Bad date");
+    if (endsAt.getTime() < startsAt.getTime()) endsAt = startsAt;
+    // Where the rule put it anyway? Then it was not moved.
+    if (startsAt.getTime() === recurrenceId.getTime() && endsAt.getTime() === recurrenceId.getTime() + length) {
+      startsAt = null;
+      endsAt = null;
+    }
+  }
+
+  await prisma.calendarEventOverride.upsert({
+    where: { eventId_recurrenceId: { eventId, recurrenceId } },
+    create: { eventId, recurrenceId, cancelled: false, title, startsAt, endsAt },
+    update: { cancelled: false, title, startsAt, endsAt },
+  });
+}
+
+/** ONE WEEK OF A SERIES, deleted - "only this event". */
+export async function deleteOccurrenceFor(ownerId: string, eventId: string, occurrence: number): Promise<void> {
+  const series = await prisma.calendarEvent.findFirst({ where: { id: eventId, ownerId }, select: { id: true, rrule: true } });
+  if (!series?.rrule) throw new Error("That is not a repeating event.");
+  const recurrenceId = new Date(occurrence);
+  if (Number.isNaN(recurrenceId.getTime())) throw new Error("No such occurrence.");
+  await prisma.calendarEventOverride.upsert({
+    where: { eventId_recurrenceId: { eventId, recurrenceId } },
+    create: { eventId, recurrenceId, cancelled: true },
+    update: { cancelled: true, title: null, startsAt: null, endsAt: null },
   });
 }
 
