@@ -23,6 +23,7 @@
     "check:saved": "tsx scripts/check-saved.mts",
     "build:handwriting": "tsx scripts/build-handwriting-fonts.mts",
     "build:desk-textures": "tsx scripts/build-desk-textures.mts",
+    "build:doodle-wall": "tsx scripts/build-doodle-wall.mts",
     "check:gaps": "tsx scripts/check-gaps.mts",
     "check:levels": "tsx scripts/check-levels.mts",
     "check:book": "tsx scripts/check-book.mts",

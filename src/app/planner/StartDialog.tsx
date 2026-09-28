@@ -80,11 +80,19 @@ const SEGMENT_PADDING = 3;
  * luminance spread of 1.6 against 2.3) and read as plain colour, not paper.
  * The colour is there before the tile loads, so the first frame is cream,
  * never blank.
+ *
+ * And on the paper, a wall of doodles in blue pen (2026-09-27: "sketched in
+ * blue pen in the background cute characters and animals"): the doodle
+ * library's pencil sketches packed edge to edge, baked by
+ * scripts/build-doodle-wall.mts (npm run build:doodle-wall) onto this same
+ * cream - so the cream here and PAPER there must match - as one seamless
+ * 1400 x 1000 tile. The fibre is overlaid on top of it, ink and all, the way
+ * paper shows through a pen line.
  */
 const BACKDROP_BASE = "#f5ead5";
-const BACKDROP_PAPER = "url(/landing/paper.jpg)";
-const BACKDROP_PAPER_SIZE = "256px 256px";
-const BACKDROP_PAPER_BLEND = "overlay";
+const BACKDROP_PAPER = "url(/landing/paper.jpg), url(/landing/doodle-wall.webp)";
+const BACKDROP_PAPER_SIZE = "256px 256px, 1400px 1000px";
+const BACKDROP_PAPER_BLEND = "overlay, normal";
 const DANGER = "#d92d20";
 const ERROR_TEXT = "#ff8f5c";
 
