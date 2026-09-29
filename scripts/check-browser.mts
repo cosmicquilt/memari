@@ -1218,6 +1218,64 @@ const spineDrag: Probe = {
         }
       };
 
+      // THERE AND BACK IN ONE PRESS. Asked 2026-09-29: "it repeats the steps
+      // backwards as you drag back up in the reverse direction without
+      // releasing?" It should: the preview is worked out from the snapshot
+      // the press took plus how far the pointer is from where it pressed,
+      // never from the frame before - so each pointer position has one
+      // layout, whichever way the pointer arrived at it. Down past the stop
+      // and back to the start, sampled at the same positions both ways,
+      // then released where it began, which saves nothing.
+      {
+        const handle = await tab.$(`[data-stack-key="hourly-stack:${left.spineId}"]`);
+        const box = handle && (await handle.boundingBox());
+        if (!box) {
+          fail("spine drag", "no handle on the left page's hours edge");
+          return;
+        }
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        const steps = 24;
+        const at = (i: number) => y + (18 * pitch * i) / steps;
+        await tab.mouse.move(x, y);
+        await tab.mouse.down();
+        const down: Rows[] = [];
+        for (let i = 1; i <= steps; i++) {
+          await tab.mouse.move(x, at(i));
+          await tab.waitForTimeout(40);
+          down.push(await read());
+        }
+        const up: Rows[] = [];
+        for (let i = steps - 1; i >= 0; i--) {
+          await tab.mouse.move(x, at(i));
+          await tab.waitForTimeout(40);
+          up.unshift(await read());
+        }
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        const afterRelease = await read();
+        // up[i] is position i (0 = where it pressed); down[i - 1] is the same
+        // position on the way down.
+        const differ = up
+          .slice(1)
+          .map((frame, i) => (JSON.stringify(frame) === JSON.stringify(down[i]) ? null : i + 1))
+          .filter((i): i is number => i !== null);
+        const spans = down.map((f) => f[left.spineId]?.rowSpan);
+        if (Math.max(...(spans as number[])) <= before[left.spineId]!.rowSpan) {
+          fail("spine drag", "there and back: the hours never grew, so nothing was retraced");
+        } else if (differ.length > 0) {
+          fail("spine drag", `there and back: ${differ.length} of ${steps - 1} positions drew differently on the way up than on the way down (first at ${differ[0]})`);
+        } else if (JSON.stringify(up[0]) !== JSON.stringify(before) || JSON.stringify(afterRelease) !== JSON.stringify(before)) {
+          fail("spine drag", "there and back: back at the start, the spread was not as it began, or releasing there changed it");
+        } else {
+          note(
+            "spine drag",
+            `there and back in one press: ${steps - 1} positions drawn identically both ways ` +
+              `(hours ${spans[0]} up to ${Math.max(...(spans as number[]))} and back), and the start released unchanged`
+          );
+        }
+      }
+
       // GROW, well past what this spread can give.
       const grown = await drag(18);
       if (!grown) {
