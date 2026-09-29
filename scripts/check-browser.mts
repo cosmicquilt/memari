@@ -1462,6 +1462,24 @@ const moduleEditor: Probe = {
       }
 
       // --- THE NOTE BOX -----------------------------------------------
+      // CENTRED ON THE PAGE, as print centres it. In serif the gratitude
+      // box's heading is wider than its box, and CSS start-aligned it: the
+      // PDF put it in the middle and the screen pushed it right - "doesn't
+      // look exactly center" (2026-09-29). Its ink's middle is the box's.
+      const centring = (await tab.evaluate(`(() => {
+        const module = document.querySelector('[data-module-instance-id="${noteBox.id}"]');
+        const heading = [...module.querySelectorAll("div")].find((d) => d.childElementCount === 0 && d.textContent.trim().length > 3 && d.textContent === d.textContent.toUpperCase());
+        if (!heading) return null;
+        const range = document.createRange();
+        range.selectNodeContents(heading);
+        const ink = range.getBoundingClientRect();
+        const box = heading.getBoundingClientRect();
+        return { text: heading.textContent, off: (ink.left + ink.width / 2) - (box.left + box.width / 2), inkW: ink.width, boxW: box.width };
+      })()`)) as { text: string; off: number; inkW: number; boxW: number } | null;
+      if (!centring) problems.push("no heading drawn on the note box");
+      else if (Math.abs(centring.off) > 0.5) {
+        problems.push(`"${centring.text}" sits ${centring.off.toFixed(1)}px off the middle of its box on the page (${centring.inkW.toFixed(0)}px of ink in ${centring.boxW.toFixed(0)}px)`);
+      } else notes.push(`"${centring.text}" centred on the page (${centring.inkW.toFixed(0)}px of ink in ${centring.boxW.toFixed(0)}px)`);
       const noteError = await openEditor(noteBox.id, "Labeled box");
       if (noteError) problems.push(noteError);
       else {
@@ -1470,6 +1488,30 @@ const moduleEditor: Probe = {
         if (labels !== "Blank/Lined/Dotted") problems.push(`the Body picker offers ${labels || "nothing"}`);
         else if (new Set(body.map((b) => b.markup)).size !== 3) problems.push("two of the Body pictures are the same drawing");
         else notes.push("note box: Body drawn three ways");
+        // THE HEADING FIELD SHOWS THE WHOLE HEADING. It clipped "THINGS I'M
+        // GRATEFUL FOR" to "...FO" (2026-09-29): in serif the heading is wider
+        // than its box, which the page does not clip and an input does.
+        // Scrolled to its end, a field holding more than it shows moves.
+        const field = await tab.locator("input.memari-heading-field").evaluate((input) => {
+          const el = input as HTMLInputElement;
+          el.scrollLeft = 100000;
+          const hidden = el.scrollLeft;
+          const style = getComputedStyle(el);
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.font = `${style.fontSize} ${style.fontFamily}`;
+          return { hidden, text: Math.round(context.measureText(el.value.toUpperCase()).width), width: el.clientWidth, value: el.value };
+        });
+        if (field.hidden > 0 || field.text > field.width) {
+          problems.push(`the heading field hides ${field.hidden}px of "${field.value}" (${field.text}px of text in ${field.width}px)`);
+        } else notes.push(`heading field holds "${field.value}" whole (${field.text}px in ${field.width}px)`);
+        // And the field is centred as the heading is: its middle is the
+        // module's, since a note box's heading box is inset equally.
+        const fieldOff = (await tab.locator("input.memari-heading-field").evaluate((input) => {
+          const r = input.getBoundingClientRect();
+          const frame = (input.parentElement as HTMLElement).getBoundingClientRect();
+          return r.left + r.width / 2 - (frame.left + frame.width / 2);
+        })) as number;
+        if (Math.abs(fieldOff) > 1) problems.push(`the heading field sits ${fieldOff.toFixed(1)}px off the middle of the module`);
         if (shots) await tab.screenshot({ path: `${shots}/note-editor.png` });
         await tab.keyboard.press("Escape");
       }

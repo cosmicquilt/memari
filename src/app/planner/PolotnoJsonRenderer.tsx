@@ -210,6 +210,21 @@ function ElementNode({
           fontFamily: element.fontFamily,
           color: element.fill ?? "#000000",
           textAlign: (element.align as React.CSSProperties["textAlign"]) ?? "left",
+          // CENTRED EVEN WHEN IT OVERFLOWS, the way print centres it.
+          //
+          // text-align alone gives up on a line wider than its box: CSS
+          // start-aligns it and lets it spill out of the far side. The PDF
+          // anchors a centred line at the box's middle, and so do the proof
+          // sheets and the timeline's canvas - so a heading one estimate
+          // judged to fit and the face did not ("THINGS I'M GRATEFUL FOR",
+          // 389 print px in a 371px box) was centred on paper and pushed to
+          // the right on screen. Reported 2026-09-29: "doesn't look exactly
+          // center". A flex container centres its content by overflowing it
+          // equally on both sides, which is print's rule; text-align still
+          // centres each line inside it when a heading wraps.
+          ...(element.align === "center" || element.align === "right"
+            ? { display: "flex", justifyContent: element.align === "center" ? "center" : "flex-end" }
+            : {}),
           opacity,
           letterSpacing: element.letterSpacing,
           lineHeight: 1.2,

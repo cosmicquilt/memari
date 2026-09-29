@@ -218,6 +218,25 @@ export function ModuleEditor({
   const frameHeight = Math.max(240, viewport.height - PADDING * 6);
   const scale = Math.min(frameWidth / box.width, frameHeight / box.height, 3);
 
+  // THE FIELD IS AS WIDE AS THE HEADING, not as the heading's box.
+  //
+  // The renderer never clips: a heading its fit judged too optimistically
+  // runs past its box on the page, start-aligned, as CSS overflows centred
+  // text. An input DOES clip, so the field cut the same heading off -
+  // reported as "THINGS I'M GRATEFUL FO" (2026-09-29). Measured in the
+  // browser: that heading is 389 print px of Newsreader in a 371px box at
+  // 7pt, because labeledBox's width estimate was taken at a display size
+  // where the face is narrower. So the field takes the text's real width
+  // when that is wider, CENTRED on the box as the page and the print centre
+  // it - see PolotnoJsonRenderer - which puts every letter where it prints.
+  const headingShown = String(draft.heading ?? "") || (heading?.text ?? "");
+  const fieldWidth = heading
+    ? Math.max(
+        (heading.width ?? 0) * scale,
+        measureTextPx(headingShown.toUpperCase(), (heading.fontSize ?? 0) * scale, String(heading.fontFamily ?? "")) + 2
+      )
+    : 0;
+
   // THE HOURS SAVE AS THE JOURNAL'S HOUR SETTINGS, through the one action
   // that sizes every page's hours and makes room below them. It shrinks
   // what is below fairly and only refuses when everything there is already
@@ -395,9 +414,15 @@ export function ModuleEditor({
             onBlur={() => setHeadingFocused(false)}
             style={{
               position: "absolute",
-              left: ((heading.x ?? 0) - box.x) * scale,
+              left:
+                ((heading.x ?? 0) - box.x) * scale +
+                (heading.align === "center"
+                  ? ((heading.width ?? 0) * scale - fieldWidth) / 2
+                  : heading.align === "right"
+                  ? (heading.width ?? 0) * scale - fieldWidth
+                  : 0),
               top: ((heading.y ?? 0) - box.y) * scale,
-              width: (heading.width ?? 0) * scale,
+              width: fieldWidth,
               height: (heading.fontSize ?? 0) * 1.2 * scale,
               margin: 0,
               padding: 0,
@@ -634,6 +659,18 @@ export function ModuleEditor({
       </div>
     </div>
   );
+}
+
+let measuringContext: CanvasRenderingContext2D | null = null;
+
+/** How wide `text` sets in `fontFamily` at `fontSizePx`, as the browser draws
+ *  it. 0 where there is no canvas to ask. */
+function measureTextPx(text: string, fontSizePx: number, fontFamily: string): number {
+  if (typeof document === "undefined" || !text || !(fontSizePx > 0)) return 0;
+  measuringContext ??= document.createElement("canvas").getContext("2d");
+  if (!measuringContext) return 0;
+  measuringContext.font = `${fontSizePx}px "${fontFamily}"`;
+  return measuringContext.measureText(text).width;
 }
 
 /** The element list without one element, wherever it sits - groups included,
