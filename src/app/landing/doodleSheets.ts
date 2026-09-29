@@ -84,8 +84,9 @@ export type SheetBakeInput = {
  *  sticker (2026-09-28: "make the page a bit fuzzier and a bit more
  *  compression artifacting to match scene"). Of four strengths compared at
  *  screen size, Andrew chose the lightest ("I actually like light better",
- *  0.55 / 0.6, over 0.42 / 0.5), then "can we do even better quality". */
-export const SHEET_AGE = { scale: 0.7, quality: 0.75 };
+ *  0.55 / 0.6, over 0.42 / 0.5), then "can we do even better quality"
+ *  (0.7 / 0.75), then the crispest of three ("lets see crisper"). */
+export const SHEET_AGE = { scale: 0.85, quality: 0.85 };
 
 /** What bakeSheet needs for one sheet, given its packed ink and a way to
  *  turn a site path into a URL the baking page can load. */
