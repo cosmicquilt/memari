@@ -480,6 +480,25 @@ for (const rule of ["none", "lined", "dotted"] as const) {
   }
 }
 
+// NOTHING ON THE HEADER RULE. The band is snapped to the lattice, so its rule
+// sits on a dot row, and the body began on that row: dots along the header
+// line, or a lined box's first rule drawn over it. Asked 2026-09-29: "omit
+// the dots that coincide with the line below the title of the box". At two
+// widths, and with a heading long enough to take the two-line band.
+for (const rule of ["lined", "dotted"] as const) {
+  for (const [columnSpan, heading] of [[6, "Notes"], [12, "Notes"], [4, "Things I'm Grateful For and More Besides"]] as const) {
+    const elements = render("labeled-box", columnSpan, 10, { heading, rule });
+    const headerRule = elements.find((e) => String(e.id).endsWith("-header-rule"));
+    const ruleY = (headerRule?.y ?? 0) + (headerRule?.height ?? 0) / 2;
+    const onIt = elements.filter(
+      (e) => /-(rule|dot)\d/.test(String(e.id)) && Math.abs((e.y ?? 0) + (e.height ?? 0) / 2 - ruleY) < 0.5
+    );
+    checked++;
+    if (!headerRule) fail(`labeled-box ${rule}: no header rule drawn`);
+    else if (onIt.length > 0) fail(`labeled-box ${rule} at ${columnSpan} columns: ${onIt.length} body mark(s) sit on the header rule`);
+  }
+}
+
 // The OLD boolean still draws. A box saved before `rule` existed holds
 // `ruled: true` and nothing has migrated it; if this stops working, those
 // boxes silently lose their lines.

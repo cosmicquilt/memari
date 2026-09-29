@@ -1446,7 +1446,7 @@ const moduleEditor: Probe = {
         // 2026-09-29 whether flying the module out of the canvas "would
         // lag" - this is the answer, measured.
         await tab.evaluate(`(() => {
-          const record = (window.__flight = { pressed: 0, frames: [] });
+          const record = (window.__flight = { pressed: 0, seen: 0, frames: [] });
           const tick = () => {
             // THE MODULE, not its card: the preview has paper around it now,
             // and it is the module that leaves the canvas at its own size.
@@ -1456,7 +1456,13 @@ const moduleEditor: Probe = {
             // transparent, where it ends before it flies from the module.
             const r = frame && u && Number(getComputedStyle(frame).opacity) > 0.5 ? { left: u.left, top: u.top, width: u.right - u.left, height: u.bottom - u.top } : null;
             record.frames.push({ t: performance.now(), r: r && { l: r.left, t: r.top, w: r.width, h: r.height } });
-            if (performance.now() - record.pressed < 1100) requestAnimationFrame(tick);
+            // Until the flight is over - 1.1s from the first frame it can be
+            // seen, not from the press - so a slow editor is measured slow
+            // rather than missed: on a loaded machine it appeared 0.9-1.0s
+            // after the press and a fixed window saw no flight at all.
+            if (r && !record.seen) record.seen = performance.now();
+            const now = performance.now();
+            if ((record.seen ? now - record.seen < 1100 : true) && now - record.pressed < 6000) requestAnimationFrame(tick);
           };
           record.pressed = performance.now();
           requestAnimationFrame(tick);
@@ -1465,7 +1471,7 @@ const moduleEditor: Probe = {
         const dialog = tab.getByRole("dialog", { name: `Edit ${name}` });
         await dialog.waitFor({ timeout: 5000 }).catch(() => undefined);
         if (!(await dialog.isVisible())) return `pressing the ${name}'s pencil opened no editor`;
-        await tab.waitForTimeout(1200);
+        await tab.waitForFunction(`(() => { const f = window.__flight; return f.seen && performance.now() - f.seen > 1150; })()`, undefined, { timeout: 8000 }).catch(() => undefined);
         const flown = (await tab.evaluate(`window.__flight`)) as {
           pressed: number;
           frames: Array<{ t: number; r: { l: number; t: number; w: number; h: number } | null }>;
@@ -1540,7 +1546,7 @@ const moduleEditor: Probe = {
       if (hoursError) problems.push(hoursError);
       // A stutter is reported, and the editor is open and working - so the
       // rest is still checked rather than failing as knock-ons.
-      if (!hoursError || /stuttered/.test(hoursError)) {
+      if (!hoursError || /stuttered|to start moving/.test(hoursError)) {
         const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
         // PAPER AROUND THE MODULE, 24px of it on every side at rest ("a bit of
         // whitespace padding around it", 2026-09-29).
@@ -1620,7 +1626,7 @@ const moduleEditor: Probe = {
       // --- THE TO-DO ---------------------------------------------------
       const todoError = await openEditor(leftTodo.id, "To-do checklist");
       if (todoError) problems.push(todoError);
-      if (!todoError || /stuttered/.test(todoError)) {
+      if (!todoError || /stuttered|to start moving/.test(todoError)) {
         const lines = await picker("Lines");
         const lined = lines.find((l) => l.label === "Lined");
         const crosses = lines.find((l) => l.label === "Dashed");
@@ -1667,7 +1673,7 @@ const moduleEditor: Probe = {
       } else notes.push(`"${centring.text}" centred on the page (${centring.inkW.toFixed(0)}px of ink in ${centring.boxW.toFixed(0)}px)`);
       const noteError = await openEditor(noteBox.id, "Labeled box");
       if (noteError) problems.push(noteError);
-      if (!noteError || /stuttered/.test(noteError)) {
+      if (!noteError || /stuttered|to start moving/.test(noteError)) {
         const body = await picker("Body");
         const labels = body.map((b) => b.label).join("/");
         if (labels !== "Blank/Lined/Dotted") problems.push(`the Body picker offers ${labels || "nothing"}`);

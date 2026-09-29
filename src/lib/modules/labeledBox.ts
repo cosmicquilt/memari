@@ -268,7 +268,13 @@ export function renderLabeledBox(
     const pitch = rowHeightPx(lattice);
     const bodyTop = geometry.y + headerHeight;
     const origin = lattice ? geometry.y - lattice.insetPx : geometry.y;
-    const first = origin + Math.ceil((bodyTop - origin) / pitch) * pitch;
+    // The first dot row BELOW the header's rule, not on it. The header band
+    // is snapped to the lattice, so its rule sits on a dot row - and that row
+    // came first: a line of dots along the header rule, or a lined box's
+    // first rule drawn over it. Asked 2026-09-29: "omit the dots that
+    // coincide with the line below the title of the box".
+    let first = origin + Math.ceil((bodyTop - origin) / pitch - 1e-6) * pitch;
+    if (Math.abs(first - bodyTop) < 0.5) first += pitch;
     // The lines a user actually writes on, and they were the heaviest
     // interior marks in the planner: a bare 0.5 written inline here, the
     // same weight as the box's own border, where the hours beside them are
