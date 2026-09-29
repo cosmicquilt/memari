@@ -116,6 +116,9 @@ import {
 import {
   gridCellToAllocation,
   followerRowsAfterGrowth,
+  resizeSpineSpread,
+  spineMaxRowSpan,
+  type SpineStack,
   rowsBelowHours,
   resolveZone,
   packedTopEdge,
@@ -646,6 +649,11 @@ type StackBottom = {
   // stacks never need (nothing sits between a stack and its own
   // members that also has to move).
   followerIds: string[];
+  // Present on a SPINE's own edge - the hours, or a month calendar: the
+  // stack under it as that edge sees it, with every follower's own floor.
+  // Taken into the drag when it begins, so the preview resizes the whole
+  // spread by the rule the commit uses - see resizeSpineSpread (grid.ts).
+  spine?: { slug: string; stack: SpineStack };
   // Each follower's own content floor, parallel to followerIds. Present
   // with rowHeightSnaps that carry a row height: that drag commits through
   // updateHourlySettings, which shrinks what is below the hours no lower
@@ -1854,9 +1862,11 @@ function NativePage({
         // here would keep showing stale pre-resize content forever.
         const info = moduleLookup.get(id);
         if (!placement || !info) return null;
-        // A module squeezed to nothing by the block above it is kept, not
-        // deleted, so it comes back when that block is made shorter again
-        // - see SPINE_FOLLOWER_FLOOR. It draws nothing while it is there:
+        // A module at zero rows draws nothing. The spine's edge could squeeze
+        // what was under it to nothing until 2026-09-29 (9fcc788; now its
+        // minimum is a hard stop, see spineMaxRowSpan), so a book may still
+        // hold one - kept, and handed its rows back when the spine shrinks.
+        // Nothing is drawn for it:
         // CSS Grid has no `span 0`, and a renderer handed a box of
         // negative height draws its border inside out.
         if (placement.rowSpan <= 0) return null;
@@ -2368,21 +2378,6 @@ function NativePage({
 // StackResizeHandle (the strip at a stack's own bottom edge, which the
 // off-mode handle also reuses) so every hit zone in the app stays the
 // same size as every other.
-/**
- * How short a page's SPINE may squeeze the stack beneath it.
- *
- * Zero, not MIN_ROW_SPAN. Growing the calendar to fill the page has to be
- * able to take the last of Notes' height, and the module is kept at zero
- * rather than deleted so that shrinking the calendar hands it straight
- * back - the last follower absorbs whatever is freed, so it returns at the
- * size the calendar gave up.
- *
- * Only the spine may do this. A follower's OWN resize handle still stops
- * at MIN_ROW_SPAN, because a module dragged to nothing by its own edge
- * would leave nothing to grab to bring it back.
- */
-const SPINE_FOLLOWER_FLOOR = 0;
-
 const RESIZE_HANDLE_HALF_HEIGHT_PX = 32;
 
 // A thin hover strip straddling the shared boundary between two
@@ -2819,6 +2814,9 @@ function StackResizeHandle({
 
   return (
     <div
+      // Which stack's edge this is - "hourly-stack:<id>" for a spine - so the
+      // browser check can grab the right one.
+      data-stack-key={stackBottom.key}
       style={{
         position: "absolute",
         left: rect.x,
@@ -5219,6 +5217,14 @@ export function NativePlannerEditor({
     // the bottom section sitting a cell low during the drag and jumping to
     // the right place afterwards.
     rowHeightSnaps?: StackBottom["rowHeightSnaps"];
+    // Present when a SPINE'S OWN EDGE is dragged (increments off, or a
+    // calendar): every page of the spread, the dragged one first, each with
+    // its stack as it stood when the drag began. The preview resizes them all
+    // with resizeSpineSpread - the function resizeHourlyGridCore commits with
+    // - so the facing page moves live and the edge stops where the save will.
+    // It did not: only the row-height drag mirrored, so with increments off
+    // the facing page changed only on release. Reported 2026-09-29.
+    spread?: Array<{ spineId: string; followerIds: string[]; stack: SpineStack }>;
   } | null>(null);
 
   // What to actually render placements as — the live resize preview(s)
@@ -5262,7 +5268,26 @@ export function NativePlannerEditor({
         }
       }
     }
-    if (stackResizeDrag && stackResizeDrag.deltaRows !== 0) {
+    if (stackResizeDrag && stackResizeDrag.deltaRows !== 0 && stackResizeDrag.spread) {
+      // A spine's own edge: every page of the spread, from the snapshot the
+      // drag took, by the function the commit uses.
+      const spread = stackResizeDrag.spread;
+      const resized = resizeSpineSpread(
+        spread.map((s) => s.stack),
+        spread[0].stack.spineRowSpan + stackResizeDrag.deltaRows
+      );
+      const patched = { ...next };
+      spread.forEach((s, i) => {
+        const spine = patched[s.spineId];
+        if (spine) patched[s.spineId] = { ...spine, rowSpan: resized.rowSpan };
+        s.followerIds.forEach((fid, j) => {
+          const follower = patched[fid];
+          const row = resized.followers[i][j];
+          if (follower && row) patched[fid] = { ...follower, ...row };
+        });
+      });
+      next = patched;
+    } else if (stackResizeDrag && stackResizeDrag.deltaRows !== 0) {
       // The dragged page first, then any page mirroring it. One body for
       // both: a mirror is the same operation on another page's copy of the
       // same stack, not a different kind of thing.
@@ -5334,16 +5359,16 @@ export function NativePlannerEditor({
               followers.map((f) => ({
                 rowStart: f.placement.rowStart,
                 rowSpan: f.placement.rowSpan,
-                minRowSpan: group.followerMinSpans?.[group.followerIds.indexOf(f.id)] ?? SPINE_FOLLOWER_FLOOR,
+                minRowSpan: group.followerMinSpans?.[group.followerIds.indexOf(f.id)] ?? MIN_ROW_SPAN,
               })),
               member.rowStart + member.rowSpan + snap.gapRows,
               followerPageGrid.gridRows
             ).rows;
           } else {
-            // The spine's own edge (increments off, or a calendar), which
-            // commits through resizeHourlyGridCore and so previews with its
-            // rule. The gap under a calendar is always one row, so the delta
-            // IS how far the followers' top moves here.
+            // Only an increments-on drag whose span names no row height can
+            // reach here - the spine's own edge (increments off, or a
+            // calendar) takes the spread path above. Shifted by the delta,
+            // each follower no lower than its own floor.
             const tailRowEnd = Math.max(
               ...followers.map((f) => f.placement.rowStart + f.placement.rowSpan)
             );
@@ -5352,11 +5377,9 @@ export function NativePlannerEditor({
                 ? member.rowStart + member.rowSpan + snap.gapRows
                 : followers[0].placement.rowStart + stackResizeDrag.deltaRows;
             rows = followerRowsAfterGrowth(
-              // Squeezed by the block above, so the floor is zero - see
-              // SPINE_FOLLOWER_FLOOR.
               followers.map((f) => ({
                 rowSpan: f.placement.rowSpan,
-                minRowSpan: SPINE_FOLLOWER_FLOOR,
+                minRowSpan: group.followerMinSpans?.[group.followerIds.indexOf(f.id)] ?? MIN_ROW_SPAN,
               })),
               stackResizeDrag.deltaRows,
               Math.max(0, followerPageGrid.gridRows - tailRowEnd),
@@ -5390,6 +5413,7 @@ export function NativePlannerEditor({
       // same live re-render - without this the other half of the spread
       // moved but kept drawing its old hours inside the new box.
       ...(stackResizeDrag ? stackResizeDrag.mirrors.flatMap((m) => [...m.memberIds, ...m.followerIds]) : []),
+      ...(stackResizeDrag?.spread ?? []).flatMap((s) => [s.spineId, ...s.followerIds]),
     ]);
   }, [resizeDrag, stackResizeDrag]);
 
@@ -5649,9 +5673,26 @@ export function NativePlannerEditor({
   // comment.
   const hourlyStackBottomsByPageId = useMemo(() => {
     const byPage: Record<string, StackBottom[]> = {};
+
+    // THE STACK UNDER EVERY SPINE, worked out before any handle is built.
+    // The spine's own edge is limited by the WHOLE SPREAD - it stops when
+    // either page's stack is all at its minimum, which is what
+    // resizeHourlyGridCore commits - so each page's handle needs the other
+    // page's stack as well as its own.
+    const spineStacks = new Map<
+      string,
+      {
+        offModeMinRowSpan: number;
+        followers: string[];
+        followerMinSpans: number[];
+        tailRowEnd: number;
+        boundBelowTail: number;
+        stack: SpineStack;
+      }
+    >();
+    const ceilingBySlug = new Map<string, number>();
     for (const page of pages) {
       const pageIds = instanceIdsByPageId[page.pageId] ?? [];
-      const entries: StackBottom[] = [];
       for (const id of pageIds) {
         const info = moduleLookup.get(id);
         const placement = displayPlacements[id];
@@ -5660,29 +5701,14 @@ export function NativePlannerEditor({
         // there - the boundary between the block a page is organised
         // around and whatever sits under it.
         if (!info || !isSpineSlug(info.slug) || !placement) continue;
-        const config = info.propValues as unknown as HourlyGridCoreConfig;
-        // Both modes get a handle on this edge, but they mean different
-        // things by it. Off-mode has no rows to speak of, so the edge is a
-        // free height. On-mode's height is rowCount times the row height,
-        // so the edge picks a row height instead — see rowHeightSnaps.
-        const isMonthGrid = info.slug === "month-grid-core";
-        const isOffMode = !isMonthGrid && config.intervalMode === "off";
-        const isDragging = stackResizeDrag?.stackKey === `hourly-stack:${id}`;
-
         const offModeMinRowSpan = Math.max(
           MIN_ROW_SPAN,
           pixelHeightToRowSpan(page.pageGrid, getHourlyGridCoreOffModeMinHeightPx())
         );
         const stackBottomRowEnd = placement.rowStart + placement.rowSpan;
-
-        // The below-zone "followers" — every unlocked instance sharing
-        // hourly-grid-core's own exact column range, sitting at or below
-        // its current bottom, sorted top to bottom (same membership test
-        // resizeStackFromBottom/updateHourlySettings already use for "is
-        // this really the below-zone stack," not a looser overlap
-        // check). All of them ride along together, preserving their own
-        // relative spacing, since they're already gravity-packed by
-        // every other path that places/moves them.
+        // The below-zone "followers": every unlocked instance sharing the
+        // spine's exact column range at or below its bottom, top to bottom
+        // - the same membership test resizeHourlyGridCore uses.
         const followers = pageIds
           .filter((otherId) => {
             if (otherId === id) return false;
@@ -5696,17 +5722,8 @@ export function NativePlannerEditor({
             );
           })
           .sort((a, b) => (displayPlacements[a]?.rowStart ?? 0) - (displayPlacements[b]?.rowStart ?? 0));
-
-        // Growing is bounded by whatever's beyond the *followers'* own
-        // combined extent (they move as a rigid block, so their own tail
-        // is what actually risks running into something), not by
-        // hourly-grid-core's own current bottom — the followers.length
-        // === 0 case (nothing to push) falls back to the simpler "bound
-        // is whatever's directly below hourly-grid-core itself" case
-        // every other StackBottom already uses. Either way, only LOCKED
-        // blocks are checked — an unlocked sibling further down would
-        // already be part of `followers` by construction (same test as
-        // the filter above, over the *whole* page, not just adjacency).
+        // What bounds them from below: a LOCKED block in the same columns,
+        // or the page. An unlocked one there would be a follower already.
         const tailRowEnd =
           followers.length > 0
             ? Math.max(...followers.map((fid) => (displayPlacements[fid]?.rowStart ?? 0) + (displayPlacements[fid]?.rowSpan ?? 0)))
@@ -5722,42 +5739,8 @@ export function NativePlannerEditor({
           if (otherPlacement.rowStart < tailRowEnd || !sameColumn) continue;
           boundBelowTail = Math.min(boundBelowTail, otherPlacement.rowStart);
         }
-        // maxGrow, translated into a maxBottomBound value that plugs
-        // straight into StackResizeHandle's existing, unmodified
-        // maxGrow = stackBottom.maxBottomBound - stackBottom.
-        // stackBottomRowEnd formula — see this memo's own header comment
-        // for the derivation (boundBelowTail - tailRowEnd is the real
-        // "room left" figure; adding stackBottomRowEnd back converts it
-        // into the bound-relative-to-hourly's-own-edge shape that
-        // formula expects).
-        // Room below the followers, PLUS what the followers themselves can
-        // give up. Without the second term the block cannot grow at all on
-        // a full page, because the to-do underneath already reaches the
-        // bottom - reported as not being able to expand the increments-off
-        // hours section. resizeHourlyGridCore applies the same sum, and
-        // cascades the shrink from the bottom follower upward.
-        // The furthest the spine's own bottom edge can ever reach: every
-        // follower squeezed to its floor, with whatever gap belongs under
-        // the spine still clear.
-        //
-        // That floor is ZERO when the pressure comes from the spine - see
-        // SPINE_FOLLOWER_FLOOR. A follower's own handle still stops at
-        // MIN_ROW_SPAN; it is only the block above pushing that can take
-        // the last of its height, and only because it gives it back on the
-        // way down.
-        //
-        // Computed from FLOORS, so it does not move while the drag does.
-        // maxBottomBound below is worked out from the followers' current
-        // spans, which the preview is busy changing - so the option being
-        // dragged towards could stop qualifying mid-drag, which is why the
-        // filter used to be suspended for the length of a drag. Suspending
-        // it offered spans that do not fit at all: the calendar reached
-        // the foot of the page and pushed Notes past it, leaving its title
-        // stranded below the sheet. A bound that holds still needs no
-        // suspending.
-        const followerFloorTotal = followers.length * SPINE_FOLLOWER_FLOOR;
-        // What updateHourlySettings will let each follower shrink to - see
-        // StackBottom's followerMinSpans.
+        // Each follower's OWN minimum - the one its own handle stops at, and
+        // the one updateHourlySettings and resizeHourlyGridCore shrink to.
         const followerMinSpans = followers.map((fid) => {
           const follower = moduleLookup.get(fid);
           const followerPlacement = displayPlacements[fid];
@@ -5765,14 +5748,67 @@ export function NativePlannerEditor({
             ? getMinRowSpanForSlug(follower.slug, page.pageGrid, followerPlacement.columnSpan, follower.propValues)
             : MIN_ROW_SPAN;
         });
+        const stack: SpineStack = {
+          spineRowSpan: placement.rowSpan,
+          // As resizeHourlyGridCore has it: the hours' own off-mode floor, a
+          // calendar's MIN_ROW_SPAN (its handle's options start higher).
+          spineMinRowSpan: info.slug === "month-grid-core" ? MIN_ROW_SPAN : offModeMinRowSpan,
+          spineRowEnd: stackBottomRowEnd,
+          followers: followers.map((fid, i) => ({
+            rowStart: displayPlacements[fid]?.rowStart ?? 0,
+            rowSpan: displayPlacements[fid]?.rowSpan ?? 0,
+            minRowSpan: followerMinSpans[i],
+          })),
+          boundRow: boundBelowTail,
+        };
+        spineStacks.set(id, { offModeMinRowSpan, followers, followerMinSpans, tailRowEnd, boundBelowTail, stack });
+        ceilingBySlug.set(info.slug, Math.min(ceilingBySlug.get(info.slug) ?? Infinity, spineMaxRowSpan(stack)));
+      }
+    }
 
-        const followerShrinkable = followers.reduce((sum, fid) => {
-          const followerPlacement = displayPlacements[fid];
-          if (!followerPlacement) return sum;
-          return sum + Math.max(0, followerPlacement.rowSpan - SPINE_FOLLOWER_FLOOR);
-        }, 0);
-        const maxGrow = boundBelowTail - tailRowEnd + followerShrinkable;
-        const maxBottomBound = stackBottomRowEnd + maxGrow;
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      const entries: StackBottom[] = [];
+      for (const id of pageIds) {
+        const info = moduleLookup.get(id);
+        const placement = displayPlacements[id];
+        const spineStack = spineStacks.get(id);
+        if (!info || !placement || !spineStack) continue;
+        const config = info.propValues as unknown as HourlyGridCoreConfig;
+        // Both modes get a handle on this edge, but they mean different
+        // things by it. Off-mode has no rows to speak of, so the edge is a
+        // free height. On-mode's height is rowCount times the row height,
+        // so the edge picks a row height instead — see rowHeightSnaps.
+        const isMonthGrid = info.slug === "month-grid-core";
+        const isOffMode = !isMonthGrid && config.intervalMode === "off";
+        const isDragging = stackResizeDrag?.stackKey === `hourly-stack:${id}`;
+
+        const { offModeMinRowSpan, followers, followerMinSpans, tailRowEnd, boundBelowTail, stack } = spineStack;
+        const stackBottomRowEnd = placement.rowStart + placement.rowSpan;
+
+        // HOW FAR THE EDGE CAN GO.
+        //
+        // The spine's OWN edge (increments off, or a calendar) stops where the
+        // commit does: at the tallest span the whole spread can take with
+        // every module under it at its own minimum - spineMaxRowSpan over
+        // every page, the ceiling resizeSpineSpread clamps to. It was this
+        // page's room with every follower squeezable to ZERO, so Habits could
+        // be taken to one row under a to-do and the edge ran on past what the
+        // facing page could give. The number holds still while the preview
+        // moves (see spineMaxRowSpan), so the handle can freeze it at
+        // pointer-down.
+        //
+        // With increments ON the row-height options are the real limit, each
+        // offered only where updateHourlySettings' own test says it fits, so
+        // this only has to be loose enough not to cut one off: the room below
+        // plus every follower's whole height, as it always was.
+        const freeResize = isOffMode || isMonthGrid;
+        const spreadCeiling = ceilingBySlug.get(info.slug) ?? spineMaxRowSpan(stack);
+        const maxBottomBound = freeResize
+          ? placement.rowStart + spreadCeiling
+          : stackBottomRowEnd +
+            (boundBelowTail - tailRowEnd) +
+            followers.reduce((sum, fid) => sum + (displayPlacements[fid]?.rowSpan ?? 0), 0);
 
         // The heights this block can actually take with increments on, one
         // per row-height option, filtered to those that fit in the room the
@@ -5879,8 +5915,8 @@ export function NativePlannerEditor({
               };
             });
 
-        // Against the floor-based bound, which holds still for the length
-        // of the drag - see followerFloorTotal.
+        // Against bounds that hold still for the length of the drag - see
+        // spineMaxRowSpan.
         const rowHeightOptions =
           spanOptions?.filter((option) =>
             option.rowHeightPt !== undefined
@@ -5898,15 +5934,11 @@ export function NativePlannerEditor({
                   placement.rowStart + option.rowSpan + option.gapRows,
                   page.pageGrid.gridRows
                 ).unmet === 0
-              : // No gap is reserved under a stack that has been squeezed to
-                // nothing: a clear row between the block and something with
-                // no height is just a row nobody can use, and it is what
-                // stopped the calendar one short of filling the page.
-                placement.rowStart +
-                  option.rowSpan +
-                  (followerFloorTotal > 0 ? option.gapRows : 0) +
-                  followerFloorTotal <=
-                boundBelowTail
+              : // A calendar span, offered where the commit can reach it:
+                // where BOTH pages' stacks still fit at their minimums. The
+                // same inequality as the old one (span, gap and every floor
+                // under the bound), with real floors instead of zero.
+                option.rowSpan <= spreadCeiling
           ) ?? null;
 
         // One landing point is not a control. If only the current height
@@ -5976,6 +6008,7 @@ export function NativePlannerEditor({
           maxBottomBound,
           followerIds: followers,
           followerMinSpans,
+          spine: { slug: info.slug, stack },
           rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt, gapRows }) => ({
             rowSpan,
             rowHeightPt,
@@ -9505,6 +9538,9 @@ export function NativePlannerEditor({
       // Mutually exclusive with a pair resize — see handleResizeStart's own
       // comment.
       setResizeDrag(null);
+      // A row height is being chosen (increments on) - rather than a span.
+      const rowHeightDrag = !!stackBottom.rowHeightSnaps?.some((option) => option.rowHeightPt !== undefined);
+      const spine = stackBottom.spine;
       setStackResizeDrag({
         stackKey: stackBottom.key,
         pageId: stackBottom.pageId,
@@ -9514,11 +9550,11 @@ export function NativePlannerEditor({
         followerIds: stackBottom.followerIds,
         followerMinSpans: stackBottom.followerMinSpans,
         rowHeightSnaps: stackBottom.rowHeightSnaps,
-        // Only the row-height drag mirrors: it commits a SETTING, and
+        // The row-height drag mirrors: it commits a SETTING, and
         // updateHourlySettings applies that to every page's hourly grid.
         // An ordinary stack resize is one page's business and mirrors
-        // nothing.
-        mirrors: stackBottom.rowHeightSnaps
+        // nothing. A spine's own edge takes `spread` below instead.
+        mirrors: rowHeightDrag
           ? Object.entries(hourlyStackBottomsByPageId)
               .filter(([pageId]) => pageId !== stackBottom.pageId)
               .flatMap(([pageId, entries]) =>
@@ -9532,6 +9568,19 @@ export function NativePlannerEditor({
                 }))
               )
           : [],
+        // A spine's own edge: this page and every other page's spine of the
+        // same kind, each with its stack as it stands now - see `spread`.
+        spread:
+          spine && !rowHeightDrag
+            ? [
+                stackBottom,
+                ...Object.entries(hourlyStackBottomsByPageId)
+                  .filter(([pageId]) => pageId !== stackBottom.pageId)
+                  .flatMap(([, entries]) => entries.filter((entry) => entry.spine?.slug === spine.slug)),
+              ].flatMap((entry) =>
+                entry.spine ? [{ spineId: entry.bottomId, followerIds: entry.followerIds, stack: entry.spine.stack }] : []
+              )
+            : undefined,
       });
     },
     [gestureBlockedByPendingCommit, hourlyStackBottomsByPageId]

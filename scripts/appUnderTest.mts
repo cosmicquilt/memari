@@ -180,6 +180,129 @@ export async function makeGuestJournal(title: string): Promise<GuestJournal> {
   };
 }
 
+export type SpineSpread = {
+  /** The weekly spread, left page first: each page's hours and what is under
+   *  them, top to bottom, with each module's own minimum. */
+  pages: Array<{ spineId: string; followers: Array<{ id: string; slug: string; minRowSpan: number }> }>;
+  gridRows: number;
+  /** Every other hourly grid in the book, and its span - none of which a
+   *  drag on the weekly spread may move. */
+  elsewhere: Array<{ id: string; rowSpan: number }>;
+};
+
+/**
+ * The spread Andrew reported on 2026-09-29, built on a journal: increments
+ * off, and a Habits tracker at its minimum under the right-hand to-do.
+ *
+ * Written the way the app stores it - the setting on every hourly grid in
+ * the book, the tracker a row of its own with its schema defaults - so the
+ * editor opens it exactly as it would have opened his.
+ */
+export async function incrementsOffSpread(journalId: string): Promise<SpineSpread> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const { getMinRowSpanForSlug } = await import("../src/lib/moduleMinRowSpan.js");
+  const { moduleSchemaDefaults } = await import("../src/lib/moduleRegistry.js");
+
+  const load = () =>
+    prisma.page.findMany({
+      where: { plannerId: journalId },
+      orderBy: { position: "asc" },
+      include: { moduleInstances: { include: { moduleType: true } } },
+    });
+  const gridOf = (page: Awaited<ReturnType<typeof load>>[number]) => ({
+    widthPx: page.widthPx,
+    heightPx: page.heightPx,
+    gridColumns: page.gridColumns,
+    gridRows: page.gridRows,
+    boxInsetPx: page.gridGapPx / 2,
+    marginPx: page.marginPx,
+  });
+
+  let pages = await load();
+  for (const page of pages) {
+    for (const mi of page.moduleInstances) {
+      if (mi.moduleType.slug !== "hourly-grid-core") continue;
+      await prisma.moduleInstance.update({
+        where: { id: mi.id },
+        data: { propValues: { ...((mi.propValues as object) ?? {}), intervalMode: "off" } },
+      });
+    }
+  }
+
+  const weekly = () => pages.filter((p) => p.level === "WEEKLY" && p.variantKey === null);
+  const followersOf = (page: (typeof pages)[number]) => {
+    const spine = page.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+    if (!spine || spine.rowStart === null) throw new Error(`no hours on the ${page.level} page at ${page.position}`);
+    const end = spine.rowStart + spine.rowSpan;
+    const followers = page.moduleInstances
+      .filter(
+        (mi) =>
+          !mi.locked &&
+          mi.columnStart === spine.columnStart &&
+          mi.columnSpan === spine.columnSpan &&
+          mi.rowStart !== null &&
+          mi.rowStart >= end
+      )
+      .sort((a, b) => (a.rowStart as number) - (b.rowStart as number));
+    return { spine, followers };
+  };
+  if (weekly().length !== 2) throw new Error(`expected a two-page weekly spread, found ${weekly().length} page(s)`);
+
+  // Habits under the right-hand to-do, at its minimum, the to-do giving up
+  // the rows.
+  const right = weekly()[1];
+  const { spine, followers } = followersOf(right);
+  const last = followers[followers.length - 1];
+  if (!last) throw new Error("nothing under the right page's hours to put Habits beneath");
+  const habitType = await prisma.moduleType.findUnique({ where: { slug: "habit-tracker" } });
+  if (!habitType) throw new Error("no habit-tracker module type in the database");
+  const habitProps = moduleSchemaDefaults("habit-tracker");
+  const habitFloor = getMinRowSpanForSlug("habit-tracker", gridOf(right), spine.columnSpan as number, habitProps);
+  const lastFloor = getMinRowSpanForSlug(last.moduleType.slug, gridOf(right), last.columnSpan as number, (last.propValues as Record<string, unknown>) ?? {});
+  if (last.rowSpan - habitFloor < lastFloor) throw new Error(`the right to-do (${last.rowSpan} rows) cannot make room for Habits (${habitFloor})`);
+  await prisma.moduleInstance.update({ where: { id: last.id }, data: { rowSpan: last.rowSpan - habitFloor } });
+  await prisma.moduleInstance.create({
+    data: {
+      pageId: right.id,
+      moduleTypeId: habitType.id,
+      placementMode: "GRID",
+      columnStart: spine.columnStart,
+      columnSpan: spine.columnSpan,
+      rowStart: (last.rowStart as number) + last.rowSpan - habitFloor,
+      rowSpan: habitFloor,
+      propValues: habitProps as object,
+    },
+  });
+
+  pages = await load();
+  const spreadIds = new Set(weekly().map((p) => p.id));
+  return {
+    pages: weekly().map((page) => {
+      const { spine: s, followers: f } = followersOf(page);
+      return {
+        spineId: s.id,
+        followers: f.map((mi) => ({
+          id: mi.id,
+          slug: mi.moduleType.slug,
+          minRowSpan: getMinRowSpanForSlug(mi.moduleType.slug, gridOf(page), mi.columnSpan as number, (mi.propValues as Record<string, unknown>) ?? {}),
+        })),
+      };
+    }),
+    gridRows: weekly()[0].gridRows,
+    elsewhere: pages
+      .filter((p) => !spreadIds.has(p.id))
+      .flatMap((p) => p.moduleInstances.filter((mi) => mi.moduleType.slug === "hourly-grid-core"))
+      .map((mi) => ({ id: mi.id, rowSpan: mi.rowSpan })),
+  };
+}
+
+/** The spans and starts of some module rows, as stored. */
+export async function storedRows(ids: string[]): Promise<Record<string, { rowStart: number | null; rowSpan: number }>> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const rows = await prisma.moduleInstance.findMany({ where: { id: { in: ids } }, select: { id: true, rowStart: true, rowSpan: true } });
+  return Object.fromEntries(rows.map((r) => [r.id, { rowStart: r.rowStart, rowSpan: r.rowSpan }]));
+}
+
 /** Close the database connection the two helpers above opened. */
 export async function disconnect(): Promise<void> {
   const { prisma } = await import("../src/lib/prisma.js");

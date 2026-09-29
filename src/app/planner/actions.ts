@@ -15,7 +15,8 @@ import {
   pixelHeightToRowSpan,
   rowsBelowHours,
   resolveZone,
-  followerRowsAfterGrowth,
+  resizeSpineSpread,
+  type SpineStack,
   resolveModulePlacement,
   gravityRepackAfterDeparture,
   type PageGrid,
@@ -3099,14 +3100,22 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
   // Every page's spine moves together, to the SAME span.
   //
   // A spread is one sheet: a left calendar three cells to a week beside a
-  // right one at four is not a thing anyone wants, and the live preview
-  // already mirrors the drag across both pages. Only the commit did not,
-  // so the two drifted apart every time one was dragged - found at six
-  // rows against sixteen. Resizing to a common TARGET rather than by a
-  // common delta also repairs a spread that has already diverged, which
-  // one built out of deltas never could.
+  // right one at four is not a thing anyone wants. Resizing to a common
+  // TARGET rather than by a common delta also repairs a spread that has
+  // already diverged, which one built out of deltas never could.
+  //
+  // THE SPREAD, NOT THE BOOK. This read every page of the planner, so
+  // dragging the weekly hours also resized the DAILY page's hours and
+  // squeezed whatever sat under them - a page nobody was looking at.
+  // Measured 2026-09-29 on a real book: weekly left, weekly right and daily
+  // all at 23 rows. The same level and the same layout (a month with its
+  // own layout is its own spread) is exactly the pages the editor has open.
   const pages = await prisma.page.findMany({
-    where: { plannerId: instance.page.plannerId },
+    where: {
+      plannerId: instance.page.plannerId,
+      level: instance.page.level,
+      variantKey: instance.page.variantKey,
+    },
     orderBy: { position: "asc" },
     include: { moduleInstances: { include: { moduleType: true } } },
   });
@@ -3156,36 +3165,21 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
       if (mi.rowStart < tailRowEnd || !sameColumn) continue;
       boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
     }
-    const freeBelow = Math.max(0, boundBelowTail - tailRowEnd);
-    const followerSpans = followers.map((mi) => mi.rowSpan);
-    // Zero, not each module's own floor. A spine growing to fill the page
-    // has to be able to take the last of what is under it, and the module
-    // is kept at zero rather than deleted so shrinking hands it straight
-    // back - followerRowsAfterGrowth gives freed height to the last
-    // follower, so it returns at the size the spine gave up. Only the
-    // spine may do this; a follower's own handle still stops at its floor,
-    // since a module dragged to nothing by its own edge would leave
-    // nothing to grab. Mirrors SPINE_FOLLOWER_FLOOR on the client.
-    const followerFloors = followers.map(() => 0);
-    // Growing can take room from the followers as well as from free space
-    // below them. Without the second term the block cannot grow at all on
-    // a full page, and the handle silently only shrinks.
-    const followerShrinkable = followerSpans.reduce(
-      (sum, span, i) => sum + Math.max(0, span - followerFloors[i]),
-      0
-    );
-    return {
-      page,
-      spine,
-      pageGrid,
-      minRowSpan,
-      followers,
-      followerSpans,
-      followerFloors,
-      freeBelow,
-      stackBottomRowEnd,
-      maxSpan: spine.rowSpan + freeBelow + followerShrinkable,
+    // Each follower's OWN minimum, the same one its own handle stops at -
+    // not zero, which it was until Habits was squeezed to one row under a
+    // to-do. See spineMaxRowSpan (grid.ts) for the decision.
+    const stack: SpineStack = {
+      spineRowSpan: spine.rowSpan,
+      spineMinRowSpan: minRowSpan,
+      spineRowEnd: stackBottomRowEnd,
+      followers: followers.map((mi) => ({
+        rowStart: mi.rowStart as number,
+        rowSpan: mi.rowSpan,
+        minRowSpan: getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan, configOf(mi)),
+      })),
+      boundRow: boundBelowTail,
     };
+    return { page, spine, pageGrid, followers, stack };
   };
 
   const analyses = pages.map(analyse).filter((a): a is NonNullable<typeof a> => a !== null);
@@ -3195,27 +3189,19 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
   }
 
   // Clamped against EVERY page, not just the dragged one: a target one
-  // page cannot reach would put the spread back out of step, which is the
-  // fault this exists to fix.
-  const target = Math.max(
-    ...analyses.map((a) => a.minRowSpan),
-    Math.min(...analyses.map((a) => a.maxSpan), instance.rowSpan + deltaRows)
+  // page cannot reach would put the spread back out of step. The editor's
+  // preview calls the same function, so the handle stops where this does.
+  const resized = resizeSpineSpread(
+    analyses.map((a) => a.stack),
+    instance.rowSpan + deltaRows
   );
+  const target = resized.rowSpan;
   if (analyses.every((a) => a.spine.rowSpan === target)) {
     throw new Error("Nothing to resize");
   }
 
-  const writes = analyses.flatMap((a) => {
-    const delta = target - a.spine.rowSpan;
-    // Shift into the free space, then take height once there is none left.
-    // followerRowsAfterGrowth owns that rule for both sides - the live
-    // preview calls the same function - so drag and drop cannot disagree.
-    const rows = followerRowsAfterGrowth(
-      a.followers.map((mi, i) => ({ rowSpan: a.followerSpans[i], minRowSpan: a.followerFloors[i] })),
-      delta,
-      a.freeBelow,
-      a.followers.length > 0 ? (a.followers[0].rowStart as number) : a.stackBottomRowEnd
-    );
+  const writes = analyses.flatMap((a, index) => {
+    const rows = resized.followers[index];
     return [
       prisma.moduleInstance.update({ where: { id: a.spine.id }, data: { rowSpan: target } }),
       ...a.followers.map((mi, i) =>

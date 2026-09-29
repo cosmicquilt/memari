@@ -328,6 +328,83 @@ export function followerRowsAfterGrowth(
 }
 
 /**
+ * One page's SPINE - the hours with increments off, or a month calendar -
+ * and the stack under it, as its own edge sees them.
+ */
+export type SpineStack = {
+  spineRowSpan: number;
+  spineMinRowSpan: number;
+  /** The spine's bottom edge: where the stack starts when it is empty. */
+  spineRowEnd: number;
+  /** Top to bottom, each with its own content floor. */
+  followers: Array<{ rowStart: number; rowSpan: number; minRowSpan: number }>;
+  /** The first row the stack may not use: a locked block below it, or the
+   *  foot of the page. */
+  boundRow: number;
+};
+
+function spineFreeBelow(stack: SpineStack): number {
+  const tail =
+    stack.followers.length > 0
+      ? Math.max(...stack.followers.map((f) => f.rowStart + f.rowSpan))
+      : stack.spineRowEnd;
+  return Math.max(0, stack.boundRow - tail);
+}
+
+/**
+ * The tallest a spine can be dragged: its own span, the free rows under its
+ * stack, and whatever the stack can give up before EVERY module in it is at
+ * its minimum. Never lower than where it already is.
+ *
+ * THE MINIMUM IS A HARD STOP. The floor used to be zero, so the calendar
+ * could fill the page (9fcc788) - but a module on its way to zero passed
+ * through every height below its minimum, and Habits was left drawn one row
+ * tall under a to-do. Andrew, 2026-09-29, choosing between a hard stop and
+ * shrink-then-hide: "Minimum is a hard stop".
+ *
+ * Invariant while a drag previews: what the spine gains, the free space and
+ * the followers lose, so this is the same number at every step of it.
+ */
+export function spineMaxRowSpan(stack: SpineStack): number {
+  const shrinkable = stack.followers.reduce((sum, f) => sum + Math.max(0, f.rowSpan - f.minRowSpan), 0);
+  return stack.spineRowSpan + spineFreeBelow(stack) + shrinkable;
+}
+
+/**
+ * A SPREAD's spines, resized together by dragging one of them.
+ *
+ * Every page goes to the same span - a spread is one sheet - clamped so
+ * that span fits on EVERY page: the edge stops as soon as either side's
+ * stack is all at its minimum. Andrew, 2026-09-29: "thats fine if it stops
+ * growing when one side all the modules hit their minimum size", and "it
+ * should show that live" - so the editor's preview and resizeHourlyGridCore
+ * both call this, from one snapshot taken when the drag began.
+ *
+ * Each page's stack then follows its spine by followerRowsAfterGrowth: into
+ * free rows first, then the BOTTOM module gives way first, each only down to
+ * its floor ("Bottom one first", same day); freed rows go back to the last.
+ */
+export function resizeSpineSpread(
+  stacks: SpineStack[],
+  requestedRowSpan: number
+): { rowSpan: number; followers: Array<Array<{ rowStart: number; rowSpan: number }>> } {
+  const floor = Math.max(...stacks.map((s) => s.spineMinRowSpan));
+  const ceiling = Math.min(...stacks.map(spineMaxRowSpan));
+  const rowSpan = Math.max(floor, Math.min(ceiling, requestedRowSpan));
+  return {
+    rowSpan,
+    followers: stacks.map((stack) =>
+      followerRowsAfterGrowth(
+        stack.followers,
+        rowSpan - stack.spineRowSpan,
+        spineFreeBelow(stack),
+        stack.followers.length > 0 ? stack.followers[0].rowStart : stack.spineRowEnd
+      )
+    ),
+  };
+}
+
+/**
  * Where the modules under the hours go when an HOURS SETTING changes the
  * hours' height - a new row height or a new time range.
  *

@@ -41,7 +41,7 @@
 // one - see the pill travel probe.
 
 import { chromium, type Browser, type Page } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect } from "./appUnderTest.mjs";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -1093,6 +1093,183 @@ const zoomBar: Probe = {
 };
 
 // ---------------------------------------------------------------------
+// SPINE DRAG: with increments off, dragging the hours' edge moves BOTH pages
+// of the spread live, takes nothing below its minimum, stops when either
+// page's stack is all at its minimum, releases to exactly what it showed,
+// and leaves every other level's hours alone.
+//
+// Reported 2026-09-29 on a weekly spread with Habits under the right-hand
+// to-do: the right page moved only on release, and then Habits was one row
+// tall - below its minimum - because the edge squeezed what was under it
+// towards zero. The save also reached every hourly grid in the book, so the
+// daily page's hours moved with the weekly ones.
+//
+// Its own journal and its own browser context, built by incrementsOffSpread,
+// so every other probe keeps its increments on.
+// ---------------------------------------------------------------------
+const spineDrag: Probe = {
+  name: "spine drag",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Spine drag check");
+    // TALLER than the other probes' window. At 800px the grown hours put
+    // their own edge under the timeline drawer, so the second drag pressed
+    // the drawer instead and, moving nothing, passed - measured: the handle
+    // at y=735 with the drawer's top at 614.
+    const context = await page.context().browser()!.newContext({
+      viewport: { width: VIEWPORT.width, height: 1200 },
+      deviceScaleFactor: 1,
+    });
+    try {
+      const spread = await incrementsOffSpread(guest.journalId);
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(3000);
+
+      const [left, right] = spread.pages;
+      const ids = spread.pages.flatMap((p) => [p.spineId, ...p.followers.map((f) => f.id)]);
+      type Rows = Record<string, { rowStart: number; rowSpan: number } | null>;
+      // The rows each module is laid out at, read off its own grid-row -
+      // exact, where a pixel rect would be rounded.
+      const read = async () =>
+        (await tab.evaluate(`(() => {
+          const out = {};
+          for (const id of ${JSON.stringify(ids)}) {
+            const el = document.querySelector('[data-module-instance-id="' + id + '"]');
+            const m = el && /(\\d+) \\/ span (\\d+)/.exec(el.style.gridRow);
+            out[id] = m ? { rowStart: +m[1] - 1, rowSpan: +m[2] } : null;
+          }
+          return out;
+        })()`)) as Rows;
+
+      const before = await read();
+      if (!before[left.spineId] || !before[right.spineId] || !before[left.followers[0]?.id]) {
+        fail("spine drag", "the weekly spread's hours and the module under them are not on screen");
+        return;
+      }
+      const pitch = (await tab.evaluate(`(() => {
+        const a = document.querySelector('[data-module-instance-id="${left.spineId}"]').getBoundingClientRect();
+        const b = document.querySelector('[data-module-instance-id="${left.followers[0].id}"]').getBoundingClientRect();
+        return (b.top - a.top) / ${before[left.followers[0].id]!.rowStart - before[left.spineId]!.rowStart};
+      })()`)) as number;
+
+      /** A real-mouse drag of the left page's hours edge, sampled as it goes. */
+      const drag = async (rows: number) => {
+        const handle = await tab.$(`[data-stack-key="hourly-stack:${left.spineId}"]`);
+        const box = handle && (await handle.boundingBox());
+        if (!box) return null;
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        // The press has to land ON the handle, or the drag is not a drag.
+        const pressed = await tab.evaluate(
+          `document.elementFromPoint(${x}, ${y})?.getAttribute("data-stack-key") ?? null`
+        );
+        if (pressed !== `hourly-stack:${left.spineId}`) return null;
+        await tab.mouse.move(x, y);
+        await tab.mouse.down();
+        const samples: Rows[] = [];
+        const steps = 24;
+        for (let i = 1; i <= steps; i++) {
+          await tab.mouse.move(x, y + (rows * pitch * i) / steps);
+          await tab.waitForTimeout(40);
+          samples.push(await read());
+        }
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        return { samples, shown: samples[samples.length - 1], released: await read(), stored: await storedRows(ids) };
+      };
+
+      const problems: string[] = [];
+      const check = (what: string, result: NonNullable<Awaited<ReturnType<typeof drag>>>) => {
+        // LIVE: the facing page's hours are the dragged page's height in
+        // every frame, not only after release.
+        const apart = result.samples.filter((s) => s[left.spineId]?.rowSpan !== s[right.spineId]?.rowSpan).length;
+        if (apart > 0) problems.push(`${what}: the right page's hours differed from the left's in ${apart} of ${result.samples.length} frames`);
+        // NOTHING BELOW ITS MINIMUM, in any frame or after release.
+        for (const frame of [...result.samples, result.released]) {
+          for (const p of spread.pages) {
+            for (const f of p.followers) {
+              const row = frame[f.id];
+              if (row && row.rowSpan < f.minRowSpan) {
+                problems.push(`${what}: ${f.slug} drawn ${row.rowSpan} rows tall, under its minimum of ${f.minRowSpan}`);
+                return;
+              }
+              if (row && row.rowStart + row.rowSpan > spread.gridRows) {
+                problems.push(`${what}: ${f.slug} runs past the foot of the page (${row.rowStart}+${row.rowSpan})`);
+                return;
+              }
+            }
+          }
+        }
+        // RELEASED AS SHOWN, and stored as released.
+        for (const id of ids) {
+          const shown = result.shown[id];
+          const released = result.released[id];
+          const stored = result.stored[id];
+          if (JSON.stringify(shown) !== JSON.stringify(released)) {
+            problems.push(`${what}: ${id} was shown at ${JSON.stringify(shown)} and released to ${JSON.stringify(released)}`);
+            return;
+          }
+          if (released && (stored?.rowStart !== released.rowStart || stored?.rowSpan !== released.rowSpan)) {
+            problems.push(`${what}: ${id} is drawn at ${JSON.stringify(released)} but stored at ${JSON.stringify(stored)}`);
+            return;
+          }
+        }
+      };
+
+      // GROW, well past what this spread can give.
+      const grown = await drag(18);
+      if (!grown) {
+        fail("spine drag", "no handle under the pointer on the left page's hours edge");
+        return;
+      }
+      check("growing", grown);
+      const grewTo = grown.shown[left.spineId]?.rowSpan ?? 0;
+      if (grewTo <= before[left.spineId]!.rowSpan) problems.push(`growing: the hours did not grow (${before[left.spineId]!.rowSpan} -> ${grewTo})`);
+      // THE STOP: some page's stack is all at its minimum - not earlier.
+      const atFloor = spread.pages.filter((p) => p.followers.every((f) => grown.shown[f.id]?.rowSpan === f.minRowSpan));
+      if (atFloor.length === 0) problems.push(`growing: stopped at ${grewTo} rows with neither page's stack at its minimum`);
+      // THE SPREAD, NOT THE BOOK.
+      const elsewhere = await storedRows(spread.elsewhere.map((e) => e.id));
+      const moved = spread.elsewhere.filter((e) => elsewhere[e.id]?.rowSpan !== e.rowSpan);
+      if (moved.length > 0) problems.push(`growing: ${moved.length} hourly grid(s) on other levels moved too (${moved.map((e) => `${e.rowSpan} -> ${elsewhere[e.id]?.rowSpan}`).join(", ")})`);
+
+      // SHRINK back part of the way: live again, and the rows go back.
+      const shrunk = await drag(-6);
+      if (!shrunk) problems.push("shrinking: the handle was not under the pointer after the first drag");
+      else {
+        check("shrinking", shrunk);
+        const shrankTo = shrunk.shown[left.spineId]?.rowSpan ?? grewTo;
+        if (shrankTo >= grewTo) problems.push(`shrinking: the hours did not shrink (${grewTo} -> ${shrankTo})`);
+        // The rows come back to the last module on each page: no hole.
+        for (const p of spread.pages) {
+          const last = shrunk.released[p.followers[p.followers.length - 1].id];
+          if (last && last.rowStart + last.rowSpan !== spread.gridRows) {
+            problems.push(`shrinking: the ${p === left ? "left" : "right"} stack ends at row ${last.rowStart + last.rowSpan}, not the foot (${spread.gridRows})`);
+          }
+        }
+      }
+
+      if (problems.length > 0) {
+        for (const problem of problems) fail("spine drag", problem);
+      } else {
+        const habits = right.followers[right.followers.length - 1];
+        note(
+          "spine drag",
+          `hours ${before[left.spineId]!.rowSpan} -> ${grewTo} -> ${shrunk!.shown[left.spineId]?.rowSpan} rows, both pages in every frame; ` +
+            `stopped with the ${atFloor.map((p) => (p === left ? "left" : "right")).join(" and ")} page's stack at its minimums ` +
+            `(${habits.slug} held at ${habits.minRowSpan}); released as shown; ${spread.elsewhere.length} other hourly grid(s) untouched`
+        );
+      }
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
 // FIRST VISIT: filling in a new person's default time zone does not rebuild
 // the editor, and the Time zone field shows what was filled in.
 //
@@ -1158,6 +1335,7 @@ const ALL_PROBES: Probe[] = [
   noReload,
   eventDrag,
   zoomBar,
+  spineDrag,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

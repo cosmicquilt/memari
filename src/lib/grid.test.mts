@@ -25,6 +25,9 @@ import {
   pixelsToContainingCell,
   takeRowsFairly,
   followerRowsAfterGrowth,
+  resizeSpineSpread,
+  spineMaxRowSpan,
+  type SpineStack,
   rowsBelowHours,
   resolveZone,
   BOTTOM_ZONE_ROW_TOLERANCE,
@@ -1006,6 +1009,102 @@ console.log("All takeRowsFairly checks passed.");
   assert(rows[0].rowStart === 21 && rows[0].rowSpan === 15, "a zero delta changes nothing");
 }
 console.log("All followerRowsAfterGrowth checks passed.");
+
+// --- resizeSpineSpread / spineMaxRowSpan ------------------------------------
+// The spread Andrew reported, 2026-09-29: 36-row pages, increments-off hours
+// at rows 0-22 with a one-row gap. Left: a to-do at 24-35. Right: a to-do at
+// 24-31 and Habits at 32-35, whose floor is its whole height. Growing the
+// hours squeezed Habits to ONE row - the followers' floor was zero - and the
+// right page only moved on release.
+{
+  const left: SpineStack = {
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    followers: [{ rowStart: 24, rowSpan: 12, minRowSpan: 3 }],
+  };
+  const right: SpineStack = {
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    followers: [
+      { rowStart: 24, rowSpan: 8, minRowSpan: 3 },
+      { rowStart: 32, rowSpan: 4, minRowSpan: 4 },
+    ],
+  };
+  assert(spineMaxRowSpan(left) === 32 && spineMaxRowSpan(right) === 28, "each page's ceiling is its stack at its minimums");
+
+  const r = resizeSpineSpread([left, right], 23 + 10);
+  assert(r.rowSpan === 28, `the edge stops when EITHER page is all at its minimum - the right, at 28 (got ${r.rowSpan})`);
+  const [todo, habits] = r.followers[1];
+  assert(
+    habits.rowSpan === 4 && habits.rowStart + habits.rowSpan === 36,
+    `Habits keeps its minimum and its place at the foot (got ${JSON.stringify(habits)})`
+  );
+  assert(todo.rowSpan === 3 && todo.rowStart === 29, `the to-do above it gives way to its own floor (got ${JSON.stringify(todo)})`);
+  assert(
+    r.followers[0][0].rowStart === 29 && r.followers[0][0].rowStart + r.followers[0][0].rowSpan === 36,
+    `the facing page follows to the same span and still reaches the foot (got ${JSON.stringify(r.followers[0])})`
+  );
+
+  // THE PREVIEW FREEZES THE CEILING AT POINTER-DOWN, which is only right if
+  // it does not move as the drag does. Re-measured from the resized stacks:
+  const after = (s: SpineStack, rows: Array<{ rowStart: number; rowSpan: number }>): SpineStack => ({
+    ...s,
+    spineRowSpan: r.rowSpan,
+    spineRowEnd: r.rowSpan,
+    followers: s.followers.map((f, i) => ({ ...f, ...rows[i] })),
+  });
+  assert(
+    spineMaxRowSpan(after(left, r.followers[0])) === 32 && spineMaxRowSpan(after(right, r.followers[1])) === 28,
+    "the ceiling is the same number after the resize as before it"
+  );
+}
+{
+  // BOTTOM ONE FIRST ("Bottom one first", 2026-09-29), each to its floor.
+  const right: SpineStack = {
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    followers: [
+      { rowStart: 24, rowSpan: 8, minRowSpan: 3 },
+      { rowStart: 32, rowSpan: 4, minRowSpan: 2 },
+    ],
+  };
+  const [todo, habits] = resizeSpineSpread([right], 26).followers[0];
+  assert(
+    habits.rowSpan === 2 && todo.rowSpan === 7,
+    `the bottom module gives its 2 first, then the one above gives 1 (got ${todo.rowSpan}, ${habits.rowSpan})`
+  );
+}
+{
+  // A module ALREADY below its floor - the 1-row Habits the old rule left in
+  // a real book - is not squeezed further and adds nothing to the ceiling,
+  // and it is the one handed the rows back when the hours shrink.
+  const right: SpineStack = {
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    followers: [
+      { rowStart: 24, rowSpan: 11, minRowSpan: 3 },
+      { rowStart: 35, rowSpan: 1, minRowSpan: 4 },
+    ],
+  };
+  assert(spineMaxRowSpan(right) === 31, `only the to-do's surplus counts (got ${spineMaxRowSpan(right)})`);
+  const grown = resizeSpineSpread([right], 40);
+  assert(grown.rowSpan === 31 && grown.followers[0][1].rowSpan === 1, "grown to the ceiling, Habits untouched");
+  const shrunk = resizeSpineSpread([right], 20).followers[0];
+  assert(
+    shrunk[1].rowSpan === 4 && shrunk[1].rowStart + shrunk[1].rowSpan === 36,
+    `shrinking the hours hands Habits the rows back (got ${JSON.stringify(shrunk[1])})`
+  );
+}
+{
+  // Pages that have drifted apart are brought to ONE span, and a page with
+  // nothing under its hours is limited only by the room below them.
+  const empty: SpineStack = { spineRowSpan: 20, spineMinRowSpan: 2, spineRowEnd: 20, boundRow: 36, followers: [] };
+  const full: SpineStack = {
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    followers: [{ rowStart: 24, rowSpan: 12, minRowSpan: 3 }],
+  };
+  assert(spineMaxRowSpan(empty) === 36, "an empty page's ceiling is the foot of the page");
+  const r = resizeSpineSpread([full, empty], 25);
+  assert(r.rowSpan === 25 && r.followers[1].length === 0, "both pages go to the requested span");
+  assert(resizeSpineSpread([full, empty], 1).rowSpan === 2, "and never below the spine's own minimum");
+}
+console.log("All resizeSpineSpread checks passed.");
 
 // --- rowsBelowHours ----------------------------------------------------------
 // The daily page as stored: hours at rows 0-19 with a one-row gap, the to-do
