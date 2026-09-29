@@ -724,10 +724,6 @@ const PRIMITIVES = {
           { value: "crosses", label: "Crosses" },
         ],
       },
-      {
-        kind: "note",
-        text: "The day columns follow whichever page this is on.",
-      },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily, lattice),
