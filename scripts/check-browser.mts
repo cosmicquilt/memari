@@ -40,8 +40,8 @@
 // which fires in a visible window does not necessarily fire in a headless
 // one - see the pill travel probe.
 
-import { chromium, type Browser, type Page } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours } from "./appUnderTest.mjs";
+import { chromium, type Browser, type Locator, type Page } from "playwright-core";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -1795,6 +1795,269 @@ const moduleEditor: Probe = {
 };
 
 // ---------------------------------------------------------------------
+// PALETTE DROP: after a module is dropped from the palette, the page shows
+// exactly what was saved - every module, not only the ones the server moved.
+//
+// Reported 2026-09-29: two Reflections dragged into the weekly sidebar, and
+// "when i released them they also over lapped" - Reminders drawn at rows
+// 20-22 over the first of them while it was saved at 15-22. The drop's
+// preview had moved Reminders; the server had not; only what the server
+// moved was corrected. "Can you ensure this doesn't happen for any other
+// module as well" - so several kinds are dropped, into the same crowded
+// sidebar, and after each one every module's rows and columns on screen are
+// compared with the database, and nothing may overlap in either.
+// ---------------------------------------------------------------------
+const paletteDrop: Probe = {
+  name: "palette drop",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Palette drop check");
+    // The sidebar it was reported from: three boxes filling it, no room.
+    await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 12], ["Reminders", 15, 11], ["Notes", 26, 10]]);
+    const context = await page.context().browser()!.newContext({
+      viewport: { width: VIEWPORT.width, height: 1200 },
+      deviceScaleFactor: 1,
+    });
+    try {
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(3000);
+      await tab.locator('button[title="Open module palette"]').click();
+      await tab.waitForTimeout(800);
+      // Its Modules section opens collapsed. The cards are in the page either
+      // way - a collapsed section clips them rather than removing them - so
+      // it is opened outright, not by asking whether cards exist: a drag from
+      // a clipped card selected the page's text instead.
+      await tab.getByRole("button", { name: "Modules", exact: true }).first().click();
+      await tab.waitForTimeout(900);
+
+      const all = await storedModules(guest.journalId);
+      const noteBoxes = all.filter((m) => m.slug === "labeled-box" && m.level === "WEEKLY" && m.propValues.heading === "Notes");
+      if (noteBoxes.length === 0) {
+        fail("palette drop", "the weekly spread has no Notes box to drop above");
+        return;
+      }
+      const notesId = noteBoxes[0].id;
+
+      /** Everything on screen and in the database, compared. */
+      const compare = async (what: string) => {
+        const onScreen = (await tab.evaluate(`[...document.querySelectorAll('[data-module-instance-id]')].map((el) => {
+          const row = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridRow);
+          const col = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridColumn);
+          return row && col ? { id: el.getAttribute('data-module-instance-id'), rowStart: +row[1] - 1, rowSpan: +row[2], columnStart: +col[1] - 1, columnSpan: +col[2] } : null;
+        }).filter(Boolean)`)) as Array<{ id: string; rowStart: number; rowSpan: number; columnStart: number; columnSpan: number }>;
+        const saved = await storedRows(onScreen.map((m) => m.id));
+        const problems: string[] = [];
+        for (const m of onScreen) {
+          const s = saved[m.id];
+          if (!s) continue;
+          if (s.rowStart !== m.rowStart || s.rowSpan !== m.rowSpan || s.columnStart !== m.columnStart || s.columnSpan !== m.columnSpan) {
+            problems.push(`${m.id.slice(-6)} shown at rows ${m.rowStart}+${m.rowSpan} cols ${m.columnStart}+${m.columnSpan}, saved at rows ${s.rowStart}+${s.rowSpan} cols ${s.columnStart}+${s.columnSpan}`);
+          }
+        }
+        // Overlaps, page by page, on screen.
+        const byPage = new Map<string, typeof onScreen>();
+        for (const m of onScreen) {
+          const pageId = saved[m.id]?.pageId;
+          if (!pageId) continue;
+          byPage.set(pageId, [...(byPage.get(pageId) ?? []), m]);
+        }
+        for (const mods of byPage.values()) {
+          for (let i = 0; i < mods.length; i++) {
+            for (let j = i + 1; j < mods.length; j++) {
+              const a = mods[i], b = mods[j];
+              if (a.columnStart < b.columnStart + b.columnSpan && b.columnStart < a.columnStart + a.columnSpan &&
+                  a.rowStart < b.rowStart + b.rowSpan && b.rowStart < a.rowStart + a.rowSpan) {
+                problems.push(`on screen, rows ${a.rowStart}+${a.rowSpan} and ${b.rowStart}+${b.rowSpan} overlap`);
+              }
+            }
+          }
+        }
+        if (problems.length > 0) fail("palette drop", `${what}: ${problems.slice(0, 2).join("; ")}`);
+        return problems.length === 0;
+      };
+
+      /** The left page's sidebar modules as saved, top to bottom. */
+      const sidebar = async () => {
+        const mods = await storedModules(guest.journalId);
+        const rows = await storedRows(mods.map((m) => m.id));
+        const notesPage = rows[notesId]?.pageId;
+        return mods
+          .filter((m) => rows[m.id]?.pageId === notesPage && rows[m.id]?.columnStart === 0 && m.slug !== "week-title")
+          .sort((a, b) => (rows[a.id].rowStart as number) - (rows[b.id].rowStart as number));
+      };
+
+      type Box = { id: string; left: number; top: number; width: number; height: number };
+      const boxes = async () =>
+        (await tab.evaluate(`[...document.querySelectorAll('[data-module-instance-id]')].map((el) => {
+          const r = el.getBoundingClientRect();
+          return { id: el.getAttribute('data-module-instance-id'), left: r.left, top: r.top, width: r.width, height: r.height };
+        })`)) as Box[];
+
+      /** A real-mouse drag from `source` to a point in module `targetId` -
+       *  `at` of the way down it - and whether release kept what the preview
+       *  showed. Reported 2026-09-29: the gap opened in one place and the
+       *  module was saved in another, so things moved on release. Every
+       *  module already on the target page must end where the preview drew
+       *  it, and the arriving one must land in the gap it opened rather than
+       *  on anything the preview showed. */
+      const dragTo = async (source: Locator, targetId: string, at: number, what: string, grabAt: number | null = null) => {
+        await source.scrollIntoViewIfNeeded();
+        const from = await source.boundingBox();
+        const to = await tab.locator(`[data-module-instance-id="${targetId}"]`).boundingBox();
+        if (!from || !to) return `could not find what to drag, or where to, for ${what}`;
+        const x0 = from.x + from.width / 2;
+        const y0 = from.y + (grabAt === null ? Math.min(40, from.height / 2) : from.height * grabAt);
+        const x1 = to.x + to.width / 2, y1 = to.y + Math.max(6, Math.min(to.height - 6, to.height * at));
+        const movingId = await source.getAttribute("data-module-instance-id");
+        const beforeDrag = await boxes();
+        await tab.mouse.move(x0, y0);
+        await tab.mouse.down();
+        for (let i = 1; i <= 25; i++) {
+          await tab.mouse.move(x0 + ((x1 - x0) * i) / 25, y0 + ((y1 - y0) * i) / 25);
+          await tab.waitForTimeout(16);
+        }
+        await tab.waitForTimeout(400);
+        const shown = await boxes();
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        const landed = await boxes();
+        const saved = await storedRows(landed.map((b) => b.id));
+        const targetPage = saved[targetId]?.pageId;
+        const shownById = new Map(shown.map((b) => [b.id, b]));
+        const arrivalId = movingId ?? landed.find((b) => !shownById.has(b.id) && saved[b.id]?.pageId === targetPage)?.id;
+        const siblings = landed.filter((b) => b.id !== arrivalId && saved[b.id]?.pageId === targetPage && shownById.has(b.id));
+        const moved = siblings
+          .map((b) => ({ b, was: shownById.get(b.id)! }))
+          .filter(({ b, was }) => Math.abs(b.top - was.top) > 2 || Math.abs(b.height - was.height) > 2);
+        if (moved.length > 0) {
+          const { b, was } = moved[0];
+          return `${what}: released, ${moved.length} module(s) moved from where the preview showed them - one from ${was.top.toFixed(0)}+${was.height.toFixed(0)}px to ${b.top.toFixed(0)}+${b.height.toFixed(0)}px`;
+        }
+        const arrival = landed.find((b) => b.id === arrivalId);
+        // Refused - no room even with everything at its minimum, which the
+        // preview says with its no-entry mark - and, checked above, nothing
+        // moved. Whether drops land at all is counted at the end.
+        if (!arrival) return null;
+        const under = siblings.find((b) => {
+          const was = shownById.get(b.id)!;
+          return arrival.left < was.left + was.width - 2 && was.left < arrival.left + arrival.width - 2 &&
+            arrival.top < was.top + was.height - 2 && was.top < arrival.top + arrival.height - 2;
+        });
+        if (under) return `${what}: landed on a module the preview had shown where it landed, not in the gap it opened`;
+        // And on the side of each neighbour its drawn middle was on - the box
+        // the palette draws round the pointer, or the module being carried.
+        // Reported 2026-09-29 as "the space created for it would jump below
+        // a module before it should": the rule judged a box half a module
+        // lower than the one on screen. Neighbours as they were before the
+        // drag, in the columns it landed in; the fixed blocks above a stack
+        // (the week title, the hours) are not neighbours it can pass.
+        const drawn = shown.find((b) => b.id === (movingId ?? "__palette_phantom__"));
+        const fixed = new Set((await storedModules(guest.journalId)).filter((m) => m.slug.endsWith("-title") || m.slug.endsWith("-grid-core")).map((m) => m.id));
+        if (drawn) {
+          const middle = drawn.top + drawn.height / 2;
+          const wrongSide = beforeDrag.find((b) => {
+            if (b.id === arrivalId || fixed.has(b.id) || saved[b.id]?.pageId !== targetPage) return false;
+            if (Math.abs(b.left - arrival.left) > 2 || Math.abs(b.width - arrival.width) > 2) return false;
+            const itsMiddle = b.top + b.height / 2;
+            if (Math.abs(middle - itsMiddle) < 4) return false;
+            const landedAbove = arrival.top < (landed.find((l) => l.id === b.id)?.top ?? b.top);
+            return landedAbove !== middle < itsMiddle;
+          });
+          if (wrongSide) {
+            return `${what}: its middle was ${drawn.top + drawn.height / 2 < wrongSide.top + wrongSide.height / 2 ? "above" : "below"} a neighbour's middle and it landed on the other side of it`;
+          }
+        }
+        return null;
+      };
+
+      /** A palette card dropped on one of the sidebar's modules. */
+      const drop = async (slug: string, targetIndex: number, at: number) => {
+        const card = tab.locator(`[data-palette-slug="${slug}"]`).first();
+        if ((await card.count()) === 0) return `no palette card for ${slug}`;
+        const targets = await sidebar();
+        const target = targets[Math.min(targetIndex, targets.length - 1)];
+        if (!target) return "the sidebar is empty";
+        return dragTo(card, target.id, at, `${slug} on sidebar module ${targetIndex + 1} at ${Math.round(at * 100)}%`);
+      };
+
+      // CROWDED, the way a real sidebar gets: kinds of every shape dropped on
+      // the top, middle and foot of whatever is there, until there is no
+      // room left and every drop has to shrink something to get in - which
+      // is where a preview and a server can disagree about what to shrink.
+      // What was reported first: two Reflections (prompted lines) dropped
+      // near the foot of the first box. The second previewed ABOVE the
+      // first, was saved BELOW it, and the screen kept the preview's
+      // Reminders over it. Then two on Notes.
+      const plan: Array<[string, number, number]> = [
+        ["prompted-lines", 0, 0.9],
+        ["prompted-lines", 0, 0.9],
+        ["prompted-lines", 3, 0.03],
+        ["prompted-lines", 4, 0.03],
+        ["column-table", 1, 0.7],
+        ["todo-checklist", 0, 0.3],
+        ["mini-month", 2, 0.05],
+        ["habit-tracker", 4, 0.5],
+        ["labeled-box", 0, 0.9],
+        ["prompted-lines", 1, 0.5],
+        ["column-table", 5, 0.1],
+        ["todo-checklist", 3, 0.95],
+      ];
+      let passed = 0;
+      if (!(await compare("before any drop"))) return;
+      for (const [i, [slug, target, at]] of plan.entries()) {
+        const error = await drop(slug, target, at);
+        if (error) {
+          fail("palette drop", error);
+          return;
+        }
+        if (await compare(`after drop ${i + 1} (${slug} on sidebar module ${target + 1} at ${Math.round(at * 100)}%)`)) passed++;
+        else break;
+      }
+      // And a MOVE between zones, which is committed the same way. The case
+      // where resolving twice disagreed is an arrival TALLER than the module
+      // it is put above: the server, starting from the preview's row, finds
+      // the two sharing a top and the taller one's middle lower, so it put
+      // the arrival after. The to-do under the hours is three rows in the
+      // sidebar; Reminders is cut to two, and the to-do is carried by its
+      // middle to just above Reminders' middle.
+      // Counted before the move below resets the sidebar.
+      const added = (await storedModules(guest.journalId)).length - all.length;
+      let moveHeld = false;
+      if (passed === plan.length) {
+        await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 12], ["Reminders", 15, 2], ["Notes", 17, 19]]);
+        await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+        await tab.waitForTimeout(3000);
+        const rows = await storedRows(all.map((m) => m.id));
+        const notesPage = rows[notesId]?.pageId;
+        const todo = all.find((m) => m.level === "WEEKLY" && rows[m.id]?.pageId === notesPage && m.slug === "todo-checklist");
+        const reminders = (await sidebar()).find((m) => m.propValues.heading === "Reminders");
+        if (!todo || !reminders) fail("palette drop", "no to-do under the hours, or no Reminders, to move between");
+        else {
+          const error = await dragTo(
+            tab.locator(`[data-module-instance-id="${todo.id}"]`),
+            reminders.id,
+            0.3,
+            "the to-do moved into the sidebar, above a shorter module",
+            0.5
+          );
+          if (error) fail("palette drop", error);
+          else moveHeld = await compare("after the move");
+        }
+      }
+      if (added < 4) fail("palette drop", `${plan.length} drops added only ${added} module(s) - the drags are not landing`);
+      else if (passed === plan.length && moveHeld) {
+        note("palette drop", `${plan.length} drops of ${new Set(plan.map((p) => p[0])).size} kinds into a full weekly sidebar (${added} fitted) and one move between zones: every release kept what the preview showed, and the page matched the database, nothing overlapping`);
+      }
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
 // FIRST VISIT: filling in a new person's default time zone does not rebuild
 // the editor, and the Time zone field shows what was filled in.
 //
@@ -1862,6 +2125,7 @@ const ALL_PROBES: Probe[] = [
   zoomBar,
   spineDrag,
   moduleEditor,
+  paletteDrop,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

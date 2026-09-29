@@ -18,6 +18,10 @@ import {
   resizeSpineSpread,
   type SpineStack,
   resolveModulePlacement,
+  proposalHolds,
+  packedTopEdge,
+  isDropProposal,
+  type DropProposal,
   gravityRepackAfterDeparture,
   type PageGrid,
 } from "@/lib/grid";
@@ -775,7 +779,9 @@ export async function addPaletteModuleAt(
   columnStart: number,
   rowStart: number,
   /** A module from Saved: placed with its settings, and linked to it. */
-  savedModuleId: string | null = null
+  savedModuleId: string | null = null,
+  /** What the drop's preview showed - saved as shown when the page can hold it. */
+  proposal: DropProposal | null = null
 ) {
   const userId = await currentOwnerId();
   if (!userId) {
@@ -1107,10 +1113,9 @@ export async function addPaletteModuleAt(
       // Mirrors moveModuleAcrossZones' own identical block below: the
       // same resolveModulePlacement, the same minRowSpanById floors for
       // siblings sharing the target column, the same reflow applied
-      // afterwards. draggedOriginalRowStart is undefined here and only
-      // here - a fresh module has no row it is coming from, which is
-      // exactly the "insert new content" case the resolver already has
-      // a documented default for.
+      // afterwards. draggedOriginalRowStart is undefined - a fresh module
+      // has no row it is coming from, which is the resolver's ARRIVAL
+      // case (placed by its middle); a module crossing zones is one too.
       const paletteMinRowSpanById: Record<string, number> = {};
       for (const o of occupied) {
         if (o.locked) continue;
@@ -1124,13 +1129,19 @@ export async function addPaletteModuleAt(
           configOf(otherMi)
         );
       }
-      const paletteResolution = resolveModulePlacement(
-        pageGrid,
-        { ...candidate, columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan },
-        occupied,
-        undefined,
-        paletteMinRowSpanById
-      );
+      const arrival = { ...candidate, columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan, rowSpan: effectiveRowSpan };
+      // What the preview showed, saved as shown whenever the page can hold
+      // it - see proposalHolds for why resolving again from the preview's
+      // own answer put a second Reflection below the first after showing
+      // it above.
+      const shown =
+        isDropProposal(proposal) &&
+        proposalHolds(pageGrid, { ...arrival, rowStart: proposal.rowStart }, proposal.reflow, occupied, paletteMinRowSpanById)
+          ? proposal
+          : null;
+      const paletteResolution = shown
+        ? ({ fits: true, placement: { columnStart: arrival.columnStart, rowStart: shown.rowStart }, reflow: shown.reflow } as const)
+        : resolveModulePlacement(pageGrid, arrival, occupied, undefined, paletteMinRowSpanById);
       // The editor already showed "no room" and never sends this; a
       // refusal here means the two disagreed, and the answer is still to
       // write nothing rather than a module on top of another.
@@ -1154,16 +1165,17 @@ export async function addPaletteModuleAt(
       // own ceiling needs no special case: __hourlygridgap__ bounds the
       // bottom zone and week-title the sidebar, both already in
       // `occupied` spanning the right columns. Only ever pulls UP, and
-      // only into genuinely empty space.
-      const paletteMovedById = new Map(paletteReflow.map((m) => [m.id, m]));
-      let paletteTopEdge = 0;
-      for (const o of occupied) {
-        if (o.columnStart >= effectiveColumnStart + effectiveColumnSpan) continue;
-        if (o.columnStart + o.columnSpan <= effectiveColumnStart) continue;
-        const moved = paletteMovedById.get(o.id);
-        const bottom = (moved?.rowStart ?? o.rowStart) + (moved?.rowSpan ?? o.rowSpan);
-        if (bottom <= resolvedPlacement.rowStart && bottom > paletteTopEdge) paletteTopEdge = bottom;
-      }
+      // only into genuinely empty space. The same packedTopEdge the
+      // preview packs with - this was a copy of its loop. A proposal was
+      // packed by the preview already and is saved as it was shown.
+      const paletteTopEdge = shown
+        ? resolvedPlacement.rowStart
+        : packedTopEdge(
+            occupied,
+            { columnStart: effectiveColumnStart, columnSpan: effectiveColumnSpan },
+            resolvedPlacement.rowStart,
+            new Map(paletteReflow.map((m) => [m.id, m]))
+          );
       const clamped =
         paletteTopEdge < resolvedPlacement.rowStart
           ? { ...resolvedPlacement, rowStart: paletteTopEdge }
@@ -1274,6 +1286,9 @@ export async function addPaletteModuleAt(
         contexts
       ),
     })),
+    // The whole page as saved, including what the drop did NOT move - see
+    // savedLayoutOf.
+    layout: await savedLayoutOf([page.id]),
   };
 }
 
@@ -1316,6 +1331,42 @@ export async function updateModulePlacement(
   await syncLinkedPages([instance.pageId]);
 }
 
+/**
+ * Every grid-placed module on these pages, where it now is.
+ *
+ * A drop and a move answer with this as well as with what they moved,
+ * because the editor had ALREADY moved things on screen for its preview:
+ * told only what the server moved, it left anything its preview moved and
+ * the server did not exactly where the preview put it - reported
+ * 2026-09-29 as two Reflections dropped into a sidebar, Reminders drawn at
+ * rows 20-22 over the first of them while it was saved at 15-22. With the
+ * whole saved layout the editor ends a drop showing what was saved, for
+ * every module on the page, whichever it is.
+ */
+export type SavedLayoutRow = {
+  id: string;
+  pageId: string;
+  columnStart: number;
+  rowStart: number;
+  columnSpan: number;
+  rowSpan: number;
+};
+
+async function savedLayoutOf(pageIds: string[]): Promise<SavedLayoutRow[]> {
+  const rows = await prisma.moduleInstance.findMany({
+    where: { pageId: { in: pageIds }, columnStart: { not: null }, rowStart: { not: null } },
+    select: { id: true, pageId: true, columnStart: true, rowStart: true, columnSpan: true, rowSpan: true },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    pageId: row.pageId,
+    columnStart: row.columnStart as number,
+    rowStart: row.rowStart as number,
+    columnSpan: row.columnSpan,
+    rowSpan: row.rowSpan,
+  }));
+}
+
 // Repositioning an existing todo-checklist/habit-tracker/labeled-box
 // across the side-zone/bottom-zone boundary — requested directly: "make
 // it so i can drag side modules to the bottom and bottom modules to the
@@ -1340,8 +1391,16 @@ export async function updateModulePlacement(
 // client's own live-preview copy in resolveDrag) for the authoritative
 // placement — including its new shrink-existing-siblings tier, which is
 // the actual "even if the section is full" behavior; nothing here
-// reimplements it.
-export async function moveModuleAcrossZones(instanceId: string, targetPageId: string, columnStart: number, rowStart: number) {
+// reimplements it. Unless the editor sends what its preview showed and
+// the page can hold that: then that is what is saved (proposalHolds).
+export async function moveModuleAcrossZones(
+  instanceId: string,
+  targetPageId: string,
+  columnStart: number,
+  rowStart: number,
+  /** What the move's preview showed - saved as shown when the page can hold it. */
+  proposal: DropProposal | null = null
+) {
   const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
@@ -1512,13 +1571,19 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
     return mi ? { slug: mi.moduleType.slug, propValues: configOf(mi) } : undefined;
   });
 
-  const resolution = resolveModulePlacement(
-    targetPageGrid,
-    candidate,
-    targetOthers,
-    instance.rowStart,
-    minRowSpanById
-  );
+  // The preview's placement when the target page can hold it - see
+  // proposalHolds, and addPaletteModuleAt's identical choice. Resolved
+  // here only when it cannot, as an ARRIVAL: its old row is in another
+  // zone, often on another page, and says nothing about a direction in
+  // this stack (the resolver's arrival rule; the preview passes the same).
+  const shown =
+    isDropProposal(proposal) &&
+    proposalHolds(targetPageGrid, { ...candidate, rowStart: proposal.rowStart }, proposal.reflow, targetOthers, minRowSpanById)
+      ? proposal
+      : null;
+  const resolution = shown
+    ? ({ fits: true, placement: { columnStart: candidate.columnStart, rowStart: shown.rowStart }, reflow: shown.reflow } as const)
+    : resolveModulePlacement(targetPageGrid, candidate, targetOthers, undefined, minRowSpanById);
   // Nothing has been written yet. See addPaletteModuleAt's identical
   // refusal: the editor shows "no room" and keeps the module where it was.
   if (!resolution.fits) {
@@ -1608,18 +1673,22 @@ export async function moveModuleAcrossZones(instanceId: string, targetPageId: st
   const targetIds = new Set<string>([instance.id, ...reflow.map((m) => m.id)]);
   // Each row drawn as ITS page - the moved module as the page it landed on.
   const contexts = await renderContextsForBookOf(targetPageId);
-  return updated.map((row) => ({
-    id: row.id,
-    rowStart: row.rowStart as number,
-    rowSpan: row.rowSpan,
-    elements: renderInstanceElements(
-      row,
-      slugById.get(row.id) ?? slug,
-      targetIds.has(row.id) ? targetPageGrid : sourcePageGrid,
-      fontFamily,
-      contexts
-    ),
-  }));
+  return {
+    moved: updated.map((row) => ({
+      id: row.id,
+      rowStart: row.rowStart as number,
+      rowSpan: row.rowSpan,
+      elements: renderInstanceElements(
+        row,
+        slugById.get(row.id) ?? slug,
+        targetIds.has(row.id) ? targetPageGrid : sourcePageGrid,
+        fontFamily,
+        contexts
+      ),
+    })),
+    // Both pages, as saved - see savedLayoutOf.
+    layout: await savedLayoutOf([...new Set([instance.pageId, targetPageId])]),
+  };
 }
 
 // Removes a module the user deleted from the canvas (see

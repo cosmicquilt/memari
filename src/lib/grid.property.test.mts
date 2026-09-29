@@ -26,6 +26,7 @@ import {
   resolveModulePlacement,
   packStackFromTop,
   gravityRepackAfterDeparture,
+  proposalHolds,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -428,6 +429,33 @@ check(
     }
     const floorsTotal = inRegion.reduce((sum, o) => sum + (s.floors?.[o.id] ?? o.rowSpan), 0);
     return floorsTotal + s.candidate.rowSpan > region.rowSpan;
+  })
+);
+
+// --- proposalHolds ---------------------------------------------------------
+//
+// The server saves what a drop's preview showed when this says the page can
+// hold it. So it must keep everything the resolver itself produces - or a
+// good preview is thrown away and resolved again, which is the
+// disagreement it exists to end - and refuse exactly the layouts that
+// collide.
+
+check(
+  "the server keeps every layout the resolver produces",
+  fc.property(scenes, (s) => {
+    const r = resolveScene(s);
+    if (!r.fits) return true;
+    return proposalHolds(s.page, placedRect(s.candidate, r.placement), r.reflow, s.others, s.floors);
+  })
+);
+
+// Restated from the inputs: with nothing moved, a placement holds exactly
+// when it is on the page and touches nothing.
+check(
+  "an unmoved layout holds exactly when the arrival is on the page and touches nothing",
+  fc.property(scenes, (s) => {
+    const clear = inBounds(s.page, s.candidate) && s.others.every((o) => !rectsOverlap(o, s.candidate));
+    return proposalHolds(s.page, s.candidate, [], s.others, s.floors) === clear;
   })
 );
 

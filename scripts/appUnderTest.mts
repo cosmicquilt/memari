@@ -340,6 +340,33 @@ export async function flushUnderHours(journalId: string, position = 0): Promise<
   });
 }
 
+/**
+ * Sets the weekly left page's sidebar to exactly these boxes, by heading, at
+ * these rows - and removes anything else in the sidebar a previous drop put
+ * there. For replaying a drop from a known starting layout.
+ */
+export async function setWeeklySidebar(journalId: string, boxes: Array<[heading: string, rowStart: number, rowSpan: number]>): Promise<void> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const page = await prisma.page.findFirst({
+    where: { plannerId: journalId, level: "WEEKLY", variantKey: null, position: 0 },
+    include: { moduleInstances: { include: { moduleType: true } } },
+  });
+  if (!page) throw new Error("no weekly left page");
+  const sidebar = page.moduleInstances.filter((mi) => mi.columnStart === 0 && mi.moduleType.slug !== "week-title");
+  // One module per heading: a box dropped from the palette can share one.
+  const used = new Set<string>();
+  for (const mi of sidebar) {
+    const heading = (mi.propValues as { heading?: string } | null)?.heading;
+    const box =
+      mi.moduleType.slug === "labeled-box" && heading && !used.has(heading) ? boxes.find(([h]) => h === heading) : undefined;
+    if (!box) await prisma.moduleInstance.delete({ where: { id: mi.id } });
+    else {
+      used.add(box[0]);
+      await prisma.moduleInstance.update({ where: { id: mi.id }, data: { rowStart: box[1], rowSpan: box[2] } });
+    }
+  }
+}
+
 /** Every module of a journal, by slug, with its stored props - for checking
  *  what a save actually wrote. */
 export async function storedModules(journalId: string): Promise<Array<{ id: string; slug: string; level: string; propValues: Record<string, unknown> }>> {

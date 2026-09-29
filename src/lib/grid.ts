@@ -732,8 +732,9 @@ export function resolveModulePlacement(
   // current dropped position — that's rawCandidate). Only used to break
   // an exact rowStart tie against a stack sibling by drag direction —
   // see the comment at that tie-break below for why a fixed rule can't
-  // get both directions right. Omit it (a brand-new palette drop has no
-  // "before" to compare against) to fall back to the neutral default.
+  // get both directions right. Omit it for an ARRIVAL - a palette drop, or
+  // a module crossing in from another zone - which has no "before" in this
+  // stack and is placed by its middle instead (see the arrival rule below).
   draggedOriginalRowStart?: number,
   // Per-sibling minimum rowSpan floor, keyed by id — opts into a second
   // fallback tier (below the normal "fits at current sizes" reorder,
@@ -894,10 +895,23 @@ export function resolveModulePlacement(
   //
   // Only the sort key changes — placement math and the topBound/
   // bottomBound clamping still use the real candidate.
+  //
+  // An ARRIVAL has no direction to lead with. A module coming from the
+  // palette or from another zone was never in this stack, so "which way it
+  // moved" is a comparison with a row in some other place - and treating it
+  // as moving down made its bottom edge the key, a whole span below where
+  // it is drawn. The palette draws it centred on the pointer, so the gap
+  // opened under a module while the pointer was still well above that
+  // module's middle - reported 2026-09-29, "the space created for it would
+  // jump below a module before it should". An arrival goes by its centre:
+  // above a sibling while its middle is above that sibling's middle.
+  const arriving = draggedOriginalRowStart === undefined;
   const movingDown = !draggedFirstOnTie;
-  let draggedSortKey = movingDown
-    ? candidate.rowStart + candidate.rowSpan
-    : candidate.rowStart;
+  let draggedSortKey = arriving
+    ? candidate.rowStart + candidate.rowSpan / 2
+    : movingDown
+      ? candidate.rowStart + candidate.rowSpan
+      : candidate.rowStart;
 
   // The center-crossing rule above breaks down for a dragged item
   // large enough that clampGridPlacement caps its candidate before
@@ -1027,6 +1041,86 @@ export function resolveModulePlacement(
   // has no room - see PlacementResolution for why not relocate, and why
   // never hand back the overlapping drop point.
   return { fits: false, region };
+}
+
+export type ProposedMove = { id: string; rowStart: number; rowSpan?: number };
+
+/** What a drop's preview showed: the arrival's row, and how its stack moved. */
+export type DropProposal = { rowStart: number; reflow: ProposedMove[] };
+
+/** A proposal arrives from the browser, so its shape is checked, not assumed. */
+export function isDropProposal(value: unknown): value is DropProposal {
+  if (!value || typeof value !== "object") return false;
+  const { rowStart, reflow } = value as { rowStart?: unknown; reflow?: unknown };
+  return (
+    Number.isInteger(rowStart) &&
+    Array.isArray(reflow) &&
+    reflow.length <= 200 &&
+    reflow.every(
+      (m) =>
+        !!m &&
+        typeof m === "object" &&
+        typeof (m as ProposedMove).id === "string" &&
+        Number.isInteger((m as ProposedMove).rowStart) &&
+        ((m as ProposedMove).rowSpan === undefined || Number.isInteger((m as ProposedMove).rowSpan))
+    )
+  );
+}
+
+/**
+ * Whether the placement the editor's preview SHOWED for an arriving module
+ * can be saved exactly as shown.
+ *
+ * A drop and a cross-zone move used to be resolved twice: once by the
+ * preview from where the pointer was, and again by the server from where
+ * the preview had put the module - against the layout from before the
+ * preview moved anything. Those are different questions and they did not
+ * always agree: a second Reflection dropped on the first previewed above
+ * it, at row 15, and was saved below it, at row 20, moving nothing the
+ * preview had moved (2026-09-29). Now the server keeps what was shown
+ * whenever it is a layout the page can hold, and resolves for itself only
+ * when it is not - a screen gone stale, or a caller with no preview.
+ *
+ * What makes it one the page can hold: the arrival and every moved module
+ * inside the page; only unlocked modules of the arrival's own stack (its
+ * exact columns) moved, each once; none grown, none below its floor in
+ * `minRowSpanById` (a module with no floor there may move but not shrink);
+ * and nothing the move touched overlapping anything else, reservations
+ * such as the gap under the hours included - they are locked members of
+ * `others`. Overlaps between modules the drop left alone are not its
+ * business, so a stored layout that already has one does not block it.
+ */
+export function proposalHolds(
+  page: PageGrid,
+  arrival: GridRect,
+  reflow: ProposedMove[],
+  others: Array<GridRect & { id: string; locked: boolean }>,
+  minRowSpanById: Record<string, number> = {}
+): boolean {
+  const inPage = (r: GridRect) =>
+    Number.isInteger(r.rowStart) &&
+    Number.isInteger(r.rowSpan) &&
+    r.rowSpan >= 1 &&
+    r.columnStart >= 0 &&
+    r.rowStart >= 0 &&
+    r.columnStart + r.columnSpan <= page.gridColumns &&
+    r.rowStart + r.rowSpan <= page.gridRows;
+  if (!inPage(arrival)) return false;
+  const byId = new Map(others.map((o) => [o.id, o]));
+  const moved = new Map<string, GridRect>();
+  for (const move of reflow) {
+    const o = byId.get(move.id);
+    if (!o || o.locked || moved.has(move.id)) return false;
+    if (o.columnStart !== arrival.columnStart || o.columnSpan !== arrival.columnSpan) return false;
+    const rowSpan = move.rowSpan ?? o.rowSpan;
+    if (rowSpan > o.rowSpan || rowSpan < (minRowSpanById[move.id] ?? o.rowSpan)) return false;
+    const rect = { columnStart: o.columnStart, columnSpan: o.columnSpan, rowStart: move.rowStart, rowSpan };
+    if (!inPage(rect)) return false;
+    moved.set(move.id, rect);
+  }
+  const after = others.map((o) => ({ id: o.id, rect: moved.get(o.id) ?? o }));
+  const touched = [{ id: "__arrival__", rect: arrival }, ...after.filter((a) => moved.has(a.id))];
+  return touched.every((t) => after.every((a) => a.id === t.id || !rectsOverlap(t.rect, a.rect)));
 }
 
 // Repacks a same-column stack after one of its own members conceptually

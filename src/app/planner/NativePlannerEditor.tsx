@@ -97,7 +97,7 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { EventLayer, type CalendarChoice } from "./EventLayer";
 import { CalendarsPanel, type CalendarRow } from "./CalendarsPanel";
-import { renderModuleInstance } from "@/lib/renderModuleInstance";
+import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
@@ -134,6 +134,7 @@ import {
   pixelHeightToRowSpan,
   gravityRepackAfterDeparture,
   type GridRect,
+  type DropProposal,
   type PageGrid,
   BOTTOM_ZONE_ROW_TOLERANCE,
 } from "@/lib/grid";
@@ -151,6 +152,7 @@ import {
 import {
   updateModulePlacement,
   moveModuleAcrossZones,
+  type SavedLayoutRow,
   resizeAdjacentModules,
   resizeStackFromBottom,
   addPaletteModuleAt,
@@ -3425,6 +3427,8 @@ const PaletteCard = memo(function PaletteCard({
   return (
     <div
       ref={setNodeRef}
+      // Which module this card places - for the browser check's drags.
+      data-palette-slug={slug}
       {...listeners}
       {...attributes}
       style={{
@@ -7734,22 +7738,34 @@ export function NativePlannerEditor({
       const overOwnColumn = crossingZones || isSameZone;
       const pinnedRowStart =
         lastOwnColumnRow?.instanceId === instanceId ? lastOwnColumnRow.rowStart : current.rowStart;
-      // nearestCellRaw is already pointer-relative (see pointerPagePx
-      // above), so the insert row needs no further correction — an
-      // earlier version re-derived it a second time from the box's own
-      // grab-anchored draw position, which was approximating exactly
-      // this and is now redundant.
+      // Where a CROSSING box is drawn. It is resized to the target zone's
+      // shape as it goes, keeping the point you took hold of under the
+      // pointer (computeDraggedSizeCompensationPagePx), so its top is the
+      // pointer less that fraction of its NEW height - a palette module is
+      // held by its middle. This used to be the pointer's own row, as if
+      // every arrival were held by its top edge: the resolver judged a box
+      // half a module lower than the one on screen, and the gap opened
+      // under a sibling early (2026-09-29, "the space created for it would
+      // jump below a module before it should").
+      const arrivingTopRow = pixelsToGridCell(hoveredPageGrid, {
+        x: hoveredLocalX,
+        y:
+          pointerPagePx.y -
+          (grabFraction?.y ?? 0) *
+            gridCellToPixels(targetPageGrid, {
+              columnStart: 0,
+              rowStart: 0,
+              columnSpan: effectiveColumnSpan,
+              rowSpan: effectiveRowSpan,
+            }).height,
+      }).rowStart;
       const nearestCell = clampGridPlacement(targetPageGrid, {
         columnStart: crossingZones ? targetZone!.columnStart : current.columnStart,
-        // Crossing keeps the pointer's row on purpose: the box is being
-        // resized to the target zone's shape as it goes, so its own top
-        // edge is mid-compensation (see computeDraggedSizeCompensationPagePx)
-        // and the pointer is the only stable thing to resolve against. A
-        // same-zone reorder has no such change, and there the box is what
-        // the rule is about.
+        // The box as drawn either way: a crossing's from the pointer (see
+        // arrivingTopRow), a same-zone reorder's from its own top edge.
         rowStart: overOwnColumn
           ? crossingZones
-            ? nearestCellRaw.rowStart
+            ? arrivingTopRow
             : draggedTopRow
           : pinnedRowStart,
         columnSpan: effectiveColumnSpan,
@@ -7867,7 +7883,11 @@ export function NativePlannerEditor({
         targetPageGrid,
         candidate,
         targetOthersWithReservations,
-        current.rowStart,
+        // A crossing is an ARRIVAL: it was never in this stack, so there
+        // is no row of its own here to tell a direction from - see the
+        // resolver's arrival rule. Its old row is in another zone, often
+        // on another page.
+        crossingZones ? undefined : current.rowStart,
         minRowSpanById
       );
       // No room even with everyone there at their minimum. Nothing moves
@@ -7959,6 +7979,10 @@ export function NativePlannerEditor({
         current,
         resolved,
         reflow,
+        // The target stack's part of `reflow` alone - what a commit
+        // proposes to the server with `resolved` (see proposalHolds). The
+        // source zone's gravity is the server's own to work out.
+        targetReflow,
         crossingZones,
         effectiveColumnSpan,
         effectiveRowSpan,
@@ -8289,6 +8313,82 @@ export function NativePlannerEditor({
     return out;
   }, [placements, moduleLookup]);
 
+  // THE SAVED LAYOUT, ADOPTED WHOLE. A drop and a move show their result
+  // before the server has one - siblings moved aside, shrunk to admit - and
+  // the server then decides for itself. Its answer used to be applied only
+  // to what IT moved, so anything the preview moved and the server did not
+  // stayed where the preview had put it: two Reflections dropped into a
+  // sidebar left Reminders drawn at rows 20-22 over the first of them, while
+  // it was saved at 15-22 (reported 2026-09-29, "when i released them they
+  // also over lapped"; "can you ensure this doesn't happen for any other
+  // module as well"). Now every module on the pages the server touched ends
+  // exactly where it was saved, whichever module it is: moved if it only
+  // shifted - its drawing is relative to its box - and redrawn if its size
+  // changed, with the server's own drawing wherever it sent one.
+  //
+  // Against the placements ON SCREEN when the answer arrives - the preview's
+  // - which the ref holds; the closure's would be from before the drag.
+  const placementsRef = useRef(placements);
+  useLayoutEffect(() => {
+    placementsRef.current = placements;
+  }, [placements]);
+  const adoptSavedLayout = useCallback(
+    (layout: SavedLayoutRow[], rendered: ReadonlyMap<string, RenderedPolotnoElement[]>) => {
+      const shown = placementsRef.current;
+      const differs = (row: SavedLayoutRow) => {
+        const p = shown[row.id];
+        return (
+          !p ||
+          p.columnStart !== row.columnStart ||
+          p.rowStart !== row.rowStart ||
+          p.columnSpan !== row.columnSpan ||
+          p.rowSpan !== row.rowSpan
+        );
+      };
+      const touched = layout.filter((row) => differs(row) || rendered.has(row.id));
+      if (touched.length === 0) return;
+      setPlacements((prev) => {
+        const next = { ...prev };
+        for (const row of touched) {
+          next[row.id] = { columnStart: row.columnStart, rowStart: row.rowStart, columnSpan: row.columnSpan, rowSpan: row.rowSpan };
+        }
+        return next;
+      });
+      setModuleLookup((prev) => {
+        const next = new Map(prev);
+        for (const row of touched) {
+          const info = next.get(row.id);
+          const grid = pageGridByPageId[row.pageId];
+          if (!info || !grid) continue;
+          const placement = { columnStart: row.columnStart, rowStart: row.rowStart, columnSpan: row.columnSpan, rowSpan: row.rowSpan };
+          const was = shown[row.id];
+          const resized = !was || was.columnSpan !== row.columnSpan || was.rowSpan !== row.rowSpan;
+          const serverDrawing = rendered.get(row.id);
+          // A pure shift keeps its drawing AND its origin: the two are one
+          // pair, and the box moving carries them both.
+          if (!serverDrawing && !resized && info.pageId === row.pageId) continue;
+          const origin = gridCellToPixels(grid, placement);
+          next.set(row.id, {
+            ...info,
+            pageId: row.pageId,
+            elements:
+              serverDrawing ??
+              renderOnPage(
+                { id: row.id, locked: info.locked, ...placement, propValues: info.propValues, moduleType: { slug: info.slug } },
+                grid,
+                fontFamily,
+                renderContextByPageId[row.pageId]
+              ),
+            originX: origin.x,
+            originY: origin.y,
+          });
+        }
+        return next;
+      });
+    },
+    [pageGridByPageId, fontFamily, renderContextByPageId]
+  );
+
   const handleAddModule = useCallback(
     async (
       pageId: string,
@@ -8303,7 +8403,10 @@ export function NativePlannerEditor({
       // path has nothing optimistic in front of it, so it captures here.
       before?: GeometrySnapshot,
       // A saved module, placed with its settings and linked to it.
-      savedModule: PaletteEntry["savedModule"] = null
+      savedModule: PaletteEntry["savedModule"] = null,
+      // What the drop's preview showed - the server saves exactly this when
+      // the page can hold it (see proposalHolds). The "+" button has none.
+      proposal: DropProposal | null = null
     ) => {
       const beforeSnapshot = before ?? captureGeometry();
       // See gestureBlockedByPendingCommit's own comment — the requested
@@ -8324,7 +8427,7 @@ export function NativePlannerEditor({
         // shouldn't read a stale "what's occupied" view server-side
         // either.
         const result = await serializeCommit(() =>
-          addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart, savedModule?.id ?? null)
+          addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart, savedModule?.id ?? null, proposal)
         );
         if (result.columnStart === null || result.rowStart === null) return; // unreachable — GRID-mode instances always have both
         const finalColumnStart = result.columnStart;
@@ -8400,6 +8503,16 @@ export function NativePlannerEditor({
           }
           return next;
         });
+        // And every other module on the page to where it was saved - see
+        // adoptSavedLayout. The new one and the moved ones come with the
+        // server's drawings.
+        adoptSavedLayout(
+          result.layout,
+          new Map<string, RenderedPolotnoElement[]>([
+            [result.instanceId, [result.element]],
+            ...result.reflowed.map((moved) => [moved.id, moved.elements] as [string, RenderedPolotnoElement[]]),
+          ])
+        );
         // Mount fade-in (see NativeModule's own justAdded comment) —
         // cleared a couple of frames later, the same "needs an actual
         // paint of the *before* state first" reasoning as every other
@@ -8436,6 +8549,7 @@ export function NativePlannerEditor({
       gestureBlockedByPendingCommit,
       captureGeometry,
       removePhantom,
+      adoptSavedLayout,
     ]
   );
 
@@ -8706,7 +8820,8 @@ export function NativePlannerEditor({
           dropped.columnStart,
           dropped.rowStart,
           phantomBefore,
-          phantom.savedModule
+          phantom.savedModule,
+          { rowStart: dropped.rowStart, reflow: phantomResult.targetReflow }
         );
         return;
       }
@@ -8747,6 +8862,7 @@ export function NativePlannerEditor({
         current,
         resolved,
         reflow,
+        targetReflow,
         crossingZones,
         effectiveColumnSpan,
         effectiveRowSpan,
@@ -8955,31 +9071,22 @@ export function NativePlannerEditor({
         // already does (fresh server-rendered elements, not just a
         // position) — overwriting the optimistic patch above with the
         // server's own authoritative render once it lands.
-        serializeCommit(() => moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart))
-          .then((results) => {
-            setModuleLookup((prev) => {
-              const next = new Map(prev);
-              for (const r of results) {
-                const info = prev.get(r.id);
-                if (!info) continue;
-                const isDragged = r.id === instanceId;
-                const columnStart = isDragged ? newPlacement.columnStart : (placements[r.id]?.columnStart ?? 0);
-                const columnSpan = isDragged ? newPlacement.columnSpan : (placements[r.id]?.columnSpan ?? 1);
-                const origin = gridCellToPixels(pageGrid, { columnStart, rowStart: r.rowStart, columnSpan, rowSpan: r.rowSpan });
-                // Same pageId fix as the optimistic patch above, applied
-                // to the server's own authoritative response too — only
-                // the dragged instance's own page can ever change.
-                next.set(r.id, {
-                  ...info,
-                  ...(isDragged ? { pageId: targetPageId } : {}),
-                  elements: r.elements,
-                  originX: origin.x,
-                  originY: origin.y,
-                });
-              }
-              return next;
-            });
+        // With what the preview showed, which is what gets saved whenever
+        // the page can hold it - see proposalHolds.
+        serializeCommit(() =>
+          moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart, {
+            rowStart: resolved.rowStart,
+            reflow: targetReflow,
           })
+        )
+          // Both pages to where they were saved, the moved modules with the
+          // server's drawings - see adoptSavedLayout. This used to take the
+          // server's drawings and keep the preview's ROWS, so a move the
+          // server resolved differently drew each module at one place and
+          // boxed it at another.
+          .then(({ moved, layout }) =>
+            adoptSavedLayout(layout, new Map(moved.map((m) => [m.id, m.elements] as [string, RenderedPolotnoElement[]])))
+          )
           .catch((err) => {
             setSaveError(err instanceof Error ? err.message : String(err));
           });
@@ -9019,6 +9126,7 @@ export function NativePlannerEditor({
       captureGeometry,
       pageGridByPageId,
       pageWidthPx,
+      adoptSavedLayout,
     ]
   );
 

@@ -32,6 +32,7 @@ import {
   resolveZone,
   BOTTOM_ZONE_ROW_TOLERANCE,
   packedTopEdge,
+  proposalHolds,
   type PageGrid,
   type GridRect,
 } from "./grid";
@@ -1312,3 +1313,68 @@ console.log("All minRowSpansForStack checks passed.");
   );
 }
 console.log("All packedTopEdge checks passed.");
+
+// --- an arrival goes by its centre; proposalHolds -------------------------
+//
+// Reported 2026-09-29: two Reflections dragged into a sidebar. The gap for
+// the second opened under the first while the pointer - the middle of the
+// box the palette draws - was still above the first one's middle, and the
+// server then saved it somewhere else again. A sidebar of four, packed:
+{
+  const side = (id: string, rowStart: number, rowSpan: number, locked = false) => ({
+    id,
+    locked,
+    columnStart: 0,
+    rowStart,
+    columnSpan: 1,
+    rowSpan,
+  });
+  const stack = [
+    side("title", 0, 3, true),
+    side("grateful", 3, 8),
+    side("reflection", 11, 5),
+    side("reminders", 16, 7),
+    side("notes", 23, 7),
+  ];
+  const floors = { grateful: 5, reflection: 5, reminders: 4, notes: 4 };
+  const arriving = (rowStart: number) => ({ columnStart: 0, rowStart, columnSpan: 1, rowSpan: 5 });
+  const rowOf = (r: { reflow: Array<{ id: string; rowStart: number }> }, id: string) =>
+    r.reflow.find((m) => m.id === id)?.rowStart ?? stack.find((s) => s.id === id)!.rowStart;
+
+  // Centre at 12.5, above the first Reflection's middle (13.5): above it.
+  // The old key - the box's bottom edge, 15 - put it below.
+  const above = resolve(page, arriving(10), stack, undefined, floors);
+  assert(above.placement.rowStart < rowOf(above, "reflection"), "an arrival whose middle is above a sibling's goes above it");
+  // Centre at 14.5, below it: below.
+  const below = resolve(page, arriving(12), stack, undefined, floors);
+  assert(below.placement.rowStart > rowOf(below, "reflection"), "an arrival whose middle is below a sibling's goes below it");
+
+  // What was shown can be saved as shown.
+  const shownRect = arriving(above.placement.rowStart);
+  assert(proposalHolds(page, shownRect, above.reflow, stack, floors), "the server keeps a layout the preview resolved");
+  // And resolving the preview's own answer again - what the server did -
+  // is not the same question: against the layout from before the preview
+  // moved anything, the arrival sits exactly on the Reflection it was
+  // shown above.
+  assert(
+    rectsOverlap(shownRect, stack.find((s) => s.id === "reflection")!),
+    "(the double resolution this replaces started from an overlap)"
+  );
+
+  const holds = (reflow: Array<{ id: string; rowStart: number; rowSpan?: number }>, rect = shownRect) =>
+    proposalHolds(page, rect, reflow, stack, floors);
+  assert(!holds([]), "refused: the arrival lands on a module nothing moved");
+  assert(!holds([...above.reflow, { id: "title", rowStart: 1 }]), "refused: a locked module moved");
+  assert(!holds([...above.reflow, { id: "ghost", rowStart: 1 }]), "refused: a module that is not on the page");
+  assert(!holds([...above.reflow, above.reflow[0]]), "refused: one module moved twice");
+  assert(
+    !holds(above.reflow.map((m) => (m.id === "notes" ? { ...m, rowSpan: 3 } : m))),
+    "refused: a module shrunk below its floor"
+  );
+  assert(
+    !proposalHolds(page, shownRect, above.reflow, stack.map((s) => (s.id === "notes" ? { ...s, columnSpan: 2 } : s)), floors),
+    "refused: a module outside the arrival's own columns moved"
+  );
+  assert(!holds(above.reflow, { ...shownRect, rowStart: 27 }), "refused: an arrival off the foot of the page");
+}
+console.log("All arrival and proposalHolds checks passed.");
