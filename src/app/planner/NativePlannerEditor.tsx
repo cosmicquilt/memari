@@ -2829,6 +2829,11 @@ function StackResizeHandle({
         height: band.height,
         cursor: "ns-resize",
         touchAction: "none",
+        // Over the module whose edge it is. A strip on a narrow gap reaches
+        // up over the spine's bottom edge (see handleBandPx), and there the
+        // hours' event layer (z-index 1) took the pointer - the strip was
+        // drawn and could not be grabbed. Under the badges (6 and 7).
+        zIndex: 2,
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -5763,24 +5768,38 @@ export function NativePlannerEditor({
               getHourlyGridCoreContentHeightPx(
                 config as Parameters<typeof getHourlyGridCoreContentHeightPx>[0]
               );
-          const belowTop = gridCellToPixels(page.pageGrid, {
-            columnStart: placement.columnStart,
-            rowStart:
-              placement.rowStart +
-              placement.rowSpan +
-              // A calendar keeps a whole cell clear, the same as the
-              // template leaves. hourlyGapRows would read an hourly config
-              // it does not have.
-              (isMonthGrid
-                ? 1
-                : hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan)),
-            columnSpan: placement.columnSpan,
-            rowSpan: 1,
-          }).y;
-          // Never a zero-height strip: a gap can be half a cell, and at a
-          // low zoom that is a few device pixels to aim at.
+          // Where the module below ACTUALLY starts - its drawn top - when
+          // there is one. This was worked out from the gap the settings imply
+          // (a row, with increments off), and a book whose to-do sits flush
+          // under the hours has no such row: the strip lay over the to-do's
+          // header. Reported 2026-09-29, "its region is the header of the
+          // todo below it"; Andrew's book had the hours on rows 0-12 and the
+          // to-do from row 12. The implied gap is kept for an empty stack,
+          // where there is nothing below to read.
+          const firstBelow = followers[0] ? displayPlacements[followers[0]] : undefined;
+          const belowTop = firstBelow
+            ? gridCellToPixels(page.pageGrid, firstBelow).y
+            : gridCellToPixels(page.pageGrid, {
+                columnStart: placement.columnStart,
+                rowStart:
+                  placement.rowStart +
+                  placement.rowSpan +
+                  // A calendar keeps a whole cell clear, the same as the
+                  // template leaves. hourlyGapRows would read an hourly config
+                  // it does not have.
+                  (isMonthGrid
+                    ? 1
+                    : hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan)),
+                columnSpan: placement.columnSpan,
+                rowSpan: 1,
+              }).y;
+          // Never a zero-height strip - a gap can be half a cell, and at a low
+          // zoom that is a few device pixels to aim at - and never INTO the
+          // module below: a gap too thin to aim at grows the strip UP, over
+          // the spine's own bottom edge, which is what it moves. It grew down,
+          // and a flush to-do lost its header to it.
           const height = Math.max(belowTop - contentBottom, RESIZE_HANDLE_HALF_HEIGHT_PX);
-          handleBandPx = { top: contentBottom, height };
+          handleBandPx = { top: belowTop - height, height };
         }
 
         entries.push({

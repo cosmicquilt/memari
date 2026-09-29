@@ -1154,6 +1154,28 @@ const spineDrag: Probe = {
         return (b.top - a.top) / ${before[left.followers[0].id]!.rowStart - before[left.spineId]!.rowStart};
       })()`)) as number;
 
+      // THE EDGE'S GRAB STRIP IS THE HOURS' EDGE, not the top of the module
+      // below. Reported 2026-09-29 with increments off: "the below resize
+      // handle seems too low, its region is the header of the todo below
+      // it". Checked on both pages, as drawn, before anything is dragged.
+      const strips = (await tab.evaluate(`(() => ${JSON.stringify(spread.pages.map((p) => ({ spine: p.spineId, below: p.followers[0]?.id ?? null })))}.map(({ spine, below }) => {
+        const strip = document.querySelector('[data-stack-key="hourly-stack:' + spine + '"]');
+        const hours = document.querySelector('[data-module-instance-id="' + spine + '"]');
+        const next = below && document.querySelector('[data-module-instance-id="' + below + '"]');
+        if (!strip || !hours || !next) return null;
+        const s = strip.getBoundingClientRect(), h = hours.getBoundingClientRect(), n = next.getBoundingClientRect();
+        return { stripTop: s.top, stripBottom: s.bottom, hoursBottom: h.bottom, belowTop: n.top };
+      }))()`)) as Array<{ stripTop: number; stripBottom: number; hoursBottom: number; belowTop: number } | null>;
+      strips.forEach((strip, i) => {
+        const side = i === 0 ? "left" : "right";
+        if (!strip) fail("spine drag", `the ${side} page's hours have no grab strip, or nothing below them`);
+        else if (strip.stripBottom > strip.belowTop + 0.5) {
+          fail("spine drag", `the ${side} hours' grab strip reaches ${(strip.stripBottom - strip.belowTop).toFixed(1)}px into the module below`);
+        } else if (strip.stripBottom < strip.hoursBottom - 0.5) {
+          fail("spine drag", `the ${side} hours' grab strip ends above the hours' own bottom edge`);
+        }
+      });
+
       /** A real-mouse drag of the left page's hours edge, sampled as it goes. */
       const drag = async (rows: number) => {
         const handle = await tab.$(`[data-stack-key="hourly-stack:${left.spineId}"]`);

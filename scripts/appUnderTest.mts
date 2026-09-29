@@ -274,6 +274,25 @@ export async function incrementsOffSpread(journalId: string): Promise<SpineSprea
     },
   });
 
+  // And NO GAP under the LEFT page's hours: its to-do moved up flush with
+  // them, keeping its own bottom edge. Andrew's book is like that - found
+  // 2026-09-29, hours rows 0-12 and the to-do from row 12 - and the edge's
+  // grab strip, which assumed the one-row gap the template leaves, covered
+  // the to-do's header. The right page keeps the template's gap, so both
+  // are in play.
+  {
+    const left = weekly()[0];
+    const { spine: leftSpine, followers: leftFollowers } = followersOf(left);
+    const first = leftFollowers[0];
+    const end = (leftSpine.rowStart as number) + leftSpine.rowSpan;
+    if (first && (first.rowStart as number) > end) {
+      await prisma.moduleInstance.update({
+        where: { id: first.id },
+        data: { rowStart: end, rowSpan: first.rowSpan + ((first.rowStart as number) - end) },
+      });
+    }
+  }
+
   pages = await load();
   const spreadIds = new Set(weekly().map((p) => p.id));
   return {
