@@ -1382,12 +1382,72 @@ const moduleEditor: Probe = {
         if ((await pencil.count()) === 0) return `the ${name} has no pencil`;
         const opacity = Number(await pencil.evaluate((el) => getComputedStyle(el).opacity));
         if (!(opacity > 0)) return `the ${name}'s pencil stays invisible on hover`;
+        // THE FLIGHT, frame by frame from the press: where the preview is
+        // drawn on each frame, and how long each frame took. Asked
+        // 2026-09-29 whether flying the module out of the canvas "would
+        // lag" - this is the answer, measured.
+        await tab.evaluate(`(() => {
+          const record = (window.__flight = { pressed: 0, frames: [] });
+          const tick = () => {
+            const frame = document.querySelector('[role="dialog"] [data-editor-piece]')?.parentElement;
+            // Only once it can be seen: it is painted once, all but
+            // transparent, where it ends before it flies from the module.
+            const r = frame && Number(getComputedStyle(frame).opacity) > 0.5 ? frame.getBoundingClientRect() : null;
+            record.frames.push({ t: performance.now(), r: r && { l: r.left, t: r.top, w: r.width, h: r.height } });
+            if (performance.now() - record.pressed < 1100) requestAnimationFrame(tick);
+          };
+          record.pressed = performance.now();
+          requestAnimationFrame(tick);
+        })()`);
         await pencil.click();
         const dialog = tab.getByRole("dialog", { name: `Edit ${name}` });
         await dialog.waitFor({ timeout: 5000 }).catch(() => undefined);
         if (!(await dialog.isVisible())) return `pressing the ${name}'s pencil opened no editor`;
+        await tab.waitForTimeout(1200);
+        const flown = (await tab.evaluate(`window.__flight`)) as {
+          pressed: number;
+          frames: Array<{ t: number; r: { l: number; t: number; w: number; h: number } | null }>;
+        };
+        const drawn = flown.frames.filter((f) => f.r);
+        if (drawn.length < 2) return `the ${name}'s editor drew no flight`;
+        const first = drawn[0];
+        const last = drawn[drawn.length - 1];
+        // TWO NUMBERS, because they are two costs. Before the flight: the
+        // preview's first render and paint, while it sits still over the
+        // module - a delay, not a stutter (measured on the hours: the width
+        // did not move across that frame). During it: the frames themselves,
+        // which a composited transform should keep at the display's rate.
+        const moving = drawn.findIndex((f) => Math.abs(f.r!.w - first.r!.w) > 0.5 || Math.abs(f.r!.l - first.r!.l) > 0.5);
+        const departed = drawn[Math.max(0, moving - 1)];
+        const during = drawn.filter((f) => f.t >= departed.t && f.t - departed.t <= 360);
+        const longest = during.length > 1 ? Math.max(...during.slice(1).map((f, i) => f.t - during[i].t)) : 0;
+        // Where it began: over the module on the canvas (the hours: over
+        // both pages' hours). The first frame can already be a step in, so
+        // it is compared against the whole distance travelled.
+        const origin = (await tab.evaluate(`(() => {
+          const rects = ${JSON.stringify(name === "Hours" ? "hours" : instanceId)} === "hours"
+            ? [...document.querySelectorAll('[data-module-instance-id]')].filter((el) => el.querySelector('[data-event-layer]')).map((el) => el.getBoundingClientRect())
+            : [document.querySelector('[data-module-instance-id="${instanceId}"]').getBoundingClientRect()];
+          const l = Math.min(...rects.map((r) => r.left)), t = Math.min(...rects.map((r) => r.top));
+          return { l, t, w: Math.max(...rects.map((r) => r.right)) - l, h: Math.max(...rects.map((r) => r.bottom)) - t, hidden: document.querySelector('[data-module-instance-id="${instanceId}"]') ? getComputedStyle(document.querySelector('[data-module-instance-id="${instanceId}"]')).visibility : "" };
+        })()`)) as { l: number; t: number; w: number; h: number; hidden: string };
+        const travel = Math.max(1, Math.abs(last.r!.l - origin.l) + Math.abs(last.r!.t - origin.t), Math.abs(last.r!.w - origin.w));
+        const off = (Math.abs(first.r!.l - origin.l) + Math.abs(first.r!.t - origin.t) + Math.abs(first.r!.w - origin.w)) / travel;
+        flights.push(
+          `${name} moves ${Math.round(departed.t - flown.pressed)}ms after the press, then ${during.length} frames, longest ${Math.round(longest)}ms`
+        );
+        if (off > 0.2) return `the ${name}'s preview did not start on the module - its first frame is ${(off * 100).toFixed(0)}% of the way`;
+        if (Math.abs(last.r!.w - origin.w) < 4) return `the ${name}'s preview never grew (${origin.w.toFixed(0)} -> ${last.r!.w.toFixed(0)}px)`;
+        if (moving < 0) return `the ${name}'s preview never moved`;
+        // Two frames at 60Hz. Anything longer is a visible hitch in motion.
+        if (longest > 34) return `the ${name}'s flight stuttered: a ${Math.round(longest)}ms frame while moving`;
+        // Generous, because this runs against the DEVELOPMENT build, where
+        // React alone is several times slower than in production.
+        if (departed.t - flown.pressed > 600) return `the ${name} took ${Math.round(departed.t - flown.pressed)}ms to start moving`;
+        if (origin.hidden !== "hidden") return `the ${name} stayed on the canvas while its preview was out`;
         return null;
       };
+      const flights: string[] = [];
       /** A picker's options: how many, and whether each draws something. */
       const picker = (group: string) =>
         tab.getByRole("radiogroup", { name: group }).evaluate((el) =>
@@ -1413,6 +1473,15 @@ const moduleEditor: Probe = {
       if (hoursError) problems.push(hoursError);
       else {
         const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
+        // BOTH PAGES' HOURS, each with its own days.
+        const pieces = (await dialog.evaluate((el) =>
+          [...el.querySelectorAll("[data-editor-piece]")].map((piece) => piece.textContent ?? "")
+        )) as string[];
+        if (pieces.length !== weeklyHours.length) {
+          problems.push(`the hours' editor shows ${pieces.length} page(s) of hours, not the spread's ${weeklyHours.length}`);
+        } else if (!pieces.some((text) => /SUNDAY/.test(text)) || !pieces.some((text) => /WEDNESDAY/.test(text))) {
+          problems.push("the hours' editor does not show both halves of the week");
+        } else notes.push(`hours: both pages in the editor`);
         for (const field of ["Increments", "Row height", "Week starts on"]) {
           if ((await dialog.getByLabel(field).count()) === 0) problems.push(`the hours' editor has no ${field}`);
         }
@@ -1513,8 +1582,32 @@ const moduleEditor: Probe = {
         })) as number;
         if (Math.abs(fieldOff) > 1) problems.push(`the heading field sits ${fieldOff.toFixed(1)}px off the middle of the module`);
         if (shots) await tab.screenshot({ path: `${shots}/note-editor.png` });
+        // OUT: back onto the module, which is on the canvas again once the
+        // preview has landed on it.
+        const target = await tab.locator(`[data-module-instance-id="${noteBox.id}"]`).boundingBox();
+        await tab.evaluate(`(() => {
+          const record = (window.__landing = []);
+          const tick = () => {
+            const frame = document.querySelector('[role="dialog"] [data-editor-piece]')?.parentElement;
+            const r = frame ? frame.getBoundingClientRect() : null;
+            record.push(r && { l: r.left, t: r.top, w: r.width });
+            if (r) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })()`);
         await tab.keyboard.press("Escape");
+        await tab.waitForTimeout(800);
+        const landing = ((await tab.evaluate(`window.__landing`)) as Array<{ l: number; t: number; w: number } | null>).filter(Boolean) as Array<{ l: number; t: number; w: number }>;
+        const landed = landing[landing.length - 1];
+        const open = await tab.getByRole("dialog").count();
+        const visible = await tab.locator(`[data-module-instance-id="${noteBox.id}"]`).evaluate((el) => getComputedStyle(el).visibility);
+        if (open > 0) problems.push("Escape left the editor open");
+        else if (!target || !landed || Math.abs(landed.l - target.x) > 6 || Math.abs(landed.w - target.width) > 6) {
+          problems.push(`closing did not land on the module (last frame ${JSON.stringify(landed)} against ${JSON.stringify(target)})`);
+        } else if (visible !== "visible") problems.push("the note box stayed hidden after its editor closed");
+        else notes.push(`closing lands on the module in ${landing.length} frames and puts it back`);
       }
+      if (flights.length > 0) notes.push(`flights: ${flights.join("; ")}`);
 
       if (problems.length > 0) for (const problem of problems) fail("module editor", problem);
       else note("module editor", notes.join("; "));

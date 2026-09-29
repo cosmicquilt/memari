@@ -171,7 +171,7 @@ import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/plann
 import { DRAWER_DEFAULT_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
 import { usePrefersReducedMotion, useIsomorphicLayoutEffect, usePointerCanHover } from "./useMediaQuery";
 import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
-import { ModuleEditor, type EditingModule } from "./ModuleEditor";
+import { ModuleEditor, type EditingModule, type ScreenRect, type SpreadPiece } from "./ModuleEditor";
 import { useSavedItems } from "./savedContext";
 import type { SavedModuleCard } from "./savedItems";
 import { useAsyncAction } from "./useAsyncAction";
@@ -4870,6 +4870,7 @@ export function NativePlannerEditor({
     return map;
   }, [pages]);
 
+
   // Which instance ids belong to each page — derived from moduleLookup,
   // not `page.moduleInstances` directly, specifically so a module added
   // after initial load (see handleAddModule) shows up: moduleLookup is
@@ -4888,6 +4889,58 @@ export function NativePlannerEditor({
     }
     return byPage;
   }, [moduleLookup]);
+
+  // THE EDITOR OPENS OUT OF THE MODULE: where it sits on screen is measured
+  // as the pencil is pressed, and the preview flies from there - see
+  // ModuleEditor's flight. The HOURS open as the whole spread's hours, each
+  // page's placed as it sits on the canvas ("it should show both sides in
+  // the popup"), so their offsets come from the same measurement, in print
+  // px by way of the canvas's own scale.
+  const openModuleEditor = useCallback(
+    (editing: EditingModule) => {
+      const hoursEditor = moduleDefinition(editing.slug)?.pageSettingsForm === "hours";
+      const memberIds = hoursEditor
+        ? pages.flatMap((page) =>
+            (instanceIdsByPageId[page.pageId] ?? []).filter((id) => moduleLookup.get(id)?.slug === editing.slug)
+          )
+        : [editing.instanceId];
+      const rects = memberIds.map(screenRectOfModule);
+      const origin = unionOfRects(rects);
+      let spread: SpreadPiece[] | undefined;
+      if (origin && memberIds.length > 1) {
+        const firstInfo = moduleLookup.get(memberIds[0]);
+        const firstPlacement = placements[memberIds[0]];
+        const firstGrid = firstInfo ? pageGridByPageId[firstInfo.pageId] : undefined;
+        const canvasScale =
+          firstGrid && firstPlacement ? (rects[0] as ScreenRect).width / gridCellToPixels(firstGrid, firstPlacement).width : 0;
+        if (canvasScale > 0) {
+          spread = memberIds.flatMap((id, index) => {
+            const info = moduleLookup.get(id);
+            const placement = placements[id];
+            const rect = rects[index];
+            const grid = info ? pageGridByPageId[info.pageId] : undefined;
+            if (!info || !placement || !rect || !grid) return [];
+            return [
+              {
+                instanceId: id,
+                propValues: (info.propValues ?? {}) as Record<string, unknown>,
+                columnStart: placement.columnStart,
+                rowStart: placement.rowStart,
+                columnSpan: placement.columnSpan,
+                rowSpan: placement.rowSpan,
+                pageGrid: grid,
+                renderContext: renderContextByPageId[info.pageId] ?? null,
+                offsetX: (rect.left - origin.left) / canvasScale,
+                offsetY: (rect.top - origin.top) / canvasScale,
+              },
+            ];
+          });
+        }
+      }
+      setEditingModule({ ...editing, origin, spread });
+    },
+    [pages, instanceIdsByPageId, moduleLookup, placements, pageGridByPageId, renderContextByPageId]
+  );
 
   // Live boundary-resize state — set for the duration of a ResizeHandle
   // drag (see handleResizeStart/Move/End below), null the rest of the
@@ -10104,7 +10157,7 @@ export function NativePlannerEditor({
                     key={page.pageId}
                     page={page}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
-                    onEditModule={setEditingModule}
+                    onEditModule={openModuleEditor}
                     placements={liveDisplayPlacements}
                     moduleLookup={moduleLookup}
                     activeId={activeId}
@@ -10176,6 +10229,13 @@ export function NativePlannerEditor({
       {editingModule && (
         <ModuleEditor
           editing={editingModule}
+          getOrigin={() =>
+            unionOfRects(
+              (editingModule.spread?.map((piece) => piece.instanceId) ?? [editingModule.instanceId]).map(
+                screenRectOfModule
+              )
+            )
+          }
           pageGrid={pages[0].pageGrid}
           fontFamily={fontFamily}
           // The module's own page's, so the preview is dated as the page is.
@@ -10190,6 +10250,26 @@ export function NativePlannerEditor({
           editor - leaves the drawer exactly as it was. */}
     </div>
   );
+}
+
+/** Where a module is drawn on screen, in viewport CSS px - or null when it
+ *  is not in the document. */
+function screenRectOfModule(instanceId: string): ScreenRect | null {
+  const element = document.querySelector<HTMLElement>(`[data-module-instance-id="${CSS.escape(instanceId)}"]`);
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+}
+
+/** The smallest rect holding all of them, or null if any is missing. */
+function unionOfRects(rects: Array<ScreenRect | null>): ScreenRect | null {
+  if (rects.length === 0 || rects.some((rect) => !rect)) return null;
+  const all = rects as ScreenRect[];
+  const left = Math.min(...all.map((rect) => rect.left));
+  const top = Math.min(...all.map((rect) => rect.top));
+  const right = Math.max(...all.map((rect) => rect.left + rect.width));
+  const bottom = Math.max(...all.map((rect) => rect.top + rect.height));
+  return { left, top, width: right - left, height: bottom - top };
 }
 
 // Floating pill toolbar, bottom-center of the viewport — same placement

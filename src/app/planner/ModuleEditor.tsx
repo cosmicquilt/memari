@@ -23,7 +23,7 @@
 // than a border, controls that are permanently present and quiet rather than
 // revealed on hover, and a spring rather than an ease.
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
@@ -31,7 +31,7 @@ import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid
 import { DEFAULT_HOURLY_SETTINGS, getHourlyGridCoreContentHeightPx } from "@/lib/modules/hourlyGridCore";
 import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
-import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
+import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
 import { HoursFields, type HoursDraft } from "./HoursFields";
 import { saveModuleToSaved, updateHourlySettings, updateModuleConfig } from "./actions";
@@ -56,7 +56,67 @@ export type EditingModule = {
   rowSpan: number;
   /** A use of a saved module - see savedItems.ts - or null. */
   savedModule: { id: string; name: string } | null;
+  /** Where the module sits on screen as the editor opens, in viewport CSS
+   *  px. The preview grows out of it, and shrinks back into it on close. */
+  origin?: ScreenRect | null;
+  /** The HOURS: every page's hours on the spread, as they sit on it. See
+   *  SpreadPiece. Absent for every other module. */
+  spread?: SpreadPiece[];
 };
+
+export type ScreenRect = { left: number; top: number; width: number; height: number };
+
+/**
+ * One page's hours, for an editor that shows the whole spread's.
+ *
+ * Asked 2026-09-29: "in the editing preview of hours section it should show
+ * both sides in the popup". The hours are one setting across the book, and a
+ * spread is one sheet, so the preview is the sheet's hours - each drawn with
+ * its own page's dates, from the one draft.
+ */
+export type SpreadPiece = {
+  instanceId: string;
+  propValues: Record<string, unknown>;
+  columnStart: number;
+  rowStart: number;
+  columnSpan: number;
+  rowSpan: number;
+  pageGrid: PageGrid;
+  renderContext: PageRenderContext | null;
+  /** Where it sits from the spread's hours' top-left, in print px - as on
+   *  the canvas, so the preview is the canvas magnified. */
+  offsetX: number;
+  offsetY: number;
+};
+
+/**
+ * THE FLIGHT. The preview is laid out where it ends up and starts over the
+ * module on the canvas, inverted by a transform - the FLIP technique - and
+ * only the transform animates. Asked 2026-09-29: "could we get the modules
+ * to animate from their current position and size in view of canvas to
+ * final size in preview, would that lag?" A transform is composited: the
+ * drawing is laid out and painted once and the GPU moves the result, so the
+ * cost is the preview's first render, not the frames - measured in
+ * check:browser's module editor probe.
+ *
+ * The canvas's own move curve, so it reads like the rest of the editor.
+ */
+const OPEN_MS = 360;
+const CLOSE_MS = 280;
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** The transform that puts `element`, as laid out, over `target`. */
+function flight(element: HTMLElement, target: ScreenRect): string | null {
+  const rect = element.getBoundingClientRect();
+  if (!(rect.width > 0 && rect.height > 0 && target.width > 0 && target.height > 0)) return null;
+  return (
+    `translate(${target.left - rect.left}px, ${target.top - rect.top}px) ` +
+    `scale(${target.width / rect.width}, ${target.height / rect.height})`
+  );
+}
 
 export function ModuleEditor({
   editing,
@@ -64,6 +124,7 @@ export function ModuleEditor({
   fontFamily,
   renderContext,
   weekStartDay = 0,
+  getOrigin,
   onClose,
   onSaved,
 }: {
@@ -75,6 +136,9 @@ export function ModuleEditor({
   renderContext: PageRenderContext | null;
   /** The book's week start - edited alongside the hours, which own it now. */
   weekStartDay?: number;
+  /** Where the module is on screen NOW - measured at close, since the canvas
+   *  may have scrolled or zoomed while the editor was open. */
+  getOrigin?: () => ScreenRect | null;
   onClose: () => void;
   /** The committed props, so the page behind can redraw without a reload. */
   onSaved: (instanceId: string, propValues: Record<string, unknown>) => void;
@@ -102,15 +166,56 @@ export function ModuleEditor({
   // Saving it to Saved > Modules: closed, or open with the name to give it.
   const [saveName, setSaveName] = useState<string | null>(null);
 
+  const frameRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Out the way it came in: the preview shrinks back onto the module, which
+  // the canvas shows again once it lands - see NativePlannerEditor's lifted
+  // modules. The editor goes when the flight ends.
+  const closing = useRef(false);
+  const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    const frame = frameRef.current;
+    const target = getOrigin?.() ?? editing.origin ?? null;
+    if (!frame || !target || prefersReducedMotion()) {
+      onClose();
+      return;
+    }
+    // Closed mid-way through opening: from where it is laid out, not from
+    // wherever the opening had got to.
+    for (const animation of frame.getAnimations()) animation.cancel();
+    const to = flight(frame, target);
+    if (!to) {
+      onClose();
+      return;
+    }
+    const flights = [
+      frame.animate([{ transform: "none" }, { transform: to }], {
+        duration: CLOSE_MS,
+        easing: RESIZE_EASE_CURVE,
+        fill: "forwards",
+      }),
+      scrimRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: CLOSE_MS, easing: "ease-in", fill: "forwards" }),
+      panelRef.current?.animate([{ opacity: 1 }, { opacity: 0, transform: "translateX(18px)" }], {
+        duration: CLOSE_MS * 0.6,
+        easing: "ease-in",
+        fill: "forwards",
+      }),
+    ];
+    void Promise.all(flights.map((animation) => animation?.finished)).then(onClose, onClose);
+  }, [getOrigin, editing.origin, onClose]);
+
   // Escape closes. A full-screen panel that can only be dismissed by finding
   // its own button is a trap, and this one covers the page you were editing.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
 
   // The module's own box, at the size it occupies on the page. Its geometry
   // is the page's, not a guess: a habit tracker changes layout below a width
@@ -206,17 +311,175 @@ export function ModuleEditor({
   // Fit the module into whatever room is left beside the fields. Measured
   // from the viewport rather than assumed, because a module can be a sixth of
   // a page or the whole of it.
-  const [viewport, setViewport] = useState({ width: 1280, height: 800 });
+  //
+  // READ AT MOUNT, not corrected after it. This started at a guessed 1280x800
+  // and an effect put the real size in once mounted - a second render of the
+  // whole preview at a new scale, which landed in the middle of the flight:
+  // measured as a 125ms frame opening the hours, whose preview is two pages
+  // of them, and a frame that moved after the flight had been aimed at it.
+  // The editor only ever mounts in the browser, on a click.
+  const [viewport, setViewport] = useState(() =>
+    typeof window === "undefined"
+      ? { width: 1280, height: 800 }
+      : { width: window.innerWidth, height: window.innerHeight }
+  );
   useEffect(() => {
-    const sync = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    const sync = () =>
+      setViewport((current) =>
+        current.width === window.innerWidth && current.height === window.innerHeight
+          ? current
+          : { width: window.innerWidth, height: window.innerHeight }
+      );
     sync();
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
   }, []);
 
+  // WHAT THE FRAME SHOWS: the module - or, for the hours, every page's hours
+  // on the spread, where they sit on it, each dated as its page is and all
+  // drawn from the one draft. See SpreadPiece.
+  const pieces = useMemo(() => {
+    const spread = hours ? editing.spread : undefined;
+    if (!spread || spread.length < 2) {
+      return [{ key: editing.instanceId, elements: drawnElements, box, offsetX: 0, offsetY: 0 }];
+    }
+    const settings = Object.fromEntries(Object.keys(DEFAULT_HOURLY_SETTINGS).map((key) => [key, draft[key]]));
+    return spread.map((member) => {
+      const memberRowSpan =
+        draft.intervalMode !== "off"
+          ? pixelHeightToRowSpan(
+              member.pageGrid,
+              getHourlyGridCoreContentHeightPx(draft as Parameters<typeof getHourlyGridCoreContentHeightPx>[0])
+            )
+          : member.rowSpan;
+      const placement = {
+        columnStart: member.columnStart,
+        rowStart: member.rowStart,
+        columnSpan: member.columnSpan,
+        rowSpan: memberRowSpan,
+      };
+      return {
+        key: member.instanceId,
+        elements: renderOnPage(
+          {
+            id: member.instanceId,
+            locked: true,
+            ...placement,
+            propValues: { ...member.propValues, ...settings },
+            moduleType: { slug: editing.slug },
+          },
+          member.pageGrid,
+          fontFamily,
+          member.renderContext
+        ),
+        box: gridCellToPixels(member.pageGrid, placement),
+        offsetX: member.offsetX,
+        offsetY: member.offsetY,
+      };
+    });
+  }, [hours, editing, drawnElements, box, draft, fontFamily]);
+  const groupWidth = Math.max(...pieces.map((piece) => piece.offsetX + piece.box.width));
+  const groupHeight = Math.max(...pieces.map((piece) => piece.offsetY + piece.box.height));
+
   const frameWidth = Math.max(240, viewport.width - FIELDS_WIDTH - PADDING * 5);
   const frameHeight = Math.max(240, viewport.height - PADDING * 6);
-  const scale = Math.min(frameWidth / box.width, frameHeight / box.height, 3);
+  const scale = Math.min(frameWidth / groupWidth, frameHeight / groupHeight, 3);
+
+  // LIFTED: the module leaves the canvas as its preview leaves it, so it
+  // reads as the module itself flying rather than a copy - and it is back as
+  // the preview lands on its spot and the editor goes.
+  //
+  // ON THE ELEMENTS THEMSELVES, not through a stylesheet or through state. It
+  // changes on the frame the flight starts, and both of those cost that
+  // frame: a new rule makes the browser re-check the whole canvas's styles,
+  // and a render re-renders it. Measured as a 39ms frame at departure with
+  // the stylesheet. React leaves an inline property it does not set alone.
+  const lifted = useRef<HTMLElement[]>([]);
+  const lift = useCallback(() => {
+    if (lifted.current.length > 0 || typeof document === "undefined") return;
+    const ids = editing.spread?.map((piece) => piece.instanceId) ?? [editing.instanceId];
+    for (const id of ids) {
+      const element = document.querySelector<HTMLElement>(`[data-module-instance-id="${CSS.escape(id)}"]`);
+      if (!element) continue;
+      element.style.visibility = "hidden";
+      lifted.current.push(element);
+    }
+  }, [editing.spread, editing.instanceId]);
+  useEffect(
+    () => () => {
+      for (const element of lifted.current) element.style.visibility = "";
+      lifted.current = [];
+    },
+    []
+  );
+
+  // IN: from the module on the canvas to here, once, as it opens.
+  //
+  // PAINTED FIRST, THEN FLOWN. The preview's first paint costs 50-60ms, and
+  // an animation started at once spent that paint with its clock running,
+  // then jumped to catch up - measured as the to-do sitting at 379-381px
+  // for 59ms and then leaping to 432px. So it is laid out and painted where
+  // it ends, all but invisible, while the module is still on the canvas, and
+  // the flight starts on the frame after that paint, from a drawing that is
+  // ready. What makes the browser paint it is the layer (will-change): with
+  // both the layer and the 0.001 taken away the flight measured 36-44ms
+  // frames again; the 0.001 keeps it painted even if the layer is not.
+  const opened = useRef(false);
+  useLayoutEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    const frame = frameRef.current;
+    const panel = panelRef.current;
+    const origin = editing.origin;
+    // Asked directly rather than through usePrefersReducedMotion, which is
+    // false on the first render by design and would let this one flight run.
+    if (!frame || !origin || prefersReducedMotion()) {
+      lift();
+      return;
+    }
+    frame.style.opacity = "0.001";
+    // Its own layer from the start, so that first paint is the one the flight
+    // moves. Promoted only when the flight began, it was painted a second
+    // time - into the new layer - on the flight's first frame.
+    frame.style.willChange = "transform";
+    // The fields panel too: fully transparent, it was not painted until it
+    // appeared - on the flight's first frame, which measured 33-43ms. Painted
+    // now, every frame of the flight comes in at the display's rate.
+    if (panel) {
+      panel.style.opacity = "0.001";
+      panel.style.willChange = "opacity, transform";
+    }
+    scrimRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: OPEN_MS, easing: "ease-out" });
+    // No cleanup cancelling these: React's development double-invoke would
+    // cancel the only flight, and `opened` keeps it to one.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!frame.isConnected) return;
+        const from = flight(frame, origin);
+        frame.style.opacity = "";
+        if (panel) panel.style.opacity = "";
+        lift();
+        if (!from) return;
+        const flying = frame.animate([{ transform: from }, { transform: "none" }], { duration: OPEN_MS, easing: RESIZE_EASE_CURVE });
+        // Landed: back to an ordinary element, so the preview and the heading
+        // field are drawn crisply at rest rather than from a cached layer.
+        void flying.finished.then(
+          () => (frame.style.willChange = ""),
+          () => undefined
+        );
+        const arriving = panel?.animate([{ opacity: 0, transform: "translateX(18px)" }, { opacity: 1, transform: "none" }], {
+          duration: OPEN_MS,
+          delay: OPEN_MS * 0.25,
+          easing: RESIZE_EASE_CURVE,
+          fill: "backwards",
+        });
+        void arriving?.finished.then(
+          () => (panel!.style.willChange = ""),
+          () => undefined
+        );
+      })
+    );
+  }, [editing.origin, lift]);
 
   // THE FIELD IS AS WIDE AS THE HEADING, not as the heading's box.
   //
@@ -300,7 +563,7 @@ export function ModuleEditor({
         return;
       }
       onSaved(editing.instanceId, cleaned);
-      onClose();
+      close();
     });
 
   // Save to Saved > Modules, with the draft committed first so what is saved
@@ -327,23 +590,26 @@ export function ModuleEditor({
         justifyContent: "center",
         gap: PADDING * 1.5,
         padding: PADDING,
-        // A scrim, not a blur. The canvas behind is a flat pale page, so a
-        // backdrop-filter would cost real GPU time to blur nothing - the same
-        // reasoning the timeline drawer's surface follows.
-        background: "rgba(0, 0, 0, 0.55)",
-      }}
-      onClick={(event) => {
-        // The scrim dismisses; the panels do not.
-        if (event.target === event.currentTarget) onClose();
       }}
     >
+      {/* A scrim, not a blur. The canvas behind is a flat pale page, so a
+          backdrop-filter would cost real GPU time to blur nothing - the same
+          reasoning the timeline drawer's surface follows. Its own layer, so
+          it can fade while the module flies. It dismisses; the panels do
+          not. */}
+      <div
+        ref={scrimRef}
+        onClick={close}
+        style={{ position: "absolute", inset: 0, background: "rgba(0, 0, 0, 0.55)" }}
+      />
       {/* THE MODULE, at a size you can see. On the page's own paper colour
           rather than on the dark chrome, because that is the ground it is
           designed against and a hairline reads differently on each. */}
       <div
+        ref={frameRef}
         style={{
-          width: box.width * scale,
-          height: box.height * scale,
+          width: groupWidth * scale,
+          height: groupHeight * scale,
           flexShrink: 0,
           background: "#fdfcf9",
           // Square-cornered, as the palette cards are and for their reason:
@@ -353,6 +619,7 @@ export function ModuleEditor({
           outlineOffset: 3,
           position: "relative",
           overflow: "hidden",
+          transformOrigin: "top left",
         }}
       >
         {/* MAGNIFIED BY A TRANSFORM, as the canvas and the palette cards
@@ -361,26 +628,37 @@ export function ModuleEditor({
             enlarges anything itself. Without this the module drew at 1:1 in
             the top-left of a frame sized for `scale`: measured 438x437 in a
             604x604 frame, the "white space outside it" that was reported. */}
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: box.width,
-            height: box.height,
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
-          }}
-        >
-          <PolotnoJsonRenderer
-            elements={drawnElements}
-            originX={box.x}
-            originY={box.y}
-            scale={scale}
-            suppressOuterBorderSize={null}
-            textElements={null}
-          />
-        </div>
+        {/* ALREADY THERE, not arriving. The renderer fades every mark in
+            as it mounts - right on the canvas, where a mark appearing is
+            news - and here that was hundreds of fades at once as the
+            preview mounted: SVG marks cannot fade on the GPU, so the whole
+            drawing repainted on every frame of the flight, and the module
+            left the page blank and filled in on the way. */}
+        <style>{"[data-editor-piece] * { animation: none !important; }"}</style>
+        {pieces.map((piece) => (
+          <div
+            key={piece.key}
+            data-editor-piece={piece.key}
+            style={{
+              position: "absolute",
+              left: piece.offsetX * scale,
+              top: piece.offsetY * scale,
+              width: piece.box.width,
+              height: piece.box.height,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <PolotnoJsonRenderer
+              elements={piece.elements}
+              originX={piece.box.x}
+              originY={piece.box.y}
+              scale={scale}
+              suppressOuterBorderSize={null}
+              textElements={null}
+            />
+          </div>
+        ))}
 
         {/* The heading, as a field. In CSS px OUTSIDE the transform, so its
             hover ring is a real 1px at any magnification rather than one
@@ -456,11 +734,13 @@ export function ModuleEditor({
       </div>
 
       <div
+        ref={panelRef}
         style={{
           width: FIELDS_WIDTH,
           maxHeight: "100%",
           display: "flex",
           flexDirection: "column",
+          position: "relative",
           background: SURFACE,
           border: "1px solid rgba(255, 255, 255, 0.12)",
           borderRadius: 12,
@@ -483,7 +763,7 @@ export function ModuleEditor({
           </strong>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             aria-label="Close"
             style={{
               width: 24,
