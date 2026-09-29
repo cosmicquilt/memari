@@ -1604,13 +1604,13 @@ const moduleEditor: Probe = {
       if (!todoError || /stuttered/.test(todoError)) {
         const lines = await picker("Lines");
         const lined = lines.find((l) => l.label === "Lined");
-        const crosses = lines.find((l) => l.label === "Crosses");
+        const crosses = lines.find((l) => l.label === "Dashed");
         if (!lined || !crosses) problems.push(`the Lines picker offers ${lines.map((l) => l.label).join(", ") || "nothing"}`);
         else if (!lined.checked) problems.push("a to-do saved before line styles existed does not show Lined as chosen");
-        else if (!(crosses.marks > lined.marks)) problems.push(`the Crosses picture (${crosses.marks} marks) is no busier than Lined (${lined.marks})`);
+        else if (!(crosses.marks > lined.marks)) problems.push(`the Dashed picture (${crosses.marks} marks) is no busier than Lined (${lined.marks})`);
         else notes.push(`to-do: Lines drawn ${lined.marks} vs ${crosses.marks} marks`);
         const rectsBefore = (await tab.evaluate(`document.querySelectorAll('[data-module-instance-id="${leftTodo.id}"] svg rect').length`)) as number;
-        await tab.getByRole("dialog", { name: "Edit To-do checklist" }).getByRole("radio", { name: "Crosses" }).click();
+        await tab.getByRole("dialog", { name: "Edit To-do checklist" }).getByRole("radio", { name: "Dashed" }).click();
         if (shots) await tab.screenshot({ path: `${shots}/todo-editor.png` });
         await done();
         const stored = (await storedModules(guest.journalId)).find((m) => m.id === leftTodo.id);

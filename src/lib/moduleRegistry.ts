@@ -721,7 +721,10 @@ const PRIMITIVES = {
         label: "Lines",
         options: [
           { value: "lined", label: "Lined" },
-          { value: "crosses", label: "Crosses" },
+          // Called "Dashed" (asked 2026-09-29); stored as "crosses", which is
+          // what every to-do already set to it holds - the same split as the
+          // note box's "none", shown as Blank.
+          { value: "crosses", label: "Dashed" },
         ],
       },
     ],
