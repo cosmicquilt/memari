@@ -1135,13 +1135,13 @@ function NativeModule({
   // cheap enough to just recompute on every render rather than memoing,
   // same as ResizeHandle/AddModuleButton's own gridCellToPixels calls
   // elsewhere in this file.
-  const editOverlayHeight = slug === "labeled-box" ? computeLabeledBoxHeaderHeightPx(heading ?? "", widthPx) : 0;
+  const editOverlayHeight = slug === "labeled-box" ? computeLabeledBoxHeaderHeightPx(heading ?? "", widthPx, fontFamily) : 0;
   // Same committed `heading` (not draftHeading) that editOverlayHeight
   // above already uses, for the same reason: the overlay's own height
   // doesn't live-resize as you type, so the font size it shows
   // shouldn't drift out of sync with that fixed height either — both
   // re-sync together once the edit commits and heading changes.
-  const editHeadingFontSizePx = slug === "labeled-box" ? computeLabeledBoxHeadingFontSizePx(heading ?? "", widthPx) : 0;
+  const editHeadingFontSizePx = slug === "labeled-box" ? computeLabeledBoxHeadingFontSizePx(heading ?? "", widthPx, fontFamily) : 0;
   return (
     <div
       ref={locked ? undefined : setNodeRef}

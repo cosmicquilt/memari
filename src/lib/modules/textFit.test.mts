@@ -157,10 +157,71 @@ check(estimateTextWidthPx("HELLO", 100) > estimateTextWidthPx("hello", 100), "ca
 check(fitFontSizePx("NOVEMBER", 400, [30, 20, 10]) === 30, `400px wide should take the largest size`);
 check(fitFontSizePx("NOVEMBER", 150, [30, 20, 10]) === 20, `150px wide should drop one step`);
 
+// --- HEADINGS: the house rule, measured -----------------------------------
+//
+// Asked 2026-09-29: "make the gratitude heading 6pt so it fits, shrink longer
+// headlines when they start to get cut off until you stop letting typing, and
+// smallest legible print". The gratitude box is the weekly sidebar's 6
+// columns: 438px, 371px of it for the heading. Measured in the browser its
+// heading sets 389px at 7pt in Newsreader - out of the box - and fits at 6.
+{
+  const { renderModuleInstance } = await import("@/lib/renderModuleInstance");
+  const { PROOF_PAGE } = await import("@/lib/proofSvg");
+  const { flatten } = await import("@/lib/proofSvg");
+  const { ptToPx } = await import("@/lib/print-spec");
+  const { fitHeading, headingFits, HEADING_SIZES_PT } = await import("@/lib/modules/moduleFrame");
+  const headingOf = (slug: string, columnSpan: number, heading: string, font: string) =>
+    flatten(
+      renderModuleInstance(
+        { id: "h", locked: true, columnStart: 0, rowStart: 2, columnSpan, rowSpan: 6, propValues: { heading, dayCount: 1 }, moduleType: { slug } },
+        PROOF_PAGE,
+        font
+      )
+    ).find((e) => e.id === "h-heading");
+  const pt = (px: number | undefined) => Math.round(((px ?? 0) * 72) / 300 * 10) / 10;
+
+  const gratitude = headingOf("labeled-box", 6, "Things I'm Grateful For", FONT_SERIF);
+  check(pt(gratitude?.fontSize) === 6, `the gratitude heading is ${pt(gratitude?.fontSize)}pt in serif, not 6pt`);
+  const sans = headingOf("labeled-box", 6, "Things I'm Grateful For", FONT_SANS);
+  check(pt(sans?.fontSize) === 7, `the gratitude heading is ${pt(sans?.fontSize)}pt in sans, where 7pt fits`);
+  check(HEADING_SIZES_PT[HEADING_SIZES_PT.length - 1] === 5, "the ladder ends at 5pt, the smallest legible");
+
+  // THE EDITOR'S LIMIT IS THE PAGE'S: headingFits is true exactly when the
+  // page draws the heading whole - one line, every letter - and false exactly
+  // when it has to cut or wrap it. Swept letter by letter, for every module
+  // that prints a heading this way, in both faces.
+  for (const [slug, columnSpan] of [["labeled-box", 6], ["todo-checklist", 6], ["habit-tracker", 6], ["column-table", 8]] as const) {
+    for (const font of [FONT_SERIF, FONT_SANS]) {
+      let disagreed = "";
+      for (let n = 1; n <= 60 && !disagreed; n++) {
+        const text = "Gratitude Lists And Longer Names".repeat(2).slice(0, n);
+        const drawn = headingOf(slug, columnSpan, text, font);
+        if (!drawn) continue;
+        const whole = drawn.text === text.toUpperCase() && Number(drawn.height ?? 0) < Number(drawn.fontSize ?? 0) * 2;
+        if (headingFits(text, Number(drawn.width ?? 0), font) !== whole) {
+          disagreed = `${n} letters: headingFits says ${!whole}, the page drew ${JSON.stringify(drawn.text)}`;
+        }
+        // And it is drawn at the rung fitHeading chose.
+        const rung = fitHeading(text, Number(drawn.width ?? 0), font).fontSizePx;
+        if (!disagreed && Math.abs(Number(drawn.fontSize ?? 0) - rung) > 0.01) {
+          disagreed = `${n} letters: drawn at ${pt(drawn.fontSize)}pt, the rule says ${pt(rung)}pt`;
+        }
+      }
+      check(!disagreed, `${slug} (${font}): the editor's limit and the page disagree - ${disagreed}`);
+    }
+  }
+  // Nothing on the ladder is below the smallest legible size, and a heading
+  // set at a rung really does fit: its measured width is inside its box.
+  const long = headingOf("todo-checklist", 6, "Weekend Groceries Lists", FONT_SERIF);
+  check(pt(long?.fontSize) >= 5 && pt(long?.fontSize) < 8, `a long to-do heading shrank to ${pt(long?.fontSize)}pt`);
+  void ptToPx;
+}
+
 if (failures > 0) {
   console.error(`\nText fitting: ${failures} problem(s).`);
   process.exit(1);
 }
+
 console.log(
   `All text fitting checks passed (capitals centre exactly in the band for both faces at 7 sizes ` +
     `and 4 bands; serif needs ${capCentreNudgeEm(FONT_SERIF).toFixed(3)}em, sans ${capCentreNudgeEm(FONT_SANS).toFixed(3)}em).`

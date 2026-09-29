@@ -1371,7 +1371,25 @@ const moduleEditor: Probe = {
       }
 
       /** Hover a module with the real mouse and press its pencil. */
+      /** Open a module's editor, measuring the flight - and if one frame of
+       *  it is long, measure once more ON A FRESHLY LOADED PAGE, failing only
+       *  if it is long again. The faults this has found (a re-render, a first
+       *  paint, an unpainted panel) were long on every first open; something
+       *  unrelated on the main thread is long once - measured: a 96ms frame
+       *  in one of five runs of an unchanged flight, and 18-47ms first-open
+       *  spreads with and without an unrelated change. Fresh, because a second
+       *  open on the same page is warm: retried there, the no-pre-paint
+       *  sabotage passed. */
       const openEditor = async (instanceId: string, name: string) => {
+        const first = await openEditorOnce(instanceId, name);
+        if (!first || !/stuttered/.test(first)) return first;
+        await tab.keyboard.press("Escape");
+        await tab.reload({ waitUntil: "networkidle" });
+        await tab.waitForTimeout(3000);
+        const again = await openEditorOnce(instanceId, name);
+        return again ? `${again} (and ${first.replace(/^the \S+ /, "")} the time before)` : null;
+      };
+      const openEditorOnce = async (instanceId: string, name: string) => {
         const box = await tab.locator(`[data-module-instance-id="${instanceId}"]`).boundingBox();
         if (!box) return `the ${name} is not on screen`;
         // Off-centre first, so the pointer arrives the way a person's would.
@@ -1439,8 +1457,13 @@ const moduleEditor: Probe = {
         if (off > 0.2) return `the ${name}'s preview did not start on the module - its first frame is ${(off * 100).toFixed(0)}% of the way`;
         if (Math.abs(last.r!.w - origin.w) < 4) return `the ${name}'s preview never grew (${origin.w.toFixed(0)} -> ${last.r!.w.toFixed(0)}px)`;
         if (moving < 0) return `the ${name}'s preview never moved`;
-        // Two frames at 60Hz. Anything longer is a visible hitch in motion.
-        if (longest > 34) return `the ${name}'s flight stuttered: a ${Math.round(longest)}ms frame while moving`;
+        // THREE frames at 60Hz. A guard against a GROSS, repeatable hitch -
+        // the faults found were 49-250ms - not a meter of smoothness: this
+        // machine's cold first open of the two-page hours spreads 18-47ms
+        // with nothing wrong, and at two frames the full suite failed a sound
+        // build at 35 and 37ms. The measured frames are in the note for a
+        // person to read.
+        if (longest > 50) return `the ${name}'s flight stuttered: a ${Math.round(longest)}ms frame while moving`;
         // Generous, because this runs against the DEVELOPMENT build, where
         // React alone is several times slower than in production.
         if (departed.t - flown.pressed > 600) return `the ${name} took ${Math.round(departed.t - flown.pressed)}ms to start moving`;
@@ -1471,7 +1494,9 @@ const moduleEditor: Probe = {
       if (/\bRow height\b/.test(palette)) problems.push("Page Settings still holds the hours' settings");
       const hoursError = await openEditor(weeklyHours[0].id, "Hours");
       if (hoursError) problems.push(hoursError);
-      else {
+      // A stutter is reported, and the editor is open and working - so the
+      // rest is still checked rather than failing as knock-ons.
+      if (!hoursError || /stuttered/.test(hoursError)) {
         const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
         // BOTH PAGES' HOURS, each with its own days.
         const pieces = (await dialog.evaluate((el) =>
@@ -1511,7 +1536,7 @@ const moduleEditor: Probe = {
       // --- THE TO-DO ---------------------------------------------------
       const todoError = await openEditor(leftTodo.id, "To-do checklist");
       if (todoError) problems.push(todoError);
-      else {
+      if (!todoError || /stuttered/.test(todoError)) {
         const lines = await picker("Lines");
         const lined = lines.find((l) => l.label === "Lined");
         const crosses = lines.find((l) => l.label === "Crosses");
@@ -1543,15 +1568,22 @@ const moduleEditor: Probe = {
         range.selectNodeContents(heading);
         const ink = range.getBoundingClientRect();
         const box = heading.getBoundingClientRect();
-        return { text: heading.textContent, off: (ink.left + ink.width / 2) - (box.left + box.width / 2), inkW: ink.width, boxW: box.width };
-      })()`)) as { text: string; off: number; inkW: number; boxW: number } | null;
+        return { text: heading.textContent, off: (ink.left + ink.width / 2) - (box.left + box.width / 2), inkW: ink.width, boxW: box.width, size: parseFloat(getComputedStyle(heading).fontSize) };
+      })()`)) as { text: string; off: number; inkW: number; boxW: number; size: number } | null;
+      // AND IT FITS, at 6pt - 25 print px - where it had printed out of its
+      // box at 7 ("make the gratitude heading 6pt so it fits").
+      if (centring && /GRATEFUL/.test(centring.text)) {
+        if (Math.abs(centring.size - 25) > 0.1) problems.push(`the gratitude heading is ${((centring.size * 72) / 300).toFixed(1)}pt, not 6pt`);
+        else if (centring.inkW > centring.boxW + 0.5) problems.push(`the gratitude heading still overflows its box (${centring.inkW.toFixed(0)}px in ${centring.boxW.toFixed(0)}px)`);
+        else notes.push(`the gratitude heading fits at 6pt`);
+      }
       if (!centring) problems.push("no heading drawn on the note box");
       else if (Math.abs(centring.off) > 0.5) {
         problems.push(`"${centring.text}" sits ${centring.off.toFixed(1)}px off the middle of its box on the page (${centring.inkW.toFixed(0)}px of ink in ${centring.boxW.toFixed(0)}px)`);
       } else notes.push(`"${centring.text}" centred on the page (${centring.inkW.toFixed(0)}px of ink in ${centring.boxW.toFixed(0)}px)`);
       const noteError = await openEditor(noteBox.id, "Labeled box");
       if (noteError) problems.push(noteError);
-      else {
+      if (!noteError || /stuttered/.test(noteError)) {
         const body = await picker("Body");
         const labels = body.map((b) => b.label).join("/");
         if (labels !== "Blank/Lined/Dotted") problems.push(`the Body picker offers ${labels || "nothing"}`);
@@ -1581,6 +1613,24 @@ const moduleEditor: Probe = {
           return r.left + r.width / 2 - (frame.left + frame.width / 2);
         })) as number;
         if (Math.abs(fieldOff) > 1) problems.push(`the heading field sits ${fieldOff.toFixed(1)}px off the middle of the module`);
+        // TYPING STOPS AT THE SMALLEST PRINT SIZE: the heading shrinks as it
+        // grows, and a letter that would not fit even at 5pt is refused - with
+        // a word to say why. Typed a key at a time, as a person would.
+        const headingField = tab.locator("input.memari-heading-field");
+        const before = await headingField.inputValue();
+        const extra = " and every other thing we could possibly think of";
+        await headingField.click();
+        await tab.keyboard.press("End");
+        await tab.keyboard.type(extra, { delay: 10 });
+        const typed = await headingField.inputValue();
+        await tab.keyboard.type("X");
+        const oneMore = await headingField.inputValue();
+        const status = (await tab.getByRole("dialog").getByRole("status").textContent()) ?? "";
+        if (typed.length >= before.length + extra.length) problems.push(`the heading field took all ${typed.length} letters - there is no end`);
+        else if (typed.length <= before.length) problems.push("the heading field would not take a single letter more");
+        else if (oneMore !== typed) problems.push("a letter past the end still went in");
+        else if (!/smallest print size/.test(status)) problems.push(`nothing said why the typing stopped (status: "${status}")`);
+        else notes.push(`typing stops at ${typed.length} letters with a word why`);
         if (shots) await tab.screenshot({ path: `${shots}/note-editor.png` });
         // OUT: back onto the module, which is on the canvas again once the
         // preview has landed on it.

@@ -35,7 +35,7 @@
 import { estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "./textFit";
 import { ptToPx } from "@/lib/print-spec";
 import {
-  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
+  RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
 
@@ -92,7 +92,6 @@ const NEAR_BLACK = "#231F20";
 // Taken from the frame rather than written as 8 here, so there is one
 // description of the house heading and not three. Only the size changes:
 // the header BAND stays 15.12pt, so no row count moves.
-const HEADER_FONT_PT = HEADING_SIZES_PT[0];
 // Bumped from the reference's measured ~6.7pt (bbox-height-derived) for
 // legibility — Newsreader renders a hair smaller than the reference's
 // MinionPro at the same nominal size.
@@ -305,16 +304,21 @@ export function renderHabitTracker(
   // "HABITS" label, centered within the name column. Manually centered
   // vertically rather than relying on verticalAlign, which hasn't
   // reliably centered text elsewhere in this codebase.
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  // The house heading rule, within the name column less the house padding -
+  // see fitHeading, and todoChecklist's heading.
+  const headingPadding = ptToPx(8);
+  const headingWidth = nameColumnWidth - headingPadding * 2;
+  const headingText = (config.heading ?? "HABITS").toUpperCase();
+  const { fontSizePx: headerFontSize, fits: headingFits } = fitHeading(headingText, headingWidth, FONT_FAMILY);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
     id: id("heading"),
     type: "text",
-    x: geometry.x,
+    x: geometry.x + headingPadding,
     y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
-    width: nameColumnWidth,
+    width: headingWidth,
     height: headerTextHeight,
-    text: (config.heading ?? "HABITS").toUpperCase(),
+    text: headingFits ? headingText : truncateHeading(headingText, headingWidth, headerFontSize, FONT_FAMILY),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
@@ -523,16 +527,20 @@ function renderHabitTrackerCompact(
 
   // "HABITS" header, centered across the full width — no name/day-letter
   // column split to center within anymore.
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  // The house heading rule across the full width, less the house padding.
+  const headingPadding = ptToPx(8);
+  const headingWidth = geometry.width - headingPadding * 2;
+  const headingText = (config.heading ?? "HABITS").toUpperCase();
+  const { fontSizePx: headerFontSize, fits: headingFits } = fitHeading(headingText, headingWidth, FONT_FAMILY);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
     id: id("heading"),
     type: "text",
-    x: geometry.x,
+    x: geometry.x + headingPadding,
     y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
-    width: geometry.width,
+    width: headingWidth,
     height: headerTextHeight,
-    text: (config.heading ?? "HABITS").toUpperCase(),
+    text: headingFits ? headingText : truncateHeading(headingText, headingWidth, headerFontSize, FONT_FAMILY),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",

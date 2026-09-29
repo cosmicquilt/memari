@@ -7,7 +7,7 @@
 // existed rather than invented - see HEADING_SIZES_PT and CONTENT_TOP.
 
 import { ptToPx } from "@/lib/print-spec";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
 
 export type FrameGeometry = { x: number; y: number; width: number; height: number };
 export type FrameLattice = {
@@ -69,7 +69,49 @@ export const RULE_WIDTH_PT = 0.3;
  * than the rule: their headings are fixed short strings ("TO - DO"), not
  * user-set names that have to survive being long.
  */
-export const HEADING_SIZES_PT = [8, 7, 6];
+export const HEADING_SIZES_PT = [8, 7, 6, 5];
+
+/**
+ * THE HEADING RULE, for every module that prints one: the largest size of
+ * the ladder at which it sets on one line in `availableWidthPx`, measured -
+ * see textWidthPx. `fits` is false when not even the smallest does.
+ *
+ * Asked 2026-09-29: "make the gratitude heading 6pt so it fits, shrink
+ * longer headlines when they start to get cut off until you stop letting
+ * typing, and smallest legible print". So the ladder goes down to 5pt - the
+ * size this codebase already calls the smallest legible (table heads, the
+ * icon strip's labels) - and the editor refuses a letter that would not fit
+ * at it (see ModuleEditor), which is why this is one function both ask.
+ */
+export function fitHeading(
+  text: string,
+  availableWidthPx: number,
+  fontFamily: string
+): { fontSizePx: number; fits: boolean } {
+  const upper = text.toUpperCase();
+  for (const pt of HEADING_SIZES_PT) {
+    const size = ptToPx(pt);
+    if (textWidthPx(upper, size, fontFamily) <= availableWidthPx + 0.01) return { fontSizePx: size, fits: true };
+  }
+  return { fontSizePx: ptToPx(HEADING_SIZES_PT[HEADING_SIZES_PT.length - 1]), fits: false };
+}
+
+/** Whether `text` fits `availableWidthPx` as a heading at all - at the
+ *  smallest legible size, if nowhere larger. */
+export function headingFits(text: string, availableWidthPx: number, fontFamily: string): boolean {
+  return fitHeading(text, availableWidthPx, fontFamily).fits;
+}
+
+/** `text` cut, with an ellipsis, to what sets in `availableWidthPx` at
+ *  `fontSizePx` - for a stored heading longer than the editor now allows. */
+export function truncateHeading(text: string, availableWidthPx: number, fontSizePx: number, fontFamily: string): string {
+  if (textWidthPx(text, fontSizePx, fontFamily) <= availableWidthPx + 0.01) return text;
+  let kept = text;
+  while (kept.length > 0 && textWidthPx(`${kept.trimEnd()}\u2026`, fontSizePx, fontFamily) > availableWidthPx) {
+    kept = kept.slice(0, -1);
+  }
+  return kept.trimEnd().length > 0 ? `${kept.trimEnd()}\u2026` : "";
+}
 
 /**
  * WHERE A MODULE'S CONTENT STARTS: the first lattice line below its top
@@ -238,9 +280,9 @@ export function headerElements(
     // reported as "text gets cut of in headers such as log".
     const padding = ptToPx(8);
     const available = geometry.width - padding * 2;
-    const sizes = HEADING_SIZES_PT.map(ptToPx);
-    const fontSize =
-      sizes.find((size) => text.length * size * 0.55 <= available) ?? sizes[sizes.length - 1];
+    // Measured, and cut only if even the smallest size will not hold it -
+    // which the editor no longer lets a heading become. See fitHeading.
+    const { fontSizePx: fontSize, fits } = fitHeading(text, available, fontFamily);
     elements.push({
       id: id("heading"),
       type: "text",
@@ -248,7 +290,7 @@ export function headerElements(
       y: capCentredTextY(geometry.y, bandHeight, fontSize, fontFamily),
       width: available,
       height: fontSize * 1.2,
-      text,
+      text: fits ? text : truncateHeading(text, available, fontSize, fontFamily),
       fontSize,
       fontFamily,
       fill: NEAR_BLACK,

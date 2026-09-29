@@ -29,6 +29,7 @@ import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
 import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid";
 import { DEFAULT_HOURLY_SETTINGS, getHourlyGridCoreContentHeightPx } from "@/lib/modules/hourlyGridCore";
+import { HEADING_SIZES_PT, headingFits } from "@/lib/modules/moduleFrame";
 import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
@@ -308,6 +309,27 @@ export function ModuleEditor({
   const [headingHovered, setHeadingHovered] = useState(false);
   const [headingFocused, setHeadingFocused] = useState(false);
 
+  // A HEADING STOPS WHERE THE SMALLEST PRINT STOPS. The page shrinks a long
+  // heading 8, 7, 6, 5pt as it grows; a letter that would not fit even at
+  // 5pt is refused - asked 2026-09-29, "shrink longer headlines when they
+  // start to get cut off until you stop letting typing". Asked through
+  // headingFits, the same function the renderer sizes the heading with, in
+  // the width the renderer gave it, so the editor and the page agree about
+  // where the end is. Deleting is always allowed, even from a heading saved
+  // before there was an end.
+  const [headingFull, setHeadingFull] = useState(false);
+  const headingFullTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const takeHeading = (next: string) => {
+    const current = String(draft.heading ?? "");
+    if (heading && next.length > current.length && !headingFits(next, heading.width ?? 0, String(heading.fontFamily ?? ""))) {
+      setHeadingFull(true);
+      if (headingFullTimer.current) clearTimeout(headingFullTimer.current);
+      headingFullTimer.current = setTimeout(() => setHeadingFull(false), 2500);
+      return;
+    }
+    setDraft((currentDraft) => ({ ...currentDraft, heading: next }));
+  };
+
   // Fit the module into whatever room is left beside the fields. Measured
   // from the viewport rather than assumed, because a module can be a sixth of
   // a page or the whole of it.
@@ -421,9 +443,13 @@ export function ModuleEditor({
   // for 59ms and then leaping to 432px. So it is laid out and painted where
   // it ends, all but invisible, while the module is still on the canvas, and
   // the flight starts on the frame after that paint, from a drawing that is
-  // ready. What makes the browser paint it is the layer (will-change): with
-  // both the layer and the 0.001 taken away the flight measured 36-44ms
-  // frames again; the 0.001 keeps it painted even if the layer is not.
+  // ready. What makes the browser paint it is the layer (will-change); the
+  // 0.001 keeps it painted even if the layer is not.
+  //
+  // WHAT IT BUYS, measured again once the mark fades were gone: the FIRST
+  // open of the heaviest preview - the two pages of hours, cold - went from a
+  // 42-44ms frame to 18-28ms. A second open, or a lighter module, was smooth
+  // either way. Small, but it is the open a person sees first.
   const opened = useRef(false);
   useLayoutEffect(() => {
     if (opened.current) return;
@@ -678,10 +704,7 @@ export function ModuleEditor({
             // prints. Typing replaces it, exactly as it would on paper.
             placeholder={heading.text ?? ""}
             spellCheck={false}
-            onChange={(event) => {
-              const value = event.target.value;
-              setDraft((current) => ({ ...current, heading: value }));
-            }}
+            onChange={(event) => takeHeading(event.target.value)}
             onKeyDown={(event) => {
               // A heading is one line; Return means done with it.
               if (event.key === "Enter") event.currentTarget.blur();
@@ -806,7 +829,11 @@ export function ModuleEditor({
               values={draft}
               defaults={defaults}
               drawRule={drawRule}
-              onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
+              onChange={(key, value) =>
+                key === "heading" && typeof value === "string"
+                  ? takeHeading(value)
+                  : setDraft((current) => ({ ...current, [key]: value }))
+              }
             />
           )}
         </div>
@@ -913,8 +940,15 @@ export function ModuleEditor({
             <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#ff8f5c" }}>{error}</span>
           )}
           {!error && (
-            <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-              {dirty ? "Unsaved changes" : "No changes"}
+            <span
+              role="status"
+              style={{ flex: 1, minWidth: 0, fontSize: 11, color: headingFull ? "#ffffff" : "rgba(255,255,255,0.35)" }}
+            >
+              {headingFull
+                ? `The heading is as long as fits at ${HEADING_SIZES_PT[HEADING_SIZES_PT.length - 1]}pt, the smallest print size`
+                : dirty
+                ? "Unsaved changes"
+                : "No changes"}
             </span>
           )}
           <button

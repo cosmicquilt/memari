@@ -61,43 +61,40 @@ const HEADING_HORIZONTAL_PADDING_PT = 8;
 // reasonable notebook-line spacing", which is the right number arrived at
 // independently; taking it from the lattice means it cannot drift from it.
 
-// The average character advance for this planner's serif, and the story
-// of how it was measured, now live in textFit.ts - a fact about a
-// typeface belongs somewhere the other modules can reach it, and they
-// need it: nothing here can measure a string, so every module that has to
-// keep a label inside a box works from this same number.
-import { SAFE_CHAR_WIDTH_RATIO, capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY } from "@/lib/modules/textFit";
 import {
   RULE_WIDTH_PT,
   contentTopAtLeastPx,
+  fitHeading,
   rowHeightPx,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
 
 /**
- * How a heading is set: the point size it is drawn at, and whether the
- * header band has to be the taller two-line one.
+ * How a heading is set: the size it is drawn at, and whether the header
+ * band has to be the taller two-line one.
  *
- * The size and the wrap decision have to be made together, because the
- * fallback to 7pt can itself remove the need to wrap. They were made
- * separately - the wrap was decided at 8pt and the text then drawn at 7pt
- * whenever that said "wraps" - so a heading between the two widths got a
- * two-line band with a single 7pt line sitting at the top of it. That is
- * the "title box is too large and the text is at the top touching" case,
- * and it was dormant until the sidebar narrowed from 497px to 438px on
- * the dot lattice.
+ * THE HOUSE HEADING RULE, fitHeading: the largest of 8, 7, 6 and 5pt at
+ * which it sets on one line, measured. It was this module's own rule - a
+ * flat 0.55 advance, 8pt or 7pt, then wrap - and the 0.55 was measured at
+ * 100px, where Newsreader's optical size gives its narrow display cut: at a
+ * heading's size "THINGS I'M GRATEFUL FOR" is 389px, not the 369 it
+ * predicted, so it printed 18px out of its 371px box at 7pt and was clipped
+ * in the editor. It fits at 6pt, which is where it now sits (asked for,
+ * 2026-09-29: "make the gratitude heading 6pt so it fits").
  *
- * Measured against real Newsreader in the browser rather than reasoned
- * about: "THINGS I'M GRATEFUL FOR" at 8pt is 421.3px against 371.3px of
- * available width, and at 7pt is 368.6px - so it fits on one line, at the
- * smaller size, and never needed the tall band. The 0.55 ratio itself
- * measured true to four decimal places (0.5495), so it stays.
+ * Wrapping is now only for a heading stored before the editor stopped
+ * taking letters past the smallest size, so nothing that exists loses
+ * words. The size and the wrap are still decided together - deciding them
+ * apart once gave a two-line band with one line in it.
  */
-function headingLayout(heading: string, availableWidthPx: number): { fontPt: 7 | 8; wraps: boolean } {
-  const fitsAt = (pt: 7 | 8) => heading.length * ptToPx(pt) * SAFE_CHAR_WIDTH_RATIO <= availableWidthPx;
-  if (fitsAt(8)) return { fontPt: 8, wraps: false };
-  if (fitsAt(7)) return { fontPt: 7, wraps: false };
-  return { fontPt: 7, wraps: true };
+function headingLayout(
+  heading: string,
+  availableWidthPx: number,
+  fontFamily: string
+): { fontSizePx: number; wraps: boolean } {
+  const { fontSizePx, fits } = fitHeading(heading, availableWidthPx, fontFamily);
+  return { fontSizePx, wraps: !fits };
 }
 
 // Exposed separately from renderLabeledBox so the native editor's inline
@@ -112,10 +109,10 @@ function headingLayout(heading: string, availableWidthPx: number): { fontPt: 7 |
 // every other caller (renderModuleInstance.ts) already depends on being
 // exactly that; a few duplicated lines here is cheaper than restructuring
 // that.
-export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: number): number {
+export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: number, fontFamily: string): number {
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
-  const { wraps } = headingLayout(heading ?? "", headingAvailableWidth);
+  const { wraps } = headingLayout(heading ?? "", headingAvailableWidth, fontFamily);
   // Must agree with renderLabeledBox's own band to the pixel - this is what
   // the editor's inline heading-edit overlay sizes itself to, and a
   // mismatch was reported live as "the header gets taller". Same snap,
@@ -137,10 +134,10 @@ export function computeLabeledBoxHeaderHeightPx(heading: string, boxWidthPx: num
 // print-pixel space (ptToPx(8) is ~33px) and scaled down together by
 // the canvas's own zoom transform — reported live as "the font turns
 // very small" while editing.
-export function computeLabeledBoxHeadingFontSizePx(heading: string, boxWidthPx: number): number {
+export function computeLabeledBoxHeadingFontSizePx(heading: string, boxWidthPx: number, fontFamily: string): number {
   const headingPadding = ptToPx(HEADING_HORIZONTAL_PADDING_PT);
   const headingAvailableWidth = boxWidthPx - headingPadding * 2;
-  return ptToPx(headingLayout(heading, headingAvailableWidth).fontPt);
+  return headingLayout(heading, headingAvailableWidth, fontFamily).fontSizePx;
 }
 
 export function renderLabeledBox(
@@ -166,7 +163,7 @@ export function renderLabeledBox(
   // whole PAGE, not one module. Found by moduleHouseStyle.test.mts, which
   // renders every registered module with no props.
   const heading = config.heading ?? "";
-  const { fontPt: headingFontPt, wraps } = headingLayout(heading, headingAvailableWidth);
+  const { fontSizePx: headingFontSize, wraps } = headingLayout(heading, headingAvailableWidth, FONT_FAMILY);
   // The measured band, rounded UP to the lattice so its divider lands on a
   // dot row - one cell for a single-line heading, two for a wrapped one.
   // The reference's own 13.7pt/24.7pt are what the TEXT needs; the lattice
@@ -217,7 +214,6 @@ export function renderLabeledBox(
   // Two-line headings instead get the full (taller) header box and are
   // left to wrap+center naturally within it, since their true wrapped
   // height isn't something we can predict precisely up front.
-  const headingFontSize = ptToPx(headingFontPt);
   if (wraps) {
     elements.push({
       id: id("heading"),

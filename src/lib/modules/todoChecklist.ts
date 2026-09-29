@@ -20,7 +20,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import {
-  RULE_WIDTH_PT, HEADING_SIZES_PT, contentTopPx,
+  RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
 import { capCentredTextY } from "@/lib/modules/textFit";
@@ -74,19 +74,10 @@ const NEAR_BLACK = "#231F20";
 // tracker's floor came out one row below what its rows actually need, and
 // the last row was silently dropped at the minimum. See
 // minRowSpanFloors.test.mts.
-// The house heading size, from moduleFrame - the same 8pt labeled-box and
-// the seven drawing primitives use.
-//
-// This was 12pt, and it was the last thing on a page still saying a
-// module heading is 12pt: "the module headers are not all caps like the
-// current modules" was about the NEW modules, and fixing those left the
-// to-do and the habit tracker as the visible outliers instead. Asked for
-// directly - "make the to-do and habit headers 8pt too".
-//
-// Taken from the frame rather than written as 8 here, so there is one
-// description of the house heading and not three. Only the size changes:
-// the header BAND stays 15.12pt, so no row count moves.
-const HEADER_FONT_PT = HEADING_SIZES_PT[0];
+// The heading is set by the house rule, fitHeading - 8pt, shrinking to 7,
+// 6 and 5 as a renamed list's heading gets longer. It was a fixed 8pt (after
+// "make the to-do and habit headers 8pt too" brought it down from 12), which
+// was right for "TO - DO" and printed a long name straight past the border.
 const HEADER_BORDER_WIDTH_PT = 0.5;
 // One row is one dot: 18pt, 75 print px, a quarter inch. With the header
 // above taking a dot less the two insets, the height left over is exactly
@@ -239,16 +230,21 @@ export function renderTodoChecklist(
   // "TO - DO" header, centered across the full width. Manually centered
   // vertically rather than relying on verticalAlign, which hasn't
   // reliably centered text elsewhere in this codebase.
-  const headerFontSize = ptToPx(HEADER_FONT_PT);
+  // Inside the same 8pt side padding as every other module's heading, which
+  // is also the width fitHeading - and so the editor's letter limit - uses.
+  const headingPadding = ptToPx(8);
+  const headingWidth = geometry.width - headingPadding * 2;
+  const headingText = (config.heading ?? "TO - DO").toUpperCase();
+  const { fontSizePx: headerFontSize, fits: headingFits } = fitHeading(headingText, headingWidth, FONT_FAMILY);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({
     id: id("heading"),
     type: "text",
-    x: geometry.x,
+    x: geometry.x + headingPadding,
     y: capCentredTextY(contentY, headerHeight, headerFontSize, FONT_FAMILY),
-    width: geometry.width,
+    width: headingWidth,
     height: headerTextHeight,
-    text: (config.heading ?? "TO - DO").toUpperCase(),
+    text: headingFits ? headingText : truncateHeading(headingText, headingWidth, headerFontSize, FONT_FAMILY),
     fontSize: headerFontSize,
     fontFamily: FONT_FAMILY,
     align: "center",
