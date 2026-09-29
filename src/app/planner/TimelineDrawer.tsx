@@ -280,6 +280,21 @@ export const DRAWER_CLOSED_HEIGHT = GRABBER_BAND;
  * once as the state's type and once as the snap candidates - and two lists
  * of the same five things is one edit away from disagreeing.
  */
+/**
+ * WHERE THE DRAWER OPENS on a fresh load: COMPACT, the smallest size that
+ * still shows the timeline. Andrew, 2026-09-28: "set the normal load position
+ * as the smallest timeline drawer size as default". (Closed is smaller, but
+ * shows no timeline at all.)
+ *
+ * ONE CONSTANT, read by everything that has to know the drawer's height
+ * before the drawer has reported it - the canvas's bottom margin, the zoom
+ * bar's fallback position, the shell's first state. They each said "resting"
+ * on their own until now, and a default changed in one of them and not the
+ * others is a first frame laid out for a drawer that is not there.
+ */
+export const DRAWER_DEFAULT_DETENT = "compact" as const;
+export const DRAWER_DEFAULT_HEIGHT = DRAWER_COMPACT_HEIGHT;
+
 export const DRAWER_DETENTS = ["closed", "compact", "resting", "middle", "expanded"] as const;
 
 export type DrawerDetent = (typeof DRAWER_DETENTS)[number];
@@ -539,6 +554,7 @@ export function TimelineDrawer({
   term,
   onOpen,
   onHeightChange,
+  editorKey,
 }: {
   /** Every page of the book, already in binding order. */
   pages: TimelinePage[];
@@ -554,6 +570,10 @@ export function TimelineDrawer({
   /** How much room the canvas should leave below itself. Called when the
    *  drawer SETTLES, not while it is being dragged. */
   onHeightChange?: (height: number) => void;
+  /** THE KEY THE EDITOR IS MOUNTED WITH. When it changes the editor - and the
+   *  zoom bar inside it - is a new element, which has to be given its place
+   *  again. See the layout effect that writes onto the bar. */
+  editorKey?: string;
 }) {
   // FIVE detents: closed, compact, resting, middle, expanded. Closed leaves the
   // grabber band and nothing else - a thin lip you can pull back up, rather
@@ -561,7 +581,7 @@ export function TimelineDrawer({
   // Asked for directly: "I want to be able to close bottom timeline
   // seamlessly in the design." MIDDLE is halfway between resting and
   // expanded, asked for 2026-09-21: "we should add a level between the two".
-  const [detent, setDetent] = useState<DrawerDetent>("resting");
+  const [detent, setDetent] = useState<DrawerDetent>(DRAWER_DEFAULT_DETENT);
   // Which open detent a close should return to. A grabber that both drags
   // and toggles has to mean ONE thing when clicked, and "close / reopen" is
   // what it is for - the middle detent is reached by dragging, and clicking
@@ -572,7 +592,9 @@ export function TimelineDrawer({
   // size while it is closed. A ref read during render is unsound under
   // concurrent rendering - a discarded render attempt can write one, and the
   // replay then reads a value from a pass that never happened.
-  const [lastOpen, setLastOpen] = useState<"compact" | "resting" | "middle" | "expanded">("resting");
+  // Starts where the drawer does, so closing and reopening a fresh drawer
+  // lands back at the size it opened at.
+  const [lastOpen, setLastOpen] = useState<"compact" | "resting" | "middle" | "expanded">(DRAWER_DEFAULT_DETENT);
   // Honoured for the drawer's own settle, and for the zoom bar that now rides
   // on it - which is why these moved into a hook rather than staying here.
   const reduceMotion = usePrefersReducedMotion();
@@ -1089,7 +1111,15 @@ export function TimelineDrawer({
     // zoom bar - when another layout opens, while this drawer carries on, so
     // the new bar has to be given its place in that same commit, before
     // paint, or it shows for a frame where a resting drawer would put it.
-  }, [height, parked, moving, closing, dragHeight, activeLevel, activeVariantKey]);
+    //
+    // KEYED ON THE EDITOR'S OWN KEY, not on the level. It was the level and
+    // occurrence, which rebuild the editor - but so does a same-page rebuild
+    // (an event saved, a font changed, a calendar toggled), and after one of
+    // those the new bar had no variable and fell back to a default drawer
+    // height while the real drawer sat at another: "zoom ui bar is at high
+    // position in middle of screen", reported 2026-09-28. Two places guessing
+    // when the editor is recreated will disagree; the key is the answer.
+  }, [height, parked, moving, closing, dragHeight, editorKey]);
 
   // Memoised for the same reason: recomputing `pages.filter` and
   // `occurrences` every render hands every LevelGroup a brand-new array and

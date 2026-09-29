@@ -165,7 +165,7 @@ import {
   resizeHourlyGridCore,
 } from "./actions";
 import { PLANNER_TRIMS, trimKeyForWidth, type PlannerTrimKey } from "@/lib/planner-trims";
-import { DRAWER_RESTING_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
+import { DRAWER_DEFAULT_HEIGHT, ZOOM_BAR_ID } from "./TimelineDrawer";
 import { usePrefersReducedMotion, useIsomorphicLayoutEffect, usePointerCanHover } from "./useMediaQuery";
 import { VIEWPORT_UNMEASURED_ATTRIBUTE, writeViewportCookie, type ViewportSize } from "@/lib/viewportCookie";
 import { ModuleEditor, type EditingModule } from "./ModuleEditor";
@@ -4063,10 +4063,10 @@ function FontToggle({ fontChoice }: { fontChoice: FontChoice }) {
           padding: 2,
         }}
       >
-        <button type="button" disabled={pending} onClick={() => handlePick("serif")} style={optionStyle("serif", FONT_SERIF)}>
+        <button type="button" aria-label="Serif" aria-pressed={fontChoice === "serif"} disabled={pending} onClick={() => handlePick("serif")} style={optionStyle("serif", FONT_SERIF)}>
           Aa
         </button>
-        <button type="button" disabled={pending} onClick={() => handlePick("sans")} style={optionStyle("sans", FONT_SANS)}>
+        <button type="button" aria-label="Sans serif" aria-pressed={fontChoice === "sans"} disabled={pending} onClick={() => handlePick("sans")} style={optionStyle("sans", FONT_SANS)}>
           Aa
         </button>
       </div>
@@ -4269,7 +4269,8 @@ function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null;
           if (next === timeZone) return;
           run(async () => {
             await setPlannerTimeZone(journalId, next);
-            await refreshPages({ rebuild: true });
+            // In place: a zone moves only events. See the editor's adoption.
+            await refreshPages();
           });
         }}
         style={selectStyle}
@@ -4297,7 +4298,7 @@ function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null;
             run(async () => {
               await setDefaultTimeZone(next);
               setChangingDefault(false);
-              await refreshPages({ rebuild: true });
+              await refreshPages();
             });
           }}
           style={selectStyle}
@@ -4931,7 +4932,7 @@ export function NativePlannerEditor({
   term,
   pageSettings: initialPageSettings,
   initialViewport,
-  drawerHeight = DRAWER_RESTING_HEIGHT,
+  drawerHeight = DRAWER_DEFAULT_HEIGHT,
   initialUi,
   onUiChange,
   journalTitle,
@@ -5056,6 +5057,63 @@ export function NativePlannerEditor({
     }
     return map;
   });
+
+  // THE HOURLY GRID'S DRAWING FOLLOWS THE CALENDAR, not just its own props.
+  //
+  // Everything above is seeded ONCE, from the first props - which is why a
+  // change of font or trim rebuilds the whole editor. Events used to go the
+  // same way, and every event added made the canvas visibly refresh:
+  // reported 2026-09-28, "after I add an event the canvas refreshing (can I
+  // prevent?)". But an event changes nothing about any module except the
+  // hourly grid's marks, and the server has already drawn those - with the
+  // event, on the right day, in the right zone - in the props this receives.
+  // So when fresh props arrive, the hourly grid takes its fresh drawing and
+  // nothing else is touched: no rebuild, zoom and scroll left alone.
+  //
+  // ONLY WHERE THE BOX IS THE ONE THE SERVER DREW FOR. A grid mid-resize has
+  // an origin the server has not seen yet, and its marks belong to that
+  // gesture until it commits.
+  //
+  // DURING RENDER, when the props change - React's own pattern for state that
+  // has to follow a prop - rather than in an effect, which renders twice and
+  // can paint the stale frame between. The event lands in the same frame the
+  // preview standing in for it steps aside; see EventLayer.
+  const [adoptedPages, setAdoptedPages] = useState(pages);
+  if (adoptedPages !== pages) {
+    setAdoptedPages(pages);
+    setModuleLookup((previous) => {
+      let next: Map<string, ModuleInfo> | null = null;
+      for (const page of pages) {
+        for (const mi of page.moduleInstances) {
+          if (mi.slug !== "hourly-grid-core") continue;
+          const current = (next ?? previous).get(mi.id);
+          if (!current || current.elements === mi.elements) continue;
+          if (current.originX !== mi.originX || current.originY !== mi.originY) continue;
+          next ??= new Map(previous);
+          next.set(mi.id, { ...current, elements: mi.elements });
+        }
+      }
+      return next ?? previous;
+    });
+  }
+
+  // THE TIME ZONE FOLLOWS THE PROPS TOO, for the same reason: it moves events
+  // and nothing else - an event is an instant, and the zone only says which
+  // clock the page reads it on. So a zone chosen in Page Settings, or the
+  // default filled in on a person's first visit, lands in place like an
+  // event does. Both used to rebuild, and the first-visit one refreshed the
+  // canvas a few seconds after a new person's journal appeared. Every other
+  // page setting reshapes modules and still rebuilds.
+  const [adoptedSettings, setAdoptedSettings] = useState(initialPageSettings);
+  if (adoptedSettings !== initialPageSettings) {
+    setAdoptedSettings(initialPageSettings);
+    const { timeZone, defaultTimeZone } = initialPageSettings;
+    setPageSettings((previous) =>
+      previous.timeZone === timeZone && previous.defaultTimeZone === defaultTimeZone
+        ? previous
+        : { ...previous, timeZone, defaultTimeZone }
+    );
+  }
 
   const pageGridByPageId = useMemo(() => {
     const map: Record<string, PageGrid> = {};
@@ -10397,7 +10455,7 @@ function ZoomControls({
         //
         // The fallback matters: it is what this reads on the very first paint
         // and if the drawer is ever absent.
-        bottom: `calc(var(--memari-drawer-height, ${DRAWER_RESTING_HEIGHT}px) + 16px)`,
+        bottom: `calc(var(--memari-drawer-height, ${DRAWER_DEFAULT_HEIGHT}px) + 16px)`,
         // And the last 22px down to where it originally sat, once the tab has
         // parked and given the space back. A separate property from `bottom`
         // precisely so it can run on a separate clock.

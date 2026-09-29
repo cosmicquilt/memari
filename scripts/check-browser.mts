@@ -65,7 +65,7 @@ const note = (probe: string, message: string) => console.log(`  ok    [${probe}]
 
 const VIEWPORT = { width: 1280, height: 800 };
 
-type Context = { base: string; journalId: string; dpr: number };
+type Context = { base: string; journalId: string; dpr: number; forgetSettings: () => Promise<void> };
 type Probe = {
   name: string;
   /** Which pixel ratios this one means anything at. */
@@ -315,7 +315,33 @@ const hairlines: Probe = {
   ratios: [1, 2, 3],
   run: async (page, { base, journalId, dpr }) => {
     await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
-    await page.waitForTimeout(2500);
+
+    // THE PALETTE'S CARDS ARE MEASURED TOO - 77 small drawings of real modules
+    // at their own scale, beside the 4 on the page - and they draw at idle, up
+    // to two seconds after the page settles (see the palette's drawCards).
+    // This used to wait a fixed 2.5s, which caught them on some runs and not
+    // others: measured on one build, 4 modules at 1x and 81 at 2x and 3x,
+    // and 1x passed only when an earlier probe had loaded the page first. So:
+    // wait for them, and fail on their absence rather than on a stopwatch.
+    const ruledDrawings = `(() => {
+      let n = 0;
+      for (const svg of document.querySelectorAll("svg")) {
+        const k = [...svg.querySelectorAll("rect")].filter((r) => {
+          const fill = r.getAttribute("fill");
+          if (!fill || fill === "none" || fill === "transparent" || parseFloat(r.getAttribute("stroke-width") || "0") > 0) return false;
+          const b = r.getBoundingClientRect();
+          return b.height > 0 && b.width > 0 && b.height < b.width * 0.15;
+        }).length;
+        if (k >= 3) n++;
+      }
+      return n;
+    })()`;
+    for (let i = 0, last = -1; i < 40; i++) {
+      const n = (await page.evaluate(ruledDrawings)) as number;
+      if (n >= 5 && n === last) break;
+      last = n;
+      await page.waitForTimeout(250);
+    }
 
     const measured = await page.evaluate(() => {
       const ratio = window.devicePixelRatio;
@@ -347,7 +373,10 @@ const hairlines: Probe = {
       return;
     }
     if (measured.modules < 5 || measured.rules < 50) {
-      fail("hairlines", `only ${measured.rules} rules in ${measured.modules} modules - nothing was measured`);
+      fail(
+        "hairlines",
+        `only ${measured.rules} rules in ${measured.modules} modules after 10s - the palette's cards never drew`
+      );
       return;
     }
 
@@ -781,13 +810,36 @@ const eventDrag: Probe = {
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await tick(250);
         const withPopup = previewBlocks(layer());
+        // NOT REBUILT: the grid's own element is tagged, and must be the same
+        // element once the event has landed. A rebuild makes a new one - which
+        // is the canvas refresh Andrew asked to be rid of, 2026-09-28.
+        const grid = layer().parentElement;
+        grid.__probeSurvives = true;
+        // NO FLICKER: every frame from Add until it settles shows exactly the
+        // blocks it should - never none (the preview gone before the event
+        // arrived) and never double (both at once).
+        const inColumn = (list) => list.filter((b) => b.left >= tab.left - 1 && b.left < tab.right).length;
+        const frames = [];
+        let sampling = true;
+        const sample = () => {
+          if (!sampling) return;
+          const l = layer();
+          if (l) frames.push(inColumn(previewBlocks(l)) + inColumn(savedBlocks(l).filter(() => true)));
+          requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
         [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "Add").click();
         for (let i = 0; i < 60 && layer()?.querySelector("[data-event-preview]"); i++) await tick(250);
         await tick(500);
+        sampling = false;
         const saved = savedBlocks(layer()).filter((b) => b.left >= tab.left - 1 && b.left < tab.right);
-        return { dragging, withPopup, saved };
+        const survived = layer()?.parentElement === grid && grid.__probeSurvives === true;
+        return { dragging, withPopup, saved, survived, frameCounts: [...new Set(frames)].sort(), frames: frames.length };
       })()`)) as {
         error?: string;
+        survived?: boolean;
+        frameCounts?: number[];
+        frames?: number;
         dragging: Array<Record<string, number | string>>;
         withPopup: Array<Record<string, number | string>>;
         saved: Array<Record<string, number | string>>;
@@ -818,6 +870,66 @@ const eventDrag: Probe = {
         );
       } else {
         note("event drag", `${label}: preview and saved result identical (${expected} block${expected === 1 ? "" : "s"}, border and corners included)`);
+      }
+      if (!r.survived) {
+        fail("event drag", `${label}: saving REBUILT the editor - the canvas refreshed`);
+      }
+      const counts = r.frameCounts ?? [];
+      // In the column's SAVED blocks, a hidden mark still counts; what the
+      // eye sees is what is rendered, so hidden ones are excluded - see
+      // savedBlocks, which reads only what the module is drawing.
+      if (counts.some((c) => c !== expected)) {
+        fail("event drag", `${label}: ${r.frames} frames while saving showed ${counts.join("/")} block(s) - a flicker (expected ${expected} throughout)`);
+      } else if (r.survived) {
+        note("event drag", `${label}: saved in place, ${r.frames} frames with ${expected} block(s) throughout - no refresh, no flicker`);
+      }
+    }
+
+    // --- DELETING: gone at once, in place, and it stays gone ------------
+    //
+    // Delete no longer rebuilds either. The event's marks are set aside the
+    // moment Delete is pressed and stay aside until the drawing without it
+    // arrives - so it must drop to one fewer block within a couple of frames,
+    // never come back, and leave the editor the same element.
+    {
+      const d = (await page.evaluate(`(async () => {
+        const { tick, savedBlocks } = window.__probe;
+        const layer = () => document.querySelectorAll("[data-event-layer]")[0];
+        const tab = window.__probe.tabsOf(layer())[${dpr}];
+        const inColumn = () => savedBlocks(layer()).filter((b) => b.left >= tab.left - 1 && b.left < tab.right);
+        const before = inColumn();
+        const target = before[before.length - 1];
+        if (!target) return { error: "nothing to delete" };
+        const l = layer();
+        l.setPointerCapture = () => {}; l.releasePointerCapture = () => {};
+        l.dispatchEvent(new PointerEvent("pointerdown", { clientX: target.left + target.width / 2,
+          clientY: target.top + target.height / 2, bubbles: true, cancelable: true, pointerId: 1,
+          button: 0, buttons: 1, isPrimary: true }));
+        await tick(400);
+        const dialog = document.querySelector("[role=dialog]");
+        const del = dialog && [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete");
+        if (!del) return { error: "no Delete in the popup" };
+        const grid = l.parentElement;
+        grid.__probeSurvives = true;
+        const frames = [];
+        let sampling = true;
+        const sample = () => { if (!sampling) return; frames.push(inColumn().length); requestAnimationFrame(sample); };
+        requestAnimationFrame(sample);
+        del.click();
+        await tick(4000);
+        sampling = false;
+        return { before: before.length, frames, survived: layer()?.parentElement === grid && grid.__probeSurvives === true };
+      })()`)) as { error?: string; before: number; frames: number[]; survived: boolean };
+      if (d.error) {
+        fail("event drag", `${dpr}x deleting: ${d.error}`);
+      } else {
+        const after = d.before - 1;
+        const firstGone = d.frames.findIndex((c) => c === after);
+        const cameBack = firstGone >= 0 && d.frames.slice(firstGone).some((c) => c !== after);
+        if (!d.survived) fail("event drag", `${dpr}x deleting REBUILT the editor`);
+        else if (firstGone < 0 || firstGone > 3) fail("event drag", `${dpr}x deleting: still drawn ${firstGone < 0 ? "after 4s" : `for ${firstGone} frames`}`);
+        else if (cameBack) fail("event drag", `${dpr}x deleting: the event came back after it had gone (${[...new Set(d.frames)].join("/")})`);
+        else note("event drag", `${dpr}x deleting: gone within ${firstGone} frame(s), in place, and stays gone`);
       }
     }
 
@@ -876,7 +988,178 @@ const eventDrag: Probe = {
   },
 };
 
-const ALL_PROBES: Probe[] = [pillTravel, drawerTab, hairlines, pageChange, noReload, eventDrag, consoleClean];
+// ---------------------------------------------------------------------
+// ZOOM BAR: it stays sixteen pixels above the drawer, including after the
+// editor is rebuilt on the same page.
+//
+// Reported 2026-09-28: after adding an event, "zoom ui bar is at high
+// position in middle of screen where it would be if timeline was open". The
+// drawer writes its height onto the bar as a CSS variable, by element, and
+// re-wrote it only when the LEVEL changed. A rebuild on the same page - an
+// event, a font, a calendar - made a new bar with no variable, which fell
+// back to the resting drawer's height. Hidden until the drawer began loading
+// at compact, where resting is the wrong answer.
+//
+// A rebuild is triggered here by switching the font, which is one; measured
+// as the gap from the bar's bottom edge to the drawer's top, which must be
+// the same before and after.
+// ---------------------------------------------------------------------
+const zoomBar: Probe = {
+  name: "zoom bar",
+  ratios: [1],
+  run: async (page, { base, journalId }) => {
+    await page.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(3000);
+    const measure = async () =>
+      (await page.evaluate(`(() => {
+        const bar = document.querySelector('button[title="Zoom in"]')?.closest("[id]");
+        // The drawer's VISIBLE top edge is its grabber. The <section>'s own
+        // box does not move with the drawer - measured: it read 186 at both
+        // compact and resting - so it cannot be what the gap is taken from.
+        const grabber = document.querySelector('section[aria-label="Planner timeline"] [role="separator"]');
+        if (!bar || !grabber) return null;
+        const top = grabber.getBoundingClientRect().top;
+        return { gap: Math.round(top - bar.getBoundingClientRect().bottom), drawerHeight: Math.round(innerHeight - top) };
+      })()`)) as { gap: number; drawerHeight: number } | null;
+
+    // SETTLED FIRST. A journal made by a script has no default time zone, so
+    // its first open seeds one - at a moment set by the server, not by this
+    // probe. When that rebuilt the editor, landing mid-measurement made the
+    // first reading a bar caught part-way (-28px). It no longer rebuilds (see
+    // the first visit probe), but the seed still redraws the page, so: wait
+    // for it.
+    for (let i = 0; i < 60; i++) {
+      const seeded = await page.evaluate(
+        `!!document.querySelector('select[aria-label^="This journal"]') && !/Your default is not set yet/.test(document.body.textContent || "")`
+      );
+      if (seeded) break;
+      await page.waitForTimeout(250);
+    }
+    await page.waitForTimeout(1500);
+
+    // OFF THE DEFAULT FIRST. The bar's fallback IS the default drawer height,
+    // so at the default the bug cannot show - measured: this probe passed on
+    // the broken code until it moved the drawer. Dragged up by hand, with a
+    // real mouse, to the next detent.
+    const grabber = (await page.evaluate(`(() => {
+      const g = document.querySelector('section[aria-label="Planner timeline"] [role="separator"]');
+      if (!g) return null;
+      const r = g.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`)) as { x: number; y: number } | null;
+    const loaded = await measure();
+    if (!grabber || !loaded) {
+      fail("zoom bar", "could not find the drawer's grabber, the zoom bar or the drawer");
+      return;
+    }
+    await page.mouse.move(grabber.x, grabber.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step++) await page.mouse.move(grabber.x, grabber.y - step * 7);
+    await page.mouse.up();
+    await page.waitForTimeout(1500);
+
+    const before = await measure();
+    if (!before || before.drawerHeight <= loaded.drawerHeight) {
+      fail("zoom bar", `could not move the drawer off its default (${loaded.drawerHeight}px -> ${before?.drawerHeight}px)`);
+      return;
+    }
+    // Switch the font - a rebuild on the same page - and back.
+    const switchTo = async (label: string) => {
+      await page.evaluate(`document.querySelector('button[aria-label="${label}"]')?.click()`);
+      await page.waitForTimeout(4000);
+    };
+    const current = (await page.evaluate(
+      `document.querySelector('button[aria-label="Sans serif"]')?.getAttribute("aria-pressed")`
+    )) as string | null;
+    const other = current === "true" ? "Serif" : "Sans serif";
+    await switchTo(other);
+    const after = await measure();
+    await switchTo(other === "Serif" ? "Sans serif" : "Serif");
+
+    if (!after) {
+      fail("zoom bar", "the zoom bar or the drawer was gone after the rebuild");
+    } else if (Math.abs(after.gap - before.gap) > 1 || Math.abs(before.gap - 16) > 2) {
+      fail(
+        "zoom bar",
+        `the bar sat ${before.gap}px above a ${before.drawerHeight}px drawer, and ${after.gap}px above it after a rebuild - it should stay 16px`
+      );
+    } else {
+      note(
+        "zoom bar",
+        `16px above the drawer before and after a rebuild - opened at ${loaded.drawerHeight}px (compact), moved to ${before.drawerHeight}px`
+      );
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
+// FIRST VISIT: filling in a new person's default time zone does not rebuild
+// the editor, and the Time zone field shows what was filled in.
+//
+// A person with no default gets the browser's zone the first time a journal
+// opens. That used to rebuild the editor when the server answered, so a new
+// person's whole canvas visibly refreshed a few seconds after their journal
+// appeared - the complaint about adding an event, on a first visit instead.
+// Found 2026-09-28 by the hairline probe, whose palette cards vanished
+// mid-measurement at 1x and at no other ratio.
+//
+// Every "Zoom in" button that ever enters the page is collected from before
+// the first paint, by an init script, so a rebuild - a new editor, so a new
+// button - counts two however quickly the server answers. On a page of its
+// own, so the observer does not ride along into the frame-counting probes.
+// ---------------------------------------------------------------------
+const firstVisit: Probe = {
+  name: "first visit",
+  ratios: [1],
+  run: async (page, { base, journalId, forgetSettings }) => {
+    await forgetSettings();
+    const tab = await page.context().newPage();
+    try {
+      await tab.addInitScript(`(() => {
+        const seen = (window.__zoomButtons = []);
+        new MutationObserver(() => {
+          for (const b of document.querySelectorAll('button[title="Zoom in"]')) if (!seen.includes(b)) seen.push(b);
+        }).observe(document, { childList: true, subtree: true });
+      })()`);
+      await tab.goto(`${base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+      const zone = (await tab.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")) as string;
+      const expected = `Your default is ${zone.replace(/_/g, " ")}`;
+      let text = "";
+      for (let i = 0; i < 60 && !text.includes(expected); i++) {
+        await tab.waitForTimeout(250);
+        text = (await tab.evaluate(`document.body.textContent || ""`)) as string;
+      }
+      // Long enough for a rebuild the seed set off to have landed.
+      await tab.waitForTimeout(2000);
+      const buttons = (await tab.evaluate(
+        `window.__zoomButtons.length + ":" + window.__zoomButtons.filter((b) => b.isConnected).length`
+      )) as string;
+      const [ever, now] = buttons.split(":").map(Number);
+
+      if (!text.includes(expected)) {
+        fail("first visit", `the Time zone field never showed "${expected}" - the seeded default did not reach it`);
+      } else if (ever !== 1 || now !== 1) {
+        fail("first visit", `seeding the default zone REBUILT the editor - ${ever} zoom bars came and went, ${now} left`);
+      } else {
+        note("first visit", `the default zone (${zone}) was filled in and shown, in place - one editor throughout`);
+      }
+    } finally {
+      await tab.close();
+    }
+  },
+};
+
+const ALL_PROBES: Probe[] = [
+  pillTravel,
+  firstVisit,
+  drawerTab,
+  hairlines,
+  pageChange,
+  noReload,
+  eventDrag,
+  zoomBar,
+  consoleClean,
+];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;
 if (PROBES.length === 0) {
   console.error(`No probe matches --only ${ONLY}. Try: ${ALL_PROBES.map((p) => p.name).join(", ")}`);
@@ -919,7 +1202,7 @@ async function main() {
       const page = await context.newPage();
       for (const probe of PROBES.filter((p) => p.ratios.includes(dpr))) {
         try {
-          await probe.run(page, { base: server.base, journalId: guest.journalId, dpr });
+          await probe.run(page, { base: server.base, journalId: guest.journalId, dpr, forgetSettings: guest.forgetSettings });
         } catch (error) {
           fail(probe.name, `threw at ${dpr}x - ${(error as Error).message.split("\n")[0]}`);
         }

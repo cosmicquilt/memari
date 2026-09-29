@@ -171,6 +171,21 @@ export function EventLayer({
    *  the real one there. Without it the block vanished for the length of the
    *  round trip and then reappeared, which reads as the save having failed. */
   const [landing, setLanding] = useState<Draft | null>(null);
+  /** An event being deleted - its key, or "id@occurrence" for one week of a
+   *  series - hidden until the drawing without it arrives. */
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  // THE HAND-OVER. When the module's own marks change, the saved event (or
+  // the deletion) has arrived in them, so the preview standing in for it
+  // steps aside - in the same render, so the event is never missing and
+  // never doubled. During render rather than in an effect, which would paint
+  // one frame of both or neither.
+  const [seenElements, setSeenElements] = useState(elements);
+  if (seenElements !== elements) {
+    setSeenElements(elements);
+    setLanding(null);
+    setRemoving(null);
+  }
 
   const grid = useMemo(
     () => hourlyGridGeometry(geometry, propValues as HourlyGridCoreConfig, lattice),
@@ -376,12 +391,12 @@ export function EventLayer({
       else await createCalendarEvent(journalId, input);
       if (!draft.id) setLanding(draft);
       setDraft(null);
-      // REBUILT, not just re-rendered. An event is DRAWN CONTENT, and the
-      // editor seeds the locked modules' marks from its first props - the
-      // same reason the font switch and the trim toggle pass this. A rebuild
-      // keeps the zoom, the palette and the drawer where they were; see
-      // pagesRefreshContext.
-      await refreshPages({ rebuild: true });
+      // NOT REBUILT. It was, and every event added made the whole canvas
+      // visibly refresh. The editor now takes the hourly grid's fresh
+      // drawing from the new props in place (see NativePlannerEditor), and
+      // the preview stands in until it arrives - the hand-over is below.
+      await refreshPages();
+      setSaving(false);
     } catch (error) {
       console.error("Could not save that event:", error);
       setSaving(false);
@@ -392,10 +407,14 @@ export function EventLayer({
     if (!draft?.id || saving) return;
     setSaving(true);
     try {
+      // GONE AT ONCE, not when the server answers: its marks are set aside
+      // now, and stay aside until the fresh drawing (without it) arrives.
+      setRemoving(draft.scope === "one" && draft.occurrence ? `${draft.id}@${draft.occurrence}` : draft.id);
       if (draft.scope === "one" && draft.occurrence) await deleteCalendarOccurrence(draft.id, draft.occurrence);
       else await deleteCalendarEvent(draft.id);
       setDraft(null);
-      await refreshPages({ rebuild: true });
+      await refreshPages();
+      setSaving(false);
     } catch (error) {
       console.error("Could not delete that event:", error);
       setSaving(false);
@@ -491,11 +510,24 @@ export function EventLayer({
 
   // The module's own marks for that day, set aside while the preview stands
   // in for them - and handed back the moment there is no preview.
-  const standingIn = useMemo(
-    () => (previewMarks ? new Set(elements.map((e) => e.id).filter(inPreviewDay)) : null),
-    [previewMarks, elements, inPreviewDay]
-  );
-  useEffect(() => {
+  const standingIn = useMemo(() => {
+    const ids = new Set<string>();
+    if (previewMarks) for (const e of elements) if (inPreviewDay(e.id)) ids.add(e.id);
+    // A deletion: every mark of that event (or of that one week of it).
+    if (removing) {
+      const key = removing.includes("@") ? `-ev${removing}-` : `-ev${removing}`;
+      for (const e of elements) {
+        if (removing.includes("@") ? e.id.includes(key) : e.id.includes(`${key}-`) || e.id.includes(`${key}@`)) ids.add(e.id);
+      }
+    }
+    return ids.size > 0 ? ids : null;
+  }, [previewMarks, elements, inPreviewDay, removing]);
+  // BEFORE PAINT. As a passive effect this ran after the frame was drawn, so
+  // the frame the preview stepped aside in still had the module hiding the
+  // day's OLD marks - measured: a new event dragged across an existing one
+  // showed one block, not two, for a frame while saving. In a layout effect
+  // the module's update lands before that frame is painted.
+  useLayoutEffect(() => {
     setAside?.(standingIn);
   }, [setAside, standingIn]);
   useEffect(() => () => setAside?.(null), [setAside]);

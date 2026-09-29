@@ -111,8 +111,12 @@ export type GuestJournal = {
   cookieValue: string;
   ownerId: string;
   journalId: string;
-  /** Deletes the journal. Its pages and modules cascade. */
+  /** Deletes the journal (its pages and modules cascade), and the guest's
+   *  calendars and settings. */
   remove: () => Promise<void>;
+  /** Forgets the guest's settings - their default time zone - so the next
+   *  open is a first visit again. */
+  forgetSettings: () => Promise<void>;
 };
 
 /**
@@ -163,7 +167,15 @@ export async function makeGuestJournal(title: string): Promise<GuestJournal> {
     ownerId,
     journalId: journal.id,
     remove: async () => {
+      // Everything the checks make for this guest, not just the journal: the
+      // browser check adds events (which make a calendar) and opening a
+      // journal seeds a default time zone. Events cascade from calendars.
       await prisma.planner.deleteMany({ where: { ownerId } });
+      await prisma.calendar.deleteMany({ where: { ownerId } });
+      await prisma.ownerSettings.deleteMany({ where: { ownerId } });
+    },
+    forgetSettings: async () => {
+      await prisma.ownerSettings.deleteMany({ where: { ownerId } });
     },
   };
 }

@@ -54,14 +54,14 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
   const [note, setNote] = useState<{ ok: boolean; message: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
 
-  /** Every change here changes what is DRAWN, so it rebuilds - the editor
-   *  seeds locked modules' marks from its first props. See EventLayer's own
-   *  note, and pagesRefreshContext. */
+  /** Every change here changes only the hourly grid's EVENTS - their colour,
+   *  whether a calendar's are shown - which the editor now takes in place
+   *  from fresh props, so none of it rebuilds the canvas. */
   const commit = (work: () => Promise<unknown>) =>
     startTransition(async () => {
       try {
         await work();
-        await refreshPages({ rebuild: true });
+        await refreshPages();
       } catch (error) {
         console.error("That calendar change did not take:", error);
         setNote({ ok: false, message: "That did not take. Try again." });
@@ -75,7 +75,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
       if (result.ok) {
         setUrl("");
         setAdding(false);
-        await refreshPages({ rebuild: true });
+        await refreshPages();
       }
     });
 
@@ -212,7 +212,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
                     onClick={() =>
                       startTransition(async () => {
                         setNote(await refreshCalendar(calendar.id));
-                        await refreshPages({ rebuild: true });
+                        await refreshPages();
                       })
                     }
                     style={secondary}

@@ -56,7 +56,7 @@ import { SavedProvider, type SavedItems } from "./savedContext";
 import { PagesRefreshProvider, type RefreshPages } from "./pagesRefreshContext";
 import type { LoadedPlanner } from "./loadPlannerPages";
 import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
-import { TimelineDrawer, DRAWER_RESTING_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
+import { TimelineDrawer, DRAWER_DEFAULT_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
 import { usePrefersReducedMotion, ServerDevicePixelRatio } from "./useMediaQuery";
 import { loadLevel } from "./loadLevel";
 
@@ -92,7 +92,7 @@ export function EditorShell({
   const reduceMotion = usePrefersReducedMotion();
   // The drawer's SETTLED height - the canvas's room for it. Here rather than
   // in the editor because the drawer is here.
-  const [drawerHeight, setDrawerHeight] = useState(DRAWER_RESTING_HEIGHT);
+  const [drawerHeight, setDrawerHeight] = useState(DRAWER_DEFAULT_HEIGHT);
   // STATE, not the prop passed straight through: saving a module to Saved
   // has to put it in the palette, and that list does not come from loadLevel
   // - see loadSavedItems. The prop is the server's first answer.
@@ -199,7 +199,11 @@ export function EditorShell({
   // somebody found the setting. It moves nothing typed before zones existed -
   // the migration marked those floating, drawn at their wall time anywhere.
   //
-  // A ref, not state, so the rebuild this causes cannot fire it twice.
+  // NOT A REBUILD. It was, and a new person's canvas visibly refreshed a few
+  // seconds after their journal appeared. A zone moves only events, which
+  // the editor takes in place from the fresh props.
+  //
+  // A ref, not state, so the refresh this causes cannot fire it twice.
   const zoneSeeded = useRef(false);
   const defaultZone = open.pageSettings.defaultTimeZone;
   useEffect(() => {
@@ -207,7 +211,7 @@ export function EditorShell({
     zoneSeeded.current = true;
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     void seedDefaultTimeZone(zone)
-      .then((seeded) => (seeded ? refreshPages({ rebuild: true }) : undefined))
+      .then((seeded) => (seeded ? refreshPages() : undefined))
       .catch((error) => console.error("Could not seed a default time zone:", error));
   }, [defaultZone, refreshPages]);
 
@@ -235,7 +239,9 @@ export function EditorShell({
     let alive = true;
     const sync = async () => {
       if (!(await syncCalendars().catch(() => false)) || !alive) return;
-      await refreshRef.current({ rebuild: true });
+      // In place - the hourly grid takes its fresh drawing; see
+      // NativePlannerEditor. A rebuild here dropped an open popup.
+      await refreshRef.current();
     };
     void sync();
     const onVisible = () => {
@@ -258,10 +264,15 @@ export function EditorShell({
   // with it, for nothing: measured as a 76-109ms stall right at the click,
   // which is exactly when the card should start to move. Memoised on the
   // editor's own inputs, React skips it unless one of them changed.
+  // WHICH EDITOR THIS IS. Changing it rebuilds the editor from scratch - a new
+  // level, a new occurrence, or a same-page rebuild (generation). The drawer
+  // is told it too, because the zoom bar lives inside the editor and has to
+  // be given its place again whenever it is a new element.
+  const editorKey = `${open.level}:${open.variantKey ?? ""}:${generation}`;
   const editor = useMemo(
     () => (
       <NativePlannerEditor
-        key={`${open.level}:${open.variantKey ?? ""}:${generation}`}
+        key={editorKey}
         pages={open.pages}
         events={open.events}
         calendars={open.calendars}
@@ -279,7 +290,7 @@ export function EditorShell({
     // `generation` is in the editor's key, so it MUST be here: a memo that
     // does not watch it returns the same element and the rebuild never
     // happens. Caught by the exhaustive-deps rule, which was right.
-    [open, initialViewport, drawerHeight, reportView, guest, generation]
+    [open, initialViewport, drawerHeight, reportView, guest, editorKey]
   );
 
   return (
@@ -289,6 +300,7 @@ export function EditorShell({
           <SavedProvider value={saved}>
         {editor}
         <TimelineDrawer
+          editorKey={editorKey}
           pages={open.timeline}
           activeLevel={shownLevel}
           activeVariantKey={shownVariantKey}
