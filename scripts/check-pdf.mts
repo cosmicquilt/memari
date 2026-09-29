@@ -213,8 +213,23 @@ if (ops.text !== report.text) {
   console.error(`  FAIL  ${report.text} text marks drawn but ${ops.text} in the file`);
   problems++;
 }
-if (ops.rects !== report.rects) {
-  console.error(`  FAIL  ${report.rects} rects drawn but ${ops.rects} in the file`);
+// A ROUNDED RECT IS NOT A RECT OPERATOR. jsPDF draws one as four lines and
+// four curves, so the file holds a rect op for every square-cornered rect
+// and four curves for every rounded one. This compared all rects with rect
+// ops, which held until events - the first rounded marks on a page - and
+// then failed on a correct file: "608 rects drawn but 607 in the file", with
+// the missing one sitting right there as 4 curves and 4 lines. Found
+// 2026-09-28, when an event was made on the journal this exports.
+const plainRects = report.rects - report.rounded;
+if (ops.rects !== plainRects) {
+  console.error(`  FAIL  ${plainRects} square-cornered rects drawn but ${ops.rects} rect ops in the file`);
+  problems++;
+}
+// At least, not exactly: a path's arcs are curves too.
+if (ops.curves < 4 * report.rounded) {
+  console.error(
+    `  FAIL  ${report.rounded} rounded rects drawn but only ${ops.curves} curves in the file - each needs four`
+  );
   problems++;
 }
 // Everything the export route would warn a person about, in the same words

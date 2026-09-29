@@ -317,13 +317,17 @@ export type DrawReport = {
   elements: number;
   text: number;
   rects: number;
+  /** Of `rects`, the ones with rounded corners - which reach the file as
+   *  four lines and four curves, not as one rect operator. An event block
+   *  is one. */
+  rounded: number;
   paths: number;
   skipped: number;
   unsupportedPathCommands: string[];
 };
 
 export function emptyReport(): DrawReport {
-  return { elements: 0, text: 0, rects: 0, paths: 0, skipped: 0, unsupportedPathCommands: [] };
+  return { elements: 0, text: 0, rects: 0, rounded: 0, paths: 0, skipped: 0, unsupportedPathCommands: [] };
 }
 
 /**
@@ -437,8 +441,10 @@ export function drawElement(
     const w = pxToPt(element.width ?? 0);
     const h = pxToPt(element.height ?? 0);
     const radius = typeof element.cornerRadius === "number" ? pxToPt(element.cornerRadius) : 0;
-    if (radius > 0) doc.roundedRect(x, y, w, h, radius, radius, style);
-    else doc.rect(x, y, w, h, style);
+    if (radius > 0) {
+      doc.roundedRect(x, y, w, h, radius, radius, style);
+      report.rounded++;
+    } else doc.rect(x, y, w, h, style);
     report.rects++;
   } finally {
     if (transparent) doc.setGState(new GState({ opacity: 1, "stroke-opacity": 1 }));
