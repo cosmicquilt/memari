@@ -1176,6 +1176,25 @@ const spineDrag: Probe = {
         }
       });
 
+      // NO EVENT SURFACE WITH INCREMENTS OFF: there are no hours to put an
+      // event at and none is drawn, so no crosshair and nothing to drag an
+      // event out of. Reported 2026-09-29: "get rid of the plus cursor over
+      // the hourly section when the increments are off".
+      const surfaces = (await tab.evaluate(`${JSON.stringify(spread.pages.map((p) => p.spineId))}.map((id) => {
+        const hours = document.querySelector('[data-module-instance-id="' + id + '"]');
+        if (!hours) return null;
+        const r = hours.getBoundingClientRect();
+        const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height * 0.4);
+        return { layer: !!hours.querySelector("[data-event-layer]"), cursor: under ? getComputedStyle(under).cursor : "" };
+      })`)) as Array<{ layer: boolean; cursor: string } | null>;
+      surfaces.forEach((surface, i) => {
+        const side = i === 0 ? "left" : "right";
+        if (!surface) fail("spine drag", `the ${side} page's hours are not on screen`);
+        else if (surface.layer || surface.cursor === "cell") {
+          fail("spine drag", `the ${side} hours, increments off, still offer events (${surface.layer ? "an event layer" : ""} ${surface.cursor} cursor)`);
+        }
+      });
+
       /** A real-mouse drag of the left page's hours edge, sampled as it goes. */
       const drag = async (rows: number) => {
         const handle = await tab.$(`[data-stack-key="hourly-stack:${left.spineId}"]`);

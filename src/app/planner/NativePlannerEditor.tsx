@@ -2143,7 +2143,15 @@ function NativePage({
               // instant to store. Not during a resize or a drag either -
               // those are other gestures, and a pointerdown must not mean two
               // things at once.
+              //
+              // Nor with increments OFF: there are no hours to place an event
+              // at, and the hours draw none (see renderHourlyGridCore). The
+              // layer was there anyway, with its crosshair cursor, and a drag
+              // on it made an event nothing would ever show - reported
+              // 2026-09-29, "get rid of the plus cursor over the hourly
+              // section when the increments are off".
               info.slug === "hourly-grid-core" &&
+              (info.propValues as { intervalMode?: string }).intervalMode !== "off" &&
               page.renderContext?.columnDates &&
               !(resizingIds?.has(id) ?? false) &&
               activeId === null
