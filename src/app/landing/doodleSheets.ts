@@ -74,7 +74,16 @@ export type SheetBakeInput = {
   paper: string;
   /** Picture px per fibre-tile px: the tile is 4in, a sheet about 100px/in. */
   paperScale: number;
+  /** Aged to match the film: drawn at `scale` of its size, through lossy
+   *  compression at `quality` there, and scaled back up. */
+  age: { scale: number; quality: number };
 };
+
+/** The film is Veo's 720p take, compressed, then upscaled to 4K: its detail
+ *  is soft and a little blocky, and ink drawn crisp at 4K sat on it like a
+ *  sticker (2026-09-28: "make the page a bit fuzzier and a bit more
+ *  compression artifacting to match scene"). */
+export const SHEET_AGE = { scale: 0.42, quality: 0.5 };
 
 /** What bakeSheet needs for one sheet, given its packed ink and a way to
  *  turn a site path into a URL the baking page can load. */
@@ -89,6 +98,7 @@ export function sheetBakeInput(id: SheetId, ink: string, url: (path: string) => 
     mask: url(sheetMaskPath(id)),
     paper: url("/landing/paper.jpg"),
     paperScale: 0.8,
+    age: SHEET_AGE,
   };
 }
 
@@ -228,6 +238,21 @@ export async function bakeSheet(input: SheetBakeInput): Promise<string> {
   p.fillRect(0, 0, W, H);
   p.globalCompositeOperation = "multiply";
   p.drawImage(warped, 0, 0);
+  p.globalCompositeOperation = "source-over";
+
+  // Aged like the film: smaller, through JPEG there - its 8px blocks and
+  // ringing come back up at the film's own scale - and up again, softly.
+  // Before the cut to the paper, so the edges at the book, cup and mug stay
+  // where they were measured.
+  const { scale: k, quality } = input.age;
+  const small = canvas(Math.round(W * k), Math.round(H * k));
+  const sg = small.getContext("2d")!;
+  sg.imageSmoothingQuality = "high";
+  sg.drawImage(sheet, 0, 0, small.width, small.height);
+  const aged = await load(small.toDataURL("image/jpeg", quality));
+  p.imageSmoothingQuality = "high";
+  p.drawImage(aged, 0, 0, W, H);
+
   p.globalCompositeOperation = "destination-in";
   p.imageSmoothingQuality = "high";
   p.drawImage(mask, 0, 0, W, H);
