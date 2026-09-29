@@ -1429,10 +1429,13 @@ const moduleEditor: Probe = {
         await tab.evaluate(`(() => {
           const record = (window.__flight = { pressed: 0, frames: [] });
           const tick = () => {
+            // THE MODULE, not its card: the preview has paper around it now,
+            // and it is the module that leaves the canvas at its own size.
             const frame = document.querySelector('[role="dialog"] [data-editor-piece]')?.parentElement;
+            const u = [...document.querySelectorAll('[role="dialog"] [data-editor-piece]')].map((el) => el.getBoundingClientRect()).reduce((u, r) => u ? { left: Math.min(u.left, r.left), top: Math.min(u.top, r.top), right: Math.max(u.right, r.right), bottom: Math.max(u.bottom, r.bottom) } : { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, null);
             // Only once it can be seen: it is painted once, all but
             // transparent, where it ends before it flies from the module.
-            const r = frame && Number(getComputedStyle(frame).opacity) > 0.5 ? frame.getBoundingClientRect() : null;
+            const r = frame && u && Number(getComputedStyle(frame).opacity) > 0.5 ? { left: u.left, top: u.top, width: u.right - u.left, height: u.bottom - u.top } : null;
             record.frames.push({ t: performance.now(), r: r && { l: r.left, t: r.top, w: r.width, h: r.height } });
             if (performance.now() - record.pressed < 1100) requestAnimationFrame(tick);
           };
@@ -1520,6 +1523,46 @@ const moduleEditor: Probe = {
       // rest is still checked rather than failing as knock-ons.
       if (!hoursError || /stuttered/.test(hoursError)) {
         const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
+        // PAPER AROUND THE MODULE, 24px of it on every side at rest ("a bit of
+        // whitespace padding around it", 2026-09-29).
+        const margins = (await dialog.evaluate(`((el) => {
+          const pieces = [...el.querySelectorAll("[data-editor-piece]")].map((piece) => piece.getBoundingClientRect());
+          const frame = el.querySelector("[data-editor-piece]").parentElement.getBoundingClientRect();
+          const left = Math.min(...pieces.map((r) => r.left)), top = Math.min(...pieces.map((r) => r.top));
+          const right = Math.max(...pieces.map((r) => r.right)), bottom = Math.max(...pieces.map((r) => r.bottom));
+          return [left - frame.left, top - frame.top, frame.right - right, frame.bottom - bottom].map((m) => Math.round(m * 10) / 10);
+        })(document.querySelector('[role="dialog"]'))`)) as number[];
+        if (margins.some((m) => Math.abs(m - 24) > 1)) problems.push(`the preview's paper margins are ${margins.join("/")}px, not 24 all round`);
+        else notes.push("24px of paper round the preview");
+        // EVERY DROPDOWN'S OPEN LIST READS: its options' text against the list
+        // behind them, at 4.5:1 or better. The list was the fields' near-white
+        // text on the browser's default white - "light grey text on white".
+        // An option with no background of its own is taken as white, even
+        // under colour-scheme dark: the hours' fields already had a dark scheme
+        // and the list was still reported white, so the options must say.
+        const unreadable = (await tab.evaluate(`(() => {
+          const el = document.querySelector('[role="dialog"]');
+          const rgb = (c) => (c.match(/[0-9.]+/g) || []).map(Number);
+          const lum = (c) =>
+            c.slice(0, 3).map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); })
+              .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+          const out = [];
+          for (const select of el.querySelectorAll("select")) {
+            for (const option of select.querySelectorAll("option")) {
+              const style = getComputedStyle(option);
+              const bgParts = rgb(style.backgroundColor);
+              const transparent = bgParts.length === 4 && bgParts[3] === 0;
+              const bg = transparent ? [255, 255, 255] : bgParts.slice(0, 3);
+              const fg = rgb(style.color).slice(0, 3);
+              const pair = [lum(fg), lum(bg)].sort((x, y) => y - x);
+              const ratio = (pair[0] + 0.05) / (pair[1] + 0.05);
+              if (ratio < 4.5) out.push('"' + option.textContent + '" ' + ratio.toFixed(1) + ":1");
+            }
+          }
+          return out;
+        })()`)) as string[];
+        if (unreadable.length > 0) problems.push(`dropdown options are unreadable: ${unreadable.slice(0, 3).join(", ")}`);
+        else notes.push("dropdown options read");
         // BOTH PAGES' HOURS, each with its own days.
         const pieces = (await dialog.evaluate((el) =>
           [...el.querySelectorAll("[data-editor-piece]")].map((piece) => piece.textContent ?? "")
@@ -1660,8 +1703,8 @@ const moduleEditor: Probe = {
         await tab.evaluate(`(() => {
           const record = (window.__landing = []);
           const tick = () => {
-            const frame = document.querySelector('[role="dialog"] [data-editor-piece]')?.parentElement;
-            const r = frame ? frame.getBoundingClientRect() : null;
+            const u = [...document.querySelectorAll('[role="dialog"] [data-editor-piece]')].map((el) => el.getBoundingClientRect()).reduce((u, r) => u ? { left: Math.min(u.left, r.left), top: Math.min(u.top, r.top), right: Math.max(u.right, r.right), bottom: Math.max(u.bottom, r.bottom) } : { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, null);
+            const r = u ? { left: u.left, top: u.top, width: u.right - u.left } : null;
             record.push(r && { l: r.left, t: r.top, w: r.width });
             if (r) requestAnimationFrame(tick);
           };

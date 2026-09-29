@@ -80,6 +80,11 @@ export const FOCUS_CSS = `
    share a ring. Selection is the accent, focus is white, focus wins while it
    lasts. Both are set here rather than inline because an inline outline beats
    a stylesheet one and a selected swatch would have eaten its own focus ring. */
+/* A dropdown's options, stated rather than left to the colour scheme: the
+   fields' text is near-white, and an open list that fell back to the
+   browser's white put it on white - "light grey text on white", reported
+   2026-09-29. The panel is also colour-scheme dark (see ModuleEditor). */
+.memari-field option { background-color: #2c2c2e; color: #f2f2f2; }
 .memari-swatch { outline: none; outline-offset: 2px; }
 .memari-swatch[data-selected="true"] { outline: 2px solid ${ACCENT}; }
 .memari-swatch:focus-visible { outline: 2px solid #ffffff; }

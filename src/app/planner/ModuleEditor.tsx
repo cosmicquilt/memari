@@ -109,13 +109,31 @@ function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** The transform that puts `element`, as laid out, over `target`. */
-function flight(element: HTMLElement, target: ScreenRect): string | null {
+/**
+ * Paper around the module in the preview, in CSS px - asked 2026-09-29: "in
+ * the preview can you make it so the module has a bit of whitespace padding
+ * around it". Fixed on screen rather than a share of the module, so a small
+ * module magnified 3x does not sit in a moat.
+ */
+const FRAME_PAD = 24;
+
+/**
+ * The transform that puts the MODULE inside `element` - everything but its
+ * `pad` of paper - over `target`, with the element's top-left as the
+ * transform origin. The paper travels with it, scaled the same, so the
+ * module leaves the canvas exactly the size it was there and its margin
+ * grows in around it on the way.
+ */
+function flight(element: HTMLElement, target: ScreenRect, pad = FRAME_PAD): string | null {
   const rect = element.getBoundingClientRect();
-  if (!(rect.width > 0 && rect.height > 0 && target.width > 0 && target.height > 0)) return null;
+  const width = rect.width - pad * 2;
+  const height = rect.height - pad * 2;
+  if (!(width > 0 && height > 0 && target.width > 0 && target.height > 0)) return null;
+  const sx = target.width / width;
+  const sy = target.height / height;
   return (
-    `translate(${target.left - rect.left}px, ${target.top - rect.top}px) ` +
-    `scale(${target.width / rect.width}, ${target.height / rect.height})`
+    `translate(${target.left - rect.left - pad * sx}px, ${target.top - rect.top - pad * sy}px) ` +
+    `scale(${sx}, ${sy})`
   );
 }
 
@@ -405,7 +423,11 @@ export function ModuleEditor({
 
   const frameWidth = Math.max(240, viewport.width - FIELDS_WIDTH - PADDING * 5);
   const frameHeight = Math.max(240, viewport.height - PADDING * 6);
-  const scale = Math.min(frameWidth / groupWidth, frameHeight / groupHeight, 3);
+  const scale = Math.min(
+    (frameWidth - FRAME_PAD * 2) / groupWidth,
+    (frameHeight - FRAME_PAD * 2) / groupHeight,
+    3
+  );
 
   // LIFTED: the module leaves the canvas as its preview leaves it, so it
   // reads as the module itself flying rather than a copy - and it is back as
@@ -634,13 +656,11 @@ export function ModuleEditor({
       <div
         ref={frameRef}
         style={{
-          width: groupWidth * scale,
-          height: groupHeight * scale,
+          width: groupWidth * scale + FRAME_PAD * 2,
+          height: groupHeight * scale + FRAME_PAD * 2,
           flexShrink: 0,
           background: "#fdfcf9",
-          // Square-cornered, as the palette cards are and for their reason:
-          // the module's own outer border sits exactly on these bounds, so a
-          // radius here would clip its real corners off.
+          // Square-cornered, as the palette cards are.
           outline: `2px solid ${ACCENT}`,
           outlineOffset: 3,
           position: "relative",
@@ -667,8 +687,8 @@ export function ModuleEditor({
             data-editor-piece={piece.key}
             style={{
               position: "absolute",
-              left: piece.offsetX * scale,
-              top: piece.offsetY * scale,
+              left: FRAME_PAD + piece.offsetX * scale,
+              top: FRAME_PAD + piece.offsetY * scale,
               width: piece.box.width,
               height: piece.box.height,
               transform: `scale(${scale})`,
@@ -716,13 +736,14 @@ export function ModuleEditor({
             style={{
               position: "absolute",
               left:
+                FRAME_PAD +
                 ((heading.x ?? 0) - box.x) * scale +
                 (heading.align === "center"
                   ? ((heading.width ?? 0) * scale - fieldWidth) / 2
                   : heading.align === "right"
                   ? (heading.width ?? 0) * scale - fieldWidth
                   : 0),
-              top: ((heading.y ?? 0) - box.y) * scale,
+              top: FRAME_PAD + ((heading.y ?? 0) - box.y) * scale,
               width: fieldWidth,
               height: (heading.fontSize ?? 0) * 1.2 * scale,
               margin: 0,
@@ -770,6 +791,11 @@ export function ModuleEditor({
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
           color: "#ddd",
           overflow: "hidden",
+          // The browser's own controls in here - a dropdown's open list, a
+          // checkbox, a time picker, the scrollbar - drawn for a dark panel.
+          // A dropdown's list was the field's light text on the browser's
+          // default white: reported 2026-09-29, "light grey text on white".
+          colorScheme: "dark",
         }}
       >
         <header
