@@ -92,6 +92,7 @@ import {
   hourlyPropsFromSettings,
   hourlyGapRows,
   DEFAULT_HOURLY_SETTINGS,
+  spineGapRows,
 } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
 
@@ -323,27 +324,6 @@ const weekSidebarTemplateBoxes = weekSidebarBoxes;
 const weekTodoTemplate = weekTodoPlacements;
 const WEEK_HOURLY_TEMPLATE = weekHourlyPlacements();
 
-/**
- * The clear rows a spine keeps beneath it.
- *
- * Only the hours have a content height that stops short of their box, and
- * hourlyGapRows measures from it - handed a calendar's props it looks for
- * a start time that is not there and throws. Everything else fills its box
- * and simply keeps a whole cell clear, which is what the month template
- * leaves and what its resize handle offers.
- *
- * One function because there are three call sites and they have to agree:
- * a drop reserves this, a cross-zone move reserves it, and the editor's
- * own preview reserves it. Mirrors the same branch in resolveDrag.
- */
-function spineGapRows(
-  slug: string,
-  cellPx: number,
-  propValues: unknown,
-  rowSpan: number
-): number {
-  return slug === "hourly-grid-core" ? hourlyGapRows(cellPx, propValues, rowSpan) : 1;
-}
 
 /**
  * The journal a request is about: THIS id, and only if it is the signed-in
@@ -2819,6 +2799,44 @@ export async function updateHourlySettings(journalId: string, settings: {
           },
         })
       );
+
+      // THE STACK UNDER THEM GOES TO THE OFF-MODE GAP - a row, spineGapRows -
+      // on every page alike. The height is kept, but the gap was too: a stack
+      // placed with increments ON can sit flush (their gap is measured from
+      // where the hours' rows end, and is often none), and switching them off
+      // carried that into a mode whose gap is a row. One page flush and the
+      // other a row down was "bottom module section un even" (2026-09-29).
+      // Placed as a settings change places it - rowsBelowHours, a row from
+      // each in turn, no lower than their floors - and flush only if the row
+      // is all that will not fit.
+      if (hourly.columnStart === null || hourly.rowStart === null) continue;
+      const hourlyEnd = hourly.rowStart + hourly.rowSpan;
+      const offGrid = pageGridFor(page);
+      const below = page.moduleInstances
+        .filter(
+          (mi): mi is typeof mi & { rowStart: number } =>
+            !mi.locked &&
+            mi.rowStart !== null &&
+            mi.columnStart === hourly.columnStart &&
+            mi.columnSpan === hourly.columnSpan &&
+            mi.rowStart >= hourlyEnd
+        )
+        .sort((a, b) => a.rowStart - b.rowStart);
+      if (below.length === 0) continue;
+      const members = below.map((mi) => ({
+        rowStart: mi.rowStart,
+        rowSpan: mi.rowSpan,
+        minRowSpan: getMinRowSpanForSlug(mi.moduleType.slug, offGrid, mi.columnSpan, configOf(mi)),
+      }));
+      const gap = spineGapRows("hourly-grid-core", cellHeightPx(offGrid), { intervalMode: "off" }, hourly.rowSpan);
+      let placed = rowsBelowHours(members, hourlyEnd + gap, offGrid.gridRows);
+      if (placed.unmet > 0) placed = rowsBelowHours(members, hourlyEnd, offGrid.gridRows);
+      if (placed.unmet > 0) continue;
+      below.forEach((mi, i) => {
+        const row = placed.rows[i];
+        if (row.rowStart === mi.rowStart && row.rowSpan === mi.rowSpan) return;
+        updates.push(prisma.moduleInstance.update({ where: { id: mi.id }, data: { rowStart: row.rowStart, rowSpan: row.rowSpan } }));
+      });
     }
     if (updates.length === 0) {
       throw new Error("No hourly grid found on this planner");
@@ -3178,6 +3196,7 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
       spineRowSpan: spine.rowSpan,
       spineMinRowSpan: minRowSpan,
       spineRowEnd: stackBottomRowEnd,
+      gapRows: spineGapRows(spine.moduleType.slug, cellHeightPx(pageGrid), spine.propValues, spine.rowSpan),
       followers: followers.map((mi) => ({
         rowStart: mi.rowStart as number,
         rowSpan: mi.rowSpan,

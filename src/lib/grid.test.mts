@@ -1018,11 +1018,11 @@ console.log("All followerRowsAfterGrowth checks passed.");
 // right page only moved on release.
 {
   const left: SpineStack = {
-    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, gapRows: 1, boundRow: 36,
     followers: [{ rowStart: 24, rowSpan: 12, minRowSpan: 3 }],
   };
   const right: SpineStack = {
-    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, gapRows: 1, boundRow: 36,
     followers: [
       { rowStart: 24, rowSpan: 8, minRowSpan: 3 },
       { rowStart: 32, rowSpan: 4, minRowSpan: 4 },
@@ -1059,7 +1059,7 @@ console.log("All followerRowsAfterGrowth checks passed.");
 {
   // BOTTOM ONE FIRST ("Bottom one first", 2026-09-29), each to its floor.
   const right: SpineStack = {
-    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, gapRows: 1, boundRow: 36,
     followers: [
       { rowStart: 24, rowSpan: 8, minRowSpan: 3 },
       { rowStart: 32, rowSpan: 4, minRowSpan: 2 },
@@ -1076,7 +1076,7 @@ console.log("All followerRowsAfterGrowth checks passed.");
   // a real book - is not squeezed further and adds nothing to the ceiling,
   // and it is the one handed the rows back when the hours shrink.
   const right: SpineStack = {
-    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, gapRows: 1, boundRow: 36,
     followers: [
       { rowStart: 24, rowSpan: 11, minRowSpan: 3 },
       { rowStart: 35, rowSpan: 1, minRowSpan: 4 },
@@ -1094,15 +1094,56 @@ console.log("All followerRowsAfterGrowth checks passed.");
 {
   // Pages that have drifted apart are brought to ONE span, and a page with
   // nothing under its hours is limited only by the room below them.
-  const empty: SpineStack = { spineRowSpan: 20, spineMinRowSpan: 2, spineRowEnd: 20, boundRow: 36, followers: [] };
+  const empty: SpineStack = { spineRowSpan: 20, spineMinRowSpan: 2, spineRowEnd: 20, gapRows: 1, boundRow: 36, followers: [] };
   const full: SpineStack = {
-    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, boundRow: 36,
+    spineRowSpan: 23, spineMinRowSpan: 2, spineRowEnd: 23, gapRows: 1, boundRow: 36,
     followers: [{ rowStart: 24, rowSpan: 12, minRowSpan: 3 }],
   };
   assert(spineMaxRowSpan(empty) === 36, "an empty page's ceiling is the foot of the page");
   const r = resizeSpineSpread([full, empty], 25);
   assert(r.rowSpan === 25 && r.followers[1].length === 0, "both pages go to the requested span");
   assert(resizeSpineSpread([full, empty], 1).rowSpan === 2, "and never below the spine's own minimum");
+}
+{
+  // PAGES THAT DISAGREE ABOUT THE GAP come out agreeing. Andrew's spread,
+  // 2026-09-29: the hours on rows 0-15 on both pages, the left to-do a row
+  // below them and the right one flush - "bottom module section un even".
+  // Whatever the edge is dragged to, both stacks start on the same row: the
+  // hours' edge plus the spine's gap (a row, chosen over flush).
+  const left: SpineStack = {
+    spineRowSpan: 15, spineMinRowSpan: 2, spineRowEnd: 15, gapRows: 1, boundRow: 36,
+    followers: [{ rowStart: 16, rowSpan: 20, minRowSpan: 3 }],
+  };
+  const right: SpineStack = {
+    spineRowSpan: 15, spineMinRowSpan: 2, spineRowEnd: 15, gapRows: 1, boundRow: 36,
+    followers: [
+      { rowStart: 15, rowSpan: 11, minRowSpan: 3 },
+      { rowStart: 26, rowSpan: 10, minRowSpan: 4 },
+    ],
+  };
+  for (const requested of [13, 15, 17, 40]) {
+    const r = resizeSpineSpread([left, right], requested);
+    const starts = r.followers.map((rows) => rows[0].rowStart);
+    const ends = r.followers.map((rows) => rows[rows.length - 1].rowStart + rows[rows.length - 1].rowSpan);
+    assert(
+      starts[0] === starts[1] && starts[0] === r.rowSpan + 1,
+      `dragged to ${requested}: the stacks start on rows ${starts.join(" and ")}, not both at ${r.rowSpan + 1}`
+    );
+    assert(ends.every((end) => end === 36), `dragged to ${requested}: the stacks end at ${ends.join(" and ")}, not the foot`);
+    const below = r.followers.flatMap((rows, p) => rows.filter((row, i) => row.rowSpan < [left, right][p].followers[i].minRowSpan));
+    assert(below.length === 0, `dragged to ${requested}: a module under its minimum`);
+  }
+  // A stack squeezed flush and already at its minimums keeps no gap rather
+  // than running off the page - the gap is the first thing to give.
+  const tight: SpineStack = {
+    spineRowSpan: 30, spineMinRowSpan: 2, spineRowEnd: 30, gapRows: 1, boundRow: 36,
+    followers: [{ rowStart: 30, rowSpan: 6, minRowSpan: 6 }],
+  };
+  const t = resizeSpineSpread([tight], 30);
+  assert(
+    t.rowSpan === 30 && t.followers[0][0].rowStart === 30 && t.followers[0][0].rowSpan === 6,
+    `a full, flush stack stays on the page (got ${JSON.stringify(t.followers[0])} under ${t.rowSpan})`
+  );
 }
 console.log("All resizeSpineSpread checks passed.");
 

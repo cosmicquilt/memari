@@ -386,6 +386,29 @@ export function hourlyGapRows(
   return Math.max(0, rowsToClear - rowSpan);
 }
 
+/**
+ * The clear rows a SPINE keeps beneath it - the gap between it and the stack
+ * under it.
+ *
+ * Only the hours have a content height that stops short of their box, and
+ * hourlyGapRows measures from it - handed a calendar's props it looks for a
+ * start time that is not there. Everything else fills its box and keeps a
+ * whole cell clear, which is what the month template leaves.
+ *
+ * ONE DESCRIPTION, used by every path that places the stack under a spine:
+ * a drop and a cross-zone move reserve it, the editor's drag preview
+ * reserves it, the hours' edge places the stack at it, and switching
+ * increments off puts the stack back at it. It lived in actions.ts with a
+ * copy in the editor, and the edge drag and the increments switch used
+ * neither - they kept whatever gap a page had - so the two pages of a spread
+ * drifted apart: reported 2026-09-29 as "bottom module section un even",
+ * one page's to-do a row below the other's. Andrew chose the row over flush
+ * the same day.
+ */
+export function spineGapRows(slug: string, cellPx: number, propValues: unknown, rowSpan: number): number {
+  return slug === "hourly-grid-core" ? hourlyGapRows(cellPx, propValues, rowSpan) : 1;
+}
+
 /** The hours a fresh planner starts with, and the state a reset restores. */
 export const DEFAULT_HOURLY_SETTINGS: HourlySettings = {
   startTime: "05:30",

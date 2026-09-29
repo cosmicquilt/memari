@@ -315,6 +315,31 @@ export async function incrementsOffSpread(journalId: string): Promise<SpineSprea
   };
 }
 
+/**
+ * Closes the gap under one weekly page's hours: its first module moved up
+ * flush against them, keeping its own bottom edge. A state the app used to
+ * leave behind - a stack placed with increments ON can sit flush - and the
+ * one that made a spread's two stacks start on different rows.
+ */
+export async function flushUnderHours(journalId: string, position = 0): Promise<void> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const page = await prisma.page.findFirst({
+    where: { plannerId: journalId, level: "WEEKLY", variantKey: null, position },
+    include: { moduleInstances: { include: { moduleType: true } } },
+  });
+  const hours = page?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  if (!page || !hours || hours.rowStart === null) throw new Error("no weekly hours to close the gap under");
+  const end = hours.rowStart + hours.rowSpan;
+  const first = page.moduleInstances
+    .filter((mi) => !mi.locked && mi.columnStart === hours.columnStart && mi.columnSpan === hours.columnSpan && (mi.rowStart ?? -1) >= end)
+    .sort((a, b) => (a.rowStart as number) - (b.rowStart as number))[0];
+  if (!first || first.rowStart === end) return;
+  await prisma.moduleInstance.update({
+    where: { id: first.id },
+    data: { rowStart: end, rowSpan: first.rowSpan + ((first.rowStart as number) - end) },
+  });
+}
+
 /** Every module of a journal, by slug, with its stored props - for checking
  *  what a save actually wrote. */
 export async function storedModules(journalId: string): Promise<Array<{ id: string; slug: string; level: string; propValues: Record<string, unknown> }>> {
@@ -332,10 +357,17 @@ export async function storedModules(journalId: string): Promise<Array<{ id: stri
 }
 
 /** The spans and starts of some module rows, as stored. */
-export async function storedRows(ids: string[]): Promise<Record<string, { rowStart: number | null; rowSpan: number }>> {
+export async function storedRows(
+  ids: string[]
+): Promise<Record<string, { rowStart: number | null; rowSpan: number; pageId: string; columnStart: number | null; columnSpan: number }>> {
   const { prisma } = await import("../src/lib/prisma.js");
-  const rows = await prisma.moduleInstance.findMany({ where: { id: { in: ids } }, select: { id: true, rowStart: true, rowSpan: true } });
-  return Object.fromEntries(rows.map((r) => [r.id, { rowStart: r.rowStart, rowSpan: r.rowSpan }]));
+  const rows = await prisma.moduleInstance.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, rowStart: true, rowSpan: true, pageId: true, columnStart: true, columnSpan: true },
+  });
+  return Object.fromEntries(
+    rows.map((r) => [r.id, { rowStart: r.rowStart, rowSpan: r.rowSpan, pageId: r.pageId, columnStart: r.columnStart, columnSpan: r.columnSpan }])
+  );
 }
 
 /** Close the database connection the two helpers above opened. */

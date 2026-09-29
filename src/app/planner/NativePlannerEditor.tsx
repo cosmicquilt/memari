@@ -111,6 +111,7 @@ import {
   getHourlyGridCoreContentHeightPx,
   hourlyGapRows,
   ROW_HEIGHT_OPTIONS_PT,
+  spineGapRows,
   type HourlyGridCoreConfig,
 } from "@/lib/modules/hourlyGridCore";
 import {
@@ -5562,6 +5563,7 @@ export function NativePlannerEditor({
           // calendar's MIN_ROW_SPAN (its handle's options start higher).
           spineMinRowSpan: info.slug === "month-grid-core" ? MIN_ROW_SPAN : offModeMinRowSpan,
           spineRowEnd: stackBottomRowEnd,
+          gapRows: spineGapRows(info.slug, cellHeightPx(page.pageGrid), info.propValues, placement.rowSpan),
           followers: followers.map((fid, i) => ({
             rowStart: displayPlacements[fid]?.rowStart ?? 0,
             rowSpan: displayPlacements[fid]?.rowSpan ?? 0,
@@ -5792,12 +5794,7 @@ export function NativePlannerEditor({
                 rowStart:
                   placement.rowStart +
                   placement.rowSpan +
-                  // A calendar keeps a whole cell clear, the same as the
-                  // template leaves. hourlyGapRows would read an hourly config
-                  // it does not have.
-                  (isMonthGrid
-                    ? 1
-                    : hourlyGapRows(cellHeightPx(page.pageGrid), config, placement.rowSpan)),
+                  spineGapRows(info.slug, cellHeightPx(page.pageGrid), config, placement.rowSpan),
                 columnSpan: placement.columnSpan,
                 rowSpan: 1,
               }).y;
@@ -7793,14 +7790,12 @@ export function NativePlannerEditor({
         // box, which is what that rule measures from. A calendar fills its
         // box and simply keeps a whole cell clear, the same as its template
         // leaves and the same as its own resize handle offers.
-        const gapRows =
-          targetHourlyGridPlacement.slug === "hourly-grid-core"
-            ? hourlyGapRows(
-                cellHeightPx(targetPageGrid),
-                targetHourlyGridPlacement.propValues,
-                targetHourlyGridPlacement.rowSpan
-              )
-            : 1;
+        const gapRows = spineGapRows(
+          targetHourlyGridPlacement.slug,
+          cellHeightPx(targetPageGrid),
+          targetHourlyGridPlacement.propValues,
+          targetHourlyGridPlacement.rowSpan
+        );
         if (gapRows > 0) {
           targetOthersWithReservations.push({
             id: "__hourlygridgap__",

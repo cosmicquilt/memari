@@ -336,20 +336,15 @@ export type SpineStack = {
   spineMinRowSpan: number;
   /** The spine's bottom edge: where the stack starts when it is empty. */
   spineRowEnd: number;
+  /** The rows the spine keeps clear beneath it - spineGapRows. The stack is
+   *  placed that far under the spine's new edge, on every page alike. */
+  gapRows: number;
   /** Top to bottom, each with its own content floor. */
   followers: Array<{ rowStart: number; rowSpan: number; minRowSpan: number }>;
   /** The first row the stack may not use: a locked block below it, or the
    *  foot of the page. */
   boundRow: number;
 };
-
-function spineFreeBelow(stack: SpineStack): number {
-  const tail =
-    stack.followers.length > 0
-      ? Math.max(...stack.followers.map((f) => f.rowStart + f.rowSpan))
-      : stack.spineRowEnd;
-  return Math.max(0, stack.boundRow - tail);
-}
 
 /**
  * The tallest a spine can be dragged: its own span, the free rows under its
@@ -366,8 +361,52 @@ function spineFreeBelow(stack: SpineStack): number {
  * the followers lose, so this is the same number at every step of it.
  */
 export function spineMaxRowSpan(stack: SpineStack): number {
-  const shrinkable = stack.followers.reduce((sum, f) => sum + Math.max(0, f.rowSpan - f.minRowSpan), 0);
-  return stack.spineRowSpan + spineFreeBelow(stack) + shrinkable;
+  const spineRowStart = stack.spineRowEnd - stack.spineRowSpan;
+  // Nothing below: the spine may take the page to its bound, and no gap is
+  // kept under nothing.
+  if (stack.followers.length === 0) return Math.max(stack.spineRowSpan, stack.boundRow - spineRowStart);
+  // The stack at its minimums, a gap under the spine. A module already
+  // below its minimum cannot give more, so it counts at the height it has.
+  const floors = stack.followers.reduce((sum, f) => sum + Math.min(f.rowSpan, f.minRowSpan), 0);
+  // Never below where it is: a stack squeezed tighter than this - by the
+  // rules before these - does not make touching the edge shrink the spine.
+  return Math.max(stack.spineRowSpan, stack.boundRow - spineRowStart - stack.gapRows - floors);
+}
+
+/**
+ * The stack under a spine, placed from `top`: the bottom module gives way
+ * first, each only to its own floor, and when the stack moved UP the rows it
+ * left go to the last module, so its bottom edge stays where it was. `unmet`
+ * is what would not fit even at the floors.
+ */
+export function placeUnderSpine(
+  followers: Array<{ rowStart: number; rowSpan: number; minRowSpan: number }>,
+  top: number,
+  boundRow: number
+): { rows: Array<{ rowStart: number; rowSpan: number }>; unmet: number } {
+  if (followers.length === 0) return { rows: [], unmet: 0 };
+  const spans = followers.map((f) => f.rowSpan);
+  let over = top + spans.reduce((sum, span) => sum + span, 0) - boundRow;
+  for (let i = spans.length - 1; i >= 0 && over > 0; i--) {
+    const give = Math.min(spans[i] - followers[i].minRowSpan, over);
+    if (give > 0) {
+      spans[i] -= give;
+      over -= give;
+    }
+  }
+  const last = followers[followers.length - 1];
+  const bottom = Math.min(last.rowStart + last.rowSpan, boundRow);
+  const end = top + spans.reduce((sum, span) => sum + span, 0);
+  if (over <= 0 && end < bottom) spans[spans.length - 1] += bottom - end;
+  let cursor = top;
+  return {
+    rows: spans.map((rowSpan) => {
+      const row = { rowStart: cursor, rowSpan };
+      cursor += rowSpan;
+      return row;
+    }),
+    unmet: Math.max(0, over),
+  };
 }
 
 /**
@@ -393,14 +432,19 @@ export function resizeSpineSpread(
   const rowSpan = Math.max(floor, Math.min(ceiling, requestedRowSpan));
   return {
     rowSpan,
-    followers: stacks.map((stack) =>
-      followerRowsAfterGrowth(
-        stack.followers,
-        rowSpan - stack.spineRowSpan,
-        spineFreeBelow(stack),
-        stack.followers.length > 0 ? stack.followers[0].rowStart : stack.spineRowEnd
-      )
-    ),
+    followers: stacks.map((stack) => {
+      // AT THE SPINE'S GAP, not at whatever gap this page had - so the
+      // stacks of a spread start on one row. They kept their own, and one
+      // page's to-do sat a row below the other's.
+      const edge = stack.spineRowEnd - stack.spineRowSpan + rowSpan;
+      const placed = placeUnderSpine(stack.followers, edge + stack.gapRows, stack.boundRow);
+      // Only if the gap is all that will not fit - a stack squeezed flush
+      // by an older rule, already at its minimums - does it close, rather
+      // than the stack running off the page.
+      return placed.unmet > 0
+        ? placeUnderSpine(stack.followers, Math.max(edge, edge + stack.gapRows - placed.unmet), stack.boundRow).rows
+        : placed.rows;
+    }),
   };
 }
 

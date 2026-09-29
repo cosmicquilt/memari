@@ -41,7 +41,7 @@
 // one - see the pill travel probe.
 
 import { chromium, type Browser, type Page } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules } from "./appUnderTest.mjs";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -1325,6 +1325,15 @@ const spineDrag: Probe = {
       }
       check("growing", grown);
       const grewTo = grown.shown[left.spineId]?.rowSpan ?? 0;
+      // ONE ROW FOR BOTH PAGES' STACKS. This journal's left to-do starts flush
+      // under the hours and its right one a row down - Andrew's spread,
+      // "bottom module section un even" (2026-09-29). After the edge moves,
+      // both start a row under it.
+      const stackStarts = spread.pages.map((p) => grown.released[p.followers[0]?.id]?.rowStart);
+      const hoursEnd = (grown.released[left.spineId]?.rowStart ?? 0) + grewTo;
+      if (stackStarts.some((row) => row !== hoursEnd + 1)) {
+        problems.push(`growing: the stacks under the hours start on rows ${stackStarts.join(" and ")}, not both at ${hoursEnd + 1}`);
+      }
       if (grewTo <= before[left.spineId]!.rowSpan) problems.push(`growing: the hours did not grow (${before[left.spineId]!.rowSpan} -> ${grewTo})`);
       // THE STOP: some page's stack is all at its minimum - not earlier.
       const atFloor = spread.pages.filter((p) => p.followers.every((f) => grown.shown[f.id]?.rowSpan === f.minRowSpan));
@@ -1388,6 +1397,9 @@ const moduleEditor: Probe = {
   ratios: [1],
   run: async (page, { base }) => {
     const guest = await makeGuestJournal("Module editor check");
+    // The left page's to-do flush under the hours, the right one a row down -
+    // the uneven spread switching increments off has to straighten.
+    await flushUnderHours(guest.journalId, 0);
     // Tall enough that the to-do is not under the timeline drawer - at 800px
     // its pencil sat at y=712 and the drawer began at 614, so the pointer
     // hovered the drawer and the pencil never showed.
@@ -1617,6 +1629,30 @@ const moduleEditor: Probe = {
         const wrong = everyHours.filter((m) => m.propValues.intervalMode !== "off" || m.propValues.offModeRule !== "none");
         if (wrong.length > 0) problems.push(`${wrong.length} of ${everyHours.length} hourly grids were not saved as increments off, blank`);
         else notes.push(`saved journal-wide to all ${everyHours.length} hourly grids`);
+        // And the stack under each page's hours now sits the off-mode gap - a
+        // row - under them: with increments on it can sit flush, and carrying
+        // that into off-mode was how two pages of one spread came apart.
+        const afterRows = await storedRows(after.map((m) => m.id));
+        const uneven: string[] = [];
+        for (const hours of after.filter((m) => m.slug === "hourly-grid-core" && m.level === "WEEKLY")) {
+          const h = afterRows[hours.id];
+          // The stack under THESE hours: same page, same columns, below them.
+          const next = Object.entries(afterRows)
+            .filter(
+              ([id, r]) =>
+                id !== hours.id &&
+                r.pageId === h.pageId &&
+                r.columnStart === h.columnStart &&
+                r.columnSpan === h.columnSpan &&
+                r.rowStart !== null &&
+                (r.rowStart as number) >= (h.rowStart as number) + h.rowSpan
+            )
+            .map(([, r]) => r.rowStart as number);
+          if (next.length === 0) continue;
+          const gap = Math.min(...next) - ((h.rowStart as number) + h.rowSpan);
+          if (gap !== 1) uneven.push(`${gap}`);
+        }
+        if (uneven.length > 0) problems.push(`after increments went off, the stacks under the hours sit ${uneven.join(" and ")} row(s) down, not 1`);
         const drawnDots = (await tab.evaluate(
           `[...document.querySelectorAll('[data-module-instance-id="${weeklyHours[0].id}"] svg rect[rx]')].length`
         )) as number;
