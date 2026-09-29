@@ -82,8 +82,10 @@ export type SheetBakeInput = {
 /** The film is Veo's 720p take, compressed, then upscaled to 4K: its detail
  *  is soft and a little blocky, and ink drawn crisp at 4K sat on it like a
  *  sticker (2026-09-28: "make the page a bit fuzzier and a bit more
- *  compression artifacting to match scene"). */
-export const SHEET_AGE = { scale: 0.42, quality: 0.5 };
+ *  compression artifacting to match scene"). Of four strengths compared at
+ *  screen size, Andrew chose this, the lightest ("I actually like light
+ *  better") over 0.42 / 0.5. */
+export const SHEET_AGE = { scale: 0.55, quality: 0.6 };
 
 /** What bakeSheet needs for one sheet, given its packed ink and a way to
  *  turn a site path into a URL the baking page can load. */
