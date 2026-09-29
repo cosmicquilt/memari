@@ -41,7 +41,7 @@
 // one - see the pill travel probe.
 
 import { chromium, type Browser, type Page } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows } from "./appUnderTest.mjs";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -1328,6 +1328,162 @@ const spineDrag: Probe = {
 };
 
 // ---------------------------------------------------------------------
+// MODULE EDITOR: the hours have a pencil and an editor of their own, and a
+// line style is chosen from pictures of the module itself.
+//
+// Asked 2026-09-29: the to-do gets line styles (lined, and crosses from a
+// reference page), the note box's rule is chosen by looking at it, and the
+// hours' settings - increments, week start, and a new dotted/blank fill with
+// increments off - move from Page Settings into the hours' own editor,
+// opened from a pencil in the middle of the hours on hover, "the ones that
+// are rule of line styles etc" drawn as a zoomed-in preview.
+//
+// A real mouse, because the pencil only shows on hover and a synthetic event
+// does not hover anything. Its own journal, since it turns increments off.
+// MEMARI_PROBE_SHOTS=<dir> keeps a screenshot of each editor.
+// ---------------------------------------------------------------------
+const moduleEditor: Probe = {
+  name: "module editor",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Module editor check");
+    // Tall enough that the to-do is not under the timeline drawer - at 800px
+    // its pencil sat at y=712 and the drawer began at 614, so the pointer
+    // hovered the drawer and the pencil never showed.
+    const context = await page.context().browser()!.newContext({
+      viewport: { width: VIEWPORT.width, height: 1200 },
+      deviceScaleFactor: 1,
+    });
+    const shots = process.env.MEMARI_PROBE_SHOTS;
+    try {
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(3000);
+
+      const before = await storedModules(guest.journalId);
+      const weeklyHours = before.filter((m) => m.slug === "hourly-grid-core" && m.level === "WEEKLY");
+      const leftTodo = before.find((m) => m.slug === "todo-checklist" && m.level === "WEEKLY");
+      const noteBox = before.find((m) => m.slug === "labeled-box" && m.level === "WEEKLY");
+      if (weeklyHours.length === 0 || !leftTodo || !noteBox) {
+        fail("module editor", "the weekly spread has no hours, to-do or note box to edit");
+        return;
+      }
+
+      /** Hover a module with the real mouse and press its pencil. */
+      const openEditor = async (instanceId: string, name: string) => {
+        const box = await tab.locator(`[data-module-instance-id="${instanceId}"]`).boundingBox();
+        if (!box) return `the ${name} is not on screen`;
+        // Off-centre first, so the pointer arrives the way a person's would.
+        await tab.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+        await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await tab.waitForTimeout(300);
+        const pencil = tab.locator(`[data-module-instance-id="${instanceId}"] > button[title="Edit ${name}"]`);
+        if ((await pencil.count()) === 0) return `the ${name} has no pencil`;
+        const opacity = Number(await pencil.evaluate((el) => getComputedStyle(el).opacity));
+        if (!(opacity > 0)) return `the ${name}'s pencil stays invisible on hover`;
+        await pencil.click();
+        const dialog = tab.getByRole("dialog", { name: `Edit ${name}` });
+        await dialog.waitFor({ timeout: 5000 }).catch(() => undefined);
+        if (!(await dialog.isVisible())) return `pressing the ${name}'s pencil opened no editor`;
+        return null;
+      };
+      /** A picker's options: how many, and whether each draws something. */
+      const picker = (group: string) =>
+        tab.getByRole("radiogroup", { name: group }).evaluate((el) =>
+          [...el.querySelectorAll('[role="radio"]')].map((radio) => ({
+            label: radio.getAttribute("aria-label"),
+            checked: radio.getAttribute("aria-checked") === "true",
+            marks: radio.querySelectorAll("svg rect").length,
+            dots: radio.querySelectorAll("svg rect[rx]").length,
+            markup: radio.querySelector("svg")?.innerHTML.length ?? 0,
+          }))
+        );
+      const done = async () => {
+        await tab.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+        await tab.waitForTimeout(3500);
+      };
+      const problems: string[] = [];
+      const notes: string[] = [];
+
+      // --- THE HOURS ---------------------------------------------------
+      const palette = (await tab.evaluate(`document.body.innerText`)) as string;
+      if (/\bRow height\b/.test(palette)) problems.push("Page Settings still holds the hours' settings");
+      const hoursError = await openEditor(weeklyHours[0].id, "Hours");
+      if (hoursError) problems.push(hoursError);
+      else {
+        const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
+        for (const field of ["Increments", "Row height", "Week starts on"]) {
+          if ((await dialog.getByLabel(field).count()) === 0) problems.push(`the hours' editor has no ${field}`);
+        }
+        await dialog.getByLabel("Increments").selectOption("off");
+        await tab.waitForTimeout(300);
+        const fills = await picker("Fill");
+        const dotted = fills.find((f) => f.label === "Dotted");
+        const blank = fills.find((f) => f.label === "Blank");
+        if (!dotted || !blank) problems.push(`the Fill picker offers ${fills.map((f) => f.label).join(", ") || "nothing"}`);
+        else if (!(dotted.dots > 0) || blank.dots !== 0) {
+          problems.push(`the Fill pictures do not show the fill: dotted draws ${dotted.dots} dots, blank ${blank.dots}`);
+        } else notes.push(`hours: Fill drawn as ${dotted.dots} dots vs none`);
+        await dialog.getByRole("radio", { name: "Blank" }).click();
+        if (shots) await tab.screenshot({ path: `${shots}/hours-editor.png` });
+        await done();
+        const after = await storedModules(guest.journalId);
+        const everyHours = after.filter((m) => m.slug === "hourly-grid-core");
+        const wrong = everyHours.filter((m) => m.propValues.intervalMode !== "off" || m.propValues.offModeRule !== "none");
+        if (wrong.length > 0) problems.push(`${wrong.length} of ${everyHours.length} hourly grids were not saved as increments off, blank`);
+        else notes.push(`saved journal-wide to all ${everyHours.length} hourly grids`);
+        const drawnDots = (await tab.evaluate(
+          `[...document.querySelectorAll('[data-module-instance-id="${weeklyHours[0].id}"] svg rect[rx]')].length`
+        )) as number;
+        if (drawnDots > 0) problems.push(`the hours still draw ${drawnDots} dots after choosing Blank`);
+      }
+
+      // --- THE TO-DO ---------------------------------------------------
+      const todoError = await openEditor(leftTodo.id, "To-do checklist");
+      if (todoError) problems.push(todoError);
+      else {
+        const lines = await picker("Lines");
+        const lined = lines.find((l) => l.label === "Lined");
+        const crosses = lines.find((l) => l.label === "Crosses");
+        if (!lined || !crosses) problems.push(`the Lines picker offers ${lines.map((l) => l.label).join(", ") || "nothing"}`);
+        else if (!lined.checked) problems.push("a to-do saved before line styles existed does not show Lined as chosen");
+        else if (!(crosses.marks > lined.marks)) problems.push(`the Crosses picture (${crosses.marks} marks) is no busier than Lined (${lined.marks})`);
+        else notes.push(`to-do: Lines drawn ${lined.marks} vs ${crosses.marks} marks`);
+        const rectsBefore = (await tab.evaluate(`document.querySelectorAll('[data-module-instance-id="${leftTodo.id}"] svg rect').length`)) as number;
+        await tab.getByRole("dialog", { name: "Edit To-do checklist" }).getByRole("radio", { name: "Crosses" }).click();
+        if (shots) await tab.screenshot({ path: `${shots}/todo-editor.png` });
+        await done();
+        const stored = (await storedModules(guest.journalId)).find((m) => m.id === leftTodo.id);
+        const rectsAfter = (await tab.evaluate(`document.querySelectorAll('[data-module-instance-id="${leftTodo.id}"] svg rect').length`)) as number;
+        if (stored?.propValues.lineStyle !== "crosses") problems.push(`the to-do saved lineStyle ${JSON.stringify(stored?.propValues.lineStyle)}`);
+        else if (!(rectsAfter > rectsBefore * 2)) problems.push(`the to-do on the page drew ${rectsBefore} marks lined and ${rectsAfter} crossed`);
+        else notes.push(`to-do on the page: ${rectsBefore} -> ${rectsAfter} marks`);
+      }
+
+      // --- THE NOTE BOX -----------------------------------------------
+      const noteError = await openEditor(noteBox.id, "Labeled box");
+      if (noteError) problems.push(noteError);
+      else {
+        const body = await picker("Body");
+        const labels = body.map((b) => b.label).join("/");
+        if (labels !== "Blank/Lined/Dotted") problems.push(`the Body picker offers ${labels || "nothing"}`);
+        else if (new Set(body.map((b) => b.markup)).size !== 3) problems.push("two of the Body pictures are the same drawing");
+        else notes.push("note box: Body drawn three ways");
+        if (shots) await tab.screenshot({ path: `${shots}/note-editor.png` });
+        await tab.keyboard.press("Escape");
+      }
+
+      if (problems.length > 0) for (const problem of problems) fail("module editor", problem);
+      else note("module editor", notes.join("; "));
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
 // FIRST VISIT: filling in a new person's default time zone does not rebuild
 // the editor, and the Time zone field shows what was filled in.
 //
@@ -1394,6 +1550,7 @@ const ALL_PROBES: Probe[] = [
   eventDrag,
   zoomBar,
   spineDrag,
+  moduleEditor,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

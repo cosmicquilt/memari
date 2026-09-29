@@ -65,6 +65,14 @@ export type HourlyGridCoreConfig = {
   // Optional/defaults to "on" so existing stored instances (seeded
   // before this field existed) keep rendering exactly as before.
   intervalMode?: "on" | "off";
+  /**
+   * What fills the block when increments are OFF: the page's dot lattice,
+   * or nothing. Dotted by default - the dots were asked for ("i would also
+   * like dot grid to show in the hours section when increments are turned
+   * off") - and blank asked for as the alternative on 2026-09-29. Absent on
+   * everything stored before, which keeps the dots it always drew.
+   */
+  offModeRule?: "dotted" | "none";
   // Opts a 1-hour interval back into rendering each row at the same
   // height a 30-min row gets, instead of the default doubled height —
   // see getRowHeightPx's own comment. Ignored at 30-min intervals (there's
@@ -386,6 +394,7 @@ export const DEFAULT_HOURLY_SETTINGS: HourlySettings = {
   intervalMode: "on",
   compactHourRows: false,
   rowHeightPt: DEFAULT_ROW_HEIGHT_PT,
+  offModeRule: "dotted",
 };
 
 /** Everything about an hourly grid that is a user choice rather than a
@@ -397,6 +406,7 @@ export type HourlySettings = {
   intervalMode: "on" | "off";
   compactHourRows: boolean;
   rowHeightPt: number;
+  offModeRule: "dotted" | "none";
 };
 
 /**
@@ -427,6 +437,7 @@ export function hourlyPropsFromSettings(
     intervalMode: settings.intervalMode,
     compactHourRows: settings.compactHourRows,
     rowHeightPt: settings.rowHeightPt,
+    offModeRule: settings.offModeRule,
   };
 }
 export type RowHeightPt = (typeof ROW_HEIGHT_OPTIONS_PT)[number];
@@ -901,7 +912,8 @@ export function renderHourlyGridCore(
       // Drawn once for the whole block, not per day column, so the field
       // reads continuously across the dividers the way a bullet journal's
       // does. Guarded on d === 0 for that reason.
-      if (d === 0 && lattice) {
+      // Unless it is set BLANK - see offModeRule.
+      if (d === 0 && lattice && config.offModeRule !== "none") {
         const top = gridTop;
         const bottom = geometry.y + geometry.height;
         const firstCol = Math.ceil((geometry.x - lattice.originX) / lattice.pitchPx);

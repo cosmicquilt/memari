@@ -36,6 +36,16 @@ export type TodoChecklistConfig = {
    * and a preset that cannot change its own name is not a preset.
    */
   heading?: string;
+  /**
+   * How the rows are marked. "lined" (the default, and everything stored
+   * before this existed) rules every row and column right across. "crosses"
+   * marks the same lattice without drawing it: a small + where a column line
+   * meets a row, a short dash at each dot between, and a tick where a column
+   * line meets the header rule or the bottom border. Asked for 2026-09-29
+   * from a reference page, "in our style and sizing" - so the marks sit on
+   * this module's own lattice points at its own rule weight.
+   */
+  lineStyle?: "lined" | "crosses";
 };
 
 export type RenderedElement = {
@@ -258,6 +268,32 @@ export function renderTodoChecklist(
   });
 
   const gridTop = contentY + headerHeight;
+  const gridBottom = gridTop + gridHeight;
+
+  // CROSSES: every mark is centred on a lattice point, so each is sized from
+  // the pitch - a quarter cell each way for a cross arm and a tick, half a
+  // cell for a dash. One description of the mark, used for all of them.
+  const crosses = config.lineStyle === "crosses";
+  const arm = checkboxWidth / 4;
+  const mark = (name: string, x: number, y: number, width: number, height: number) =>
+    elements.push({
+      id: id(name),
+      type: "figure",
+      subType: "rect",
+      x,
+      y,
+      width,
+      height,
+      fill: NEAR_BLACK,
+      stroke: "none",
+      opacity: 0.6,
+    });
+  /** A vertical stroke of the given length centred on x. */
+  const vertical = (name: string, x: number, top: number, length: number) =>
+    mark(name, x - rowLineWidth / 2, top, rowLineWidth, length);
+  /** A horizontal stroke centred on (x, y). */
+  const horizontal = (name: string, x: number, y: number, halfLength: number) =>
+    mark(name, x - halfLength, y - rowLineWidth / 2, halfLength * 2, rowLineWidth);
 
   // Per-day-column checkbox+line segments, repeated for each row.
   for (let d = 0; d < config.dayCount; d++) {
@@ -281,6 +317,39 @@ export function renderTodoChecklist(
     // both put a second line just outside the border. (It was measured
     // 0.7px outside the box even before this change, when the two were
     // drawn at the same place.)
+    // The column lines this day has, where a line is DRAWN rather than being
+    // the box's own border.
+    const columnLines = [
+      ...(d > 0 || !lattice ? [{ name: "checkbox-left", x: segX }] : []),
+      { name: "checkbox-right", x: segX + checkboxWidth },
+    ];
+
+    if (crosses) {
+      // Ticks where each column line meets the header rule and the border.
+      for (const line of columnLines) {
+        vertical(`d${d}-${line.name}-top`, line.x, gridTop, arm);
+        vertical(`d${d}-${line.name}-bottom`, line.x, gridBottom - arm, arm);
+      }
+      for (let i = 0; i < rowCount; i++) {
+        const y = gridTop + (i + 1) * rowHeight;
+        // Not on the bottom border, which is already a line - as below.
+        if (Math.abs(y - gridBottom) < 0.5) continue;
+        for (const line of columnLines) {
+          horizontal(`d${d}-row${i}-${line.name}-h`, line.x, y, arm);
+          vertical(`d${d}-row${i}-${line.name}-v`, line.x, y - arm, arm * 2);
+        }
+        // The first day's left edge IS the box's border, so its cross is the
+        // half that falls inside: a tick in from the border.
+        if (d === 0 && lattice) mark(`d0-row${i}-edge`, geometry.x, y - rowLineWidth / 2, arm, rowLineWidth);
+        // A dash at each dot across the writing space, stopping a whole arm
+        // short of the day's end so none reaches the next day or the border.
+        for (let k = 2; segX + k * checkboxWidth + arm <= segX + segmentWidth + 0.5; k++) {
+          horizontal(`d${d}-row${i}-dash${k}`, segX + k * checkboxWidth, y, arm);
+        }
+      }
+      continue;
+    }
+
     if (d > 0 || !lattice) elements.push({
       id: id(`d${d}-checkbox-left`),
       type: "figure",

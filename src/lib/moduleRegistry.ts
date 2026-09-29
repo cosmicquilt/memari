@@ -138,6 +138,14 @@ export type ModuleField =
   // A separate kind rather than a flag on select, because which control to
   // use IS what a field kind says.
   | { kind: "icon"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // A closed set of LINE STYLES - a note box's body, a to-do's rules, what
+  // fills the hours with increments off. Each option is drawn as a zoomed-in
+  // corner of the module ITSELF, by the renderer that prints it, so the
+  // choice is made by looking at the lines rather than reading their names.
+  // Asked for 2026-09-29: "the ones that are rule of line styles etc should
+  // show a visual zoomed in preview of the line/rule for its toggle". A kind
+  // of its own for the reason `icon` is one.
+  | { kind: "rule"; key: string; label: string; options: Array<{ value: string; label: string }> }
   // Multi-line text kept as ONE string, newlines and all - a passage,
   // where `lines` would turn a prayer into an array of its lines and lose
   // the fact that it is a single piece of writing. The two look identical
@@ -420,6 +428,9 @@ const NEVER = () => false;
 
 const PRIMITIVES = {
   "hourly-grid-core": {
+    // What its pencil and its editor call it - the hours, which is what
+    // they are on the page.
+    label: "Hours",
     pageSettingsForm: "hours",
     db: {
       "name": "Hourly Grid (Core)",
@@ -492,6 +503,14 @@ const PRIMITIVES = {
           "compactHourRows": {
             "type": "boolean",
             "default": false
+          },
+          "offModeRule": {
+            "type": "string",
+            "enum": [
+              "dotted",
+              "none"
+            ],
+            "default": "dotted"
           }
         }
       },
@@ -593,7 +612,7 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
       {
-        kind: "select",
+        kind: "rule",
         key: "rule",
         label: "Body",
         options: [
@@ -673,6 +692,14 @@ const PRIMITIVES = {
           "heading": {
             "type": "string",
             "default": "To - Do"
+          },
+          "lineStyle": {
+            "type": "string",
+            "enum": [
+              "lined",
+              "crosses"
+            ],
+            "default": "lined"
           }
         }
       },
@@ -688,6 +715,15 @@ const PRIMITIVES = {
     previewProps: { dayCount: 1 },
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
+      {
+        kind: "rule",
+        key: "lineStyle",
+        label: "Lines",
+        options: [
+          { value: "lined", label: "Lined" },
+          { value: "crosses", label: "Crosses" },
+        ],
+      },
       {
         kind: "note",
         text: "The day columns follow whichever page this is on.",

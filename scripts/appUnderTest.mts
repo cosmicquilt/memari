@@ -296,6 +296,22 @@ export async function incrementsOffSpread(journalId: string): Promise<SpineSprea
   };
 }
 
+/** Every module of a journal, by slug, with its stored props - for checking
+ *  what a save actually wrote. */
+export async function storedModules(journalId: string): Promise<Array<{ id: string; slug: string; level: string; propValues: Record<string, unknown> }>> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const rows = await prisma.moduleInstance.findMany({
+    where: { page: { plannerId: journalId } },
+    select: { id: true, propValues: true, moduleType: { select: { slug: true } }, page: { select: { level: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    slug: r.moduleType.slug,
+    level: r.page.level,
+    propValues: (r.propValues as Record<string, unknown>) ?? {},
+  }));
+}
+
 /** The spans and starts of some module rows, as stored. */
 export async function storedRows(ids: string[]): Promise<Record<string, { rowStart: number | null; rowSpan: number }>> {
   const { prisma } = await import("../src/lib/prisma.js");

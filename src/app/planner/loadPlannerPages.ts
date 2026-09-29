@@ -117,6 +117,8 @@ export type PageSettings = {
   compactHourRows: boolean;
   // One of ROW_HEIGHT_OPTIONS_PT; 9pt when unset.
   rowHeightPt: number;
+  /** What fills the hours with increments off. Dotted when unset. */
+  offModeRule: "dotted" | "none";
 };
 
 /**
@@ -459,6 +461,7 @@ export async function loadPlannerPages(
         intervalMode?: "on" | "off";
         compactHourRows?: boolean;
         rowHeightPt?: number;
+        offModeRule?: "dotted" | "none";
       }
     | undefined;
 
@@ -496,6 +499,7 @@ export async function loadPlannerPages(
       intervalMode: hourlyProps?.intervalMode ?? "on",
       compactHourRows: hourlyProps?.compactHourRows ?? false,
       rowHeightPt: hourlyProps?.rowHeightPt ?? 9,
+      offModeRule: hourlyProps?.offModeRule === "none" ? "none" : "dotted",
     },
   };
 }

@@ -23,16 +23,19 @@
 // than a border, controls that are permanently present and quiet rather than
 // revealed on hover, and a spring rather than an ease.
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { moduleDefinition, cleanPropsForSave } from "@/lib/moduleRegistry";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
-import { gridCellToPixels } from "@/lib/grid";
+import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid";
+import { DEFAULT_HOURLY_SETTINGS, getHourlyGridCoreContentHeightPx } from "@/lib/modules/hourlyGridCore";
 import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
-import { ModuleFieldsForm } from "./ModuleFieldsForm";
-import { saveModuleToSaved, updateModuleConfig } from "./actions";
+import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
+import { HoursFields, type HoursDraft } from "./HoursFields";
+import { saveModuleToSaved, updateHourlySettings, updateModuleConfig } from "./actions";
+import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRefreshPages } from "./pagesRefreshContext";
 
@@ -60,6 +63,7 @@ export function ModuleEditor({
   pageGrid,
   fontFamily,
   renderContext,
+  weekStartDay = 0,
   onClose,
   onSaved,
 }: {
@@ -69,15 +73,32 @@ export function ModuleEditor({
   /** The module's page's - see src/lib/renderContext.ts. The draft is the
    *  stored props; the preview shows them as the page prints them. */
   renderContext: PageRenderContext | null;
+  /** The book's week start - edited alongside the hours, which own it now. */
+  weekStartDay?: number;
   onClose: () => void;
   /** The committed props, so the page behind can redraw without a reload. */
   onSaved: (instanceId: string, propValues: Record<string, unknown>) => void;
 }) {
   const refreshPages = useRefreshPages();
+  const journalId = useJournalId();
   const definition = moduleDefinition(editing.slug);
-  const [draft, setDraft] = useState<Record<string, unknown>>(editing.propValues);
+  // THE HOURS edit the journal's hour settings rather than one module's
+  // props - see HoursFields. Their draft is those settings, read from this
+  // block's props with the defaults under them, plus the week start.
+  const hours = definition?.pageSettingsForm === "hours";
+  const [draft, setDraft] = useState<Record<string, unknown>>(() =>
+    hours
+      ? {
+          ...editing.propValues,
+          ...Object.fromEntries(
+            Object.entries(DEFAULT_HOURLY_SETTINGS).map(([key, value]) => [key, editing.propValues[key] ?? value])
+          ),
+        }
+      : editing.propValues
+  );
+  const [weekStart, setWeekStart] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(editing.propValues);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(editing.propValues) || weekStart !== weekStartDay;
   // Saving it to Saved > Modules: closed, or open with the name to give it.
   const [saveName, setSaveName] = useState<string | null>(null);
 
@@ -94,20 +115,32 @@ export function ModuleEditor({
   // The module's own box, at the size it occupies on the page. Its geometry
   // is the page's, not a guess: a habit tracker changes layout below a width
   // and would lay out differently in a box of the wrong shape.
+  //
+  // The HOURS change height with their settings - more rows, taller rows - so
+  // their preview is sized the way updateHourlySettings sizes the block: the
+  // content height of those settings, in whole cells. With increments off the
+  // block keeps the height it has, as the save does.
+  const rowSpan =
+    hours && draft.intervalMode !== "off"
+      ? pixelHeightToRowSpan(
+          pageGrid,
+          getHourlyGridCoreContentHeightPx(draft as Parameters<typeof getHourlyGridCoreContentHeightPx>[0])
+        )
+      : editing.rowSpan;
   const box = useMemo(
     () =>
       gridCellToPixels(pageGrid, {
         columnStart: editing.columnStart,
         rowStart: editing.rowStart,
         columnSpan: editing.columnSpan,
-        rowSpan: editing.rowSpan,
+        rowSpan,
       }),
-    [pageGrid, editing.columnStart, editing.rowStart, editing.columnSpan, editing.rowSpan]
+    [pageGrid, editing.columnStart, editing.rowStart, editing.columnSpan, rowSpan]
   );
 
   // Redrawn from the DRAFT, so the preview is what saving would produce.
-  const elements = useMemo(
-    () =>
+  const draw = useCallback(
+    (propValues: Record<string, unknown>) =>
       renderOnPage(
         {
           id: editing.instanceId,
@@ -115,16 +148,36 @@ export function ModuleEditor({
           columnStart: editing.columnStart,
           rowStart: editing.rowStart,
           columnSpan: editing.columnSpan,
-          rowSpan: editing.rowSpan,
-          propValues: draft,
+          rowSpan,
+          propValues,
           moduleType: { slug: editing.slug },
         },
         pageGrid,
         fontFamily,
         renderContext
       ),
-    [draft, editing, pageGrid, fontFamily, renderContext]
+    [editing, rowSpan, pageGrid, fontFamily, renderContext]
   );
+  const elements = useMemo(() => draw(draft), [draw, draft]);
+
+  // A LINE STYLE, drawn: the module as it is being edited with that one
+  // option changed, and its bottom-left corner - the border, a column line
+  // and a row or two of whatever fills it. Every module has that corner, and
+  // it is where the rules meet the border, which is most of what tells one
+  // style from another.
+  const drawRule = useCallback(
+    (key: string, value: string): RuleSample => {
+      const cell = cellHeightPx(pageGrid);
+      const width = cell * 2.4;
+      const height = cell * 2.1;
+      return {
+        elements: draw({ ...draft, [key]: value }),
+        window: { x: box.x - 4, y: box.y + box.height - height + 4, width, height },
+      };
+    },
+    [draw, draft, pageGrid, box]
+  );
+  const defaults = useMemo(() => moduleSchemaDefaults(editing.slug), [editing.slug]);
 
   // THE HEADING IS EDITED WHERE IT IS DRAWN - "it should allow you to edit
   // the title cleanly with a text hover". Every renderer that draws a
@@ -164,6 +217,54 @@ export function ModuleEditor({
   const frameWidth = Math.max(240, viewport.width - FIELDS_WIDTH - PADDING * 5);
   const frameHeight = Math.max(240, viewport.height - PADDING * 6);
   const scale = Math.min(frameWidth / box.width, frameHeight / box.height, 3);
+
+  // THE HOURS SAVE AS THE JOURNAL'S HOUR SETTINGS, through the one action
+  // that sizes every page's hours and makes room below them. It shrinks
+  // what is below fairly and only refuses when everything there is already
+  // at its minimum - and then says by how much and what is in the way, so
+  // this can offer the one remaining option rather than just reporting a
+  // wall. Moved here from Page Settings with the rest of the form.
+  const saveHours = () =>
+    run(async () => {
+      const settings = draft as unknown as HoursDraft;
+      const send = (deleteLowestBelowToFit?: boolean) =>
+        updateHourlySettings(journalId, {
+          deleteLowestBelowToFit,
+          startTime: settings.startTime,
+          endTime: settings.endTime,
+          intervalMinutes: settings.intervalMinutes === 60 ? 60 : 30,
+          intervalMode: settings.intervalMode === "off" ? "off" : "on",
+          compactHourRows: settings.compactHourRows,
+          rowHeightPt: settings.rowHeightPt,
+          offModeRule: settings.offModeRule === "none" ? "none" : "dotted",
+          weekStartDay: weekStart,
+        });
+      try {
+        await send();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const match = /^HOURS_DO_NOT_FIT:(\d+):(.*)$/.exec(message);
+        if (!match) throw err;
+        const short = Number(match[1]);
+        const names = match[2] ? match[2].split("|") : [];
+        const rows = `${short} row${short === 1 ? "" : "s"}`;
+        if (names.length === 0) {
+          throw new Error(`These hours need ${rows} more than the page has. Try a shorter range or a smaller row height.`);
+        }
+        const lowest = names[names.length - 1];
+        const ok = window.confirm(
+          `These hours need ${rows} more than the page has, even with ${names.join(" and ")} shrunk as far as they go.\n\n` +
+            `Delete "${lowest}" to make room?`
+        );
+        if (!ok) {
+          throw new Error(`Not enough room - ${rows} short. Shorten the range, choose a smaller row height, or remove a module below the hours.`);
+        }
+        await send(true);
+      }
+      // Rebuilt: the hours' height moves what is below them on every page,
+      // and a new week start renames the days. This closes the editor too.
+      await refreshPages({ rebuild: true });
+    });
 
   const save = () =>
     run(async () => {
@@ -385,11 +486,24 @@ export function ModuleEditor({
         </header>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
-          <ModuleFieldsForm
-            fields={definition?.fields ?? []}
-            values={draft}
-            onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
-          />
+          {hours ? (
+            <HoursFields
+              values={{ ...(draft as unknown as HoursDraft), weekStartDay: weekStart }}
+              onChange={({ weekStartDay: nextWeekStart, ...next }) => {
+                setWeekStart(nextWeekStart);
+                setDraft((current) => ({ ...current, ...next }));
+              }}
+              drawRule={drawRule}
+            />
+          ) : (
+            <ModuleFieldsForm
+              fields={definition?.fields ?? []}
+              values={draft}
+              defaults={defaults}
+              drawRule={drawRule}
+              onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
+            />
+          )}
         </div>
 
         {/* SAVED > MODULES. A use of a saved module says so - its settings
@@ -404,7 +518,9 @@ export function ModuleEditor({
             color: "rgba(255,255,255,0.6)",
           }}
         >
-          {editing.savedModule ? (
+          {hours ? (
+            <>A page&rsquo;s hours are part of its layout, so they cannot be saved to place again.</>
+          ) : editing.savedModule ? (
             <>
               <div style={{ color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 Saved as &ldquo;{editing.savedModule.name}&rdquo;
@@ -498,7 +614,7 @@ export function ModuleEditor({
           )}
           <button
             type="button"
-            onClick={save}
+            onClick={hours ? saveHours : save}
             disabled={pending || !dirty}
             style={{
               padding: "6px 14px",

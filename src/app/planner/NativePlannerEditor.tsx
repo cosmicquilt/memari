@@ -1560,7 +1560,11 @@ function NativeModule({
           It opens the module at a size you can see it at, which is what was
           asked for: "expand the module to page size and create a container
           around it to further edit it". */}
-      {!locked && (moduleDefinition(slug)?.fields?.length ?? 0) > 0 && (
+      {/* THE HOURS TOO, though they are locked: their settings moved here
+          from Page Settings on 2026-09-29 ("add edit button to center of
+          hourly section on each page"), on hover like every other pencil. */}
+      {(moduleDefinition(slug)?.pageSettingsForm === "hours" ||
+        (!locked && (moduleDefinition(slug)?.fields?.length ?? 0) > 0)) && (
         <button
           type="button"
           title={`Edit ${moduleDefinition(slug)?.label ?? slug}`}
@@ -3536,7 +3540,6 @@ function ModulePalette({
   pageSettings,
   pageGrid,
   fontFamily,
-  showHours,
   term,
   calendars,
 }: {
@@ -3566,7 +3569,6 @@ function ModulePalette({
   // Whether this cadence's spine is the one the Hours form edits. A month
   // page's is not, so it does not get the section at all - see the
   // registry's pageSettingsForm.
-  showHours: boolean;
   /** For the Term fields. The drawer needs it too, from the editor itself. */
   term: { start: string | null; end: string | null };
 }) {
@@ -3851,28 +3853,8 @@ function ModulePalette({
             </div>
             <FontToggle fontChoice={pageSettings.fontFamily} />
           </div>
-          {showHours && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: "uppercase", color: PANEL_FAINT }}>
-              Hours
-            </div>
-            {/* Re-seeded when the settings change from outside this form
-                - the row-height handle commits without a reload now, and
-                HoursForm holds its own drafts in state seeded once from
-                these props. Without this the dropdown keeps showing the
-                height you dragged away from. */}
-            <HoursForm
-              key={`${pageSettings.rowHeightPt}:${pageSettings.intervalMode}:${pageSettings.intervalMinutes}`}
-              startTime={pageSettings.startTime}
-              endTime={pageSettings.endTime}
-              intervalMinutes={pageSettings.intervalMinutes}
-              intervalMode={pageSettings.intervalMode}
-              compactHourRows={pageSettings.compactHourRows}
-              rowHeightPt={pageSettings.rowHeightPt}
-              weekStartDay={pageSettings.weekStartDay}
-            />
-          </div>
-          )}
+          {/* HOURS moved to the hours' own editor - the pencil in the middle
+              of the hours on the page - on 2026-09-29. See HoursFields. */}
           {/* CALENDARS. Below Hours because that is what they are drawn on,
               and inside Page Settings because the switch beside each one is a
               property of THIS book - the calendar itself belongs to the
@@ -4392,232 +4374,6 @@ function TrimToggle({ pageGrid }: { pageGrid: PageGrid }) {
   );
 }
 
-const WEEK_START_DAY_LABELS = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
-// Snaps a raw "HH:MM" <input type="time"> value to the nearest 30-min
-// mark — requested directly: "round inputs to the nearest 30 mins."
-// Clamped to [00:00, 23:30] rather than wrapping past midnight (e.g. a
-// typed 23:45 becomes 23:30, not 00:00) — this app has no notion of an
-// overnight range yet (updateHourlySettings already rejects endTime <=
-// startTime), so wrapping would just produce a value the server refuses.
-function roundToNearestHalfHour(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
-  const snapped = Math.min(23 * 60 + 30, Math.max(0, Math.round((h * 60 + m) / 30) * 30));
-  const snappedHour = Math.floor(snapped / 60);
-  const snappedMinute = snapped % 60;
-  return `${String(snappedHour).padStart(2, "0")}:${String(snappedMinute).padStart(2, "0")}`;
-}
-
-// Page Settings > Hours — start/end time, increment (including "off"),
-// week-start-day, and (only at 1-hour increments) a compact-rows option,
-// applied together via one Save button (unlike FontToggle's click-to-
-// apply switch — this bundles several fields, and a start/end/interval
-// change is a heavier operation server-side (it can resize hourly-grid-
-// core and reflow whatever's below it), so it's gated behind an explicit
-// action rather than firing per keystroke/selection). Picking "Off" hides
-// the start/end inputs (moot until switched back — see
-// updateHourlySettings' own "off" branch, which keeps whatever height
-// hourly-grid-core currently has rather than deriving one from them) and
-// hands sizing over to its own drag handle on the canvas instead
-// (StackResizeHandle, via hourlyStackBottomsByPageId).
-function HoursForm({
-  rowHeightPt,
-  startTime,
-  endTime,
-  intervalMinutes,
-  intervalMode,
-  compactHourRows,
-  weekStartDay,
-}: {
-  startTime: string;
-  endTime: string;
-  intervalMinutes: number;
-  intervalMode: "on" | "off";
-  compactHourRows: boolean;
-  weekStartDay: number;
-  rowHeightPt: number;
-}) {
-  const refreshPages = useRefreshPages();
-  const [draftRowHeight, setDraftRowHeight] = useState<number>(rowHeightPt);
-  const [draftStart, setDraftStart] = useState(startTime);
-  const [draftEnd, setDraftEnd] = useState(endTime);
-  const [draftInterval, setDraftInterval] = useState<"30" | "60" | "off">(
-    intervalMode === "off" ? "off" : intervalMinutes === 60 ? "60" : "30"
-  );
-  const [draftCompact, setDraftCompact] = useState(compactHourRows);
-  const [draftWeekStartDay, setDraftWeekStartDay] = useState(weekStartDay);
-  const [pending, error, run] = useAsyncAction();
-  const journalId = useJournalId();
-
-  const save = (deleteLowestBelowToFit?: boolean) =>
-    updateHourlySettings(journalId, {
-      deleteLowestBelowToFit,
-      startTime: draftStart,
-      endTime: draftEnd,
-      intervalMinutes: draftInterval === "60" ? 60 : 30,
-      intervalMode: draftInterval === "off" ? "off" : "on",
-      compactHourRows: draftCompact,
-      weekStartDay: draftWeekStartDay,
-      rowHeightPt: draftRowHeight,
-    });
-
-  // The server shrinks what is below to make room, fairly, a row at a time
-  // from each. It only refuses when everything down there is already at its
-  // minimum and the hours STILL do not fit - and then it says by how much
-  // and what is in the way, so this can offer the one remaining option
-  // rather than just reporting a wall.
-  const handleSave = () =>
-    run(async () => {
-      try {
-        await save();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const match = /^HOURS_DO_NOT_FIT:(\d+):(.*)$/.exec(message);
-        if (!match) throw err;
-        const short = Number(match[1]);
-        const names = match[2] ? match[2].split("|") : [];
-        const rows = `${short} row${short === 1 ? "" : "s"}`;
-        if (names.length === 0) {
-          throw new Error(`These hours need ${rows} more than the page has. Try a shorter range or a smaller row height.`);
-        }
-        const lowest = names[names.length - 1];
-        const ok = window.confirm(
-          `These hours need ${rows} more than the page has, even with ${names.join(" and ")} shrunk as far as they go.
-
-` +
-            `Delete "${lowest}" to make room?`
-        );
-        if (!ok) {
-          throw new Error(`Not enough room — ${rows} short. Shorten the range, choose a smaller row height, or remove a module below the hours.`);
-        }
-        await save(true);
-      }
-      await refreshPages({ rebuild: true });
-    });
-
-  const fieldStyle: CSSProperties = {
-    background: PANEL_BG,
-    border: `1px solid ${PANEL_EDGE}`,
-    borderRadius: 6,
-    color: PANEL_TEXT,
-    fontSize: 11,
-    padding: "4px 6px",
-    width: "100%",
-    boxSizing: "border-box",
-    // Tells the browser this control sits on a dark background, so its
-    // own native chrome (here, the time-input's picker-icon button)
-    // renders in a light-appropriate color instead of the default dark
-    // gray — reported directly: "the view time picker button isn't very
-    // visible because it is dark on a dark background."
-    colorScheme: "dark",
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }}>
-      {draftInterval !== "off" && (
-        <>
-          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ color: PANEL_MUTED }}>Start</span>
-            <input
-              type="time"
-              step={1800}
-              value={draftStart}
-              onChange={(event) => setDraftStart(roundToNearestHalfHour(event.target.value))}
-              style={fieldStyle}
-            />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ color: PANEL_MUTED }}>End</span>
-            <input
-              type="time"
-              step={1800}
-              value={draftEnd}
-              onChange={(event) => setDraftEnd(roundToNearestHalfHour(event.target.value))}
-              style={fieldStyle}
-            />
-          </label>
-        </>
-      )}
-      <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ color: PANEL_MUTED }}>Increments</span>
-        <select
-          value={draftInterval}
-          onChange={(event) => setDraftInterval(event.target.value as "30" | "60" | "off")}
-          style={fieldStyle}
-        >
-          <option value="30">30 min</option>
-          <option value="60">1 hour</option>
-          <option value="off">Off</option>
-        </select>
-      </label>
-      {draftInterval !== "off" && (
-        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <span style={{ color: PANEL_MUTED }}>Row height</span>
-          <select
-            value={String(draftRowHeight)}
-            onChange={(event) => setDraftRowHeight(Number(event.target.value))}
-            style={fieldStyle}
-          >
-            {/* All three land on the 1/4in lattice, but only 9 and 18
-                divide the pitch, so only they put a rule on every cell
-                line. 12 repeats every two cells instead - roomier, and
-                still aligned, just not on every line. 18 at 30-minute
-                increments is 9 inches of rows, the whole usable page, so
-                the save will report that it does not fit rather than this
-                hiding the option. */}
-            <option value="9">Compact</option>
-            <option value="12">Roomy</option>
-            <option value="18">Tall</option>
-          </select>
-        </label>
-      )}
-      {draftInterval === "60" && (
-        <label style={{ display: "flex", alignItems: "center", gap: 6, color: PANEL_MUTED }}>
-          <input type="checkbox" checked={draftCompact} onChange={(event) => setDraftCompact(event.target.checked)} />
-          Compact hour rows
-        </label>
-      )}
-      <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ color: PANEL_MUTED }}>Week starts on</span>
-        <select
-          value={draftWeekStartDay}
-          onChange={(event) => setDraftWeekStartDay(Number(event.target.value))}
-          style={fieldStyle}
-        >
-          {WEEK_START_DAY_LABELS.map((label, i) => (
-            <option key={label} value={i}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={pending}
-        style={{
-          ...fieldStyle,
-          cursor: pending ? "default" : "pointer",
-          opacity: pending ? 0.6 : 1,
-          textAlign: "center",
-        }}
-      >
-        {pending ? "Saving…" : "Save"}
-      </button>
-      {error && <span style={{ color: "#c0392b" }}>{error}</span>}
-    </div>
-  );
-}
-
 // Animated expand/collapse — requested directly ("can you animate the
 // collapsing"), replacing the previous instant `{open && children}`
 // toggle. The CSS grid-template-rows 0fr/1fr technique: an adaptive-
@@ -4992,20 +4748,6 @@ export function NativePlannerEditor({
   const savedModules = useSavedItems().modules;
 
   const fontFamily = resolveFontFamily(pageSettings.fontFamily);
-  // Does this cadence's spine own the Hours form? A month page's does not,
-  // and it was being offered a full set of hourly controls with no hourly
-  // grid to apply them to. Asked from the registry rather than tested as
-  // the level, so a cadence added later gets the right answer
-  // without anyone remembering this - see pageSettingsForm.
-  const showHoursSettings = useMemo(
-    () =>
-      pages.some((page) =>
-        page.moduleInstances.some(
-          (m) => moduleDefinition(m.slug)?.pageSettingsForm === "hours"
-        )
-      ),
-    [pages]
-  );
   // Current grid placement per module instance — seeded from the loaded
   // snapshot, mutated by drag-to-reposition below. Deliberately separate
   // from each instance's static elements/origin (see file-level
@@ -9622,6 +9364,7 @@ export function NativePlannerEditor({
           intervalMinutes: (pageSettings.intervalMinutes === 60 ? 60 : 30) as 30 | 60,
           intervalMode: pageSettings.intervalMode,
           compactHourRows: pageSettings.compactHourRows,
+          offModeRule: pageSettings.offModeRule,
           weekStartDay: pageSettings.weekStartDay,
           rowHeightPt,
         };
@@ -10414,7 +10157,6 @@ export function NativePlannerEditor({
               pageSettings={pageSettings}
               pageGrid={pages[0].pageGrid}
               fontFamily={fontFamily}
-              showHours={showHoursSettings}
               term={term}
               calendars={calendars}
             />
@@ -10438,6 +10180,7 @@ export function NativePlannerEditor({
           fontFamily={fontFamily}
           // The module's own page's, so the preview is dated as the page is.
           renderContext={renderContextByPageId[moduleLookup.get(editingModule.instanceId)?.pageId ?? ""] ?? null}
+          weekStartDay={pageSettings.weekStartDay}
           onClose={() => setEditingModule(null)}
           onSaved={(instanceId, propValues) => patchModuleProps(instanceId, propValues)}
         />

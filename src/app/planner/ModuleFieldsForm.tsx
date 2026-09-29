@@ -16,7 +16,8 @@
 import type { CSSProperties } from "react";
 import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
-import { toSvg } from "@/lib/proofSvg";
+import { flatten, toSvg } from "@/lib/proofSvg";
+import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
 const ACCENT = "#4a5cff";
 
@@ -69,7 +70,7 @@ const inputStyle: CSSProperties = {
  * a focus indicator, and 2px with a 2px offset is the house selection language
  * already used by the swatches, the drawer and the editor frame.
  */
-const FOCUS_CSS = `
+export const FOCUS_CSS = `
 .memari-field:focus-visible {
   outline: 2px solid ${ACCENT};
   outline-offset: 2px;
@@ -150,14 +151,124 @@ function GlyphSwatch({
   );
 }
 
+/**
+ * What a line-style option looks like: the module drawn with that option, and
+ * the window of it to show. See RuleSwatch.
+ */
+export type RuleSample = {
+  elements: RenderedPolotnoElement[];
+  window: { x: number; y: number; width: number; height: number };
+};
+
+/**
+ * One line style, drawn rather than named - a zoomed-in corner of the module
+ * itself with that style applied.
+ *
+ * THE MODULE'S OWN DRAWING, through the same toSvg the proofs and the PDF go
+ * through, cropped by the viewBox. A picture drawn for the picker would be a
+ * second description of what "crosses" means, and the first change to one
+ * would leave them disagreeing - the argument GlyphSwatch makes for shapes.
+ *
+ * On paper, like the glyph swatches, for their reason: the real ink at the
+ * real weight.
+ */
+export function RuleSwatch({
+  sample,
+  label,
+  selected,
+  onPick,
+  width,
+}: {
+  sample: RuleSample;
+  label: string;
+  selected: boolean;
+  onPick: () => void;
+  width: number;
+}) {
+  const { window: w } = sample;
+  // Only what can show. An hourly block with its dots on is a thousand marks,
+  // and all but a dozen are outside the window.
+  const markup = flatten(sample.elements)
+    .filter((element) => {
+      const x = element.x ?? 0;
+      const y = element.y ?? 0;
+      return (
+        x <= w.x + w.width && x + (element.width ?? 0) >= w.x && y <= w.y + w.height && y + (element.height ?? 0) >= w.y
+      );
+    })
+    .map((element) => toSvg(element))
+    .join("");
+  const height = (width * w.height) / w.width;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onPick}
+      title={label}
+      aria-label={label}
+      className="memari-swatch"
+      data-selected={selected ? "true" : undefined}
+      style={{
+        width,
+        padding: 0,
+        border: "none",
+        borderRadius: 5,
+        background: "transparent",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: 5,
+        alignItems: "stretch",
+        color: selected ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+        font: "inherit",
+        fontSize: 11,
+      }}
+    >
+      <svg
+        viewBox={`${w.x} ${w.y} ${w.width} ${w.height}`}
+        width={width}
+        height={height}
+        style={{
+          display: "block",
+          pointerEvents: "none",
+          background: "#fdfcf9",
+          borderRadius: 5,
+          opacity: selected ? 1 : 0.85,
+          transition: "opacity 150ms ease-out",
+        }}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: markup }}
+      />
+      <span style={{ paddingBottom: 3 }}>{label}</span>
+    </button>
+  );
+}
+
+/** How wide each of `count` swatches is in the fields panel. */
+export function ruleSwatchWidth(count: number): number {
+  const room = 268;
+  const gap = 10;
+  return Math.min(124, Math.floor((room - gap * (count - 1)) / count));
+}
+
 export function ModuleFieldsForm({
   fields,
   values,
   onChange,
+  defaults,
+  drawRule,
 }: {
   fields: ModuleField[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  /** What a key reads as when the stored props do not have it - a module
+   *  saved before the key existed draws its default, so its picker should
+   *  show that one chosen. */
+  defaults?: Record<string, unknown>;
+  /** Draws the module with one line-style option, for a `rule` field. Without
+   *  it, a rule field is an ordinary list of names. */
+  drawRule?: (key: string, value: string) => RuleSample | null;
 }) {
   if (fields.length === 0) {
     return (
@@ -299,6 +410,48 @@ export function ModuleFieldsForm({
                     label={option.label}
                     selected={values[field.key] === option.value}
                     onPick={() => onChange(field.key, option.value)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        if (field.kind === "rule") {
+          const current = values[field.key] ?? defaults?.[field.key];
+          const samples = drawRule ? field.options.map((option) => drawRule(field.key, option.value)) : [];
+          if (!drawRule || samples.some((sample) => sample === null)) {
+            return (
+              <label key={field.key} style={rowStyle}>
+                <span style={labelStyle}>{field.label}</span>
+                <select
+                  value={(current as string | undefined) ?? ""}
+                  onChange={(event) => onChange(field.key, event.target.value)}
+                  className="memari-field"
+                  style={{ ...inputStyle, cursor: "pointer" }}
+                >
+                  {field.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+          const width = ruleSwatchWidth(field.options.length);
+          return (
+            <div key={field.key} style={rowStyle}>
+              <span style={labelStyle}>{field.label}</span>
+              <div role="radiogroup" aria-label={field.label} style={{ display: "flex", gap: 10 }}>
+                {field.options.map((option, index) => (
+                  <RuleSwatch
+                    key={option.value}
+                    sample={samples[index] as RuleSample}
+                    label={option.label}
+                    selected={current === option.value}
+                    onPick={() => onChange(field.key, option.value)}
+                    width={width}
                   />
                 ))}
               </div>

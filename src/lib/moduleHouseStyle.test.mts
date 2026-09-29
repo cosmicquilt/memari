@@ -489,6 +489,70 @@ if (legacy.filter((e) => /-rule\d/.test(String(e.id))).length === 0) {
 }
 checked++;
 
+// --- the to-do's two line styles ----------------------------------------
+//
+// "crosses" (2026-09-29) marks the lattice that "lined" rules: a + where a
+// column line meets a row, a dash at each dot between, a tick where a column
+// line meets the header rule or the border. The preview props draw "lined",
+// so the loop above never sees a cross. Each mark must be CENTRED on a
+// lattice point - a cross off its dot is a second grid printed over the
+// first - no mark may be a rule, and the rows must be the lined style's rows.
+const onLattice = (v: number) => Math.abs(v - (PAGE.marginPx + Math.round((v - PAGE.marginPx) / PITCH) * PITCH)) <= 0.51;
+for (const [columnSpan, dayCount] of [
+  [18, 3],
+  [24, 4],
+  [6, 1],
+] as const) {
+  const label = `todo-checklist crosses at ${columnSpan} columns`;
+  const lined = render("todo-checklist", columnSpan, 9, { dayCount, lineStyle: "lined" });
+  const crosses = render("todo-checklist", columnSpan, 9, { dayCount, lineStyle: "crosses" });
+  const border = crosses.find((e) => String(e.id).endsWith("-border"));
+  const structure = /-(border|heading|header-rule)$/;
+  const marks = crosses.filter((e) => !structure.test(String(e.id)));
+  checked++;
+  if (!border || marks.length === 0) {
+    fail(`${label}: drew ${marks.length} marks and ${border ? "a" : "no"} border`);
+    continue;
+  }
+  let reported = false;
+  const report = (message: string) => {
+    if (!reported) fail(`${label}: ${message}`);
+    reported = true;
+  };
+  for (const mark of marks) {
+    const id = String(mark.id);
+    const x = mark.x ?? 0;
+    const y = mark.y ?? 0;
+    const w = mark.width ?? 0;
+    const h = mark.height ?? 0;
+    if (Math.max(w, h) > PITCH / 2 + 0.01) report(`${id} is ${Math.max(w, h).toFixed(1)}px long - a rule, not a mark`);
+    if (x < (border.x ?? 0) - 0.01 || x + w > (border.x ?? 0) + (border.width ?? 0) + 0.01 ||
+        y < (border.y ?? 0) - 0.01 || y + h > (border.y ?? 0) + (border.height ?? 0) + 0.01) {
+      report(`${id} leaves the box`);
+    }
+    const horizontal = w > h;
+    // A horizontal mark lies ON a row line; a cross's vertical arm is
+    // centred on one. The ticks at the header rule and the border hang from
+    // those edges, and the tick in from the left border starts at it, so
+    // each is checked on the one axis it is aligned on.
+    if ((horizontal || id.endsWith("-v")) && !onLattice(y + h / 2)) report(`${id} is off a lattice ROW`);
+    if (!id.endsWith("-edge") && !onLattice(x + w / 2)) report(`${id} is off a lattice COLUMN`);
+  }
+  // The rows are the lined style's rows, no more and no fewer.
+  const rowsOf = (elements: RenderedPolotnoElement[], pattern: RegExp) =>
+    new Set(elements.filter((e) => pattern.test(String(e.id))).map((e) => Math.round((e.y ?? 0) + (e.height ?? 0) / 2)));
+  const linedRows = rowsOf(lined, /^t-d0-row\d+$/);
+  const crossRows = rowsOf(crosses, /^t-d0-row\d+-/);
+  if (linedRows.size === 0 || [...linedRows].sort().join() !== [...crossRows].sort().join()) {
+    report(`marks ${crossRows.size} rows where lined rules ${linedRows.size}`);
+  }
+  // And lined - the default, and every to-do stored before this - draws none.
+  for (const props of [{ dayCount }, { dayCount, lineStyle: "lined" }]) {
+    const drawn = render("todo-checklist", columnSpan, 9, props).filter((e) => /-(dash\d+|edge|-h|-v)$/.test(String(e.id)) || /-(top|bottom)$/.test(String(e.id)));
+    if (drawn.length > 0) fail(`todo-checklist ${JSON.stringify(props)}: drew ${drawn.length} cross mark(s)`);
+  }
+}
+
 if (failures > 0) {
   console.error(`\nHouse style violated in ${failures} case(s).`);
   process.exit(1);

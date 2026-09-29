@@ -2753,6 +2753,9 @@ export async function updateHourlySettings(journalId: string, settings: {
   // even at 30min/off; just ignored wherever row height doesn't depend
   // on it.
   compactHourRows: boolean;
+  // What fills the block with increments off. Required, so no caller can
+  // leave it out and silently put the dots back - see hourlyPropsFromSettings.
+  offModeRule: "dotted" | "none";
   weekStartDay: number; // 0=Sun..6=Sat
   // Set only after the editor has asked and been told yes: drop the lowest
   // module below the hours and try again. See HOURS_DO_NOT_FIT.
@@ -2764,6 +2767,9 @@ export async function updateHourlySettings(journalId: string, settings: {
   }
   if (settings.intervalMinutes !== 30 && settings.intervalMinutes !== 60) {
     throw new Error("Interval must be 30 or 60 minutes");
+  }
+  if (settings.offModeRule !== "dotted" && settings.offModeRule !== "none") {
+    throw new Error("With increments off the hours are dotted or blank");
   }
   const startMinutes = timeStringToMinutes(settings.startTime);
   const endMinutes = timeStringToMinutes(settings.endTime);
