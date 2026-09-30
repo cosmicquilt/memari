@@ -13,6 +13,7 @@
 // lets the same form sit in a side panel and in a full-page editor without
 // either of them arguing about when a save happens.
 
+import { EDITOR_RADIUS } from "./editorStyle";
 import type { CSSProperties } from "react";
 import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
@@ -54,7 +55,7 @@ const inputStyle: CSSProperties = {
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
   border: "1px solid rgba(255, 255, 255, 0.33)",
-  borderRadius: 7,
+  borderRadius: EDITOR_RADIUS,
 };
 
 /**
@@ -157,7 +158,7 @@ function GlyphSwatch({
         height: size,
         padding: 0,
         border: "none",
-        borderRadius: 5,
+        borderRadius: EDITOR_RADIUS,
         background: "#fdfcf9",
         opacity: selected ? 1 : 0.65,
         cursor: "pointer",
@@ -238,7 +239,7 @@ export function RuleSwatch({
         width,
         padding: 0,
         border: "none",
-        borderRadius: 5,
+        borderRadius: EDITOR_RADIUS,
         background: "transparent",
         cursor: "pointer",
         display: "flex",
@@ -258,7 +259,7 @@ export function RuleSwatch({
           display: "block",
           pointerEvents: "none",
           background: "#fdfcf9",
-          borderRadius: 5,
+          borderRadius: EDITOR_RADIUS,
           opacity: selected ? 1 : 0.85,
           transition: "opacity 150ms ease-out",
         }}
@@ -441,7 +442,7 @@ export function ModuleFieldsForm({
                     <span
                       role="group"
                       aria-label={`Lines under ${String(item ?? "") || `prompt ${i + 1}`}`}
-                      style={{ display: "inline-flex", alignItems: "center", borderRadius: 7, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                      style={{ display: "inline-flex", alignItems: "center", borderRadius: EDITOR_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
                     >
                       <button
                         type="button"
@@ -497,7 +498,7 @@ export function ModuleFieldsForm({
                     color: "#f2f2f2",
                     background: "rgba(255, 255, 255, 0.06)",
                     border: "1px solid rgba(255, 255, 255, 0.33)",
-                    borderRadius: 7,
+                    borderRadius: EDITOR_RADIUS,
                     cursor: "pointer",
                   }}
                 >
@@ -547,7 +548,7 @@ export function ModuleFieldsForm({
                   width: 34,
                   height: 20,
                   flexShrink: 0,
-                  borderRadius: 10,
+                  borderRadius: EDITOR_RADIUS,
                   background: on ? ACCENT : "rgba(255,255,255,0.15)",
                   position: "relative",
                   transition: "background 150ms ease-out",
@@ -560,7 +561,7 @@ export function ModuleFieldsForm({
                     left: on ? 16 : 2,
                     width: 16,
                     height: 16,
-                    borderRadius: 8,
+                    borderRadius: EDITOR_RADIUS - 2,
                     background: "#fff",
                     transition: "left 150ms ease-out",
                   }}

@@ -14,6 +14,7 @@
 // any magnification. The drawing itself is untouched: the draft changes and
 // the renderer redraws the table with the new widths.
 
+import { EDITOR_RADIUS } from "./editorStyle";
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { tableNumberCells } from "@/lib/modules/columnTable";
@@ -160,7 +161,7 @@ export function ColumnDividers({
                 top: Math.min(height / 2, 36) - 14,
                 width: 10,
                 height: 28,
-                borderRadius: 5,
+                borderRadius: EDITOR_RADIUS,
                 background: ACCENT,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
                 opacity: lit ? 1 : 0.55,

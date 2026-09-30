@@ -23,6 +23,7 @@
 // than a border, controls that are permanently present and quiet rather than
 // revealed on hover, and a spring rather than an ease.
 
+import { EDITOR_RADIUS } from "./editorStyle";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults, withCurrentSettings } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
@@ -805,7 +806,7 @@ export function ModuleEditor({
           position: "relative",
           background: SURFACE,
           border: "1px solid rgba(255, 255, 255, 0.12)",
-          borderRadius: 12,
+          borderRadius: EDITOR_RADIUS,
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
           color: "#ddd",
           overflow: "hidden",
@@ -840,7 +841,7 @@ export function ModuleEditor({
               justifyContent: "center",
               padding: 0,
               border: "none",
-              borderRadius: 12,
+              borderRadius: EDITOR_RADIUS,
               background: "transparent",
               color: "rgba(255,255,255,0.5)",
               cursor: "pointer",
@@ -951,7 +952,7 @@ export function ModuleEditor({
                     color: "#fff",
                     background: "rgba(255,255,255,0.06)",
                     border: "1px solid rgba(255,255,255,0.15)",
-                    borderRadius: 6,
+                    borderRadius: EDITOR_RADIUS,
                     outline: "none",
                   }}
                 />
@@ -963,7 +964,7 @@ export function ModuleEditor({
                     fontSize: 12,
                     fontWeight: 600,
                     border: "none",
-                    borderRadius: 6,
+                    borderRadius: EDITOR_RADIUS,
                     background: ACCENT,
                     color: "#fff",
                     cursor: pending ? "default" : "pointer",
@@ -1013,7 +1014,7 @@ export function ModuleEditor({
               fontSize: 12,
               fontWeight: 600,
               border: "none",
-              borderRadius: 7,
+              borderRadius: EDITOR_RADIUS,
               background: dirty ? ACCENT : "rgba(255,255,255,0.1)",
               color: dirty ? "#fff" : "rgba(255,255,255,0.4)",
               cursor: pending || !dirty ? "default" : "pointer",

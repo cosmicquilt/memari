@@ -2082,6 +2082,20 @@ const textOnThePage: Probe = {
       // --- A TO-DO'S ITEMS, FROM ITS FIRST EMPTY ROW -----------------------
       if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
       else {
+        // EVERY CORNER IN THE EDITOR IS SMALL - asked 2026-09-30: 4px, and a
+        // switch's knob 2px inside it (see editorStyle.ts).
+        const radii = (await tab.getByRole("dialog").evaluate((dialog) => {
+          const found = new Set<string>();
+          for (const el of dialog.querySelectorAll("*")) {
+            if (el.closest("[data-editor-piece]") || el.hasAttribute("data-canvas-slot")) continue;
+            const radius = getComputedStyle(el).borderTopLeftRadius;
+            if (radius && radius !== "0px") found.add(radius);
+          }
+          return [...found];
+        })) as string[];
+        const odd = radii.filter((r) => r !== "4px" && r !== "2px");
+        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not the small 4px`);
+        else seen.push(`every editor corner small (${radii.join(", ")})`);
         const first = tab.locator('[data-canvas-slot="items#0"]');
         if ((await first.count()) === 0) problems.push("an empty to-do offers no place for its first item");
         else {
