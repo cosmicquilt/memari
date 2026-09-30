@@ -10,6 +10,7 @@ import { PROOF_PAGE as PAGE, flatten } from "./proofSvg";
 import { cellHeightPx } from "./grid";
 import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hourlyGridCore";
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
+import { wholeCellColumns } from "./modules/columnTable";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -134,4 +135,45 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(letters.length === 7 && letters.every((l) => Math.abs((l.width ?? 0) - (ids(grid, /-day0-letter$/)[0].width ?? 0)) < 0.5), "the week keeps its one-cell columns");
   check((label?.width ?? 0) >= 2 * PITCH - 0.5, "the total is two cells wide");
   check(ids(draw("habit-tracker", { heading: "Habits", habits, totalColumn: true }, 6, 8), /-total-/).length === 0, "not in the sidebar layout");
+}
+
+// --- table -----------------------------------------------------------------
+{
+  const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+  const cells = wholeCellColumns([1, 1.6, 1], 10)!;
+  check(sum(cells) === 10 && cells.every((c) => c >= 1), `whole cells summing to the table (got ${cells})`);
+  check(wholeCellColumns([2, 5, 3], 10)!.join() === "2,5,3", "dragged cells come back as they were");
+  check(wholeCellColumns([2, 5, 3], 20)!.join() === "4,10,6", "and scale with the table");
+  check(wholeCellColumns([1, 1, 1, 1], 3) === null, "more columns than cells cannot land on the lattice");
+  check(wholeCellColumns([100, 1, 1], 6)!.every((c) => c >= 1), "every column keeps at least one cell");
+
+  const props = { heading: "Log", columns: ["Date", "Item", "Amount"], weights: [1, 1.6, 1] };
+  const divX = (elements: RenderedPolotnoElement[]) =>
+    ids(elements, /-c\d-divider$/).map((e) => ((e.x ?? 0) + (e.width ?? 0) / 2 - PAGE.marginPx) / PITCH);
+  const auto = divX(draw("column-table", props, 10, 7));
+  check(auto.every((x) => Math.abs(x - Math.round(x)) < 1e-6), `every divider on a lattice column (got ${auto.map((x) => x.toFixed(2))})`);
+  const dragged = divX(draw("column-table", { ...props, cellWidths: [2, 5, 3] }, 10, 7));
+  check(dragged.map((x) => Math.round(x)).join() === "2,7", `dragged widths put the dividers at 2 and 7 cells (got ${dragged})`);
+  const wide = divX(draw("column-table", { ...props, cellWidths: [2, 5, 3] }, 20, 7));
+  check(wide.map((x) => Math.round(x)).join() === "4,14", `and at 4 and 14 when the table is twice as wide (got ${wide})`);
+  const stale = divX(draw("column-table", { ...props, cellWidths: [2, 8] }, 10, 7));
+  check(stale.join() === auto.join(), "widths for a different number of columns are ignored");
+
+  const rowsOf = (extra: Record<string, unknown>) => draw("column-table", { ...props, ...extra }, 10, 7);
+  const lined = ids(rowsOf({}), /-row\d+-rule$/).length;
+  check(lined > 0, "lined by default");
+  const dotted = rowsOf({ rows: "dotted" });
+  check(ids(dotted, /-row\d+-rule$/).length === 0 && ids(dotted, /-dot\d+-\d+$/).length > 0, "dotted rows are dots, not rules");
+  const dividers = ids(dotted, /-c\d-divider$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+  check(ids(dotted, /-dot\d+-\d+$/).every((d) => dividers.every((x) => Math.abs((d.x ?? 0) + (d.width ?? 0) / 2 - x) > 1)), "no dot on a divider");
+  check(ids(rowsOf({ rows: "none" }), /-(row\d+-rule|dot\d+-\d+)$/).length === 0, "blank rows are blank");
+  const totals = rowsOf({ rows: "none", totalsRow: true });
+  check(ids(totals, /-row\d+-rule$/).length === 1, "a totals row stays ruled off in a blank table");
+
+  const numbered = draw("column-table", { ...props, rowNumbers: true }, 10, 7);
+  const numbers = texts(numbered, /-row\d+-number$/);
+  check(numbers[0] === "1" && numbers.length >= 4, `rows numbered from 1 (got ${numbers.join(",")})`);
+  const numberDivider = ids(numbered, /-number-divider$/)[0];
+  check(!!numberDivider && Math.abs(((numberDivider.x ?? 0) + (numberDivider.width ?? 0) / 2 - PAGE.marginPx) / PITCH - 1) < 1e-6, "in a one-cell column on the lattice");
+  check(ids(numbered, /-c0-head$/)[0]?.text === "Date", "the table's own columns keep their heads");
 }

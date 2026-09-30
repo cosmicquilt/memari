@@ -24,6 +24,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { columnWidthsForLabels, fitLabel, fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
+import { latticeFill, rowMarkerElement } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -53,7 +54,53 @@ export type ColumnTableConfig = {
   totalsRow?: boolean;
   /** Printed at the left of the totals row. */
   totalsLabel?: string;
+  /**
+   * Each column's width in WHOLE LATTICE CELLS, set by dragging the dividers
+   * in the editor - the column-spacing idea from the editor vision, and
+   * quantised to cells as agreed then. Scaled to whatever width the table
+   * has, so a resize keeps the proportions and every divider stays on a
+   * dot. Absent: the widths come from the words and weights.
+   */
+  cellWidths?: number[];
+  /** The rows: ruled (the default), dotted on the lattice, or blank. A
+   *  totals row stays ruled off whichever. */
+  rows?: "lined" | "dotted" | "none";
+  /** A narrow first column numbering the rows - books this year, albums. */
+  rowNumbers?: boolean;
 };
+
+/**
+ * Widths in WHOLE CELLS, summing to `cells`, in proportion to anything -
+ * weights, pixel widths, a dragged set of cells. Largest remainder, and at
+ * least one cell each. Null when there are more columns than cells, which
+ * cannot all land on the lattice.
+ *
+ * Every table's dividers go through this now. They used to fall wherever
+ * the words and weights put them - the Log's 2.8 and 7.2 cells in, between
+ * the dots - found while building the module-edits list, 2026-09-30.
+ */
+export function wholeCellColumns(proportions: number[], cells: number): number[] | null {
+  const n = proportions.length;
+  if (n === 0 || cells < n) return null;
+  const total = proportions.reduce((sum, p) => sum + Math.max(0, p), 0);
+  // One cell each first, then the rest by share.
+  const spare = cells - n;
+  const shares = proportions.map((p) => (total > 0 ? (Math.max(0, p) / total) * cells : cells / n));
+  const extra = shares.map((share) => Math.max(0, share - 1));
+  const extraTotal = extra.reduce((a, b) => a + b, 0);
+  const wanted = extra.map((e) => (extraTotal > 0 ? (e / extraTotal) * spare : spare / n));
+  const whole = wanted.map((w) => Math.floor(w));
+  let left = spare - whole.reduce((a, b) => a + b, 0);
+  const order = wanted
+    .map((w, i) => ({ i, remainder: w - Math.floor(w) }))
+    .sort((a, b) => b.remainder - a.remainder || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    whole[i]++;
+    left--;
+  }
+  return whole.map((w) => w + 1);
+}
 
 export type RenderedElement = {
   id: string;
@@ -154,19 +201,47 @@ export function renderColumnTable(
       ? (name.length >= config.totalsLabel.length ? name : config.totalsLabel)
       : name
   );
+  // A narrow first column for row numbers: one cell, outside the table's
+  // own columns, so the user's columns and their dragged widths are the
+  // same with or without it.
+  const pitch = rowHeightPx(lattice);
+  const inset = lattice?.insetPx ?? 0;
+  const allocationX = geometry.x - inset;
+  const allocationCells = Math.round((geometry.width + inset * 2) / pitch);
+  const numberCells = config.rowNumbers && lattice && allocationCells >= columns.length + 2 ? 1 : 0;
+  const tableLeft = numberCells ? allocationX + numberCells * pitch : geometry.x;
+  const tableRight = geometry.x + geometry.width;
   const layout = columnWidthsForLabels({
     labels: claims,
     weights,
-    totalWidthPx: geometry.width,
+    totalWidthPx: tableRight - tableLeft,
     paddingPx: padding,
     sizesPx: headSizes,
   });
-  let x = geometry.x;
-  const bounds = layout.widths.map((width) => {
+  // ON THE LATTICE: whole cells, in proportion to the dragged widths when
+  // there are some and to the words and weights when not - see
+  // wholeCellColumns. Only a table with more columns than cells, or one
+  // drawn without a lattice, keeps the fractional widths.
+  const dragged =
+    Array.isArray(config.cellWidths) &&
+    config.cellWidths.length === columns.length &&
+    config.cellWidths.every((w) => typeof w === "number" && w > 0)
+      ? config.cellWidths
+      : null;
+  const cells = lattice ? wholeCellColumns(dragged ?? layout.widths, allocationCells - numberCells) : null;
+  let x = tableLeft;
+  let cellsSoFar = numberCells;
+  const bounds = (cells ?? layout.widths).map((width, c) => {
     const start = x;
-    x += width;
+    if (cells) {
+      cellsSoFar += width;
+      x = c === columns.length - 1 ? tableRight : allocationX + cellsSoFar * pitch;
+    } else {
+      x += width;
+    }
     return { start, end: x };
   });
+  const widths = bounds.map((b) => b.end - b.start);
 
   // One size across every head: see fitLabelSet. The size is already
   // settled by the width allocation above; this is the last-resort cut for
@@ -183,12 +258,14 @@ export function renderColumnTable(
   // sum, so `end - start` comes back a fraction of a float short and the
   // head is cut by a millionth of a pixel. That is how "Category" became
   // "Catego…" in a table that had been sized precisely to hold it.
+  // Snapping to whole cells can take a little from a column the allocator
+  // had sized exactly, so the set may step down the head ladder here.
   const heads = fitLabelSet(
     columns.map((name, c) => ({
       text: name,
-      widthPx: layout.widths[c] - headPadding * 2,
+      widthPx: widths[c] - headPadding * 2,
     })),
-    [layout.fontSizePx]
+    headSizes.filter((size) => size <= layout.fontSizePx + 0.01)
   );
 
   columns.forEach((name, c) => {
@@ -232,6 +309,20 @@ export function renderColumnTable(
     }
   });
 
+  if (numberCells) {
+    elements.push({
+      id: id("number-divider"),
+      type: "figure",
+      subType: "rect",
+      x: tableLeft - ruleWidth / 2,
+      y: headsTop,
+      width: ruleWidth,
+      height: bodyBottom - headsTop,
+      fill: NEAR_BLACK,
+      stroke: "none",
+    });
+  }
+
   // The rule under the column heads, which is what makes them read as
   // headings rather than as the first row.
   elements.push({
@@ -247,6 +338,7 @@ export function renderColumnTable(
   });
 
   const rowCount = Math.max(0, Math.floor((bodyBottom - bodyTop) / rowHeight + 1e-6));
+  const rowStyle = config.rows === "dotted" || config.rows === "none" ? config.rows : "lined";
   for (let r = 0; r < rowCount; r++) {
     const lineBottom = bodyTop + rowHeight * (r + 1);
     // The bottom border already draws the last line, and draws it better -
@@ -262,6 +354,8 @@ export function renderColumnTable(
     // whole row (the 6px inset debt, see moduleFrame's contentTopPx); that
     // band is the totals row.
     const isTotalsRule = config.totalsRow && r === rowCount - 1;
+    // Dotted or blank rows lose their rules; the totals row keeps its own.
+    if (!isTotalsRule && rowStyle !== "lined") continue;
     // A totals row is ruled OFF from the body rather than merely ruled:
     // the line above it is the full-weight one, which is how a sum reads as
     // separate from what it sums.
@@ -286,22 +380,57 @@ export function renderColumnTable(
     });
   }
 
+  // Dotted rows: the lattice's own dots, down to the totals rule if there
+  // is one, and never on a divider.
+  const totalsRuleY = config.totalsRow && rowCount >= 1 ? bodyTop + rowHeight * rowCount : null;
+  if (rowStyle === "dotted") {
+    elements.push(
+      ...latticeFill({
+        style: "dotted",
+        region: { left: geometry.x, top: bodyTop, right: tableRight, bottom: totalsRuleY ?? bodyBottom },
+        geometry,
+        lattice,
+        id,
+        skipX: [...(numberCells ? [tableLeft] : []), ...bounds.slice(1).map((b) => b.start)],
+      })
+    );
+  }
+
+  // Row numbers, centred in their own column, one per writing band.
+  if (numberCells) {
+    const bandsBottom = totalsRuleY ?? bodyBottom;
+    for (let r = 0; ; r++) {
+      const bandTop = bodyTop + r * rowHeight;
+      const bandHeight = Math.min(rowHeight, bandsBottom - bandTop);
+      if (bandHeight < rowHeight * 0.75) break;
+      const number = rowMarkerElement({
+        marker: "numbers",
+        number: r + 1,
+        id: id(`row${r}-number`),
+        x: geometry.x,
+        width: tableLeft - geometry.x,
+        align: "center",
+        bandTop,
+        bandHeight,
+        fontFamily,
+        textY: capCentredTextY,
+      });
+      if (number) elements.push(number);
+    }
+  }
+
   if (config.totalsRow && rowCount >= 1 && config.totalsLabel) {
     const totalsTop = bodyTop + rowHeight * rowCount;
     const totalsHeight = bodyBottom - totalsTop;
     // At the size the heads settled on - the first column was widened to
     // hold this word, so it fits, and a totals row set larger or smaller
     // than the heads above it reads as a different table.
-    const totals = fitLabel(
-      config.totalsLabel,
-      layout.widths[0] - headPadding * 2,
-      [layout.fontSizePx]
-    );
+    const totals = fitLabel(config.totalsLabel, widths[0] - headPadding * 2, [heads.fontSizePx, ...headSizes.filter((size) => size < heads.fontSizePx)]);
     const labelFontSize = totals.fontSizePx;
     elements.push({
       id: id("totals-label"),
       type: "text",
-      x: geometry.x + headPadding,
+      x: bounds[0].start + headPadding,
       y: capCentredTextY(totalsTop, totalsHeight, labelFontSize, fontFamily),
       width: bounds[0].end - bounds[0].start - headPadding * 2,
       height: labelFontSize * 1.2,

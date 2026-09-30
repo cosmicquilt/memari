@@ -288,6 +288,40 @@ export function ModuleFieldsForm({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <style>{FOCUS_CSS}</style>
       {fields.map((field, index) => {
+        if (field.kind === "columnWidths") {
+          // Edited on the preview - see ColumnDividers. The panel says so,
+          // and puts the words-and-weights layout back.
+          const set = Array.isArray(values[field.key]) && (values[field.key] as unknown[]).length > 0;
+          return (
+            <div key={field.key} style={rowStyle}>
+              <span style={labelStyle}>{field.label}</span>
+              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "rgba(255, 255, 255, 0.6)" }}>
+                Drag the lines between the columns on the preview. They snap to the dots.
+              </p>
+              {set && (
+                <button
+                  type="button"
+                  onClick={() => onChange(field.key, [])}
+                  className="memari-field"
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "5px 10px",
+                    fontSize: 12,
+                    fontFamily: "inherit",
+                    color: "#f2f2f2",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "1px solid rgba(255, 255, 255, 0.33)",
+                    borderRadius: 7,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fit to the column names
+                </button>
+              )}
+            </div>
+          );
+        }
+
         if (field.kind === "note") {
           return (
             <p

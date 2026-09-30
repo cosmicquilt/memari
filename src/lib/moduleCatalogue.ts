@@ -1231,7 +1231,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Creative & leisure",
     cadence: "journal",
     paletteName: "Books",
-    props: { heading: "Books", ...table(["Title", "Author", "Rating", "Done"], [3, 2, 1, 0.9]) },
+    props: { heading: "Books", ...table(["Title", "Author", "Rating", "Done"], [3, 2, 1, 0.9]), rowNumbers: true },
   },
   {
     slug: "reading-progress",
@@ -1258,7 +1258,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Creative & leisure",
     cadence: "month",
     paletteName: "Listening",
-    props: { heading: "Listening", ...table(["Album", "Artist", "Rating"], [2.6, 2.2, 1]) },
+    props: { heading: "Listening", ...table(["Album", "Artist", "Rating"], [2.6, 2.2, 1]), rowNumbers: true },
   },
   {
     slug: "sketch-box",

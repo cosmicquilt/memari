@@ -156,6 +156,10 @@ export type ModuleField =
   // in the panel and store different things, which is the whole
   // distinction.
   | { kind: "paragraph"; key: string; label: string; rows?: number }
+  // Widths in whole lattice cells, one per column, edited by dragging the
+  // dividers on the preview - the panel only says so and offers a reset.
+  // See ColumnDividers.
+  | { kind: "columnWidths"; key: string; label: string }
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
@@ -1099,6 +1103,20 @@ const PRIMITIVES = {
           "totalsLabel": {
             "type": "string",
             "default": "Total"
+          },
+          "cellWidths": {
+            "type": "array",
+            "items": { "type": "number" },
+            "default": []
+          },
+          "rows": {
+            "type": "string",
+            "enum": ["lined", "dotted", "none"],
+            "default": "lined"
+          },
+          "rowNumbers": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1125,6 +1143,18 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5 },
+      { kind: "columnWidths", key: "cellWidths", label: "Column widths" },
+      {
+        kind: "rule",
+        key: "rows",
+        label: "Rows",
+        options: [
+          { value: "lined", label: "Lined" },
+          { value: "dotted", label: "Dotted" },
+          { value: "none", label: "Blank" },
+        ],
+      },
+      { kind: "boolean", key: "rowNumbers", label: "Number the rows" },
       { kind: "boolean", key: "totalsRow", label: "Totals row" },
       { kind: "text", key: "totalsLabel", label: "Totals label" },
     ],

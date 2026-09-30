@@ -100,8 +100,9 @@ const LATTICE_DEBT: Record<string, number> = {
  * only the horizontal arm had been snapped.
  */
 const WEIGHTED_COLUMNS = new Set([
+  // column-table left this list on 2026-09-30: its dividers snap to whole
+  // cells now (wholeCellColumns), so every one must land on a lattice column.
   ...slugsDrawnBy(
-    "column-table",
     "todo-checklist",
     "habit-tracker",
     "rating-strip",
@@ -262,6 +263,9 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   ["habit-tracker", { heading: "Habits", habits: ["Read", "Walk"], cells: "circles", totalColumn: true }],
   ["habit-tracker", { heading: "Habits", habits: ["Read", "Walk"], cells: "dots" }],
   ["salah-tracker", { heading: "Salah", habits: ["Mon", "Tue"], columns: ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"], totalColumn: true }],
+  ["column-table", { heading: "Log", columns: ["Date", "Item", "Amount"], cellWidths: [1, 3, 2], rows: "dotted", rowNumbers: true }],
+  ["column-table", { heading: "Log", columns: ["Date", "Item", "Amount"], rows: "none", totalsRow: true, rowNumbers: true }],
+  ["spending-log", { heading: "Spending", columns: ["Date", "Item", "Category", "Amount"], cellWidths: [2, 5, 3, 2], totalsRow: true, totalsLabel: "Total" }],
   ["hourly-grid-core", { timeFormat: "24" }],
   ["hourly-grid-core", { dayBorder: true }],
   ["hourly-grid-core", { hourLineStyle: "gone" }],

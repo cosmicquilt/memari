@@ -35,6 +35,7 @@ import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
 import { HoursFields, type HoursDraft } from "./HoursFields";
+import { ColumnDividers } from "./ColumnDividers";
 import { saveModuleToSaved, updateHourlySettings, updateModuleConfig } from "./actions";
 import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
@@ -792,6 +793,21 @@ export function ModuleEditor({
               cursor: "text",
               transition: "outline-color 120ms ease-out, background 120ms ease-out",
             }}
+          />
+        )}
+
+        {/* The table's column widths, dragged where they print. */}
+        {!hours && definition?.fields?.some((field) => field.kind === "columnWidths") && (
+          <ColumnDividers
+            elements={flatten(drawnElements)}
+            instanceId={editing.instanceId}
+            columnCount={Math.max(1, ((draft.columns as unknown[] | undefined) ?? []).length)}
+            box={box}
+            pitch={cellHeightPx(pageGrid)}
+            latticeOrigin={pageGrid.marginPx}
+            scale={scale}
+            pad={FRAME_PAD}
+            onChange={(cellWidths) => setDraft((current) => ({ ...current, cellWidths }))}
           />
         )}
       </div>
