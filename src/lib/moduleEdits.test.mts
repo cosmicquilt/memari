@@ -304,6 +304,13 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const monday = texts(draw("icon-strip", { ...base, groupLabels: "days", weekStartDay: 1 }, 18, 2), /-g\d-day$/);
   check(monday[0] === "MON", "in the journal's week order");
   check(ids(draw("icon-strip", { ...base, groupLabels: "days" }, 18, 2), /-s1-.*day$/).length === 0, "on the first strip only");
+  // THE DAY NAME GIVES WAY BEFORE THE ROW'S LABEL: three days in a sidebar
+  // cut "WATER" to "WA..." beside a full SUN (2026-09-30).
+  const line = (props: Record<string, unknown>, columns: number) =>
+    texts(draw("icon-strip", { ...base, count: 2, groupLabels: "days", ...props }, columns, 2), /-s0-heading$|-g\d-day$/).join(",");
+  check(line({ groups: 3 }, 6) === "WATER,S,M,T", `three days in a sidebar keep WATER whole, as initials (got ${line({ groups: 3 }, 6)})`);
+  check(line({ groups: 1 }, 6) === "WATER,SUN", `one day in a sidebar keeps its short name (got ${line({ groups: 1 }, 6)})`);
+  check(line({ groups: 3 }, 18) === "WATER,SUN,MON,TUE", `wide days keep their short names (got ${line({ groups: 3 }, 18)})`);
 
   // An icon for each row and each day. Which shape a mark is, is read back
   // by drawing every shape in its place and seeing which one it is.

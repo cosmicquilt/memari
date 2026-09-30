@@ -33,7 +33,7 @@
 import { ptToPx } from "@/lib/print-spec";
 import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { estimateTextWidthPx, fitLabel } from "@/lib/modules/textFit";
-import { weekdayShortNames } from "@/lib/weekDays";
+import { weekdayInitials, weekdayShortNames } from "@/lib/weekDays";
 import {
   NEAR_BLACK,
   borderElement,
@@ -183,13 +183,33 @@ export function renderIconStrip(
     Math.min(glyphBandHeight, glyphPitch * GLYPH_WIDTH_SHARE)
   );
 
-  // Day names over the first strip's groups: short, in the journal's week
-  // order, right-aligned at each group's end so the strip's own label keeps
-  // the left.
-  const dayNames = config.groupLabels === "days" ? weekdayShortNames(config.weekStartDay) : null;
-  const dayLabelWidth = dayNames ? estimateTextWidthPx("WED", ptToPx(HEADING_FONT_PT)) + ptToPx(2) : 0;
-
   const stripLabels = (config.stripLabels ?? []).map((text) => (typeof text === "string" ? text.trim() : ""));
+  const labelSizePx = ptToPx(HEADING_FONT_PT);
+  const labelInsetPx = ptToPx(4);
+
+  // Day names over the first strip's groups, in the journal's week order,
+  // right-aligned at each group's end so the strip's own label keeps the
+  // left - and so the first strip's label runs only as far as the first
+  // day's name. THE DAY NAME GIVES WAY FIRST: short names ("SUN") where the
+  // label fits whole beside them and they fit their groups, initials ("S")
+  // where not. Asked 2026-09-30, after three days in a sidebar cut "WATER"
+  // to "WA..." beside a SUN measured as wide as WED. Initials and still no
+  // room is the one case left to cut, since the label is already at the
+  // smallest legible size.
+  const firstLabel = (stripLabels[0] || heading).toUpperCase();
+  const groupRight = (g: number) => geometry.x + (g + 1) * groupWidth - groupPad;
+  const roomBeside = (names: string[]) =>
+    groupRight(0) - estimateTextWidthPx(names[0], labelSizePx) - labelInsetPx - (geometry.x + labelInsetPx);
+  const dayNames = (() => {
+    if (config.groupLabels !== "days") return null;
+    const forms = [weekdayShortNames(config.weekStartDay), weekdayInitials(config.weekStartDay)];
+    const fits = (names: string[]) =>
+      names.every((name) => estimateTextWidthPx(name, labelSizePx) <= groupWidth - groupPad * 2) &&
+      (!firstLabel || fitLabel(firstLabel, roomBeside(names), [labelSizePx]).text === firstLabel);
+    return forms.find(fits) ?? forms[forms.length - 1];
+  })();
+  const dayLabelWidth = (name: string) => estimateTextWidthPx(name, labelSizePx) + ptToPx(2);
+
   const glyphAt = (list: unknown, index: number): GlyphShape | null => {
     const value = Array.isArray(list) ? list[index] : undefined;
     return GLYPH_SHAPES.includes(value as GlyphShape) ? (value as GlyphShape) : null;
@@ -201,14 +221,14 @@ export function renderIconStrip(
     // thing left when it will not fit is to cut it. See textFit.ts. Each
     // strip its own, or the heading.
     const labelText = stripLabels[s] || heading;
-    const labelWidth = (dayNames && s === 0 ? groupWidth - dayLabelWidth - ptToPx(4) : geometry.width) - ptToPx(4) * 2;
-    const label = labelText ? fitLabel(labelText.toUpperCase(), labelWidth, [ptToPx(HEADING_FONT_PT)]) : null;
+    const labelWidth = dayNames && s === 0 ? roomBeside(dayNames) : geometry.width - labelInsetPx * 2;
+    const label = labelText ? fitLabel(labelText.toUpperCase(), labelWidth, [labelSizePx]) : null;
 
     if (label && label.text) {
       elements.push({
         id: id(`s${s}-heading`),
         type: "text",
-        x: geometry.x + ptToPx(4),
+        x: geometry.x + labelInsetPx,
         y: stripTop + AIR_PX,
         width: labelWidth,
         height: headingHeight,
@@ -234,16 +254,16 @@ export function renderIconStrip(
 
     if (dayNames && s === 0) {
       for (let g = 0; g < groups; g++) {
-        const right = geometry.x + (g + 1) * groupWidth - groupPad;
+        const name = dayNames[g % 7];
         elements.push({
           id: id(`g${g}-day`),
           type: "text",
-          x: right - dayLabelWidth,
+          x: groupRight(g) - dayLabelWidth(name),
           y: stripTop + AIR_PX,
-          width: dayLabelWidth,
+          width: dayLabelWidth(name),
           height: headingHeight,
-          text: dayNames[g % 7],
-          fontSize: ptToPx(HEADING_FONT_PT),
+          text: name,
+          fontSize: labelSizePx,
           fontFamily,
           fill: NEAR_BLACK,
           align: "right",
