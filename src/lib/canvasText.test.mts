@@ -143,11 +143,11 @@ for (const slug of PRIMITIVES) {
 // --- places that come and go with their switches ------------------------------------
 {
   const numbers = places("rating-strip", { items: ["Mood"], scaleHead: "numbers" }, 12, 8);
-  check(numbers.panelKeys.has("lowLabel") && !numbers.slots.some((s) => s.key === "lowLabel"), "the scale's words have no place while the scale is numbers");
+  check(numbers.unprintedKeys.has("lowLabel") && !numbers.panelKeys.has("lowLabel") && !numbers.slots.some((s) => s.key === "lowLabel"), "the scale's words are offered nowhere while the scale is numbers");
   const words = places("rating-strip", { items: ["Mood"], scaleHead: "words" }, 12, 8);
   check(words.slots.some((s) => s.key === "lowLabel") && words.slots.some((s) => s.key === "highLabel"), "and are edited where they print once it is words");
   const noTotals = places("column-table", { columns: ["Item", "Cost"] }, 12, 8);
-  check(noTotals.panelKeys.has("totalsLabel"), "the totals label has no place without a totals row");
+  check(noTotals.unprintedKeys.has("totalsLabel") && !noTotals.panelKeys.has("totalsLabel"), "the totals label is offered nowhere without a totals row");
   const totals = places("column-table", { columns: ["Item", "Cost"], totalsRow: true }, 12, 8);
   check(totals.slots.some((s) => s.key === "totalsLabel"), "and has one where the totals row prints");
   const strip = places("icon-strip", { heading: "Water", icon: "droplet", count: 2 }, 12, 4);

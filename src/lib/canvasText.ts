@@ -158,8 +158,14 @@ export function ghostValues(
 
 export type CanvasPlaces = {
   slots: CanvasSlot[];
-  /** Fields with no place on the drawing, which the panel keeps. */
+  /** Fields that would print but have no clear place on the drawing yet -
+   *  an optional heading whose band would land on the passage. The panel
+   *  keeps them until they do. */
   panelKeys: Set<string>;
+  /** Fields the module does not print at all as it is set - a totals label
+   *  with no totals row, a scale's words with the scale in numbers. Shown
+   *  nowhere: a setting that does nothing is not offered. */
+  unprintedKeys: Set<string>;
   /** Each list as it is edited: the stored one, or - where the stored list
    *  is empty and the module prints items of its own (a week's initials) -
    *  those, so editing one keeps the rest. */
@@ -191,6 +197,12 @@ export function canvasSlots(options: {
   const ghostBlanks = options.ghostBlanks ?? ghost;
   const slots: CanvasSlot[] = [];
   const panelKeys = new Set<string>();
+  const unprintedKeys = new Set<string>();
+  // Does the module print this field anywhere - drawn, or in either ghost?
+  const printsAt = (field: CanvasField, index: number) =>
+    find(real, instanceId, field.canvas, index).length > 0 ||
+    find(ghostBlanks, instanceId, field.canvas, index).length > 0 ||
+    find(ghost, instanceId, field.canvas, index).length > 0;
   const lists: Record<string, string[]> = {};
   const realTexts = real.filter((element) => element.type === "text");
 
@@ -284,9 +296,13 @@ export function canvasSlots(options: {
         }
       }
     }
-    if (placed === 0) panelKeys.add(field.key);
+    if (placed === 0) {
+      const from = field.kind === "lines" ? field.canvas.from ?? 0 : 0;
+      if (printsAt(field, from)) panelKeys.add(field.key);
+      else unprintedKeys.add(field.key);
+    }
   }
-  return { slots, panelKeys, lists };
+  return { slots, panelKeys, unprintedKeys, lists };
 }
 
 /** The values with one place's text changed. */

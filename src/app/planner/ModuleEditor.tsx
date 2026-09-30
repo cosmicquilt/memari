@@ -365,7 +365,9 @@ export function ModuleEditor({
     () => (focusedSlot ? focusedSlot.elementIds.reduce((kept, id) => withoutElement(kept, id), elements) : elements),
     [elements, focusedSlot]
   );
-  // The panel keeps only the text settings with no place on the drawing yet.
+  // The panel keeps only the text settings that would print but have no
+  // place on the drawing yet. One the module does not print as it is set -
+  // a totals label with no totals row - is not offered anywhere.
   const onCanvasKeys = useMemo(
     () => new Set(canvasFields(definition?.fields).map((field) => field.key).filter((key) => !places.panelKeys.has(key))),
     [definition, places.panelKeys]
