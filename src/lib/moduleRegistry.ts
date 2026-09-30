@@ -51,6 +51,12 @@ import {
   type HabitTrackerConfig,
 } from "@/lib/modules/habitTracker";
 import { renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
+import {
+  DEFAULT_DAY_CHART_LEVELS,
+  getDayChartMinHeightPx,
+  renderDayChart,
+  type DayChartConfig,
+} from "@/lib/modules/dayChart";
 import { renderMonthTitle, type MonthTitleConfig } from "@/lib/modules/monthTitle";
 import {
   renderColumnTable,
@@ -1754,6 +1760,79 @@ const PRIMITIVES = {
     // Mood rates each day of a week, so its rows start on the journal's day.
     weekStart: (props, weekStartDay) => ({ ...props, items: rotateWeekList(props.items, weekStartDay) }),
     minContentHeightPx: () => getRatingStripMinHeightPx(),
+    contentIsLive: ALWAYS,
+  },
+
+  // A CHART OF SOMETHING ACROSS THE DAYS - mood, energy, sleep - printed
+  // empty to be filled in by hand, in four looks. Asked for 2026-09-30; see
+  // dayChart.ts.
+  "day-chart": {
+    db: {
+      "name": "Day Chart",
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "heading": { "type": "string", "default": "Mood" },
+          "span": { "type": "string", "enum": ["week", "month"], "default": "week" },
+          "levels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": DEFAULT_DAY_CHART_LEVELS,
+          },
+          "look": { "type": "string", "enum": ["dots", "ruled", "bars", "circles"], "default": "dots" },
+        },
+      },
+      "defaultWidth": 900,
+      "defaultHeight": 500,
+      "defaultColumnSpan": 12,
+      // The header, five levels and the day names - see getDayChartMinHeightPx.
+      "defaultRowSpan": 7,
+    },
+    label: "Day chart",
+    inPalette: true,
+    category: "General",
+    paletteName: "Chart",
+    previewProps: { heading: "Mood", span: "week", levels: DEFAULT_DAY_CHART_LEVELS, look: "dots" },
+    resizableWidth: true,
+    fields: [
+      { kind: "text", key: "heading", label: "Heading" },
+      {
+        kind: "select",
+        key: "span",
+        label: "Along the bottom",
+        options: [
+          { value: "week", label: "The days of the week" },
+          { value: "month", label: "The days of the month" },
+        ],
+      },
+      { kind: "lines", key: "levels", label: "Levels, highest first (one per line)", rows: 5 },
+      {
+        kind: "rule",
+        key: "look",
+        label: "Look",
+        options: [
+          { value: "dots", label: "Dots" },
+          { value: "ruled", label: "Ruled" },
+          { value: "bars", label: "Bars" },
+          { value: "circles", label: "Circles" },
+        ],
+        // The foot of the plot: the axes meeting, the lowest levels and the
+        // first days - where the four looks differ most.
+        window: { x: "left", y: "bottom", columns: 4.2, rows: 3.2 },
+      },
+    ],
+    render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
+      renderDayChart(geometry, propValues as DayChartConfig, idPrefix, fontFamily, lattice),
+    weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
+    // A month's own number of days when the page is dated; 31 on a template
+    // or an undated planner, to be crossed off.
+    dated: (props, at) => ({
+      ...props,
+      monthDays: new Date(Date.UTC(at.start.getUTCFullYear(), at.start.getUTCMonth() + 1, 0)).getUTCDate(),
+    }),
+    undated: (props) => ({ ...props, monthDays: null }),
+    minContentHeightPx: (pageGrid, _columnSpan, propValues) =>
+      getDayChartMinHeightPx(propValues as DayChartConfig, pageGrid.boxInsetPx),
     contentIsLive: ALWAYS,
   },
 
