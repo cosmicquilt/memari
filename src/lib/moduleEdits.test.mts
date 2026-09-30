@@ -177,3 +177,26 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(!!numberDivider && Math.abs(((numberDivider.x ?? 0) + (numberDivider.width ?? 0) / 2 - PAGE.marginPx) / PITCH - 1) < 1e-6, "in a one-cell column on the lattice");
   check(ids(numbered, /-c0-head$/)[0]?.text === "Date", "the table's own columns keep their heads");
 }
+
+// --- prompts -----------------------------------------------------------------
+{
+  const base = { heading: "Reflection", prompts: ["What went well?", "What would I change?"], linesPerPrompt: 2 };
+  const lines = (props: Record<string, unknown>, p: number) => ids(draw("prompted-lines", props, 6, 12), new RegExp(`-p${p}-line\\d+$`)).length;
+  check(lines(base, 0) === 2 && lines(base, 1) === 2, "every prompt takes the default");
+  const set = { ...base, promptLines: [1, 4] };
+  check(lines(set, 0) === 1 && lines(set, 1) === 4, `each prompt its own count (got ${lines(set, 0)} and ${lines(set, 1)})`);
+  const second = ids(draw("prompted-lines", set, 6, 12), /-p1-prompt$/)[0];
+  const secondDefault = ids(draw("prompted-lines", base, 6, 12), /-p1-prompt$/)[0];
+  check(!!second && !!secondDefault && Math.abs((secondDefault.y ?? 0) - (second.y ?? 0) - PITCH) < 0.5, "the next prompt moves up by exactly the cell given back");
+  check(lines({ ...base, promptLines: [3] }, 1) === 2, "a prompt with no count of its own takes the default");
+  const dotted = draw("prompted-lines", { ...base, answers: "dotted" }, 6, 12);
+  check(ids(dotted, /-line\d+$/).length === 0 && ids(dotted, /-p\d-dot\d+-\d+$/).length > 0, "dotted answers are dots");
+  check(ids(draw("prompted-lines", { ...base, answers: "none" }, 6, 12), /-(line\d+|dot\d+-\d+)$/).length === 0, "blank answers are blank");
+  const numbered = draw("prompted-lines", { ...base, numbered: true }, 6, 12);
+  check(texts(numbered, /-p\d-number$/).join(",") === "1,2", "numbered 1 and 2");
+  const n = ids(numbered, /-p0-number$/)[0];
+  const q = ids(numbered, /-p0-prompt$/)[0];
+  check(!!n && !!q && (q.x ?? 0) > (n.x ?? 0), "each prompt sets after its number");
+  const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("prompted-lines", PAGE, 6, props);
+  check(floor({ linesPerPrompt: 2, promptLines: [5] }) > floor({ linesPerPrompt: 2 }), "the floor follows the first prompt's own count");
+}

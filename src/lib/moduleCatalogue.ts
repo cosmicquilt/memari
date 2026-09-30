@@ -82,6 +82,7 @@ const table = (columns: string[], weights: number[], extra: Record<string, unkno
  * on why nothing here can measure a string.
  */
 import { estimateTextWidthPx } from "@/lib/modules/textFit";
+import { promptLinesFor } from "@/lib/modules/promptedLines";
 
 const CELL_PADDING_PX = (4 / 72) * 300;
 const HEAD_FONT_PX = (7 / 72) * 300;
@@ -119,9 +120,11 @@ const PROMPT_PADDING_PX = (8 / 72) * 300;
 
 export function promptedLinesSpan(
   prompts: string[],
-  linesPerPrompt: number
+  linesPerPrompt: number,
+  /** Lines set per prompt - see promptLinesFor. */
+  promptLines?: number[]
 ): { columnSpan: number; rowSpan: number } {
-  const lines = Math.max(1, Math.round(linesPerPrompt) || 1);
+  const lines = prompts.reduce((sum, _prompt, p) => sum + promptLinesFor({ linesPerPrompt, promptLines }, p), 0);
   const widest = prompts.reduce(
     (w, prompt) => Math.max(w, estimateTextWidthPx(prompt, PROMPT_FONT_PX) + PROMPT_PADDING_PX * 2),
     0
@@ -141,7 +144,7 @@ export function promptedLinesSpan(
     // every one of these came out exactly one prompt short - six pixels
     // short, silently, which is the whole reason that trade-off is
     // documented where it is.
-    rowSpan: 2 + prompts.length * (1 + lines),
+    rowSpan: 2 + prompts.length + lines,
   };
 }
 
@@ -503,6 +506,10 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Food Diary",
       prompts: ["What did I eat?", "How did I feel after?"],
       linesPerPrompt: 3,
+      // Lines set per prompt - what was eaten takes more room than how it
+      // felt. Module-edits list, 2026-09-30, as are SOAP's, the recipe's and
+      // the sermon's below.
+      promptLines: [4, 2],
     },
   },
   {
@@ -516,6 +523,7 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Recipe",
       prompts: ["Ingredients", "Method"],
       linesPerPrompt: 5,
+      promptLines: [4, 6],
     },
   },
   {
@@ -937,6 +945,8 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Examen",
       prompts: ["Gratitude", "Ask for light", "Review the day", "Ask forgiveness", "Resolve for tomorrow"],
       linesPerPrompt: 2,
+      // The five movements are a sequence, by tradition.
+      numbered: true,
     },
   },
   {
@@ -950,6 +960,7 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "SOAP",
       prompts: ["Scripture", "Observation", "Application", "Prayer"],
       linesPerPrompt: 3,
+      promptLines: [2, 3, 4, 3],
     },
     columnSpan: 8,
   },
@@ -987,6 +998,7 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Sermon",
       prompts: ["Speaker and passage", "Main points", "Application"],
       linesPerPrompt: 3,
+      promptLines: [1, 4, 3],
     },
   },
   {
@@ -1075,6 +1087,7 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Lectio Divina",
       prompts: ["Lectio - read", "Meditatio - reflect", "Oratio - respond", "Contemplatio - rest"],
       linesPerPrompt: 2,
+      numbered: true,
     },
   },
   {
@@ -1530,9 +1543,9 @@ for (const entry of CATALOGUE) {
     if (!props.columns) continue;
     entry.columnSpan = Math.max(entry.columnSpan ?? 0, tableColumnSpan(props.columns, props.weights));
   } else if (entry.primitive === "prompted-lines") {
-    const props = entry.props as { prompts?: string[]; linesPerPrompt?: number };
+    const props = entry.props as { prompts?: string[]; linesPerPrompt?: number; promptLines?: number[] };
     if (!props.prompts) continue;
-    const needed = promptedLinesSpan(props.prompts, props.linesPerPrompt ?? 1);
+    const needed = promptedLinesSpan(props.prompts, props.linesPerPrompt ?? 1, props.promptLines);
     entry.columnSpan = Math.max(entry.columnSpan ?? 0, needed.columnSpan);
     entry.rowSpan = Math.max(entry.rowSpan ?? 0, needed.rowSpan);
   }

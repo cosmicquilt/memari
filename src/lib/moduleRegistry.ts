@@ -60,6 +60,7 @@ import {
 import {
   renderPromptedLines,
   getPromptedLinesMinHeightPx,
+  promptLinesFor,
   type PromptedLinesConfig,
 } from "@/lib/modules/promptedLines";
 import {
@@ -160,6 +161,10 @@ export type ModuleField =
   // dividers on the preview - the panel only says so and offers a reset.
   // See ColumnDividers.
   | { kind: "columnWidths"; key: string; label: string }
+  // A number FOR EACH ITEM of another field's list - lines under each
+  // prompt - shown as that list with a stepper beside every entry. An item
+  // without its own number takes `defaultKey`'s.
+  | { kind: "countEach"; key: string; itemsKey: string; defaultKey: string; label: string; min: number; max: number }
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
@@ -1188,6 +1193,20 @@ const PRIMITIVES = {
           "linesPerPrompt": {
             "type": "integer",
             "default": 2
+          },
+          "promptLines": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "default": []
+          },
+          "answers": {
+            "type": "string",
+            "enum": ["lined", "dotted", "none"],
+            "default": "lined"
+          },
+          "numbered": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1209,12 +1228,31 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "lines", key: "prompts", label: "Prompts (one per line)", rows: 6 },
-      { kind: "number", key: "linesPerPrompt", label: "Lines per prompt", min: 1, max: 8 },
+      {
+        kind: "countEach",
+        key: "promptLines",
+        itemsKey: "prompts",
+        defaultKey: "linesPerPrompt",
+        label: "Lines under each prompt",
+        min: 1,
+        max: 8,
+      },
+      {
+        kind: "rule",
+        key: "answers",
+        label: "Answer lines",
+        options: [
+          { value: "lined", label: "Lined" },
+          { value: "dotted", label: "Dotted" },
+          { value: "none", label: "Blank" },
+        ],
+      },
+      { kind: "boolean", key: "numbered", label: "Number the prompts" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderPromptedLines(geometry, propValues as PromptedLinesConfig, idPrefix, fontFamily, lattice),
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
-      getPromptedLinesMinHeightPx(Number(propValues.linesPerPrompt ?? 2)),
+      getPromptedLinesMinHeightPx(promptLinesFor(propValues, 0)),
     contentIsLive: ALWAYS,
   },
 

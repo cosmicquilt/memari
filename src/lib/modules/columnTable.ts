@@ -23,7 +23,7 @@
 // none of the ones above.
 
 import { ptToPx } from "@/lib/print-spec";
-import { columnWidthsForLabels, fitLabel, fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
+import { columnWidthsForLabels, estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import { latticeFill, rowMarkerElement } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
@@ -229,6 +229,32 @@ export function renderColumnTable(
       ? config.cellWidths
       : null;
   const cells = lattice ? wholeCellColumns(dragged ?? layout.widths, allocationCells - numberCells) : null;
+  // Rounding can leave a column a little narrower than its own head needs -
+  // "Done", "Page" and "Reps" were cut to "Do…" when this first snapped. A
+  // short column takes a cell from whichever has the most to spare, until
+  // every head fits or none can give. Not for dragged widths: a column
+  // someone narrowed on purpose keeps its width and its head shrinks.
+  if (cells && !dragged) {
+    const need = (c: number) => (claims[c] ? estimateTextWidthPx(claims[c], layout.fontSizePx) + layout.paddingPx * 2 : 0);
+    const widthOf = (c: number) =>
+      cells[c] * pitch - (c === 0 && !numberCells ? inset : 0) - (c === cells.length - 1 ? inset : 0);
+    for (let guard = 0; guard < cells.length * allocationCells; guard++) {
+      const short = cells.findIndex((_, c) => widthOf(c) + 0.01 < need(c));
+      if (short < 0) break;
+      let donor = -1;
+      let spare = 0;
+      cells.forEach((count, c) => {
+        const slack = widthOf(c) - pitch - need(c);
+        if (c !== short && count > 1 && slack >= 0 && (donor < 0 || slack > spare)) {
+          donor = c;
+          spare = slack;
+        }
+      });
+      if (donor < 0) break;
+      cells[donor]--;
+      cells[short]++;
+    }
+  }
   let x = tableLeft;
   let cellsSoFar = numberCells;
   const bounds = (cells ?? layout.widths).map((width, c) => {

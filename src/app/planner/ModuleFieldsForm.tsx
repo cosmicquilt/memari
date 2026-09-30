@@ -288,6 +288,78 @@ export function ModuleFieldsForm({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <style>{FOCUS_CSS}</style>
       {fields.map((field, index) => {
+        if (field.kind === "countEach") {
+          // One stepper per item of the list it follows - lines under each
+          // prompt. Stored as the whole list, so the numbers stay with their
+          // items; an item that has none shows the default.
+          const items = ((values[field.itemsKey] ?? defaults?.[field.itemsKey]) as unknown[] | undefined) ?? [];
+          const fallback = Number(values[field.defaultKey] ?? defaults?.[field.defaultKey]) || field.min;
+          const own = Array.isArray(values[field.key]) ? (values[field.key] as unknown[]) : [];
+          const countOf = (i: number) => {
+            const n = Number(own[i]);
+            return Number.isFinite(n) && n > 0 ? n : fallback;
+          };
+          const step = (i: number, by: number) => {
+            const next = items.map((_item, k) => countOf(k));
+            next[i] = Math.max(field.min, Math.min(field.max, next[i] + by));
+            onChange(field.key, next);
+          };
+          if (items.length === 0) return null;
+          return (
+            <div key={field.key} style={rowStyle}>
+              <span style={labelStyle}>{field.label}</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {items.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontSize: 12.5,
+                        color: "rgba(255, 255, 255, 0.85)",
+                      }}
+                    >
+                      {String(item ?? "") || `Prompt ${i + 1}`}
+                    </span>
+                    <span
+                      role="group"
+                      aria-label={`Lines under ${String(item ?? "") || `prompt ${i + 1}`}`}
+                      style={{ display: "inline-flex", alignItems: "center", borderRadius: 7, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                    >
+                      <button
+                        type="button"
+                        aria-label="One line fewer"
+                        disabled={countOf(i) <= field.min}
+                        onClick={() => step(i, -1)}
+                        className="memari-field"
+                        style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) <= field.min ? 0.35 : 1 }}
+                      >
+                        &minus;
+                      </button>
+                      <span style={{ minWidth: 18, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>
+                        {countOf(i)}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="One line more"
+                        disabled={countOf(i) >= field.max}
+                        onClick={() => step(i, 1)}
+                        className="memari-field"
+                        style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) >= field.max ? 0.35 : 1 }}
+                      >
+                        +
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
         if (field.kind === "columnWidths") {
           // Edited on the preview - see ColumnDividers. The panel says so,
           // and puts the words-and-weights layout back.

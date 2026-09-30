@@ -20,6 +20,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
+import { latticeColumnsIn, latticeDot } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -35,9 +36,28 @@ export type PromptedLinesConfig = {
   heading: string;
   /** The questions, printed in order. Each gets `linesPerPrompt` rules. */
   prompts: string[];
-  /** Ruled lines under each prompt. */
+  /** Ruled lines under each prompt - the default for any prompt that does
+   *  not set its own in `promptLines`. */
   linesPerPrompt: number;
+  /**
+   * Lines under EACH prompt, index-aligned with `prompts`. The one named in
+   * the editor vision: SOAP's Scripture takes a line and its Application
+   * four, a recipe's method is longer than its ingredients. Every block is
+   * still whole cells, so every rule stays on a dot.
+   */
+  promptLines?: number[];
+  /** The answer space: ruled (the default), dotted on the lattice, blank. */
+  answers?: "lined" | "dotted" | "none";
+  /** A number before each prompt, where the prompts are steps in order. */
+  numbered?: boolean;
 };
+
+/** How many lines prompt `p` has: its own, or the module's default. */
+export function promptLinesFor(config: { linesPerPrompt?: unknown; promptLines?: unknown }, p: number): number {
+  const own = Array.isArray(config.promptLines) ? Number(config.promptLines[p]) : NaN;
+  const fallback = Math.round(Number(config.linesPerPrompt)) || 1;
+  return Math.max(1, Math.min(12, Number.isFinite(own) && own > 0 ? Math.round(own) : fallback));
+}
 
 export type RenderedElement = {
   id: string;
@@ -79,6 +99,8 @@ export function getPromptedLinesRowMetricsPx() {
 /** Header, one prompt and one line to answer on - the least this can be
  *  and still be the thing it is. */
 export function getPromptedLinesMinHeightPx(linesPerPrompt: number): number {
+  // The FIRST prompt's lines, when they are set per prompt - it is the block
+  // that has to fit for the module to be itself.
   const m = getPromptedLinesRowMetricsPx();
   return (
     m.headerHeightPx +
@@ -106,14 +128,17 @@ export function renderPromptedLines(
   const ruleWidth = ptToPx(RULE_WIDTH_PT);
   const padding = ptToPx(HORIZONTAL_PADDING_PT);
   // Total in its config - see columnTable.ts for why.
-  const linesPerPrompt = Math.max(1, Math.round(config.linesPerPrompt) || 1);
   const prompts = config.prompts ?? [];
+  const answers = config.answers === "dotted" || config.answers === "none" ? config.answers : "lined";
+  // A numbered prompt sets after its number, in the same band.
+  const numberWidth = config.numbered ? ptToPx(9) : 0;
+  const pitch = answerLineHeight;
+  const latticeY = lattice ? geometry.y - lattice.insetPx : geometry.y;
 
   elements.push(borderElement(geometry, id));
   elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bodyTop));
 
   const bodyBottom = geometry.y + geometry.height;
-  const blockHeight = promptHeight + answerLineHeight * linesPerPrompt;
 
   const promptSizes = [ptToPx(PROMPT_FONT_PT), ptToPx(7), ptToPx(6), ptToPx(5.5)];
   // ONE size for all the prompts in a module, chosen so the longest fits.
@@ -125,11 +150,13 @@ export function renderPromptedLines(
   // the case fitLabelSet was written for, in columnTable, and this file
   // was still calling fitLabel in a loop.
   const fitted = fitLabelSet(
-    prompts.map((text) => ({ text: text ?? "", widthPx: geometry.width - padding * 2 })),
+    prompts.map((text) => ({ text: text ?? "", widthPx: geometry.width - padding * 2 - numberWidth })),
     promptSizes
   );
   let cursor = bodyTop;
   for (let p = 0; p < prompts.length; p++) {
+    const linesPerPrompt = promptLinesFor(config, p);
+    const blockHeight = promptHeight + answerLineHeight * linesPerPrompt;
     // A block that would not fit whole is not drawn at all. A prompt
     // printed with nowhere to answer it is worse than one page short:
     // the question is the part that has to be reachable.
@@ -141,12 +168,28 @@ export function renderPromptedLines(
     // badly? What did I do well? What have I left undone?"), so this is
     // the ordinary case here, not the edge one.
     const prompt = { text: fitted.texts[p] ?? "", fontSizePx: fitted.fontSizePx };
+    if (config.numbered) {
+      elements.push({
+        id: id(`p${p}-number`),
+        type: "text",
+        x: geometry.x + padding,
+        y: capCentredTextY(cursor, promptHeight, prompt.fontSizePx, fontFamily),
+        width: numberWidth,
+        height: prompt.fontSizePx * 1.2,
+        text: String(p + 1),
+        fontSize: prompt.fontSizePx,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: "left",
+        opacity: 0.55,
+      });
+    }
     elements.push({
       id: id(`p${p}-prompt`),
       type: "text",
-      x: geometry.x + padding,
+      x: geometry.x + padding + numberWidth,
       y: capCentredTextY(cursor, promptHeight, prompt.fontSizePx, fontFamily),
-      width: geometry.width - padding * 2,
+      width: geometry.width - padding * 2 - numberWidth,
       height: prompt.fontSizePx * 1.2,
       text: prompt.text,
       fontSize: prompt.fontSizePx,
@@ -157,6 +200,15 @@ export function renderPromptedLines(
 
     for (let line = 0; line < linesPerPrompt; line++) {
       const lineBottom = cursor + promptHeight + answerLineHeight * (line + 1);
+      if (answers === "none") continue;
+      if (answers === "dotted") {
+        // The answer line's own lattice row, broken into the page's dots.
+        const row = Math.round((lineBottom - latticeY) / pitch);
+        for (const column of latticeColumnsIn(geometry, lattice, geometry.x + padding, geometry.x + geometry.width - padding)) {
+          elements.push(latticeDot(id(`p${p}-dot${row}-${column.index}`), column.x, lineBottom));
+        }
+        continue;
+      }
       elements.push({
         id: id(`p${p}-line${line}`),
         type: "figure",
