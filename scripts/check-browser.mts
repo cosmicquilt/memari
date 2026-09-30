@@ -1964,19 +1964,15 @@ const roundTwoPickers: Probe = {
         if (!tick || tick.options !== 3 || tick.drawings !== 3) problems.push(`the Tick mark picker is ${JSON.stringify(tick)}`);
         else if (tick.chosen !== "Column") problems.push(`a to-do opens with ${tick.chosen} as its tick mark, not Column`);
         else notesSeen.push("to-do: tick mark Column by default, three drawn");
-        // THE ITEMS BOX GROWS AND HAS NO GRIP. Its resize grip was the one
-        // thing on the page Chrome draws as anti-aliased diagonals, and
-        // compiling their shaders was the to-do's 104-157ms opening frame
-        // (2026-09-30). Typed a line at a time, it must get taller.
-        const items = tab.getByRole("dialog").getByLabel("Printed items (one per line)");
-        const grip = await items.evaluate((el) => getComputedStyle(el).resize);
-        const shortHeight = (await items.boundingBox())?.height ?? 0;
-        await items.click();
-        await tab.keyboard.type(Array.from({ length: 12 }, (_, i) => `Item ${i + 1}`).join("\n"), { delay: 5 });
-        const tallHeight = (await items.boundingBox())?.height ?? 0;
-        if (grip !== "none") problems.push(`the items box has a resize grip again (resize: ${grip})`);
-        else if (!(tallHeight > shortHeight + 50)) problems.push(`twelve typed items left the box ${Math.round(shortHeight)} -> ${Math.round(tallHeight)}px tall`);
-        else notesSeen.push(`items box: no grip, grew ${Math.round(shortHeight)} -> ${Math.round(tallHeight)}px for twelve lines`);
+        // THE ITEMS ARE TYPED ON THE PAGE NOW, not in a box in the panel
+        // (2026-09-30) - the panel says so instead. The box it replaced had a
+        // resize grip, the to-do's 104-157ms opening frame; the "text on the
+        // page" probe holds every text field left to that.
+        const panelBoxes = await tab.getByRole("dialog").locator("[data-tour-panel], textarea").count();
+        const hint = await tab.getByRole("dialog").getByText("Click any words on the preview to change them", { exact: false }).count();
+        if (panelBoxes > 0) problems.push(`the to-do's editor still has ${panelBoxes} text box(es) for its items`);
+        else if (hint === 0) problems.push("the to-do's panel does not say its words are edited on the preview");
+        else notesSeen.push("to-do: items typed on the preview, the panel says so");
         const before = await drawnOnPage(todo.id);
         await tab.getByRole("dialog").getByRole("radio", { name: "Circle" }).click();
         await done();
@@ -2007,6 +2003,204 @@ const roundTwoPickers: Probe = {
     }
     if (problems.length > 0) for (const problem of problems) fail("round-two pickers", problem);
     else note("round-two pickers", notesSeen.join("; "));
+  },
+};
+
+// ---------------------------------------------------------------------
+// TEXT ON THE PAGE: asked 2026-09-30 - "instead of typing things out in the
+// side panel, have them only editable through hovering the region it will
+// display and clicking to edit text normally and live ... ideally with the
+// blinking vertical bar indicating typing position as well". Typed as a
+// person would, then read back from the database and the page: a to-do's
+// items added from its first empty row, a chart's level renamed where it
+// prints with the caret where the click was, a table's column renamed and
+// one added with Return. With it, the note box's Dividers switch and the
+// month calendar's editor showing the whole spread.
+// ---------------------------------------------------------------------
+const textOnThePage: Probe = {
+  name: "text on the page",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Text on the page check");
+    await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 12], ["Reminders", 15, 11], ["Notes", 26, 10]]);
+    const all = await storedModules(guest.journalId);
+    const chart = all.find((m) => m.slug === "labeled-box" && m.level === "WEEKLY" && m.propValues.heading === "Reminders");
+    const todo = all.find((m) => m.slug === "todo-checklist" && m.level === "WEEKLY");
+    if (!chart || !todo) {
+      fail("text on the page", "the weekly spread has no Reminders or to-do to work with");
+      await guest.remove();
+      return;
+    }
+    await retypeModule(chart.id, "mood-chart-week", { heading: "Mood", span: "week", levels: ["Great", "Good", "Okay", "Low", "Awful"] });
+    const context = await page.context().browser()!.newContext({ viewport: { width: VIEWPORT.width, height: 1200 }, deviceScaleFactor: 1 });
+    const problems: string[] = [];
+    const seen: string[] = [];
+    const setLevel = (level: string) => context.addCookies([{ name: "memari-open", value: level, domain: "localhost", path: "/" }]);
+    try {
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      const load = async () => {
+        await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+        await tab.waitForTimeout(3000);
+      };
+      const open = async (instanceId: string) => {
+        const target = tab.locator(`[data-module-instance-id="${instanceId}"]`);
+        await target.scrollIntoViewIfNeeded();
+        const box = await target.boundingBox();
+        if (!box) return false;
+        await tab.mouse.move(box.x + box.width * 0.3, box.y + Math.min(box.height * 0.3, 60));
+        await tab.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 120));
+        await tab.waitForTimeout(300);
+        const pencil = target.locator(':scope > button[title^="Edit "]');
+        if ((await pencil.count()) === 0) return false;
+        await pencil.click();
+        await tab.getByRole("dialog").waitFor({ timeout: 5000 }).catch(() => undefined);
+        await tab.waitForTimeout(1300);
+        return tab.getByRole("dialog").isVisible();
+      };
+      const done = async () => {
+        await tab.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+        await tab.waitForTimeout(3500);
+      };
+      const stored = async (id: string) => (await storedModules(guest.journalId)).find((m) => m.id === id)?.propValues ?? {};
+      /** The focused field: which place, its caret, and whether its letters show. */
+      const caret = () =>
+        tab.evaluate(() => {
+          const el = document.activeElement as HTMLInputElement | null;
+          const style = el ? getComputedStyle(el) : null;
+          return {
+            slot: el?.getAttribute("data-canvas-slot") ?? null,
+            at: el?.selectionStart ?? -1,
+            length: el?.value.length ?? -1,
+            caretColor: style?.caretColor ?? "",
+            ink: style?.color ?? "",
+          };
+        });
+
+      await load();
+
+      // --- A TO-DO'S ITEMS, FROM ITS FIRST EMPTY ROW -----------------------
+      if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
+      else {
+        const first = tab.locator('[data-canvas-slot="items#0"]');
+        if ((await first.count()) === 0) problems.push("an empty to-do offers no place for its first item");
+        else {
+          const box = (await first.boundingBox())!;
+          await tab.mouse.move(box.x + 12, box.y + box.height / 2);
+          await tab.waitForTimeout(200);
+          const hovered = await first.evaluate((el) => ({
+            cursor: getComputedStyle(el).cursor,
+            outline: getComputedStyle(el).outlineStyle,
+            tint: getComputedStyle(el).backgroundColor,
+            hint: getComputedStyle(el, "::placeholder").color,
+          }));
+          await tab.mouse.click(box.x + 12, box.y + box.height / 2);
+          await tab.keyboard.type("Buy milk", { delay: 15 });
+          await tab.keyboard.press("Enter");
+          await tab.keyboard.type("Call mum", { delay: 15 });
+          const now = await caret();
+          // No highlight - asked 2026-09-30 - but a text cursor, and the
+          // empty row's placeholder showing.
+          if (hovered.cursor !== "text") problems.push(`hovering the first row shows a ${hovered.cursor} cursor, not a text one`);
+          else if (hovered.outline !== "none" || !/rgba\(0, 0, 0, 0\)/.test(hovered.tint)) problems.push(`hovering highlights the row (outline ${hovered.outline}, ${hovered.tint})`);
+          else if (/rgba\(0, 0, 0, 0\)/.test(hovered.hint)) problems.push("hovering the first row shows nothing to say an item goes there");
+          if (now.slot !== "items#1") problems.push(`after Return the caret is in ${now.slot}, not the second item`);
+          else if (now.at !== now.length) problems.push(`the caret is at ${now.at} of ${now.length}, not where the typing is`);
+          else if (/rgba\(0, 0, 0, 0\)|74, 92, 255/.test(now.caretColor)) problems.push(`the caret is ${now.caretColor}, not the text's ink`);
+          else if (/rgba\(0, 0, 0, 0\)|transparent/.test(now.ink)) problems.push("the item being typed is invisible");
+          else seen.push("to-do: no highlight, a text cursor and the row's placeholder on hover; typed from the first row, Return to the next, the caret in ink at the typing");
+          await done();
+          const items = (await stored(todo.id)).items;
+          const printed = await tab.locator(`[data-module-instance-id="${todo.id}"]`).evaluate((el) => (el as HTMLElement).innerText);
+          if (JSON.stringify(items) !== '["Buy milk","Call mum"]') problems.push(`the to-do saved items ${JSON.stringify(items)}`);
+          else if (!/Buy milk/.test(printed) || !/Call mum/.test(printed)) problems.push("the to-do on the page does not print its new items");
+          else seen.push("saved and printed");
+        }
+      }
+
+      // --- A CHART'S LEVEL, RENAMED WHERE IT PRINTS -------------------------
+      if (!(await open(chart.id))) problems.push("the chart's editor would not open");
+      else {
+        const panelFields = await tab.getByRole("dialog").getByText("Levels, highest first", { exact: false }).count();
+        if (panelFields > 0) problems.push("the chart's levels are still a box in the panel");
+        const okay = tab.locator('[data-canvas-slot="levels#2"]');
+        const box = await okay.boundingBox();
+        if (!box) problems.push("the chart's third level has no place on the preview");
+        else {
+          // Right-aligned: a click at the place's right edge is after the y.
+          await tab.mouse.click(box.x + box.width - 1, box.y + box.height / 2);
+          const at = await caret();
+          if (at.slot !== "levels#2" || at.at !== 4) problems.push(`a click at the end of "Okay" put the caret at ${at.at} in ${at.slot}`);
+          await tab.keyboard.press("Backspace");
+          await tab.keyboard.press("Backspace");
+          await tab.keyboard.press("Backspace");
+          await tab.keyboard.press("Backspace");
+          await tab.keyboard.type("Fine", { delay: 15 });
+          await done();
+          const levels = (await stored(chart.id)).levels;
+          if (JSON.stringify(levels) !== '["Great","Good","Fine","Low","Awful"]') problems.push(`the chart saved levels ${JSON.stringify(levels)}`);
+          else seen.push("chart: a level renamed in place, caret where clicked");
+        }
+      }
+
+      // --- A TABLE'S COLUMNS, AND DIVIDERS - on the Beginning page ----------
+      await setLevel("FRONT_MATTER");
+      await load();
+      const matter = (await storedModules(guest.journalId)).filter((m) => m.level === "FRONT_MATTER" && m.slug === "labeled-box");
+      if (matter.length < 2) problems.push(`the Beginning page has ${matter.length} boxes to work with`);
+      else {
+        await retypeModule(matter[matter.length - 1].id, "column-table", { heading: "Log", columns: ["Item", "Cost"] });
+        await load();
+        const table = matter[matter.length - 1];
+        if (!(await open(table.id))) problems.push("the table's editor would not open");
+        else {
+          const head = tab.locator('[data-canvas-slot="columns#0"]');
+          if ((await head.count()) === 0) problems.push("the table's first column has no place on the preview");
+          else {
+            await head.click();
+            await tab.keyboard.press("ControlOrMeta+A");
+            await tab.keyboard.type("Thing", { delay: 15 });
+            await tab.keyboard.press("Enter");
+            const next = await caret();
+            await tab.keyboard.type("Qty", { delay: 15 });
+            await done();
+            const columns = (await stored(table.id)).columns;
+            if (next.slot !== "columns#1") problems.push(`Return in a column head moved the caret to ${next.slot}`);
+            else if (JSON.stringify(columns) !== '["Thing","Qty","Cost"]') problems.push(`the table saved columns ${JSON.stringify(columns)}`);
+            else seen.push("table: a head renamed and a column added with Return");
+          }
+        }
+        // Dividers down the day columns: a box across the page is four days.
+        const box = matter[0];
+        if (!(await open(box.id))) problems.push("the Beginning box's editor would not open");
+        else {
+          const dividers = tab.getByRole("dialog").getByLabel("Dividers");
+          if ((await dividers.count()) === 0) problems.push("the note box has no Dividers switch");
+          else {
+            await dividers.check({ force: true });
+            await done();
+            if ((await stored(box.id)).dividers !== true) problems.push(`the note box saved dividers ${JSON.stringify((await stored(box.id)).dividers)}`);
+            else seen.push("note box: Dividers saved");
+          }
+        }
+      }
+
+      // --- THE MONTH CALENDAR'S EDITOR SHOWS THE WHOLE SPREAD ---------------
+      await setLevel("MONTHLY");
+      await load();
+      const month = (await storedModules(guest.journalId)).find((m) => m.slug === "month-grid-core" && m.level === "MONTHLY");
+      if (!month || !(await open(month.id))) problems.push("the month calendar's editor would not open");
+      else {
+        const pieces = await tab.getByRole("dialog").locator("[data-editor-piece]").count();
+        if (pieces !== 2) problems.push(`the month calendar's editor shows ${pieces} page(s), not the spread's 2`);
+        else seen.push("month calendar: both pages in the editor");
+      }
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+    if (problems.length > 0) for (const problem of problems) fail("text on the page", problem);
+    else note("text on the page", seen.join("; "));
   },
 };
 
@@ -2343,6 +2537,7 @@ const ALL_PROBES: Probe[] = [
   moduleEditor,
   paletteDrop,
   roundTwoPickers,
+  textOnThePage,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

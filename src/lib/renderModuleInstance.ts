@@ -5,7 +5,7 @@
 // (planner/actions.ts) — both need the exact same logic, so it lives here
 // instead of being duplicated.
 
-import { gridCellToPixels, gridCellToAllocation, type PageGrid } from "@/lib/grid";
+import { dayUnitColumns, gridCellToPixels, gridCellToAllocation, type PageGrid } from "@/lib/grid";
 import { moduleDefinition, withDerivedProps } from "@/lib/moduleRegistry";
 import { FONT_SERIF } from "@/lib/theme";
 
@@ -68,7 +68,7 @@ function renderBySlug(
   // The page's dot lattice, for the renderers that draw on it. Square
   // cells, so one pitch; originX/originY are the page margin, which is
   // where the lattice starts.
-  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number }
+  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number; dayCells?: number }
 ): RenderedPolotnoElement[] {
   // A switch over slugs used to live here, one case per module, and it was
   // one of nine places that had to learn a module's name. The registry is
@@ -103,7 +103,7 @@ function renderBySlug(
 export type DrawingInputs = {
   geometry: { x: number; y: number; width: number; height: number };
   propValues: unknown;
-  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number };
+  lattice: { pitchPx: number; originX: number; originY: number; insetPx: number; dayCells?: number };
 };
 
 /**
@@ -150,6 +150,7 @@ export function drawingInputsFor(
       originX: pageGrid.marginPx,
       originY: pageGrid.marginPx,
       insetPx: pageGrid.boxInsetPx,
+      dayCells: dayUnitColumns(pageGrid),
     },
   };
 }

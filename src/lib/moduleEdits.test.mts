@@ -54,17 +54,20 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(verticals.length === 5, `a 6-cell graph box has 5 interior verticals (got ${verticals.length})`);
   check(verticals.every((v) => onColumn((v.x ?? 0) + (v.width ?? 0) / 2)), "every graph vertical sits on a lattice column");
 
-  const two = draw("labeled-box", { heading: "Notes", rule: "lined", columns: 2 }, 12, 6);
-  const divider = ids(two, /-column-rule$/)[0];
-  check(!!divider, "two columns draw a divider");
-  if (divider) {
-    const x = (divider.x ?? 0) + (divider.width ?? 0) / 2;
-    check(onColumn(x), "on a lattice column");
-    const box = ids(two, /-border$/)[0];
-    check(Math.abs(x - ((box.x ?? 0) + (box.width ?? 0) / 2)) <= PITCH / 2, "nearest the middle");
-  }
-  check(ids(two, /-c0-rule\d+$/).length > 0 && ids(two, /-c1-rule\d+$/).length === ids(two, /-c0-rule\d+$/).length, "both halves are ruled alike");
-  check(ids(draw("labeled-box", { heading: "Notes", rule: "lined", columns: 2 }, 3, 6), /-column-rule$/).length === 0, "too narrow for two columns draws one");
+  // DIVIDERS DOWN THE DAY COLUMNS - a day is six cells, a quarter of the
+  // page, so a box three days wide has two, each where a day ends.
+  const dayEdge = (x: number) => Math.abs(((x - PAGE.marginPx) / (6 * PITCH)) % 1) < 1e-6;
+  const three = draw("labeled-box", { heading: "Notes", rule: "lined", dividers: true }, 18, 6);
+  const dividers = ids(three, /-divider\d$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+  check(dividers.length === 2, `a box three days wide has two dividers (got ${dividers.length})`);
+  check(dividers.every(dayEdge), "each on a day column's edge");
+  check(ids(draw("labeled-box", { heading: "Notes", rule: "lined", dividers: true }, 12, 6), /-divider\d$/).length === 1, "two days wide, one");
+  check(ids(draw("labeled-box", { heading: "Notes", rule: "lined", dividers: true }, 6, 6), /-divider\d$/).length === 0, "one day wide, none");
+  check(ids(draw("labeled-box", { heading: "Notes", rule: "lined" }, 18, 6), /-divider\d$/).length === 0, "off by default");
+  check(ids(draw("labeled-box", { heading: "Notes", rule: "lined", columns: 2 }, 18, 6), /-divider\d$/).length === 2, "a box saved with two columns keeps its dividers");
+  check(withCurrentSettings("labeled-box", { columns: 2 }).dividers === true, "and opens with the switch on");
+  const two = draw("labeled-box", { heading: "Notes", rule: "lined", dividers: true }, 12, 6);
+  check(ids(two, /-c0-rule\d+$/).length > 0 && ids(two, /-c1-rule\d+$/).length === ids(two, /-c0-rule\d+$/).length, "each column is ruled alike");
 
   const numbered = draw("labeled-box", { heading: "Notes", rule: "lined", lineStart: "numbers" });
   const numbers = texts(numbered, /-start\d+$/);

@@ -23,13 +23,15 @@
 // than a border, controls that are permanently present and quiet rather than
 // revealed on hover, and a spring rather than an ease.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults, withCurrentSettings } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
 import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid";
 import { DEFAULT_HOURLY_SETTINGS, getHourlyGridCoreContentHeightPx } from "@/lib/modules/hourlyGridCore";
 import { HEADING_SIZES_PT, headingFits } from "@/lib/modules/moduleFrame";
+import { canvasFields, canvasSlots, ghostValues, withItemAfter, withSlotText, withoutItem, type CanvasSlot } from "@/lib/canvasText";
+import { CanvasTextFields } from "./CanvasTextFields";
 import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
@@ -321,32 +323,52 @@ export function ModuleEditor({
   );
   const defaults = useMemo(() => moduleSchemaDefaults(editing.slug), [editing.slug]);
 
-  // THE HEADING IS EDITED WHERE IT IS DRAWN - "it should allow you to edit
-  // the title cleanly with a text hover". Every renderer that draws a
-  // module's heading gives it the id `<instance>-heading` and reads it from
-  // a `heading` text field, so when both are there the drawn heading gives
-  // way to a real text field laid exactly over it: same face, same size,
-  // same uppercase, same place. Hovering shows it is text; clicking puts
-  // the caret where you clicked. It edits the same draft as the Heading
-  // field beside it, so the two cannot disagree.
+  // EVERY TEXT SETTING IS EDITED WHERE IT IS DRAWN - the heading first ("it
+  // should allow you to edit the title cleanly with a text hover", 2026-09-29),
+  // then everything typed: rows, columns, prompts, levels, labels ("have them
+  // only editable through hovering the region it will display and clicking
+  // to edit text normally and live", 2026-09-30). lib/canvasText.ts finds
+  // each place from the drawing - and from a ghost drawing with the empty
+  // ones written in, for where they would print - and CanvasTextFields lays a
+  // real text field over each. Only the text under the field being edited
+  // is left out of the drawing, so its field's letters stand in exactly
+  // where they print.
   const headingId = `${editing.instanceId}-heading`;
-  const hasHeadingField = definition?.fields?.some((field) => field.kind === "text" && field.key === "heading") ?? false;
-  const heading = useMemo(
-    () =>
-      hasHeadingField
-        ? flatten(elements).find((element) => element.type === "text" && element.id === headingId) ?? null
-        : null,
-    [elements, hasHeadingField, headingId]
-  );
-  const drawnElements = useMemo(
-    () => (heading ? withoutElement(elements, headingId) : elements),
-    [elements, heading, headingId]
-  );
-  // Every mark, for the fields that read the drawing - an icon strip's rows
-  // and days are counted and named from it.
   const everyMark = useMemo(() => flatten(elements), [elements]);
-  const [headingHovered, setHeadingHovered] = useState(false);
-  const [headingFocused, setHeadingFocused] = useState(false);
+  const hasCanvasText = useMemo(() => canvasFields(definition?.fields).length > 0, [definition]);
+  const ghostMarks = useMemo(
+    () => (hasCanvasText ? flatten(draw(ghostValues(definition?.fields, draft, defaults))) : []),
+    [hasCanvasText, draw, definition, draft, defaults]
+  );
+  const ghostBlankMarks = useMemo(
+    () => (hasCanvasText ? flatten(draw(ghostValues(definition?.fields, draft, defaults, false))) : []),
+    [hasCanvasText, draw, definition, draft, defaults]
+  );
+  const places = useMemo(
+    () =>
+      canvasSlots({
+        fields: hours ? [] : definition?.fields,
+        values: draft,
+        defaults,
+        real: everyMark,
+        ghost: ghostMarks,
+        ghostBlanks: ghostBlankMarks,
+        instanceId: editing.instanceId,
+      }),
+    [hours, definition, draft, defaults, everyMark, ghostMarks, ghostBlankMarks, editing.instanceId]
+  );
+  const [focusedSlotId, setFocusedSlotId] = useState<string | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const focusedSlot = places.slots.find((slot) => slot.id === focusedSlotId) ?? null;
+  const drawnElements = useMemo(
+    () => (focusedSlot ? focusedSlot.elementIds.reduce((kept, id) => withoutElement(kept, id), elements) : elements),
+    [elements, focusedSlot]
+  );
+  // The panel keeps only the text settings with no place on the drawing yet.
+  const onCanvasKeys = useMemo(
+    () => new Set(canvasFields(definition?.fields).map((field) => field.key).filter((key) => !places.panelKeys.has(key))),
+    [definition, places.panelKeys]
+  );
 
   // A HEADING STOPS WHERE THE SMALLEST PRINT STOPS. The page shrinks a long
   // heading 8, 7, 6, 5pt as it grows; a letter that would not fit even at
@@ -358,16 +380,18 @@ export function ModuleEditor({
   // before there was an end.
   const [headingFull, setHeadingFull] = useState(false);
   const headingFullTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const takeHeading = (next: string) => {
-    const current = String(draft.heading ?? "");
-    if (heading && next.length > current.length && !headingFits(next, heading.width ?? 0, String(heading.fontFamily ?? ""))) {
+  const takeText = (slot: CanvasSlot, next: string) => {
+    const isHeading = slot.elementIds.includes(headingId);
+    const current = slot.value;
+    if (isHeading && next.length > current.length && !headingFits(next, slot.rect.width, slot.font.family)) {
       setHeadingFull(true);
       if (headingFullTimer.current) clearTimeout(headingFullTimer.current);
       headingFullTimer.current = setTimeout(() => setHeadingFull(false), 2500);
       return;
     }
-    setDraft((currentDraft) => ({ ...currentDraft, heading: next }));
+    setDraft((currentDraft) => withSlotText(currentDraft, places, slot, next));
   };
+  const headingSlotId = places.slots.find((slot) => slot.elementIds.includes(headingId))?.id ?? null;
 
   // Fit the module into whatever room is left beside the fields. Measured
   // from the viewport rather than assumed, because a module can be a sixth of
@@ -400,14 +424,21 @@ export function ModuleEditor({
   // on the spread, where they sit on it, each dated as its page is and all
   // drawn from the one draft. See SpreadPiece.
   const pieces = useMemo(() => {
-    const spread = hours ? editing.spread : undefined;
+    // The whole spread for the hours and for any module whose settings are
+    // the journal's - each page's copy drawn with the draft's settings, so
+    // both sides change together as they will when saved.
+    const journalWide = !!definition?.journalWideSettings;
+    const spread = hours || journalWide ? editing.spread : undefined;
     if (!spread || spread.length < 2) {
       return [{ key: editing.instanceId, elements: drawnElements, box, offsetX: 0, offsetY: 0 }];
     }
-    const settings = Object.fromEntries(Object.keys(DEFAULT_HOURLY_SETTINGS).map((key) => [key, draft[key]]));
+    const settingKeys = hours
+      ? Object.keys(DEFAULT_HOURLY_SETTINGS)
+      : (definition?.fields ?? []).flatMap((field) => ("key" in field ? [field.key] : []));
+    const settings = Object.fromEntries(settingKeys.filter((key) => key in draft).map((key) => [key, draft[key]]));
     return spread.map((member) => {
       const memberRowSpan =
-        draft.intervalMode !== "off"
+        hours && draft.intervalMode !== "off"
           ? pixelHeightToRowSpan(
               member.pageGrid,
               getHourlyGridCoreContentHeightPx(draft as Parameters<typeof getHourlyGridCoreContentHeightPx>[0])
@@ -438,7 +469,7 @@ export function ModuleEditor({
         offsetY: member.offsetY,
       };
     });
-  }, [hours, editing, drawnElements, box, draft, fontFamily]);
+  }, [hours, definition, editing, drawnElements, box, draft, fontFamily]);
   const groupWidth = Math.max(...pieces.map((piece) => piece.offsetX + piece.box.width));
   const groupHeight = Math.max(...pieces.map((piece) => piece.offsetY + piece.box.height));
 
@@ -549,25 +580,6 @@ export function ModuleEditor({
       })
     );
   }, [editing.origin, lift]);
-
-  // THE FIELD IS AS WIDE AS THE HEADING, not as the heading's box.
-  //
-  // The renderer never clips: a heading its fit judged too optimistically
-  // runs past its box on the page, start-aligned, as CSS overflows centred
-  // text. An input DOES clip, so the field cut the same heading off -
-  // reported as "THINGS I'M GRATEFUL FO" (2026-09-29). Measured in the
-  // browser: that heading is 389 print px of Newsreader in a 371px box at
-  // 7pt, because labeledBox's width estimate was taken at a display size
-  // where the face is narrower. So the field takes the text's real width
-  // when that is wider, CENTRED on the box as the page and the print centre
-  // it - see PolotnoJsonRenderer - which puts every letter where it prints.
-  const headingShown = String(draft.heading ?? "") || (heading?.text ?? "");
-  const fieldWidth = heading
-    ? Math.max(
-        (heading.width ?? 0) * scale,
-        measureTextPx(headingShown.toUpperCase(), (heading.fontSize ?? 0) * scale, String(heading.fontFamily ?? "")) + 2
-      )
-    : 0;
 
   // THE HOURS SAVE AS THE JOURNAL'S HOUR SETTINGS, through the one action
   // that sizes every page's hours and makes room below them. It shrinks
@@ -739,73 +751,30 @@ export function ModuleEditor({
           </div>
         ))}
 
-        {/* The heading, as a field. In CSS px OUTSIDE the transform, so its
-            hover ring is a real 1px at any magnification rather than one
-            print px scaled up. Its box is the renderer's text box exactly:
-            one line, 1.2em tall, from the element's top - which is how the
-            renderer draws every heading, wrapped or not - so nothing moves
-            when the caret arrives. */}
-        {heading && (
-          <input
-            type="text"
-            aria-label="Heading, on the page"
-            className="memari-heading-field"
-            value={String(draft.heading ?? "")}
-            // An UNSET heading prints its module's default - the to-do's
-            // "TO - DO", a mini month's month name - so an empty field shows
-            // what the renderer drew for it, in the same ink, where it
-            // prints. Typing replaces it, exactly as it would on paper.
-            placeholder={heading.text ?? ""}
-            spellCheck={false}
-            onChange={(event) => takeHeading(event.target.value)}
-            onKeyDown={(event) => {
-              // A heading is one line; Return means done with it.
-              if (event.key === "Enter") event.currentTarget.blur();
+        {/* Every text setting, as a field over where it prints - see
+            CanvasTextFields. One piece only: the hours and the month calendar
+            have no text to type. */}
+        {pieces.length === 1 && places.slots.length > 0 && (
+          <CanvasTextFields
+            slots={places.slots}
+            box={box}
+            scale={scale}
+            pad={FRAME_PAD}
+            focusedId={focusedSlotId}
+            pendingFocusId={pendingFocusId}
+            onPendingFocusDone={() => setPendingFocusId(null)}
+            onFocusChange={setFocusedSlotId}
+            onText={takeText}
+            onEnterItem={(slot) => {
+              const next = withItemAfter(draft, places, slot.key, slot.index ?? 0);
+              setDraft(next.values);
+              setPendingFocusId(`${slot.key}#${next.index}`);
             }}
-            onPointerEnter={() => setHeadingHovered(true)}
-            onPointerLeave={() => setHeadingHovered(false)}
-            onFocus={() => setHeadingFocused(true)}
-            onBlur={() => setHeadingFocused(false)}
-            style={{
-              position: "absolute",
-              left:
-                FRAME_PAD +
-                ((heading.x ?? 0) - box.x) * scale +
-                (heading.align === "center"
-                  ? ((heading.width ?? 0) * scale - fieldWidth) / 2
-                  : heading.align === "right"
-                  ? (heading.width ?? 0) * scale - fieldWidth
-                  : 0),
-              top: FRAME_PAD + ((heading.y ?? 0) - box.y) * scale,
-              width: fieldWidth,
-              height: (heading.fontSize ?? 0) * 1.2 * scale,
-              margin: 0,
-              padding: 0,
-              border: "none",
-              borderRadius: 2,
-              background: headingFocused
-                ? "rgba(74, 92, 255, 0.07)"
-                : headingHovered
-                ? "rgba(74, 92, 255, 0.04)"
-                : "transparent",
-              // The ring sits OUTSIDE the text's box, so the text itself
-              // stays exactly where the page prints it.
-              outline: `1px solid ${
-                headingFocused ? ACCENT : headingHovered ? "rgba(74, 92, 255, 0.5)" : "transparent"
-              }`,
-              outlineOffset: 3,
-              fontFamily: heading.fontFamily,
-              fontSize: (heading.fontSize ?? 0) * scale,
-              fontWeight: "normal",
-              lineHeight: 1.2,
-              letterSpacing: (heading.letterSpacing as CSSProperties["letterSpacing"]) ?? "normal",
-              textAlign: (heading.align as CSSProperties["textAlign"]) ?? "left",
-              textTransform: "uppercase",
-              color: heading.fill ?? "#000000",
-              caretColor: ACCENT,
-              cursor: "text",
-              transition: "outline-color 120ms ease-out, background 120ms ease-out",
+            onRemoveItem={(slot, focusPrevious) => {
+              setDraft((current) => withoutItem(definition?.fields, current, places, slot.key, slot.index ?? 0));
+              if (focusPrevious && (slot.index ?? 0) > 0) setPendingFocusId(`${slot.key}#${(slot.index ?? 0) - 1}`);
             }}
+            headingSlotId={headingSlotId}
           />
         )}
 
@@ -900,17 +869,20 @@ export function ModuleEditor({
             />
           ) : (
             <ModuleFieldsForm
-              fields={definition?.fields ?? []}
+              fields={(definition?.fields ?? []).filter((field) => !("key" in field) || !onCanvasKeys.has(field.key))}
               values={draft}
               defaults={defaults}
               drawRule={drawRule}
               drawn={everyMark}
               weekStartDay={weekStart}
-              onChange={(key, value) =>
-                key === "heading" && typeof value === "string"
-                  ? takeHeading(value)
-                  : setDraft((current) => ({ ...current, [key]: value }))
+              onCanvasHint={
+                onCanvasKeys.size > 0
+                  ? canvasFields(definition?.fields).some((field) => field.kind === "lines" && field.canvas.add && onCanvasKeys.has(field.key))
+                    ? "Click any words on the preview to change them. Return after a row adds another."
+                    : "Click any words on the preview to change them."
+                  : undefined
               }
+              onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
             />
           )}
         </div>
@@ -1021,10 +993,12 @@ export function ModuleEditor({
           {!error && (
             <span
               role="status"
-              style={{ flex: 1, minWidth: 0, fontSize: 11, color: headingFull ? "#ffffff" : "rgba(255,255,255,0.35)" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 11, color: headingFull || focusedSlot?.truncated ? "#ffffff" : "rgba(255,255,255,0.35)" }}
             >
               {headingFull
                 ? `The heading is as long as fits at ${HEADING_SIZES_PT[HEADING_SIZES_PT.length - 1]}pt, the smallest print size`
+                : focusedSlot?.truncated
+                ? "Longer than its space: the page cuts it off"
                 : dirty
                 ? "Unsaved changes"
                 : "No changes"}
@@ -1052,18 +1026,6 @@ export function ModuleEditor({
       </div>
     </div>
   );
-}
-
-let measuringContext: CanvasRenderingContext2D | null = null;
-
-/** How wide `text` sets in `fontFamily` at `fontSizePx`, as the browser draws
- *  it. 0 where there is no canvas to ask. */
-function measureTextPx(text: string, fontSizePx: number, fontFamily: string): number {
-  if (typeof document === "undefined" || !text || !(fontSizePx > 0)) return 0;
-  measuringContext ??= document.createElement("canvas").getContext("2d");
-  if (!measuringContext) return 0;
-  measuringContext.font = `${fontSizePx}px "${fontFamily}"`;
-  return measuringContext.measureText(text).width;
 }
 
 /** The element list without one element, wherever it sits - groups included,

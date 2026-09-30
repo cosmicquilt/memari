@@ -4933,11 +4933,14 @@ export function NativePlannerEditor({
   // ModuleEditor's flight. The HOURS open as the whole spread's hours, each
   // page's placed as it sits on the canvas ("it should show both sides in
   // the popup"), so their offsets come from the same measurement, in print
-  // px by way of the canvas's own scale.
+  // px by way of the canvas's own scale. So does anything else whose
+  // settings are the journal's - the month calendar, asked 2026-09-30: "it
+  // should show the entire spread not just one side".
   const openModuleEditor = useCallback(
     (editing: EditingModule) => {
-      const hoursEditor = moduleDefinition(editing.slug)?.pageSettingsForm === "hours";
-      const memberIds = hoursEditor
+      const definition = moduleDefinition(editing.slug);
+      const wholeSpread = definition?.pageSettingsForm === "hours" || !!definition?.journalWideSettings;
+      const memberIds = wholeSpread
         ? pages.flatMap((page) =>
             (instanceIdsByPageId[page.pageId] ?? []).filter((id) => moduleLookup.get(id)?.slug === editing.slug)
           )

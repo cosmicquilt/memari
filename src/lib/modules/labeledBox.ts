@@ -25,7 +25,16 @@ export type LabeledBoxConfig = {
   rule?: BoxRule;
   /** What each writing line starts with - see rowMarkerElement. */
   lineStart?: RowMarker;
-  /** One column, or two with a divider on the lattice. */
+  /**
+   * Dividers down the page's day columns, where the box spans more than one:
+   * a note box under three days of hours becomes three, one under each.
+   * Asked 2026-09-30 in place of a one-or-two columns picker: "just make it a
+   * switch that says dividers and it should split them into the day columns
+   * if wider".
+   */
+  dividers?: boolean;
+  /** THE OLD PICKER - 2 read as dividers on, so a box saved with two
+   *  columns keeps its divider. Nothing writes it any more. */
   columns?: 1 | 2;
   /**
    * The heading and its band, or none - a box that is only writing space.
@@ -276,19 +285,30 @@ export function renderLabeledBox(
   const bottom = geometry.y + geometry.height;
   const left = geometry.x;
   const right = geometry.x + geometry.width;
-  // Two columns: a divider on the lattice column nearest the middle, each
-  // half filled on its own. Asked in the module-edits list: a note box under
-  // the hours is 4.5in wide, and its lines were longer than anyone writes.
+  // DIVIDERS DOWN THE DAY COLUMNS: a rule on each of the page's day
+  // boundaries that falls inside the box, each column then filled on its
+  // own - so a note box under the hours has a column under each day. Measured
+  // from the PAGE's lattice, not the box, so a divider is where the day
+  // above it ends; a box one day wide has none. Asked in the module-edits
+  // list as "two columns" (a note box under the hours is 4.5in wide, and its
+  // lines were longer than anyone writes), then as this switch.
   const pitch = rowHeightPx(lattice);
-  const originX = lattice ? geometry.x - lattice.insetPx : geometry.x;
-  const twoColumns = config.columns === 2 && geometry.width >= pitch * 4;
-  const divider = twoColumns ? originX + Math.round((geometry.x + geometry.width / 2 - originX) / pitch) * pitch : null;
-  if (divider !== null) {
+  const dividersOn = config.dividers ?? config.columns === 2;
+  const dayWidth = (lattice?.dayCells ?? 6) * pitch;
+  const pageLeft = lattice?.originX ?? geometry.x;
+  const dividerXs: number[] = [];
+  if (dividersOn) {
+    // A boundary closer than a cell to either edge would leave a sliver
+    // column - the box starting a little short of a day's edge, say.
+    const first = Math.ceil((left + pitch - pageLeft) / dayWidth);
+    for (let k = first; pageLeft + k * dayWidth <= right - pitch; k++) dividerXs.push(pageLeft + k * dayWidth);
+  }
+  dividerXs.forEach((x, k) => {
     elements.push({
-      id: id("column-rule"),
+      id: id(`divider${k}`),
       type: "figure",
       subType: "rect",
-      x: divider - ptToPx(RULE_WIDTH_PT) / 2,
+      x: x - ptToPx(RULE_WIDTH_PT) / 2,
       y: bodyTop,
       width: ptToPx(RULE_WIDTH_PT),
       height: bottom - bodyTop,
@@ -296,14 +316,14 @@ export function renderLabeledBox(
       stroke: "none",
       opacity: 0.6,
     });
-  }
-  const halves =
-    divider === null
-      ? [{ tag: "", left, right }]
-      : [
-          { tag: rule === "lined" || rule === "graph" ? "c0-" : "", left, right: divider },
-          { tag: rule === "lined" || rule === "graph" ? "c1-" : "", left: divider, right },
-        ];
+  });
+  const edges = [left, ...dividerXs, right];
+  const lines = rule === "lined" || rule === "graph";
+  const halves = edges.slice(1).map((edge, k) => ({
+    tag: lines && edges.length > 2 ? `c${k}-` : "",
+    left: edges[k],
+    right: edge,
+  }));
   for (const half of halves) {
     elements.push(
       ...latticeFill({

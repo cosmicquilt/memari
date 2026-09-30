@@ -112,6 +112,8 @@ export type ModuleLattice = {
   originX: number;
   originY: number;
   insetPx: number;
+  /** A day column's width in cells - see FrameLattice. */
+  dayCells?: number;
 };
 
 /**
@@ -130,10 +132,46 @@ export type ModuleLattice = {
  * and the next module with a list would have needed the same clause added
  * beside it.
  */
+/**
+ * WHERE A TEXT SETTING IS DRAWN, so it is edited there - hovered, clicked and
+ * typed into, live - rather than typed into the panel. Asked 2026-09-30:
+ * "instead of typing things out in the side panel, have them only editable
+ * through hovering the region it will display and clicking to edit text
+ * normally and live". See lib/canvasText.ts, which turns these into the
+ * places the editor lays a field over.
+ *
+ * `element` is the drawn text element's id after the instance id, `#` for a
+ * list item's index - or several such, for a module with two layouts - or a
+ * function of the index where the ids are not numbered (the matrix's
+ * corners). Where the value is empty and nothing is drawn, the module is
+ * drawn once more with `placeholder` written in, to find where it would
+ * print.
+ */
+export type CanvasText = {
+  element: string | string[] | ((index: number) => string);
+  placeholder: string;
+  /** Every element matching `element` (a regex after the instance id) draws
+   *  this one value between them - a stacked label, a wrapped passage. */
+  several?: boolean;
+};
+export type CanvasList = CanvasText & {
+  /** Can an item be added - Return after an item, or typed into the place
+   *  after the last where there is one - or is the count the drawing's own
+   *  (the icon strip's strips follow its height)? */
+  add: boolean;
+  /** Items from this index; the ones before are another field's (the icon
+   *  strip's first strip is its heading). */
+  from?: number;
+};
+
 export type ModuleField =
-  | { kind: "text"; key: string; label: string }
+  | { kind: "text"; key: string; label: string; canvas?: CanvasText }
   | { kind: "boolean"; key: string; label: string }
-  | { kind: "lines"; key: string; label: string; rows?: number }
+  // POSITIONAL lists keep a blank where it is - the icon strip's second
+  // strip label, the matrix's third corner, a scale's unnamed level - where
+  // dropping it would move everything after it up a place. Others lose
+  // their blanks at save, and an item cleared on the page is removed.
+  | { kind: "lines"; key: string; label: string; rows?: number; canvas?: CanvasList; positional?: boolean }
   // A count, not a measurement: how many segments a meter has, how many
   // lines follow a prompt, where a rating scale starts and stops. Kept
   // apart from `text` because a number arriving from an <input type="text">
@@ -164,7 +202,7 @@ export type ModuleField =
   // the fact that it is a single piece of writing. The two look identical
   // in the panel and store different things, which is the whole
   // distinction.
-  | { kind: "paragraph"; key: string; label: string; rows?: number }
+  | { kind: "paragraph"; key: string; label: string; rows?: number; canvas?: CanvasText }
   // Widths in whole lattice cells, one per column, edited by dragging the
   // dividers on the preview - the panel only says so and offers a reset.
   // See ColumnDividers.
@@ -702,10 +740,9 @@ const PRIMITIVES = {
             "enum": ["none", "numbers", "bullets", "boxes"],
             "default": "none"
           },
-          "columns": {
-            "type": "integer",
-            "enum": [1, 2],
-            "default": 1
+          "dividers": {
+            "type": "boolean",
+            "default": false
           },
           "showHeading": {
             "type": "boolean",
@@ -733,7 +770,7 @@ const PRIMITIVES = {
     previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       { kind: "boolean", key: "showHeading", label: "Show the heading" },
       {
         kind: "rule",
@@ -759,20 +796,15 @@ const PRIMITIVES = {
         ],
         window: { x: "left", y: "top", columns: 2.2, rows: 3.2 },
       },
-      {
-        kind: "rule",
-        key: "columns",
-        label: "Columns",
-        options: [
-          { value: 1, label: "One" },
-          { value: 2, label: "Two" },
-        ],
-        window: { x: "centre", y: "bottom", columns: 3, rows: 2.1 },
-      },
+      // Down the page's day columns, where the box spans more than one.
+      { kind: "boolean", key: "dividers", label: "Dividers" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily, lattice),
-    current: (props) => (props.rule === undefined ? { ...props, rule: props.ruled ? "lined" : "none" } : props),
+    current: (props) => {
+      const ruled = props.rule === undefined ? { ...props, rule: props.ruled ? "lined" : "none" } : props;
+      return ruled.dividers === undefined && ruled.columns === 2 ? { ...ruled, dividers: true } : ruled;
+    },
     // Its heading drops a point size rather than wrapping when the box
     // narrows, and a ruled box gains rules as it grows, so both axes
     // change the drawing.
@@ -877,7 +909,7 @@ const PRIMITIVES = {
     paletteName: "To-Do",
     previewProps: { dayCount: 1 },
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       {
         kind: "rule",
         key: "lineStyle",
@@ -901,7 +933,8 @@ const PRIMITIVES = {
         ],
         window: { x: "left", y: "top", columns: 2.2, rows: 2.8 },
       },
-      { kind: "lines", key: "items", label: "Printed items (one per line)", rows: 6 },
+      // Printed on the first day's rows, and repeated on every other day's.
+      { kind: "lines", key: "items", label: "Printed items (one per line)", rows: 6, canvas: { element: "-d0-row#-item", placeholder: "Add an item", add: true } },
       { kind: "boolean", key: "numbered", label: "Number the rows" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
@@ -965,9 +998,12 @@ const PRIMITIVES = {
     paletteName: "Habits",
     previewProps: { heading: "Habits" },
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
-      { kind: "lines", key: "habits", label: "Rows (one per line)", rows: 8 },
-      { kind: "lines", key: "columns", label: "Columns (one per line, blank for a week)", rows: 4 },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      { kind: "lines", key: "habits", label: "Rows (one per line)", rows: 8, canvas: { element: ["-row#-name", "-pair#-name"], placeholder: "Add a habit", add: true } },
+      // Blank is a week, drawn as its initials - edited there, it becomes a
+      // list of its own. The compact layout repeats the heads under every
+      // habit; the first habit's are the ones edited.
+      { kind: "lines", key: "columns", label: "Columns (one per line, blank for a week)", rows: 4, canvas: { element: ["-day#-letter", "-pair0-day#-letter"], placeholder: "Column", add: true } },
       {
         kind: "rule",
         key: "cells",
@@ -1251,8 +1287,8 @@ const PRIMITIVES = {
     },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
-      { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5 },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5, canvas: { element: "-c#-head", placeholder: "Column", add: true } },
       { kind: "columnWidths", key: "cellWidths", label: "Column widths" },
       {
         kind: "rule",
@@ -1266,7 +1302,8 @@ const PRIMITIVES = {
       },
       { kind: "boolean", key: "rowNumbers", label: "Number the rows" },
       { kind: "boolean", key: "totalsRow", label: "Totals row" },
-      { kind: "text", key: "totalsLabel", label: "Totals label" },
+      // Drawn only with the totals row, so it is only there to edit then.
+      { kind: "text", key: "totalsLabel", label: "Totals label", canvas: { element: "-totals-label", placeholder: "Total" } },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderColumnTable(geometry, propValues as ColumnTableConfig, idPrefix, fontFamily, lattice),
@@ -1331,8 +1368,8 @@ const PRIMITIVES = {
     },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
-      { kind: "lines", key: "prompts", label: "Prompts (one per line)", rows: 6 },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      { kind: "lines", key: "prompts", label: "Prompts (one per line)", rows: 6, canvas: { element: "-p#-prompt", placeholder: "Add a prompt", add: true } },
       {
         kind: "countEach",
         key: "promptLines",
@@ -1415,7 +1452,7 @@ const PRIMITIVES = {
     previewProps: { year: 2026, month: 1, heading: "", markable: false, keepDates: false },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading (blank for the month name)" },
+      { kind: "text", key: "heading", label: "Heading (blank for the month name)", canvas: { element: "-heading", placeholder: "Heading" } },
       { kind: "number", key: "year", label: "Year", min: 1900, max: 2100 },
       { kind: "number", key: "month", label: "Month (1-12)", min: 1, max: 12 },
       {
@@ -1525,7 +1562,7 @@ const PRIMITIVES = {
     previewProps: { heading: "Progress", total: 30, milestoneEvery: 10, numbered: true },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       { kind: "number", key: "total", label: "Segments", min: 1, max: 400 },
       { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
       {
@@ -1550,8 +1587,8 @@ const PRIMITIVES = {
         ],
         window: { x: "left", y: "top", columns: 3.4, rows: 2.1 },
       },
-      { kind: "text", key: "startLabel", label: "Start label (optional)" },
-      { kind: "text", key: "endLabel", label: "End label (optional)" },
+      { kind: "text", key: "startLabel", label: "Start label (optional)", canvas: { element: "-start-label", placeholder: "Start" } },
+      { kind: "text", key: "endLabel", label: "End label (optional)", canvas: { element: "-end-label", placeholder: "Goal" } },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderProgressMeter(geometry, propValues as ProgressMeterConfig, idPrefix, fontFamily, lattice),
@@ -1607,7 +1644,7 @@ const PRIMITIVES = {
     previewProps: { heading: "Water", icon: "droplet", count: 8 },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-s0-heading", placeholder: "Heading" } },
       {
         kind: "icon",
         key: "icon",
@@ -1627,7 +1664,9 @@ const PRIMITIVES = {
       },
       { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24 },
       { kind: "number", key: "groups", label: "Groups across (0 = one per column)", min: 0, max: 12 },
-      { kind: "lines", key: "stripLabels", label: "A label for each strip (one per line)", rows: 4 },
+      // Strip 0 is the heading; each other strip shows the heading until it
+      // has a label of its own. As many as the height draws.
+      { kind: "lines", key: "stripLabels", label: "A label for each strip (one per line)", rows: 4, positional: true, canvas: { element: "-s#-heading", placeholder: "Label", add: false, from: 1 } },
       {
         kind: "iconEach",
         key: "stripIcons",
@@ -1724,8 +1763,8 @@ const PRIMITIVES = {
     },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
-      { kind: "lines", key: "items", label: "Rows (one per line)", rows: 6 },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      { kind: "lines", key: "items", label: "Rows (one per line)", rows: 6, canvas: { element: "-i#-label", placeholder: "Add a row", add: true } },
       { kind: "number", key: "scaleMin", label: "Scale from", min: 0, max: 10 },
       { kind: "number", key: "scaleMax", label: "Scale to", min: 1, max: 20 },
       // Drawn, like the icon strip's own picker, and any of its glyphs.
@@ -1752,8 +1791,9 @@ const PRIMITIVES = {
         ],
         window: { x: "right", y: "top", columns: 3.4, rows: 3.3 },
       },
-      { kind: "text", key: "lowLabel", label: "Low end, in words" },
-      { kind: "text", key: "highLabel", label: "High end, in words" },
+      // Drawn only with the scale in words, so only there to edit then.
+      { kind: "text", key: "lowLabel", label: "Low end, in words", canvas: { element: "-scale-low", placeholder: "low" } },
+      { kind: "text", key: "highLabel", label: "High end, in words", canvas: { element: "-scale-high", placeholder: "high" } },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily, lattice),
@@ -1795,7 +1835,7 @@ const PRIMITIVES = {
     previewProps: { heading: "Mood", span: "week", levels: DEFAULT_DAY_CHART_LEVELS, look: "dots" },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       {
         kind: "select",
         key: "span",
@@ -1805,7 +1845,8 @@ const PRIMITIVES = {
           { value: "month", label: "The days of the month" },
         ],
       },
-      { kind: "lines", key: "levels", label: "Levels, highest first (one per line)", rows: 5 },
+      // A blank level is one left to write in, so it keeps its place.
+      { kind: "lines", key: "levels", label: "Levels, highest first (one per line)", rows: 5, positional: true, canvas: { element: "-l#-label", placeholder: "Level", add: true } },
       {
         kind: "rule",
         key: "look",
@@ -1893,20 +1934,29 @@ const PRIMITIVES = {
     },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading" },
-      { kind: "text", key: "xLeft", label: "Across: left end" },
-      { kind: "text", key: "xRight", label: "Across: right end" },
+      { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      { kind: "text", key: "xLeft", label: "Across: left end", canvas: { element: "-x-left", placeholder: "Less" } },
+      { kind: "text", key: "xRight", label: "Across: right end", canvas: { element: "-x-right", placeholder: "More" } },
       // The down axis is set one letter per line in a gutter, so a long
       // word costs height that a wide one does not - see
       // AXIS_LABEL_DEFAULT_UNITS.
-      { kind: "text", key: "yTop", label: "Down: upper half (short)" },
-      { kind: "text", key: "yBottom", label: "Down: lower half (short)" },
+      // Stacked a letter at a time, so every letter is part of the one label.
+      { kind: "text", key: "yTop", label: "Down: upper half (short)", canvas: { element: "-y-top-l\\d+", placeholder: "High", several: true } },
+      { kind: "text", key: "yBottom", label: "Down: lower half (short)", canvas: { element: "-y-bottom-l\\d+", placeholder: "Low", several: true } },
       // READING ORDER, not clockwise, which is what this said and what the
       // renderer has never done: corners run tl, tr, bl, br. Clockwise
       // would swap the bottom two, which on the Eisenhower matrix puts
       // Delete under "urgent" and Delegate under "not urgent" - the two
       // most consequential boxes, exactly reversed.
-      { kind: "lines", key: "quadrants", label: "Box names (4: top-left, top-right, bottom-left, bottom-right)", rows: 4 },
+      // Four corners, top-left to bottom-right - each where it prints.
+      {
+        kind: "lines",
+        key: "quadrants",
+        label: "Box names (4: top-left, top-right, bottom-left, bottom-right)",
+        rows: 4,
+        positional: true,
+        canvas: { element: (i) => `-q-${["tl", "tr", "bl", "br"][i] ?? "none"}`, placeholder: "Name", add: false },
+      },
       {
         kind: "rule",
         key: "boxNames",
@@ -1983,9 +2033,10 @@ const PRIMITIVES = {
     },
     resizableWidth: true,
     fields: [
-      { kind: "text", key: "heading", label: "Heading (optional)" },
-      { kind: "paragraph", key: "body", label: "Text", rows: 8 },
-      { kind: "text", key: "attribution", label: "Attribution (optional)" },
+      { kind: "text", key: "heading", label: "Heading (optional)", canvas: { element: "-heading", placeholder: "Heading" } },
+      // Wrapped by the renderer into a line element each.
+      { kind: "paragraph", key: "body", label: "Text", rows: 8, canvas: { element: "-line\\d+", placeholder: "Your text", several: true } },
+      { kind: "text", key: "attribution", label: "Attribution (optional)", canvas: { element: "-attribution", placeholder: "Attribution" } },
       {
         kind: "select",
         key: "align",
@@ -2416,9 +2467,15 @@ export function cleanPropsForSave(
   const out = { ...propValues };
   for (const field of fields) {
     if (field.kind !== "lines") continue;
-    out[field.key] = ((out[field.key] as string[] | undefined) ?? [])
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const trimmed = ((out[field.key] as string[] | undefined) ?? []).map((line) => String(line ?? "").trim());
+    if (field.positional) {
+      // A blank keeps its place - dropping it moved every later label up
+      // one: the matrix's third corner became its second.
+      while (trimmed.length > 0 && !trimmed[trimmed.length - 1]) trimmed.pop();
+      out[field.key] = trimmed;
+    } else {
+      out[field.key] = trimmed.filter(Boolean);
+    }
   }
   return out;
 }

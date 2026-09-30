@@ -15,6 +15,9 @@ export type FrameLattice = {
   originX: number;
   originY: number;
   insetPx: number;
+  /** A day column's width in cells - a quarter of the page (grid.ts's
+   *  dayUnitColumns), where the hours' days fall. 6 on the 24-column page. */
+  dayCells?: number;
 };
 
 export type FrameElement = {
