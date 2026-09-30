@@ -1964,6 +1964,19 @@ const roundTwoPickers: Probe = {
         if (!tick || tick.options !== 3 || tick.drawings !== 3) problems.push(`the Tick mark picker is ${JSON.stringify(tick)}`);
         else if (tick.chosen !== "Column") problems.push(`a to-do opens with ${tick.chosen} as its tick mark, not Column`);
         else notesSeen.push("to-do: tick mark Column by default, three drawn");
+        // THE ITEMS BOX GROWS AND HAS NO GRIP. Its resize grip was the one
+        // thing on the page Chrome draws as anti-aliased diagonals, and
+        // compiling their shaders was the to-do's 104-157ms opening frame
+        // (2026-09-30). Typed a line at a time, it must get taller.
+        const items = tab.getByRole("dialog").getByLabel("Printed items (one per line)");
+        const grip = await items.evaluate((el) => getComputedStyle(el).resize);
+        const shortHeight = (await items.boundingBox())?.height ?? 0;
+        await items.click();
+        await tab.keyboard.type(Array.from({ length: 12 }, (_, i) => `Item ${i + 1}`).join("\n"), { delay: 5 });
+        const tallHeight = (await items.boundingBox())?.height ?? 0;
+        if (grip !== "none") problems.push(`the items box has a resize grip again (resize: ${grip})`);
+        else if (!(tallHeight > shortHeight + 50)) problems.push(`twelve typed items left the box ${Math.round(shortHeight)} -> ${Math.round(tallHeight)}px tall`);
+        else notesSeen.push(`items box: no grip, grew ${Math.round(shortHeight)} -> ${Math.round(tallHeight)}px for twelve lines`);
         const before = await drawnOnPage(todo.id);
         await tab.getByRole("dialog").getByRole("radio", { name: "Circle" }).click();
         await done();

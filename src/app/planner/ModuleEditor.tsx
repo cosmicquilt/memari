@@ -905,6 +905,7 @@ export function ModuleEditor({
               defaults={defaults}
               drawRule={drawRule}
               drawn={everyMark}
+              weekStartDay={weekStart}
               onChange={(key, value) =>
                 key === "heading" && typeof value === "string"
                   ? takeHeading(value)

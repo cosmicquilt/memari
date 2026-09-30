@@ -182,6 +182,9 @@ export type ModuleField =
       countPattern: string;
       labelsKey?: string;
       namePattern?: string;
+      /** Where `namePattern` finds a drawn label, name the item by the
+       *  journal's own week ("Sun", "Mon") - the drawing may abbreviate. */
+      weekdayNames?: boolean;
       defaultKey: string;
       options: Array<{ value: string; label: string }>;
     }
@@ -1636,6 +1639,9 @@ const PRIMITIVES = {
         itemLabel: "Day",
         countPattern: "-s0-g(\\d+)-i0$",
         namePattern: "-g#-day$",
+        // Named as the week names them, not as drawn: a narrow strip draws
+        // initials, and "S" does not say Sunday or Saturday.
+        weekdayNames: true,
         defaultKey: "icon",
         options: GLYPH_PICKER_OPTIONS,
       },

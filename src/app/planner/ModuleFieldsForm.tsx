@@ -18,6 +18,7 @@ import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { flatten, toSvg } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { weekdayShortNames } from "@/lib/weekDays";
 
 const ACCENT = "#4a5cff";
 
@@ -55,6 +56,22 @@ const inputStyle: CSSProperties = {
   border: "1px solid rgba(255, 255, 255, 0.33)",
   borderRadius: 7,
 };
+
+/**
+ * A TEXT BOX THAT GROWS WITH WHAT IS IN IT, from `rows` lines up, rather than
+ * one with a resize grip. The grip cost the to-do's editor its opening: it is
+ * the only thing on the page Chrome draws as small anti-aliased diagonals, so
+ * the GPU compiled new shaders for it on the flight's first frame - measured
+ * 2026-09-30 as a 104-157ms frame on a fresh browser profile and 55-74ms in
+ * later sessions, gone (18-20ms) with the grip off. Growing is the better
+ * field anyway: nothing to drag, and a long list is never scrolled inside a
+ * panel that already scrolls. `field-sizing` is Chrome's; elsewhere the box
+ * keeps its `rows` and scrolls, as before less the grip.
+ */
+function growingTextareaStyle(rows: number): CSSProperties {
+  // 13px at 1.5 is 19.5px a line, plus the padding and the border.
+  return { ...inputStyle, resize: "none", fieldSizing: "content", lineHeight: 1.5, minHeight: rows * 19.5 + 16 };
+}
 
 /**
  * Focus, which inline styles cannot express - so a <style> element, the same
@@ -267,6 +284,7 @@ export function ModuleFieldsForm({
   defaults,
   drawRule,
   drawn,
+  weekStartDay = 0,
 }: {
   fields: ModuleField[];
   values: Record<string, unknown>;
@@ -281,6 +299,8 @@ export function ModuleFieldsForm({
   /** The module as drawn - an `iconEach` field counts and names its rows
    *  and days from it. */
   drawn?: RenderedPolotnoElement[];
+  /** The journal's first day of the week, for fields that name days. */
+  weekStartDay?: number;
 }) {
   if (fields.length === 0) {
     return (
@@ -318,8 +338,11 @@ export function ModuleFieldsForm({
             if (field.namePattern) {
               const naming = new RegExp(field.namePattern.replace("#", String(i)));
               const text = (drawn ?? []).find((element) => naming.test(String(element.id)))?.text;
-              // Drawn in capitals ("MON"); named as a word ("Mon").
-              if (typeof text === "string" && text.trim()) return text.trim().charAt(0) + text.trim().slice(1).toLowerCase();
+              const word = (name: string) => name.charAt(0) + name.slice(1).toLowerCase();
+              // Drawn in capitals ("MON"), maybe as an initial; named as a word ("Mon").
+              if (typeof text === "string" && text.trim()) {
+                return field.weekdayNames ? word(weekdayShortNames(weekStartDay)[i % 7]) : word(text.trim());
+              }
             }
             return `${field.itemLabel} ${i + 1}`;
           };
@@ -670,7 +693,7 @@ export function ModuleFieldsForm({
                 value={(values[field.key] as string | undefined) ?? ""}
                 onChange={(event) => onChange(field.key, event.target.value)}
                 className="memari-field"
-                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+                style={growingTextareaStyle(field.rows ?? 5)}
               />
             </label>
           );
@@ -688,7 +711,7 @@ export function ModuleFieldsForm({
                 value={((values[field.key] as string[] | undefined) ?? []).join("\n")}
                 onChange={(event) => onChange(field.key, event.target.value.split("\n"))}
                 className="memari-field"
-                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+                style={growingTextareaStyle(field.rows ?? 6)}
               />
               <span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.35)" }}>
                 One per line.
