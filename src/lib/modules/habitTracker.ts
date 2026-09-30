@@ -59,11 +59,11 @@ export type HabitTrackerConfig = {
   weekStartDay?: number;
   /**
    * What you mark: the ruled grid (the default, and everything stored
-   * before), a circle to fill in each cell - the bullet-journal tracker - or
-   * a dot, the lightest. The row rules stay in every option so the rows
-   * still read across. Module-edits list, 2026-09-30.
+   * before) or a circle to fill in each cell - the bullet-journal tracker.
+   * The row rules stay either way so the rows still read across. A dot was
+   * offered too and turned down (2026-09-30); anything else draws the grid.
    */
-  cells?: "grid" | "circles" | "dots";
+  cells?: "grid" | "circles";
   /** A last column, two cells wide, to write a total in - "5/7". The week
    *  stays derived; typing it out into Columns to add one stops it
    *  following the journal. Wide layout only: a sidebar has no room. */
@@ -94,10 +94,6 @@ function cellMark(
       strokeWidth: ptToPx(ROW_LINE_WIDTH_PT),
       opacity: 0.7,
     };
-  }
-  if (cells === "dots") {
-    const r = ptToPx(1);
-    return { id, type: "figure", subType: "rect", x: cx - r, y: cy - r, width: r * 2, height: r * 2, cornerRadius: r, fill: NEAR_BLACK, stroke: "none", opacity: 0.55 };
   }
   return null;
 }
@@ -327,7 +323,7 @@ export function renderHabitTracker(
     (geometry.width * 0.72 - totalWidth) / columns.length
   );
   const nameColumnWidth = geometry.width - dayColumnWidth * columns.length - totalWidth;
-  const marked = config.cells === "circles" || config.cells === "dots";
+  const marked = config.cells === "circles";
 
   const rowCount = Math.max(
     0,
@@ -768,7 +764,7 @@ function renderHabitTrackerCompact(
         const ring = cellMark("circles", id(`pair${i}-day${d}-mark`), colX + squareSize / 2, squareRowTop + squareSize / 2, squareSize * 1.6);
         if (ring) elements.push(ring);
       }
-      if (d > 0 && config.cells !== "circles" && config.cells !== "dots") {
+      if (d > 0 && config.cells !== "circles") {
         elements.push({
           id: id(`pair${i}-day${d}-rule`),
           type: "figure",

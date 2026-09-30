@@ -25,6 +25,7 @@ import {
   type FrameLattice } from "@/lib/modules/moduleFrame";
 import { capCentredTextY, fitLabel } from "@/lib/modules/textFit";
 import { rowMarkerElement } from "./latticeFill";
+import { glyphElement } from "./glyphs";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -56,6 +57,9 @@ export type TodoChecklistConfig = {
   items?: string[];
   /** A number at the start of every row, for a list whose order matters. */
   numbered?: boolean;
+  /** What you tick: the ruled column (the default), or a square or circle -
+   *  symbols from glyphs.ts, which a bigger set will join. */
+  tickMark?: "column" | "square" | "circle";
 };
 
 /** A to-do's printed items: the non-blank ones, as they will print. */
@@ -337,65 +341,9 @@ export function renderTodoChecklist(
     // the box's own border.
     const columnLines = [
       ...(d > 0 || !lattice ? [{ name: "checkbox-left", x: segX }] : []),
-      { name: "checkbox-right", x: segX + checkboxWidth },
+      // No tick column's edge when the mark is a symbol instead.
+      ...(config.tickMark === "square" || config.tickMark === "circle" ? [] : [{ name: "checkbox-right", x: segX + checkboxWidth }]),
     ];
-
-    if (crosses) {
-      // Ticks where each column line meets the header rule and the border.
-      for (const line of columnLines) {
-        vertical(`d${d}-${line.name}-top`, line.x, gridTop, arm);
-        vertical(`d${d}-${line.name}-bottom`, line.x, gridBottom - arm, arm);
-      }
-      for (let i = 0; i < rowCount; i++) {
-        const y = gridTop + (i + 1) * rowHeight;
-        // Not on the bottom border, which is already a line - as below.
-        if (Math.abs(y - gridBottom) < 0.5) continue;
-        for (const line of columnLines) {
-          horizontal(`d${d}-row${i}-${line.name}-h`, line.x, y, arm);
-          vertical(`d${d}-row${i}-${line.name}-v`, line.x, y - arm, arm * 2);
-        }
-        // The first day's left edge IS the box's border, so its cross is the
-        // half that falls inside: a tick in from the border.
-        if (d === 0 && lattice) mark(`d0-row${i}-edge`, geometry.x, y - rowLineWidth / 2, arm, rowLineWidth);
-        // A dash at each dot across the writing space, stopping a whole arm
-        // short of the day's end so none reaches the next day or the border.
-        for (let k = 2; segX + k * checkboxWidth + arm <= segX + segmentWidth + 0.5; k++) {
-          horizontal(`d${d}-row${i}-dash${k}`, segX + k * checkboxWidth, y, arm);
-        }
-      }
-      continue;
-    }
-
-    if (d > 0 || !lattice) elements.push({
-      id: id(`d${d}-checkbox-left`),
-      type: "figure",
-      subType: "rect",
-      x: segX - rowLineWidth / 2,
-      y: gridTop,
-      width: rowLineWidth,
-      // Down to the border, not just to the last row line: with a fixed
-      // pitch those are no longer the same place, and stopping short would
-      // leave the checkbox column hanging above the bottom edge.
-      height: gridHeight,
-      fill: NEAR_BLACK,
-      stroke: "none",
-    });
-
-    // Vertical divider between checkbox and task line.
-    elements.push({
-      id: id(`d${d}-checkbox-right`),
-      type: "figure",
-      subType: "rect",
-      x: segX + checkboxWidth - rowLineWidth / 2,
-      y: gridTop,
-      width: rowLineWidth,
-      // Down to the border, not just to the last row line: with a fixed
-      // pitch those are no longer the same place, and stopping short would
-      // leave the checkbox column hanging above the bottom edge.
-      height: gridHeight,
-      fill: NEAR_BLACK,
-      stroke: "none",
-    });
 
     // What each row starts with: its number, then its printed item. In the
     // row's own band, after the tick column - every band, including the
@@ -441,6 +389,89 @@ export function renderTodoChecklist(
         });
       }
     }
+
+    // THE TICK MARK: the ruled column (the default), or a square or a circle
+    // in the same cell, drawn from the icon strip's own symbols so a larger
+    // set can join them - "circle can be a place holder for now"
+    // (2026-09-30). The row lines stay whichever.
+    const tickMark = config.tickMark === "square" || config.tickMark === "circle" ? config.tickMark : "column";
+    if (tickMark !== "column") {
+      const bands = rowCount + (gridHeight - rowCount * rowHeight > rowHeight / 4 ? 1 : 0);
+      const size = Math.min(checkboxWidth, rowHeight) * 0.42;
+      for (let i = 0; i < bands; i++) {
+        const bandTop = gridTop + i * rowHeight;
+        const bandHeight = Math.min(rowHeight, gridTop + gridHeight - bandTop);
+        elements.push(
+          glyphElement({
+            id: id(`d${d}-row${i}-tick`),
+            // Centred in the cell as drawn: the first day's starts at the border.
+            x: (Math.max(segX, geometry.x) + segX + checkboxWidth) / 2 - size / 2,
+            y: bandTop + bandHeight / 2 - size / 2,
+            sizePx: size,
+            shape: tickMark,
+            opacity: 0.8,
+          })
+        );
+      }
+    }
+
+    if (crosses) {
+      // Ticks where each column line meets the header rule and the border.
+      for (const line of columnLines) {
+        vertical(`d${d}-${line.name}-top`, line.x, gridTop, arm);
+        vertical(`d${d}-${line.name}-bottom`, line.x, gridBottom - arm, arm);
+      }
+      for (let i = 0; i < rowCount; i++) {
+        const y = gridTop + (i + 1) * rowHeight;
+        // Not on the bottom border, which is already a line - as below.
+        if (Math.abs(y - gridBottom) < 0.5) continue;
+        for (const line of columnLines) {
+          horizontal(`d${d}-row${i}-${line.name}-h`, line.x, y, arm);
+          vertical(`d${d}-row${i}-${line.name}-v`, line.x, y - arm, arm * 2);
+        }
+        // The first day's left edge IS the box's border, so its cross is the
+        // half that falls inside: a tick in from the border.
+        if (d === 0 && lattice) mark(`d0-row${i}-edge`, geometry.x, y - rowLineWidth / 2, arm, rowLineWidth);
+        // A dash at each dot across the writing space, stopping a whole arm
+        // short of the day's end so none reaches the next day or the border.
+        for (let k = 2; segX + k * checkboxWidth + arm <= segX + segmentWidth + 0.5; k++) {
+          horizontal(`d${d}-row${i}-dash${k}`, segX + k * checkboxWidth, y, arm);
+        }
+      }
+      continue;
+    }
+
+    if (d > 0 || !lattice) elements.push({
+      id: id(`d${d}-checkbox-left`),
+      type: "figure",
+      subType: "rect",
+      x: segX - rowLineWidth / 2,
+      y: gridTop,
+      width: rowLineWidth,
+      // Down to the border, not just to the last row line: with a fixed
+      // pitch those are no longer the same place, and stopping short would
+      // leave the checkbox column hanging above the bottom edge.
+      height: gridHeight,
+      fill: NEAR_BLACK,
+      stroke: "none",
+    });
+
+    // Vertical divider between checkbox and task line - the tick column,
+    // unless the mark is a symbol.
+    if (config.tickMark !== "square" && config.tickMark !== "circle") elements.push({
+      id: id(`d${d}-checkbox-right`),
+      type: "figure",
+      subType: "rect",
+      x: segX + checkboxWidth - rowLineWidth / 2,
+      y: gridTop,
+      width: rowLineWidth,
+      // Down to the border, not just to the last row line: with a fixed
+      // pitch those are no longer the same place, and stopping short would
+      // leave the checkbox column hanging above the bottom edge.
+      height: gridHeight,
+      fill: NEAR_BLACK,
+      stroke: "none",
+    });
 
     for (let i = 0; i < rowCount; i++) {
       // Every row is exactly one pitch. The last one is NOT pinned to the

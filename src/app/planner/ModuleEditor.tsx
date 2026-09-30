@@ -812,6 +812,7 @@ export function ModuleEditor({
             elements={flatten(drawnElements)}
             instanceId={editing.instanceId}
             columnCount={Math.max(1, ((draft.columns as unknown[] | undefined) ?? []).length)}
+            rowNumbers={draft.rowNumbers === true}
             box={box}
             pitch={cellHeightPx(pageGrid)}
             latticeOrigin={pageGrid.marginPx}

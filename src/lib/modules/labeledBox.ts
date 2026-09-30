@@ -27,6 +27,14 @@ export type LabeledBoxConfig = {
   lineStart?: RowMarker;
   /** One column, or two with a divider on the lattice. */
   columns?: 1 | 2;
+  /**
+   * The heading and its band, or none - a box that is only writing space.
+   * On by default, so the palette shows the box as NOTES; turned off, the
+   * band becomes the first row and every rule stays on its dot. Asked
+   * 2026-09-30: "they can toggle it off but in the palette it should show
+   * with the heading notes".
+   */
+  showHeading?: boolean;
   /** THE OLD BOOLEAN. Read only when `rule` is absent, so a box saved before
    *  this existed still draws its lines. Nothing writes it any more; the
    *  editor writes `rule`. Same shape of change as quote-block's text->body
@@ -175,7 +183,8 @@ export function renderLabeledBox(
   // decides where the rule may sit. Reported as "lined notes also not
   // aligned with dots", which was the body rules, and this is the same
   // rule one band higher.
-  const headerHeight =
+  const headed = config.showHeading !== false;
+  const headerHeight = !headed ? 0 :
     contentTopAtLeastPx(
       geometry,
       ptToPx(wraps ? HEADER_HEIGHT_TWO_LINE_PT : HEADER_HEIGHT_SINGLE_LINE_PT),
@@ -197,56 +206,58 @@ export function renderLabeledBox(
     strokeWidth: ptToPx(OUTER_BORDER_WIDTH_PT),
   });
 
-  // Header divider line. A filled thin rect, not a zero-height stroked
-  // one — Polotno doesn't reliably render sub-2px strokes on degenerate
-  // (zero-height) shapes at the exact requested color.
-  const dividerWidth = ptToPx(DIVIDER_WIDTH_PT);
-  elements.push({
-    id: id("header-rule"),
-    type: "figure",
-    subType: "rect",
-    x: geometry.x,
-    y: geometry.y + headerHeight - dividerWidth / 2,
-    width: geometry.width,
-    height: dividerWidth,
-    fill: NEAR_BLACK,
-    stroke: "none",
-  });
+  if (headed) {
+    // Header divider line. A filled thin rect, not a zero-height stroked
+    // one — Polotno doesn't reliably render sub-2px strokes on degenerate
+    // (zero-height) shapes at the exact requested color.
+    const dividerWidth = ptToPx(DIVIDER_WIDTH_PT);
+    elements.push({
+      id: id("header-rule"),
+      type: "figure",
+      subType: "rect",
+      x: geometry.x,
+      y: geometry.y + headerHeight - dividerWidth / 2,
+      width: geometry.width,
+      height: dividerWidth,
+      fill: NEAR_BLACK,
+      stroke: "none",
+    });
 
-  // Heading text, centered, inset from the side borders. Single-line
-  // headings are manually vertically centered — verticalAlign wasn't
-  // reliably centering text in a box much taller than the text itself.
-  // Two-line headings instead get the full (taller) header box and are
-  // left to wrap+center naturally within it, since their true wrapped
-  // height isn't something we can predict precisely up front.
-  if (wraps) {
-    elements.push({
-      id: id("heading"),
-      type: "text",
-      x: geometry.x + headingPadding,
-      y: geometry.y,
-      width: headingAvailableWidth,
-      height: headerHeight,
-      text: heading.toUpperCase(),
-      fontSize: headingFontSize,
-      fontFamily: FONT_FAMILY,
-      align: "center",
-      verticalAlign: "middle",
-    });
-  } else {
-    const headingTextHeight = headingFontSize * 1.2;
-    elements.push({
-      id: id("heading"),
-      type: "text",
-      x: geometry.x + headingPadding,
-      y: capCentredTextY(geometry.y, headerHeight, headingFontSize, FONT_FAMILY),
-      width: headingAvailableWidth,
-      height: headingTextHeight,
-      text: heading.toUpperCase(),
-      fontSize: headingFontSize,
-      fontFamily: FONT_FAMILY,
-      align: "center",
-    });
+    // Heading text, centered, inset from the side borders. Single-line
+    // headings are manually vertically centered — verticalAlign wasn't
+    // reliably centering text in a box much taller than the text itself.
+    // Two-line headings instead get the full (taller) header box and are
+    // left to wrap+center naturally within it, since their true wrapped
+    // height isn't something we can predict precisely up front.
+    if (wraps) {
+      elements.push({
+        id: id("heading"),
+        type: "text",
+        x: geometry.x + headingPadding,
+        y: geometry.y,
+        width: headingAvailableWidth,
+        height: headerHeight,
+        text: heading.toUpperCase(),
+        fontSize: headingFontSize,
+        fontFamily: FONT_FAMILY,
+        align: "center",
+        verticalAlign: "middle",
+      });
+    } else {
+      const headingTextHeight = headingFontSize * 1.2;
+      elements.push({
+        id: id("heading"),
+        type: "text",
+        x: geometry.x + headingPadding,
+        y: capCentredTextY(geometry.y, headerHeight, headingFontSize, FONT_FAMILY),
+        width: headingAvailableWidth,
+        height: headingTextHeight,
+        text: heading.toUpperCase(),
+        fontSize: headingFontSize,
+        fontFamily: FONT_FAMILY,
+        align: "center",
+      });
+    }
   }
 
   // The body: blank (the default, and the reference - the sidebar boxes are

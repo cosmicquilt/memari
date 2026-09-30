@@ -70,6 +70,15 @@ export type ColumnTableConfig = {
 };
 
 /**
+ * How many cells the row-number column takes: one, when numbers are on and
+ * the table has room for a cell beside every column of its own - the
+ * renderer and the editor's divider handles both ask this.
+ */
+export function tableNumberCells(rowNumbers: unknown, allocationCells: number, columnCount: number): number {
+  return rowNumbers === true && allocationCells >= columnCount + 2 ? 1 : 0;
+}
+
+/**
  * Widths in WHOLE CELLS, summing to `cells`, in proportion to anything -
  * weights, pixel widths, a dragged set of cells. Largest remainder, and at
  * least one cell each. Null when there are more columns than cells, which
@@ -208,7 +217,7 @@ export function renderColumnTable(
   const inset = lattice?.insetPx ?? 0;
   const allocationX = geometry.x - inset;
   const allocationCells = Math.round((geometry.width + inset * 2) / pitch);
-  const numberCells = config.rowNumbers && lattice && allocationCells >= columns.length + 2 ? 1 : 0;
+  const numberCells = lattice ? tableNumberCells(config.rowNumbers, allocationCells, columns.length) : 0;
   const tableLeft = numberCells ? allocationX + numberCells * pitch : geometry.x;
   const tableRight = geometry.x + geometry.width;
   const layout = columnWidthsForLabels({
@@ -335,19 +344,9 @@ export function renderColumnTable(
     }
   });
 
-  if (numberCells) {
-    elements.push({
-      id: id("number-divider"),
-      type: "figure",
-      subType: "rect",
-      x: tableLeft - ruleWidth / 2,
-      y: headsTop,
-      width: ruleWidth,
-      height: bodyBottom - headsTop,
-      fill: NEAR_BLACK,
-      stroke: "none",
-    });
-  }
+  // The number column keeps its cell but draws no line of its own: the
+  // numbers read as the start of each row, not as a column to write in -
+  // "keep same spacing but remove extra vertical line", 2026-09-30.
 
   // The rule under the column heads, which is what makes them read as
   // headings rather than as the first row.

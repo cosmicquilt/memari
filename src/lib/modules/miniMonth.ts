@@ -165,12 +165,16 @@ export function renderMiniMonth(
   const blankWeeks = calendar ? 0 : UNDATED_WEEK_COUNT;
   const mark = miniMonthMark(config);
   const markable = mark === "box";
-  const ringRadius = ptToPx(DATE_ROW_HEIGHT_PT) * 0.42;
   const stripTop = contentTopPx(geometry, lattice);
   const stripHeight = ptToPx(WEEKDAY_STRIP_HEIGHT_PT);
-  const dateBandHeight = ptToPx(DATE_ROW_HEIGHT_PT);
-  const rowHeight = ptToPx(markable ? MARKABLE_ROW_HEIGHT_PT : DATE_ROW_HEIGHT_PT);
+  const rowHeight = ptToPx(mark !== "none" ? MARKABLE_ROW_HEIGHT_PT : DATE_ROW_HEIGHT_PT);
+  // A RING TAKES A WHOLE ROW, as a box does: in the half-cell row a plain
+  // month uses, a ring small enough to fit could not hold a two-digit date -
+  // "the numbers dont fit within the ring" (2026-09-30). The date centres in
+  // the row and the ring round it; a box keeps its date in the top half.
+  const dateBandHeight = mark === "ring" ? rowHeight : ptToPx(DATE_ROW_HEIGHT_PT);
   const columnWidth = geometry.width / 7;
+  const ringRadius = Math.min(columnWidth, rowHeight) * 0.38;
 
   elements.push(borderElement(geometry, id));
   elements.push(

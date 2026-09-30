@@ -12,6 +12,7 @@ import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hour
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
 import { withCurrentSettings } from "./moduleRegistry";
+import { textWidthPx } from "./modules/textFit";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -71,6 +72,13 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(ids(draw("labeled-box", { heading: "Notes", rule: "none", lineStart: "numbers" }), /-start\d+$/).length === 0, "a blank box has no lines to start");
   check(ids(draw("labeled-box", { heading: "Notes", rule: "graph", lineStart: "numbers" }), /-start\d+$/).length === 0, "nor does graph paper");
 
+  // Heading off: the band is the first row, so a lined box gains a line and
+  // every rule stays on its dot. On by default - the palette card shows NOTES.
+  const bare = draw("labeled-box", { heading: "Notes", rule: "lined", showHeading: false });
+  check(ids(bare, /-(heading|header-rule)$/).length === 0, "no heading and no band when it is off");
+  check(ids(bare, /-rule\d+$/).length === rules + 1, `the band becomes a writing line (${ids(bare, /-rule\d+$/).length} vs ${rules})`);
+  check(ids(draw("labeled-box", { heading: "Notes" }), /-heading$/).length === 1, "on by default");
+
   // What it always drew, unchanged.
   const legacy = draw("labeled-box", { heading: "Notes", ruled: true });
   check(ids(legacy, /-rule\d+$/).length === rules, "the old ruled boolean still rules the box");
@@ -108,6 +116,24 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const item = ids(both, /-row0-item$/)[0];
   check(!!number && !!item && (item.x ?? 0) > (number.x ?? 0), "a numbered item sets after its number");
   check(ids(draw("todo-checklist", { heading: "To - Do", dayCount: 1 }, 6, 8), /-(item|number)$/).length === 0, "the default prints neither");
+  // Dashed rows print their items and numbers too - they skipped them.
+  const dashed = draw("todo-checklist", { heading: "Packing", dayCount: 1, lineStyle: "crosses", items, numbered: true }, 6, 8);
+  check(texts(dashed, /-row\d+-item$/).join(",") === items.join(",") && ids(dashed, /-row\d+-number$/).length > 0, "dashed rows print items and numbers");
+
+  // The tick mark: the column by default; a square or a circle in its place.
+  const column = draw("todo-checklist", { heading: "To - Do", dayCount: 1 }, 6, 6);
+  check(ids(column, /-checkbox-right$/).length === 1 && ids(column, /-tick$/).length === 0, "a ruled tick column by default");
+  for (const shape of ["square", "circle"]) {
+    const marked = draw("todo-checklist", { heading: "To - Do", dayCount: 1, tickMark: shape }, 6, 6);
+    const ticks = ids(marked, /-row\d+-tick$/);
+    const rows = ids(column, /-row\d+$/).length;
+    check(ids(marked, /-checkbox-right$/).length === 0 && ticks.length >= rows, `a ${shape} on every row instead (${ticks.length})`);
+    const border = ids(marked, /-border$/)[0];
+    const cellRight = ids(column, /-checkbox-right$/)[0];
+    const centre = (ticks[0].x ?? 0) + (ticks[0].width ?? 0) / 2;
+    check(Math.abs(centre - ((border.x ?? 0) + (cellRight.x ?? 0)) / 2) < 1.5, `centred in the cell it replaces (${centre.toFixed(1)})`);
+  }
+  check(ids(draw("todo-checklist", { heading: "To - Do", dayCount: 1, lineStyle: "crosses", tickMark: "circle" }, 6, 6), /-checkbox-right-/).length === 0, "dashed marks no tick column either");
   const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("todo-checklist", PAGE, 6, props);
   check(floor({ items: ["a", "b", "c", "d", "e", "f"] }) > floor({}), "six printed items need more rows than a blank list");
   check(floor({ items: ["a", " ", ""] }) === floor({ items: ["a"] }), "blank items do not count");
@@ -125,7 +151,7 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(rings.length > 0 && rings.length % 7 === 0 && rings.every((r) => Number(r.cornerRadius ?? 0) > 0), `a circle in every day cell (${rings.length})`);
   check(ids(circles, /^m-row\d+$/).length === ids(grid, /^m-row\d+$/).length, "the row rules stay");
   const dots = draw("habit-tracker", { heading: "Habits", habits, cells: "dots" }, 18, 6);
-  check(ids(dots, /-mark$/).length === rings.length, "a dot where each circle would be");
+  check(ids(dots, /-mark$/).length === 0 && ids(dots, /-day\d-rule$/).length === 6, "dots were turned down: anything but circles is the grid");
   const compact = draw("habit-tracker", { heading: "Habits", habits, cells: "circles" }, 6, 8);
   check(ids(compact, /-pair\d+-day\d-mark$/).length > 0 && ids(compact, /-pair\d+-day\d-rule$/).length === 0, "the sidebar layout rings its letters too");
 
@@ -174,8 +200,12 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const numbered = draw("column-table", { ...props, rowNumbers: true }, 10, 7);
   const numbers = texts(numbered, /-row\d+-number$/);
   check(numbers[0] === "1" && numbers.length >= 4, `rows numbered from 1 (got ${numbers.join(",")})`);
-  const numberDivider = ids(numbered, /-number-divider$/)[0];
-  check(!!numberDivider && Math.abs(((numberDivider.x ?? 0) + (numberDivider.width ?? 0) / 2 - PAGE.marginPx) / PITCH - 1) < 1e-6, "in a one-cell column on the lattice");
+  check(ids(numbered, /-number-divider$/).length === 0, "the number column draws no line of its own");
+  const firstDivider = ids(numbered, /-c1-divider$/)[0];
+  const unnumbered = ids(draw("column-table", props, 10, 7), /-c1-divider$/)[0];
+  check(!!firstDivider && !!unnumbered && (firstDivider.x ?? 0) > (unnumbered.x ?? 0), "but keeps its cell: the table's own columns start one cell in");
+  const one = ids(numbered, /-row0-number$/)[0];
+  check(!!one && Math.abs((one.x ?? 0) + (one.width ?? 0) / 2 - (PAGE.marginPx + PITCH / 2)) < PITCH / 2, "the numbers sit in that first cell");
   check(ids(numbered, /-c0-head$/)[0]?.text === "Date", "the table's own columns keep their heads");
 }
 
@@ -216,7 +246,17 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(texts(hidden, /-date$/).length === 31, `hiding the neighbours leaves January's 31 (got ${texts(hidden, /-date$/).length})`);
   check(texts(plain, /-date$/).length > 31, "they show by default");
   const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("mini-month", PAGE, 6, props);
-  check(floor({ mark: "box" }) > floor({ mark: "ring" }), "a box needs its row; a ring does not");
+  check(floor({ mark: "ring" }) === floor({ mark: "box" }) && floor({ mark: "ring" }) > floor({}), "a ring takes a whole row per week, as a box does");
+  // THE DATE FITS IN ITS RING: two digits, measured, inside the ring's
+  // inner diameter with room either side.
+  const ringed = draw("mini-month", { ...jan, mark: "ring" }, 6, 12);
+  const ring = ids(ringed, /-w2-d\d-ring$/)[0];
+  const date = ids(ringed, /-w2-d\d-date$/).find((d) => String(d.text).length === 2);
+  if (ring && date) {
+    const inner = (ring.width ?? 0) - 2 * Number(ring.strokeWidth ?? 0);
+    const inkWidth = textWidthPx(String(date.text), Number(date.fontSize), String(date.fontFamily));
+    check(inkWidth < inner * 0.8, `a two-digit date fits its ring (${inkWidth.toFixed(0)}px in ${inner.toFixed(0)}px)`);
+  } else check(false, "a ringed month draws rings and dates");
   check(withCurrentSettings("mini-month", { markable: true }).mark === "box", "the editor opens an old boxed month on Box");
   check(withCurrentSettings("labeled-box", { ruled: true }).rule === "lined", "and an old ruled note box on Lined");
 }
@@ -233,7 +273,19 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const circles = ids(draw("progress-meter", { ...base, segments: "circles" }, 12, 4), /-seg\d+$/);
   check(circles.length === 20 && circles.every((c) => Number(c.cornerRadius ?? 0) > 0), "twenty circles");
   const bar = draw("progress-meter", { ...base, segments: "bar" }, 12, 4);
-  check(ids(bar, /-bar\d+$/).length === 1 && ids(bar, /-seg\d+$/).length === 0 && ids(bar, /-tick\d+$/).length === 19, "one bar, ticked at the other nineteen");
+  check(ids(bar, /-bar\d+$/).length === 1 && ids(bar, /-seg\d+$/).length === 0 && ids(bar, /-tick\d+$/).length === 16 && ids(bar, /-div\d+$/).length === 3, "one bar, ticked faintly, with a full line at each milestone");
+
+  // BOXES: one outline per row, a faint line between segments and a full-ink
+  // one - no heavier - at each milestone (asked 2026-09-30).
+  const boxes = draw("progress-meter", base, 12, 4);
+  const dividers = ids(boxes, /-div\d+$/);
+  check(ids(boxes, /-row\d+-box$/).length === 1 && ids(boxes, /-seg\d+$/).length === 0, "the row is one outlined strip");
+  check(dividers.length === 19, `a line between each of twenty segments (got ${dividers.length})`);
+  const milestoneLines = dividers.filter((d) => (d.opacity ?? 1) === 1).map((d) => Number(String(d.id).replace(/^.*-div/, "")));
+  check(milestoneLines.join(",") === "5,10,15", `full ink at 5, 10 and 15 (got ${milestoneLines.join(",")})`);
+  check(dividers.filter((d) => (d.opacity ?? 1) < 1).every((d) => (d.opacity ?? 1) <= 0.35), "and faint between");
+  const widths = new Set(dividers.map((d) => Number(d.width).toFixed(3)));
+  check(widths.size === 1, "a milestone line is no thicker than the others");
   const ends = texts(draw("progress-meter", { ...base, startLabel: "$0", endLabel: "Goal" }, 12, 4), /-(start|end)-label$/);
   check(ends.join(",") === "$0,Goal", `start and end labels (got ${ends.join(",")})`);
   check(withCurrentSettings("progress-meter", { numbered: false }).numbers === "none", "the editor opens an old unnumbered meter on None");

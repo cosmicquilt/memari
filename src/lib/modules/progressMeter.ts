@@ -71,10 +71,10 @@ export type RenderedElement = {
 const SEGMENT_PT = 9;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
 const SEGMENT_STROKE_PT = RULE_WIDTH_PT;
-/** The rule that marks a milestone, against the segment's own hairline. */
-// Twice the interior rule, so a milestone reads as heavier than the
-// segments it divides however the house weight moves.
-const MILESTONE_STROKE_PT = RULE_WIDTH_PT * 2;
+/** The line between two segments: the house hairline, faint - and at full
+ *  ink at a milestone, where it used to be a rule twice as heavy (asked for
+ *  "a normal opacity line instead of that thicker one", 2026-09-30). */
+const DIVIDER_OPACITY = 0.3;
 // Small enough to read as an index in the corner of a square rather than
 // as something written in it: at 5.5pt the digits nearly filled the
 // half-cell segment and the block read as clutter.
@@ -147,6 +147,22 @@ export function renderProgressMeter(
   const blockLeft = geometry.x + (geometry.width - columns * segment) / 2;
   const milestoneFontSize = ptToPx(MILESTONE_FONT_PT);
 
+  // The line between segment n-1 and segment n, a segment tall.
+  const divider = (n: number, x: number, top: number, opacity: number): RenderedElement => ({
+    id: id(`div${n}`),
+    type: "figure",
+    subType: "rect",
+    x: x - ptToPx(SEGMENT_STROKE_PT) / 2,
+    y: top,
+    width: ptToPx(SEGMENT_STROKE_PT),
+    height: segment,
+    fill: NEAR_BLACK,
+    stroke: "none",
+    ...(opacity < 1 ? { opacity } : {}),
+  });
+  // Is the boundary before segment n a milestone - n segments complete?
+  const milestoneAt = (n: number) => milestone > 0 && n > 0 && n % milestone === 0;
+
   for (let n = 0; n < total; n++) {
     const row = Math.floor(n / columns);
     const column = n % columns;
@@ -191,6 +207,8 @@ export function renderProgressMeter(
           strokeWidth: ptToPx(SEGMENT_STROKE_PT),
           opacity: 0.75,
         });
+      } else if (milestoneAt(n)) {
+        elements.push(divider(n, segX, top, 1));
       } else {
         const tick = segment / 3;
         elements.push({
@@ -203,24 +221,34 @@ export function renderProgressMeter(
           height: tick,
           fill: NEAR_BLACK,
           stroke: "none",
-          opacity: 0.6,
+          opacity: DIVIDER_OPACITY,
         });
       }
-    } else {
+    } else if (column === 0) {
+      // BOXES: the row outlined once at full ink, and a line between each
+      // segment - faint, so the count reads as one strip, and at full ink
+      // at each milestone. Asked 2026-09-30: "make the dividers between each
+      // segment a low transparency line then inbetween each five have a
+      // normal opacity line instead of that thicker one." Each segment was
+      // its own box before, which drew every shared edge twice.
+      const inRow = Math.min(columns, total - n);
       elements.push({
-        id: id(`seg${n}`),
+        id: id(`row${row}-box`),
         type: "figure",
         subType: "rect",
         x: segX,
         y: top,
-        width: segment,
+        width: inRow * segment,
         height: segment,
         fill: "transparent",
         stroke: NEAR_BLACK,
         strokeWidth: ptToPx(SEGMENT_STROKE_PT),
-        opacity: 0.75,
       });
+    } else {
+      elements.push(divider(n, segX, top, milestoneAt(n) ? 1 : DIVIDER_OPACITY));
     }
+    // Circles have no dividers; a milestone is still a line between two.
+    if (segments === "circles" && column > 0 && milestoneAt(n)) elements.push(divider(n, segX, top, 1));
     if (numbers === "every") {
       elements.push({
         id: id(`n${n + 1}-label`),
@@ -245,18 +273,6 @@ export function renderProgressMeter(
     // line rather than starting at it.
     const count = n + 1;
     if (milestone > 0 && count % milestone === 0 && column < columns - 1) {
-      const ruleWidth = ptToPx(MILESTONE_STROKE_PT);
-      elements.push({
-        id: id(`mile${count}`),
-        type: "figure",
-        subType: "rect",
-        x: blockLeft + (column + 1) * segment - ruleWidth / 2,
-        y: top,
-        width: ruleWidth,
-        height: segment,
-        fill: NEAR_BLACK,
-        stroke: "none",
-      });
       if (numbers === "milestones") {
         elements.push({
           id: id(`mile${count}-label`),

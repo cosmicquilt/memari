@@ -12,7 +12,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
@@ -130,6 +130,15 @@ function hoursOrDefaults(config: Partial<HourlyGridCoreConfig>): {
     // zero dressed as a setting.
     intervalMinutes: config.intervalMinutes || DEFAULT_HOURLY_SETTINGS.intervalMinutes,
   };
+}
+
+/** The 24-hour labels' one size - see the time label below. */
+function twentyFourHourLabelSizePx(boxWidthPx: number, fontFamily: string): number {
+  const room = boxWidthPx - ptToPx(1.5) * 2;
+  for (const pt of [5, 4.75, 4.5, 4.25, 4]) {
+    if (textWidthPx("00:00", ptToPx(pt), fontFamily) <= room) return ptToPx(pt);
+  }
+  return ptToPx(4);
 }
 
 // 24-hour, with the leading zero: every label is then five characters and
@@ -1056,7 +1065,14 @@ export function renderHourlyGridCore(
         const timeLabelText =
           config.timeFormat === "24" ? formatHour24(rowMinutes) : formatHour12NoMeridiem(rowMinutes);
         const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
-        const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5 : 5.5);
+        // 24-hour labels are all five characters, and at the 12-hour clock's
+        // 5pt they filled the box edge to edge ("shrink text to fit in box
+        // better", 2026-09-30). One size for all of them: the largest at
+        // which the widest, "00:00", keeps 1.5pt clear each side.
+        const timeLabelFontSize =
+          config.timeFormat === "24"
+            ? twentyFourHourLabelSizePx(labelBoxWidth, FONT_FAMILY)
+            : ptToPx(timeLabelDigitCount >= 4 ? 5 : 5.5);
         const timeLabelTextHeight = timeLabelFontSize * 1.2;
         const timeLabelBottomGap = ptToPx(1);
         elements.push({

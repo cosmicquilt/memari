@@ -242,15 +242,6 @@ export function HoursFields({
         </>
       )}
 
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#ddd" }}>
-        <input
-          type="checkbox"
-          checked={values.dayBorder === true}
-          onChange={(event) => set("dayBorder", event.target.checked)}
-          className="memari-field"
-        />
-        A border round each day
-      </label>
 
       <label style={rowStyle}>
         <span style={labelStyle}>Week starts on</span>

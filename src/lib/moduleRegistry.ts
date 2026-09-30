@@ -666,6 +666,10 @@ const PRIMITIVES = {
             "enum": [1, 2],
             "default": 1
           },
+          "showHeading": {
+            "type": "boolean",
+            "default": true
+          },
           "ruled": {
             "type": "boolean",
             "default": false
@@ -689,6 +693,7 @@ const PRIMITIVES = {
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading" },
+      { kind: "boolean", key: "showHeading", label: "Show the heading" },
       {
         kind: "rule",
         key: "rule",
@@ -812,6 +817,11 @@ const PRIMITIVES = {
           "numbered": {
             "type": "boolean",
             "default": false
+          },
+          "tickMark": {
+            "type": "string",
+            "enum": ["column", "square", "circle"],
+            "default": "column"
           }
         }
       },
@@ -838,6 +848,17 @@ const PRIMITIVES = {
           // note box's "none", shown as Blank.
           { value: "crosses", label: "Dashed" },
         ],
+      },
+      {
+        kind: "rule",
+        key: "tickMark",
+        label: "Tick mark",
+        options: [
+          { value: "column", label: "Column" },
+          { value: "square", label: "Square" },
+          { value: "circle", label: "Circle" },
+        ],
+        window: { x: "left", y: "top", columns: 2.2, rows: 2.8 },
       },
       { kind: "lines", key: "items", label: "Printed items (one per line)", rows: 6 },
       { kind: "boolean", key: "numbered", label: "Number the rows" },
@@ -883,7 +904,7 @@ const PRIMITIVES = {
           },
           "cells": {
             "type": "string",
-            "enum": ["grid", "circles", "dots"],
+            "enum": ["grid", "circles"],
             "default": "grid"
           },
           "totalColumn": {
@@ -913,7 +934,6 @@ const PRIMITIVES = {
         options: [
           { value: "grid", label: "Grid" },
           { value: "circles", label: "Circles" },
-          { value: "dots", label: "Dots" },
         ],
         window: { x: "right", y: "top", columns: 3.2, rows: 2.6 },
       },
@@ -1398,7 +1418,8 @@ const PRIMITIVES = {
             month: at.start.getUTCMonth() + 1,
           },
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
-      getMiniMonthMinHeightPx(miniMonthMark(propValues) === "box"),
+      // A box or a ring takes a whole row per week - see miniMonth.ts.
+      getMiniMonthMinHeightPx(miniMonthMark(propValues) !== "none"),
     weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
     current: (props) => (props.mark === undefined ? { ...props, mark: miniMonthMark(props) } : props),
     // Seven columns of a fixed grid: the drawing is the same marks at

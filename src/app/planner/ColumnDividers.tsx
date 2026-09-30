@@ -16,6 +16,7 @@
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { tableNumberCells } from "@/lib/modules/columnTable";
 
 const ACCENT = "#4a5cff";
 
@@ -23,6 +24,7 @@ export function ColumnDividers({
   elements,
   instanceId,
   columnCount,
+  rowNumbers,
   box,
   pitch,
   latticeOrigin,
@@ -34,6 +36,8 @@ export function ColumnDividers({
   elements: RenderedPolotnoElement[];
   instanceId: string;
   columnCount: number;
+  /** Whether the table numbers its rows - a one-cell column before its own. */
+  rowNumbers: boolean;
   /** The module's box, in print px, and where it sits in the frame. */
   box: { x: number; y: number; width: number; height: number };
   /** One lattice cell, in print px, and the x of lattice column 0. */
@@ -59,11 +63,12 @@ export function ColumnDividers({
     dividers.push({ index: c, x: (e.x ?? 0) + (e.width ?? 0) / 2, top: e.y ?? 0, bottom: (e.y ?? 0) + (e.height ?? 0) });
   }
   if (dividers.length === 0) return null;
-  // The table's own edges, as lattice columns: the number column's divider
-  // when there is one, else the box's; the box's right.
-  const numberDivider = find("number-divider");
-  const leftCell = numberDivider ? cellOf((numberDivider.x ?? 0) + (numberDivider.width ?? 0) / 2) : cellOf(box.x);
+  // The table's own edges, as lattice columns: after the number column when
+  // there is one (it draws no line, so the rule the renderer uses is asked
+  // here too), else the box's; the box's right.
+  const boxLeftCell = cellOf(box.x);
   const rightCell = cellOf(box.x + box.width);
+  const leftCell = boxLeftCell + tableNumberCells(rowNumbers, rightCell - boxLeftCell, columnCount);
   const cells = dividers.map((d) => cellOf(d.x));
 
   const move = (index: number, cell: number) => {
