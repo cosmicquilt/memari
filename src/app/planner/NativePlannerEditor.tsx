@@ -3550,6 +3550,16 @@ const PALETTE_PREVIEW_WIDTH_PX = 186;
 // component, not local state) specifically so AddModuleButton's own
 // "+" zones can drive them too — clicking one opens the panel and
 // briefly marks the list.
+// THE DRAG SENSOR'S OPTIONS, ONE OBJECT FOR GOOD. useSensor memoises on the
+// options' identity, so an inline object made a new sensor on every render
+// of the editor, and a new sensor is a new drag context - which re-renders
+// every draggable under it whatever their memo says: the palette's 122 cards
+// and every module on the page. Measured 2026-09-30 opening the to-do's
+// editor on the development build: 732 card renders (366 memo checks, every
+// one "same") and 131-181ms frames in its flight - check:browser's module
+// editor probe failing twice in the full suite. See also TimeZoneField.
+const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+
 function ModulePalette({
   activeId,
   activeDelta,
@@ -4230,7 +4240,11 @@ const zoneLabel = (zone: string) => zone.replace(/_/g, " ");
  *  names, where the region is what tells two Portlands apart. */
 const zoneCity = (zone: string) => zoneLabel(zone.split("/").pop() ?? zone);
 
-function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null; defaultTimeZone: string | null }) {
+// MEMOISED, and its list built once per set of zones: some 420 options, each
+// a formatted label, were remade on every render of the palette - 27ms of
+// the to-do editor's opening on the development build once the sensor above
+// was fixed (2026-09-30). Its props are two strings.
+const TimeZoneField = memo(function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null; defaultTimeZone: string | null }) {
   const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const [pending, error, run] = useAsyncAction();
@@ -4245,6 +4259,15 @@ function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null;
     );
     return [...extra, ...all];
   }, [timeZone, defaultTimeZone]);
+  const zoneOptions = useMemo(
+    () =>
+      zones.map((zone) => (
+        <option key={zone} value={zone}>
+          {zoneLabel(zone)}
+        </option>
+      )),
+    [zones]
+  );
 
   const selectStyle: CSSProperties = {
     font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
@@ -4277,11 +4300,7 @@ function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null;
         <option value="">
           {defaultTimeZone ? `Your default (${zoneCity(defaultTimeZone)})` : "Your default"}
         </option>
-        {zones.map((zone) => (
-          <option key={zone} value={zone}>
-            {zoneLabel(zone)}
-          </option>
-        ))}
+        {zoneOptions}
       </select>
 
       {changingDefault ? (
@@ -4336,7 +4355,7 @@ function TimeZoneField({ timeZone, defaultTimeZone }: { timeZone: string | null;
       {error && <span style={{ fontSize: 10.5, color: "#c0392b" }}>{error}</span>}
     </div>
   );
-}
+});
 
 // Page Settings > Paper. The swap keeps whatever the user has built - the
 // two rows of difference come off (or go onto) the bottom of each stack
@@ -6575,7 +6594,7 @@ export function NativePlannerEditor({
   // A small activation distance, not an instant-trigger sensor — without
   // it, a plain click (no intended drag at all) can register as a
   // zero-distance "drag" and briefly flicker the dragging state.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
 
   // Converts an absolute screen point (a palette card's own live center,
   // via event.active.rect.current.translated — see handleDragMove below)
