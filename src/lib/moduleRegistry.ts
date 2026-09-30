@@ -1491,7 +1491,9 @@ const PRIMITIVES = {
           },
           "count": { "type": "integer", "default": 8 },
           "groups": { "type": "integer", "default": 0 },
-          "border": { "type": "boolean", "default": false }
+          "border": { "type": "boolean", "default": false },
+          "stripLabels": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "groupLabels": { "type": "string", "enum": ["none", "days"], "default": "none" }
         }
       },
       "defaultWidth": 1560,
@@ -1526,9 +1528,23 @@ const PRIMITIVES = {
       },
       { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24 },
       { kind: "number", key: "groups", label: "Groups across (0 = one per column)", min: 0, max: 12 },
+      { kind: "lines", key: "stripLabels", label: "A label for each strip (one per line)", rows: 4 },
+      {
+        kind: "select",
+        key: "groupLabels",
+        label: "Label the groups",
+        options: [
+          { value: "none", label: "No labels" },
+          { value: "days", label: "Days of the week" },
+        ],
+      },
+      // Drawn since the strip was built; offered from the module-edits list.
+      { kind: "boolean", key: "border", label: "Box around it" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderIconStrip(geometry, propValues as IconStripConfig, idPrefix, fontFamily, lattice),
+    // Day names over the groups start on the journal's day.
+    weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
     minContentHeightPx: () => getIconStripMinHeightPx(),
     contentIsLive: ALWAYS,
   },
@@ -1558,9 +1574,16 @@ const PRIMITIVES = {
           },
           "shape": {
             "type": "string",
-            "enum": ["circle", "square"],
+            "enum": ["circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant"],
             "default": "circle"
-          }
+          },
+          "scaleHead": {
+            "type": "string",
+            "enum": ["numbers", "words", "inside"],
+            "default": "numbers"
+          },
+          "lowLabel": { "type": "string", "default": "" },
+          "highLabel": { "type": "string", "default": "" }
         }
       },
       "defaultWidth": 600,
@@ -1585,15 +1608,32 @@ const PRIMITIVES = {
       { kind: "lines", key: "items", label: "Rows (one per line)", rows: 6 },
       { kind: "number", key: "scaleMin", label: "Scale from", min: 0, max: 10 },
       { kind: "number", key: "scaleMax", label: "Scale to", min: 1, max: 20 },
-      {
-        kind: "select",
-        key: "shape",
-        label: "Mark",
-        options: [
+      // Drawn, like the icon strip's own picker, and any of its glyphs.
+      { kind: "icon", key: "shape", label: "Mark", options: [
           { value: "circle", label: "Circles" },
           { value: "square", label: "Squares" },
+          { value: "rounded", label: "Rounded squares" },
+          { value: "droplet", label: "Droplets" },
+          { value: "heart", label: "Hearts" },
+          { value: "star", label: "Stars" },
+          { value: "moon", label: "Moons" },
+          { value: "flame", label: "Flames" },
+          { value: "leaf", label: "Leaves" },
+          { value: "plant", label: "Potted plants" },
+        ] },
+      {
+        kind: "rule",
+        key: "scaleHead",
+        label: "Scale",
+        options: [
+          { value: "numbers", label: "Numbers" },
+          { value: "words", label: "Words" },
+          { value: "inside", label: "Inside" },
         ],
+        window: { x: "right", y: "top", columns: 3.4, rows: 2.3 },
       },
+      { kind: "text", key: "lowLabel", label: "Low end, in words" },
+      { kind: "text", key: "highLabel", label: "High end, in words" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily, lattice),

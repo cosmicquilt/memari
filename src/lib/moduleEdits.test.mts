@@ -238,3 +238,32 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(ends.join(",") === "$0,Goal", `start and end labels (got ${ends.join(",")})`);
   check(withCurrentSettings("progress-meter", { numbered: false }).numbers === "none", "the editor opens an old unnumbered meter on None");
 }
+
+// --- icon strip --------------------------------------------------------------
+{
+  const base = { heading: "Water", icon: "droplet", count: 8 };
+  check(ids(draw("icon-strip", base, 12, 2), /-border$/).length === 0, "open by default");
+  check(ids(draw("icon-strip", { ...base, border: true }, 12, 2), /-border$/).length === 1, "boxed when asked");
+  const labels = texts(draw("icon-strip", { ...base, stripLabels: ["Water", "Tea"] }, 12, 3), /-s\d-heading$/);
+  check(labels.join(",") === "WATER,TEA,WATER", `each strip its own label, the heading where it has none (got ${labels.join(",")})`);
+  const days = texts(draw("icon-strip", { ...base, groupLabels: "days" }, 18, 2), /-g\d-day$/);
+  check(days.join(",") === "SUN,MON,TUE", `day names over the groups (got ${days.join(",")})`);
+  const monday = texts(draw("icon-strip", { ...base, groupLabels: "days", weekStartDay: 1 }, 18, 2), /-g\d-day$/);
+  check(monday[0] === "MON", "in the journal's week order");
+  check(ids(draw("icon-strip", { ...base, groupLabels: "days" }, 18, 2), /-s1-.*day$/).length === 0, "on the first strip only");
+}
+
+// --- ratings -----------------------------------------------------------------
+{
+  const base = { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 5 };
+  const hearts = ids(draw("rating-strip", { ...base, shape: "heart" }, 6, 6), /-i\d-v\d$/);
+  check(hearts.length === 10 && hearts.every((h) => typeof h.pathD === "string"), "hearts are drawn as the glyph");
+  check(ids(draw("rating-strip", { ...base, shape: "nonsense" }, 6, 6), /-i\d-v\d$/).every((m) => Number(m.cornerRadius ?? 0) > 0), "an unknown mark is a circle");
+  const numbers = texts(draw("rating-strip", base, 6, 6), /-scale\d+$/);
+  check(numbers.join(",") === "1,2,3,4,5", "numbers above by default");
+  const words = draw("rating-strip", { ...base, scaleHead: "words", lowLabel: "awful", highLabel: "great" }, 6, 6);
+  check(texts(words, /-scale\d+$/).length === 0 && texts(words, /-scale-(low|high)$/).join(",") === "awful,great", "words at the ends instead");
+  check(texts(draw("rating-strip", { ...base, scaleHead: "words" }, 6, 6), /-scale-(low|high)$/).join(",") === "low,high", "low and high when none are given");
+  const inside = draw("rating-strip", { ...base, scaleHead: "inside" }, 6, 6);
+  check(texts(inside, /-scale\d+$/).length === 0 && texts(inside, /-i0-v\d-number$/).join(",") === "1,2,3,4,5", "or the numbers inside the marks");
+}

@@ -317,6 +317,8 @@ export const CATALOGUE: CatalogueEntry[] = [
       scaleMin: 1,
       scaleMax: 5,
       shape: "circle",
+      // A mood reads better as low and high than as 1 and 5.
+      scaleHead: "words",
     },
     rowSpan: 10,
   },
@@ -458,6 +460,8 @@ export const CATALOGUE: CatalogueEntry[] = [
       scaleMin: 1,
       scaleMax: 10,
       shape: "circle",
+      // A 1 to 10 scale is printed as numbered circles.
+      scaleHead: "inside",
     },
   },
 
@@ -1408,7 +1412,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Health & body",
     cadence: "week",
     paletteName: "Water",
-    props: { heading: "Water", icon: "droplet", count: 8 },
+    // Day names over the groups: a week of water on its own.
+    props: { heading: "Water", icon: "droplet", count: 8, groupLabels: "days" },
   },
   {
     slug: "focus-blocks",

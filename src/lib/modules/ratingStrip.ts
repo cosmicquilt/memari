@@ -16,7 +16,7 @@
 // and moduleRegistry.ts for the classifier that checks it.
 
 import { ptToPx } from "@/lib/print-spec";
-import { glyphElement } from "@/lib/modules/glyphs";
+import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
@@ -36,8 +36,18 @@ export type RatingStripConfig = {
   /** Lowest and highest point of the scale, printed at the head. */
   scaleMin: number;
   scaleMax: number;
-  /** Circles read as "ring the one you mean"; squares as "tick it". */
-  shape?: "circle" | "square";
+  /** Circles read as "ring the one you mean"; squares as "tick it" - and
+   *  since the module-edits list any of the icon strip's glyphs: hearts for
+   *  mood, stars for a review. */
+  shape?: GlyphShape;
+  /**
+   * What heads the scale: its numbers (the default), words at its two ends
+   * ("low", "high"), or the numbers inside the marks - how a 1 to 10 pain
+   * scale is printed.
+   */
+  scaleHead?: "numbers" | "words" | "inside";
+  lowLabel?: string;
+  highLabel?: string;
 };
 
 export type RenderedElement = {
@@ -163,7 +173,35 @@ export function renderRatingStrip(
     [ptToPx(SCALE_HEAD_FONT_PT), ptToPx(6), ptToPx(5), ptToPx(4.5)]
   );
   const scaleFontSize = scaleNumbers.fontSizePx;
-  for (let value = min; value <= min + points - 1; value++) {
+  const scaleHead = config.scaleHead === "words" || config.scaleHead === "inside" ? config.scaleHead : "numbers";
+  if (scaleHead === "words") {
+    // The two ends named instead, left under the first mark and right under
+    // the last - a mood reads better as low and high than as 1 and 5.
+    const span = centreOf(min + points - 1) - centreOf(min) + step;
+    const half = span / 2 - ptToPx(1);
+    const ends = [
+      { key: "low", text: (config.lowLabel ?? "").trim() || "low", x: centreOf(min) - step / 2, align: "left" },
+      { key: "high", text: (config.highLabel ?? "").trim() || "high", x: centreOf(min + points - 1) + step / 2 - half, align: "right" },
+    ];
+    const set = fitLabelSet(ends.map((end) => ({ text: end.text, widthPx: half })), [ptToPx(SCALE_HEAD_FONT_PT), ptToPx(6), ptToPx(5)]);
+    ends.forEach((end, k) => {
+      elements.push({
+        id: id(`scale-${end.key}`),
+        type: "text",
+        x: end.x,
+        y: capCentredTextY(headTop, scaleHeadHeight, set.fontSizePx, fontFamily),
+        width: half,
+        height: set.fontSizePx * 1.2,
+        text: set.texts[k],
+        fontSize: set.fontSizePx,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: end.align,
+        opacity: 0.7,
+      });
+    });
+  }
+  for (let value = min; value <= min + points - 1 && scaleHead === "numbers"; value++) {
     elements.push({
       // By VALUE, not by index: the "7" is the same mark whatever else
       // changes around it.
@@ -203,7 +241,8 @@ export function renderRatingStrip(
     items.map((text) => ({ text, widthPx: labelWidth })),
     [ptToPx(ITEM_FONT_PT), ptToPx(7), ptToPx(6)]
   );
-  const circular = (config.shape ?? "circle") === "circle";
+  // Any glyph the icon strip has - see glyphs.ts; anything else is a circle.
+  const shape: GlyphShape = GLYPH_SHAPES.includes(config.shape as GlyphShape) ? (config.shape as GlyphShape) : "circle";
 
   for (let i = 0; i < items.length; i++) {
     const rowTop = bodyTop + rowHeight * i;
@@ -238,9 +277,28 @@ export function renderRatingStrip(
           x: centreOf(value) - glyph / 2,
           y: rowTop + (rowHeight - glyph) / 2,
           sizePx: glyph,
-          shape: circular ? "circle" : "square",
+          shape,
         })
       );
+      if (scaleHead === "inside") {
+        // The value in the mark, small and light, so a mark filled in still
+        // shows which it was.
+        const insideSize = Math.min(ptToPx(4.5), glyph * 0.5);
+        elements.push({
+          id: id(`i${i}-v${value}-number`),
+          type: "text",
+          x: centreOf(value) - glyph / 2,
+          y: capCentredTextY(rowTop + (rowHeight - glyph) / 2, glyph, insideSize, fontFamily),
+          width: glyph,
+          height: insideSize * 1.2,
+          text: String(value),
+          fontSize: insideSize,
+          fontFamily,
+          fill: NEAR_BLACK,
+          align: "center",
+          opacity: 0.55,
+        });
+      }
     }
 
     // The separator BELOW each row, skipped where it would land on the

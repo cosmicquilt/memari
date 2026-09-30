@@ -53,6 +53,11 @@ export type GlyphShape =
   | "leaf"
   | "plant";
 
+/** Every shape, for checking a stored value is one. */
+export const GLYPH_SHAPES: readonly GlyphShape[] = [
+  "circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant",
+];
+
 /** Shapes drawn as a path; everything else is the rect itself. */
 const PATH_SHAPES: Record<string, (x: number, y: number, size: number) => string> = {
   // Each builder maps unit coordinates (0..1 across the glyph's own box)

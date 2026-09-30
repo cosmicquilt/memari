@@ -32,7 +32,8 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
-import { fitLabel } from "@/lib/modules/textFit";
+import { estimateTextWidthPx, fitLabel } from "@/lib/modules/textFit";
+import { weekdayShortNames } from "@/lib/weekDays";
 import {
   NEAR_BLACK,
   borderElement,
@@ -66,6 +67,17 @@ export type IconStripConfig = {
   /** A box around the whole module. Off by default - the reference has the
    *  glyphs sitting on the page, not in a frame. */
   border?: boolean;
+  /**
+   * A label for each strip, top down - water, tea, vitamins; one plant per
+   * row. A strip with no label of its own takes the heading, which is what
+   * every strip printed before. Module-edits list, 2026-09-30.
+   */
+  stripLabels?: string[];
+  /** Day names over the groups of the first strip, in the journal's week
+   *  order - the groups line up with the day columns already. */
+  groupLabels?: "none" | "days";
+  /** Set at render time from the journal - see the registry's weekStart. */
+  weekStartDay?: number;
 };
 
 export type RenderedElement = {
@@ -163,16 +175,21 @@ export function renderIconStrip(
     Math.min(glyphBandHeight, glyphPitch * GLYPH_WIDTH_SHARE)
   );
 
-  // One size for the heading, fixed at the smallest legible - so the only
-  // thing left when it will not fit is to cut it. See textFit.ts.
-  const label = heading
-    ? fitLabel(heading.toUpperCase(), geometry.width - ptToPx(4) * 2, [
-        ptToPx(HEADING_FONT_PT),
-      ])
-    : null;
+  // Day names over the first strip's groups: short, in the journal's week
+  // order, right-aligned at each group's end so the strip's own label keeps
+  // the left.
+  const dayNames = config.groupLabels === "days" ? weekdayShortNames(config.weekStartDay) : null;
+  const dayLabelWidth = dayNames ? estimateTextWidthPx("WED", ptToPx(HEADING_FONT_PT)) + ptToPx(2) : 0;
 
+  const stripLabels = (config.stripLabels ?? []).map((text) => (typeof text === "string" ? text.trim() : ""));
   for (let s = 0; s < stripCount; s++) {
     const stripTop = allocationTop + s * pitch;
+    // One size for a label, fixed at the smallest legible - so the only
+    // thing left when it will not fit is to cut it. See textFit.ts. Each
+    // strip its own, or the heading.
+    const labelText = stripLabels[s] || heading;
+    const labelWidth = (dayNames && s === 0 ? groupWidth - dayLabelWidth - ptToPx(4) : geometry.width) - ptToPx(4) * 2;
+    const label = labelText ? fitLabel(labelText.toUpperCase(), labelWidth, [ptToPx(HEADING_FONT_PT)]) : null;
 
     if (label && label.text) {
       elements.push({
@@ -180,7 +197,7 @@ export function renderIconStrip(
         type: "text",
         x: geometry.x + ptToPx(4),
         y: stripTop + AIR_PX,
-        width: geometry.width - ptToPx(4) * 2,
+        width: labelWidth,
         height: headingHeight,
         text: label.text,
         fontSize: label.fontSizePx,
@@ -200,6 +217,26 @@ export function renderIconStrip(
         // line.
         align: "left",
       });
+    }
+
+    if (dayNames && s === 0) {
+      for (let g = 0; g < groups; g++) {
+        const right = geometry.x + (g + 1) * groupWidth - groupPad;
+        elements.push({
+          id: id(`g${g}-day`),
+          type: "text",
+          x: right - dayLabelWidth,
+          y: stripTop + AIR_PX,
+          width: dayLabelWidth,
+          height: headingHeight,
+          text: dayNames[g % 7],
+          fontSize: ptToPx(HEADING_FONT_PT),
+          fontFamily,
+          fill: NEAR_BLACK,
+          align: "right",
+          opacity: 0.55,
+        });
+      }
     }
 
     const glyphTop = stripTop + glyphBandTop + (glyphBandHeight - glyphSize) / 2;

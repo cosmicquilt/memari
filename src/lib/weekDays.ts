@@ -83,3 +83,9 @@ export function rotateWeekList<T>(list: T, weekStartDay: number | null | undefin
   if (shift === 0) return list;
   return [...list.slice(shift), ...list.slice(0, shift)] as T;
 }
+
+/** Three-letter day names, starting on the week's first day. */
+export function weekdayShortNames(weekStartDay: number | null | undefined): string[] {
+  const names = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  return Array.from({ length: 7 }, (_, c) => names[weekdayOfColumn(c, weekStartDay)]);
+}
