@@ -405,7 +405,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Health & body",
     cadence: "month",
     paletteName: "Cycle",
-    props: { year: 2026, month: 1, heading: "Cycle", markable: true },
+    // A ring round the date, the usual way to track a cycle - and `mark`,
+    // not the old `markable`, for the reason the meters above give.
+    props: { year: 2026, month: 1, heading: "Cycle", mark: "ring" },
     rowSpan: 8,
   },
   {
@@ -589,7 +591,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Fitness",
     cadence: "month",
     paletteName: "Steps",
-    props: { heading: "Steps", total: 31, milestoneEvery: 7, numbered: true },
+    // `numbers`, not the old `numbered` - see the note on Savings.
+    props: { heading: "Steps", total: 31, milestoneEvery: 7, numbers: "every" },
   },
   {
     slug: "run-log",
@@ -671,7 +674,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Money",
     cadence: "journal",
     paletteName: "Savings",
-    props: { heading: "Savings", total: 100, milestoneEvery: 10, numbered: true },
+    // `numbers` replaced `numbered` (2026-09-30), and a preset has to say the
+    // new one: the schema defaults it, and a default wins over an old key -
+    // the trap that left Gratitude lined on its card and blank when dropped.
+    props: { heading: "Savings", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "$0", endLabel: "Goal" },
   },
   {
     slug: "debt-payoff",
@@ -680,7 +686,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Money",
     cadence: "journal",
     paletteName: "Payoff",
-    props: { heading: "Payoff", total: 100, milestoneEvery: 10, numbered: true },
+    props: { heading: "Payoff", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "Owed", endLabel: "Paid off" },
   },
   {
     slug: "bill-tracker",
@@ -708,7 +714,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Money",
     cadence: "month",
     paletteName: "No-Spend",
-    props: { year: 2026, month: 1, heading: "No-Spend", markable: true },
+    props: { year: 2026, month: 1, heading: "No-Spend", mark: "box" },
     rowSpan: 8,
   },
   {
@@ -893,7 +899,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "journal",
     paletteName: "Memento Mori",
     // Weeks, not days - a box a week is the form this is always drawn in.
-    props: { heading: "Weeks", total: 52, milestoneEvery: 13, numbered: true },
+    props: { heading: "Weeks", total: 52, milestoneEvery: 13, numbers: "milestones", segments: "circles" },
   },
   {
     slug: "negative-visualisation",
@@ -1041,7 +1047,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "journal",
     paletteName: "Quran",
     // Thirty juz, one a day through Ramadan.
-    props: { heading: "Juz", total: 30, milestoneEvery: 10, numbered: true },
+    props: { heading: "Juz", total: 30, milestoneEvery: 10, numbers: "every" },
   },
   {
     slug: "metta-practice",
@@ -1063,7 +1069,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Philosophy & faith",
     cadence: "month",
     paletteName: "Sitting",
-    props: { heading: "Sitting", total: 31, milestoneEvery: 7, numbered: true },
+    props: { heading: "Sitting", total: 31, milestoneEvery: 7, numbers: "every" },
   },
   {
     slug: "mussar-trait",
@@ -1098,7 +1104,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "journal",
     paletteName: "Omer",
     // Exactly 49, counted in weeks of seven. The count IS the practice.
-    props: { heading: "Omer", total: 49, milestoneEvery: 7, numbered: true },
+    // Counting the Omer is saying which day it is, so every day is numbered.
+    props: { heading: "Omer", total: 49, milestoneEvery: 7, numbers: "every" },
   },
   {
     slug: "dhikr-counter",
@@ -1107,7 +1114,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Philosophy & faith",
     cadence: "day",
     paletteName: "Dhikr",
-    props: { heading: "Dhikr", total: 33, milestoneEvery: 11, numbered: false },
+    props: { heading: "Dhikr", total: 33, milestoneEvery: 11, numbers: "none", segments: "circles" },
   },
   {
     slug: "parashah-study",
@@ -1154,7 +1161,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Self-help & growth",
     cadence: "journal",
     paletteName: "30 Days",
-    props: { heading: "30 Days", total: 30, milestoneEvery: 10, numbered: true },
+    props: { heading: "30 Days", total: 30, milestoneEvery: 10, numbers: "every" },
   },
   {
     slug: "ninety-day-sprint",
@@ -1163,7 +1170,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Self-help & growth",
     cadence: "journal",
     paletteName: "90 Days",
-    props: { heading: "90 Days", total: 90, milestoneEvery: 10, numbered: true },
+    props: { heading: "90 Days", total: 90, milestoneEvery: 10, numbers: "milestones" },
   },
   {
     slug: "smart-goal",
@@ -1253,7 +1260,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Creative & leisure",
     cadence: "journal",
     paletteName: "Reading",
-    props: { heading: "Books This Year", total: 24, milestoneEvery: 6, numbered: true },
+    props: { heading: "Books This Year", total: 24, milestoneEvery: 6, numbers: "milestones" },
   },
   {
     slug: "watchlist",

@@ -32,7 +32,7 @@ import {
   headerElements,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, fitLabel } from "@/lib/modules/textFit";
 
 export type ProgressMeterConfig = {
   heading: string;
@@ -40,8 +40,21 @@ export type ProgressMeterConfig = {
   total: number;
   /** A heavier rule after every Nth segment. 0 or absent for none. */
   milestoneEvery?: number;
-  /** Print the running count at each milestone. */
+  /** Print the running count at each milestone. The old setting - see
+   *  `numbers`, which is read first. */
   numbered?: boolean;
+  /**
+   * The count printed on the meter: none, at each milestone (the old
+   * `numbered`), or in every segment - counting the Omer is saying which
+   * day it is. Module-edits list, 2026-09-30.
+   */
+  numbers?: "none" | "milestones" | "every";
+  /** Boxes to tick (the default), circles to fill like beads, or one bar to
+   *  shade towards a goal - a hundred boxes say the wrong thing about money. */
+  segments?: "boxes" | "circles" | "bar";
+  /** Printed under the two ends: "$0" and the goal, page 1 and the last. */
+  startLabel?: string;
+  endLabel?: string;
 };
 
 export type RenderedElement = {
@@ -66,6 +79,9 @@ const MILESTONE_STROKE_PT = RULE_WIDTH_PT * 2;
 // as something written in it: at 5.5pt the digits nearly filled the
 // half-cell segment and the block read as clutter.
 const MILESTONE_FONT_PT = 4.5;
+// The start and end labels: the smallest size this planner prints text at
+// that is meant to be read, not ticked beside.
+const END_LABEL_FONT_PT = 6;
 const EDGE_PADDING_PT = 4;
 
 export function getProgressMeterRowMetricsPx() {
@@ -121,6 +137,10 @@ export function renderProgressMeter(
   elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bodyTop));
 
   const columns = progressMeterColumns(geometry.width);
+  const numbers = progressMeterNumbers(config);
+  const segments = config.segments === "circles" || config.segments === "bar" ? config.segments : "boxes";
+  let lastRowBottom = bodyTop;
+  let lastRight = 0;
   const bodyBottom = geometry.y + geometry.height;
   // Centred in whatever the width leaves over, so a short final row and a
   // full one share the same left edge and the block reads as a block.
@@ -136,19 +156,89 @@ export function renderProgressMeter(
     // geometry it is given.
     if (top + segment > bodyBottom + 0.5) break;
 
-    elements.push({
-      id: id(`seg${n}`),
-      type: "figure",
-      subType: "rect",
-      x: blockLeft + column * segment,
-      y: top,
-      width: segment,
-      height: segment,
-      fill: "transparent",
-      stroke: NEAR_BLACK,
-      strokeWidth: ptToPx(SEGMENT_STROKE_PT),
-      opacity: 0.75,
-    });
+    const segX = blockLeft + column * segment;
+    if (segments === "circles") {
+      const r = segment / 2 - ptToPx(1);
+      elements.push({
+        id: id(`seg${n}`),
+        type: "figure",
+        subType: "rect",
+        x: segX + segment / 2 - r,
+        y: top + segment / 2 - r,
+        width: r * 2,
+        height: r * 2,
+        cornerRadius: r,
+        fill: "transparent",
+        stroke: NEAR_BLACK,
+        strokeWidth: ptToPx(SEGMENT_STROKE_PT),
+        opacity: 0.75,
+      });
+    } else if (segments === "bar") {
+      // ONE bar per row, ticked at each segment from below: an amount to
+      // shade in, still counted.
+      if (column === 0) {
+        const inRow = Math.min(columns, total - n);
+        elements.push({
+          id: id(`bar${row}`),
+          type: "figure",
+          subType: "rect",
+          x: segX,
+          y: top,
+          width: inRow * segment,
+          height: segment,
+          fill: "transparent",
+          stroke: NEAR_BLACK,
+          strokeWidth: ptToPx(SEGMENT_STROKE_PT),
+          opacity: 0.75,
+        });
+      } else {
+        const tick = segment / 3;
+        elements.push({
+          id: id(`tick${n}`),
+          type: "figure",
+          subType: "rect",
+          x: segX - ptToPx(SEGMENT_STROKE_PT) / 2,
+          y: top + segment - tick,
+          width: ptToPx(SEGMENT_STROKE_PT),
+          height: tick,
+          fill: NEAR_BLACK,
+          stroke: "none",
+          opacity: 0.6,
+        });
+      }
+    } else {
+      elements.push({
+        id: id(`seg${n}`),
+        type: "figure",
+        subType: "rect",
+        x: segX,
+        y: top,
+        width: segment,
+        height: segment,
+        fill: "transparent",
+        stroke: NEAR_BLACK,
+        strokeWidth: ptToPx(SEGMENT_STROKE_PT),
+        opacity: 0.75,
+      });
+    }
+    if (numbers === "every") {
+      elements.push({
+        id: id(`n${n + 1}-label`),
+        type: "text",
+        x: segX,
+        y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
+        width: segment,
+        height: milestoneFontSize * 1.2,
+        text: String(n + 1),
+        fontSize: milestoneFontSize,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: "center",
+        opacity: 0.5,
+      });
+    }
+    lastRowBottom = top + segment;
+    lastRight = segX + segment;
 
     // The milestone rule sits on the segment's RIGHT edge - after the
     // tenth day, not before it - so the count reads as complete up to the
@@ -167,7 +257,7 @@ export function renderProgressMeter(
         fill: NEAR_BLACK,
         stroke: "none",
       });
-      if (config.numbered) {
+      if (numbers === "milestones") {
         elements.push({
           id: id(`mile${count}-label`),
           type: "text",
@@ -186,5 +276,40 @@ export function renderProgressMeter(
     }
   }
 
+  // The two ends named, under the first segment and the last.
+  const ends = [
+    { key: "start", text: (config.startLabel ?? "").trim(), x: blockLeft, align: "left" },
+    { key: "end", text: (config.endLabel ?? "").trim(), x: lastRight, align: "right" },
+  ];
+  const endSize = ptToPx(END_LABEL_FONT_PT);
+  if (lastRowBottom + endSize * 1.4 <= geometry.y + geometry.height + 0.5) {
+    for (const end of ends) {
+      if (!end.text) continue;
+      const width = Math.max(segment * 4, (lastRight - blockLeft) / 2 - segment / 2);
+      const fitted = fitLabel(end.text, width, [endSize, ptToPx(5)]);
+      elements.push({
+        id: id(`${end.key}-label`),
+        type: "text",
+        x: end.align === "left" ? end.x : end.x - width,
+        y: lastRowBottom + ptToPx(1.5),
+        width,
+        height: fitted.fontSizePx * 1.2,
+        text: fitted.text,
+        fontSize: fitted.fontSizePx,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: end.align,
+        opacity: 0.65,
+      });
+    }
+  }
+
   return elements;
 }
+
+/** The numbers a meter prints: `numbers`, or the old `numbered` boolean. */
+export function progressMeterNumbers(config: { numbers?: unknown; numbered?: unknown }): "none" | "milestones" | "every" {
+  if (config.numbers === "none" || config.numbers === "milestones" || config.numbers === "every") return config.numbers;
+  return config.numbered === false ? "none" : config.numbered === true ? "milestones" : "none";
+}
+

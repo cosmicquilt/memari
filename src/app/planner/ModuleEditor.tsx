@@ -24,7 +24,7 @@
 // revealed on hover, and a spring rather than an ease.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults } from "@/lib/moduleRegistry";
+import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults, withCurrentSettings } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
 import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid";
@@ -178,7 +178,9 @@ export function ModuleEditor({
             Object.entries(DEFAULT_HOURLY_SETTINGS).map(([key, value]) => [key, editing.propValues[key] ?? value])
           ),
         }
-      : editing.propValues
+      : // Old settings read as the ones that replaced them, so the picker
+        // opens on what the module actually draws - see `current`.
+        withCurrentSettings(editing.slug, editing.propValues)
   );
   const [draft, setDraft] = useState<Record<string, unknown>>(openedDraft);
   const [weekStart, setWeekStart] = useState(weekStartDay);

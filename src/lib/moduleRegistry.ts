@@ -66,11 +66,13 @@ import {
 import {
   renderMiniMonth,
   getMiniMonthMinHeightPx,
+  miniMonthMark,
   type MiniMonthConfig,
 } from "@/lib/modules/miniMonth";
 import {
   renderProgressMeter,
   getProgressMeterMinHeightPx,
+  progressMeterNumbers,
   type ProgressMeterConfig,
 } from "@/lib/modules/progressMeter";
 import {
@@ -449,6 +451,15 @@ export type ModuleDefinition = {
   weekStart?: (propValues: Record<string, unknown>, weekStartDay: number) => Record<string, unknown>;
 
   /**
+   * This module's props with any OLD setting read as the one that replaced
+   * it - `ruled` as `rule`, `markable` as `mark`, `numbered` as `numbers`.
+   * The renderers read both, so a stored module draws as it always did; this
+   * is for the editor, which opens on the new setting and would otherwise
+   * show "Nothing" picked on a box that draws lines.
+   */
+  current?: (propValues: Record<string, unknown>) => Record<string, unknown>;
+
+  /**
    * Does this module's content have to be RE-DRAWN as its box resizes,
    * rather than drawn once and clipped?
    *
@@ -706,6 +717,7 @@ const PRIMITIVES = {
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderLabeledBox(geometry, propValues as LabeledBoxConfig, idPrefix, fontFamily, lattice),
+    current: (props) => (props.rule === undefined ? { ...props, rule: props.ruled ? "lined" : "none" } : props),
     // Its heading drops a point size rather than wrapping when the box
     // narrows, and a ruled box gains rules as it grows, so both axes
     // change the drawing.
@@ -1283,6 +1295,15 @@ const PRIMITIVES = {
           "keepDates": {
             "type": "boolean",
             "default": false
+          },
+          "mark": {
+            "type": "string",
+            "enum": ["none", "box", "ring"],
+            "default": "none"
+          },
+          "neighbours": {
+            "type": "boolean",
+            "default": true
           }
         }
       },
@@ -1301,7 +1322,18 @@ const PRIMITIVES = {
       { kind: "text", key: "heading", label: "Heading (blank for the month name)" },
       { kind: "number", key: "year", label: "Year", min: 1900, max: 2100 },
       { kind: "number", key: "month", label: "Month (1-12)", min: 1, max: 12 },
-      { kind: "boolean", key: "markable", label: "Box under each date" },
+      {
+        kind: "rule",
+        key: "mark",
+        label: "Mark each date",
+        options: [
+          { value: "none", label: "Nothing" },
+          { value: "box", label: "Box" },
+          { value: "ring", label: "Ring" },
+        ],
+        window: { x: "left", y: "top", columns: 3.4, rows: 2.8 },
+      },
+      { kind: "boolean", key: "neighbours", label: "Days from the months either side" },
       {
         kind: "boolean",
         key: "keepDates",
@@ -1331,8 +1363,9 @@ const PRIMITIVES = {
             month: at.start.getUTCMonth() + 1,
           },
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
-      getMiniMonthMinHeightPx(propValues.markable === true),
+      getMiniMonthMinHeightPx(miniMonthMark(propValues) === "box"),
     weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
+    current: (props) => (props.mark === undefined ? { ...props, mark: miniMonthMark(props) } : props),
     // Seven columns of a fixed grid: the drawing is the same marks at
     // every size, only further apart, so nothing has to be recounted.
     // The clip window serves it more cheaply than a redraw.
@@ -1362,6 +1395,24 @@ const PRIMITIVES = {
           "numbered": {
             "type": "boolean",
             "default": true
+          },
+          "numbers": {
+            "type": "string",
+            "enum": ["none", "milestones", "every"],
+            "default": "milestones"
+          },
+          "segments": {
+            "type": "string",
+            "enum": ["boxes", "circles", "bar"],
+            "default": "boxes"
+          },
+          "startLabel": {
+            "type": "string",
+            "default": ""
+          },
+          "endLabel": {
+            "type": "string",
+            "default": ""
           }
         }
       },
@@ -1380,10 +1431,34 @@ const PRIMITIVES = {
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "number", key: "total", label: "Segments", min: 1, max: 400 },
       { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
-      { kind: "boolean", key: "numbered", label: "Number the milestones" },
+      {
+        kind: "rule",
+        key: "segments",
+        label: "Segments",
+        options: [
+          { value: "boxes", label: "Boxes" },
+          { value: "circles", label: "Circles" },
+          { value: "bar", label: "One bar" },
+        ],
+        window: { x: "left", y: "top", columns: 3.4, rows: 2.1 },
+      },
+      {
+        kind: "rule",
+        key: "numbers",
+        label: "Numbers",
+        options: [
+          { value: "none", label: "None" },
+          { value: "milestones", label: "Milestones" },
+          { value: "every", label: "Every one" },
+        ],
+        window: { x: "left", y: "top", columns: 3.4, rows: 2.1 },
+      },
+      { kind: "text", key: "startLabel", label: "Start label (optional)" },
+      { kind: "text", key: "endLabel", label: "End label (optional)" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderProgressMeter(geometry, propValues as ProgressMeterConfig, idPrefix, fontFamily, lattice),
+    current: (props) => (props.numbers === undefined ? { ...props, numbers: progressMeterNumbers(props) } : props),
     // How many rows a count needs depends on how many segments fit across
     // the box, so this one genuinely needs the width - which is why the
     // rule takes the page grid rather than a constant.
@@ -1986,6 +2061,12 @@ export function withoutDates(slug: string, propValues: unknown): unknown {
  */
 /** One instance's props for a journal whose weeks start on `weekStartDay` -
  *  untouched for a module that prints no weekdays. See `weekStart`. */
+/** Props with old settings read as their replacements - see `current`. */
+export function withCurrentSettings(slug: string, propValues: Record<string, unknown>): Record<string, unknown> {
+  const read = MODULE_REGISTRY[slug]?.current;
+  return read ? read(propValues) : propValues;
+}
+
 export function withWeekStart(slug: string, propValues: unknown, weekStartDay: number): unknown {
   const turn = MODULE_REGISTRY[slug]?.weekStart;
   if (!turn) return propValues;

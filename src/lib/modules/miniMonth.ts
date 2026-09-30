@@ -42,7 +42,7 @@ import {
   headerElements,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, textBaselineY } from "@/lib/modules/textFit";
 
 export type MiniMonthConfig = {
   year: number;
@@ -55,6 +55,16 @@ export type MiniMonthConfig = {
   heading?: string;
   /** Give every date a square to tick - the dot-calendar trackers. */
   markable?: boolean;
+  /**
+   * What each date gets to mark it: nothing, a box under it (the old
+   * `markable`), or a ring round the number - how a cycle is usually
+   * tracked, and it needs no extra row. Read first; `markable` only when
+   * this is absent. Module-edits list, 2026-09-30.
+   */
+  mark?: "none" | "box" | "ring";
+  /** The days of the months either side: shown faint (the default), or
+   *  left out - a mark on 30 December means nothing on a tracker. */
+  neighbours?: boolean;
   /** Keep real dates even when the planner itself is undated. Read by the
    *  registry's `undated` hook, not by this renderer, which only ever sees
    *  the month it was given. */
@@ -112,6 +122,12 @@ export function getMiniMonthRowMetricsPx(markable: boolean) {
  * verifies that exhaustively for 1900-2100 - so sizing for six means every
  * month fits and none of them silently loses a week.
  */
+/** The mark a mini month prints: `mark`, or the old `markable` boolean. */
+export function miniMonthMark(config: { mark?: unknown; markable?: unknown }): "none" | "box" | "ring" {
+  if (config.mark === "none" || config.mark === "box" || config.mark === "ring") return config.mark;
+  return config.markable === true ? "box" : "none";
+}
+
 export function getMiniMonthMinHeightPx(markable: boolean): number {
   const m = getMiniMonthRowMetricsPx(markable);
   return m.headerHeightPx + m.weekdayStripHeightPx + m.dateRowHeightPx * 6;
@@ -147,7 +163,9 @@ export function renderMiniMonth(
   // above still says which column is which, so a written-in month lands in
   // the right place.
   const blankWeeks = calendar ? 0 : UNDATED_WEEK_COUNT;
-  const markable = config.markable === true;
+  const mark = miniMonthMark(config);
+  const markable = mark === "box";
+  const ringRadius = ptToPx(DATE_ROW_HEIGHT_PT) * 0.42;
   const stripTop = contentTopPx(geometry, lattice);
   const stripHeight = ptToPx(WEEKDAY_STRIP_HEIGHT_PT);
   const dateBandHeight = ptToPx(DATE_ROW_HEIGHT_PT);
@@ -207,6 +225,8 @@ export function renderMiniMonth(
       // readable at a glance, and a gap at either end breaks it.
       const opacity = !cell || cell.inCurrentMonth ? 1 : 0.3;
       const columnX = geometry.x + columnWidth * c;
+      // Left out entirely, box and ring included, when asked.
+      if (cell && !cell.inCurrentMonth && config.neighbours === false) continue;
 
       if (typeof cell?.date === "number") {
         elements.push({
@@ -222,6 +242,27 @@ export function renderMiniMonth(
           fill: NEAR_BLACK,
           align: "center",
           opacity,
+        });
+      }
+
+      if (mark === "ring") {
+        // Round the number, centred on its ink rather than on its line box:
+        // a figure's middle is half its cap height above the baseline.
+        const baseline = textBaselineY(capCentredTextY(rowTop, dateBandHeight, dateFontSize, fontFamily), dateFontSize, fontFamily);
+        const cy = baseline - dateFontSize * 0.34;
+        elements.push({
+          id: id(`w${w}-d${weekdayOfColumn(c, weekStartDay)}-ring`),
+          type: "figure",
+          subType: "rect",
+          x: columnX + columnWidth / 2 - ringRadius,
+          y: cy - ringRadius,
+          width: ringRadius * 2,
+          height: ringRadius * 2,
+          cornerRadius: ringRadius,
+          fill: "transparent",
+          stroke: NEAR_BLACK,
+          strokeWidth: ptToPx(MARK_BOX_STROKE_PT),
+          opacity: opacity * 0.8,
         });
       }
 

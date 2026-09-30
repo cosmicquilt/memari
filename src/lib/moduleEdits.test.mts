@@ -11,6 +11,7 @@ import { cellHeightPx } from "./grid";
 import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hourlyGridCore";
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
+import { withCurrentSettings } from "./moduleRegistry";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -199,4 +200,41 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(!!n && !!q && (q.x ?? 0) > (n.x ?? 0), "each prompt sets after its number");
   const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("prompted-lines", PAGE, 6, props);
   check(floor({ linesPerPrompt: 2, promptLines: [5] }) > floor({ linesPerPrompt: 2 }), "the floor follows the first prompt's own count");
+}
+
+// --- mini month --------------------------------------------------------------
+{
+  const jan = { year: 2026, month: 1, heading: "" };
+  const plain = draw("mini-month", jan, 6, 8);
+  check(ids(plain, /-(box|ring)$/).length === 0, "no marks by default");
+  const rings = ids(draw("mini-month", { ...jan, mark: "ring" }, 6, 8), /-ring$/);
+  check(rings.length === ids(plain, /-date$/).length, `a ring round every date (${rings.length})`);
+  check(ids(draw("mini-month", { ...jan, mark: "box" }, 6, 12), /-box$/).length > 0, "boxes as before");
+  check(ids(draw("mini-month", { ...jan, markable: true }, 6, 12), /-box$/).length > 0, "the old markable still draws boxes");
+  check(ids(draw("mini-month", { ...jan, markable: true, mark: "none" }, 6, 12), /-box$/).length === 0, "and mark wins over it");
+  const hidden = draw("mini-month", { ...jan, neighbours: false }, 6, 8);
+  check(texts(hidden, /-date$/).length === 31, `hiding the neighbours leaves January's 31 (got ${texts(hidden, /-date$/).length})`);
+  check(texts(plain, /-date$/).length > 31, "they show by default");
+  const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("mini-month", PAGE, 6, props);
+  check(floor({ mark: "box" }) > floor({ mark: "ring" }), "a box needs its row; a ring does not");
+  check(withCurrentSettings("mini-month", { markable: true }).mark === "box", "the editor opens an old boxed month on Box");
+  check(withCurrentSettings("labeled-box", { ruled: true }).rule === "lined", "and an old ruled note box on Lined");
+}
+
+// --- meter ---------------------------------------------------------------------
+{
+  const base = { heading: "Progress", total: 20, milestoneEvery: 5 };
+  const labels = (props: Record<string, unknown>) => texts(draw("progress-meter", { ...base, ...props }, 12, 4), /-label$/);
+  check(labels({ numbered: true }).join(",") === "5,10,15,20", `milestones as before (got ${labels({ numbered: true }).join(",")})`);
+  check(labels({ numbers: "none" }).length === 0, "none");
+  const every = labels({ numbers: "every" });
+  check(every.length === 20 && every[0] === "1" && every[19] === "20", `every segment numbered 1 to 20 (got ${every.length})`);
+  check(labels({ numbered: false, numbers: "every" }).length === 20, "numbers wins over the old numbered");
+  const circles = ids(draw("progress-meter", { ...base, segments: "circles" }, 12, 4), /-seg\d+$/);
+  check(circles.length === 20 && circles.every((c) => Number(c.cornerRadius ?? 0) > 0), "twenty circles");
+  const bar = draw("progress-meter", { ...base, segments: "bar" }, 12, 4);
+  check(ids(bar, /-bar\d+$/).length === 1 && ids(bar, /-seg\d+$/).length === 0 && ids(bar, /-tick\d+$/).length === 19, "one bar, ticked at the other nineteen");
+  const ends = texts(draw("progress-meter", { ...base, startLabel: "$0", endLabel: "Goal" }, 12, 4), /-(start|end)-label$/);
+  check(ends.join(",") === "$0,Goal", `start and end labels (got ${ends.join(",")})`);
+  check(withCurrentSettings("progress-meter", { numbered: false }).numbers === "none", "the editor opens an old unnumbered meter on None");
 }
