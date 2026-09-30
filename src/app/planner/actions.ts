@@ -34,7 +34,7 @@ import { resolvePairResize } from "@/lib/stackResize";
 const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
   (mi.propValues as Record<string, unknown> | null) ?? {};
 import {
-  canCrossZones, isSpineSlug, findSpine } from "@/lib/moduleRegistry";
+  canCrossZones, isSpineSlug, findSpine, moduleDefinition } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
 import {
   WITH_PAGES,
@@ -1813,6 +1813,50 @@ export async function deleteModuleWithGravity(instanceId: string) {
 // addPaletteModuleAt returns) so the client can swap it into the live
 // canvas — delete the old group by id, add this one in its place — same
 // pattern as adding a brand new module, just replacing an existing one.
+/**
+ * A locked module's journal-wide settings, written to every copy of it in the
+ * journal - the month calendar's, like the hours' through updateHourlySettings.
+ * Only the keys the module's own `fields` offer are taken, each sanitised
+ * against its schema; everything else about the instances is untouched.
+ */
+export async function updateJournalModuleSettings(
+  journalId: string,
+  slug: string,
+  settings: Record<string, unknown>
+) {
+  const userId = await currentOwnerId();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const definition = moduleDefinition(slug);
+  if (!definition?.journalWideSettings) {
+    throw new Error("This module has no journal-wide settings");
+  }
+  const planner = await prisma.planner.findFirst({ where: { id: journalId, ownerId: userId }, select: { id: true } });
+  if (!planner) {
+    throw new Error("Journal not found or not owned by this user");
+  }
+  const keys = new Set(
+    (definition.fields ?? []).flatMap((field) => ("key" in field ? [field.key] : []))
+  );
+  const offered = Object.fromEntries(Object.entries(settings).filter(([key]) => keys.has(key)));
+  const instances = await prisma.moduleInstance.findMany({
+    where: { page: { plannerId: planner.id }, moduleType: { slug } },
+    include: { moduleType: true },
+  });
+  await prisma.$transaction(
+    instances.map((instance) => {
+      const merged = sanitizePropValues(instance.moduleType.configSchema, {
+        ...((instance.propValues ?? {}) as Record<string, unknown>),
+        ...offered,
+      });
+      return prisma.moduleInstance.update({ where: { id: instance.id }, data: { propValues: merged as Prisma.InputJsonValue } });
+    })
+  );
+  await syncLinkedPages([...new Set(instances.map((instance) => instance.pageId))]);
+  return { updated: instances.length };
+}
+
 export async function updateModuleConfig(
   instanceId: string,
   propValues: Record<string, unknown>

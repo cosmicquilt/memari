@@ -27,6 +27,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
+import { latticeFill } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
@@ -52,6 +53,18 @@ export type AxisMatrixConfig = {
    * effort/impact plot names none and relies on the axes.
    */
   quadrants?: string[];
+  /**
+   * The box names: large and grey in the middle (the default), or small in
+   * each box's top corner - the large ones sit exactly where you write,
+   * fine for sorting and in the way of a list. Module-edits list,
+   * 2026-09-30, as are the next two.
+   */
+  boxNames?: "large" | "small";
+  /** What each box holds: nothing, lines or the lattice's dots. */
+  inside?: "none" | "lined" | "dotted";
+  /** The axis labels, or none - a SWOT names its boxes and has no axes, and
+   *  the gutter and label row go back to the boxes. */
+  axisLabels?: boolean;
 };
 
 export type RenderedElement = {
@@ -126,6 +139,8 @@ const AXIS_BAND_HEIGHT_PT = AXIS_FONT_PT * 1.2 + AXIS_BAND_PADDING_PT * 2;
  * it cannot be mistaken for anything else.
  */
 const AXIS_GUTTER_WIDTH_PT = 9;
+// A small box name: the house's small-label size, uppercase, in the corner.
+const SMALL_NAME_FONT_PT = 6;
 const AXIS_LETTER_FONT_PT = 6;
 /**
  * Letters of a stacked label, as a multiple of their own size.
@@ -269,7 +284,8 @@ export function renderAxisMatrix(
   const id = (name: string) => `${idPrefix}-${name}`;
 
   const bandTop = contentTopPx(geometry, lattice);
-  const axisBand = ptToPx(AXIS_BAND_HEIGHT_PT);
+  const showAxes = config.axisLabels !== false;
+  const axisBand = showAxes ? ptToPx(AXIS_BAND_HEIGHT_PT) : 0;
   const crossWidth = ptToPx(CROSS_WIDTH_PT);
   const padding = ptToPx(PADDING_PT);
 
@@ -301,7 +317,7 @@ export function renderAxisMatrix(
   //   first position at or below the axis band that puts the midpoint on
   //   the half-cell pitch. That costs a little air under the axis words
   //   (36px at most) and nothing else.
-  const gutter = ptToPx(AXIS_GUTTER_WIDTH_PT);
+  const gutter = showAxes ? ptToPx(AXIS_GUTTER_WIDTH_PT) : 0;
   const pitch = lattice?.pitchPx ?? ptToPx(18);
   const half = pitch / 2;
   const originY = lattice?.originY ?? geometry.y;
@@ -330,7 +346,7 @@ export function renderAxisMatrix(
     [axisFontSize, ptToPx(6), ptToPx(5)]
   );
   acrossEnds.forEach(([name, text, x], i) => {
-    if (!text) return;
+    if (!text || !showAxes) return;
     const fitted = { text: across.texts[i], fontSizePx: across.fontSizePx };
     elements.push({
       id: id(name),
@@ -402,7 +418,7 @@ export function renderAxisMatrix(
   const letterPitch = letterSize * AXIS_LETTER_PITCH;
 
   for (const [name, text, top, height] of downEnds) {
-    if (!text) continue;
+    if (!text || !showAxes) continue;
     const letters = [...text];
     const units = advanceUnits(text);
     // Centred on its own half, measured in the advance it actually uses.
@@ -513,7 +529,54 @@ export function renderAxisMatrix(
     // its end missing, which is the same order the column heads use.
     [quadrantFontSize, ptToPx(9), ptToPx(8), ptToPx(7), ptToPx(6), ptToPx(5)]
   );
+  // What each box holds - the shared fill, box by box, on the lattice and
+  // clear of the cross. Below a small name, not over it.
+  const small = config.boxNames === "small";
+  const smallSize = ptToPx(SMALL_NAME_FONT_PT);
+  const smallBand = smallSize * 1.2 + ptToPx(3);
+  const inside = config.inside === "lined" || config.inside === "dotted" ? config.inside : "none";
   corners.forEach(([name, x, y], q) => {
+    const right = q % 2 === 0 ? midX : plotLeft + plotWidth;
+    const bottom = q < 2 ? midY : gridBottom;
+    elements.push(
+      ...latticeFill({
+        style: inside,
+        region: { left: x, top: y + (small && quadrants[q] ? smallBand : 0), right, bottom },
+        geometry,
+        lattice,
+        id,
+        tag: `q-${name}-`,
+        lineOpacity: 0.6,
+      })
+    );
+  });
+
+  if (small) {
+    const smallLabels = fitLabelSet(
+      quadrants.map((text) => ({ text, widthPx: halfWidth - padding * 2 })),
+      [smallSize, ptToPx(5)]
+    );
+    corners.forEach(([name, x, y], q) => {
+      if (!quadrants[q]) return;
+      elements.push({
+        id: id(`q-${name}`),
+        type: "text",
+        x: x + padding,
+        y: y + ptToPx(2),
+        width: halfWidth - padding * 2,
+        height: smallLabels.fontSizePx * 1.2,
+        text: smallLabels.texts[q],
+        fontSize: smallLabels.fontSizePx,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: "left",
+        opacity: 0.6,
+      });
+    });
+  }
+
+  corners.forEach(([name, x, y], q) => {
+    if (small) return;
     const fitted = { text: quadrantLabels.texts[q], fontSizePx: quadrantLabels.fontSizePx };
     const textHeight = fitted.fontSizePx * 1.2;
     elements.push({

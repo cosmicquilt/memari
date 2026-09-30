@@ -1567,6 +1567,7 @@ function NativeModule({
           from Page Settings on 2026-09-29 ("add edit button to center of
           hourly section on each page"), on hover like every other pencil. */}
       {(moduleDefinition(slug)?.pageSettingsForm === "hours" ||
+        moduleDefinition(slug)?.journalWideSettings ||
         (!locked && (moduleDefinition(slug)?.fields?.length ?? 0) > 0)) && (
         <button
           type="button"

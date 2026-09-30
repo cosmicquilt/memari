@@ -267,3 +267,54 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const inside = draw("rating-strip", { ...base, scaleHead: "inside" }, 6, 6);
   check(texts(inside, /-scale\d+$/).length === 0 && texts(inside, /-i0-v\d-number$/).join(",") === "1,2,3,4,5", "or the numbers inside the marks");
 }
+
+// --- matrix --------------------------------------------------------------------
+{
+  const eis = { heading: "Eisenhower", xLeft: "Not urgent", xRight: "Urgent", yTop: "Vital", yBottom: "Minor", quadrants: ["Schedule", "Do", "Delete", "Delegate"] };
+  const large = draw("axis-matrix", eis, 12, 9);
+  const big = ids(large, /-q-(tl|tr|bl|br)$/);
+  const small = ids(draw("axis-matrix", { ...eis, boxNames: "small" }, 12, 9), /-q-(tl|tr|bl|br)$/);
+  check(small.length === 4 && small.every((q, i) => Number(q.fontSize) < Number(big[i].fontSize) && q.align === "left"), "small names sit left, smaller than the large ones");
+  check(ids(draw("axis-matrix", { ...eis, boxNames: "small", quadrants: ["", "", "", ""] }, 12, 9), /-q-(tl|tr|bl|br)$/).length === 0, "an unnamed box prints no placeholder when small");
+  const lined = draw("axis-matrix", { ...eis, boxNames: "small", inside: "lined" }, 12, 9);
+  check(["tl", "tr", "bl", "br"].every((q) => ids(lined, new RegExp(`-q-${q}-rule\\d+$`)).length > 0), "lines in all four boxes");
+  const cross = ids(lined, /-cross-h$/)[0];
+  const crossY = (cross.y ?? 0) + (cross.height ?? 0) / 2;
+  check(ids(lined, /-q-\w+-rule\d+$/).every((r) => Math.abs((r.y ?? 0) + (r.height ?? 0) / 2 - crossY) > 1), "never on the cross");
+  check(ids(draw("axis-matrix", { ...eis, inside: "dotted" }, 12, 9), /-dot\d+-\d+$/).length > 0, "or dots");
+  const bare = draw("axis-matrix", { ...eis, axisLabels: false }, 12, 9);
+  check(ids(bare, /-(x-left|x-right|y-top-l\d+|y-bottom-l\d+)$/).length === 0, "axis labels hidden");
+  const bareCross = ids(bare, /-cross-h$/)[0];
+  const box = ids(bare, /-border$/)[0];
+  check(Math.abs((bareCross.width ?? 0) - (box.width ?? 0)) < 0.5, "and the cross takes the whole width");
+}
+
+// --- text --------------------------------------------------------------------
+{
+  const quote = { heading: "", body: "A journey of a thousand miles begins with a single step.", attribution: "after Lao Tzu", align: "center" };
+  const size = (s: string) => Number(ids(draw("text-block", { ...quote, size: s }, 12, 5), /-line0$/)[0]?.fontSize ?? 0);
+  check(size("small") < size("regular") && size("regular") < size("large"), "three sizes, in order");
+  check(ids(draw("text-block", quote, 12, 5), /-border$/).length === 1, "boxed by default");
+  check(ids(draw("text-block", { ...quote, frame: "open" }, 12, 5), /-border(-top|-bottom)?$/).length === 0, "open");
+  check(ids(draw("text-block", { ...quote, frame: "rules" }, 12, 5), /-border-(top|bottom)$/).length === 2, "or a rule above and below");
+  const floor = (s: string) => getMinRowSpanForSlug("text-block", PAGE, 6, { ...quote, size: s });
+  check(floor("large") > floor("small"), "large type needs more room");
+}
+
+// --- month calendar ----------------------------------------------------------
+{
+  const month = {
+    dayCount: 3,
+    dayLabels: [{ name: "SUNDAY" }, { name: "MONDAY" }, { name: "TUESDAY" }],
+    weekCount: 5,
+    cells: Array.from({ length: 5 }, (_, w) => Array.from({ length: 3 }, (_, d) => ({ date: w * 7 + d + 1, inCurrentMonth: true }))),
+  };
+  const plain = draw("month-grid-core", month, 18, 16);
+  check(ids(plain, /-(rule|dot)\d+(-\d+)?$/).filter((e) => /-w\d-d\d-/.test(String(e.id))).length === 0, "blank days by default");
+  const lined = draw("month-grid-core", { ...month, inside: "lined" }, 18, 16);
+  const lines = ids(lined, /-w\d-d\d-rule\d+$/);
+  check(lines.length > 0 && ids(lined, /^m-w0-d2-rule\d+$/).length > 0, `lines in every day (${lines.length})`);
+  const strips = ids(lined, /-w\d-strip-rule$/).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2);
+  check(lines.every((l) => strips.every((y) => Math.abs((l.y ?? 0) + (l.height ?? 0) / 2 - y) > 1)), "never on a date strip");
+  check(ids(draw("month-grid-core", { ...month, inside: "dotted" }, 18, 16), /-dot\d+-\d+$/).length > 0, "or dots");
+}

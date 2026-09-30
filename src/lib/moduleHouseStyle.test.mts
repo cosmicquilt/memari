@@ -276,6 +276,10 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, border: true, groupLabels: "days", stripLabels: ["Water", "A very long strip label"] }],
   ["rating-strip", { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 10, shape: "star", scaleHead: "inside" }],
   ["rating-strip", { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 5, scaleHead: "words", lowLabel: "not at all", highLabel: "completely" }],
+  ["eisenhower-matrix", { heading: "Eisenhower", xLeft: "Not urgent", xRight: "Urgent", yTop: "Vital", yBottom: "Minor", quadrants: ["Schedule", "Do", "Delete", "Delegate"], boxNames: "small", inside: "lined" }],
+  ["axis-matrix", { heading: "SWOT", quadrants: ["Strengths", "Weaknesses", "Opportunities", "Threats"], boxNames: "small", inside: "dotted", axisLabels: false }],
+  ["text-block", { heading: "Serenity", body: "God, grant me the serenity to accept the things I cannot change.", size: "large", frame: "rules" }],
+  ["quote-block", { body: "A journey of a thousand miles begins with a single step.", attribution: "after Lao Tzu", align: "center", size: "small", frame: "open" }],
   ["hourly-grid-core", { timeFormat: "24" }],
   ["hourly-grid-core", { dayBorder: true }],
   ["hourly-grid-core", { hourLineStyle: "gone" }],
@@ -430,7 +434,10 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
         // a to-do's per-column row segments unexamined; it also had no
         // outline test, so it measured the module's own border against the
         // lattice the border is defined by.
-        .filter((e) => e !== box && ruleAxisOf(e, PITCH) === "horizontal")
+        // A frame drawn as two rules (the text block's "rules" frame) sits
+        // where a border's top and bottom would - on the ink box, like every
+        // border - so it is held to the border's rule, not a writing rule's.
+        .filter((e) => e !== box && !/-border-(top|bottom)$/.test(String(e.id)) && ruleAxisOf(e, PITCH) === "horizontal")
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
           const k = Math.round((centre - PAGE.marginPx) / PITCH);

@@ -36,7 +36,7 @@ import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
 import { HoursFields, type HoursDraft } from "./HoursFields";
 import { ColumnDividers } from "./ColumnDividers";
-import { saveModuleToSaved, updateHourlySettings, updateModuleConfig } from "./actions";
+import { saveModuleToSaved, updateHourlySettings, updateJournalModuleSettings, updateModuleConfig } from "./actions";
 import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRefreshPages } from "./pagesRefreshContext";
@@ -624,6 +624,14 @@ export function ModuleEditor({
       // the `lines` field, where a blank line somebody is typing around has
       // to survive until they stop.
       const cleaned = cleanPropsForSave(editing.slug, draft);
+      // A locked module with journal-wide settings - the month calendar -
+      // sets every copy of itself, and the pages are read again, as the
+      // hours are. See updateJournalModuleSettings.
+      if (definition?.journalWideSettings) {
+        await updateJournalModuleSettings(journalId, editing.slug, cleaned);
+        await refreshPages({ rebuild: true });
+        return;
+      }
       const result = await updateModuleConfig(editing.instanceId, cleaned);
       // A saved module used elsewhere in this journal changed there too.
       // The server has it right; the canvas and the timeline are showing the
@@ -915,6 +923,8 @@ export function ModuleEditor({
         >
           {hours ? (
             <>A page&rsquo;s hours are part of its layout, so they cannot be saved to place again.</>
+          ) : definition?.journalWideSettings ? (
+            <>This is part of every page&rsquo;s layout, so it cannot be saved to place again.</>
           ) : editing.savedModule ? (
             <>
               <div style={{ color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

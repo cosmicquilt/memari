@@ -47,7 +47,20 @@ export type TextBlockConfig = {
   /** Printed right-aligned under the passage. */
   attribution?: string;
   align?: "left" | "center";
+  /** Small (7pt), regular (8pt, the default) or large (11pt) - three fixed
+   *  sizes, so type stays on the house scale. Module-edits list. */
+  size?: "small" | "regular" | "large";
+  /** A box (the default), open on the page, or a rule above and below -
+   *  a quote reads as set type when it is not boxed like writing space. */
+  frame?: "box" | "open" | "rules";
 };
+
+/** The passage's type size and line pitch for a size setting. */
+export function textBlockType(size: unknown): { fontPt: number; linePt: number } {
+  if (size === "small") return { fontPt: 7, linePt: 9 };
+  if (size === "large") return { fontPt: 11, linePt: 13.5 };
+  return { fontPt: BODY_FONT_PT, linePt: LINE_HEIGHT_PT };
+}
 
 export type RenderedElement = {
   id: string;
@@ -128,12 +141,13 @@ export function wrapTextBlock(body: string, widthPx: number, fontSizePx: number)
 export function getTextBlockMinHeightPx(config: TextBlockConfig, widthPx: number): number {
   const m = getTextBlockRowMetricsPx();
   const usableWidth = widthPx - ptToPx(HORIZONTAL_PADDING_PT) * 2;
-  const lines = wrapTextBlock(config.body ?? "", usableWidth, ptToPx(BODY_FONT_PT));
+  const type = textBlockType(config.size);
+  const lines = wrapTextBlock(config.body ?? "", usableWidth, ptToPx(type.fontPt));
   const attribution = config.attribution ? m.lineHeightPx : 0;
   return (
     (config.heading ? m.headerHeightPx : 0) +
     ptToPx(BODY_TOP_PADDING_PT) +
-    m.lineHeightPx * Math.max(1, lines.length) +
+    ptToPx(type.linePt) * Math.max(1, lines.length) +
     attribution
   );
 }
@@ -159,12 +173,34 @@ export function renderTextBlock(
   // is simply blank, so a text block and a ruled module beside it agree
   // about where their content begins.
   const contentTop = contentTopPx(geometry, lattice);
-  const lineHeight = ptToPx(LINE_HEIGHT_PT);
+  const type = textBlockType(config.size);
+  const lineHeight = ptToPx(type.linePt);
+  const attributionLine = ptToPx(LINE_HEIGHT_PT);
   const padding = ptToPx(HORIZONTAL_PADDING_PT);
-  const bodyFontSize = ptToPx(BODY_FONT_PT);
+  const bodyFontSize = ptToPx(type.fontPt);
   const align = config.align ?? "left";
 
-  elements.push(borderElement(geometry, id));
+  if (config.frame === "rules") {
+    // Above and below at the border's weight: the passage set off, not boxed.
+    // Named as the border's own edges, because that is what they are: the
+    // frame, where the border's top and bottom would be - on the ink box,
+    // like every border, and not writing rules on the lattice.
+    for (const [name, y] of [["border-top", geometry.y], ["border-bottom", geometry.y + geometry.height]] as const) {
+      elements.push({
+        id: id(name),
+        type: "figure",
+        subType: "rect",
+        x: geometry.x,
+        y: y - ptToPx(0.5) / 2,
+        width: geometry.width,
+        height: ptToPx(0.5),
+        fill: NEAR_BLACK,
+        stroke: "none",
+      });
+    }
+  } else if (config.frame !== "open") {
+    elements.push(borderElement(geometry, id));
+  }
   elements.push(
     ...headerElements(geometry, config.heading ?? "", id, fontFamily, contentTop, {
       rule: !!config.heading,
@@ -205,12 +241,12 @@ export function renderTextBlock(
   if (config.attribution) {
     const attributionFontSize = ptToPx(ATTRIBUTION_FONT_PT);
     const top = bodyTop + lineHeight * drawn;
-    if (top + lineHeight <= bodyBottom + 0.5) {
+    if (top + attributionLine <= bodyBottom + 0.5) {
       elements.push({
         id: id("attribution"),
         type: "text",
         x: geometry.x + padding,
-        y: capCentredTextY(top, lineHeight, attributionFontSize, fontFamily),
+        y: capCentredTextY(top, attributionLine, attributionFontSize, fontFamily),
         width: usableWidth,
         height: attributionFontSize * 1.2,
         // An em dash is how an attribution is set, and the module owns

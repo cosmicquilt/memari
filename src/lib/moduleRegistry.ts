@@ -296,6 +296,15 @@ export type ModuleDefinition = {
   pageSettingsForm?: "hours";
 
   /**
+   * A LOCKED module whose `fields` are the journal's own settings for it,
+   * saved to every copy of it in the journal at once - the month calendar,
+   * which like the hours is placed by the template and is the same on every
+   * month page. Earns it a pencil though it is locked; see
+   * updateJournalModuleSettings.
+   */
+  journalWideSettings?: boolean;
+
+  /**
    * Whether the width can be stepped in the properties panel.
    *
    * Off by default. A to-do or habit tracker's column span is tied to the
@@ -1006,6 +1015,11 @@ const PRIMITIVES = {
               "type": "array"
             },
             "default": []
+          },
+          "inside": {
+            "type": "string",
+            "enum": ["none", "lined", "dotted"],
+            "default": "none"
           }
         }
       },
@@ -1015,6 +1029,24 @@ const PRIMITIVES = {
       "defaultRowSpan": 22
     },
     isSpine: true,
+    // Its pencil opens these, and saving them sets every month page's
+    // calendar - see journalWideSettings. Module-edits list, 2026-09-30.
+    label: "Month calendar",
+    journalWideSettings: true,
+    fields: [
+      {
+        kind: "rule",
+        key: "inside",
+        label: "Inside each day",
+        options: [
+          { value: "none", label: "Blank" },
+          { value: "lined", label: "Lined" },
+          { value: "dotted", label: "Dotted" },
+        ],
+        window: { x: "left", y: "top", columns: 4.4, rows: 4.2 },
+      },
+      { kind: "note", text: "Applies to the calendar on every month page of this journal." },
+    ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily, lattice),
     // The grid keeps every cell and every date box; only the numbers go.
@@ -1675,7 +1707,10 @@ const PRIMITIVES = {
             "type": "array",
             "items": { "type": "string" },
             "default": ["", "", "", ""]
-          }
+          },
+          "boxNames": { "type": "string", "enum": ["large", "small"], "default": "large" },
+          "inside": { "type": "string", "enum": ["none", "lined", "dotted"], "default": "none" },
+          "axisLabels": { "type": "boolean", "default": true }
         }
       },
       "defaultWidth": 1200,
@@ -1711,6 +1746,27 @@ const PRIMITIVES = {
       // Delete under "urgent" and Delegate under "not urgent" - the two
       // most consequential boxes, exactly reversed.
       { kind: "lines", key: "quadrants", label: "Box names (4: top-left, top-right, bottom-left, bottom-right)", rows: 4 },
+      {
+        kind: "rule",
+        key: "boxNames",
+        label: "Box names",
+        options: [
+          { value: "large", label: "Large" },
+          { value: "small", label: "Small" },
+        ],
+        window: { x: "left", y: "top", columns: 4.2, rows: 3.4 },
+      },
+      {
+        kind: "rule",
+        key: "inside",
+        label: "Inside each box",
+        options: [
+          { value: "none", label: "Blank" },
+          { value: "lined", label: "Lined" },
+          { value: "dotted", label: "Dotted" },
+        ],
+      },
+      { kind: "boolean", key: "axisLabels", label: "Axis labels" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderAxisMatrix(geometry, propValues as AxisMatrixConfig, idPrefix, fontFamily, lattice),
@@ -1744,7 +1800,9 @@ const PRIMITIVES = {
             "type": "string",
             "enum": ["left", "center"],
             "default": "left"
-          }
+          },
+          "size": { "type": "string", "enum": ["small", "regular", "large"], "default": "regular" },
+          "frame": { "type": "string", "enum": ["box", "open", "rules"], "default": "box" }
         }
       },
       "defaultWidth": 600,
@@ -1775,6 +1833,27 @@ const PRIMITIVES = {
           { value: "left", label: "Left" },
           { value: "center", label: "Centred" },
         ],
+      },
+      {
+        kind: "select",
+        key: "size",
+        label: "Size",
+        options: [
+          { value: "small", label: "Small, 7pt" },
+          { value: "regular", label: "Regular, 8pt" },
+          { value: "large", label: "Large, 11pt" },
+        ],
+      },
+      {
+        kind: "rule",
+        key: "frame",
+        label: "Frame",
+        options: [
+          { value: "box", label: "Box" },
+          { value: "open", label: "Open" },
+          { value: "rules", label: "Rules" },
+        ],
+        window: { x: "left", y: "top", columns: 3, rows: 1.6 },
       },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
@@ -1968,6 +2047,10 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
           },
           attribution: { type: "string", default: "after Lao Tzu" },
           align: { type: "string", enum: ["left", "center"], default: "center" },
+          size: { type: "string", enum: ["small", "regular", "large"], default: "regular" },
+          // Set off by a rule above and below rather than boxed like the
+          // writing space around it - module-edits list, 2026-09-30.
+          frame: { type: "string", enum: ["box", "open", "rules"], default: "rules" },
         },
       },
       defaultColumnSpan: 24,
@@ -1989,6 +2072,7 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
       body: "A journey of a thousand miles begins with a single step.",
       attribution: "after Lao Tzu",
       align: "center",
+      frame: "rules",
     },
   }),
 

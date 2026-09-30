@@ -197,6 +197,9 @@ export const CATALOGUE: CatalogueEntry[] = [
       yTop: "Vital",
       yBottom: "Minor",
       quadrants: ["Schedule", "Do", "Delete", "Delegate"],
+      // Four lists: small names in the corners, lines to write on.
+      boxNames: "small",
+      inside: "lined",
     },
   },
   {

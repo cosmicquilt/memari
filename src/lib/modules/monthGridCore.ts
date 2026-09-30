@@ -34,6 +34,7 @@ import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 import { capCentredTextY } from "@/lib/modules/textFit";
+import { latticeFill } from "./latticeFill";
 
 export type MonthGridCoreConfig = {
   dayCount: number; // 3 or 4, matching which half of the spread (same convention as hourly-grid-core)
@@ -47,6 +48,9 @@ export type MonthGridCoreConfig = {
    *  stored. Read by the registry's `dated` hook, which computes `cells`
    *  from it; the drawing itself only ever sees the cells. */
   weekStartDay?: number;
+  /** What each day holds under its date: nothing, lines or the lattice's
+   *  dots. Journal-wide, like the hours' settings - module-edits list. */
+  inside?: "none" | "lined" | "dotted";
 };
 
 export type RenderedElement = {
@@ -286,6 +290,31 @@ export function renderMonthGridCore(
     // Row divider under the date-strip, and under the body (i.e. the
     // top of the next row) — skip the very last row's bottom line, the
     // outer border already covers it.
+    // Writing space in each day, below its date strip - the shared fill, on
+    // the lattice's rows, clear of the day rules.
+    const inside = config.inside === "lined" || config.inside === "dotted" ? config.inside : "none";
+    if (inside !== "none") {
+      for (let d = 0; d < config.dayCount; d++) {
+        const left = geometry.x + d * dayColumnWidth;
+        elements.push(
+          ...latticeFill({
+            style: inside,
+            region: {
+              left,
+              right: d === config.dayCount - 1 ? geometry.x + geometry.width : left + dayColumnWidth,
+              top: rowY + dateStripHeight,
+              bottom: Math.min(rowY + rowHeight, geometry.y + geometry.height),
+            },
+            geometry,
+            lattice,
+            id,
+            tag: `w${w}-d${d}-`,
+            lineOpacity: 0.5,
+          })
+        );
+      }
+    }
+
     elements.push({
       id: id(`w${w}-strip-rule`),
       type: "figure",
