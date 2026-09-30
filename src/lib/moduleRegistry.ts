@@ -41,6 +41,7 @@ import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
 import {
   renderTodoChecklist,
   getTodoChecklistRowMetricsPx,
+  todoItems,
   type TodoChecklistConfig,
 } from "@/lib/modules/todoChecklist";
 import {
@@ -772,6 +773,15 @@ const PRIMITIVES = {
               "crosses"
             ],
             "default": "lined"
+          },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          },
+          "numbered": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -799,13 +809,17 @@ const PRIMITIVES = {
           { value: "crosses", label: "Dashed" },
         ],
       },
+      { kind: "lines", key: "items", label: "Printed items (one per line)", rows: 6 },
+      { kind: "boolean", key: "numbered", label: "Number the rows" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderTodoChecklist(geometry, propValues as TodoChecklistConfig, idPrefix, fontFamily, lattice),
-    minContentHeightPx: () => {
-      // "Title and one row below", requested in those words.
+    minContentHeightPx: (_pageGrid, _columnSpan, propValues) => {
+      // "Title and one row below", requested in those words - and a row for
+      // every printed item, which is the module's content the way a
+      // tracker's named rows are (see habit-tracker's floor).
       const m = getTodoChecklistRowMetricsPx();
-      return m.headerHeightPx + m.nominalRowHeightPx;
+      return m.headerHeightPx + m.nominalRowHeightPx * Math.max(1, todoItems(propValues).length);
     },
     derivedProps: (pageGrid, placement) => ({
       dayCount: columnSpanToDayCount(pageGrid, placement.columnSpan),

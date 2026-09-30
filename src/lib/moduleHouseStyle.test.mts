@@ -257,6 +257,8 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   ["labeled-box", { heading: "Notes", rule: "lined", lineStart: "numbers" }],
   ["labeled-box", { heading: "Notes", rule: "dotted", lineStart: "bullets" }],
   ["labeled-box", { heading: "Notes", rule: "lined", lineStart: "boxes", columns: 2 }],
+  ["todo-checklist", { dayCount: 1, items: ["Passport", "A rather long item that has to shrink", "Chargers"], numbered: true }],
+  ["todo-checklist", { dayCount: 3, items: ["Stretch", "Read"] }],
   ["hourly-grid-core", { timeFormat: "24" }],
   ["hourly-grid-core", { dayBorder: true }],
   ["hourly-grid-core", { hourLineStyle: "gone" }],

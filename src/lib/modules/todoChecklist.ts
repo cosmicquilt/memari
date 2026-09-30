@@ -23,7 +23,8 @@ import {
   RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, fitLabel } from "@/lib/modules/textFit";
+import { rowMarkerElement } from "./latticeFill";
 
 export type TodoChecklistConfig = {
   dayCount: number; // matches the hourly-grid-core above it (3 or 4), or 1 in the sidebar
@@ -46,7 +47,23 @@ export type TodoChecklistConfig = {
    * this module's own lattice points at its own rule weight.
    */
   lineStyle?: "lined" | "crosses";
+  /**
+   * Printed on the rows, top down; blank rows follow. A packing list or a
+   * stretch routine is the same checklist every time, and a to-do could
+   * only print blank rows - the catalogue pass found it "had nowhere to put
+   * a suggestion". Under the hours each day column prints the same list.
+   */
+  items?: string[];
+  /** A number at the start of every row, for a list whose order matters. */
+  numbered?: boolean;
 };
+
+/** A to-do's printed items: the non-blank ones, as they will print. */
+export function todoItems(config: { items?: unknown }): string[] {
+  return (Array.isArray(config.items) ? config.items : [])
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0);
+}
 
 export type RenderedElement = {
   id: string;
@@ -59,6 +76,9 @@ export type RenderedElement = {
 };
 
 const NEAR_BLACK = "#231F20";
+// A printed item sets at the row's own size, shrinking a point at a time
+// before it is cut - the table's ladder for a cell.
+const ITEM_SIZES_PT = [7.5, 7, 6.5, 6];
 // The header band the renderer actually draws.
 //
 // Taken from moduleFrame rather than restated, because the renderers here
@@ -376,6 +396,51 @@ export function renderTodoChecklist(
       fill: NEAR_BLACK,
       stroke: "none",
     });
+
+    // What each row starts with: its number, then its printed item. In the
+    // row's own band, after the tick column - every band, including the
+    // short one at the foot, which is a row you write on like the others.
+    const items = todoItems(config);
+    if (items.length > 0 || config.numbered) {
+      const bands = rowCount + (gridHeight - rowCount * rowHeight > rowHeight / 4 ? 1 : 0);
+      const writeX = segX + checkboxWidth + ptToPx(2.5);
+      const writeWidth = segX + segmentWidth - writeX - ptToPx(2.5);
+      const numberWidth = config.numbered ? ptToPx(9) : 0;
+      for (let i = 0; i < bands; i++) {
+        const bandTop = gridTop + i * rowHeight;
+        const bandHeight = Math.min(rowHeight, gridTop + gridHeight - bandTop);
+        if (config.numbered) {
+          const number = rowMarkerElement({
+            marker: "numbers",
+            number: i + 1,
+            id: id(`d${d}-row${i}-number`),
+            x: writeX,
+            bandTop,
+            bandHeight,
+            fontFamily: FONT_FAMILY,
+            textY: capCentredTextY,
+          });
+          if (number) elements.push(number);
+        }
+        const item = items[i];
+        if (!item) continue;
+        const fitted = fitLabel(item, writeWidth - numberWidth, ITEM_SIZES_PT.map(ptToPx));
+        elements.push({
+          id: id(`d${d}-row${i}-item`),
+          type: "text",
+          x: writeX + numberWidth,
+          y: capCentredTextY(bandTop, bandHeight, fitted.fontSizePx, FONT_FAMILY),
+          width: writeWidth - numberWidth,
+          height: fitted.fontSizePx * 1.2,
+          text: fitted.text,
+          fontSize: fitted.fontSizePx,
+          fontFamily: FONT_FAMILY,
+          fill: NEAR_BLACK,
+          align: "left",
+          opacity: 0.85,
+        });
+      }
+    }
 
     for (let i = 0; i < rowCount; i++) {
       // Every row is exactly one pitch. The last one is NOT pinned to the

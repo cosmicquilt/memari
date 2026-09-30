@@ -9,6 +9,7 @@ import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModul
 import { PROOF_PAGE as PAGE, flatten } from "./proofSvg";
 import { cellHeightPx } from "./grid";
 import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hourlyGridCore";
+import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -88,4 +89,24 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(ids(draw("hourly-grid-core", props, 18, 20), /^m-d\d-border$/).length === 0, "none by default");
   const settings = hourlyPropsFromSettings({}, { ...DEFAULT_HOURLY_SETTINGS, hourLineStyle: "gone", dayBorder: true, timeFormat: "24" });
   check(settings.hourLineStyle === "gone" && settings.dayBorder === true && settings.timeFormat === "24", "the journal-wide settings write all three to every grid");
+}
+
+// --- to-do -------------------------------------------------------------------
+{
+  const items = ["Passport", "Tickets", "Chargers"];
+  const one = draw("todo-checklist", { heading: "Packing", dayCount: 1, items }, 6, 8);
+  check(texts(one, /-row\d+-item$/).join(",") === items.join(","), `printed items print in order (got ${texts(one, /-row\d+-item$/).join(",")})`);
+  const two = draw("todo-checklist", { heading: "Routine", dayCount: 2, items }, 12, 8);
+  check(ids(two, /^m-d1-row\d+-item$/).length === 3, "each day column prints the same list");
+  const numbered = draw("todo-checklist", { heading: "Six Tasks", dayCount: 1, numbered: true }, 6, 7);
+  const numbers = texts(numbered, /-row\d+-number$/);
+  check(numbers.join(",") === "1,2,3,4,5,6", `Ivy Lee's six are numbered 1 to 6 (got ${numbers.join(",")})`);
+  const both = draw("todo-checklist", { heading: "Six", dayCount: 1, numbered: true, items: ["One"] }, 6, 7);
+  const number = ids(both, /-row0-number$/)[0];
+  const item = ids(both, /-row0-item$/)[0];
+  check(!!number && !!item && (item.x ?? 0) > (number.x ?? 0), "a numbered item sets after its number");
+  check(ids(draw("todo-checklist", { heading: "To - Do", dayCount: 1 }, 6, 8), /-(item|number)$/).length === 0, "the default prints neither");
+  const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("todo-checklist", PAGE, 6, props);
+  check(floor({ items: ["a", "b", "c", "d", "e", "f"] }) > floor({}), "six printed items need more rows than a blank list");
+  check(floor({ items: ["a", " ", ""] }) === floor({ items: ["a"] }), "blank items do not count");
 }

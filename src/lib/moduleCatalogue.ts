@@ -164,7 +164,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Core planning",
     cadence: "week",
     paletteName: "Priorities",
-    props: { heading: "Priorities", dayCount: 1 },
+    props: { heading: "Priorities", dayCount: 1, numbered: true },
     columnSpan: 6,
     rowSpan: 11,
   },
@@ -176,7 +176,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "day",
     // Exactly six rows, ranked. The constraint IS the method, so the row
     // span is fixed rather than left to whatever the box is dragged to.
-    props: { heading: "Six Tasks", dayCount: 1 },
+    props: { heading: "Six Tasks", dayCount: 1, numbered: true },
     rowSpan: 7,
     columnSpan: 6,
   },
@@ -274,7 +274,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Core planning",
     cadence: "day",
     paletteName: "Big 3",
-    props: { heading: "Big Three", dayCount: 1 },
+    props: { heading: "Big Three", dayCount: 1, numbered: true },
     rowSpan: 4,
     columnSpan: 6,
   },
@@ -610,7 +610,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Fitness",
     cadence: "week",
     paletteName: "Stretches",
-    props: { heading: "Stretches", dayCount: 1 },
+    props: { heading: "Stretches", dayCount: 1, items: ["Neck", "Shoulders", "Back", "Hips", "Hamstrings", "Calves"] },
     columnSpan: 6,
   },
   {
@@ -801,7 +801,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Home & family",
     cadence: "journal",
     paletteName: "Packing",
-    props: { heading: "Packing", dayCount: 1 },
+    props: { heading: "Packing", dayCount: 1, items: ["Passport", "Tickets", "Chargers", "Toiletries", "Medication", "Clothes"] },
     columnSpan: 6,
   },
   {
