@@ -17,12 +17,16 @@
  * `rule === "dotted"` below, where the dots are the page's OWN lattice
  * showing through rather than a second grid invented for the box.
  */
-export type BoxRule = "none" | "lined" | "dotted";
+export type BoxRule = FillStyle;
 
 export type LabeledBoxConfig = {
   heading: string;
-  /** "none" | "lined" | "dotted". */
+  /** "none" | "lined" | "dotted" | "graph". */
   rule?: BoxRule;
+  /** What each writing line starts with - see rowMarkerElement. */
+  lineStart?: RowMarker;
+  /** One column, or two with a divider on the lattice. */
+  columns?: 1 | 2;
   /** THE OLD BOOLEAN. Read only when `rule` is absent, so a box saved before
    *  this existed still draws its lines. Nothing writes it any more; the
    *  editor writes `rule`. Same shape of change as quote-block's text->body
@@ -42,6 +46,7 @@ export type RenderedElement = {
 };
 
 import { ptToPx } from "@/lib/print-spec";
+import { latticeFill, latticeRowsIn, rowMarkerElement, rowMarkerOf, type FillStyle, type RowMarker } from "./latticeFill";
 
 const NEAR_BLACK = "#231F20";
 const OUTER_BORDER_WIDTH_PT = 0.5;
@@ -244,97 +249,83 @@ export function renderLabeledBox(
     });
   }
 
-  // Ruled body, if explicitly requested — default is blank, no marks inside
-  // the box (matches the reference: the sidebar boxes are blank writing
-  // space, not a ruled notebook).
+  // The body: blank (the default, and the reference - the sidebar boxes are
+  // blank writing space), lined, dotted or graph, drawn by the shared fill so
+  // a note box agrees with every other filled module. See latticeFill.ts.
   //
   // `rule` if it is there, the old `ruled` boolean if it is not. A box saved
-  // before the three-state setting existed keeps drawing exactly what it drew.
+  // before the setting existed keeps drawing exactly what it drew.
+  //
+  // Anchored to the lattice, not to the heading: the first rule is the first
+  // dot row clear of the header ("lined notes also not aligned with dots"),
+  // and not ON the header rule ("omit the dots that coincide with the line
+  // below the title of the box", 2026-09-29) - both now latticeFill's rules.
   const rule: BoxRule = config.rule ?? (config.ruled ? "lined" : "none");
-  if (rule !== "none") {
-    // Ruled ON the dot lattice, not at a fixed offset below the heading.
-    //
-    // The lines used to start one spacing below the header band, and the
-    // band is 13.7pt or 24.7pt depending on whether the heading wraps -
-    // neither a lattice quantity - so the rules landed 11.9px above the
-    // dots, and moved when the heading got longer. Reported as "lined
-    // notes also not aligned with dots".
-    //
-    // Anchored to the lattice instead: the first rule is the first dot row
-    // clear of the header, and every one after it is a whole cell down. A
-    // heading that wraps now changes where the rules START and never where
-    // they SIT, and two ruled boxes side by side line up with each other
-    // whatever their headings say.
-    const pitch = rowHeightPx(lattice);
-    const bodyTop = geometry.y + headerHeight;
-    const origin = lattice ? geometry.y - lattice.insetPx : geometry.y;
-    // The first dot row BELOW the header's rule, not on it. The header band
-    // is snapped to the lattice, so its rule sits on a dot row - and that row
-    // came first: a line of dots along the header rule, or a lined box's
-    // first rule drawn over it. Asked 2026-09-29: "omit the dots that
-    // coincide with the line below the title of the box".
-    let first = origin + Math.ceil((bodyTop - origin) / pitch - 1e-6) * pitch;
-    if (Math.abs(first - bodyTop) < 0.5) first += pitch;
-    // The lines a user actually writes on, and they were the heaviest
-    // interior marks in the planner: a bare 0.5 written inline here, the
-    // same weight as the box's own border, where the hours beside them are
-    // 0.3. Nobody decided that; it was never stated anywhere to disagree
-    // with. See moduleFrame's RULE_WIDTH_PT.
-    const ruledLineWidth = ptToPx(RULE_WIDTH_PT);
-    const bottom = geometry.y + geometry.height;
-    // Numbered by which lattice row it is, not by which line it happens to
-    // be - see this file's own note on semantic ids. A box whose heading
-    // grows keeps the ids of the rules that did not move.
-    // A DOT is the rule broken into pieces on the lattice's own columns, not
-    // a dashed line at some invented spacing: the page is a 1/4in dot grid,
-    // and a dotted box should be that grid showing through. Three times the
-    // rule's own weight so a dot reads as a dot rather than as a speck - a
-    // 0.3pt square at 300dpi is barely over one printed pixel.
-    const dotSize = ruledLineWidth * 3;
-    const columnPitch = pitch;
-    const originX = lattice ? geometry.x - lattice.insetPx : geometry.x;
-    const left = geometry.x + 8;
-    const right = geometry.x + geometry.width - 8;
+  const bodyTop = geometry.y + headerHeight;
+  const bottom = geometry.y + geometry.height;
+  const left = geometry.x;
+  const right = geometry.x + geometry.width;
+  // Two columns: a divider on the lattice column nearest the middle, each
+  // half filled on its own. Asked in the module-edits list: a note box under
+  // the hours is 4.5in wide, and its lines were longer than anyone writes.
+  const pitch = rowHeightPx(lattice);
+  const originX = lattice ? geometry.x - lattice.insetPx : geometry.x;
+  const twoColumns = config.columns === 2 && geometry.width >= pitch * 4;
+  const divider = twoColumns ? originX + Math.round((geometry.x + geometry.width / 2 - originX) / pitch) * pitch : null;
+  if (divider !== null) {
+    elements.push({
+      id: id("column-rule"),
+      type: "figure",
+      subType: "rect",
+      x: divider - ptToPx(RULE_WIDTH_PT) / 2,
+      y: bodyTop,
+      width: ptToPx(RULE_WIDTH_PT),
+      height: bottom - bodyTop,
+      fill: NEAR_BLACK,
+      stroke: "none",
+      opacity: 0.6,
+    });
+  }
+  const halves =
+    divider === null
+      ? [{ tag: "", left, right }]
+      : [
+          { tag: rule === "lined" || rule === "graph" ? "c0-" : "", left, right: divider },
+          { tag: rule === "lined" || rule === "graph" ? "c1-" : "", left: divider, right },
+        ];
+  for (const half of halves) {
+    elements.push(
+      ...latticeFill({
+        style: rule,
+        region: { left: half.left, top: bodyTop, right: half.right, bottom },
+        geometry,
+        lattice,
+        id,
+        tag: half.tag,
+      })
+    );
+  }
 
-    for (let row = 0; ; row++) {
-      const y = first + row * pitch;
-      if (y > bottom - pitch / 4) break;
-      // Numbered by which lattice row it is, not by which line it happens to
-      // be - see this file's own note on semantic ids. A box whose heading
-      // grows keeps the ids of the rules that did not move.
-      const rowIndex = Math.round((y - origin) / pitch);
-      if (rule === "lined") {
-        elements.push({
-          id: id(`rule${rowIndex}`),
-          type: "figure",
-          subType: "rect",
-          x: left,
-          y: y - ruledLineWidth / 2,
-          width: geometry.width - 16,
-          height: ruledLineWidth,
-          fill: NEAR_BLACK,
-          stroke: "none",
+  // What each line starts with: a number, a bullet or a box to tick - a
+  // lined box turned into a list without becoming a to-do. Only on lined or
+  // dotted writing rows; graph paper and a blank box have no lines to start.
+  const marker = rowMarkerOf(config.lineStart);
+  if (marker !== "none" && (rule === "lined" || rule === "dotted")) {
+    let count = 0;
+    for (const half of halves) {
+      for (const row of latticeRowsIn(geometry, lattice, bodyTop, bottom)) {
+        count++;
+        const element = rowMarkerElement({
+          marker,
+          number: count,
+          id: id(`${half.tag}start${row.index}`),
+          x: half.left + 12,
+          bandTop: row.y - pitch,
+          bandHeight: pitch,
+          fontFamily: FONT_FAMILY,
+          textY: capCentredTextY,
         });
-        continue;
-      }
-      // Dotted: one dot per lattice COLUMN that falls inside the box, so
-      // the dots of two boxes side by side line up with each other and with
-      // every other mark on the page.
-      const firstColumn = Math.ceil((left - originX) / columnPitch);
-      for (let column = firstColumn; ; column++) {
-        const x = originX + column * columnPitch;
-        if (x > right) break;
-        elements.push({
-          id: id(`dot${rowIndex}-${column}`),
-          type: "figure",
-          subType: "rect",
-          x: x - dotSize / 2,
-          y: y - dotSize / 2,
-          width: dotSize,
-          height: dotSize,
-          fill: NEAR_BLACK,
-          stroke: "none",
-        });
+        if (element) elements.push(element);
       }
     }
   }

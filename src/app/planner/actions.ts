@@ -2805,6 +2805,11 @@ export async function updateHourlySettings(journalId: string, settings: {
   // What fills the block with increments off. Required, so no caller can
   // leave it out and silently put the dots back - see hourlyPropsFromSettings.
   offModeRule: "dotted" | "none";
+  // Solid, faint or no hour rules; a border round each day; the clock.
+  // Required for the reason offModeRule is.
+  hourLineStyle: "full" | "low-transparency" | "gone";
+  dayBorder: boolean;
+  timeFormat: "12" | "24";
   weekStartDay: number; // 0=Sun..6=Sat
   // Set only after the editor has asked and been told yes: drop the lowest
   // module below the hours and try again. See HOURS_DO_NOT_FIT.
@@ -2819,6 +2824,15 @@ export async function updateHourlySettings(journalId: string, settings: {
   }
   if (settings.offModeRule !== "dotted" && settings.offModeRule !== "none") {
     throw new Error("With increments off the hours are dotted or blank");
+  }
+  if (!["full", "low-transparency", "gone"].includes(settings.hourLineStyle)) {
+    throw new Error("Hour rules are solid, faint or none");
+  }
+  if (typeof settings.dayBorder !== "boolean") {
+    throw new Error("Day borders are on or off");
+  }
+  if (settings.timeFormat !== "12" && settings.timeFormat !== "24") {
+    throw new Error("Times are 12-hour or 24-hour");
   }
   const startMinutes = timeStringToMinutes(settings.startTime);
   const endMinutes = timeStringToMinutes(settings.endTime);

@@ -169,7 +169,7 @@ export function ModuleEditor({
   // props - see HoursFields. Their draft is those settings, read from this
   // block's props with the defaults under them, plus the week start.
   const hours = definition?.pageSettingsForm === "hours";
-  const [draft, setDraft] = useState<Record<string, unknown>>(() =>
+  const [openedDraft] = useState<Record<string, unknown>>(() =>
     hours
       ? {
           ...editing.propValues,
@@ -179,9 +179,13 @@ export function ModuleEditor({
         }
       : editing.propValues
   );
+  const [draft, setDraft] = useState<Record<string, unknown>>(openedDraft);
   const [weekStart, setWeekStart] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(editing.propValues) || weekStart !== weekStartDay;
+  // Against what the editor OPENED with, not the stored props: the hours'
+  // draft fills in every setting a grid stored before it existed, and
+  // compared with the stored props that read as a change nobody made.
+  const dirty = JSON.stringify(draft) !== JSON.stringify(openedDraft) || weekStart !== weekStartDay;
   // Saving it to Saved > Modules: closed, or open with the name to give it.
   const [saveName, setSaveName] = useState<string | null>(null);
 
@@ -290,16 +294,27 @@ export function ModuleEditor({
   // it is where the rules meet the border, which is most of what tells one
   // style from another.
   const drawRule = useCallback(
-    (key: string, value: string): RuleSample => {
+    (key: string, value: string | number): RuleSample => {
       const cell = cellHeightPx(pageGrid);
-      const width = cell * 2.4;
-      const height = cell * 2.1;
+      // The part of the module the option changes - see SwatchWindow. The
+      // bottom-left corner unless the field says otherwise.
+      const field = definition?.fields?.find((f) => f.kind === "rule" && f.key === key);
+      const spec = field?.kind === "rule" ? field.window : undefined;
+      const width = cell * (spec?.columns ?? 2.4);
+      const height = cell * (spec?.rows ?? 2.1);
+      const x =
+        spec?.x === "centre"
+          ? box.x + box.width / 2 - width / 2
+          : spec?.x === "right"
+            ? box.x + box.width - width + 4
+            : box.x - 4;
+      const y = spec?.y === "top" ? box.y - 4 : box.y + box.height - height + 4;
       return {
         elements: draw({ ...draft, [key]: value }),
-        window: { x: box.x - 4, y: box.y + box.height - height + 4, width, height },
+        window: { x, y, width, height },
       };
     },
-    [draw, draft, pageGrid, box]
+    [draw, draft, pageGrid, box, definition]
   );
   const defaults = useMemo(() => moduleSchemaDefaults(editing.slug), [editing.slug]);
 
@@ -567,6 +582,10 @@ export function ModuleEditor({
           compactHourRows: settings.compactHourRows,
           rowHeightPt: settings.rowHeightPt,
           offModeRule: settings.offModeRule === "none" ? "none" : "dotted",
+          hourLineStyle:
+            settings.hourLineStyle === "low-transparency" || settings.hourLineStyle === "gone" ? settings.hourLineStyle : "full",
+          dayBorder: settings.dayBorder === true,
+          timeFormat: settings.timeFormat === "24" ? "24" : "12",
           weekStartDay: weekStart,
         });
       try {

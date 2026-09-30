@@ -9548,6 +9548,9 @@ export function NativePlannerEditor({
           intervalMode: pageSettings.intervalMode,
           compactHourRows: pageSettings.compactHourRows,
           offModeRule: pageSettings.offModeRule,
+          hourLineStyle: pageSettings.hourLineStyle,
+          dayBorder: pageSettings.dayBorder,
+          timeFormat: pageSettings.timeFormat,
           weekStartDay: pageSettings.weekStartDay,
           rowHeightPt,
         };

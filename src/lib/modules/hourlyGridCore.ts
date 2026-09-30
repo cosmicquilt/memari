@@ -73,6 +73,12 @@ export type HourlyGridCoreConfig = {
    * everything stored before, which keeps the dots it always drew.
    */
   offModeRule?: "dotted" | "none";
+  /**
+   * How the times down the side read: the reference's 12-hour clock with no
+   * AM or PM (the default, and everything stored before this), or 24-hour -
+   * asked for in the module-edits list, 2026-09-30.
+   */
+  timeFormat?: "12" | "24";
   // Opts a 1-hour interval back into rendering each row at the same
   // height a 30-min row gets, instead of the default doubled height —
   // see getRowHeightPx's own comment. Ignored at 30-min intervals (there's
@@ -124,6 +130,15 @@ function hoursOrDefaults(config: Partial<HourlyGridCoreConfig>): {
     // zero dressed as a setting.
     intervalMinutes: config.intervalMinutes || DEFAULT_HOURLY_SETTINGS.intervalMinutes,
   };
+}
+
+// 24-hour, with the leading zero: every label is then five characters and
+// sets at one size, where "5:30" and "13:00" would fit at two.
+function formatHour24(minutesSinceMidnight: number): string {
+  const totalMinutes = ((minutesSinceMidnight % 1440) + 1440) % 1440;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 // 12-hour label with no AM/PM, matching the reference design — position
@@ -418,6 +433,9 @@ export const DEFAULT_HOURLY_SETTINGS: HourlySettings = {
   compactHourRows: false,
   rowHeightPt: DEFAULT_ROW_HEIGHT_PT,
   offModeRule: "dotted",
+  hourLineStyle: "full",
+  dayBorder: false,
+  timeFormat: "12",
 };
 
 /** Everything about an hourly grid that is a user choice rather than a
@@ -430,6 +448,12 @@ export type HourlySettings = {
   compactHourRows: boolean;
   rowHeightPt: number;
   offModeRule: "dotted" | "none";
+  /** The hour rules: solid, faint or none. Stored on every hourly grid since
+   *  the first template and set by nothing until the module-edits list. */
+  hourLineStyle: "full" | "low-transparency" | "gone";
+  /** A border round each day column - also always drawn, never offered. */
+  dayBorder: boolean;
+  timeFormat: "12" | "24";
 };
 
 /**
@@ -445,8 +469,8 @@ export type HourlySettings = {
  *
  * Spelling the set out once means a new setting is added in one place and
  * cannot be half-applied. Existing props are preserved for everything this
- * does not name - dayLabels, events, hourLineStyle, dayBorder - which is
- * why this merges rather than replaces.
+ * does not name - dayLabels and events - which is why this merges rather
+ * than replaces.
  */
 export function hourlyPropsFromSettings(
   existing: unknown,
@@ -461,6 +485,9 @@ export function hourlyPropsFromSettings(
     compactHourRows: settings.compactHourRows,
     rowHeightPt: settings.rowHeightPt,
     offModeRule: settings.offModeRule,
+    hourLineStyle: settings.hourLineStyle,
+    dayBorder: settings.dayBorder,
+    timeFormat: settings.timeFormat,
   };
 }
 export type RowHeightPt = (typeof ROW_HEIGHT_OPTIONS_PT)[number];
@@ -1026,7 +1053,8 @@ export function renderHourlyGridCore(
         // still crowded either way — back to the original 5pt
         // measurement for these specifically, requested directly.
         // Single-digit-hour times keep the 5.5pt bump.
-        const timeLabelText = formatHour12NoMeridiem(rowMinutes);
+        const timeLabelText =
+          config.timeFormat === "24" ? formatHour24(rowMinutes) : formatHour12NoMeridiem(rowMinutes);
         const timeLabelDigitCount = timeLabelText.replace(/\D/g, "").length;
         const timeLabelFontSize = ptToPx(timeLabelDigitCount >= 4 ? 5 : 5.5);
         const timeLabelTextHeight = timeLabelFontSize * 1.2;

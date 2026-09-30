@@ -54,6 +54,9 @@ export type HoursDraft = {
   compactHourRows: boolean;
   rowHeightPt: number;
   offModeRule: "dotted" | "none";
+  hourLineStyle: "full" | "low-transparency" | "gone";
+  dayBorder: boolean;
+  timeFormat: "12" | "24";
   weekStartDay: number;
 };
 
@@ -92,14 +95,21 @@ export function HoursFields({
 }: {
   values: HoursDraft;
   onChange: (next: HoursDraft) => void;
-  /** Draws the hours with a fill, for the dotted/blank picker. */
-  drawRule: (key: "offModeRule", value: "dotted" | "none") => RuleSample;
+  /** Draws the hours with one setting changed, for the picture pickers. */
+  drawRule: (key: "offModeRule" | "hourLineStyle", value: string) => RuleSample;
 }) {
   const set = <K extends keyof HoursDraft>(key: K, value: HoursDraft[K]) => onChange({ ...values, [key]: value });
   const increments = values.intervalMode === "off" ? "off" : values.intervalMinutes === 60 ? "60" : "30";
   const fills = [
     { value: "dotted" as const, label: "Dotted" },
     { value: "none" as const, label: "Blank" },
+  ];
+  // The hour rules, drawn - the renderer has drawn all three since the first
+  // template; nothing offered them until the module-edits list (2026-09-30).
+  const hourRules = [
+    { value: "full" as const, label: "Solid" },
+    { value: "low-transparency" as const, label: "Faint" },
+    { value: "gone" as const, label: "None" },
   ];
 
   return (
@@ -202,8 +212,45 @@ export function HoursFields({
               Compact hour rows
             </label>
           )}
+          <div style={rowStyle}>
+            <span style={labelStyle}>Hour rules</span>
+            <div role="radiogroup" aria-label="Hour rules" style={{ display: "flex", gap: 10 }}>
+              {hourRules.map((rule) => (
+                <RuleSwatch
+                  key={rule.value}
+                  sample={drawRule("hourLineStyle", rule.value)}
+                  label={rule.label}
+                  selected={(values.hourLineStyle ?? "full") === rule.value}
+                  onPick={() => set("hourLineStyle", rule.value)}
+                  width={ruleSwatchWidth(hourRules.length)}
+                />
+              ))}
+            </div>
+          </div>
+          <label style={rowStyle}>
+            <span style={labelStyle}>Time labels</span>
+            <select
+              value={values.timeFormat === "24" ? "24" : "12"}
+              onChange={(event) => set("timeFormat", event.target.value === "24" ? "24" : "12")}
+              className="memari-field"
+              style={{ ...inputStyle, cursor: "pointer" }}
+            >
+              <option value="12">12-hour</option>
+              <option value="24">24-hour</option>
+            </select>
+          </label>
         </>
       )}
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#ddd" }}>
+        <input
+          type="checkbox"
+          checked={values.dayBorder === true}
+          onChange={(event) => set("dayBorder", event.target.checked)}
+          className="memari-field"
+        />
+        A border round each day
+      </label>
 
       <label style={rowStyle}>
         <span style={labelStyle}>Week starts on</span>

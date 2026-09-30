@@ -146,7 +146,9 @@ export type ModuleField =
   // Asked for 2026-09-29: "the ones that are rule of line styles etc should
   // show a visual zoomed in preview of the line/rule for its toggle". A kind
   // of its own for the reason `icon` is one.
-  | { kind: "rule"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // Values are stored as given - a number for a count like Columns, which a
+  // string "2" would not equal.
+  | { kind: "rule"; key: string; label: string; options: Array<{ value: string | number; label: string }>; window?: SwatchWindow }
   // Multi-line text kept as ONE string, newlines and all - a passage,
   // where `lines` would turn a prayer into an array of its lines and lose
   // the fact that it is a single piece of writing. The two look identical
@@ -156,6 +158,21 @@ export type ModuleField =
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
+
+/**
+ * Which part of the module a picture option shows, in lattice cells: the
+ * corner or edge it is anchored to, and how much of it. Undefined is the
+ * bottom-left corner, which is where a body's lines show. A choice about a
+ * heading row, a divider in the middle or a scale at the top needs a
+ * different window - the lines option shown as a bottom-left corner would
+ * be three identical pictures.
+ */
+export type SwatchWindow = {
+  x: "left" | "centre" | "right";
+  y: "top" | "bottom";
+  columns: number;
+  rows: number;
+};
 
 /**
  * The palette's sections, in the order they are shown.
@@ -527,6 +544,11 @@ const PRIMITIVES = {
               "none"
             ],
             "default": "dotted"
+          },
+          "timeFormat": {
+            "type": "string",
+            "enum": ["12", "24"],
+            "default": "12"
           }
         }
       },
@@ -601,8 +623,18 @@ const PRIMITIVES = {
           },
           "rule": {
             "type": "string",
-            "enum": ["none", "lined", "dotted"],
+            "enum": ["none", "lined", "dotted", "graph"],
             "default": "none"
+          },
+          "lineStart": {
+            "type": "string",
+            "enum": ["none", "numbers", "bullets", "boxes"],
+            "default": "none"
+          },
+          "columns": {
+            "type": "integer",
+            "enum": [1, 2],
+            "default": 1
           },
           "ruled": {
             "type": "boolean",
@@ -635,7 +667,31 @@ const PRIMITIVES = {
           { value: "none", label: "Blank" },
           { value: "lined", label: "Lined" },
           { value: "dotted", label: "Dotted" },
+          // Graph paper on the lattice - module-edits list, 2026-09-30.
+          { value: "graph", label: "Graph" },
         ],
+      },
+      {
+        kind: "rule",
+        key: "lineStart",
+        label: "Each line starts with",
+        options: [
+          { value: "none", label: "Nothing" },
+          { value: "numbers", label: "Numbers" },
+          { value: "bullets", label: "Bullets" },
+          { value: "boxes", label: "Boxes" },
+        ],
+        window: { x: "left", y: "top", columns: 2.2, rows: 3.2 },
+      },
+      {
+        kind: "rule",
+        key: "columns",
+        label: "Columns",
+        options: [
+          { value: 1, label: "One" },
+          { value: 2, label: "Two" },
+        ],
+        window: { x: "centre", y: "bottom", columns: 3, rows: 2.1 },
       },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>

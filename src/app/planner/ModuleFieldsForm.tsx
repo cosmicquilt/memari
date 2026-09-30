@@ -273,7 +273,7 @@ export function ModuleFieldsForm({
   defaults?: Record<string, unknown>;
   /** Draws the module with one line-style option, for a `rule` field. Without
    *  it, a rule field is an ordinary list of names. */
-  drawRule?: (key: string, value: string) => RuleSample | null;
+  drawRule?: (key: string, value: string | number) => RuleSample | null;
 }) {
   if (fields.length === 0) {
     return (
@@ -430,13 +430,18 @@ export function ModuleFieldsForm({
               <label key={field.key} style={rowStyle}>
                 <span style={labelStyle}>{field.label}</span>
                 <select
-                  value={(current as string | undefined) ?? ""}
-                  onChange={(event) => onChange(field.key, event.target.value)}
+                  value={current === undefined || current === null ? "" : String(current)}
+                  onChange={(event) =>
+                    onChange(
+                      field.key,
+                      field.options.find((option) => String(option.value) === event.target.value)?.value ?? event.target.value
+                    )
+                  }
                   className="memari-field"
                   style={{ ...inputStyle, cursor: "pointer" }}
                 >
                   {field.options.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <option key={String(option.value)} value={String(option.value)}>
                       {option.label}
                     </option>
                   ))}

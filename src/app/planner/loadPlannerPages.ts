@@ -119,6 +119,9 @@ export type PageSettings = {
   rowHeightPt: number;
   /** What fills the hours with increments off. Dotted when unset. */
   offModeRule: "dotted" | "none";
+  hourLineStyle: "full" | "low-transparency" | "gone";
+  dayBorder: boolean;
+  timeFormat: "12" | "24";
 };
 
 /**
@@ -462,6 +465,9 @@ export async function loadPlannerPages(
         compactHourRows?: boolean;
         rowHeightPt?: number;
         offModeRule?: "dotted" | "none";
+        hourLineStyle?: "full" | "low-transparency" | "gone";
+        dayBorder?: boolean;
+        timeFormat?: "12" | "24";
       }
     | undefined;
 
@@ -500,6 +506,12 @@ export async function loadPlannerPages(
       compactHourRows: hourlyProps?.compactHourRows ?? false,
       rowHeightPt: hourlyProps?.rowHeightPt ?? 9,
       offModeRule: hourlyProps?.offModeRule === "none" ? "none" : "dotted",
+      hourLineStyle:
+        hourlyProps?.hourLineStyle === "low-transparency" || hourlyProps?.hourLineStyle === "gone"
+          ? hourlyProps.hourLineStyle
+          : "full",
+      dayBorder: hourlyProps?.dayBorder === true,
+      timeFormat: hourlyProps?.timeFormat === "24" ? "24" : "12",
     },
   };
 }

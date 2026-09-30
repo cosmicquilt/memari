@@ -137,6 +137,24 @@ for (const slug of REGISTERED_SLUGS) {
   }
 }
 
+// --- 3b. and they DRAW the same --------------------------------------
+//
+// Key by key is not enough: one key can override another. The Gratitude,
+// Values and Lessons presets set the old `ruled: true`, which check 3 saw
+// agreeing - but the schema's newer `rule` defaults to "none" and wins, so
+// they were lined on the palette card and arrived blank. Found 2026-09-30.
+// So each preset's card is drawn, and so is what a drop places (the schema
+// defaults with the preset's props over them, as addPaletteModuleAt builds
+// it), and the two must be the same drawing.
+for (const slug of REGISTERED_SLUGS) {
+  const definition = moduleDefinition(slug);
+  if (!definition?.render || !definition.inPalette || definition.primitive === slug) continue;
+  const preview = (definition.previewProps ?? {}) as Record<string, unknown>;
+  const card = JSON.stringify(draw(slug, preview));
+  const placed = JSON.stringify(draw(slug, { ...moduleSchemaDefaults(slug), ...preview }));
+  if (card !== placed) fail(`${slug}: the palette card and a freshly placed one draw differently`);
+}
+
 // --- 4. retiring a module keeps it drawable ---------------------------
 //
 // A slug is a database key: every ModuleInstance points at a ModuleType by

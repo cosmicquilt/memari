@@ -245,6 +245,23 @@ const fail = (message: string) => {
 
 let checked = 0;
 
+/**
+ * Options the palette props do not draw, one entry per option worth drawing.
+ * Added to as each module gains a setting - see the module-edits list.
+ */
+const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
+  ["labeled-box", { heading: "Notes", rule: "graph" }],
+  ["labeled-box", { heading: "Notes", rule: "lined", columns: 2 }],
+  ["labeled-box", { heading: "Notes", rule: "dotted", columns: 2 }],
+  ["labeled-box", { heading: "Notes", rule: "graph", columns: 2 }],
+  ["labeled-box", { heading: "Notes", rule: "lined", lineStart: "numbers" }],
+  ["labeled-box", { heading: "Notes", rule: "dotted", lineStart: "bullets" }],
+  ["labeled-box", { heading: "Notes", rule: "lined", lineStart: "boxes", columns: 2 }],
+  ["hourly-grid-core", { timeFormat: "24" }],
+  ["hourly-grid-core", { dayBorder: true }],
+  ["hourly-grid-core", { hourLineStyle: "gone" }],
+];
+
 for (const slug of REGISTERED_SLUGS) {
   const definition = moduleDefinition(slug);
   if (!definition?.render) continue;
@@ -263,12 +280,26 @@ for (const slug of REGISTERED_SLUGS) {
     }
   }
 
+  checkSizes(slug, preview, "");
+}
+
+// EVERY OPTION, not only the defaults. The loop above draws each module with
+// its palette props, so an option nothing previews - a graph body, a second
+// column, numbered rows - was drawn by nothing this file did (the labeled
+// box's own section below says the same of lined and dotted). Each variant
+// here runs the same five rules at the same sixteen sizes.
+for (const [slug, props] of OPTION_VARIANTS) {
+  checkSizes(slug, props, ` ${JSON.stringify(props)}`);
+}
+
+function checkSizes(slug: string, preview: Record<string, unknown>, tag: string) {
   for (const columnSpan of [6, 12, 18, 24]) {
     for (const rowSpan of [4, 8, 13, 20]) {
       let elements: RenderedPolotnoElement[];
       try {
         elements = render(slug, columnSpan, rowSpan, preview);
-      } catch {
+      } catch (error) {
+        if (tag) fail(`${slug}${tag}: threw - ${error}`);
         continue; // already reported above
       }
       // The module's INK BOX, from the GRID - not "the first stroked
@@ -287,7 +318,7 @@ for (const slug of REGISTERED_SLUGS) {
       });
       checked++;
 
-      const where = `${slug} ${columnSpan}x${rowSpan}`;
+      const where = `${slug}${tag} ${columnSpan}x${rowSpan}`;
       // Modules that lay out in the ALLOCATION frame so their boundaries
       // land on the lattice are entitled to the box inset on every side -
       // the allocation IS the ink box grown by that inset, so a mark on
@@ -417,6 +448,19 @@ for (const slug of REGISTERED_SLUGS) {
                 ? " - rules must land on the lattice (see moduleFrame's contentTopPx)"
                 : `, but ${slug} is recorded in LATTICE_DEBT at ${expected}px`)
           );
+        }
+      }
+
+      // A LATTICE DOT sits on a lattice point - both axes, where a rule only
+      // has to get its row right. Any mark the shared fill names a dot.
+      for (const element of elements) {
+        if (!/-dot\d+-\d+$/.test(String(element.id))) continue;
+        const cx = (element.x ?? 0) + (element.width ?? 0) / 2;
+        const cy = (element.y ?? 0) + (element.height ?? 0) / 2;
+        const dx = cx - (PAGE.marginPx + Math.round((cx - PAGE.marginPx) / PITCH) * PITCH);
+        const dy = cy - (PAGE.marginPx + Math.round((cy - PAGE.marginPx) / PITCH) * PITCH);
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          fail(`${where}: dot ${element.id} is ${dx.toFixed(1)},${dy.toFixed(1)}px off a lattice point`);
         }
       }
     }
