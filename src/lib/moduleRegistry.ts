@@ -27,6 +27,7 @@ import { gridCellToPixels, columnSpanToDayCount, pixelHeightToRowSpan } from "@/
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { CATALOGUE } from "@/lib/moduleCatalogue";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
+import { rotateWeekList } from "@/lib/weekDays";
 import {
   MONTH_NAMES,
   WEEKDAY_NAMES,
@@ -404,6 +405,21 @@ export type ModuleDefinition = {
     propValues: Record<string, unknown>,
     at: OccurrenceContext
   ) => Record<string, unknown>;
+
+  /**
+   * This module's props for a journal whose weeks start on `weekStartDay`
+   * (0 = Sunday, 1 = Monday).
+   *
+   * For a module that PRINTS WEEKDAYS. The journal's week start used to
+   * reach only the hours, so a Monday journal had Monday-first hours beside
+   * a Sunday-first mini month and habit tracker. Applied at render time and
+   * never stored, like `dated`: change the week start and every module turns
+   * with it, and nothing saved has to be migrated.
+   *
+   * Beside the module for the reason `dated` is - the alternative is a list
+   * of weekday-printing slugs inside the renderer.
+   */
+  weekStart?: (propValues: Record<string, unknown>, weekStartDay: number) => Record<string, unknown>;
 
   /**
    * Does this module's content have to be RE-DRAWN as its box resizes,
@@ -784,6 +800,14 @@ const PRIMITIVES = {
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily, lattice),
+    // Its default columns are a week, and some presets' ROWS are one (Salah,
+    // Day Boxes). Both start on the journal's day.
+    weekStart: (props, weekStartDay) => ({
+      ...props,
+      weekStartDay,
+      habits: rotateWeekList(props.habits, weekStartDay),
+      columns: rotateWeekList(props.columns, weekStartDay),
+    }),
     minContentHeightPx: (pageGrid, columnSpan, propValues) => {
       const widthPx = gridCellToPixels(pageGrid, {
         columnStart: 0,
@@ -897,11 +921,16 @@ const PRIMITIVES = {
       const names = ((props.dayLabels as Array<{ name?: unknown }>) ?? []).map((d) =>
         String(d.name ?? "").trim().toUpperCase()
       );
-      const first = WEEKDAY_NAMES.indexOf(names[0] ?? "");
-      if (first < 0) return props;
+      const weekStartDay = Number(props.weekStartDay) || 0;
+      const named = WEEKDAY_NAMES.indexOf(names[0] ?? "");
+      if (named < 0) return props;
+      // Which column of the journal's week this page's first day is: the
+      // right page of a Monday journal starts on Thursday, the fourth.
+      const first = (named - weekStartDay + 7) % 7;
       const calendar = computeMonthCalendar(
         at.start.getUTCFullYear(),
-        at.start.getUTCMonth() + 1
+        at.start.getUTCMonth() + 1,
+        weekStartDay
       );
       return {
         ...props,
@@ -909,6 +938,9 @@ const PRIMITIVES = {
         cells: calendar.weeks.map((week) => week.slice(first, first + names.length)),
       };
     },
+    // The calendar is computed from it when the page is dated - see `dated`.
+    // Its day names are turned with the hours', in renderContext.
+    weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
     // Every week row shares out whatever height the block has, so all of
     // them move when it resizes and the drawing has to follow.
     contentIsLive: ALWAYS,
@@ -1141,6 +1173,7 @@ const PRIMITIVES = {
           },
     minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
       getMiniMonthMinHeightPx(propValues.markable === true),
+    weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
     // Seven columns of a fixed grid: the drawing is the same marks at
     // every size, only further apart, so nothing has to be recounted.
     // The clip window serves it more cheaply than a redraw.
@@ -1330,6 +1363,8 @@ const PRIMITIVES = {
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily, lattice),
+    // Mood rates each day of a week, so its rows start on the journal's day.
+    weekStart: (props, weekStartDay) => ({ ...props, items: rotateWeekList(props.items, weekStartDay) }),
     minContentHeightPx: () => getRatingStripMinHeightPx(),
     contentIsLive: ALWAYS,
   },
@@ -1790,6 +1825,14 @@ export function withoutDates(slug: string, propValues: unknown): unknown {
  * but a handful - so the generator applies this to every instance without
  * knowing or caring which ones are affected.
  */
+/** One instance's props for a journal whose weeks start on `weekStartDay` -
+ *  untouched for a module that prints no weekdays. See `weekStart`. */
+export function withWeekStart(slug: string, propValues: unknown, weekStartDay: number): unknown {
+  const turn = MODULE_REGISTRY[slug]?.weekStart;
+  if (!turn) return propValues;
+  return turn((propValues ?? {}) as Record<string, unknown>, weekStartDay);
+}
+
 export function withDates(
   slug: string,
   propValues: unknown,

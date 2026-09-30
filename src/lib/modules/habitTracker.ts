@@ -34,6 +34,7 @@
 
 import { estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "./textFit";
 import { ptToPx } from "@/lib/print-spec";
+import { weekdayInitials } from "@/lib/weekDays";
 import {
   RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
@@ -52,6 +53,10 @@ export type HabitTrackerConfig = {
    * geometry is identical - named rows down the left, marks in the grid.
    */
   columns?: string[];
+  /** The journal's week start, 0 = Sunday - set at render time by the
+   *  registry's weekStart hook, never stored. The default columns are a week
+   *  and start on it. */
+  weekStartDay?: number;
 };
 
 export type RenderedElement = {
@@ -238,7 +243,7 @@ export function renderHabitTracker(
   // assumption doesn't hold everywhere else it might land.
   const contentY = geometry.y;
   // The columns this tracker actually has - its own, or a week.
-  const columns = (config.columns ?? []).length > 0 ? config.columns! : DAY_LETTERS;
+  const columns = (config.columns ?? []).length > 0 ? config.columns! : weekdayInitials(config.weekStartDay);
   const contentHeight = geometry.height;
 
   // The header band ends on the first LATTICE line - same change, same
@@ -486,7 +491,7 @@ function renderHabitTrackerCompact(
 
   const contentY = geometry.y;
   // The columns this tracker actually has - its own, or a week.
-  const columns = (config.columns ?? []).length > 0 ? config.columns! : DAY_LETTERS;
+  const columns = (config.columns ?? []).length > 0 ? config.columns! : weekdayInitials(config.weekStartDay);
   const contentHeight = geometry.height;
   // The header band ends on the first LATTICE line - same change, same
   // reason, and the same cost as the to-do's: see contentTopPx, and

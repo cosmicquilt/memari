@@ -11,6 +11,8 @@ import { propsForRender, renderContextForPage, renderOnPage, type RenderContextB
 import { renderModuleInstance } from "./renderModuleInstance.js";
 import { pageThumbnail } from "../app/planner/loadPlannerPages.js";
 import type { PageGrid } from "./grid.js";
+import { monthLayout } from "./pageLayouts.js";
+import { flatten } from "./proofSvg.js";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -180,6 +182,66 @@ const stored = (id: string) => book.pages.find((p) => p.id === id)!.moduleInstan
   // page - belonging to no term - has to keep doing.
   const loose = JSON.stringify(pageThumbnail(source as never, "serif", null));
   check(loose.includes("MONDAY"), "a thumbnail with no context draws the stored values, as a saved page must");
+}
+
+
+// --- the week start reaches every module that prints weekdays -------------
+// It used to reach only the hours (2026-09-30): a Monday journal drew a
+// Sunday-first mini month, habit tracker and month calendar.
+{
+  const month = monthLayout(36);
+  const placement = (slug: string, index: number) => {
+    for (const group of month.groups)
+      for (const p of group.placements as Array<Record<string, unknown>>)
+        if (p.slug === slug && p.page === index) return p;
+    throw new Error(`${slug} on page ${index}`);
+  };
+  const calendar = (index: number) => ({ moduleType: { slug: "month-grid-core" }, propValues: placement("month-grid-core", index).propValues });
+  const monthBook = (weekStartDay: number, over: Partial<RenderContextBook> = {}): RenderContextBook => ({
+    ...book,
+    theme: { weekStartDay },
+    pages: [
+      { id: "m-left", level: "MONTHLY", variantKey: null, position: 0, moduleInstances: [calendar(0)] },
+      { id: "m-right", level: "MONTHLY", variantKey: null, position: 1, moduleInstances: [calendar(1)] },
+    ],
+    ...over,
+  });
+  type Cell = { date?: number | null };
+  const drawn = (b: RenderContextBook, id: string) =>
+    propsForRender("month-grid-core", b.pages.find((p) => p.id === id)!.moduleInstances[0].propValues, renderContextForPage(b, id)) as {
+      dayLabels: Array<{ name: string }>;
+      cells: Cell[][];
+    };
+  const names = (props: { dayLabels: Array<{ name: string }> }) => props.dayLabels.map((d) => d.name).join(" ");
+  const firstRow = (props: { cells: Cell[][] }) => props.cells[0].map((c) => c.date).join(" ");
+
+  const mon = monthBook(1);
+  check(names(drawn(mon, "m-left")) === "MONDAY TUESDAY WEDNESDAY", `a Monday journal's calendar opens on Monday (got ${names(drawn(mon, "m-left"))})`);
+  check(names(drawn(mon, "m-right")) === "THURSDAY FRIDAY SATURDAY SUNDAY", `and closes on Sunday (got ${names(drawn(mon, "m-right"))})`);
+  // January 2026 begins on a Thursday: Mon 29 Dec, Tue 30, Wed 31 | Thu 1 .. Sun 4.
+  check(firstRow(drawn(mon, "m-left")) === "29 30 31", `its dates follow the days (left got ${firstRow(drawn(mon, "m-left"))})`);
+  check(firstRow(drawn(mon, "m-right")) === "1 2 3 4", `(right got ${firstRow(drawn(mon, "m-right"))})`);
+  const sun = monthBook(0);
+  check(names(drawn(sun, "m-left")) === "SUNDAY MONDAY TUESDAY" && firstRow(drawn(sun, "m-left")) === "28 29 30", "a Sunday journal is as it was");
+  // With no term there is nothing to recompute the cells from, so the
+  // stored month keeps its stored order rather than turn its names alone.
+  const noTerm = monthBook(1, { startDate: null, endDate: null });
+  check(names(drawn(noTerm, "m-left")) === "SUNDAY MONDAY TUESDAY", "a calendar with no term keeps the order its cells are stored in");
+
+  const context = renderContextForPage(mon, "m-left");
+  const pageGrid: PageGrid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 75 };
+  const draw = (slug: string, propValues: unknown, columnSpan = 6, rowSpan = 10) =>
+    renderOnPage({ id: "x", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan, propValues, moduleType: { slug } }, pageGrid, "serif", context);
+  const initials = (elements: unknown, pattern: RegExp) =>
+    flatten(elements as never).filter((e) => pattern.test(String(e.id))).map((e) => e.text).join("");
+  const mini = draw("mini-month", { year: 2026, month: 1, heading: "", markable: false });
+  check(initials(mini, /-weekday\d$/) === "MTWTFSS", `the mini month's letters start Monday (got ${initials(mini, /-weekday\d$/)})`);
+  const habits = draw("habit-tracker", { heading: "Habits", habits: ["Read"] }, 24, 4);
+  check(initials(habits, /-day\d-letter$/) === "MTWTFSS", `the habit tracker's week starts Monday (got ${initials(habits, /-day\d-letter$/)})`);
+  const salah = propsForRender("salah-tracker", { habits: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], columns: ["Fajr"] }, renderContextForPage(sun, "m-left")) as { habits: string[] };
+  check(salah.habits[0] === "Sun", `a preset that types its week turns with the journal (got ${salah.habits[0]})`);
+  const mood = propsForRender("mood-tracker", { items: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] }, renderContextForPage(sun, "m-left")) as { items: string[] };
+  check(mood.items[0] === "Sun", "the mood tracker's rows too");
 }
 
 if (failures > 0) {

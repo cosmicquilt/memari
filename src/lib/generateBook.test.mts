@@ -217,6 +217,55 @@ eq(
   "with no term, only the matter prints"
 );
 
+
+// --- THE BOOK TURNS THE WEEK LIKE THE EDITOR -------------------------------
+// It took the stored labels as they were, so a Monday journal's week printed
+// SUNDAY in its first column - dated as the last day of the week - while the
+// editor showed MONDAY there. Found 2026-09-30.
+{
+  const hoursPage = (position: number, names: string[]): BookSource["pages"][number] => ({
+    ...page("WEEKLY", position, null, []),
+    moduleInstances: [
+      {
+        id: `h${position}`,
+        columnStart: 6,
+        rowStart: 0,
+        columnSpan: 18,
+        rowSpan: 20,
+        locked: true,
+        zIndex: 0,
+        propValues: {
+          dayCount: names.length,
+          dayLabels: names.map((name) => ({ name, date: null })),
+          startTime: "05:30",
+          endTime: "23:30",
+          intervalMinutes: 30,
+          hourLineStyle: "full",
+          dayBorder: false,
+          events: [],
+        },
+        moduleType: { slug: "hourly-grid-core" },
+      },
+    ],
+  });
+  const monday = generateBook(
+    book({
+      theme: { weekStartDay: 1 },
+      startDate: utc(2026, 1, 5), // a Monday
+      endDate: utc(2026, 1, 18),
+      pages: [hoursPage(0, ["SUNDAY", "MONDAY", "TUESDAY"]), hoursPage(1, ["WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])],
+    }),
+    FONT
+  );
+  const left = monday.pages[0];
+  const names = flatten(left.elements as never)
+    .filter((e) => /-d\d-name$/.test(String(e.id)))
+    .map((e) => String(e.text));
+  eq(names.join(" "), "MONDAY TUESDAY WEDNESDAY", "a Monday journal's book opens its week on Monday");
+  const firstDate = flatten(left.elements as never).find((e) => /-d0-date$/.test(String(e.id)));
+  eq(String(firstDate?.text), "5", "and its first column is dated the week's first day");
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exitCode = 1;

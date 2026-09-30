@@ -116,6 +116,28 @@ function assert(cond: boolean, msg: string) {
   }
 }
 
+
+// --- a calendar starting on the journal's week start ----------------------
+// January 2026 begins on a Thursday. Monday first, its opening row is
+// 29 30 31 1 2 3 4 - and every month of every year still takes 4 to 6 rows,
+// holds every one of its own days once, and starts each row on a Monday.
+{
+  const jan = computeMonthCalendar(2026, 1, 1);
+  assert(jan.weeks[0].map((c) => c.date).join(" ") === "29 30 31 1 2 3 4", `Jan 2026 Monday-first row 0 = ${jan.weeks[0].map((c) => c.date).join(" ")}`);
+  assert(computeMonthCalendar(2026, 1, 0).weeks[0].map((c) => c.date).join(" ") === "28 29 30 31 1 2 3", "Sunday first is unchanged");
+  for (let year = 1990; year <= 2040; year++) {
+    for (let month = 1; month <= 12; month++) {
+      const cal = computeMonthCalendar(year, month, 1);
+      const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const inMonth = cal.weeks.flat().filter((c) => c.inCurrentMonth);
+      assert(inMonth.length === days, `${year}-${month} Monday-first: ${days} in-month cells`);
+      const first = cal.weeks[0].findIndex((c) => c.inCurrentMonth && c.date === 1);
+      const weekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+      assert(first === (weekday + 6) % 7, `${year}-${month} Monday-first: the 1st sits in its weekday's column`);
+    }
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exitCode = 1;

@@ -26,7 +26,7 @@
 // This walks occurrences and hands each page its context.
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { withDates, withoutDates } from "./moduleRegistry";
+import { propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
 import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_LABELS,
@@ -171,7 +171,19 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     const template = pagesByLevel.get(slot.at.level) ?? [];
     const chosen = pagesFor(template, slot.at.key);
     const customised = slot.at.key !== null && hasOwn(template, slot.at.key);
-    for (const page of chosen) {
+    // Each page's day columns turned to the week start, by the function the
+    // editor uses - this used to print the stored order, so a Monday
+    // journal's book opened its week on SUNDAY, dated the week's last day.
+    const spreadLabels = spreadDayLabels(chosen, weekStartDay);
+    for (const [pageIndex, page] of chosen.entries()) {
+      const context: PageRenderContext = {
+        dated: planner.dated,
+        occurrence: slot.at,
+        dayLabels: spreadLabels[pageIndex] ?? null,
+        weekStartDay,
+        events: null,
+        columnDates: null,
+      };
       const pageGrid: PageGrid = {
         widthPx: page.widthPx,
         heightPx: page.heightPx,
@@ -190,9 +202,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
         // many copies of a template to write into, which is a real product
         // and the free tier's whole shape. Otherwise the module fills itself
         // in for this occurrence.
-        const propValues = planner.dated
-          ? withDates(instance.moduleType.slug, instance.propValues, slot.at)
-          : withoutDates(instance.moduleType.slug, instance.propValues);
+        const propValues = propsForRender(instance.moduleType.slug, instance.propValues, context);
         elements.push(
           ...renderModuleInstance({ ...instance, propValues }, pageGrid, fontFamily)
         );

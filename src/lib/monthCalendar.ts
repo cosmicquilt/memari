@@ -36,7 +36,8 @@ export type MonthCalendarCell = {
 
 export type MonthCalendar = {
   weekCount: 4 | 5 | 6;
-  // weekCount rows x 7 columns, Sunday first (column 0 = Sunday ... 6 = Saturday).
+  // weekCount rows x 7 columns, starting on the week's first day - Sunday
+  // unless a week start is given (column 0 is then that day).
   weeks: MonthCalendarCell[][];
 };
 
@@ -49,7 +50,14 @@ function utcDate(year: number, monthIndex0: number, day: number): Date {
   return new Date(Date.UTC(year, monthIndex0, day));
 }
 
-export function computeMonthCalendar(year: number, month: number): MonthCalendar {
+/**
+ * `weekStartDay` is the journal's own, 0 = Sunday, 1 = Monday - the first
+ * column of every week. It used to be Sunday whatever the journal said, so
+ * a Monday journal printed Monday-first hours beside Sunday-first months.
+ * A week of seven still spans 4 to 6 rows whichever day it starts on.
+ */
+export function computeMonthCalendar(year: number, month: number, weekStartDay = 0): MonthCalendar {
+  const start = ((Math.round(weekStartDay) % 7) + 7) % 7;
   const monthIndex0 = month - 1; // JS Date months are 0-indexed; this file's own API stays 1-indexed to match dayLabels-style config elsewhere.
   const firstOfMonth = utcDate(year, monthIndex0, 1);
   // Day 0 of the *next* month is the last day of *this* one — the
@@ -58,10 +66,12 @@ export function computeMonthCalendar(year: number, month: number): MonthCalendar
   const daysInMonth = utcDate(year, monthIndex0 + 1, 0).getUTCDate();
   const lastOfMonth = utcDate(year, monthIndex0, daysInMonth);
 
-  // Grid runs from the Sunday on/before the 1st through the Saturday
-  // on/after the last day of the month.
-  const gridStart = new Date(firstOfMonth.getTime() - firstOfMonth.getUTCDay() * MS_PER_DAY);
-  const gridEnd = new Date(lastOfMonth.getTime() + (6 - lastOfMonth.getUTCDay()) * MS_PER_DAY);
+  // Grid runs from the week's first day on/before the 1st through its last
+  // day on/after the last day of the month.
+  const leading = (firstOfMonth.getUTCDay() - start + 7) % 7;
+  const trailing = 6 - ((lastOfMonth.getUTCDay() - start + 7) % 7);
+  const gridStart = new Date(firstOfMonth.getTime() - leading * MS_PER_DAY);
+  const gridEnd = new Date(lastOfMonth.getTime() + trailing * MS_PER_DAY);
 
   const totalDays = Math.round((gridEnd.getTime() - gridStart.getTime()) / MS_PER_DAY) + 1;
   const weekCount = totalDays / 7;

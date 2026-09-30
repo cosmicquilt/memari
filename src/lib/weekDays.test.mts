@@ -2,7 +2,7 @@
 // no-framework convention as grid.test.mts. Run with:
 // npx tsx src/lib/weekDays.test.mts
 
-import { rotateWeekDays, type DayLabel } from "./weekDays";
+import { rotateWeekDays, rotateWeekList, weekdayInitials, weekdayOfColumn, type DayLabel } from "./weekDays";
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -61,6 +61,29 @@ const right: DayLabel[] = [
   const shortLeft = [left[0], left[1]];
   const result = rotateWeekDays(shortLeft, right, 1);
   assert(result.left === shortLeft && result.right === right, "a non-3/4 shape is returned untouched, not rotated");
+}
+
+
+// --- every module that prints weekdays -----------------------------------
+// The journal's week start reached only the hours (2026-09-30). These are the
+// pieces the other modules turn with.
+{
+  assert(weekdayInitials(0).join("") === "SMTWTFS", "Sunday start: S M T W T F S");
+  assert(weekdayInitials(1).join("") === "MTWTFSS", "Monday start: M T W T F S S");
+  assert(weekdayOfColumn(0, 1) === 1 && weekdayOfColumn(6, 1) === 0, "a Monday week's first column is Monday and its last Sunday");
+
+  const monFirst = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  assert(rotateWeekList(monFirst, 0).join(",") === "Sun,Mon,Tue,Wed,Thu,Fri,Sat", "a typed Monday-first week turns to a Sunday journal");
+  assert(rotateWeekList(monFirst, 1) === monFirst, "a week already starting on the journal's day is returned as it is");
+  const long = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  assert(rotateWeekList(long, 1)[0] === "Monday" && rotateWeekList(long, 1)[6] === "Sunday", "full day names turn too");
+  const initials = ["S", "M", "T", "W", "T", "F", "S"];
+  assert(rotateWeekList(initials, 1) === initials, "initials are left alone - S and T do not say which day they are");
+  const prose = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha", "Tahajjud", "Duha"];
+  assert(rotateWeekList(prose, 1) === prose, "seven words that are not a week are never reordered");
+  const scrambled = ["Mon", "Wed", "Tue", "Thu", "Fri", "Sat", "Sun"];
+  assert(rotateWeekList(scrambled, 0) === scrambled, "day names out of order are not treated as a week");
+  assert(rotateWeekList(["Mon", "Tue"], 0).length === 2, "a list that is not seven long is untouched");
 }
 
 if (failures > 0) {

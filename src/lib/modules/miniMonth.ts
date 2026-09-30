@@ -32,6 +32,7 @@ const UNDATED_WEEK_COUNT = 5;
 
 import { ptToPx } from "@/lib/print-spec";
 import { computeMonthCalendar } from "@/lib/monthCalendar";
+import { weekdayInitials, weekdayOfColumn } from "@/lib/weekDays";
 import {
   RULE_WIDTH_PT,
   HEADER_HEIGHT_PT,
@@ -58,6 +59,9 @@ export type MiniMonthConfig = {
    *  registry's `undated` hook, not by this renderer, which only ever sees
    *  the month it was given. */
   keepDates?: boolean;
+  /** The journal's week start, 0 = Sunday - set at render time by the
+   *  registry's weekStart hook, never stored. Column 0 is this day. */
+  weekStartDay?: number;
 };
 
 export type RenderedElement = {
@@ -84,7 +88,6 @@ const MARK_BOX_PT = 9;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
 const MARK_BOX_STROKE_PT = RULE_WIDTH_PT;
 
-const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_NAMES = [
   "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
   "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
@@ -136,7 +139,8 @@ export function renderMiniMonth(
   const year = Number.isFinite(config.year) ? Math.round(config.year) : 0;
   const month = Number.isFinite(config.month) ? Math.round(config.month as number) : 0;
   const drawable = year >= 1900 && year <= 2100 && month >= 1 && month <= 12;
-  const calendar = drawable ? computeMonthCalendar(year, month) : null;
+  const weekStartDay = config.weekStartDay ?? 0;
+  const calendar = drawable ? computeMonthCalendar(year, month, weekStartDay) : null;
   // No month, so no dates - the undated planner, where you write them in.
   // FIVE rows, because five is the count that covers most months and the
   // grid has to commit to one without a month to ask. The weekday strip
@@ -165,11 +169,11 @@ export function renderMiniMonth(
 
   const gridTop = stripTop + stripHeight;
   const weekdayFontSize = ptToPx(WEEKDAY_FONT_PT);
-  WEEKDAY_INITIALS.forEach((initial, c) => {
+  weekdayInitials(weekStartDay).forEach((initial, c) => {
     elements.push({
       // Named by weekday, not by "the nth label" - Sunday's initial is the
-      // same mark whichever month is drawn.
-      id: id(`weekday${c}`),
+      // same mark whichever month is drawn, and whichever column it is in.
+      id: id(`weekday${weekdayOfColumn(c, weekStartDay)}`),
       type: "text",
       x: geometry.x + columnWidth * c,
       y: capCentredTextY(stripTop, stripHeight, weekdayFontSize, fontFamily),
@@ -206,7 +210,7 @@ export function renderMiniMonth(
 
       if (typeof cell?.date === "number") {
         elements.push({
-          id: id(`w${w}-d${c}-date`),
+          id: id(`w${w}-d${weekdayOfColumn(c, weekStartDay)}-date`),
           type: "text",
           x: columnX,
           y: capCentredTextY(rowTop, dateBandHeight, dateFontSize, fontFamily),
@@ -223,7 +227,7 @@ export function renderMiniMonth(
 
       if (markable) {
         elements.push({
-          id: id(`w${w}-d${c}-box`),
+          id: id(`w${w}-d${weekdayOfColumn(c, weekStartDay)}-box`),
           type: "figure",
           subType: "rect",
           x: columnX + (columnWidth - markBox) / 2,

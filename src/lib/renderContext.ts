@@ -24,7 +24,7 @@
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
 import type { PageGrid } from "./grid";
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
-import { withDates, withoutDates } from "./moduleRegistry";
+import { isSpineSlug, withDates, withWeekStart, withoutDates } from "./moduleRegistry";
 import { columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
 import { effectiveZone } from "./timeZone";
 import {
@@ -40,9 +40,13 @@ export type PageRenderContext = {
   /** The occurrence this page is edited AS. Null when the book has no term
    *  yet, and the stored values stand. */
   occurrence: OccurrenceContext | null;
-  /** The day columns this page's hourly grid shows, rotated to the book's
-   *  week start. Null on a page with no hourly grid. */
+  /** The day columns this page's spine shows - the hours on a week, the
+   *  calendar on a month - rotated to the book's week start. Null on a page
+   *  whose spine names no days. */
   dayLabels: DayLabel[] | null;
+  /** The book's week start, 0 = Sunday. Every module that prints weekdays
+   *  starts on it - see the registry's `weekStart`. */
+  weekStartDay: number;
   /** The calendar events falling on this page's columns, already indexed to
    *  them. Null when nothing was passed in, when the page has no hours, and
    *  on an undated book - a book with no dates cannot carry dated marks. */
@@ -114,20 +118,14 @@ export function renderContextForPage(
   const spread = book.pages
     .filter((p) => p.level === page.level && (p.variantKey ?? null) === (page.variantKey ?? null))
     .sort((a, b) => a.position - b.position);
-  const labelsOf = (p: RenderContextBook["pages"][number] | undefined) =>
-    ((p?.moduleInstances.find((mi) => mi.moduleType.slug === "hourly-grid-core")?.propValues as
-      | { dayLabels?: DayLabel[] }
-      | null
-      | undefined)?.dayLabels ?? []) as DayLabel[];
-  const rotated = rotateWeekDays(labelsOf(spread[0]), labelsOf(spread[1]), weekStartDay);
+  const dayLabels = spreadDayLabels(spread, weekStartDay)[spread.indexOf(page)] ?? null;
   const hasHours = page.moduleInstances.some((mi) => mi.moduleType.slug === "hourly-grid-core");
-  const dayLabels = !hasHours ? null : spread.indexOf(page) === 0 ? rotated.left : rotated.right;
 
   // EVENTS ARE DATED THINGS, so they need all three: a real occurrence to be
   // dated against, columns to sit in, and a book that admits dates at all.
   // columnDates is the same rule the day tab's own number comes from, so an
   // event cannot land under a date the tab does not show.
-  const grid = dated && occurrence && dayLabels ? columnDates(page.level, occurrence.start, dayLabels) : null;
+  const grid = dated && occurrence && dayLabels && hasHours ? columnDates(page.level, occurrence.start, dayLabels) : null;
   // In the BOOK's zone: an event is an instant, and the page prints the
   // wall-clock time here. This one argument is the whole of the fix for a
   // 9am New York meeting printing in the 1pm row - every drawing of a page
@@ -141,9 +139,38 @@ export function renderContextForPage(
     dated,
     occurrence,
     dayLabels,
+    weekStartDay,
     events: placed,
     columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
   };
+}
+
+/**
+ * The day columns each page of a spread shows, turned to the week start:
+ * the left page's three and the right page's four, taken from whichever
+ * spine names them - the hours on a week, the calendar on a month. Null for
+ * a page whose spine names no days.
+ *
+ * ONE function for the editor and the book. The book used to take the
+ * stored labels as they were, so a Monday journal's PDF printed SUNDAY in
+ * the first column, dated as the last day of its week, while the editor
+ * showed MONDAY there. Found 2026-09-30.
+ */
+export function spreadDayLabels(
+  spread: Array<{ moduleInstances: Array<{ moduleType: { slug: string }; propValues: unknown }> } | undefined>,
+  weekStartDay: number
+): Array<DayLabel[] | null> {
+  const labelsOf = (p: (typeof spread)[number]) => {
+    const spine = p?.moduleInstances.find((mi) => isSpineSlug(mi.moduleType.slug));
+    const labels = (spine?.propValues as { dayLabels?: unknown } | null | undefined)?.dayLabels;
+    return Array.isArray(labels) ? (labels as DayLabel[]) : null;
+  };
+  const rotated = rotateWeekDays(labelsOf(spread[0]) ?? [], labelsOf(spread[1]) ?? [], weekStartDay);
+  return spread.map((p, i) => {
+    const own = labelsOf(p);
+    if (!own) return null;
+    return i === 0 ? rotated.left : i === 1 ? rotated.right : own;
+  });
 }
 
 /**
@@ -159,16 +186,25 @@ export function propsForRender(
   // The events go in beside the rotated day labels, not after the dating
   // hook: they are already placed against the columns this context describes,
   // and `withDates` only ever rewrites those labels.
+  const hours = slug === "hourly-grid-core";
+  // A spine's day names turn with the week. The hours' labels carry their own
+  // dates, so they can always turn. The calendar's dates live in its cells,
+  // which only its dating hook recomputes for the week start - so it turns
+  // when it is being dated, or has no dates to disagree with.
+  const turnsDays =
+    !!context.dayLabels && isSpineSlug(slug) && (hours || context.occurrence !== null || !context.dated);
+  const events = hours && context.events;
   const rotated =
-    slug === "hourly-grid-core" && (context.dayLabels || context.events)
+    turnsDays || events
       ? {
           ...((propValues ?? {}) as object),
-          ...(context.dayLabels ? { dayLabels: context.dayLabels } : {}),
-          ...(context.events ? { events: context.events } : {}),
+          ...(turnsDays ? { dayLabels: context.dayLabels } : {}),
+          ...(events ? { events: context.events } : {}),
         }
       : propValues;
-  if (!context.dated) return withoutDates(slug, rotated);
-  return context.occurrence ? withDates(slug, rotated, context.occurrence) : rotated;
+  const weekly = withWeekStart(slug, rotated, context.weekStartDay);
+  if (!context.dated) return withoutDates(slug, weekly);
+  return context.occurrence ? withDates(slug, weekly, context.occurrence) : weekly;
 }
 
 /**

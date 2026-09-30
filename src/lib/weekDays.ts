@@ -37,3 +37,49 @@ export function rotateWeekDays(
   const rotated = [...canonical.slice(start), ...canonical.slice(0, start)];
   return { left: rotated.slice(0, 3), right: rotated.slice(3) };
 }
+
+// ---------------------------------------------------------------------
+// THE JOURNAL'S WEEK START, FOR EVERY MODULE THAT PRINTS WEEKDAYS.
+//
+// The rotation above only ever reached the hours. The mini month and the
+// habit tracker printed S M T W T F S from fixed lists, the month calendar
+// was seeded Sunday first and never turned, and three presets typed their
+// own day names Monday first - so a Monday journal had Monday-first hours
+// beside Sunday-first trackers, and a Sunday journal had the reverse.
+// Found building the module-edits list, 2026-09-30.
+
+const INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
+const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+const normalStart = (weekStartDay: number | null | undefined) =>
+  ((Math.round(Number(weekStartDay) || 0) % 7) + 7) % 7;
+
+/** Which weekday (0 = Sunday) column `c` of a week is. */
+export function weekdayOfColumn(c: number, weekStartDay: number | null | undefined): number {
+  return (c + normalStart(weekStartDay)) % 7;
+}
+
+/** The seven initials, starting on the week's first day. */
+export function weekdayInitials(weekStartDay: number | null | undefined): string[] {
+  return Array.from({ length: 7 }, (_, c) => INITIALS[weekdayOfColumn(c, weekStartDay)]);
+}
+
+/**
+ * A list that IS a week, turned to start on the journal's week start.
+ *
+ * Recognised only when it is exactly the seven day names in order from any
+ * day - "Mon".."Sun", "Monday".."Sunday" - so free text is never reordered.
+ * Initials are left alone: S and T do not say which day they are. Returns
+ * the list itself when it is not a week or already starts right.
+ */
+export function rotateWeekList<T>(list: T, weekStartDay: number | null | undefined): T {
+  if (!Array.isArray(list) || list.length !== 7) return list;
+  const indices = list.map((entry) => {
+    const word = typeof entry === "string" ? entry.trim().toLowerCase() : "";
+    return word.length >= 3 ? DAY_NAMES.findIndex((name) => name.startsWith(word)) : -1;
+  });
+  if (indices.some((index, i) => index < 0 || index !== (indices[0] + i) % 7)) return list;
+  const shift = (normalStart(weekStartDay) - indices[0] + 7) % 7;
+  if (shift === 0) return list;
+  return [...list.slice(shift), ...list.slice(0, shift)] as T;
+}

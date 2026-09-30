@@ -43,6 +43,10 @@ export type MonthGridCoreConfig = {
   // range — see monthCalendar.ts's computeMonthCalendar, which produces
   // the full 7-column week that this gets sliced from.
   cells: MonthCalendarCell[][];
+  /** The journal's week start, 0 = Sunday - set at render time, never
+   *  stored. Read by the registry's `dated` hook, which computes `cells`
+   *  from it; the drawing itself only ever sees the cells. */
+  weekStartDay?: number;
 };
 
 export type RenderedElement = {
