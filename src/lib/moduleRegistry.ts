@@ -1290,6 +1290,9 @@ const PRIMITIVES = {
           { value: "dotted", label: "Dotted" },
           { value: "none", label: "Blank" },
         ],
+        // The first prompt and its lines: the foot of a prompts block is
+        // often empty, and three pictures of nothing say nothing.
+        window: { x: "left", y: "top", columns: 3.4, rows: 3.6 },
       },
       { kind: "boolean", key: "numbered", label: "Number the prompts" },
     ],
@@ -1662,7 +1665,7 @@ const PRIMITIVES = {
           { value: "words", label: "Words" },
           { value: "inside", label: "Inside" },
         ],
-        window: { x: "right", y: "top", columns: 3.4, rows: 2.3 },
+        window: { x: "right", y: "top", columns: 3.4, rows: 3.3 },
       },
       { kind: "text", key: "lowLabel", label: "Low end, in words" },
       { kind: "text", key: "highLabel", label: "High end, in words" },

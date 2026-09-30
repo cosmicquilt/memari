@@ -411,7 +411,10 @@ export function ModuleFieldsForm({
         }
 
         if (field.kind === "boolean") {
-          const on = values[field.key] === true;
+          // Unset is the schema's default, which is not always off: a module
+          // stored before "Days from the months either side" existed draws
+          // them, and the switch has to say so.
+          const on = (values[field.key] ?? defaults?.[field.key]) === true;
           return (
             <label
               key={field.key}
