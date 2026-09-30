@@ -850,6 +850,15 @@ const PRIMITIVES = {
               "type": "string"
             },
             "default": []
+          },
+          "cells": {
+            "type": "string",
+            "enum": ["grid", "circles", "dots"],
+            "default": "grid"
+          },
+          "totalColumn": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -867,6 +876,18 @@ const PRIMITIVES = {
       { kind: "text", key: "heading", label: "Heading" },
       { kind: "lines", key: "habits", label: "Rows (one per line)", rows: 8 },
       { kind: "lines", key: "columns", label: "Columns (one per line, blank for a week)", rows: 4 },
+      {
+        kind: "rule",
+        key: "cells",
+        label: "Cells",
+        options: [
+          { value: "grid", label: "Grid" },
+          { value: "circles", label: "Circles" },
+          { value: "dots", label: "Dots" },
+        ],
+        window: { x: "right", y: "top", columns: 3.2, rows: 2.6 },
+      },
+      { kind: "boolean", key: "totalColumn", label: "Total column" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderHabitTracker(geometry, propValues as HabitTrackerConfig, idPrefix, fontFamily, lattice),

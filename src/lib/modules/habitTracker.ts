@@ -57,7 +57,50 @@ export type HabitTrackerConfig = {
    *  registry's weekStart hook, never stored. The default columns are a week
    *  and start on it. */
   weekStartDay?: number;
+  /**
+   * What you mark: the ruled grid (the default, and everything stored
+   * before), a circle to fill in each cell - the bullet-journal tracker - or
+   * a dot, the lightest. The row rules stay in every option so the rows
+   * still read across. Module-edits list, 2026-09-30.
+   */
+  cells?: "grid" | "circles" | "dots";
+  /** A last column, two cells wide, to write a total in - "5/7". The week
+   *  stays derived; typing it out into Columns to add one stops it
+   *  following the journal. Wide layout only: a sidebar has no room. */
+  totalColumn?: boolean;
 };
+
+/** A habit cell's circle or dot, centred in its cell. */
+function cellMark(
+  cells: HabitTrackerConfig["cells"],
+  id: string,
+  cx: number,
+  cy: number,
+  cellSize: number
+): RenderedElement | null {
+  if (cells === "circles") {
+    const r = cellSize * 0.22;
+    return {
+      id,
+      type: "figure",
+      subType: "rect",
+      x: cx - r,
+      y: cy - r,
+      width: r * 2,
+      height: r * 2,
+      cornerRadius: r,
+      fill: "transparent",
+      stroke: NEAR_BLACK,
+      strokeWidth: ptToPx(ROW_LINE_WIDTH_PT),
+      opacity: 0.7,
+    };
+  }
+  if (cells === "dots") {
+    const r = ptToPx(1);
+    return { id, type: "figure", subType: "rect", x: cx - r, y: cy - r, width: r * 2, height: r * 2, cornerRadius: r, fill: NEAR_BLACK, stroke: "none", opacity: 0.55 };
+  }
+  return null;
+}
 
 export type RenderedElement = {
   id: string;
@@ -273,11 +316,18 @@ export function renderHabitTracker(
   const labelWidthNeeded = Math.max(
     ...columns.map((label) => estimateTextWidthPx(label, ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(4))
   );
+  // The total column is its own width - two cells, room for "5/7" and for
+  // its label at the day letters' size - so the week keeps its one-cell
+  // columns rather than every column widening to fit "TOTAL".
+  const totalWidth = config.totalColumn
+    ? Math.max(ptToPx(DAY_COLUMN_WIDTH_PT * 2), estimateTextWidthPx("TOTAL", ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(6))
+    : 0;
   const dayColumnWidth = Math.min(
     Math.max(ptToPx(DAY_COLUMN_WIDTH_PT), labelWidthNeeded),
-    (geometry.width * 0.72) / columns.length
+    (geometry.width * 0.72 - totalWidth) / columns.length
   );
-  const nameColumnWidth = geometry.width - dayColumnWidth * columns.length;
+  const nameColumnWidth = geometry.width - dayColumnWidth * columns.length - totalWidth;
+  const marked = config.cells === "circles" || config.cells === "dots";
 
   const rowCount = Math.max(
     0,
@@ -386,7 +436,7 @@ export function renderHabitTracker(
       fontFamily: FONT_FAMILY,
       align: "center",
     });
-    if (i > 0) {
+    if (i > 0 && !marked) {
       elements.push({
         id: id(`day${i}-rule`),
         type: "figure",
@@ -406,6 +456,56 @@ export function renderHabitTracker(
   });
 
   const gridTop = contentY + headerHeight;
+
+  if (totalWidth > 0) {
+    const totalX = geometry.x + nameColumnWidth + columns.length * dayColumnWidth;
+    const label = fitLabel("TOTAL", totalWidth - ptToPx(2), [dayLetterFontSize, ptToPx(7), ptToPx(6), ptToPx(5)]);
+    elements.push({
+      id: id("total-letter"),
+      type: "text",
+      x: totalX,
+      y: capCentredTextY(contentY, headerHeight, label.fontSizePx, FONT_FAMILY),
+      width: totalWidth,
+      height: label.fontSizePx * 1.2,
+      text: label.text,
+      fontSize: label.fontSizePx,
+      fontFamily: FONT_FAMILY,
+      align: "center",
+    });
+    elements.push({
+      id: id("total-rule"),
+      type: "figure",
+      subType: "rect",
+      x: totalX - rowLineWidth / 2,
+      y: contentY,
+      width: rowLineWidth,
+      height: contentHeight,
+      fill: NEAR_BLACK,
+      stroke: "none",
+      opacity: 0.6,
+    });
+  }
+
+  // Circles or dots to mark, one per day cell in every band - the short one
+  // at the foot included when it is most of a row.
+  if (marked) {
+    const body = contentHeight - headerHeight;
+    const bands = rowCount + (body - rowCount * rowHeight >= rowHeight * 0.75 ? 1 : 0);
+    for (let j = 0; j < bands; j++) {
+      const bandTop = gridTop + j * rowHeight;
+      const bandHeight = Math.min(rowHeight, contentY + contentHeight - bandTop);
+      for (let c = 0; c < columns.length; c++) {
+        const mark = cellMark(
+          config.cells,
+          id(`row${j}-day${c}-mark`),
+          geometry.x + nameColumnWidth + c * dayColumnWidth + dayColumnWidth / 2,
+          bandTop + bandHeight / 2,
+          Math.min(dayColumnWidth, rowHeight)
+        );
+        if (mark) elements.push(mark);
+      }
+    }
+  }
 
   // Habit-name rows + optional pre-filled names.
   for (let i = 0; i < rowCount; i++) {
@@ -664,7 +764,11 @@ function renderHabitTrackerCompact(
         fontFamily: FONT_FAMILY,
         align: "center",
       });
-      if (d > 0) {
+      if (config.cells === "circles") {
+        const ring = cellMark("circles", id(`pair${i}-day${d}-mark`), colX + squareSize / 2, squareRowTop + squareSize / 2, squareSize * 1.6);
+        if (ring) elements.push(ring);
+      }
+      if (d > 0 && config.cells !== "circles" && config.cells !== "dots") {
         elements.push({
           id: id(`pair${i}-day${d}-rule`),
           type: "figure",

@@ -110,3 +110,28 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(floor({ items: ["a", "b", "c", "d", "e", "f"] }) > floor({}), "six printed items need more rows than a blank list");
   check(floor({ items: ["a", " ", ""] }) === floor({ items: ["a"] }), "blank items do not count");
 }
+
+// --- habits ------------------------------------------------------------------
+{
+  const habits = ["Read", "Walk", "Water"];
+  const grid = draw("habit-tracker", { heading: "Habits", habits }, 18, 6);
+  check(ids(grid, /-day\d-rule$/).length === 6, "the grid rules every day column");
+  check(ids(grid, /-mark$/).length === 0, "and marks nothing");
+  const circles = draw("habit-tracker", { heading: "Habits", habits, cells: "circles" }, 18, 6);
+  check(ids(circles, /-day\d-rule$/).length === 0, "circles take the column rules away");
+  const rings = ids(circles, /^m-row\d+-day\d-mark$/);
+  check(rings.length > 0 && rings.length % 7 === 0 && rings.every((r) => Number(r.cornerRadius ?? 0) > 0), `a circle in every day cell (${rings.length})`);
+  check(ids(circles, /^m-row\d+$/).length === ids(grid, /^m-row\d+$/).length, "the row rules stay");
+  const dots = draw("habit-tracker", { heading: "Habits", habits, cells: "dots" }, 18, 6);
+  check(ids(dots, /-mark$/).length === rings.length, "a dot where each circle would be");
+  const compact = draw("habit-tracker", { heading: "Habits", habits, cells: "circles" }, 6, 8);
+  check(ids(compact, /-pair\d+-day\d-mark$/).length > 0 && ids(compact, /-pair\d+-day\d-rule$/).length === 0, "the sidebar layout rings its letters too");
+
+  const total = draw("habit-tracker", { heading: "Habits", habits, totalColumn: true }, 18, 6);
+  const label = ids(total, /-total-letter$/)[0];
+  check(label?.text === "TOTAL", `a TOTAL column (got ${label?.text})`);
+  const letters = ids(total, /-day\d-letter$/);
+  check(letters.length === 7 && letters.every((l) => Math.abs((l.width ?? 0) - (ids(grid, /-day0-letter$/)[0].width ?? 0)) < 0.5), "the week keeps its one-cell columns");
+  check((label?.width ?? 0) >= 2 * PITCH - 0.5, "the total is two cells wide");
+  check(ids(draw("habit-tracker", { heading: "Habits", habits, totalColumn: true }, 6, 8), /-total-/).length === 0, "not in the sidebar layout");
+}
