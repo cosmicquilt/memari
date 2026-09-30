@@ -515,12 +515,19 @@ function RectLayer({
         // size it was built for, so a path mark is redrawn rather than
         // slid. Glyphs are small and a strip rescales as a whole, which is
         // a cross-fade case anyway; see check:behaviour.
+        //
+        // `d` is in PAGE coordinates, as the renderer built it; this SVG
+        // sits at the module's corner, which is why every rect above goes
+        // through markGeometry. The path moves by the same origin - without
+        // it every glyph drew one module-offset below its module, off it
+        // (found 2026-09-30, there since paths arrived on 2026-09-16).
         const pathD = typeof element.pathD === "string" ? element.pathD : undefined;
         if (pathD) {
           return (
             <path
               key={element.id}
               d={pathD}
+              transform={`translate(${-originX} ${-originY})`}
               fill={hasFill ? element.fill : "none"}
               stroke={hasStroke ? element.stroke : undefined}
               strokeWidth={hasStroke ? strokeWidth : undefined}
