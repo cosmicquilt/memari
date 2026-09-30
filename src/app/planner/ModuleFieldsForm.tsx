@@ -111,11 +111,14 @@ function GlyphSwatch({
   label,
   selected,
   onPick,
+  size = 34,
 }: {
   shape: GlyphShape;
   label: string;
   selected: boolean;
   onPick: () => void;
+  /** 34px in a picker of its own; smaller in a picker per row or day. */
+  size?: number;
 }) {
   // Drawn in a 100-unit box and shown at 34px. The viewBox does the scaling,
   // so the hairline stays proportionally what it is on the page.
@@ -133,8 +136,8 @@ function GlyphSwatch({
       className="memari-swatch"
       data-selected={selected ? "true" : undefined}
       style={{
-        width: 34,
-        height: 34,
+        width: size,
+        height: size,
         padding: 0,
         border: "none",
         borderRadius: 5,
@@ -146,8 +149,8 @@ function GlyphSwatch({
     >
       <svg
         viewBox="0 0 100 100"
-        width="34"
-        height="34"
+        width={size}
+        height={size}
         style={{ display: "block", pointerEvents: "none" }}
         aria-hidden="true"
         dangerouslySetInnerHTML={{ __html: markup }}
@@ -263,6 +266,7 @@ export function ModuleFieldsForm({
   onChange,
   defaults,
   drawRule,
+  drawn,
 }: {
   fields: ModuleField[];
   values: Record<string, unknown>;
@@ -274,6 +278,9 @@ export function ModuleFieldsForm({
   /** Draws the module with one line-style option, for a `rule` field. Without
    *  it, a rule field is an ordinary list of names. */
   drawRule?: (key: string, value: string | number) => RuleSample | null;
+  /** The module as drawn - an `iconEach` field counts and names its rows
+   *  and days from it. */
+  drawn?: RenderedPolotnoElement[];
 }) {
   if (fields.length === 0) {
     return (
@@ -288,6 +295,82 @@ export function ModuleFieldsForm({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <style>{FOCUS_CSS}</style>
       {fields.map((field, index) => {
+        if (field.kind === "iconEach") {
+          // A picker per row or day of the drawing, each a line of the same
+          // drawn icons as the module's own picker, smaller. How many, and
+          // their names, are read off the drawing - rows follow the height,
+          // days the width.
+          const counting = new RegExp(field.countPattern);
+          let count = 0;
+          for (const element of drawn ?? []) {
+            const match = counting.exec(String(element.id));
+            if (match) count = Math.max(count, Number(match[1]) + 1);
+          }
+          if (count < 2) return null;
+          const own = Array.isArray(values[field.key]) ? (values[field.key] as unknown[]) : [];
+          const valid = new Set(field.options.map((option) => option.value));
+          const ownAt = (i: number) => (typeof own[i] === "string" && valid.has(own[i] as string) ? (own[i] as string) : null);
+          const fallback = String(values[field.defaultKey] ?? defaults?.[field.defaultKey] ?? field.options[0]?.value);
+          const typed = field.labelsKey ? values[field.labelsKey] ?? defaults?.[field.labelsKey] : undefined;
+          const nameOf = (i: number) => {
+            const label = Array.isArray(typed) ? typed[i] : undefined;
+            if (typeof label === "string" && label.trim()) return label.trim();
+            if (field.namePattern) {
+              const naming = new RegExp(field.namePattern.replace("#", String(i)));
+              const text = (drawn ?? []).find((element) => naming.test(String(element.id)))?.text;
+              // Drawn in capitals ("MON"); named as a word ("Mon").
+              if (typeof text === "string" && text.trim()) return text.trim().charAt(0) + text.trim().slice(1).toLowerCase();
+            }
+            return `${field.itemLabel} ${i + 1}`;
+          };
+          const pick = (i: number, value: string) => {
+            const next = Array.from({ length: count }, (_, k) => ownAt(k) ?? "");
+            next[i] = value;
+            onChange(field.key, next);
+          };
+          const anyOwn = Array.from({ length: count }, (_, i) => ownAt(i)).some(Boolean);
+          return (
+            <div key={field.key} style={rowStyle}>
+              <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <span style={labelStyle}>{field.label}</span>
+                {anyOwn && (
+                  <button
+                    type="button"
+                    onClick={() => onChange(field.key, [])}
+                    className="memari-field"
+                    style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontSize: 11.5, color: "rgba(255, 255, 255, 0.7)" }}
+                  >
+                    Reset
+                  </button>
+                )}
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {Array.from({ length: count }, (_, i) => (
+                  <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.85)" }}>{nameOf(i)}</span>
+                    <div
+                      role="radiogroup"
+                      aria-label={`${field.label}: ${nameOf(i)}`}
+                      style={{ display: "flex", flexWrap: "wrap", gap: 4 }}
+                    >
+                      {field.options.map((option) => (
+                        <GlyphSwatch
+                          key={option.value}
+                          size={22}
+                          shape={option.value as GlyphShape}
+                          label={`${nameOf(i)}: ${option.label}`}
+                          selected={(ownAt(i) ?? fallback) === option.value}
+                          onPick={() => pick(i, option.value)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
         if (field.kind === "countEach") {
           // One stepper per item of the list it follows - lines under each
           // prompt. Stored as the whole list, so the numbers stay with their

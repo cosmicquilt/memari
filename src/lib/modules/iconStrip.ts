@@ -31,7 +31,7 @@
 // draws the box.
 
 import { ptToPx } from "@/lib/print-spec";
-import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
+import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { estimateTextWidthPx, fitLabel } from "@/lib/modules/textFit";
 import { weekdayShortNames } from "@/lib/weekDays";
 import {
@@ -78,6 +78,14 @@ export type IconStripConfig = {
   groupLabels?: "none" | "days";
   /** Set at render time from the journal - see the registry's weekStart. */
   weekStartDay?: number;
+  /**
+   * The icon of each row, top down, and of each day (group), left to right -
+   * picked from previews in the editor (2026-09-30). A day's own icon wins in
+   * its column, since it is the more particular choice (a rest day, say);
+   * then the row's; then `icon`. Blank entries fall through.
+   */
+  stripIcons?: string[];
+  groupIcons?: string[];
 };
 
 export type RenderedElement = {
@@ -182,6 +190,11 @@ export function renderIconStrip(
   const dayLabelWidth = dayNames ? estimateTextWidthPx("WED", ptToPx(HEADING_FONT_PT)) + ptToPx(2) : 0;
 
   const stripLabels = (config.stripLabels ?? []).map((text) => (typeof text === "string" ? text.trim() : ""));
+  const glyphAt = (list: unknown, index: number): GlyphShape | null => {
+    const value = Array.isArray(list) ? list[index] : undefined;
+    return GLYPH_SHAPES.includes(value as GlyphShape) ? (value as GlyphShape) : null;
+  };
+  const iconFor = (s: number, g: number): GlyphShape => glyphAt(config.groupIcons, g) ?? glyphAt(config.stripIcons, s) ?? shape;
   for (let s = 0; s < stripCount; s++) {
     const stripTop = allocationTop + s * pitch;
     // One size for a label, fixed at the smallest legible - so the only
@@ -250,7 +263,7 @@ export function renderIconStrip(
             x: centre - glyphSize / 2,
             y: glyphTop,
             sizePx: glyphSize,
-            shape,
+            shape: iconFor(s, g),
           })
         );
       }

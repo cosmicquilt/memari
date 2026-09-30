@@ -367,6 +367,20 @@ export async function setWeeklySidebar(journalId: string, boxes: Array<[heading:
   }
 }
 
+/**
+ * Makes a module another kind in place - same page, same rows and columns -
+ * with these props. For putting a module the seeded layouts do not have
+ * where a probe can open it. Returns the kind's display name, which is what
+ * its pencil and its editor are called.
+ */
+export async function retypeModule(instanceId: string, slug: string, propValues: Record<string, unknown>): Promise<string> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const type = await prisma.moduleType.findUnique({ where: { slug } });
+  if (!type) throw new Error(`no module type ${slug} - is the database seeded?`);
+  await prisma.moduleInstance.update({ where: { id: instanceId }, data: { moduleTypeId: type.id, propValues: propValues as never } });
+  return type.name;
+}
+
 /** Every module of a journal, by slug, with its stored props - for checking
  *  what a save actually wrote. */
 export async function storedModules(journalId: string): Promise<Array<{ id: string; slug: string; level: string; propValues: Record<string, unknown> }>> {

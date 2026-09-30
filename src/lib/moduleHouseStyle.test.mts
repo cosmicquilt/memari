@@ -273,6 +273,7 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   ["progress-meter", { heading: "Omer", total: 49, milestoneEvery: 7, numbers: "every", segments: "circles" }],
   ["progress-meter", { heading: "Savings", total: 40, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "$0", endLabel: "A long goal label that has to fit" }],
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, border: true, groupLabels: "days", stripLabels: ["Water", "A very long strip label"] }],
+  ["icon-strip", { heading: "Water", icon: "droplet", count: 8, groupLabels: "days", stripIcons: ["leaf", "plant"], groupIcons: ["", "star", "moon"] }],
   ["rating-strip", { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 10, shape: "star", scaleHead: "inside" }],
   ["rating-strip", { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 5, scaleHead: "words", lowLabel: "not at all", highLabel: "completely" }],
   ["eisenhower-matrix", { heading: "Eisenhower", xLeft: "Not urgent", xRight: "Urgent", yTop: "Vital", yBottom: "Minor", quadrants: ["Schedule", "Do", "Delete", "Delegate"], boxNames: "small", inside: "lined" }],

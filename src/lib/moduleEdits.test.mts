@@ -13,6 +13,7 @@ import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
 import { withCurrentSettings } from "./moduleRegistry";
 import { textWidthPx } from "./modules/textFit";
+import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -303,6 +304,27 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const monday = texts(draw("icon-strip", { ...base, groupLabels: "days", weekStartDay: 1 }, 18, 2), /-g\d-day$/);
   check(monday[0] === "MON", "in the journal's week order");
   check(ids(draw("icon-strip", { ...base, groupLabels: "days" }, 18, 2), /-s1-.*day$/).length === 0, "on the first strip only");
+
+  // An icon for each row and each day. Which shape a mark is, is read back
+  // by drawing every shape in its place and seeing which one it is.
+  const shapeOf = (e: RenderedPolotnoElement) =>
+    GLYPH_SHAPES.find((shape) => {
+      const again = glyphElement({ id: "", x: e.x ?? 0, y: e.y ?? 0, sizePx: e.width ?? 0, shape }) as { pathD?: string; cornerRadius?: number };
+      const mark = e as { pathD?: string; cornerRadius?: number };
+      return again.pathD === mark.pathD && again.cornerRadius === mark.cornerRadius;
+    }) ?? "?";
+  const shapes = (elements: RenderedPolotnoElement[], pattern: RegExp) => ids(elements, pattern).map(shapeOf);
+  const plain = draw("icon-strip", base, 18, 3);
+  check(shapes(plain, /-i\d+$/).every((shape) => shape === "droplet"), "without either, every icon is the module's");
+  const rows = draw("icon-strip", { ...base, stripIcons: ["", "leaf"] }, 18, 3);
+  check(shapes(rows, /-s0-g\d+-i\d+$/).every((shape) => shape === "droplet"), "a blank row falls through to the module's icon");
+  check(shapes(rows, /-s1-g\d+-i\d+$/).every((shape) => shape === "leaf"), `a row's own icon across the row (got ${[...new Set(shapes(rows, /-s1-/))].join(",")})`);
+  check(shapes(rows, /-s2-g\d+-i\d+$/).every((shape) => shape === "droplet"), "a row past the list keeps the module's icon");
+  const both = draw("icon-strip", { ...base, stripIcons: ["", "leaf"], groupIcons: ["star", "", "nonsense"] }, 18, 3);
+  check(shapes(both, /-s\d-g0-i\d+$/).every((shape) => shape === "star"), "a day's own icon wins down its column, over a row's");
+  check(shapes(both, /-s1-g1-i\d+$/).every((shape) => shape === "leaf"), "a blank day keeps the row's");
+  check(shapes(both, /-s0-g2-i\d+$/).every((shape) => shape === "droplet"), "a name that is not a shape is ignored");
+  check(ids(both, /-i\d+$/).length === ids(plain, /-i\d+$/).length, "the icons change shape, never number or place");
 }
 
 // --- ratings -----------------------------------------------------------------

@@ -342,6 +342,9 @@ export function ModuleEditor({
     () => (heading ? withoutElement(elements, headingId) : elements),
     [elements, heading, headingId]
   );
+  // Every mark, for the fields that read the drawing - an icon strip's rows
+  // and days are counted and named from it.
+  const everyMark = useMemo(() => flatten(elements), [elements]);
   const [headingHovered, setHeadingHovered] = useState(false);
   const [headingFocused, setHeadingFocused] = useState(false);
 
@@ -901,6 +904,7 @@ export function ModuleEditor({
               values={draft}
               defaults={defaults}
               drawRule={drawRule}
+              drawn={everyMark}
               onChange={(key, value) =>
                 key === "heading" && typeof value === "string"
                   ? takeHeading(value)

@@ -167,6 +167,24 @@ export type ModuleField =
   // prompt - shown as that list with a stepper beside every entry. An item
   // without its own number takes `defaultKey`'s.
   | { kind: "countEach"; key: string; itemsKey: string; defaultKey: string; label: string; min: number; max: number }
+  // A SHAPE FOR EACH of something the module draws - each row of an icon
+  // strip, each day - picked from the same drawn previews as `icon`. How many
+  // there are is read off the drawing (`countPattern`, a regex over mark ids),
+  // since a strip's rows follow its height and its days its width; each is
+  // named from `labelsKey` as typed, or from a drawn label (`namePattern`, a
+  // regex over mark ids with the index in place of `#`), else "`itemLabel`
+  // n". Offered only for two or more - one is the module's own icon.
+  | {
+      kind: "iconEach";
+      key: string;
+      label: string;
+      itemLabel: string;
+      countPattern: string;
+      labelsKey?: string;
+      namePattern?: string;
+      defaultKey: string;
+      options: Array<{ value: string; label: string }>;
+    }
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
@@ -485,6 +503,20 @@ export type ModuleDefinition = {
    */
   contentIsLive?: (propValues: Record<string, unknown>) => boolean;
 };
+
+/** Every glyph, by name, for the pickers that draw them. */
+const GLYPH_PICKER_OPTIONS = [
+  { value: "circle", label: "Circles" },
+  { value: "square", label: "Squares" },
+  { value: "rounded", label: "Rounded squares" },
+  { value: "droplet", label: "Droplets" },
+  { value: "heart", label: "Hearts" },
+  { value: "star", label: "Stars" },
+  { value: "moon", label: "Moons" },
+  { value: "flame", label: "Flames" },
+  { value: "leaf", label: "Leaves" },
+  { value: "plant", label: "Potted plants" },
+];
 
 const ALWAYS = () => true;
 const NEVER = () => false;
@@ -1549,6 +1581,8 @@ const PRIMITIVES = {
           "groups": { "type": "integer", "default": 0 },
           "border": { "type": "boolean", "default": false },
           "stripLabels": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "stripIcons": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "groupIcons": { "type": "array", "items": { "type": "string" }, "default": [] },
           "groupLabels": { "type": "string", "enum": ["none", "days"], "default": "none" }
         }
       },
@@ -1586,6 +1620,26 @@ const PRIMITIVES = {
       { kind: "number", key: "groups", label: "Groups across (0 = one per column)", min: 0, max: 12 },
       { kind: "lines", key: "stripLabels", label: "A label for each strip (one per line)", rows: 4 },
       {
+        kind: "iconEach",
+        key: "stripIcons",
+        label: "Icon for each row",
+        itemLabel: "Row",
+        countPattern: "-s(\\d+)-g0-i0$",
+        labelsKey: "stripLabels",
+        defaultKey: "icon",
+        options: GLYPH_PICKER_OPTIONS,
+      },
+      {
+        kind: "iconEach",
+        key: "groupIcons",
+        label: "Icon for each day",
+        itemLabel: "Day",
+        countPattern: "-s0-g(\\d+)-i0$",
+        namePattern: "-g#-day$",
+        defaultKey: "icon",
+        options: GLYPH_PICKER_OPTIONS,
+      },
+      {
         kind: "select",
         key: "groupLabels",
         label: "Label the groups",
@@ -1594,8 +1648,6 @@ const PRIMITIVES = {
           { value: "days", label: "Days of the week" },
         ],
       },
-      // Drawn since the strip was built; offered from the module-edits list.
-      { kind: "boolean", key: "border", label: "Box around it" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderIconStrip(geometry, propValues as IconStripConfig, idPrefix, fontFamily, lattice),

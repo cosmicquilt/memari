@@ -41,7 +41,7 @@
 // one - see the pill travel probe.
 
 import { chromium, type Browser, type Locator, type Page } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar } from "./appUnderTest.mjs";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar, retypeModule } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -1799,6 +1799,205 @@ const moduleEditor: Probe = {
 };
 
 // ---------------------------------------------------------------------
+// ROUND-TWO PICKERS: asked 2026-09-30 - "for icon strip make it so you can
+// change the icon with previews of the icons in the setting to select of
+// each row and day", "for tick mark column is default with those others as
+// options", and a heading band "they can toggle it off". Each is picked in
+// the editor as a person would, then read back from the database, from the
+// page, and from the editor opened again.
+// ---------------------------------------------------------------------
+const roundTwoPickers: Probe = {
+  name: "round-two pickers",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Round-two pickers check");
+    await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 12], ["Reminders", 15, 11], ["Notes", 26, 10]]);
+    const all = await storedModules(guest.journalId);
+    const weekly = (slug: string, heading?: string) =>
+      all.find((m) => m.slug === slug && m.level === "WEEKLY" && (heading === undefined || m.propValues.heading === heading));
+    const strip = weekly("labeled-box", "Reminders");
+    const notes = weekly("labeled-box", "Notes");
+    const todo = weekly("todo-checklist");
+    if (!strip || !notes || !todo) {
+      fail("round-two pickers", "the weekly spread has no Reminders, Notes or to-do to work with");
+      await guest.remove();
+      return;
+    }
+    // Water where the Reminders were: eleven rows tall, so more than one
+    // strip, and three named days - a sidebar is one group wide unless told.
+    await retypeModule(strip.id, "water-week", { heading: "Water", icon: "droplet", count: 2, groups: 3, groupLabels: "days" });
+    const context = await page.context().browser()!.newContext({
+      viewport: { width: VIEWPORT.width, height: 1200 },
+      deviceScaleFactor: 1,
+    });
+    const problems: string[] = [];
+    const notesSeen: string[] = [];
+    try {
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(3000);
+
+      /** Hover a module and press its pencil; the dialog once it has flown. */
+      const open = async (instanceId: string) => {
+        const target = tab.locator(`[data-module-instance-id="${instanceId}"]`);
+        const box = await target.boundingBox();
+        if (!box) return false;
+        await tab.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+        await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await tab.waitForTimeout(300);
+        const pencil = target.locator(':scope > button[title^="Edit "]');
+        if ((await pencil.count()) === 0) return false;
+        await pencil.click();
+        const dialog = tab.getByRole("dialog");
+        await dialog.waitFor({ timeout: 5000 }).catch(() => undefined);
+        await tab.waitForTimeout(1300);
+        return dialog.isVisible();
+      };
+      const done = async () => {
+        await tab.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+        await tab.waitForTimeout(3500);
+      };
+      /** Every picker in the editor whose name starts so: its item's name,
+       *  how many options, which is chosen, how many different drawings. */
+      const pickers = (prefix: string) =>
+        tab.evaluate(
+          (prefix) =>
+            [...document.querySelectorAll('[role="dialog"] [role="radiogroup"]')]
+              .filter((group) => (group.getAttribute("aria-label") ?? "").startsWith(prefix))
+              .map((group) => {
+                const radios = [...group.querySelectorAll('[role="radio"]')];
+                return {
+                  name: (group.getAttribute("aria-label") ?? "").slice(prefix.length),
+                  options: radios.length,
+                  chosen: radios.find((radio) => radio.getAttribute("aria-checked") === "true")?.getAttribute("aria-label") ?? "",
+                  drawings: new Set(radios.map((radio) => radio.querySelector("svg")?.innerHTML ?? "")).size,
+                };
+              }),
+          prefix
+        );
+      const drawnOnPage = (instanceId: string) =>
+        tab.locator(`[data-module-instance-id="${instanceId}"]`).evaluate((el) => el.innerHTML);
+      // EVERY ICON IS IN ITS MODULE. A glyph's path is written in page
+      // coordinates and its SVG sits at the module's corner; until
+      // 2026-09-30 nothing moved one to the other, and every droplet on a
+      // placed module drew a module-offset below it, off it - on the page and
+      // in the editor alike. Rects never showed it, as they are moved.
+      const strays = (scope: string) =>
+        tab.evaluate((scope) => {
+          const out: string[] = [];
+          for (const holder of document.querySelectorAll(scope)) {
+            const box = holder.getBoundingClientRect();
+            // The drawing's paths, not the pencil's.
+            const paths = [...holder.querySelectorAll("path")].filter((path) => !path.closest("button"));
+            // 10px of slack: the last strip's icons reach into the 6-print-px
+            // inset below the module's drawn box, which is its own room. The
+            // offset this is for was the module's whole distance from the
+            // page's corner - a margin at the very least.
+            const slack = 10;
+            const outside = paths.filter((path) => {
+              const r = path.getBoundingClientRect();
+              return r.left < box.left - slack || r.right > box.right + slack || r.top < box.top - slack || r.bottom > box.bottom + slack;
+            });
+            if (paths.length === 0) out.push("no icons drawn at all");
+            else if (outside.length > 0) {
+              const r = outside[0].getBoundingClientRect();
+              out.push(`${outside.length} of ${paths.length} icons outside it (one at y=${Math.round(r.top)}, the module ${Math.round(box.top)}-${Math.round(box.bottom)})`);
+            }
+          }
+          return out;
+        }, scope);
+      const onPage = await strays(`[data-module-instance-id="${strip.id}"]`);
+      if (onPage.length > 0) problems.push(`the water strip on the page: ${onPage.join("; ")}`);
+      else notesSeen.push("every droplet inside its module on the page");
+
+      // --- AN ICON FOR EACH ROW AND EACH DAY -----------------------------
+      if (!(await open(strip.id))) problems.push("the water strip's editor would not open");
+      else {
+        const inEditor = await strays('[role="dialog"] [data-editor-piece]');
+        if (inEditor.length > 0) problems.push(`the water strip in the editor: ${inEditor.join("; ")}`);
+        const rows = await pickers("Icon for each row: ");
+        const days = await pickers("Icon for each day: ");
+        if (rows.length < 2) problems.push(`an eleven-row strip offers ${rows.length} row picker(s)`);
+        else if (days.length < 2) problems.push(`a week of water offers ${days.length} day picker(s)`);
+        else {
+          const all = [...rows, ...days];
+          if (all.some((p) => p.options !== 10 || p.drawings !== 10)) {
+            problems.push(`a per-item picker is not ten different drawn icons: ${all.map((p) => `${p.options}/${p.drawings}`).join(" ")}`);
+          } else if (all.some((p) => !/: Droplets$/.test(p.chosen))) {
+            problems.push(`before any pick, not every row and day shows the strip's droplet: ${all.map((p) => p.chosen).join(", ")}`);
+          } else if (days[0].name !== "Sun" || days[1].name !== "Mon") {
+            problems.push(`the days are named ${days.map((d) => d.name).join(",")}, not the week's days`);
+          } else if (rows[0].name !== "Row 1") {
+            problems.push(`the first row is named "${rows[0].name}"`);
+          } else notesSeen.push(`${rows.length} rows and ${days.length} days (${days.map((d) => d.name).join(",")}), each ten drawn icons`);
+          const before = await drawnOnPage(strip.id);
+          await tab.getByRole("radio", { name: `${days[0].name}: Stars` }).click();
+          await tab.getByRole("radio", { name: `${rows[1].name}: Leaves` }).click();
+          await tab.waitForTimeout(200);
+          const reset = await tab.getByRole("dialog").getByRole("button", { name: "Reset" }).count();
+          if (reset !== 2) problems.push(`after a pick in each, ${reset} Reset button(s) show, not 2`);
+          await done();
+          const stored = (await storedModules(guest.journalId)).find((m) => m.id === strip.id)?.propValues ?? {};
+          const groupIcons = stored.groupIcons as string[] | undefined;
+          const stripIcons = stored.stripIcons as string[] | undefined;
+          if (groupIcons?.[0] !== "star" || groupIcons.slice(1).some(Boolean)) problems.push(`saved groupIcons ${JSON.stringify(groupIcons)}`);
+          else if (stripIcons?.[1] !== "leaf" || stripIcons.some((icon, i) => i !== 1 && icon)) problems.push(`saved stripIcons ${JSON.stringify(stripIcons)}`);
+          else notesSeen.push(`saved Sun as stars and row 2 as leaves`);
+          if ((await drawnOnPage(strip.id)) === before) problems.push("the strip on the page drew the same after the picks");
+          // Opened again, the pickers read what was saved.
+          if (await open(strip.id)) {
+            const again = [...(await pickers("Icon for each row: ")), ...(await pickers("Icon for each day: "))];
+            const starred = again.filter((p) => /: Stars$/.test(p.chosen)).map((p) => p.name);
+            const leaved = again.filter((p) => /: Leaves$/.test(p.chosen)).map((p) => p.name);
+            if (starred.join() !== "Sun" || leaved.join() !== "Row 2") problems.push(`reopened, stars on ${starred.join(",") || "nothing"} and leaves on ${leaved.join(",") || "nothing"}`);
+            await tab.keyboard.press("Escape");
+            await tab.waitForTimeout(900);
+          } else problems.push("the strip's editor would not open a second time");
+        }
+      }
+
+      // --- THE TO-DO'S TICK MARK ------------------------------------------
+      if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
+      else {
+        const [tick] = await pickers("Tick mark");
+        if (!tick || tick.options !== 3 || tick.drawings !== 3) problems.push(`the Tick mark picker is ${JSON.stringify(tick)}`);
+        else if (tick.chosen !== "Column") problems.push(`a to-do opens with ${tick.chosen} as its tick mark, not Column`);
+        else notesSeen.push("to-do: tick mark Column by default, three drawn");
+        const before = await drawnOnPage(todo.id);
+        await tab.getByRole("dialog").getByRole("radio", { name: "Circle" }).click();
+        await done();
+        const stored = (await storedModules(guest.journalId)).find((m) => m.id === todo.id)?.propValues ?? {};
+        if (stored.tickMark !== "circle") problems.push(`the to-do saved tickMark ${JSON.stringify(stored.tickMark)}`);
+        else if ((await drawnOnPage(todo.id)) === before) problems.push("the to-do on the page drew the same with circles");
+        else notesSeen.push("saved and drawn as circles");
+      }
+
+      // --- THE NOTE BOX'S HEADING -----------------------------------------
+      const headingShown = () =>
+        tab.locator(`[data-module-instance-id="${notes.id}"]`).evaluate((el) => /NOTES/.test((el as HTMLElement).innerText));
+      if (!(await headingShown())) problems.push("the Notes box draws no heading to start with");
+      if (!(await open(notes.id))) problems.push("the Notes box's editor would not open");
+      else {
+        const toggle = tab.getByRole("dialog").getByLabel("Show the heading");
+        if (!(await toggle.isChecked())) problems.push("a note box saved before the switch existed opens with its heading off");
+        await toggle.uncheck({ force: true });
+        await done();
+        const stored = (await storedModules(guest.journalId)).find((m) => m.id === notes.id)?.propValues ?? {};
+        if (stored.showHeading !== false) problems.push(`the note box saved showHeading ${JSON.stringify(stored.showHeading)}`);
+        else if (await headingShown()) problems.push("the Notes box still draws its heading with the switch off");
+        else notesSeen.push("note box: heading switched off, saved and gone from the page");
+      }
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+    if (problems.length > 0) for (const problem of problems) fail("round-two pickers", problem);
+    else note("round-two pickers", notesSeen.join("; "));
+  },
+};
+
+// ---------------------------------------------------------------------
 // PALETTE DROP: after a module is dropped from the palette, the page shows
 // exactly what was saved - every module, not only the ones the server moved.
 //
@@ -2130,6 +2329,7 @@ const ALL_PROBES: Probe[] = [
   spineDrag,
   moduleEditor,
   paletteDrop,
+  roundTwoPickers,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;
