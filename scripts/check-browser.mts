@@ -1541,7 +1541,10 @@ const moduleEditor: Probe = {
             checked: radio.getAttribute("aria-checked") === "true",
             marks: radio.querySelectorAll("svg rect").length,
             dots: radio.querySelectorAll("svg rect[rx]").length,
-            markup: radio.querySelector("svg")?.innerHTML.length ?? 0,
+            // The drawing itself, not its length: Dotted and Graph came out
+            // at 497 characters each - two different drawings the length
+            // alone called the same.
+            markup: radio.querySelector("svg")?.innerHTML ?? "",
           }))
         );
       const done = async () => {
@@ -1712,9 +1715,10 @@ const moduleEditor: Probe = {
       if (!noteError || /stuttered|to start moving/.test(noteError)) {
         const body = await picker("Body");
         const labels = body.map((b) => b.label).join("/");
-        if (labels !== "Blank/Lined/Dotted") problems.push(`the Body picker offers ${labels || "nothing"}`);
-        else if (new Set(body.map((b) => b.markup)).size !== 3) problems.push("two of the Body pictures are the same drawing");
-        else notes.push("note box: Body drawn three ways");
+        // Graph joined the three on 2026-09-30 (the module-edits list).
+        if (labels !== "Blank/Lined/Dotted/Graph") problems.push(`the Body picker offers ${labels || "nothing"}`);
+        else if (new Set(body.map((b) => b.markup)).size !== 4) problems.push("two of the Body pictures are the same drawing");
+        else notes.push("note box: Body drawn four ways");
         // THE HEADING FIELD SHOWS THE WHOLE HEADING. It clipped "THINGS I'M
         // GRATEFUL FOR" to "...FO" (2026-09-29): in serif the heading is wider
         // than its box, which the page does not clip and an input does.
