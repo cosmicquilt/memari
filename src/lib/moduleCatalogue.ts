@@ -232,10 +232,16 @@ export const CATALOGUE: CatalogueEntry[] = [
       linesPerPrompt: 2,
     },
   },
+  // THE FUTURE LOG IS MONTHS WITH ROOM TO WRITE, which a habit tracker is
+  // not: it drew the months as rows and Dates/Events/Notes as 0.44in tick
+  // columns, nowhere to write an event. Asked to fix 2026-09-30. The
+  // replacement is prompted lines - each month a printed heading with lines
+  // under it. The old one stays registered and off the palette so the
+  // journals already using it keep drawing (see CatalogueEntry.inPalette).
   {
     slug: "future-log",
     primitive: "habit-tracker",
-    name: "Future Log",
+    name: "Future Log (old)",
     category: "Core planning",
     cadence: "journal",
     props: {
@@ -244,6 +250,19 @@ export const CATALOGUE: CatalogueEntry[] = [
       columns: ["Dates", "Events", "Notes"],
     },
     rowSpan: 8,
+    inPalette: false,
+  },
+  {
+    slug: "future-log-months",
+    primitive: "prompted-lines",
+    name: "Future Log",
+    category: "Core planning",
+    cadence: "journal",
+    props: {
+      heading: "Future Log",
+      prompts: ["January", "February", "March", "April", "May", "June"],
+      linesPerPrompt: 3,
+    },
   },
   {
     slug: "project-tracker",
