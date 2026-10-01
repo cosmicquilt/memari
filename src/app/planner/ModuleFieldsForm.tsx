@@ -290,7 +290,7 @@ export function ModuleFieldsForm({
   drawRule,
   drawn,
   weekStartDay = 0,
-  onCanvasHint,
+  textOnPage,
 }: {
   fields: ModuleField[];
   values: Record<string, unknown>;
@@ -307,13 +307,11 @@ export function ModuleFieldsForm({
   drawn?: RenderedPolotnoElement[];
   /** The journal's first day of the week, for fields that name days. */
   weekStartDay?: number;
-  /** Said at the top when the module's text is edited on the preview. */
-  onCanvasHint?: string;
+  /** The module's text is edited on the preview - so an empty panel is not
+   *  "nothing to set". */
+  textOnPage?: boolean;
 }) {
-  const hint = onCanvasHint ? (
-    <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "rgba(255, 255, 255, 0.72)" }}>{onCanvasHint}</p>
-  ) : null;
-  if (fields.length === 0 && hint) return hint;
+  if (fields.length === 0 && textOnPage) return null;
   if (fields.length === 0) {
     return (
       <p style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, lineHeight: 1.6 }}>
@@ -326,7 +324,6 @@ export function ModuleFieldsForm({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <style>{FOCUS_CSS}</style>
-      {hint}
       {fields.map((field, index) => {
         if (field.kind === "iconEach") {
           // A picker per row or day of the drawing, each a line of the same

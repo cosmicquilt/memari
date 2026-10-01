@@ -1375,14 +1375,14 @@ const PRIMITIVES = {
         key: "promptLines",
         itemsKey: "prompts",
         defaultKey: "linesPerPrompt",
-        label: "Lines under each prompt",
+        label: "Response lines",
         min: 1,
         max: 8,
       },
       {
         kind: "rule",
         key: "answers",
-        label: "Answer lines",
+        label: "Rule",
         options: [
           { value: "lined", label: "Lined" },
           { value: "dotted", label: "Dotted" },

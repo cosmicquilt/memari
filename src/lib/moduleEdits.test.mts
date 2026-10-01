@@ -243,9 +243,61 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(ids(plain, /-(box|ring)$/).length === 0, "no marks by default");
   const rings = ids(draw("mini-month", { ...jan, mark: "ring" }, 6, 8), /-ring$/);
   check(rings.length === ids(plain, /-date$/).length, `a ring round every date (${rings.length})`);
-  check(ids(draw("mini-month", { ...jan, mark: "box" }, 6, 12), /-box$/).length > 0, "boxes as before");
-  check(ids(draw("mini-month", { ...jan, markable: true }, 6, 12), /-box$/).length > 0, "the old markable still draws boxes");
-  check(ids(draw("mini-month", { ...jan, markable: true, mark: "none" }, 6, 12), /-box$/).length === 0, "and mark wins over it");
+  // THE BOX IS THE DAY'S CELL (2026-10-01): a box round every day of the
+  // month with its date inside, touching the next on every side, and no
+  // line anywhere else - not over a neighbouring month's faint day, not on
+  // the module's own sides, and no edge drawn twice.
+  const boxed = draw("mini-month", { ...jan, mark: "box" }, 6, 12);
+  const edges = ids(boxed, /-grid-[hv]\d+-\d+$/);
+  check(edges.length > 0 && ids(boxed, /-box$/).length === 0, "a grid of edges, not a small box under each date");
+  const border = ids(boxed, /-border$/)[0];
+  const left = border.x ?? 0;
+  const right = left + (border.width ?? 0);
+  const col = (border.width ?? 0) / 7;
+  const covers = (horizontal: boolean, at: number, from: number, to: number) =>
+    edges.some((e) => {
+      const isH = (e.width ?? 0) > (e.height ?? 0);
+      if (isH !== horizontal) return false;
+      const pos = horizontal ? (e.y ?? 0) + (e.height ?? 0) / 2 : (e.x ?? 0) + (e.width ?? 0) / 2;
+      const start = horizontal ? e.x ?? 0 : e.y ?? 0;
+      const end = start + (horizontal ? e.width ?? 0 : e.height ?? 0);
+      return Math.abs(pos - at) < 0.5 && start <= from + 0.5 && end >= to - 0.5;
+    });
+  const january = ids(boxed, /-w\d-d\d-date$/).filter((e) => (e.opacity ?? 1) === 1);
+  check(january.length === 31, `January's 31 days (got ${january.length})`);
+  const closed = january.every((d) => {
+    const x0 = d.x ?? 0;
+    const x1 = x0 + (d.width ?? 0);
+    const w = Number(/-w(\d)-/.exec(String(d.id))![1]);
+    const top = edges.filter((e) => (e.width ?? 0) > (e.height ?? 0)).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2).sort((a, b) => a - b);
+    const rows = [...new Set(top.map((y) => Math.round(y * 10) / 10))];
+    const y0 = rows[w];
+    const y1 = rows[w + 1];
+    const sideL = Math.abs(x0 - left) < 0.5 || covers(false, x0, y0, y1);
+    const sideR = Math.abs(x1 - right) < 0.5 || covers(false, x1, y0, y1);
+    return y0 !== undefined && y1 !== undefined && covers(true, y0, x0, x1) && covers(true, y1, x0, x1) && sideL && sideR;
+  });
+  check(closed, "every day of the month is closed on all four sides");
+  const firstRowTop = Math.min(...edges.filter((e) => (e.width ?? 0) > (e.height ?? 0)).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2));
+  check(!covers(true, firstRowTop, left, left + col * 4), "no line over the last days of December (1 January 2026 is a Thursday)");
+  check(edges.every((e) => (e.width ?? 0) > (e.height ?? 0) || (Math.abs((e.x ?? 0) - left) > 1 && Math.abs((e.x ?? 0) + (e.width ?? 0) - right) > 1)), "none on the module's own sides");
+  const twice = edges.some((a, i) =>
+    edges.some((b, j) => {
+      if (j <= i) return false;
+      const aH = (a.width ?? 0) > (a.height ?? 0);
+      if (aH !== (b.width ?? 0) > (b.height ?? 0)) return false;
+      const pa = aH ? a.y ?? 0 : a.x ?? 0;
+      const pb = aH ? b.y ?? 0 : b.x ?? 0;
+      if (Math.abs(pa - pb) > 0.5) return false;
+      const [s1, e1] = aH ? [a.x ?? 0, (a.x ?? 0) + (a.width ?? 0)] : [a.y ?? 0, (a.y ?? 0) + (a.height ?? 0)];
+      const [s2, e2] = aH ? [b.x ?? 0, (b.x ?? 0) + (b.width ?? 0)] : [b.y ?? 0, (b.y ?? 0) + (b.height ?? 0)];
+      return s1 < e2 - 0.5 && s2 < e1 - 0.5;
+    })
+  );
+  check(!twice, "no edge is drawn twice");
+  check(ids(draw("mini-month", { heading: "", mark: "box" }, 6, 12), /-grid-v\d+-\d+$/).length === 6, "an undated month boxes every place: six full-height column lines");
+  check(ids(draw("mini-month", { ...jan, markable: true }, 6, 12), /-grid-/).length > 0, "the old markable draws the grid");
+  check(ids(draw("mini-month", { ...jan, markable: true, mark: "none" }, 6, 12), /-grid-/).length === 0, "and mark wins over it");
   const hidden = draw("mini-month", { ...jan, neighbours: false }, 6, 8);
   check(texts(hidden, /-date$/).length === 31, `hiding the neighbours leaves January's 31 (got ${texts(hidden, /-date$/).length})`);
   check(texts(plain, /-date$/).length > 31, "they show by default");
@@ -293,6 +345,20 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const ends = texts(draw("progress-meter", { ...base, startLabel: "$0", endLabel: "Goal" }, 12, 4), /-(start|end)-label$/);
   check(ends.join(",") === "$0,Goal", `start and end labels (got ${ends.join(",")})`);
   check(withCurrentSettings("progress-meter", { numbered: false }).numbers === "none", "the editor opens an old unnumbered meter on None");
+  // SIDE TO SIDE (2026-10-01): no gap between the meter and the module's
+  // sides, whichever way it is drawn.
+  for (const style of ["boxes", "bar", "circles"] as const) {
+    const drawn = draw("progress-meter", { heading: "Goal", total: 40, segments: style }, 12, 6);
+    const border = ids(drawn, /-border$/)[0];
+    const left = border.x ?? 0;
+    const right = left + (border.width ?? 0);
+    const marks = ids(drawn, style === "circles" ? /-seg\d+$/ : style === "bar" ? /-bar\d+$/ : /-row\d+-box$/);
+    const minX = Math.min(...marks.map((m) => m.x ?? 0));
+    const maxX = Math.max(...marks.map((m) => (m.x ?? 0) + (m.width ?? 0)));
+    // A circle sits a point inside its segment; a box or bar meets the border.
+    const slack = style === "circles" ? 6 : 0.5;
+    check(minX - left <= slack && right - maxX <= slack, `${style}: the meter meets both sides (gaps ${(minX - left).toFixed(1)} and ${(right - maxX).toFixed(1)}px)`);
+  }
 }
 
 // --- icon strip --------------------------------------------------------------

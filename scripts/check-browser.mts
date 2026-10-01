@@ -1965,14 +1965,14 @@ const roundTwoPickers: Probe = {
         else if (tick.chosen !== "Column") problems.push(`a to-do opens with ${tick.chosen} as its tick mark, not Column`);
         else notesSeen.push("to-do: tick mark Column by default, three drawn");
         // THE ITEMS ARE TYPED ON THE PAGE NOW, not in a box in the panel
-        // (2026-09-30) - the panel says so instead. The box it replaced had a
-        // resize grip, the to-do's 104-157ms opening frame; the "text on the
-        // page" probe holds every text field left to that.
+        // (2026-09-30), and the panel no longer says so (2026-10-01). The box
+        // it replaced had a resize grip, the to-do's 104-157ms opening frame;
+        // the "text on the page" probe holds every text field left to that.
         const panelBoxes = await tab.getByRole("dialog").locator("[data-tour-panel], textarea").count();
-        const hint = await tab.getByRole("dialog").getByText("Click any words on the preview to change them", { exact: false }).count();
+        const hint = await tab.getByRole("dialog").getByText("Click any words on the preview", { exact: false }).count();
         if (panelBoxes > 0) problems.push(`the to-do's editor still has ${panelBoxes} text box(es) for its items`);
-        else if (hint === 0) problems.push("the to-do's panel does not say its words are edited on the preview");
-        else notesSeen.push("to-do: items typed on the preview, the panel says so");
+        else if (hint > 0) problems.push("the to-do's panel still carries the hint about the preview");
+        else notesSeen.push("to-do: items typed on the preview, no hint in the panel");
         const before = await drawnOnPage(todo.id);
         await tab.getByRole("dialog").getByRole("radio", { name: "Circle" }).click();
         await done();

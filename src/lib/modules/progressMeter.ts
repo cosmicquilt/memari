@@ -82,7 +82,6 @@ const MILESTONE_FONT_PT = 4.5;
 // The start and end labels: the smallest size this planner prints text at
 // that is meant to be read, not ticked beside.
 const END_LABEL_FONT_PT = 6;
-const EDGE_PADDING_PT = 4;
 
 export function getProgressMeterRowMetricsPx() {
   return {
@@ -100,8 +99,8 @@ export function getProgressMeterRowMetricsPx() {
  * which is the defect this codebase keeps meeting.
  */
 export function progressMeterColumns(widthPx: number): number {
-  const usable = widthPx - ptToPx(EDGE_PADDING_PT) * 2;
-  return Math.max(1, Math.floor(usable / ptToPx(SEGMENT_PT) + 1e-6));
+  // The whole width: the meter runs side to side (see renderProgressMeter).
+  return Math.max(1, Math.floor(widthPx / ptToPx(SEGMENT_PT) + 1e-6));
 }
 
 /** Header and every segment the total asks for - a meter that cannot show
@@ -142,9 +141,15 @@ export function renderProgressMeter(
   let lastRowBottom = bodyTop;
   let lastRight = 0;
   const bodyBottom = geometry.y + geometry.height;
-  // Centred in whatever the width leaves over, so a short final row and a
-  // full one share the same left edge and the block reads as a block.
-  const blockLeft = geometry.x + (geometry.width - columns * segment) / 2;
+  // SIDE TO SIDE: the segments share the box's whole width, so the meter
+  // meets the module's border on both sides - asked 2026-10-01, "there
+  // doesn't need to be a gap between the meter and the sides of the overall
+  // module". They were half-cell squares centred in what the width left over,
+  // a margin each side; now each is a hair wider than tall (as many as fit
+  // whole at half a cell, sharing the rest), and still half a cell high, on
+  // the lattice rows. A short final row keeps the same left edge.
+  const blockLeft = geometry.x;
+  const segmentWidth = geometry.width / columns;
   const milestoneFontSize = ptToPx(MILESTONE_FONT_PT);
 
   // The line between segment n-1 and segment n, a segment tall.
@@ -172,14 +177,14 @@ export function renderProgressMeter(
     // geometry it is given.
     if (top + segment > bodyBottom + 0.5) break;
 
-    const segX = blockLeft + column * segment;
+    const segX = blockLeft + column * segmentWidth;
     if (segments === "circles") {
-      const r = segment / 2 - ptToPx(1);
+      const r = Math.min(segment, segmentWidth) / 2 - ptToPx(1);
       elements.push({
         id: id(`seg${n}`),
         type: "figure",
         subType: "rect",
-        x: segX + segment / 2 - r,
+        x: segX + segmentWidth / 2 - r,
         y: top + segment / 2 - r,
         width: r * 2,
         height: r * 2,
@@ -200,7 +205,7 @@ export function renderProgressMeter(
           subType: "rect",
           x: segX,
           y: top,
-          width: inRow * segment,
+          width: inRow * segmentWidth,
           height: segment,
           fill: "transparent",
           stroke: NEAR_BLACK,
@@ -238,7 +243,7 @@ export function renderProgressMeter(
         subType: "rect",
         x: segX,
         y: top,
-        width: inRow * segment,
+        width: inRow * segmentWidth,
         height: segment,
         fill: "transparent",
         stroke: NEAR_BLACK,
@@ -255,7 +260,7 @@ export function renderProgressMeter(
         type: "text",
         x: segX,
         y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
-        width: segment,
+        width: segmentWidth,
         height: milestoneFontSize * 1.2,
         text: String(n + 1),
         fontSize: milestoneFontSize,
@@ -266,7 +271,7 @@ export function renderProgressMeter(
       });
     }
     lastRowBottom = top + segment;
-    lastRight = segX + segment;
+    lastRight = segX + segmentWidth;
 
     // The milestone rule sits on the segment's RIGHT edge - after the
     // tenth day, not before it - so the count reads as complete up to the
@@ -277,9 +282,9 @@ export function renderProgressMeter(
         elements.push({
           id: id(`mile${count}-label`),
           type: "text",
-          x: blockLeft + (column + 1) * segment - segment,
+          x: blockLeft + column * segmentWidth,
           y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
-          width: segment,
+          width: segmentWidth,
           height: milestoneFontSize * 1.2,
           text: String(count),
           fontSize: milestoneFontSize,
@@ -292,16 +297,22 @@ export function renderProgressMeter(
     }
   }
 
-  // The two ends named, under the first segment and the last.
+  // The two ends named: the start under the first segment, the end under the
+  // last - or, once the count wraps, at the meter's right end, which every
+  // full row now reaches; under a short final row of one or two it would
+  // run out past the left.
+  const meterRight = total > columns ? blockLeft + columns * segmentWidth : lastRight;
+  // The words keep a little off the border the meter now meets.
+  const inset = ptToPx(2);
   const ends = [
-    { key: "start", text: (config.startLabel ?? "").trim(), x: blockLeft, align: "left" },
-    { key: "end", text: (config.endLabel ?? "").trim(), x: lastRight, align: "right" },
+    { key: "start", text: (config.startLabel ?? "").trim(), x: blockLeft + inset, align: "left" },
+    { key: "end", text: (config.endLabel ?? "").trim(), x: meterRight - inset, align: "right" },
   ];
   const endSize = ptToPx(END_LABEL_FONT_PT);
   if (lastRowBottom + endSize * 1.4 <= geometry.y + geometry.height + 0.5) {
     for (const end of ends) {
       if (!end.text) continue;
-      const width = Math.max(segment * 4, (lastRight - blockLeft) / 2 - segment / 2);
+      const width = Math.max(segment * 4, (meterRight - blockLeft) / 2 - segment / 2);
       const fitted = fitLabel(end.text, width, [endSize, ptToPx(5)]);
       elements.push({
         id: id(`${end.key}-label`),

@@ -878,13 +878,9 @@ export function ModuleEditor({
               drawRule={drawRule}
               drawn={everyMark}
               weekStartDay={weekStart}
-              onCanvasHint={
-                onCanvasKeys.size > 0
-                  ? canvasFields(definition?.fields).some((field) => field.kind === "lines" && field.canvas.add && onCanvasKeys.has(field.key))
-                    ? "Click any words on the preview to change them. Return after a row adds another."
-                    : "Click any words on the preview to change them."
-                  : undefined
-              }
+              // No hint that the words are edited on the preview - asked
+              // 2026-10-01 to remove it; the text cursor on hover says so.
+              textOnPage={onCanvasKeys.size > 0}
               onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
             />
           )}
