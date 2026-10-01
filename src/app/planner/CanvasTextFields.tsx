@@ -18,8 +18,10 @@
 // blue highlight as well for the text". Text is edited as text is anywhere:
 // the pointer turns to a text cursor over it, the caret blinks in the text's
 // own ink, a selection is a neutral tint. The one hint is an empty place's
-// faint placeholder on hover ("Add an item"), since otherwise nothing would
-// say it is there.
+// placeholder ("Add an item", "Goal"), since otherwise nothing would say it
+// is there - faint at rest, a little darker on hover. It was on hover only
+// until 2026-10-01: "as a default any place that has a text field without
+// text in it should have a low opacity placeholder text once in the editor".
 //
 // In CSS px OUTSIDE the preview's transform - the heading's field did this
 // first; this is that field for everything.
@@ -83,7 +85,7 @@ export function CanvasTextFields(props: CanvasTextFieldsProps) {
   return (
     <>
       <style>{`
-        .memari-canvas-field::placeholder { color: transparent; }
+        .memari-canvas-field::placeholder { color: var(--idle-ink); }
         .memari-canvas-field::selection { background: rgba(35, 31, 32, 0.16); }
         .memari-canvas-field:hover::placeholder { color: var(--ghost-ink); }
         .memari-canvas-field:focus::placeholder { color: var(--rest-ink); }
@@ -162,10 +164,12 @@ function CanvasTextField({
     caretColor: inkOf(font.fill, 1),
     cursor: "text",
     whiteSpace: slot.kind === "paragraph" ? "pre-wrap" : "pre",
-    // The placeholder: faint for a place nothing prints yet, in the page's
-    // own ink for a module default ("TO - DO") that prints where it is empty.
-    // On hover only where nothing prints yet: over a printed default ("Q2",
-    // "TO - DO") it would draw the same words twice, darker.
+    // The placeholder: faint for a place nothing prints yet - at rest while
+    // the editor is open, darker on hover - and in the page's own ink for a
+    // module default ("TO - DO") that prints where it is empty, shown only
+    // once focused: over a printed default ("Q2", "TO - DO") it would draw
+    // the same words twice, darker. Only the editor shows it; nothing prints.
+    "--idle-ink": slot.ghost ? "rgba(35, 31, 32, 0.25)" : "transparent",
     "--ghost-ink": slot.ghost ? "rgba(35, 31, 32, 0.38)" : "transparent",
     "--rest-ink": slot.ghost ? "rgba(35, 31, 32, 0.38)" : inkOf(font.fill, font.opacity),
   };
