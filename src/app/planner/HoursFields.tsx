@@ -16,7 +16,7 @@
 // editor owns the draft - so the preview beside it is redrawn from the same
 // draft on every change, and saving is one place.
 
-import { EDITOR_RADIUS } from "./editorStyle";
+import { CONTROL_RADIUS } from "./editorStyle";
 import type { CSSProperties } from "react";
 import { ROW_HEIGHT_OPTIONS_PT } from "@/lib/modules/hourlyGridCore";
 import { FOCUS_CSS, RuleSwatch, ruleSwatchWidth, type RuleSample } from "./ModuleFieldsForm";
@@ -80,7 +80,7 @@ const inputStyle: CSSProperties = {
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
   border: "1px solid rgba(255, 255, 255, 0.33)",
-  borderRadius: EDITOR_RADIUS,
+  borderRadius: CONTROL_RADIUS,
   // The time inputs' picker button, light on the dark panel - reported
   // directly: "the view time picker button isn't very visible because it
   // is dark on a dark background."

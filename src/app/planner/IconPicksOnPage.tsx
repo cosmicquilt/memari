@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { GlyphSwatch } from "./ModuleFieldsForm";
-import { EDITOR_RADIUS } from "./editorStyle";
+import { CONTROL_RADIUS, PANEL_RADIUS, concentric } from "./editorStyle";
 import type { GlyphShape } from "@/lib/modules/glyphs";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 
@@ -211,13 +211,15 @@ export function IconPicksOnPage({
             left: chooserLeft,
             top: chooserTop,
             width: CHOOSER_WIDTH,
-            padding: 8,
+            // The panel's radius less a control's: what sits in its corners
+            // is concentric with them.
+            padding: PANEL_RADIUS - CONTROL_RADIUS,
             display: "flex",
             flexDirection: "column",
             gap: 8,
             background: "#26262a",
             border: "1px solid rgba(255, 255, 255, 0.12)",
-            borderRadius: EDITOR_RADIUS,
+            borderRadius: PANEL_RADIUS,
             boxShadow: "0 8px 24px rgba(0, 0, 0, 0.45)",
             color: "#eee",
             fontSize: 12,
@@ -226,7 +228,7 @@ export function IconPicksOnPage({
           }}
         >
           {reaches.length > 1 && (
-            <div role="radiogroup" aria-label="How far it reaches" style={{ display: "flex", background: "rgba(255,255,255,0.06)", borderRadius: EDITOR_RADIUS, padding: 2 }}>
+            <div role="radiogroup" aria-label="How far it reaches" style={{ display: "flex", background: "rgba(255,255,255,0.06)", borderRadius: CONTROL_RADIUS, padding: 2 }}>
               {reaches.map((reach) => (
                 <button
                   key={reach}
@@ -238,7 +240,7 @@ export function IconPicksOnPage({
                     flex: 1,
                     padding: "4px 0",
                     border: "none",
-                    borderRadius: EDITOR_RADIUS - 2,
+                    borderRadius: concentric(CONTROL_RADIUS, 2),
                     background: open.reach === reach ? "rgba(255,255,255,0.16)" : "transparent",
                     color: open.reach === reach ? "#fff" : "rgba(255,255,255,0.65)",
                     font: "inherit",

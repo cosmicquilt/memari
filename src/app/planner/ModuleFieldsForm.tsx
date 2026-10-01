@@ -13,7 +13,7 @@
 // lets the same form sit in a side panel and in a full-page editor without
 // either of them arguing about when a save happens.
 
-import { EDITOR_RADIUS, PREVIEW_RADIUS } from "./editorStyle";
+import { CONTROL_RADIUS, PREVIEW_RADIUS, concentric } from "./editorStyle";
 import type { CSSProperties } from "react";
 import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
@@ -54,7 +54,7 @@ const inputStyle: CSSProperties = {
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
   border: "1px solid rgba(255, 255, 255, 0.33)",
-  borderRadius: EDITOR_RADIUS,
+  borderRadius: CONTROL_RADIUS,
 };
 
 /**
@@ -359,7 +359,7 @@ export function ModuleFieldsForm({
                     <span
                       role="group"
                       aria-label={`Lines under ${String(item ?? "") || `prompt ${i + 1}`}`}
-                      style={{ display: "inline-flex", alignItems: "center", borderRadius: EDITOR_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                      style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
                     >
                       <button
                         type="button"
@@ -367,7 +367,7 @@ export function ModuleFieldsForm({
                         disabled={countOf(i) <= field.min}
                         onClick={() => step(i, -1)}
                         className="memari-field"
-                        style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) <= field.min ? 0.35 : 1 }}
+                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) <= field.min ? 0.35 : 1 }}
                       >
                         &minus;
                       </button>
@@ -380,7 +380,7 @@ export function ModuleFieldsForm({
                         disabled={countOf(i) >= field.max}
                         onClick={() => step(i, 1)}
                         className="memari-field"
-                        style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) >= field.max ? 0.35 : 1 }}
+                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) >= field.max ? 0.35 : 1 }}
                       >
                         +
                       </button>
@@ -415,7 +415,7 @@ export function ModuleFieldsForm({
                     color: "#f2f2f2",
                     background: "rgba(255, 255, 255, 0.06)",
                     border: "1px solid rgba(255, 255, 255, 0.33)",
-                    borderRadius: EDITOR_RADIUS,
+                    borderRadius: CONTROL_RADIUS,
                     cursor: "pointer",
                   }}
                 >
@@ -466,7 +466,9 @@ export function ModuleFieldsForm({
                   width: 34,
                   height: 20,
                   flexShrink: 0,
-                  borderRadius: EDITOR_RADIUS,
+                  // A capsule, as Apple's switches are; the knob 2px inside
+                  // it is concentric, which on a 16px knob is a circle.
+                  borderRadius: 10,
                   background: on ? ACCENT : "rgba(255,255,255,0.15)",
                   position: "relative",
                   transition: "background 150ms ease-out",
@@ -479,7 +481,7 @@ export function ModuleFieldsForm({
                     left: on ? 16 : 2,
                     width: 16,
                     height: 16,
-                    borderRadius: EDITOR_RADIUS - 2,
+                    borderRadius: concentric(10, 2),
                     background: "#fff",
                     transition: "left 150ms ease-out",
                   }}
@@ -512,7 +514,7 @@ export function ModuleFieldsForm({
               disabled={by < 0 ? value <= min : value >= max}
               onClick={() => step(by)}
               className="memari-field"
-              style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: (by < 0 ? value <= min : value >= max) ? 0.35 : 1 }}
+              style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: (by < 0 ? value <= min : value >= max) ? 0.35 : 1 }}
             >
               {glyph}
             </button>
@@ -523,7 +525,7 @@ export function ModuleFieldsForm({
               <span
                 role="group"
                 aria-label={field.label}
-                style={{ display: "inline-flex", alignItems: "center", borderRadius: EDITOR_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
               >
                 {button(-1, `${field.label}: fewer`, "\u2212")}
                 <span style={{ minWidth: 34, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>

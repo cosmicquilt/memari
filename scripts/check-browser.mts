@@ -2109,10 +2109,12 @@ const textOnThePage: Probe = {
       // --- A TO-DO'S ITEMS, FROM ITS FIRST EMPTY ROW -----------------------
       if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
       else {
-        // THE EDITOR'S CORNERS - asked 2026-09-30: small, then "a bit higher"
-        // (5px, a switch's knob 3px inside it), "even smaller for the
-        // preview and selection within" (the pictures 1px, so 3px rings).
-        // See editorStyle.ts.
+        // THE EDITOR'S CORNERS ARE APPLE'S - asked 2026-10-01, "just try
+        // whatever apple uses": macOS 27's 12 for the panel, 6 for a control,
+        // capsules for a switch (20px tall: 10, its knob 8), and what nests
+        // inside a control concentric with it (a stepper's ends 5). The
+        // pictures stay 1px - "even smaller for the preview and selection
+        // within" (2026-09-30). See editorStyle.ts.
         const radii = (await tab.getByRole("dialog").evaluate((dialog) => {
           const found = new Set<string>();
           for (const el of dialog.querySelectorAll("*")) {
@@ -2122,20 +2124,26 @@ const textOnThePage: Probe = {
           }
           return [...found];
         })) as string[];
-        const odd = radii.filter((r) => r !== "5px" && r !== "3px" && r !== "1px");
+        const odd = radii.filter((r) => !["12px", "10px", "8px", "6px", "5px", "4px", "1px"].includes(r));
         const pictures = (await tab.getByRole("dialog").evaluate((dialog) =>
           [...dialog.querySelectorAll(".memari-swatch")].map((el) => getComputedStyle(el).borderTopLeftRadius)
         )) as string[];
-        const panel = (await tab.getByRole("dialog").evaluate((dialog) => {
+        const corners = (await tab.getByRole("dialog").evaluate((dialog) => {
           const done = [...dialog.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Done");
           let el = done as HTMLElement | null;
           while (el && el.parentElement !== dialog) el = el.parentElement;
-          return el ? getComputedStyle(el).borderTopLeftRadius : "";
-        })) as string;
-        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not 5px, a knob's 3px or a picture's 1px`);
-        else if (panel !== "5px") problems.push(`the editor's panel is rounded ${panel}, not 5px`);
+          const field = dialog.querySelector("input:not([type=checkbox]):not([data-canvas-slot]), select, textarea:not([data-canvas-slot])");
+          return {
+            panel: el ? getComputedStyle(el).borderTopLeftRadius : "",
+            done: done ? getComputedStyle(done).borderTopLeftRadius : "",
+            field: field ? getComputedStyle(field).borderTopLeftRadius : "",
+          };
+        })) as { panel: string; done: string; field: string };
+        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not one of Apple's (12, 6, a capsule's 10/8, concentric 5/4) or a picture's 1px`);
+        else if (corners.panel !== "12px") problems.push(`the editor's panel is rounded ${corners.panel}, not Apple's 12px`);
+        else if (corners.done !== "6px" || (corners.field && corners.field !== "6px")) problems.push(`the editor's controls are rounded ${corners.done} (Done) and ${corners.field} (a field), not Apple's 6px`);
         else if (pictures.length === 0 || pictures.some((r) => r !== "1px")) problems.push(`the pickers' pictures are rounded ${[...new Set(pictures)].join(", ")}, not 1px`);
-        else seen.push(`editor corners 5px, knobs 3px, pictures 1px (${radii.join(", ")})`);
+        else seen.push(`editor corners Apple's: panel 12px, controls 6px, pictures 1px (${radii.join(", ")})`);
         // THE INTERFACE IS THE LANDING PAGE'S FACE - San Francisco, else
         // Inter (asked 2026-09-30) - and the page it edits is not.
         const faces = (await tab.getByRole("dialog").evaluate(async (dialog) => {

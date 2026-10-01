@@ -1,21 +1,34 @@
 // The module editor's shared look.
 
-/**
- * EVERY CORNER IN THE MODULE EDITOR - the panel, its fields, steppers,
- * switches and buttons, the table's divider handles. Asked for small
- * (2026-09-30, "change the border radius of all of the module editor ui to
- * small": 4px), then "a bit higher" - "dont increase it fully back to its
- * original, just a bit more than now": 5px (it had been 7 on the fields and
- * 12 on the panel). Something nested inside a rounded thing (a switch's knob)
- * takes this less its inset, so the curves stay parallel.
+/*
+ * THE EDITOR'S CORNERS ARE APPLE'S - asked 2026-10-01, "for the corner radius
+ * of the editor can you just try whatever apple uses", after 4px ("small")
+ * and then 5px everywhere. Apple does not use one radius: macOS 27's AppKit,
+ * measured at 2x, rounds a control (button, field, pop-up) 6pt and a menu,
+ * box or overlay 12pt; a menu item's highlight is 7pt, which is 12 less its
+ * 5pt margin. That last is the rule under all of it (WWDC25, "Get to know the
+ * new design system"): a shape inside another is CONCENTRIC, the outer radius
+ * less the padding between them, so the two curves stay parallel. And what
+ * Apple draws as a capsule - a switch, a grabber - stays a capsule.
  */
-export const EDITOR_RADIUS = 5;
+
+/** The panel, and anything that floats over the page like it (the icon chooser). */
+export const PANEL_RADIUS = 12;
+
+/** A field, a button, a stepper, a segmented control. */
+export const CONTROL_RADIUS = 6;
+
+/** A shape inset `padding` inside one rounded `outer`: concentric with it. */
+export function concentric(outer: number, padding: number): number {
+  return Math.max(0, outer - padding);
+}
 
 /**
  * THE PREVIEWS INSIDE IT - the drawn pictures a picker chooses between, and
  * the timeline's page cards - and so their selection rings: "make it even
  * smaller for the preview and selection within" (2026-09-30). A ring is an
  * outline 2px out, and an outline's corner is the element's radius plus its
- * offset, so these 1px corners carry 3px rings.
+ * offset, so these 1px corners carry 3px rings. Not Apple's: pictures of
+ * paper, whose corners are square.
  */
 export const PREVIEW_RADIUS = 1;
