@@ -504,6 +504,14 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(line({ groups: 3 }, 6) === "WATER,S,M,T", `three days in a sidebar keep WATER whole, as initials (got ${line({ groups: 3 }, 6)})`);
   check(line({ groups: 1 }, 6) === "WATER,SUN", `one day in a sidebar keeps its short name (got ${line({ groups: 1 }, 6)})`);
   check(line({ groups: 3 }, 18) === "WATER,SUN,MON,TUE", `wide days keep their short names (got ${line({ groups: 3 }, 18)})`);
+  // THE DAY UNDER EACH GROUP (2026-10-01): named from where the strip sits,
+  // not counted from the week's start. Under Wednesday to Saturday it says
+  // so; widened into a sidebar its group there has no day ("fourth column").
+  check(line({ groupDays: [3, 4, 5, 6] }, 24) === "WATER,WED,THU,FRI,SAT", `under the right page's days, their names (got ${line({ groupDays: [3, 4, 5, 6] }, 24)})`);
+  check(line({ groupDays: [null, 0, 1, 2] }, 24) === "WATER,SUN,MON,TUE", `widened into the sidebar, that group unnamed (got ${line({ groupDays: [null, 0, 1, 2] }, 24)})`);
+  const unnamed = ids(draw("icon-strip", { ...base, count: 2, groupLabels: "days", groupDays: [null, 0, 1, 2] }, 24, 2), /-g\d-day$/);
+  check(unnamed.every((d) => !/-g0-day$/.test(String(d.id))), "no name drawn over the group under no day");
+  check(line({ groupDays: [1, 2, 3], weekStartDay: 1 }, 18) === "WATER,MON,TUE,WED", `a Monday week's days by their own names (got ${line({ groupDays: [1, 2, 3], weekStartDay: 1 }, 18)})`);
 
   // An icon for each row and each day. Which shape a mark is, is read back
   // by drawing every shape in its place and seeing which one it is.

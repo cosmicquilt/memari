@@ -79,6 +79,17 @@ export type IconStripConfig = {
   /** Set at render time from the journal - see the registry's weekStart. */
   weekStartDay?: number;
   /**
+   * THE DAY UNDER EACH GROUP, left to right - 0 Sunday to 6 Saturday, or
+   * null for a group under no day. Set at render time from where the strip
+   * sits against the page's day columns. Without it the groups are named in
+   * week order from the first, which is right only for a strip that starts
+   * under the week's first day: a Water strip under Wednesday to Saturday
+   * printed SUN to WED. And widened past the hours (horizontal resizing,
+   * 2026-10-01) a strip gains a group under no day - "fourth column" - which
+   * is left unnamed.
+   */
+  groupDays?: Array<number | null>;
+  /**
    * The icon of each row, top down, and of each day (group), left to right -
    * picked from previews in the editor (2026-09-30). A day's own icon wins in
    * its column, since it is the more particular choice (a rest day, say);
@@ -200,9 +211,17 @@ export function renderIconStrip(
   const groupRight = (g: number) => geometry.x + (g + 1) * groupWidth - groupPad;
   const roomBeside = (names: string[]) =>
     groupRight(0) - estimateTextWidthPx(names[0], labelSizePx) - labelInsetPx - (geometry.x + labelInsetPx);
+  // Each group's name: from groupDays where the page says which day is
+  // under it (null - no day - names nothing), else in week order.
+  const dayOf = (g: number): number | null =>
+    Array.isArray(config.groupDays) ? (Number.isInteger(config.groupDays[g]) ? (config.groupDays[g] as number) : null) : null;
   const dayNames = (() => {
     if (config.groupLabels !== "days") return null;
-    const forms = [weekdayShortNames(config.weekStartDay), weekdayInitials(config.weekStartDay)];
+    const named = (names: string[]) =>
+      Array.isArray(config.groupDays)
+        ? Array.from({ length: groups }, (_, g) => (dayOf(g) === null ? "" : names[(dayOf(g)! - (config.weekStartDay ?? 0) + 14) % 7]))
+        : Array.from({ length: groups }, (_, g) => names[g % 7]);
+    const forms = [named(weekdayShortNames(config.weekStartDay)), named(weekdayInitials(config.weekStartDay))];
     const fits = (names: string[]) =>
       names.every((name) => estimateTextWidthPx(name, labelSizePx) <= groupWidth - groupPad * 2) &&
       (!firstLabel || fitLabel(firstLabel, roomBeside(names), [labelSizePx]).text === firstLabel);
@@ -254,7 +273,8 @@ export function renderIconStrip(
 
     if (dayNames && s === 0) {
       for (let g = 0; g < groups; g++) {
-        const name = dayNames[g % 7];
+        const name = dayNames[g];
+        if (!name) continue;
         elements.push({
           id: id(`g${g}-day`),
           type: "text",
