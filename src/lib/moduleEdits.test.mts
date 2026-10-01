@@ -11,7 +11,7 @@ import { cellHeightPx } from "./grid";
 import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hourlyGridCore";
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
-import { withCurrentSettings } from "./moduleRegistry";
+import { moduleDefinition, withCurrentSettings } from "./moduleRegistry";
 import { textWidthPx } from "./modules/textFit";
 import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
 import { progressMeterColumns, progressMeterLayout } from "./modules/progressMeter";
@@ -192,6 +192,25 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 
 // --- table -----------------------------------------------------------------
 {
+  // ONE DAY WIDE (2026-10-01, for horizontal resizing): "i want three column
+  // table to go to one day, if column names become too long put the letter
+  // that will fit with ... at the end". Heads keep the table's head size and
+  // are cut, never shrunk; a column keeps its share by weight, so the one
+  // written in is not starved for a long head beside it.
+  const headsOf = (slug: string, days: number) =>
+    ids(draw(slug, { ...(moduleDefinition(slug)?.previewProps ?? {}) }, days * 6, 8), /-c\d+-head$/);
+  const sevenPt = (7 * 300) / 72;
+  const three = headsOf("column-table", 1);
+  check(three.length === 3 && three.every((h) => Math.abs((h.fontSize ?? 0) - sevenPt) < 0.01 && !String(h.text).endsWith("…")), `a three-column table at one day: every head whole at 7pt (${three.map((h) => h.text).join(", ")})`);
+  const four = headsOf("spending-log", 1);
+  check(four.every((h) => Math.abs((h.fontSize ?? 0) - sevenPt) < 0.01), "a four-column log at one day keeps 7pt heads");
+  check(four.some((h) => String(h.text).endsWith("…")) && four.filter((h) => String(h.text).endsWith("…")).every((h) => String(h.text).length >= 2), `and cuts the ones that cannot fit, letters then "…" (${four.map((h) => h.text).join(", ")})`);
+  // Item has the largest share (5 of 12); Category, a longer word, has 3.
+  // Shared out by the words, Category took two cells and Item one.
+  const item = four.find((h) => /^It/.test(String(h.text)))!, category = four.find((h) => /^Ca/.test(String(h.text)))!;
+  check((item.width ?? 0) >= (category.width ?? 0) - 0.5, `Item, the column written in, is never narrower than Category for its longer word (${((item.width ?? 0) * 72 / 300).toFixed(0)}pt against ${((category.width ?? 0) * 72 / 300).toFixed(0)}pt)`);
+  check(headsOf("spending-log", 2).every((h) => !String(h.text).endsWith("…")), "with room, nothing is cut");
+
   const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
   const cells = wholeCellColumns([1, 1.6, 1], 10)!;
   check(sum(cells) === 10 && cells.every((c) => c >= 1), `whole cells summing to the table (got ${cells})`);

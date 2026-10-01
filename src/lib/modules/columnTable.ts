@@ -204,7 +204,15 @@ export function renderColumnTable(
   // The first column also has to hold the totals label, which is a
   // different and often longer word than its head ("Date" against
   // "Total"), and sizing it for the head alone is what printed "Tot…".
-  const headSizes = [ptToPx(COLUMN_HEAD_FONT_PT), ptToPx(6), ptToPx(5)];
+  // ONE SIZE, cut rather than shrunk: a head that cannot fit at the table's
+  // head size keeps that size and is cut to the letters that fit, with "…"
+  // (asked 2026-10-01 for horizontal resizing: "i want three column table to
+  // go to one day, if column names become too long put the letter that will
+  // fit with ... at the end"). It used to step down to 6pt and 5pt first, so
+  // a narrow table's every head shrank for the sake of its longest. Where
+  // there is room, the allocator below still widens a column to hold its
+  // whole head, so nothing is cut that need not be.
+  const headSizes = [ptToPx(COLUMN_HEAD_FONT_PT)];
   const claims = columns.map((name, c) =>
     c === 0 && config.totalsRow && config.totalsLabel
       ? (name.length >= config.totalsLabel.length ? name : config.totalsLabel)

@@ -306,17 +306,14 @@ export function columnWidthsForLabels(options: {
     }
   }
 
-  // 4. Too narrow for its own words at any size.
-  const needs = needsAt(smallestPx, tight);
-  const needed = needs.reduce((a, b) => a + b, 0);
-  if (needed <= 0) {
-    return { widths: byWeight(totalWidthPx, weights), fontSizePx: smallestPx, paddingPx: tight };
-  }
-  return {
-    widths: needs.map((need) => (totalWidthPx * need) / needed),
-    fontSizePx: smallestPx,
-    paddingPx: tight,
-  };
+  // 4. Too narrow for its own words at any size: the weights, and the heads
+  //    are cut. This shared the width out by the words instead, so the
+  //    longest head took the room: a spending log at one day gave Item, the
+  //    column written in, a single cell ("It…") and Category two. Asked for
+  //    horizontal resizing (2026-10-01): "if column names become too long
+  //    put the letter that will fit with ... at the end" - the head gives
+  //    way, not the column.
+  return { widths: byWeight(totalWidthPx, weights), fontSizePx: smallestPx, paddingPx: tight };
 }
 
 function byWeight(totalWidthPx: number, weights: number[]): number[] {
