@@ -632,7 +632,7 @@ function EventPopup({
   }, []);
 
   const field: React.CSSProperties = {
-    font: "13px/1.3 ui-sans-serif, system-ui, sans-serif",
+    font: "13px/1.3 var(--font-ui)",
     color: "#1a1a1a",
     background: "#ffffff",
     border: "1px solid #d5d3cd",
@@ -642,7 +642,7 @@ function EventPopup({
     boxSizing: "border-box",
   };
   const label: React.CSSProperties = {
-    font: "11px/1 ui-sans-serif, system-ui, sans-serif",
+    font: "11px/1 var(--font-ui)",
     letterSpacing: "0.04em",
     textTransform: "uppercase",
     color: "#7a7871",
@@ -688,7 +688,7 @@ function EventPopup({
           }}
           style={{
             ...field,
-            font: "14px/1.3 ui-sans-serif, system-ui, sans-serif",
+            font: "14px/1.3 var(--font-ui)",
             ...(readOnly ? { background: "#f1efea", color: "#55534e" } : {}),
           }}
         />
@@ -826,7 +826,7 @@ function EventPopup({
                 }
                 style={{
                   flex: 1,
-                  font: "12px/1 ui-sans-serif, system-ui, sans-serif",
+                  font: "12px/1 var(--font-ui)",
                   padding: "6px 0",
                   border: "none",
                   borderRadius: 6,
@@ -855,7 +855,7 @@ function EventPopup({
             disabled={saving}
             style={{
               flex: 1,
-              font: "13px/1 ui-sans-serif, system-ui, sans-serif",
+              font: "13px/1 var(--font-ui)",
               padding: "8px 10px",
               borderRadius: 7,
               border: "1px solid #2f2d29",
@@ -872,7 +872,7 @@ function EventPopup({
               onClick={onDelete}
               disabled={saving}
               style={{
-                font: "13px/1 ui-sans-serif, system-ui, sans-serif",
+                font: "13px/1 var(--font-ui)",
                 padding: "8px 10px",
                 borderRadius: 7,
                 border: "1px solid #d5d3cd",

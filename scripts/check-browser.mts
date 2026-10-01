@@ -2096,6 +2096,22 @@ const textOnThePage: Probe = {
         const odd = radii.filter((r) => r !== "4px" && r !== "2px");
         if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not the small 4px`);
         else seen.push(`every editor corner small (${radii.join(", ")})`);
+        // THE INTERFACE IS THE LANDING PAGE'S FACE - San Francisco, else
+        // Inter (asked 2026-09-30) - and the page it edits is not.
+        const faces = (await tab.getByRole("dialog").evaluate(async (dialog) => {
+          await document.fonts.ready;
+          const label = [...dialog.querySelectorAll("span")].find((el) => (el.textContent ?? "").trim() === "Lines");
+          const mark = dialog.querySelector("[data-editor-piece] div, [data-editor-piece] text");
+          return {
+            panel: label ? getComputedStyle(label).fontFamily : "",
+            inter: [...document.fonts].some((f) => /Inter/.test(f.family) && f.status === "loaded"),
+            page: mark ? getComputedStyle(mark).fontFamily : "",
+          };
+        })) as { panel: string; inter: boolean; page: string };
+        if (!/^-apple-system/.test(faces.panel) || !/Inter/.test(faces.panel)) problems.push(`the editor's panel is set in ${faces.panel}, not the landing page's face`);
+        else if (!faces.inter) problems.push("Inter, the interface face off Apple systems, never loaded");
+        else if (/apple-system|Inter/.test(faces.page)) problems.push(`the module on the page took the interface face (${faces.page})`);
+        else seen.push("the panel in the landing page's face, the module in its own");
         const first = tab.locator('[data-canvas-slot="items#0"]');
         if ((await first.count()) === 0) problems.push("an empty to-do offers no place for its first item");
         else {

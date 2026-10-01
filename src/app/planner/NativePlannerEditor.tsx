@@ -4270,7 +4270,7 @@ const TimeZoneField = memo(function TimeZoneField({ timeZone, defaultTimeZone }:
   );
 
   const selectStyle: CSSProperties = {
-    font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
+    font: "12px/1.3 var(--font-ui)",
     color: PANEL_TEXT,
     background: PANEL_BG,
     border: `1px solid ${PANEL_EDGE}`,
@@ -10510,18 +10510,19 @@ function ZoomControls({
       <button onClick={onZoomOut} title="Zoom out" style={buttonStyle(false)}>
         −
       </button>
-      {/* The number in the system's own sans-serif - SF on a Mac, Segoe UI
-          on Windows - rather than the interface face, Almarai, whose figures
-          read as a display face in a readout. Asked for: "switch zoom
-          number in the zoom ui to normal sans serif font". Only the number;
-          the rest of the bar keeps the interface font. */}
+      {/* The number in the interface face, with figures that keep their
+          width as it changes. It was the system's sans while the interface
+          was Almarai, whose figures read as a display face ("switch zoom
+          number in the zoom ui to normal sans serif font"); San Francisco and
+          Inter are that normal sans. */}
       <span
         style={{
           fontSize: 13,
           color: "#333",
           minWidth: 44,
           textAlign: "center",
-          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontFamily: "var(--font-ui)",
+          fontVariantNumeric: "tabular-nums",
         }}
       >
         {Math.round(scale * 100)}%

@@ -2201,7 +2201,10 @@ function PageCardInner({
     display: "flex",
     padding: 0,
     border: highContrast && !selected ? "1px solid #777777" : "none",
-    borderRadius: 3,
+    // 2px, so the selection ring 2px outside it is a small 4px - the
+    // editor's corner (asked 2026-09-30, "make the selector of the previews
+    // have a low border radius").
+    borderRadius: 2,
     background: "#fdfcf9",
     // Dimming the unselected is what keeps a row of thumbnails from
     // competing with the canvas it describes. Under Increase Contrast it

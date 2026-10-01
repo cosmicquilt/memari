@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Newsreader, Hanken_Grotesk, Almarai } from "next/font/google";
+import { sans } from "./landing/sansFont";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { VIEWPORT_GUARD_SCRIPT } from "@/lib/viewportCookie";
@@ -50,7 +51,10 @@ const hankenGrotesk = Hanken_Grotesk({
   weight: ["300"],
 });
 
-// THE APP'S OWN FONT - the chrome, and only the chrome.
+// THE APP'S OWN FONT WAS THIS - the chrome, and only the chrome. Since
+// 2026-09-30 the chrome is the landing page's face (--font-ui in
+// globals.css: San Francisco, else Inter, loaded here as `sans`); Almarai
+// stays loaded for the landing hero's desk scene, which letters with it.
 //
 // Everything on the canvas names its family explicitly in its element data
 // (Newsreader, or Hanken Grotesk when a planner is set to sans - see
@@ -80,7 +84,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <ClerkProvider signInUrl="/sign-in">
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} ${almarai.variable} h-full antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} ${almarai.variable} ${sans.variable} h-full antialiased`}
         // VIEWPORT_GUARD_SCRIPT may set an attribute here before React
         // hydrates. Suppresses the warning for this one element only.
         suppressHydrationWarning

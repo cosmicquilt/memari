@@ -18,7 +18,7 @@
   color: var(--ink);
   /* San Francisco where the system has it, Inter - the closest open face
      - everywhere else (sansFont.ts; 2026-09-25). */
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-ui);
   min-height: 100vh;
   /* Doodles in the margins never widen the page. */
   overflow-x: clip;

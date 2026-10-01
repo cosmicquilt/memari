@@ -35,7 +35,7 @@ export function LegalPage({
         background: "#0c0c0c",
         color: "#e8e8e8",
         padding: "48px 20px 96px",
-        font: '16px/1.65 var(--font-almarai), Arial, Helvetica, sans-serif',
+        font: "16px/1.65 var(--font-ui)",
       }}
     >
       <div style={{ maxWidth: 680, margin: "0 auto" }}>

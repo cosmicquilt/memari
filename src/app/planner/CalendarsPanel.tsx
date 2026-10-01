@@ -170,7 +170,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
                   }
                 }}
                 style={{
-                  font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
+                  font: "12px/1.3 var(--font-ui)",
                   color: TEXT,
                   background: "#ffffff",
                   border: `1px solid ${EDGE}`,
@@ -256,7 +256,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
               if (e.key === "Escape") setAdding(false);
             }}
             style={{
-              font: "12px/1.3 ui-sans-serif, system-ui, sans-serif",
+              font: "12px/1.3 var(--font-ui)",
               color: TEXT,
               background: "#ffffff",
               border: `1px solid ${EDGE}`,
@@ -293,7 +293,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
 }
 
 const secondary: React.CSSProperties = {
-  font: "11px/1 ui-sans-serif, system-ui, sans-serif",
+  font: "11px/1 var(--font-ui)",
   color: TEXT,
   background: "#ffffff",
   border: `1px solid ${EDGE}`,
