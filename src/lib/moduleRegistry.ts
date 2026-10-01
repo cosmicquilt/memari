@@ -544,6 +544,21 @@ export type ModuleDefinition = {
   weekStart?: (propValues: Record<string, unknown>, weekStartDay: number) => Record<string, unknown>;
 
   /**
+   * This module's props given THE DAY OVER EACH OF ITS DAY COLUMNS, left to
+   * right - 0 Sunday to 6 Saturday, or null for a day column under no day
+   * (the sidebar, or a page whose spine names none). Applied at render time
+   * and never stored, like `weekStart`: move or resize the module and it
+   * reads the days it now sits under.
+   *
+   * For a module whose columns line up with the hours' and name them - the
+   * icon strip's groups. Horizontal resizing (2026-10-01) is what made it
+   * matter: a strip under Wednesday to Saturday printed SUN to WED, and one
+   * widened past the hours gains a column under no day - "fourth column" -
+   * which is left unnamed.
+   */
+  underDays?: (propValues: Record<string, unknown>, days: Array<number | null>) => Record<string, unknown>;
+
+  /**
    * This module's props with any OLD setting read as the one that replaced
    * it - `ruled` as `rule`, `markable` as `mark`, `numbered` as `numbers`.
    * The renderers read both, so a stored module draws as it always did; this
@@ -1705,6 +1720,9 @@ const PRIMITIVES = {
     // No content rule beyond its floor: it draws one strip per row, so any
     // number of rows from one up is a whole drawing.
     minRowSpan: ICON_STRIP_MIN_ROWS,
+    // Its groups are one per day column unless a count is set, and then
+    // they are not days at all.
+    underDays: (props, days) => ((props.groups as number | undefined) ?? 0) > 0 ? props : { ...props, groupDays: days },
     contentIsLive: ALWAYS,
   },
 
@@ -2407,6 +2425,13 @@ export function withWeekStart(slug: string, propValues: unknown, weekStartDay: n
   const turn = MODULE_REGISTRY[slug]?.weekStart;
   if (!turn) return propValues;
   return turn((propValues ?? {}) as Record<string, unknown>, weekStartDay);
+}
+
+/** A module's props given the days over its day columns - see `underDays`. */
+export function withDaysUnder(slug: string, propValues: unknown, days: Array<number | null>): unknown {
+  const read = MODULE_REGISTRY[slug]?.underDays;
+  if (!read) return propValues;
+  return read((propValues ?? {}) as Record<string, unknown>, days);
 }
 
 export function withDates(

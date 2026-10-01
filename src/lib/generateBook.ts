@@ -35,7 +35,7 @@ import {
   type OccurrenceContext,
   type PageLevel,
 } from "./pageLevels";
-import type { PageGrid } from "./grid";
+import { dayUnitColumns, type PageGrid } from "./grid";
 
 /** The shape this needs from a planner row. Deliberately the smallest one,
  *  so a caller can hand it a query it already had. */
@@ -202,7 +202,13 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
         // many copies of a template to write into, which is a real product
         // and the free tier's whole shape. Otherwise the module fills itself
         // in for this occurrence.
-        const propValues = propsForRender(instance.moduleType.slug, instance.propValues, context);
+        // Where it sits, too, so a module naming the days over it (the icon
+        // strip) prints the days the editor shows it under.
+        const propValues = propsForRender(instance.moduleType.slug, instance.propValues, context, {
+          columnStart: instance.columnStart,
+          columnSpan: instance.columnSpan,
+          dayColumns: dayUnitColumns(pageGrid),
+        });
         elements.push(
           ...renderModuleInstance({ ...instance, propValues }, pageGrid, fontFamily)
         );

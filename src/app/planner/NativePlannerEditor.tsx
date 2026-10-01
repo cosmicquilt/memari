@@ -2238,7 +2238,11 @@ function NativePage({
                         rowStart: placement.rowStart,
                         columnSpan: placement.columnSpan,
                         rowSpan: placement.rowSpan,
-                        propValues: propsForRender(info.slug, info.propValues, context),
+                        propValues: propsForRender(info.slug, info.propValues, context, {
+                          columnStart: placement.columnStart,
+                          columnSpan: placement.columnSpan,
+                          dayColumns: dayUnitColumns(page.pageGrid),
+                        }),
                         moduleType: { slug: info.slug },
                       },
                       page.pageGrid

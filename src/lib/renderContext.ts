@@ -22,10 +22,10 @@
 // all call these two; none of them decides what a page is dated as.
 
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
-import type { PageGrid } from "./grid";
+import { dayUnitColumns, type PageGrid } from "./grid";
 import type { HourlyGridEvent } from "./modules/hourlyGridCore";
-import { isSpineSlug, withDates, withWeekStart, withoutDates } from "./moduleRegistry";
-import { columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
+import { isSpineSlug, withDates, withDaysUnder, withWeekStart, withoutDates } from "./moduleRegistry";
+import { WEEKDAY_NAMES, columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
 import { effectiveZone } from "./timeZone";
 import {
   renderModuleInstance,
@@ -47,6 +47,11 @@ export type PageRenderContext = {
   /** The book's week start, 0 = Sunday. Every module that prints weekdays
    *  starts on it - see the registry's `weekStart`. */
   weekStartDay: number;
+  /** The columns the page's spine spans, which `dayLabels` divide between
+   *  them - so a module can be told which day it sits under (daysUnder).
+   *  Null on a page with no spine. Optional for a context built before it
+   *  existed. */
+  spineColumns?: { columnStart: number; columnSpan: number } | null;
   /** The calendar events falling on this page's columns, already indexed to
    *  them. Null when nothing was passed in, when the page has no hours, and
    *  on an undated book - a book with no dates cannot carry dated marks. */
@@ -79,7 +84,12 @@ export type RenderContextBook = {
     level: PageLevel;
     variantKey: string | null;
     position: number;
-    moduleInstances: Array<{ moduleType: { slug: string }; propValues: unknown }>;
+    moduleInstances: Array<{
+      moduleType: { slug: string };
+      propValues: unknown;
+      columnStart?: number | null;
+      columnSpan?: number;
+    }>;
   }>;
 };
 
@@ -120,6 +130,11 @@ export function renderContextForPage(
     .sort((a, b) => a.position - b.position);
   const dayLabels = spreadDayLabels(spread, weekStartDay)[spread.indexOf(page)] ?? null;
   const hasHours = page.moduleInstances.some((mi) => mi.moduleType.slug === "hourly-grid-core");
+  const spine = page.moduleInstances.find((mi) => isSpineSlug(mi.moduleType.slug));
+  const spineColumns =
+    spine && typeof spine.columnStart === "number" && typeof spine.columnSpan === "number"
+      ? { columnStart: spine.columnStart, columnSpan: spine.columnSpan }
+      : null;
 
   // EVENTS ARE DATED THINGS, so they need all three: a real occurrence to be
   // dated against, columns to sit in, and a book that admits dates at all.
@@ -140,6 +155,7 @@ export function renderContextForPage(
     occurrence,
     dayLabels,
     weekStartDay,
+    spineColumns,
     events: placed,
     columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
   };
@@ -174,13 +190,45 @@ export function spreadDayLabels(
 }
 
 /**
+ * THE DAY OVER EACH OF A MODULE'S DAY COLUMNS, left to right: 0 Sunday to 6
+ * Saturday, or null where its column is under no day - the sidebar, or past
+ * the hours (horizontal resizing's "fourth column"). Read off the spine:
+ * its day labels split its columns between them, a day column each.
+ *
+ * Null - nothing to tell the module - where the spine's labels are not a
+ * day column each: the daily page names one day across all its columns,
+ * and naming every group of a strip under it that same day says nothing.
+ */
+export function daysUnder(
+  placement: { columnStart: number | null; columnSpan: number },
+  context: PageRenderContext,
+  dayColumns: number
+): Array<number | null> | null {
+  const spine = context.spineColumns;
+  const labels = context.dayLabels;
+  if (!spine || !labels || labels.length === 0 || placement.columnStart === null) return null;
+  if (spine.columnSpan !== labels.length * dayColumns) return null;
+  const count = Math.max(1, Math.round(placement.columnSpan / dayColumns));
+  return Array.from({ length: count }, (_, u) => {
+    const column = placement.columnStart! + u * dayColumns;
+    if (column < spine.columnStart || column >= spine.columnStart + spine.columnSpan) return null;
+    const label = labels[Math.floor((column - spine.columnStart) / dayColumns)];
+    const index = WEEKDAY_NAMES.indexOf(String(label?.name ?? "").trim().toUpperCase());
+    return index < 0 ? null : index;
+  });
+}
+
+/**
  * A module's stored props, as its page draws them. Null context draws the
- * stored values as they are.
+ * stored values as they are. `placement` - where the module sits, in grid
+ * columns - lets it read the days over it (daysUnder); without one it is
+ * drawn as if under none in particular, as before.
  */
 export function propsForRender(
   slug: string,
   propValues: unknown,
-  context: PageRenderContext | null | undefined
+  context: PageRenderContext | null | undefined,
+  placement?: { columnStart: number | null; columnSpan: number; dayColumns: number }
 ): unknown {
   if (!context) return propValues;
   // The events go in beside the rotated day labels, not after the dating
@@ -202,7 +250,9 @@ export function propsForRender(
           ...(events ? { events: context.events } : {}),
         }
       : propValues;
-  const weekly = withWeekStart(slug, rotated, context.weekStartDay);
+  const turned = withWeekStart(slug, rotated, context.weekStartDay);
+  const days = placement ? daysUnder(placement, context, placement.dayColumns) : null;
+  const weekly = days ? withDaysUnder(slug, turned, days) : turned;
   if (!context.dated) return withoutDates(slug, weekly);
   return context.occurrence ? withDates(slug, weekly, context.occurrence) : weekly;
 }
@@ -220,7 +270,14 @@ export function renderOnPage(
   context: PageRenderContext | null | undefined
 ): RenderedPolotnoElement[] {
   return renderModuleInstance(
-    { ...instance, propValues: propsForRender(instance.moduleType.slug, instance.propValues, context) },
+    {
+      ...instance,
+      propValues: propsForRender(instance.moduleType.slug, instance.propValues, context, {
+        columnStart: instance.columnStart,
+        columnSpan: instance.columnSpan,
+        dayColumns: dayUnitColumns(pageGrid),
+      }),
+    },
     pageGrid,
     fontFamily
   );

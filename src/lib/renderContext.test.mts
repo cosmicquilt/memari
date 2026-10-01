@@ -244,6 +244,70 @@ const stored = (id: string) => book.pages.find((p) => p.id === id)!.moduleInstan
   check(mood.items[0] === "Sun", "the mood tracker's rows too");
 }
 
+// --- daysUnder: the day over each of a module's day columns (2026-10-01) ----
+// An icon strip's groups are named for the days they sit under, read off the
+// spine's own columns: a strip under Thursday to Saturday printed SUN to TUE,
+// and one widened past the hours gains a column under no day.
+{
+  const week = (weekStartDay: number): RenderContextBook => ({
+    dated: false,
+    theme: { weekStartDay },
+    pages: [
+      {
+        id: "w-left",
+        level: "WEEKLY",
+        variantKey: null,
+        position: 0,
+        moduleInstances: [{ ...hours([{ name: "SUNDAY", date: null }, { name: "MONDAY", date: null }, { name: "TUESDAY", date: null }]), columnStart: 6, columnSpan: 18 }],
+      },
+      {
+        id: "w-right",
+        level: "WEEKLY",
+        variantKey: null,
+        position: 1,
+        moduleInstances: [
+          {
+            ...hours([{ name: "WEDNESDAY", date: null }, { name: "THURSDAY", date: null }, { name: "FRIDAY", date: null }, { name: "SATURDAY", date: null }]),
+            columnStart: 0,
+            columnSpan: 24,
+          },
+        ],
+      },
+      {
+        id: "d-page",
+        level: "DAILY",
+        variantKey: null,
+        position: 0,
+        moduleInstances: [{ ...hours([{ name: "THURSDAY", date: null }]), columnStart: 6, columnSpan: 18 }],
+      },
+    ],
+  });
+  const strip = (book: RenderContextBook, pageId: string, columnStart: number, columnSpan: number, props: Record<string, unknown> = { groupLabels: "days" }) =>
+    JSON.stringify(
+      (propsForRender("icon-strip", props, renderContextForPage(book, pageId), { columnStart, columnSpan, dayColumns: 6 }) as { groupDays?: unknown }).groupDays ?? null
+    );
+  const sun = week(0);
+  check(strip(sun, "w-right", 0, 24) === "[3,4,5,6]", `under the right page's hours: Wednesday to Saturday (got ${strip(sun, "w-right", 0, 24)})`);
+  check(strip(sun, "w-right", 6, 18) === "[4,5,6]", `a strip under Thursday to Saturday names those, not the week's first three (got ${strip(sun, "w-right", 6, 18)})`);
+  check(strip(sun, "w-left", 0, 24) === "[null,0,1,2]", `widened into the sidebar: its first column is under no day (got ${strip(sun, "w-left", 0, 24)})`);
+  check(strip(sun, "w-left", 0, 6) === "[null]", `in the sidebar it is under no day (got ${strip(sun, "w-left", 0, 6)})`);
+  check(strip(sun, "w-left", 6, 18, { groups: 5 }) === "null", "a strip with a set number of groups is not told days - its groups are not days");
+  check(strip(sun, "d-page", 6, 18) === "null", "the daily page names one day over all its columns, so a strip under it is told nothing");
+  const mon = week(1);
+  check(strip(mon, "w-left", 6, 18) === "[1,2,3]", `in a Monday journal the left page is Monday to Wednesday (got ${strip(mon, "w-left", 6, 18)})`);
+  // And it reaches the drawing: Day names on, the right page's last two days.
+  const drawn = renderOnPage(
+    { id: "s", locked: false, columnStart: 12, rowStart: 22, columnSpan: 12, rowSpan: 1, propValues: { heading: "Water", groupLabels: "days" }, moduleType: { slug: "icon-strip" } },
+    { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 75 },
+    "serif",
+    renderContextForPage(sun, "w-right")
+  );
+  const names = flatten(drawn as never)
+    .filter((e: { id?: string }) => /-g\d+-day$/.test(String(e.id)))
+    .map((e: { text?: unknown }) => String(e.text));
+  check(names.join(" ") === "FRI SAT", `a strip under Friday and Saturday prints FRI SAT (got ${names.join(" ") || "nothing"})`);
+}
+
 if (failures > 0) {
   console.error(`\n${failures} render context check(s) failed.`);
   process.exit(1);
