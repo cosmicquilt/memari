@@ -359,15 +359,24 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     const marks = ids(drawn, style === "circles" ? /-seg\d+$/ : style === "bar" ? /-bar\d+$/ : /-row\d+-box$/);
     const minX = Math.min(...marks.map((m) => m.x ?? 0));
     const maxX = Math.max(...marks.map((m) => (m.x ?? 0) + (m.width ?? 0)));
-    // A circle sits a point inside its segment; a box or bar meets the border.
-    const slack = style === "circles" ? 6 : 0.5;
-    check(minX - left <= slack && right - maxX <= slack, `${style}: the meter meets both sides (gaps ${(minX - left).toFixed(1)} and ${(right - maxX).toFixed(1)}px)`);
+    if (style === "circles") {
+      // A circle sits centred in its segment, and the segments run side to side.
+      const centres = [...new Set(marks.map((m) => Number(((m.x ?? 0) + (m.width ?? 0) / 2).toFixed(2))))].sort((a, b) => a - b);
+      const segment = centres[1] - centres[0];
+      const lastCentre = Math.max(...centres);
+      check(Math.abs(centres[0] - left - segment / 2) < 0.5 && Math.abs(right - lastCentre - segment / 2) < 0.5, `circles: centred in segments that run side to side (${(centres[0] - left).toFixed(1)} and ${(right - lastCentre).toFixed(1)}px in, half a segment ${(segment / 2).toFixed(1)})`);
+    } else {
+      check(minX - left <= 0.5 && right - maxX <= 0.5, `${style}: the meter meets both sides (gaps ${(minX - left).toFixed(1)} and ${(right - maxX).toFixed(1)}px)`);
+    }
   }
 
   // PER ROW AND FILL (2026-10-01): "settings for how many per row or it can
   // fill the whole module the amount even as close to a grid of squares".
   const rowBoxes = (drawn: RenderedPolotnoElement[]) => ids(drawn, /-row\d+-box$/);
   const counted = (drawn: RenderedPolotnoElement[]) => rowBoxes(drawn).length + ids(drawn, /-div\d+$/).length;
+  // The line kept under the rows for the start and end labels, set or not:
+  // a 1.5pt gap and a line of 6pt type (1.2 of it), at 300 px to the inch.
+  const LABEL_STRIP = ((1.5 + 6 * 1.2) * 300) / 72;
   const gapAtFoot = (drawn: RenderedPolotnoElement[]) => {
     const border = ids(drawn, /-border$/)[0];
     return (border.y ?? 0) + (border.height ?? 0) - Math.max(...rowBoxes(drawn).map((r) => (r.y ?? 0) + (r.height ?? 0)));
@@ -382,21 +391,29 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const sevenBorder = ids(seven, /-border$/)[0];
   check(rowBoxes(seven).slice(0, 4).every((r) => Math.abs((r.x ?? 0) - (sevenBorder.x ?? 0)) < 0.5 && Math.abs((r.width ?? 0) - (sevenBorder.width ?? 0)) < 0.5), "each full row of seven runs side to side");
   const sevenHeights = rowBoxes(seven).map((r) => r.height ?? 0);
-  check(sevenHeights.every((h) => Math.abs(h - sevenHeights[0]) < 0.01) && Math.abs(gapAtFoot(seven)) < 0.5, "rows of seven share the height and meet the foot");
+  check(sevenHeights.every((h) => Math.abs(h - sevenHeights[0]) < 0.01) && Math.abs(gapAtFoot(seven) - LABEL_STRIP) < 0.5, "rows of seven share the height down to the labels' strip");
   // More than fit at half a cell wide is as many as fit.
   const many = draw("progress-meter", { heading: "Pages", total: 60, perRow: 100 }, 6, 8);
   check(perRowOf(many) === progressMeterColumns(6 * PITCH - 12), `100 a row on a narrow meter is as many as fit (${perRowOf(many)} vs ${progressMeterColumns(6 * PITCH - 12)})`);
   // Fill: the count spread over the whole module, as near square as it goes.
   const filled = draw("progress-meter", { heading: "Days", total: 30 }, 12, 6);
   check(rowBoxes(filled).length === 3 && perRowOf(filled) === 10 && counted(filled) === 30, `30 filling a 12x6 meter: three rows of ten (got ${rowBoxes(filled).length} of ${perRowOf(filled)}, ${counted(filled)} in all)`);
-  check(Math.abs(gapAtFoot(filled)) < 0.5, `and they meet the module's foot (${gapAtFoot(filled).toFixed(1)}px short)`);
+  check(Math.abs(gapAtFoot(filled) - LABEL_STRIP) < 0.5, `and they reach the labels' strip at the foot (${gapAtFoot(filled).toFixed(1)}px short, the strip ${LABEL_STRIP.toFixed(1)})`);
+  // The rows are the same whether or not the labels have words - so the
+  // editor's faint "Start" and "Goal" show where their words will print, not
+  // over the last row (they did, the afternoon the meter first filled).
+  const worded = draw("progress-meter", { heading: "Days", total: 30, startLabel: "Day 1", endLabel: "Day 30" }, 12, 6);
+  const rowsAt = (drawn: RenderedPolotnoElement[]) => rowBoxes(drawn).map((r) => `${(r.y ?? 0).toFixed(2)}+${(r.height ?? 0).toFixed(2)}`).join(" ");
+  check(rowsAt(worded) === rowsAt(filled), `labels set or not, the rows do not move (${rowsAt(filled)} vs ${rowsAt(worded)})`);
+  const lastFoot = Math.max(...rowBoxes(worded).map((r) => (r.y ?? 0) + (r.height ?? 0)));
+  check(ids(worded, /-(start|end)-label$/).every((l) => (l.y ?? 0) >= lastFoot - 0.01), "and the labels print below the last row, clear of its numbers");
   const filledHeights = rowBoxes(filled).map((r) => r.height ?? 0);
   check(filledHeights.every((h) => Math.abs(h - filledHeights[0]) < 0.01 && h >= PITCH / 2), `the rows share the height evenly (${filledHeights.map((h) => h.toFixed(1)).join(", ")})`);
   // At the many heights a row count does not divide in half cells - the
   // first version kept to them and left as much as half the module empty.
   for (const rowSpan of [9, 10, 11, 13]) {
     const drawn = draw("progress-meter", { heading: "100 days", total: 100, milestoneEvery: 10 }, 6, rowSpan);
-    check(Math.abs(gapAtFoot(drawn)) < 0.5 && counted(drawn) === 100, `100 filling a 6x${rowSpan} meter meets its foot (${gapAtFoot(drawn).toFixed(1)}px short, ${counted(drawn)} drawn)`);
+    check(Math.abs(gapAtFoot(drawn) - LABEL_STRIP) < 0.5 && counted(drawn) === 100, `100 filling a 6x${rowSpan} meter reaches the labels' strip (${gapAtFoot(drawn).toFixed(1)}px short, ${counted(drawn)} drawn)`);
   }
   // A hundred days with a rule every ten fills as ten rows of ten - the first
   // version chose seven rows of fifteen, the rules staggered and the last

@@ -214,10 +214,13 @@ export function renderProgressMeter(
   const endSize = ptToPx(END_LABEL_FONT_PT);
   // What the end labels take under the meter: their gap and their line.
   const endBand = ptToPx(1.5) + endSize * 1.2;
-  // The body - less the end labels' line when there are any, which the
-  // filled rows would otherwise take.
-  const labelled = !!((config.startLabel ?? "").trim() || (config.endLabel ?? "").trim());
-  const { columns, rowHeight } = progressMeterLayout(total, geometry.width, bodyBottom - bodyTop - (labelled ? endBand : 0), {
+  // The body less the end labels' line, KEPT WHETHER OR NOT THEY ARE SET. It
+  // was kept only once one had words, and the filled rows took the line
+  // otherwise - so the editor's faint "Start" and "Goal", always showing
+  // since 2026-10-01, sat inside the last row where neither prints, and
+  // "Goal" landed on the last milestone's number and fell back to a typed
+  // field in the panel. Kept, each placeholder shows where its words will.
+  const { columns, rowHeight } = progressMeterLayout(total, geometry.width, bodyBottom - bodyTop - endBand, {
     perRow: config.perRow,
     milestoneEvery: milestone,
   });
