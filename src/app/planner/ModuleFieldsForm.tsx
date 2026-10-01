@@ -31,6 +31,26 @@ const labelStyle: CSSProperties = {
 };
 
 /**
+ * A DROPDOWN, with its arrow drawn rather than the browser's: as far in from
+ * the right edge as its words are from the left, the field's 9px. The
+ * browser's own sat a few px off the border - "the down arrow ... is too
+ * close to the right border of its container compare to the text on the
+ * left" (2026-10-01). The words stop short of the arrow: 9 + 10 + 8.
+ */
+const SELECT_ARROW =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23f2f2f2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
+export function selectStyle(field: CSSProperties): CSSProperties {
+  return {
+    ...field,
+    appearance: "none",
+    WebkitAppearance: "none",
+    padding: "7px 27px 7px 9px",
+    background: `${SELECT_ARROW} no-repeat right 9px center / 10px 6px, ${String(field.background)}`,
+    cursor: "pointer",
+  };
+}
+
+/**
  * The border is 0.33 white, not the 0.12 the rest of this chrome uses, and
  * the number is MEASURED rather than chosen.
  *
@@ -567,7 +587,7 @@ export function ModuleFieldsForm({
                 value={(values[field.key] as string | undefined) ?? ""}
                 onChange={(event) => onChange(field.key, event.target.value)}
                 className="memari-field"
-                style={{ ...inputStyle, cursor: "pointer" }}
+                style={selectStyle(inputStyle)}
               >
                 {field.options.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -622,7 +642,7 @@ export function ModuleFieldsForm({
                     )
                   }
                   className="memari-field"
-                  style={{ ...inputStyle, cursor: "pointer" }}
+                  style={selectStyle(inputStyle)}
                 >
                   {field.options.map((option) => (
                     <option key={String(option.value)} value={String(option.value)}>

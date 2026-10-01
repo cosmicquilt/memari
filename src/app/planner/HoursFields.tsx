@@ -19,7 +19,7 @@
 import { CONTROL_RADIUS } from "./editorStyle";
 import type { CSSProperties } from "react";
 import { ROW_HEIGHT_OPTIONS_PT } from "@/lib/modules/hourlyGridCore";
-import { FOCUS_CSS, RuleSwatch, ruleSwatchWidth, type RuleSample } from "./ModuleFieldsForm";
+import { FOCUS_CSS, RuleSwatch, ruleSwatchWidth, selectStyle, type RuleSample } from "./ModuleFieldsForm";
 
 export const WEEK_START_DAY_LABELS = [
   "Sunday",
@@ -129,7 +129,7 @@ export function HoursFields({
             );
           }}
           className="memari-field"
-          style={{ ...inputStyle, cursor: "pointer" }}
+          style={selectStyle(inputStyle)}
         >
           <option value="30">30 min</option>
           <option value="60">1 hour</option>
@@ -187,7 +187,7 @@ export function HoursFields({
               value={String(values.rowHeightPt)}
               onChange={(event) => set("rowHeightPt", Number(event.target.value))}
               className="memari-field"
-              style={{ ...inputStyle, cursor: "pointer" }}
+              style={selectStyle(inputStyle)}
             >
               {/* All three land on the 1/4in lattice, but only 9 and 18
                   divide the pitch, so only they put a rule on every cell
@@ -234,7 +234,7 @@ export function HoursFields({
               value={values.timeFormat === "24" ? "24" : "12"}
               onChange={(event) => set("timeFormat", event.target.value === "24" ? "24" : "12")}
               className="memari-field"
-              style={{ ...inputStyle, cursor: "pointer" }}
+              style={selectStyle(inputStyle)}
             >
               <option value="12">12-hour</option>
               <option value="24">24-hour</option>
@@ -250,7 +250,7 @@ export function HoursFields({
           value={values.weekStartDay}
           onChange={(event) => set("weekStartDay", Number(event.target.value))}
           className="memari-field"
-          style={{ ...inputStyle, cursor: "pointer" }}
+          style={selectStyle(inputStyle)}
         >
           {WEEK_START_DAY_LABELS.map((label, i) => (
             <option key={label} value={i}>

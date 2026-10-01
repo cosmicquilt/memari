@@ -10,13 +10,17 @@
  * new design system"): a shape inside another is CONCENTRIC, the outer radius
  * less the padding between them, so the two curves stay parallel. And what
  * Apple draws as a capsule - a switch, a grabber - stays a capsule.
+ *
+ * THEN TUNED BY EYE (2026-10-01): Andrew set these on a page of sliders over
+ * the progress meter's panel and pasted back panel 14, controls 3, pictures
+ * 1, switches as capsules. Apple's structure, his numbers.
  */
 
 /** The panel, and anything that floats over the page like it (the icon chooser). */
-export const PANEL_RADIUS = 12;
+export const PANEL_RADIUS = 14;
 
 /** A field, a button, a stepper, a segmented control. */
-export const CONTROL_RADIUS = 6;
+export const CONTROL_RADIUS = 3;
 
 /** A shape inset `padding` inside one rounded `outer`: concentric with it. */
 export function concentric(outer: number, padding: number): number {

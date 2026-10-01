@@ -1603,6 +1603,19 @@ const moduleEditor: Probe = {
         })()`)) as string[];
         if (unreadable.length > 0) problems.push(`dropdown options are unreadable: ${unreadable.slice(0, 3).join(", ")}`);
         else notes.push("dropdown options read");
+        // A DROPDOWN'S ARROW sits as far in from the right as its words from
+        // the left (2026-10-01: the browser's was "too close to the right
+        // border"), and the words stop before it.
+        const arrows = (await tab.evaluate(`(() => [...document.querySelectorAll('[role="dialog"] select')].map((s) => {
+          const c = getComputedStyle(s);
+          const first = c.backgroundPositionX.split(",")[0];
+          const x = (first.match(/right ([0-9.]+)px/) || first.match(/100% - ([0-9.]+)px/) || [])[1];
+          return { native: c.appearance !== "none", right: x === undefined ? null : Number(x), left: parseFloat(c.paddingLeft), room: parseFloat(c.paddingRight), at: first };
+        }))()`)) as Array<{ native: boolean; right: number | null; left: number; room: number; at: string }>;
+        const askew = arrows.filter((a) => a.native || a.right === null || Math.abs(a.right - a.left) > 0.5 || a.room < a.right + 10);
+        if (arrows.length === 0) problems.push("the hours editor has no dropdown to measure");
+        else if (askew.length > 0) problems.push(`a dropdown's arrow is not ${askew[0].left}px in from the right: ${JSON.stringify(askew[0])}`);
+        else notes.push(`${arrows.length} dropdown arrows ${arrows[0].right}px in, as the words are`);
         // BOTH PAGES' HOURS, each with its own days.
         const pieces = (await dialog.evaluate((el) =>
           [...el.querySelectorAll("[data-editor-piece]")].map((piece) => piece.textContent ?? "")
@@ -1946,6 +1959,17 @@ const roundTwoPickers: Probe = {
           const reaches = await chooser.getByRole("radiogroup", { name: "How far it reaches" }).getByRole("radio").allTextContents();
           if (reaches.join(",") !== "Strip,Row,Day") problems.push(`the chooser reaches ${reaches.join(",")}, not Strip, Row and Day`);
           if ((await reachOf()) !== "Strip") problems.push(`an icon with nothing of its own opens on ${await reachOf()}, not Strip`);
+          // Its icons inside its padding, the reach buttons too - a fixed
+          // width spilt the row once the padding grew (panel 14, controls 3).
+          const spill = (await chooser.evaluate((el) => {
+            const box = el.getBoundingClientRect();
+            const pad = parseFloat(getComputedStyle(el).paddingLeft) + parseFloat(getComputedStyle(el).borderLeftWidth);
+            return [...el.querySelectorAll('[role="radio"]')]
+              .map((b) => b.getBoundingClientRect())
+              .map((r) => Math.max(box.left + pad - r.left, r.right - (box.right - pad)))
+              .reduce((a, b) => Math.max(a, b), -Infinity);
+          })) as number;
+          if (spill > 0.5) problems.push(`the chooser's icons run ${spill.toFixed(1)}px into its padding`);
           await chooser.getByRole("radio", { name: "Day" }).click();
           await chooser.getByRole("radio", { name: "Stars" }).click();
           // Escape closes the chooser, not the editor.
@@ -2109,12 +2133,12 @@ const textOnThePage: Probe = {
       // --- A TO-DO'S ITEMS, FROM ITS FIRST EMPTY ROW -----------------------
       if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
       else {
-        // THE EDITOR'S CORNERS ARE APPLE'S - asked 2026-10-01, "just try
-        // whatever apple uses": macOS 27's 12 for the panel, 6 for a control,
-        // capsules for a switch (20px tall: 10, its knob 8), and what nests
-        // inside a control concentric with it (a stepper's ends 5). The
-        // pictures stay 1px - "even smaller for the preview and selection
-        // within" (2026-09-30). See editorStyle.ts.
+        // THE EDITOR'S CORNERS - Apple's structure (2026-10-01, "just try
+        // whatever apple uses"), Andrew's numbers off a page of sliders the
+        // same day: the panel 14, a control 3, capsules for a switch (20px
+        // tall: 10, its knob 8), and what nests inside a control concentric
+        // with it (a stepper's ends 2). The pictures stay 1px - "even smaller
+        // for the preview and selection within" (2026-09-30). editorStyle.ts.
         const radii = (await tab.getByRole("dialog").evaluate((dialog) => {
           const found = new Set<string>();
           for (const el of dialog.querySelectorAll("*")) {
@@ -2124,7 +2148,7 @@ const textOnThePage: Probe = {
           }
           return [...found];
         })) as string[];
-        const odd = radii.filter((r) => !["12px", "10px", "8px", "6px", "5px", "4px", "1px"].includes(r));
+        const odd = radii.filter((r) => !["14px", "10px", "8px", "5px", "3px", "2px", "1px"].includes(r));
         const pictures = (await tab.getByRole("dialog").evaluate((dialog) =>
           [...dialog.querySelectorAll(".memari-swatch")].map((el) => getComputedStyle(el).borderTopLeftRadius)
         )) as string[];
@@ -2139,11 +2163,11 @@ const textOnThePage: Probe = {
             field: field ? getComputedStyle(field).borderTopLeftRadius : "",
           };
         })) as { panel: string; done: string; field: string };
-        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not one of Apple's (12, 6, a capsule's 10/8, concentric 5/4) or a picture's 1px`);
-        else if (corners.panel !== "12px") problems.push(`the editor's panel is rounded ${corners.panel}, not Apple's 12px`);
-        else if (corners.done !== "6px" || (corners.field && corners.field !== "6px")) problems.push(`the editor's controls are rounded ${corners.done} (Done) and ${corners.field} (a field), not Apple's 6px`);
+        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not the panel's 14, a control's 3, a capsule's 10/8, a concentric 2 or a picture's 1px`);
+        else if (corners.panel !== "14px") problems.push(`the editor's panel is rounded ${corners.panel}, not 14px`);
+        else if (corners.done !== "3px" || (corners.field && corners.field !== "3px")) problems.push(`the editor's controls are rounded ${corners.done} (Done) and ${corners.field} (a field), not 3px`);
         else if (pictures.length === 0 || pictures.some((r) => r !== "1px")) problems.push(`the pickers' pictures are rounded ${[...new Set(pictures)].join(", ")}, not 1px`);
-        else seen.push(`editor corners Apple's: panel 12px, controls 6px, pictures 1px (${radii.join(", ")})`);
+        else seen.push(`editor corners: panel 14px, controls 3px, pictures 1px (${radii.join(", ")})`);
         // THE INTERFACE IS THE LANDING PAGE'S FACE - San Francisco, else
         // Inter (asked 2026-09-30) - and the page it edits is not.
         const faces = (await tab.getByRole("dialog").evaluate(async (dialog) => {

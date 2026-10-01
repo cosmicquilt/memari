@@ -154,11 +154,21 @@ export function IconPicksOnPage({
     `${rows > 1 ? `row ${group.s + 1}` : "the strip"}${days > 1 ? `, ${dayNames?.[group.g] ?? `group ${group.g + 1}`}` : ""}`;
 
   const openGroup = open ? groups.find((group) => group.s === open.s && group.g === open.g) : null;
-  const CHOOSER_WIDTH = 248;
+  // Sized from what it holds: the icons in one row inside its padding and
+  // border (box-sizing is border-box here), which is the panel's radius less
+  // a control's so what sits in its corners is concentric with them. A fixed
+  // 248 spilt the row into the padding once that grew to 11 (panel 14,
+  // controls 3).
+  const SWATCH = 20;
+  const GAP = 3;
+  const CHOOSER_PADDING = PANEL_RADIUS - CONTROL_RADIUS;
+  const CHOOSER_WIDTH = field.options.length * (SWATCH + GAP) - GAP + CHOOSER_PADDING * 2 + 2;
+  // Reach buttons, the icons, the reset line, the gaps between them.
+  const CHOOSER_HEIGHT = CHOOSER_PADDING * 2 + 2 + 26 + 8 + SWATCH + 8 + 18;
   const place = openGroup ? at(openGroup) : null;
   const chooserLeft = place ? Math.max(4, Math.min(place.left + place.width / 2 - CHOOSER_WIDTH / 2, frame.width - CHOOSER_WIDTH - 4)) : 0;
   const below = place ? place.top + place.height + 8 : 0;
-  const chooserTop = place ? (below + 104 > frame.height ? Math.max(4, place.top - 104 - 8) : below) : 0;
+  const chooserTop = place ? (below + CHOOSER_HEIGHT > frame.height ? Math.max(4, place.top - CHOOSER_HEIGHT - 8) : below) : 0;
   const reaches: Reach[] = ["strip", ...(rows > 1 ? (["row"] as Reach[]) : []), ...(days > 1 ? (["day"] as Reach[]) : [])];
 
   return (
@@ -211,9 +221,7 @@ export function IconPicksOnPage({
             left: chooserLeft,
             top: chooserTop,
             width: CHOOSER_WIDTH,
-            // The panel's radius less a control's: what sits in its corners
-            // is concentric with them.
-            padding: PANEL_RADIUS - CONTROL_RADIUS,
+            padding: CHOOSER_PADDING,
             display: "flex",
             flexDirection: "column",
             gap: 8,
@@ -252,11 +260,11 @@ export function IconPicksOnPage({
               ))}
             </div>
           )}
-          <div role="radiogroup" aria-label="Icon" style={{ display: "flex", gap: 3 }}>
+          <div role="radiogroup" aria-label="Icon" style={{ display: "flex", gap: GAP }}>
             {field.options.map((option) => (
               <GlyphSwatch
                 key={option.value}
-                size={20}
+                size={SWATCH}
                 shape={option.value as GlyphShape}
                 label={option.label}
                 selected={current(open.reach, open.s, open.g) === option.value}
