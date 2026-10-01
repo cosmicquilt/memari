@@ -83,7 +83,7 @@ import {
 } from "@/lib/modules/progressMeter";
 import {
   renderIconStrip,
-  getIconStripMinHeightPx,
+  ICON_STRIP_MIN_ROWS,
   type IconStripConfig,
 } from "@/lib/modules/iconStrip";
 import {
@@ -450,6 +450,18 @@ export type ModuleDefinition = {
     columnSpan: number,
     propValues: Record<string, unknown>
   ) => number;
+
+  /**
+   * The module's own floor in rows, where it is lower than the uniform
+   * MIN_ROW_SPAN. A module is inserted at its floor, so this is also the
+   * height it arrives at.
+   *
+   * The icon strip's: one row. Its strip is a heading over a row of glyphs
+   * in one lattice cell (ICON_STRIP_MIN_ROWS), and Andrew asked for it
+   * "resizable as well down to one column height (the height it should
+   * insert at) ... shrinkable down to 1 cell high 1 day wide" (2026-10-01).
+   */
+  minRowSpan?: number;
 
   /**
    * Props that are not settings but consequences of the module's own
@@ -1650,9 +1662,9 @@ const PRIMITIVES = {
         }
       },
       "defaultWidth": 1560,
-      "defaultHeight": 150,
+      "defaultHeight": 75,
       "defaultColumnSpan": 24,
-      "defaultRowSpan": 2
+      "defaultRowSpan": 1
     },
     label: "Icon strip",
     inPalette: true,
@@ -1690,7 +1702,9 @@ const PRIMITIVES = {
       renderIconStrip(geometry, propValues as IconStripConfig, idPrefix, fontFamily, lattice),
     // Day names over the groups start on the journal's day.
     weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
-    minContentHeightPx: () => getIconStripMinHeightPx(),
+    // No content rule beyond its floor: it draws one strip per row, so any
+    // number of rows from one up is a whole drawing.
+    minRowSpan: ICON_STRIP_MIN_ROWS,
     contentIsLive: ALWAYS,
   },
 
@@ -2491,7 +2505,8 @@ export function canCrossZones(slug: string): boolean {
   return slug !== "freeform-element";
 }
 
-/** The uniform floor, for a module with no rule of its own. */
+/** The uniform floor, for a module with no rule of its own and no lower
+ *  `minRowSpan` of its own (the icon strip's is one row). */
 export const MIN_ROW_SPAN = 2;
 
 /**
@@ -2533,11 +2548,12 @@ export function getMinRowSpanForSlug(
   // still gets the right answer, because a fresh module IS its defaults.
   propValues: Record<string, unknown> = {}
 ): number {
+  const floor = MODULE_REGISTRY[slug]?.minRowSpan ?? MIN_ROW_SPAN;
   const rule = MODULE_REGISTRY[slug]?.minContentHeightPx;
-  if (!rule) return MIN_ROW_SPAN;
+  if (!rule) return floor;
   const content = { ...moduleSchemaDefaults(slug), ...propValues };
   return Math.max(
-    MIN_ROW_SPAN,
+    floor,
     // Never taller than the page itself. A rule states what the content
     // needs, and for a 31-row tracker squeezed into a sidebar that can
     // come out larger than any box on the page - a floor nothing can

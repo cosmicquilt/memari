@@ -2340,6 +2340,48 @@ const textOnThePage: Probe = {
   },
 };
 
+/**
+ * Every module on screen against the database - where each is drawn (its
+ * grid row and column, which is what the page lays it out by) against what
+ * was saved - and, page by page, any two on screen that overlap. Empty when
+ * the page is the truth. Shared by the probes that drop, move and resize.
+ */
+async function screenAgainstDatabase(tab: Page): Promise<string[]> {
+  const onScreen = (await tab.evaluate(`[...document.querySelectorAll('[data-module-instance-id]')].map((el) => {
+    const row = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridRow);
+    const col = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridColumn);
+    return row && col ? { id: el.getAttribute('data-module-instance-id'), rowStart: +row[1] - 1, rowSpan: +row[2], columnStart: +col[1] - 1, columnSpan: +col[2] } : null;
+  }).filter(Boolean)`)) as Array<{ id: string; rowStart: number; rowSpan: number; columnStart: number; columnSpan: number }>;
+  const saved = await storedRows(onScreen.map((m) => m.id));
+  const problems: string[] = [];
+  for (const m of onScreen) {
+    const s = saved[m.id];
+    if (!s) continue;
+    if (s.rowStart !== m.rowStart || s.rowSpan !== m.rowSpan || s.columnStart !== m.columnStart || s.columnSpan !== m.columnSpan) {
+      problems.push(`${m.id.slice(-6)} shown at rows ${m.rowStart}+${m.rowSpan} cols ${m.columnStart}+${m.columnSpan}, saved at rows ${s.rowStart}+${s.rowSpan} cols ${s.columnStart}+${s.columnSpan}`);
+    }
+  }
+  // Overlaps, page by page, on screen.
+  const byPage = new Map<string, typeof onScreen>();
+  for (const m of onScreen) {
+    const pageId = saved[m.id]?.pageId;
+    if (!pageId) continue;
+    byPage.set(pageId, [...(byPage.get(pageId) ?? []), m]);
+  }
+  for (const mods of byPage.values()) {
+    for (let i = 0; i < mods.length; i++) {
+      for (let j = i + 1; j < mods.length; j++) {
+        const a = mods[i], b = mods[j];
+        if (a.columnStart < b.columnStart + b.columnSpan && b.columnStart < a.columnStart + a.columnSpan &&
+            a.rowStart < b.rowStart + b.rowSpan && b.rowStart < a.rowStart + a.rowSpan) {
+          problems.push(`on screen, rows ${a.rowStart}+${a.rowSpan} cols ${a.columnStart}+${a.columnSpan} and rows ${b.rowStart}+${b.rowSpan} cols ${b.columnStart}+${b.columnSpan} overlap`);
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 // ---------------------------------------------------------------------
 // PALETTE DROP: after a module is dropped from the palette, the page shows
 // exactly what was saved - every module, not only the ones the server moved.
@@ -2388,38 +2430,7 @@ const paletteDrop: Probe = {
 
       /** Everything on screen and in the database, compared. */
       const compare = async (what: string) => {
-        const onScreen = (await tab.evaluate(`[...document.querySelectorAll('[data-module-instance-id]')].map((el) => {
-          const row = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridRow);
-          const col = /(\\d+) \\/ span (\\d+)/.exec(el.style.gridColumn);
-          return row && col ? { id: el.getAttribute('data-module-instance-id'), rowStart: +row[1] - 1, rowSpan: +row[2], columnStart: +col[1] - 1, columnSpan: +col[2] } : null;
-        }).filter(Boolean)`)) as Array<{ id: string; rowStart: number; rowSpan: number; columnStart: number; columnSpan: number }>;
-        const saved = await storedRows(onScreen.map((m) => m.id));
-        const problems: string[] = [];
-        for (const m of onScreen) {
-          const s = saved[m.id];
-          if (!s) continue;
-          if (s.rowStart !== m.rowStart || s.rowSpan !== m.rowSpan || s.columnStart !== m.columnStart || s.columnSpan !== m.columnSpan) {
-            problems.push(`${m.id.slice(-6)} shown at rows ${m.rowStart}+${m.rowSpan} cols ${m.columnStart}+${m.columnSpan}, saved at rows ${s.rowStart}+${s.rowSpan} cols ${s.columnStart}+${s.columnSpan}`);
-          }
-        }
-        // Overlaps, page by page, on screen.
-        const byPage = new Map<string, typeof onScreen>();
-        for (const m of onScreen) {
-          const pageId = saved[m.id]?.pageId;
-          if (!pageId) continue;
-          byPage.set(pageId, [...(byPage.get(pageId) ?? []), m]);
-        }
-        for (const mods of byPage.values()) {
-          for (let i = 0; i < mods.length; i++) {
-            for (let j = i + 1; j < mods.length; j++) {
-              const a = mods[i], b = mods[j];
-              if (a.columnStart < b.columnStart + b.columnSpan && b.columnStart < a.columnStart + a.columnSpan &&
-                  a.rowStart < b.rowStart + b.rowSpan && b.rowStart < a.rowStart + a.rowSpan) {
-                problems.push(`on screen, rows ${a.rowStart}+${a.rowSpan} and ${b.rowStart}+${b.rowSpan} overlap`);
-              }
-            }
-          }
-        }
+        const problems = await screenAgainstDatabase(tab);
         if (problems.length > 0) fail("palette drop", `${what}: ${problems.slice(0, 2).join("; ")}`);
         return problems.length === 0;
       };
@@ -2660,6 +2671,263 @@ const firstVisit: Probe = {
   },
 };
 
+// ---------------------------------------------------------------------
+// WIDTH RESIZE (horizontal resizing, 2026-10-01): a module's side edge,
+// dragged a day at a time, to a hard stop at anything in its rows.
+//
+// Andrew's own case first: on the weekly left page the to-do under the
+// hours "shouldnt be able to expand left unless the reminders were one cell
+// shorter vertically". Then what widening made possible and nothing had
+// checked: the sidebar's "+" drawn over the widened to-do, a drop landing
+// on it, and a drop beside one narrowed to two days. Then the icon strip,
+// "shrinkable down to 1 cell high 1 day wide" and inserted one row tall.
+// After every step the page must match the database, nothing overlapping.
+// ---------------------------------------------------------------------
+const widthResize: Probe = {
+  name: "width resize",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const failuresBefore = failures;
+    const guest = await makeGuestJournal("Width resize check");
+    const { prisma } = await import("../src/lib/prisma.js");
+    const weeklyPage = (position: number) =>
+      prisma.page.findFirst({
+        where: { plannerId: guest.journalId, level: "WEEKLY", variantKey: null, position },
+        include: { moduleInstances: { include: { moduleType: true } } },
+      });
+    const context = await page.context().browser()!.newContext({
+      viewport: { width: VIEWPORT.width, height: 1200 },
+      deviceScaleFactor: 1,
+    });
+    try {
+      const left = await weeklyPage(0);
+      const right = await weeklyPage(1);
+      const todo = left?.moduleInstances.find((mi) => mi.moduleType.slug === "todo-checklist");
+      const rightTodo = right?.moduleInstances.find((mi) => mi.moduleType.slug === "todo-checklist");
+      if (!todo || todo.rowStart === null || !rightTodo) {
+        fail("width resize", "the weekly spread has no to-do under the hours on each page");
+        return;
+      }
+      const R = todo.rowStart;
+      // Reminders reaching one row into the to-do's top row.
+      await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 9], ["Reminders", 12, R - 12 + 1]]);
+      await context.addCookies([
+        { name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" },
+        { name: "memari-open", value: "WEEKLY", domain: "localhost", path: "/" },
+      ]);
+      const tab = await context.newPage();
+      const open = async () => {
+        await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+        await tab.waitForTimeout(3000);
+      };
+      const stored = async (id: string) => (await storedRows([id]))[id];
+      const matches = async (what: string) => {
+        const problems = await screenAgainstDatabase(tab);
+        if (problems.length > 0) fail("width resize", `${what}: ${problems.slice(0, 2).join("; ")}`);
+        return problems.length === 0;
+      };
+      /** Drags one side edge of a module by `days` (negative = left), the
+       *  grip held near the top of its strip, clear of the drawer. */
+      const dragEdge = async (id: string, edge: "left" | "right", days: number) => {
+        const handle = tab.locator(`[data-width-handle="${id}:${edge}"]`);
+        const box = await handle.boundingBox({ timeout: 5000 }).catch(() => null);
+        const moduleBox = await tab.locator(`[data-module-instance-id="${id}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+        const span = (await stored(id))?.columnSpan;
+        if (!box || !moduleBox || !span) return false;
+        const dayPx = (moduleBox.width / span) * 6;
+        const x0 = box.x + box.width / 2;
+        const y0 = box.y + Math.min(30, box.height / 2);
+        await tab.mouse.move(x0, y0);
+        await tab.mouse.down();
+        await tab.mouse.move(x0 + days * dayPx, y0, { steps: 10 });
+        await tab.waitForTimeout(400);
+        await tab.mouse.up();
+        await tab.waitForTimeout(1500);
+        return true;
+      };
+      const columns = async (id: string) => {
+        const s = await stored(id);
+        return s ? `${s.columnStart}:${s.columnSpan}` : "gone";
+      };
+      const openPalette = async () => {
+        await tab.locator('button[title="Open module palette"]').click();
+        await tab.waitForTimeout(800);
+        await tab.getByRole("button", { name: "Modules", exact: true }).first().click();
+        await tab.waitForTimeout(900);
+      };
+      /** A palette card carried to a point on the page and let go. */
+      const dropCard = async (slug: string, x: number, y: number) => {
+        const card = tab.locator(`[data-palette-slug="${slug}"]`).first();
+        await card.scrollIntoViewIfNeeded();
+        const from = await card.boundingBox({ timeout: 5000 }).catch(() => null);
+        if (!from) return false;
+        const x0 = from.x + from.width / 2;
+        const y0 = from.y + Math.min(40, from.height / 2);
+        await tab.mouse.move(x0, y0);
+        await tab.mouse.down();
+        for (let i = 1; i <= 25; i++) {
+          await tab.mouse.move(x0 + ((x - x0) * i) / 25, y0 + ((y - y0) * i) / 25);
+          await tab.waitForTimeout(16);
+        }
+        await tab.waitForTimeout(400);
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        return true;
+      };
+
+      // 1. Blocked: Reminders is in the to-do's top row.
+      await open();
+      if (!(await dragEdge(todo.id, "left", -1))) {
+        fail("width resize", "no left-edge handle on the to-do");
+        return;
+      }
+      if ((await columns(todo.id)) !== "6:18") {
+        fail("width resize", `widened into the sidebar past Reminders, which reaches into its top row (saved ${await columns(todo.id)})`);
+        return;
+      }
+      if (!(await matches("after the blocked drag"))) return;
+
+      // 2. A STALE page: drawn with Reminders a row shorter, so the editor
+      // lets the edge go - but Reminders has grown back in the database
+      // since. The server resolves the edge again from what is stored, so it
+      // must refuse, and the page must show what it saved. Without this the
+      // server's own check is never reached: a page that is current refuses
+      // the drag itself and sends nothing.
+      await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 9], ["Reminders", 12, R - 12]]);
+      await open();
+      await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 9], ["Reminders", 12, R - 12 + 1]]);
+      await dragEdge(todo.id, "left", -1);
+      if ((await columns(todo.id)) !== "6:18") {
+        fail("width resize", `a stale page widened the to-do over Reminders, which the database had in its top row (saved ${await columns(todo.id)})`);
+        return;
+      }
+      // Only the to-do: the rest of this page is stale by construction.
+      const shownColumns = await tab.evaluate(
+        `(() => { const m = /(\\d+) \\/ span (\\d+)/.exec(document.querySelector('[data-module-instance-id="${todo.id}"]')?.style.gridColumn ?? ""); return m ? (+m[1] - 1) + ":" + m[2] : "not in the grid"; })()`
+      );
+      if (shownColumns !== "6:18") {
+        fail("width resize", `after the server refused a stale page's drag, the to-do is shown at ${shownColumns}, not where it was saved (6:18)`);
+        return;
+      }
+
+      // 3. One row shorter, it widens - swept over several frames, not one jump.
+      await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 9], ["Reminders", 12, R - 12]]);
+      await open();
+      await tab.evaluate(
+        `(() => { window.__widths = []; const t0 = performance.now(); const el = document.querySelector('[data-module-instance-id="${todo.id}"]'); const loop = () => { window.__widths.push([performance.now() - t0, el.getBoundingClientRect().width]); if (performance.now() - t0 < 1500) requestAnimationFrame(loop); }; requestAnimationFrame(loop); })()`
+      );
+      await dragEdge(todo.id, "left", -1);
+      if ((await columns(todo.id)) !== "0:24") {
+        fail("width resize", `with Reminders a row shorter the to-do did not widen into the sidebar (saved ${await columns(todo.id)})`);
+        return;
+      }
+      const widths = ((await tab.evaluate(`window.__widths`)) as number[][]).map((w) => Math.round(w[1]));
+      const between = new Set(widths.filter((w) => w > widths[0] && w < widths[widths.length - 1]));
+      if (between.size < 2) fail("width resize", `the widening jumped rather than swept (${between.size} width(s) between the two)`);
+      if (!(await matches("after widening"))) return;
+
+      // 4. No dashed "+" box drawn over it - the sidebar stack's free space,
+      // or either empty zone. (A section's hover circle sits on the section's
+      // bottom edge by design, which is now the to-do's top edge.)
+      const todoBox = (await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
+      if (!todoBox) {
+        fail("width resize", "the widened to-do is not on the page");
+        return;
+      }
+      const pluses = (await tab.evaluate(
+        `[...document.querySelectorAll('[data-add-zone]')].map((el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; })`
+      )) as Array<{ left: number; top: number; width: number; height: number }>;
+      const over = pluses.filter(
+        (b) =>
+          b.width > 2 &&
+          b.height > 2 &&
+          b.left < todoBox.x + todoBox.width - 2 &&
+          todoBox.x < b.left + b.width - 2 &&
+          b.top < todoBox.y + todoBox.height - 2 &&
+          todoBox.y < b.top + b.height - 2
+      );
+      if (over.length > 0) fail("width resize", `${over.length} "+" box(es) drawn over the widened to-do`);
+
+      // 5. Drops where it now is: the sidebar under Reminders, and the bottom
+      // zone. Each either fits or is refused - never on top of it.
+      await openPalette();
+      const beforeDrops = (await storedModules(guest.journalId)).length;
+      // This page's Reminders - the daily page has one too.
+      const remindersId = (await prisma.moduleInstance.findMany({ where: { pageId: todo.pageId } })).find(
+        (m) => (m.propValues as { heading?: string } | null)?.heading === "Reminders"
+      )?.id;
+      if (!remindersId) {
+        fail("width resize", "no Reminders on the weekly left page to drop under");
+        return;
+      }
+      const remindersBox = await tab.locator(`[data-module-instance-id="${remindersId}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+      if (remindersBox) {
+        await dropCard("labeled-box", remindersBox.x + remindersBox.width / 2, remindersBox.y + remindersBox.height - 4);
+        if (!(await matches("a box dropped at the foot of the sidebar, over the widened to-do"))) return;
+      }
+      const widened = (await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
+      if (!widened) {
+        fail("width resize", "the widened to-do is not on the page");
+        return;
+      }
+      await dropCard("labeled-box", widened.x + widened.width * 0.6, widened.y + 12);
+      if (!(await matches("a box dropped into the bottom zone, on the widened to-do"))) return;
+
+      // 6. Narrowed back from the left to two days, and a drop beside it.
+      await open();
+      const before = await stored(todo.id);
+      if (before && before.columnStart === 0 && before.columnSpan === 24) {
+        await dragEdge(todo.id, "left", 2);
+        if ((await columns(todo.id)) !== "12:12") fail("width resize", `narrowing from the left by two days saved ${await columns(todo.id)}, not 12:12`);
+      }
+      if (!(await matches("after narrowing"))) return;
+      await openPalette();
+      const narrowed = (await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
+      if (!narrowed) {
+        fail("width resize", "the narrowed to-do is not on the page");
+        return;
+      }
+      await dropCard("labeled-box", narrowed.x - narrowed.width / 4, narrowed.y + 12);
+      if (!(await matches("a box dropped beside the narrowed to-do"))) return;
+      const landed = (await storedModules(guest.journalId)).length - beforeDrops;
+
+      // 7. The icon strip arrives one row tall, and narrows to one day.
+      const rightBox = (await tab.locator(`[data-module-instance-id="${rightTodo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
+      if (!rightBox) {
+        fail("width resize", "the right page's to-do is not on the page");
+        return;
+      }
+      const beforeIds = new Set((await storedModules(guest.journalId)).map((m) => m.id));
+      await dropCard("icon-strip", rightBox.x + rightBox.width / 2, rightBox.y + 4);
+      const strip = (await storedModules(guest.journalId)).find((m) => !beforeIds.has(m.id) && m.slug === "icon-strip");
+      if (!strip) {
+        fail("width resize", "an icon strip dropped on the right page's to-do did not land");
+        return;
+      }
+      const arrived = await stored(strip.id);
+      if (arrived?.rowSpan !== 1) fail("width resize", `the icon strip arrived ${arrived?.rowSpan} rows tall, not one`);
+      if (!(await matches("after the icon strip landed"))) return;
+      await open();
+      await dragEdge(strip.id, "right", -3);
+      const narrowedStrip = await stored(strip.id);
+      if (narrowedStrip?.columnSpan !== 6 || narrowedStrip.rowSpan !== 1) {
+        fail(
+          "width resize",
+          `the icon strip narrowed from the right by three days saved ${narrowedStrip?.columnStart}:${narrowedStrip?.columnSpan} x ${narrowedStrip?.rowSpan} rows, not one day by one row`
+        );
+      }
+      if (!(await matches("after narrowing the icon strip"))) return;
+      if (failures === failuresBefore) note(
+        "width resize",
+        `held by Reminders, refused by the server for a stale page, widened with it a row shorter (${between.size} widths swept through), no "+" over it, three drops around it kept the page true (${landed} landed, the rest refused), narrowed back to two days, and an icon strip landed one row tall and narrowed to one day`
+      );
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+  },
+};
+
 const ALL_PROBES: Probe[] = [
   pillTravel,
   firstVisit,
@@ -2672,6 +2940,7 @@ const ALL_PROBES: Probe[] = [
   spineDrag,
   moduleEditor,
   paletteDrop,
+  widthResize,
   roundTwoPickers,
   textOnThePage,
   consoleClean,

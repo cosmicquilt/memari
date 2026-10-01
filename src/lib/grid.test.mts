@@ -27,6 +27,9 @@ import {
   followerRowsAfterGrowth,
   resizeSpineSpread,
   spineMaxRowSpan,
+  pageSections,
+  stackUnderSpine,
+  firstRowBelow,
   type SpineStack,
   rowsBelowHours,
   resolveZone,
@@ -1204,15 +1207,19 @@ console.log("All resizeSpineSpread checks passed.");
 }
 console.log("All rowsBelowHours checks passed.");
 // --- resolveZone -----------------------------------------------------------
+// The page's sections with the week's title over the sidebar, as the server
+// and the editor build them.
+const sectionsOf = (spine: GridRect) =>
+  pageSections(spine.columnStart > 0 ? [spine, { columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 3 }] : [spine], 24, 6);
 // Left page: hourly at columns 6-23, rows 0-19. Sidebar is 0-5.
 {
   const hourly = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
-  const below = resolveZone(hourly, { columnStart: 10, rowStart: 21 });
+  const below = resolveZone(hourly, { columnStart: 10, rowStart: 21 }, sectionsOf(hourly));
   assert(
     !!below && below.isBottomZone && below.columnStart === 6 && below.columnSpan === 18,
     `below the hours, in its columns, is the bottom zone (got ${JSON.stringify(below)})`
   );
-  const side = resolveZone(hourly, { columnStart: 2, rowStart: 5 });
+  const side = resolveZone(hourly, { columnStart: 2, rowStart: 5 }, sectionsOf(hourly));
   assert(
     !!side && !side.isBottomZone && side.columnStart === 0 && side.columnSpan === 6,
     `left of the hours is the sidebar, six columns wide (got ${JSON.stringify(side)})`
@@ -1230,7 +1237,7 @@ console.log("All rowsBelowHours checks passed.");
   // removed: 324 of a left page's 864 cells, every cell of the hourly block
   // above its last two rows, previewing six columns wide and committing
   // eighteen.
-  const overTheHours = resolveZone(hourly, { columnStart: 10, rowStart: 5 });
+  const overTheHours = resolveZone(hourly, { columnStart: 10, rowStart: 5 }, sectionsOf(hourly));
   assert(
     !!overTheHours && !overTheHours.isBottomZone && overTheHours.columnSpan === 6,
     `above the hours, in its columns, is the SIDEBAR - it is the locked block, not a zone to drop into (got ${JSON.stringify(overTheHours)})`
@@ -1239,11 +1246,11 @@ console.log("All rowsBelowHours checks passed.");
   // row 18 is the first that counts as below them.
   const firstBelow = hourly.rowStart + hourly.rowSpan - BOTTOM_ZONE_ROW_TOLERANCE;
   assert(
-    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow })?.isBottomZone === true,
+    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow }, sectionsOf(hourly))?.isBottomZone === true,
     `row ${firstBelow} is within the tolerance and IS the bottom zone`
   );
   assert(
-    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow - 1 })?.isBottomZone === false,
+    resolveZone(hourly, { columnStart: 10, rowStart: firstBelow - 1 }, sectionsOf(hourly))?.isBottomZone === false,
     `row ${firstBelow - 1} is one row too high and is NOT the bottom zone`
   );
   assert(BOTTOM_ZONE_ROW_TOLERANCE === 2, `the bottom-zone tolerance is ${BOTTOM_ZONE_ROW_TOLERANCE}, not the 2 these rows are written for`);
@@ -1251,9 +1258,40 @@ console.log("All rowsBelowHours checks passed.");
 // Right page: the hourly block spans the full width, so there is no sidebar.
 {
   const full = { columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan: 20 };
-  assert(resolveZone(full, { columnStart: 3, rowStart: 5 }) === null, "a full-width page has no sidebar to fall back to");
-  const below = resolveZone(full, { columnStart: 3, rowStart: 21 });
+  assert(resolveZone(full, { columnStart: 3, rowStart: 5 }, sectionsOf(full)) === null, "a full-width page has no sidebar to fall back to");
+  const below = resolveZone(full, { columnStart: 3, rowStart: 21 }, sectionsOf(full));
   assert(!!below && below.isBottomZone && below.columnSpan === 24, "but it still has a bottom zone");
+}
+// --- pageSections (2026-10-01): what a move or drop fills -----------------
+{
+  const title = { columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 3 };
+  const hours = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20 };
+  const show = (sections: Array<{ columnStart: number; columnSpan: number }>) =>
+    sections.map((x) => `${x.columnStart}:${x.columnSpan}`).join(" ");
+  assert(show(pageSections([title, hours], 24, 6)) === "0:6 6:18", `the week's left page: the sidebar, the three days (got ${show(pageSections([title, hours], 24, 6))})`);
+  assert(show(pageSections([{ ...hours, columnStart: 0, columnSpan: 24 }], 24, 6)) === "0:24", "the right page is one section");
+  // Read from the top: a to-do widened under the sidebar changes nothing.
+  const widened = { columnStart: 0, rowStart: 21, columnSpan: 24, rowSpan: 15 };
+  assert(show(pageSections([title, hours, widened], 24, 6)) === "0:6 6:18", "a module widened below does not merge the sections");
+  // "if none at the top of that section it is that entire empty section"
+  assert(show(pageSections([], 24, 6)) === "0:24", "an empty page is one section");
+  assert(show(pageSections([{ columnStart: 0, rowStart: 4, columnSpan: 6, rowSpan: 9 }], 24, 6)) === "0:6 6:18", "one module on a page: its days, and the empty rest");
+  assert(
+    show(pageSections([{ columnStart: 6, rowStart: 4, columnSpan: 6, rowSpan: 9 }], 24, 6)) === "0:6 6:6 12:12",
+    "empty days either side of a module are separate sections"
+  );
+  // Two modules side by side at the top are two sections; the higher one
+  // over a day wins it.
+  const a = { columnStart: 0, rowStart: 0, columnSpan: 12, rowSpan: 5 };
+  const b = { columnStart: 6, rowStart: 2, columnSpan: 18, rowSpan: 5 };
+  assert(show(pageSections([a, b], 24, 6)) === "0:12 12:12", `the higher module takes the day they share (got ${show(pageSections([a, b], 24, 6))})`);
+
+  // No spine: the section under the pointer, not one column (the editor) or
+  // one day (the server), which is what the two used to disagree on.
+  const empty = resolveZone(null, { columnStart: 9, rowStart: 4 }, pageSections([], 24, 6));
+  assert(!!empty && empty.columnStart === 0 && empty.columnSpan === 24 && !empty.isBottomZone, `an empty spine-less page: the whole width (got ${JSON.stringify(empty)})`);
+  const beside = resolveZone(null, { columnStart: 9, rowStart: 4 }, pageSections([{ columnStart: 0, rowStart: 4, columnSpan: 6, rowSpan: 9 }], 24, 6));
+  assert(!!beside && beside.columnStart === 6 && beside.columnSpan === 18, `beside a one-day module: the empty rest (got ${JSON.stringify(beside)})`);
 }
 console.log("All resolveZone checks passed.");
 
@@ -1378,3 +1416,56 @@ console.log("All packedTopEdge checks passed.");
   assert(!holds(above.reflow, { ...shownRect, rowStart: 27 }), "refused: an arrival off the foot of the page");
 }
 console.log("All arrival and proposalHolds checks passed.");
+
+// --- stackUnderSpine / firstRowBelow (horizontal resizing, 2026-10-01) -----
+// The weekly left page: the hours at columns 6..24, rows 0..20, a sidebar
+// stack at 0..6. The exact-columns rule these replace let the hours grow
+// into a to-do widened into the sidebar, and drew the sidebar's "+" over it.
+{
+  const hours = { columnStart: 6, columnSpan: 18, rowStart: 0, rowSpan: 20 };
+  const reminders = { id: "reminders", locked: false, columnStart: 0, columnSpan: 6, rowStart: 12, rowSpan: 9 };
+  const at = (id: string, columnStart: number, columnSpan: number, rowStart: number, rowSpan: number, locked = false) =>
+    ({ id, locked, columnStart, columnSpan, rowStart, rowSpan });
+  const ids = (r: { followers: Array<{ id: string }> }) => r.followers.map((f) => f.id).join(",");
+
+  // The template: a habit tracker and a to-do in the hours' own columns.
+  const plain = stackUnderSpine(hours, [reminders, at("todo", 6, 18, 27, 9), at("habits", 6, 18, 21, 6)], 36);
+  assert(ids(plain) === "habits,todo", `the template's stack follows, top to bottom (got ${ids(plain)})`);
+  assert(plain.boundRow === 36 && !plain.boundByModule, "with nothing else below, the page's foot bounds it");
+
+  // Narrowed to two days, it still lies within the hours: it follows.
+  const narrowed = stackUnderSpine(hours, [reminders, at("todo", 12, 12, 21, 15)], 36);
+  assert(ids(narrowed) === "todo", "a to-do narrowed within the hours' columns still follows");
+
+  // Widened into the sidebar, it does not, and it stops the hours.
+  const widened = stackUnderSpine(hours, [reminders, at("todo", 0, 24, 21, 15)], 36);
+  assert(ids(widened) === "", "a to-do widened past the hours' columns does not follow");
+  assert(widened.boundRow === 21 && widened.boundByModule, `it is the hours' hard stop (got ${widened.boundRow})`);
+  const stop: SpineStack = { spineRowSpan: 20, spineMinRowSpan: 2, spineRowEnd: 20, gapRows: 1, followers: [], boundRow: widened.boundRow, boundByModule: true };
+  assert(spineMaxRowSpan(stop) === 20, `the hours keep their gap above it, so cannot grow (got ${spineMaxRowSpan(stop)})`);
+  assert(spineMaxRowSpan({ ...stop, boundByModule: false }) === 21, "under nothing but the page's foot, no gap is kept");
+
+  // Side by side: not one column, so nothing follows and the first stops it.
+  const sideBySide = stackUnderSpine(hours, [at("todo", 6, 12, 21, 15), at("notes", 18, 6, 23, 13)], 36);
+  assert(ids(sideBySide) === "" && sideBySide.boundRow === 21, "two modules side by side under the hours: neither follows");
+
+  // A module widened in BESIDE a follower's rows takes the stack with it.
+  const among = stackUnderSpine(hours, [at("habits", 6, 18, 21, 6), at("todo", 0, 24, 27, 9)], 36);
+  assert(ids(among) === "habits" && among.boundRow === 27, "a stop under the followers bounds them, as a locked block did");
+  const beside = stackUnderSpine(hours, [at("habits", 6, 12, 21, 6), at("todo", 0, 6, 21, 15), at("wide", 0, 24, 30, 6)], 36);
+  assert(ids(beside) === "habits" && beside.boundRow === 30, "a module wholly in the sidebar is not under the hours at all");
+  const straddle = stackUnderSpine(hours, [at("habits", 6, 18, 21, 6), at("straddle", 0, 12, 24, 12)], 36);
+  assert(ids(straddle) === "" && straddle.boundRow === 21, "a module reaching in among the followers' rows: nothing follows");
+
+  // Locked blocks never follow.
+  const locked = stackUnderSpine(hours, [at("todo", 6, 18, 21, 9), at("footer", 6, 18, 33, 3, true)], 36);
+  assert(ids(locked) === "todo" && locked.boundRow === 33, "a locked block below the stack is its bound");
+
+  // firstRowBelow: anything in the columns, locked or not.
+  const sidebar = { columnStart: 0, columnSpan: 6 };
+  assert(firstRowBelow(sidebar, 21, [hours, at("todo", 0, 24, 21, 15)], 36) === 21, "the widened to-do bounds the sidebar stack");
+  assert(firstRowBelow(sidebar, 21, [hours, at("todo", 6, 18, 21, 15)], 36) === 36, "one in the hours' columns does not");
+  assert(firstRowBelow(sidebar, 21, [at("above", 0, 6, 3, 9)], 36) === 36, "nothing above the stack's bottom counts");
+}
+if (failures > 0) process.exitCode = 1;
+console.log(failures > 0 ? `${failures} stackUnderSpine/firstRowBelow checks FAILED` : "All stackUnderSpine and firstRowBelow checks passed.");

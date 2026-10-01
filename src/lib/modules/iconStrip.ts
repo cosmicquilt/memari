@@ -136,10 +136,12 @@ const GROUP_PAD_SHARE = 0.06;
 const GROUP_PAD_MAX_PX = 8;
 
 /** One strip, which is the module's minimum: a heading and a row of
- *  glyphs, one lattice cell tall. */
-export function getIconStripMinHeightPx(): number {
-  return rowHeightPx();
-}
+ *  glyphs, one lattice cell tall - so ONE ROW, whatever that row's drawn
+ *  height (its cell less the inset). Stated in rows rather than as the
+ *  cell's 75px: the floor rule measures a height against a row's DRAWN box,
+ *  which is inset inside the cell, so 75px came out as two rows and the
+ *  strip could never be one row tall. */
+export const ICON_STRIP_MIN_ROWS = 1;
 
 export function renderIconStrip(
   geometry: { x: number; y: number; width: number; height: number },

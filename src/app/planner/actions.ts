@@ -23,16 +23,34 @@ import {
   isDropProposal,
   type DropProposal,
   gravityRepackAfterDeparture,
+  dayUnitColumns,
+  pageSections,
+  stackUnderSpine,
+  firstRowBelow,
   type PageGrid,
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import { resolvePairResize } from "@/lib/stackResize";
+import { resolveWidthResize, type WidthEdge } from "@/lib/widthResize";
 
 /** A stored propValues column, as the floor rules want it. Prisma types it
  *  as JsonValue, and a row written before a prop existed simply has no key -
  *  getMinRowSpanForSlug layers whatever it gets over the schema defaults. */
 const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
   (mi.propValues as Record<string, unknown> | null) ?? {};
+
+/** A page's grid-placed instances other than `exceptId`, as the shared
+ *  geometry rules take them (stackUnderSpine), each holding its row. */
+function placedOthers<M extends { id: string; locked: boolean; columnStart: number | null; columnSpan: number; rowStart: number | null; rowSpan: number }>(
+  instances: M[],
+  exceptId: string
+) {
+  return instances.flatMap((mi) =>
+    mi.id !== exceptId && mi.columnStart !== null && mi.rowStart !== null
+      ? [{ columnStart: mi.columnStart, columnSpan: mi.columnSpan, rowStart: mi.rowStart, rowSpan: mi.rowSpan, locked: mi.locked, mi }]
+      : []
+  );
+}
 import {
   canCrossZones, isSpineSlug, findSpine, moduleDefinition } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
@@ -930,14 +948,16 @@ export async function addPaletteModuleAt(
         // resolveZone (grid.ts) is the shared rule, and it no longer takes
         // a tolerance - this side used to pass Infinity, which disagreed
         // with the editor's preview over a third of the page. See there.
-        const zone =
+        // And it reads the page's SECTIONS (pageSections), which decide the
+        // width on a page with no spine.
+        const zone = resolveZone(
           hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
-            ? resolveZone(
-                { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
-                  columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
-                { columnStart, rowStart }
-              )
-            : null;
+            ? { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
+                columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan }
+            : null,
+          { columnStart, rowStart },
+          pageSections(placedOthers(page.moduleInstances, ""), pageGrid.gridColumns, dayUnitColumns(pageGrid))
+        );
         const inBottomZone = zone?.isBottomZone ?? false;
         if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
           effectiveColumnStart = hourlyGrid.columnStart;
@@ -966,6 +986,12 @@ export async function addPaletteModuleAt(
           // overflowing, its day letters piled up, and an add zone offered
           // under the one-dot stack it formed.
           effectiveColumnSpan = sidebarColumnSpan(pageGrid, hourlyGrid?.columnStart);
+          // With no spine, the section under the drop - the whole page while
+          // it is empty (pageSections). It was one day at the left edge.
+          if (zone && !hourlyGrid) {
+            effectiveColumnStart = zone.columnStart;
+            effectiveColumnSpan = zone.columnSpan;
+          }
           // A to-do's dayCount used to be written here too. It is derived
           // from the span at render (see the registry's derivedProps), so
           // storing it was a second description of the same width - the
@@ -1461,15 +1487,17 @@ export async function moveModuleAcrossZones(
   const sourcePageGrid = pageGridFor(sourcePage);
   const targetPageGrid = pageGridFor(targetPage);
   const hourlyGrid = findSpine(targetPage.moduleInstances);
-  // The same shared rule the editor's preview uses - see resolveZone.
-  const zone =
+  // The same shared rule the editor's preview uses - see resolveZone. The
+  // sections leave out the module moving: on an empty page it would be the
+  // top of its own.
+  const zone = resolveZone(
     hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
-      ? resolveZone(
-          { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
-            columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan },
-          { columnStart, rowStart }
-        )
-      : null;
+      ? { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
+          columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan }
+      : null,
+    { columnStart, rowStart },
+    pageSections(placedOthers(targetPage.moduleInstances, instance.id), targetPageGrid.gridColumns, dayUnitColumns(targetPageGrid))
+  );
   const inBottomZone = zone?.isBottomZone ?? false;
 
   let effectiveColumnStart: number;
@@ -1478,6 +1506,10 @@ export async function moveModuleAcrossZones(
   if (inBottomZone && hourlyGrid && hourlyGrid.columnStart !== null) {
     effectiveColumnStart = hourlyGrid.columnStart;
     effectiveColumnSpan = hourlyGrid.columnSpan;
+  } else if (zone && !hourlyGrid) {
+    // No spine: the section under the drop (pageSections).
+    effectiveColumnStart = zone.columnStart;
+    effectiveColumnSpan = zone.columnSpan;
   } else {
     // Side zone. Reached by every zone-crossing type now, labeled-box
     // included — see canCrossZones (grid.ts) for why that used to throw
@@ -2208,6 +2240,85 @@ export async function resizeAdjacentModules(
   };
 }
 
+// HORIZONTAL RESIZE (2026-10-01): one module's left or right edge, a day at a
+// time, to a hard stop at anything in its rows - see widthResize.ts, the rule
+// the editor's live preview runs too. The client sends where the pointer put
+// the edge, not the width it previewed; the width is resolved again here from
+// the page as stored, so a stale preview cannot write an overlap.
+export async function resizeModuleWidth(instanceId: string, edge: WidthEdge, edgeColumn: number) {
+  const userId = await currentOwnerId();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  if (edge !== "left" && edge !== "right") {
+    throw new Error("Unknown edge");
+  }
+  if (!Number.isFinite(edgeColumn)) {
+    throw new Error("No edge position");
+  }
+  const instance = await prisma.moduleInstance.findFirst({
+    where: { id: instanceId, page: { planner: { ownerId: userId } } },
+    include: {
+      page: {
+        include: {
+          planner: { select: { theme: true } },
+          moduleInstances: { include: { moduleType: true } },
+        },
+      },
+      moduleType: true,
+    },
+  });
+  if (!instance) {
+    throw new Error("Module instance not found or not owned by this user");
+  }
+  if (instance.locked) {
+    throw new Error("Cannot resize a locked module");
+  }
+  if (instance.columnStart === null || instance.rowStart === null) {
+    throw new Error("Module isn't grid-placed");
+  }
+  const pageGrid = pageGridFor(instance.page);
+  const target = {
+    columnStart: instance.columnStart,
+    columnSpan: instance.columnSpan,
+    rowStart: instance.rowStart,
+    rowSpan: instance.rowSpan,
+  };
+  // Every other module on the page, locked or not: the hours stop an edge
+  // like anything else.
+  const others = instance.page.moduleInstances
+    .filter((mi) => mi.id !== instance.id && mi.columnStart !== null && mi.rowStart !== null && mi.rowSpan > 0)
+    .map((mi) => ({ columnStart: mi.columnStart!, columnSpan: mi.columnSpan, rowStart: mi.rowStart!, rowSpan: mi.rowSpan }));
+  const config = configOf(instance);
+  const resolved = resolveWidthResize(
+    {
+      target,
+      others,
+      gridColumns: pageGrid.gridColumns,
+      step: dayUnitColumns(pageGrid),
+      minRowSpanAt: (columnSpan) => getMinRowSpanForSlug(instance.moduleType.slug, pageGrid, columnSpan, config),
+    },
+    edge,
+    edgeColumn
+  );
+
+  const fontFamily = fontFamilyFromTheme(instance.page.planner.theme);
+  const unchanged = resolved.columnStart === target.columnStart && resolved.columnSpan === target.columnSpan;
+  const updated = unchanged
+    ? instance
+    : await prisma.moduleInstance.update({
+        where: { id: instance.id },
+        data: { columnStart: resolved.columnStart, columnSpan: resolved.columnSpan },
+      });
+  if (!unchanged) await syncLinkedPages([updated.pageId]);
+  const contexts = await renderContextsForBookOf(updated.pageId);
+  return {
+    element: renderInstance(updated, instance.moduleType.slug, pageGrid, fontFamily, contexts),
+    columnStart: resolved.columnStart,
+    columnSpan: resolved.columnSpan,
+  };
+}
+
 // Resizes an entire same-column stack from its own OUTER bottom edge —
 // the module passed in must be the bottom-most of its stack (nothing
 // else sits directly below it in the same column), unlike
@@ -2333,17 +2444,20 @@ export async function resizeStackFromBottom(bottomInstanceId: string, totalDelta
   const totalShrinkable = originalSpans.reduce((sum, span, i) => sum + (span - minSpans[i]), 0);
 
   const stackBottom = bottomRowStart + bottom.rowSpan;
-  // How far the stack may grow — up to whatever bounds it from below (a
-  // locked block sharing its column range, if any) or the page's own
-  // bottom edge otherwise. Same "column-range overlap, not exact span
-  // match" test resolveModulePlacement's own topBound/bottomBound use.
-  const columnsOverlap = (o: { columnStart: number | null; columnSpan: number }) =>
-    o.columnStart !== null && o.columnStart < bottomColumnStart + bottom.columnSpan && o.columnStart + o.columnSpan > bottomColumnStart;
-  const boundingBelow = bottom.page.moduleInstances.filter(
-    (mi): mi is typeof mi & { rowStart: number } =>
-      mi.locked && mi.rowStart !== null && mi.rowStart >= stackBottom && columnsOverlap(mi)
+  // How far the stack may grow - the first row anything else holds in its
+  // columns below it, locked or not, or the page's foot: firstRowBelow, the
+  // bound the editor's handle and "+" read. Only locked blocks counted while
+  // every module filled its zone; a module widened under this stack is as
+  // solid as one.
+  const inStack = new Set(stack.map((m) => m.id));
+  const maxBottomBound = firstRowBelow(
+    { columnStart: bottomColumnStart, columnSpan: bottom.columnSpan },
+    stackBottom,
+    bottom.page.moduleInstances
+      .filter((mi) => !inStack.has(mi.id) && mi.columnStart !== null && mi.rowStart !== null)
+      .map((mi) => ({ columnStart: mi.columnStart!, columnSpan: mi.columnSpan, rowStart: mi.rowStart!, rowSpan: mi.rowSpan })),
+    pageGrid.gridRows
   );
-  const maxBottomBound = boundingBelow.length > 0 ? Math.min(...boundingBelow.map((mi) => mi.rowStart)) : pageGrid.gridRows;
   const maxGrow = Math.max(0, maxBottomBound - stackBottom);
 
   // Clamped in terms of the resulting *gap* below the stack (maxGrow -
@@ -2939,16 +3053,13 @@ export async function updateHourlySettings(journalId: string, settings: {
       if (hourly.columnStart === null || hourly.rowStart === null) continue;
       const hourlyEnd = hourly.rowStart + hourly.rowSpan;
       const offGrid = pageGridFor(page);
-      const below = page.moduleInstances
-        .filter(
-          (mi): mi is typeof mi & { rowStart: number } =>
-            !mi.locked &&
-            mi.rowStart !== null &&
-            mi.columnStart === hourly.columnStart &&
-            mi.columnSpan === hourly.columnSpan &&
-            mi.rowStart >= hourlyEnd
-        )
-        .sort((a, b) => a.rowStart - b.rowStart);
+      // What follows the hours, and what stops it - stackUnderSpine.
+      const under = stackUnderSpine(
+        { columnStart: hourly.columnStart, columnSpan: hourly.columnSpan, rowStart: hourly.rowStart, rowSpan: hourly.rowSpan },
+        placedOthers(page.moduleInstances, hourly.id),
+        offGrid.gridRows
+      );
+      const below = under.followers.map((f) => ({ ...f.mi, rowStart: f.rowStart }));
       if (below.length === 0) continue;
       const members = below.map((mi) => ({
         rowStart: mi.rowStart,
@@ -2956,8 +3067,8 @@ export async function updateHourlySettings(journalId: string, settings: {
         minRowSpan: getMinRowSpanForSlug(mi.moduleType.slug, offGrid, mi.columnSpan, configOf(mi)),
       }));
       const gap = spineGapRows("hourly-grid-core", cellHeightPx(offGrid), { intervalMode: "off" }, hourly.rowSpan);
-      let placed = rowsBelowHours(members, hourlyEnd + gap, offGrid.gridRows);
-      if (placed.unmet > 0) placed = rowsBelowHours(members, hourlyEnd, offGrid.gridRows);
+      let placed = rowsBelowHours(members, hourlyEnd + gap, under.boundRow);
+      if (placed.unmet > 0) placed = rowsBelowHours(members, hourlyEnd, under.boundRow);
       if (placed.unmet > 0) continue;
       below.forEach((mi, i) => {
         const row = placed.rows[i];
@@ -3003,24 +3114,18 @@ export async function updateHourlySettings(journalId: string, settings: {
       const pageGrid = pageGridFor(page);
       const newRowSpan = pixelHeightToRowSpan(pageGrid, requiredHeightPx);
 
-      // The below-zone stack: unlocked siblings sharing hourly's own exact
-      // column range — same "exact match, not just overlap" membership
-      // test resizeStackFromBottom/resizeAdjacentModules already use for
-      // "is this really the same stack," not a looser overlap check.
-      // Top to bottom. The fit, the fair shrink and "the lowest" below all
-      // read this order, and the database hands rows back in whatever order
-      // it likes - so "delete the lowest to fit" could remove one that was
-      // not the lowest.
-      let belowMembers = page.moduleInstances
-        .filter(
-          (mi): mi is typeof mi & { rowStart: number } =>
-            !mi.locked &&
-            mi.rowStart !== null &&
-            mi.columnStart === hourly.columnStart &&
-            mi.columnSpan === hourly.columnSpan &&
-            mi.rowStart >= hourly.rowStart! + hourly.rowSpan
-        )
-        .sort((a, b) => a.rowStart - b.rowStart);
+      // The below-zone stack, and the first row it may not use: what
+      // follows the hours and what stops them - stackUnderSpine, the rule
+      // their own edge resizes with. Top to bottom. The fit, the fair shrink
+      // and "the lowest" below all read this order, and the database hands
+      // rows back in whatever order it likes - so "delete the lowest to fit"
+      // could remove one that was not the lowest.
+      const under = stackUnderSpine(
+        { columnStart: hourly.columnStart, columnSpan: hourly.columnSpan, rowStart: hourly.rowStart, rowSpan: hourly.rowSpan },
+        placedOthers(page.moduleInstances, hourly.id),
+        pageGrid.gridRows
+      );
+      let belowMembers = under.followers.map((f) => ({ ...f.mi, rowStart: f.rowStart }));
       // Checked against each member's CURRENT rowSpan, not its own minimum
       // floor — this repack (packStackFromTop, below) only ever moves a
       // member's rowStart, it never shrinks a member's own rowSpan to fit.
@@ -3057,7 +3162,7 @@ export async function updateHourlySettings(journalId: string, settings: {
       const placed = rowsBelowHours(
         belowMembers.map((mi, i) => ({ rowStart: mi.rowStart, rowSpan: mi.rowSpan, minRowSpan: floors[i] })),
         hourly.rowStart + newRowSpan + gapRows,
-        pageGrid.gridRows
+        under.boundRow
       );
       if (placed.unmet > 0) {
         // Only name the modules when removing the lowest would actually
@@ -3290,32 +3395,15 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
         ? Math.max(MIN_ROW_SPAN, pixelHeightToRowSpan(pageGrid, getHourlyGridCoreOffModeMinHeightPx()))
         : MIN_ROW_SPAN;
     const stackBottomRowEnd = spine.rowStart + spine.rowSpan;
-    // The below-zone followers: every unlocked instance sharing the
-    // spine's exact column range at or below its bottom, top to bottom.
-    // They move together, keeping their own relative spacing.
-    const followers = page.moduleInstances
-      .filter(
-        (mi) =>
-          !mi.locked &&
-          mi.id !== spine.id &&
-          mi.columnStart === spine.columnStart &&
-          mi.columnSpan === spine.columnSpan &&
-          mi.rowStart !== null &&
-          mi.rowStart >= stackBottomRowEnd
-      )
-      .sort((a, b) => (a.rowStart as number) - (b.rowStart as number));
-    const tailRowEnd =
-      followers.length > 0
-        ? Math.max(...followers.map((mi) => (mi.rowStart as number) + mi.rowSpan))
-        : stackBottomRowEnd;
-    const followerIds = new Set(followers.map((mi) => mi.id));
-    let boundBelowTail = pageGrid.gridRows;
-    for (const mi of page.moduleInstances) {
-      if (mi.id === spine.id || followerIds.has(mi.id) || mi.rowStart === null) continue;
-      const sameColumn = mi.columnStart === spine.columnStart && mi.columnSpan === spine.columnSpan;
-      if (mi.rowStart < tailRowEnd || !sameColumn) continue;
-      boundBelowTail = Math.min(boundBelowTail, mi.rowStart);
-    }
+    // The below-zone followers, top to bottom - they move together, keeping
+    // their own relative spacing - and what stops them: stackUnderSpine,
+    // the rule the editor's edge previews with.
+    const under = stackUnderSpine(
+      { columnStart: spine.columnStart as number, columnSpan: spine.columnSpan, rowStart: spine.rowStart, rowSpan: spine.rowSpan },
+      placedOthers(page.moduleInstances, spine.id),
+      pageGrid.gridRows
+    );
+    const followers = under.followers.map((f) => f.mi);
     // Each follower's OWN minimum, the same one its own handle stops at -
     // not zero, which it was until Habits was squeezed to one row under a
     // to-do. See spineMaxRowSpan (grid.ts) for the decision.
@@ -3329,7 +3417,8 @@ export async function resizeHourlyGridCore(instanceId: string, deltaRows: number
         rowSpan: mi.rowSpan,
         minRowSpan: getMinRowSpanForSlug(mi.moduleType.slug, pageGrid, mi.columnSpan, configOf(mi)),
       })),
-      boundRow: boundBelowTail,
+      boundRow: under.boundRow,
+      boundByModule: under.boundByModule,
     };
     return { page, spine, pageGrid, followers, stack };
   };

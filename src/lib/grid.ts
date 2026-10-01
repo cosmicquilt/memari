@@ -344,7 +344,88 @@ export type SpineStack = {
   /** The first row the stack may not use: a locked block below it, or the
    *  foot of the page. */
   boundRow: number;
+  /** boundRow is a MODULE's top, not the page's foot - see stackUnderSpine.
+   *  With nothing following, the spine then keeps its gap above it. */
+  boundByModule?: boolean;
 };
+
+/**
+ * THE STACK UNDER A SPINE, and what stops it (2026-10-01).
+ *
+ * The followers - what moves with the spine's bottom edge - are the unlocked
+ * modules below it that lie WITHIN its columns, provided they make one
+ * column: no two share a row, and nothing else sits among them. Anything
+ * else below the spine that reaches into its columns is a hard stop, and
+ * `boundRow` is the first row of the highest of them (the page's foot if
+ * there are none).
+ *
+ * The test was exact columns until horizontal resizing, when every module
+ * under the hours had the hours' columns and "the same columns" and "within
+ * them, in one column" were the same set. Now a to-do narrowed to two days
+ * still follows, and one widened into the sidebar does not - it would rise
+ * into the sidebar's modules as the hours shrank - so it stops the hours,
+ * where the exact test let the hours grow straight into it.
+ *
+ * Side by side they are not one column, and placeUnderSpine and
+ * rowsBelowHours both pack one column, so then nothing follows and the
+ * spine stops at the first of them.
+ *
+ * The editor's preview, resizeHourlyGridCore and the hours settings all
+ * read this, so the edge and the commit cannot disagree about what moves.
+ */
+export function stackUnderSpine<T extends GridPlacement & { locked: boolean }>(
+  spine: GridPlacement,
+  others: T[],
+  gridRows: number
+): { followers: T[]; boundRow: number; boundByModule: boolean } {
+  const spineRowEnd = spine.rowStart + spine.rowSpan;
+  const spineColumnEnd = spine.columnStart + spine.columnSpan;
+  const below = others.filter(
+    (o) =>
+      o.rowSpan > 0 &&
+      o.rowStart >= spineRowEnd &&
+      o.columnStart < spineColumnEnd &&
+      o.columnStart + o.columnSpan > spine.columnStart
+  );
+  let followers = below
+    .filter((o) => !o.locked && o.columnStart >= spine.columnStart && o.columnStart + o.columnSpan <= spineColumnEnd)
+    .sort((a, b) => a.rowStart - b.rowStart);
+  const oneColumn = followers.every(
+    (f, i) => i === 0 || f.rowStart >= followers[i - 1].rowStart + followers[i - 1].rowSpan
+  );
+  const tailRowEnd = followers.length > 0 ? Math.max(...followers.map((f) => f.rowStart + f.rowSpan)) : spineRowEnd;
+  const amongThem = below.some((o) => !followers.includes(o) && o.rowStart < tailRowEnd);
+  if (!oneColumn || amongThem) followers = [];
+  const stops = below.filter((o) => !followers.includes(o));
+  const boundRow = Math.min(gridRows, ...stops.map((o) => o.rowStart));
+  return { followers, boundRow, boundByModule: boundRow < gridRows };
+}
+
+/**
+ * The first row under a stack that anything else on the page holds, in the
+ * stack's columns - how far its bottom edge may go, and the free space a
+ * "+" below it offers. The page's foot if nothing is there.
+ *
+ * Any module, locked or not. Only locked ones were counted while every
+ * module filled its zone: nothing unlocked could sit under a stack in its
+ * columns without being in the stack. A module widened into the sidebar
+ * does, and the sidebar stack's edge grew into it and its "+" was drawn
+ * over it (2026-10-01).
+ */
+export function firstRowBelow(
+  columns: { columnStart: number; columnSpan: number },
+  fromRow: number,
+  others: GridPlacement[],
+  gridRows: number
+): number {
+  let bound = gridRows;
+  for (const o of others) {
+    if (o.rowSpan <= 0 || o.rowStart < fromRow) continue;
+    if (o.columnStart >= columns.columnStart + columns.columnSpan || o.columnStart + o.columnSpan <= columns.columnStart) continue;
+    bound = Math.min(bound, o.rowStart);
+  }
+  return bound;
+}
 
 /**
  * The tallest a spine can be dragged: its own span, the free rows under its
@@ -364,7 +445,10 @@ export function spineMaxRowSpan(stack: SpineStack): number {
   const spineRowStart = stack.spineRowEnd - stack.spineRowSpan;
   // Nothing below: the spine may take the page to its bound, and no gap is
   // kept under nothing.
-  if (stack.followers.length === 0) return Math.max(stack.spineRowSpan, stack.boundRow - spineRowStart);
+  // Under a MODULE, though, it stops a gap short of it, as a stack would.
+  if (stack.followers.length === 0) {
+    return Math.max(stack.spineRowSpan, stack.boundRow - spineRowStart - (stack.boundByModule ? stack.gapRows : 0));
+  }
   // The stack at its minimums, a gap under the spine. A module already
   // below its minimum cannot give more, so it counts at the height it has.
   const floors = stack.followers.reduce((sum, f) => sum + Math.min(f.rowSpan, f.minRowSpan), 0);
@@ -558,9 +642,50 @@ export type ZoneResolution = {
  */
 export const BOTTOM_ZONE_ROW_TOLERANCE = 2;
 
+/**
+ * A PAGE'S SECTIONS - the widths a moved or dropped module takes.
+ *
+ * Andrew, 2026-10-01, deciding how wide a move lands once modules could be
+ * any number of days wide: "fill the width space it can determined by the
+ * modules at the top of the page (if none at the top of that section it is
+ * that entire empty section) so on a week/month spread it would be the side
+ * bar the three first days columns or the right page."
+ *
+ * So: day by day across the page, the module whose top is highest over that
+ * day; runs of days under the SAME topmost module are one section, and runs
+ * of days with nothing over them are one section. Read from the top of the
+ * page, which nothing below can change - a to-do widened under the sidebar
+ * does not make the sidebar three days wide.
+ *
+ * Callers leave out the module being moved: on an empty page it would
+ * otherwise be the top of its own section.
+ */
+export function pageSections(
+  placed: GridRect[],
+  gridColumns: number,
+  step: number
+): Array<{ columnStart: number; columnSpan: number }> {
+  const sections: Array<{ columnStart: number; columnSpan: number }> = [];
+  let runTop: GridRect | null | undefined = undefined;
+  for (let columnStart = 0; columnStart < gridColumns; columnStart += step) {
+    const columnEnd = Math.min(gridColumns, columnStart + step);
+    let top: GridRect | null = null;
+    for (const rect of placed) {
+      if (rect.rowSpan <= 0 || rect.columnStart >= columnEnd || rect.columnStart + rect.columnSpan <= columnStart) continue;
+      if (!top || rect.rowStart < top.rowStart) top = rect;
+    }
+    const last = sections[sections.length - 1];
+    if (last && top === runTop) last.columnSpan = columnEnd - last.columnStart;
+    else sections.push({ columnStart, columnSpan: columnEnd - columnStart });
+    runTop = top;
+  }
+  return sections;
+}
+
 export function resolveZone(
   hourly: GridRect | null | undefined,
-  target: { columnStart: number; rowStart: number }
+  target: { columnStart: number; rowStart: number },
+  sections: Array<{ columnStart: number; columnSpan: number }>
 ): ZoneResolution | null {
   if (
     hourly &&
@@ -570,10 +695,23 @@ export function resolveZone(
   ) {
     return { columnStart: hourly.columnStart, columnSpan: hourly.columnSpan, isBottomZone: true };
   }
-  // The sidebar is everything left of the hourly block. Falls back to a
-  // single column only when there is no hourly block to measure against.
-  if (!hourly || hourly.columnStart > 0) {
-    return { columnStart: 0, columnSpan: hourly ? hourly.columnStart : 1, isBottomZone: false };
+  // The sidebar is everything left of the hourly block.
+  //
+  // On a page with a spine these ARE its sections - the spine is the top of
+  // its own columns, and the sidebar is one day under one title - so the
+  // two branches above and below read the spine directly. pageSections
+  // decides only where there is no spine to measure against, where this
+  // used to fall back to a single column (and the server to one day, so the
+  // preview and the drop disagreed): the section under the pointer, the
+  // whole page while it is empty.
+  if (hourly && hourly.columnStart > 0) {
+    return { columnStart: 0, columnSpan: hourly.columnStart, isBottomZone: false };
+  }
+  if (!hourly) {
+    const section = sections.find(
+      (s) => target.columnStart >= s.columnStart && target.columnStart < s.columnStart + s.columnSpan
+    );
+    return section ? { ...section, isBottomZone: false } : null;
   }
   return null;
 }

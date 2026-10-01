@@ -119,6 +119,9 @@ import {
   followerRowsAfterGrowth,
   resizeSpineSpread,
   spineMaxRowSpan,
+  pageSections,
+  stackUnderSpine,
+  firstRowBelow,
   type SpineStack,
   rowsBelowHours,
   resolveZone,
@@ -140,6 +143,7 @@ import {
 } from "@/lib/grid";
 import { MIN_ROW_SPAN, getMinRowSpanForSlug, minRowSpansForStack } from "@/lib/moduleMinRowSpan";
 import { resolvePairResize, pairResizeRange } from "@/lib/stackResize";
+import { resolveWidthResize, type WidthEdge, type WidthResizeInput } from "@/lib/widthResize";
 import {
   moduleDefinition,
   canCrossZones,
@@ -154,6 +158,7 @@ import {
   moveModuleAcrossZones,
   type SavedLayoutRow,
   resizeAdjacentModules,
+  resizeModuleWidth,
   resizeStackFromBottom,
   addPaletteModuleAt,
   restoreModulePlacements,
@@ -681,6 +686,9 @@ type StackBottom = {
   // updateHourlySettings, which shrinks what is below the hours no lower
   // than these, so the preview (rowsBelowHours) has to use the same ones.
   followerMinSpans?: number[];
+  // The first row the followers may not use - stackUnderSpine's boundRow: a
+  // module below them, or the page's foot. Present with followerMinSpans.
+  followerBoundRow?: number;
   // Present only on hourly-grid-core's own handle while increments are ON,
   // where the block's height is not a free quantity: it is rowCount times
   // whichever row height is set, so the only heights it can actually take
@@ -783,6 +791,13 @@ type StackBottom = {
 // put the state and the input back rather than editing this number - that
 // was the whole point of it being a slider.
 const DEFAULT_EASE_MS = 400;
+
+// HOW LONG A WIDTH STEP SWEEPS: 140ms on the crossing's curve. Andrew's pick
+// (2026-10-01) from a demo with the length on a slider - "smooth 140" -
+// after comparing it with an instant step (how the vertical resize moves)
+// and the crossing's own 400ms, which trailed a quick drag. Crossings keep
+// their 400 ("drag stays at 400ms for now").
+const WIDTH_EASE_MS = 140;
 
 const boxResizeTransition = (easeMs: number) =>
   easeMs > 0
@@ -1746,6 +1761,11 @@ function NativePage({
   easeContent,
   reflowContent,
   resizeFrozenSize,
+  widthEase,
+  widthResizeId,
+  onWidthResizeStart,
+  onWidthResizeMove,
+  onWidthResizeEnd,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
@@ -1831,6 +1851,14 @@ function NativePage({
   // PolotnoJsonRenderer recognize and hide the resizing pair's own stale
   // outer-border element.
   resizeFrozenSize: Record<string, { width: number; height: number }> | null;
+  /** A width still sweeping: its id, and the drawing's extent - the wider of
+   *  the two widths - for WIDTH_EASE_MS after a step. */
+  widthEase: { id: string; content: Placement } | null;
+  /** The module whose side edge is being dragged, if any. */
+  widthResizeId: string | null;
+  onWidthResizeStart: (target: WidthTarget, edge: WidthEdge) => void;
+  onWidthResizeMove: (target: WidthTarget, resolved: { columnStart: number; columnSpan: number }) => void;
+  onWidthResizeEnd: (target: WidthTarget, edge: WidthEdge, edgeColumn: number, resolved: { columnStart: number; columnSpan: number }) => void;
   onResizeStart: (pair: ResizePair) => void;
   onResizeMove: (pair: ResizePair, deltaRows: number, pushDown: number) => void;
   onResizeEnd: (pair: ResizePair, deltaRows: number) => void;
@@ -1938,10 +1966,15 @@ function NativePage({
         // module: out of grid flow so position and size share a clock,
         // content drawn at the larger of the two sizes, box clipping it.
         const reflowContentPlacement = reflowContent?.[id] ?? null;
-        const isEasingBox = easeContent?.instanceId === id || reflowContentPlacement !== null;
+        // A width step sweeping: the same window as a crossing, over the
+        // wider of the two widths.
+        const widthEasing = widthEase?.id === id;
+        const isEasingBox = easeContent?.instanceId === id || reflowContentPlacement !== null || widthEasing;
         const contentPlacement =
           easeContent?.instanceId === id
             ? easeContent.placement
+            : widthEasing
+            ? widthEase!.content
             : (reflowContentPlacement ?? placement);
         // isEasingBox, not just resizingIds. When a crossing ENDS,
         // crossingLivePreview returns null, so this id leaves
@@ -2098,7 +2131,11 @@ function NativePage({
         // had the module. Nothing shifts; the module just stops being
         // laid out and starts being positioned. A reflow later in the
         // gesture is then a change to an existing value, which animates.
-        const baseRect = activeId !== null ? gridCellToPixels(page.pageGrid, placement) : null;
+        // A module whose width is being dragged, or still sweeping, is out of
+        // grid flow too - left and width have to transition, and a grid
+        // column line cannot.
+        const widthMoving = widthResizeId === id || widthEasing;
+        const baseRect = activeId !== null || widthMoving ? gridCellToPixels(page.pageGrid, placement) : null;
         const draggedRectPx = !baseRect
           ? null
           : activeId === id
@@ -2136,7 +2173,7 @@ function NativePage({
             isResizing={resizingIds?.has(id) ?? false}
             suppressTransition={suppressTransitionIds?.has(id) ?? false}
             isSettling={settlingIds?.has(id) ?? false}
-            easeMs={easeMs}
+            easeMs={widthMoving ? WIDTH_EASE_MS : easeMs}
             scale={scale}
             justAdded={justAddedIds?.has(id) ?? false}
             onDelete={onDeleteModule}
@@ -2240,6 +2277,36 @@ function NativePage({
           reposition can change which modules are adjacent, and the
           handles' own positions would be fighting the live reflow
           preview for the same screen space otherwise. */}
+      {/* Each unlocked module's two side edges - horizontal resizing. */}
+      {activeId === null &&
+        instanceIds.map((id) => {
+          const placement = placements[id];
+          const info = moduleLookup.get(id);
+          if (!placement || !info || info.locked || placement.rowSpan <= 0) return null;
+          const target: WidthTarget = {
+            id,
+            pageId: page.pageId,
+            placement,
+            others: instanceIds
+              .filter((other) => other !== id)
+              .map((other) => placements[other])
+              .filter((other): other is Placement => !!other && other.rowSpan > 0),
+            minRowSpanAt: (columnSpan) =>
+              getMinRowSpanForSlug(info.slug, page.pageGrid, columnSpan, (info.propValues ?? {}) as Record<string, unknown>),
+          };
+          return (["left", "right"] as const).map((edge) => (
+            <WidthResizeHandle
+              key={`${id}:${edge}`}
+              target={target}
+              edge={edge}
+              pageGrid={page.pageGrid}
+              scale={scale}
+              onStart={onWidthResizeStart}
+              onMove={onWidthResizeMove}
+              onEnd={onWidthResizeEnd}
+            />
+          ));
+        })}
       {activeId === null &&
         resizePairs.map((pair) => (
           <ResizeHandle
@@ -2628,6 +2695,118 @@ function ResizeHandle({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+    />
+  );
+}
+
+// A MODULE'S SIDE EDGE, dragged to widen or narrow it a day at a time
+// (horizontal resizing, 2026-10-01). Where the edge may go is
+// resolveWidthResize - the rule resizeModuleWidth saves with - run against
+// the page as it stood when the drag began, so the preview and the save
+// cannot disagree. A strip just INSIDE the module's own edge, so two
+// modules side by side never share one, and short of its top and bottom,
+// which belong to the vertical resize strips.
+type WidthTarget = {
+  id: string;
+  pageId: string;
+  placement: Placement;
+  /** Everything else on the page as it stood - the stops. */
+  others: Placement[];
+  /** The module's content floor, in rows, at a width in columns. */
+  minRowSpanAt: (columnSpan: number) => number;
+};
+
+function WidthResizeHandle({
+  target,
+  edge,
+  pageGrid,
+  scale,
+  onStart,
+  onMove,
+  onEnd,
+}: {
+  target: WidthTarget;
+  edge: WidthEdge;
+  pageGrid: PageGrid;
+  scale: number;
+  onStart: (target: WidthTarget, edge: WidthEdge) => void;
+  onMove: (target: WidthTarget, resolved: { columnStart: number; columnSpan: number }) => void;
+  onEnd: (target: WidthTarget, edge: WidthEdge, edgeColumn: number, resolved: { columnStart: number; columnSpan: number }) => void;
+}) {
+  const rect = gridCellToPixels(pageGrid, target.placement);
+  // Page px per column, measured off the grid the same way ResizeHandle
+  // measures a row - the difference between two spans, not a formula.
+  const columnPitchPx = useMemo(() => {
+    const one = gridCellToAllocation(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 1, rowSpan: 1 });
+    const two = gridCellToAllocation(pageGrid, { columnStart: 0, rowStart: 0, columnSpan: 2, rowSpan: 1 });
+    return two.width - one.width;
+  }, [pageGrid]);
+  const dragRef = useRef<{ clientX: number; startEdge: number; input: WidthResizeInput } | null>(null);
+  // Everything about the drag is frozen at pointer-down: `target` is the
+  // module's LIVE placement, which the preview moves under the pointer.
+  const resolveAt = useCallback(
+    (clientX: number) => {
+      const drag = dragRef.current;
+      if (!drag) return null;
+      const edgeColumn = drag.startEdge + (clientX - drag.clientX) / scale / columnPitchPx;
+      return { edgeColumn, resolved: resolveWidthResize(drag.input, edge, edgeColumn) };
+    },
+    [edge, scale, columnPitchPx]
+  );
+  // About 12 screen px wide whatever the zoom, and never under a quarter of
+  // a cell; the vertical strips' 32 page px kept clear at top and bottom, or
+  // a quarter of a short module's height.
+  const width = Math.max(24, 12 / Math.max(0.05, scale));
+  const inset = Math.min(RESIZE_HANDLE_HALF_HEIGHT_PX, rect.height * 0.25);
+  return (
+    <div
+      data-width-handle={`${target.id}:${edge}`}
+      style={{
+        position: "absolute",
+        left: edge === "left" ? rect.x : rect.x + rect.width - width,
+        top: rect.y + inset,
+        width,
+        height: Math.max(0, rect.height - inset * 2),
+        cursor: "ew-resize",
+        touchAction: "none",
+        zIndex: 3,
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        lockCursor("ew-resize");
+        const { placement } = target;
+        dragRef.current = {
+          clientX: event.clientX,
+          startEdge: edge === "left" ? placement.columnStart : placement.columnStart + placement.columnSpan,
+          input: {
+            target: placement,
+            others: target.others,
+            gridColumns: pageGrid.gridColumns,
+            step: dayUnitColumns(pageGrid),
+            minRowSpanAt: target.minRowSpanAt,
+          },
+        };
+        onStart(target, edge);
+      }}
+      onPointerMove={(event) => {
+        const at = resolveAt(event.clientX);
+        if (at) onMove(target, at.resolved);
+      }}
+      onPointerUp={(event) => {
+        const at = resolveAt(event.clientX);
+        dragRef.current = null;
+        unlockCursor();
+        if (at) onEnd(target, edge, at.edgeColumn, at.resolved);
+      }}
+      onPointerCancel={() => {
+        const drag = dragRef.current;
+        dragRef.current = null;
+        unlockCursor();
+        // Back to where it began.
+        if (drag) onEnd(target, edge, drag.startEdge, drag.input.target);
+      }}
     />
   );
 }
@@ -3141,6 +3320,9 @@ function AddModuleButton({
       type="button"
       onClick={rowSpan > 0 ? onClick : undefined}
       title="Add a module here"
+      // The dashed box over free space - for the browser check, which must
+      // tell it from SectionAddButton's hover circle (same title).
+      data-add-zone=""
       style={{
         position: "absolute",
         left: rect.x,
@@ -5025,6 +5207,25 @@ export function NativePlannerEditor({
     pushDown: number;
   } | null>(null);
 
+  // A SIDE EDGE being dragged (horizontal resizing): the module's width as
+  // the handle has resolved it, a day at a time. Null the rest of the time.
+  const [widthDrag, setWidthDrag] = useState<{
+    id: string;
+    pageId: string;
+    edge: WidthEdge;
+    start: Placement;
+    columnStart: number;
+    columnSpan: number;
+  } | null>(null);
+  // For WIDTH_EASE_MS after each step, the drawing is the wider of the two
+  // widths - from wherever each edge was to wherever it is going - so the box
+  // sweeping between them is a window over it, as a crossing's is.
+  const [widthEase, setWidthEase] = useState<{ id: string; content: Placement } | null>(null);
+  const widthEaseTimerRef = useRef<number | null>(null);
+  // The live width, written only by the handlers below (event time, never
+  // render), so a step's ease is armed once from what was really on screen.
+  const activeWidthRef = useRef<{ id: string; start: Placement; columnStart: number; columnSpan: number } | null>(null);
+
   // Same shape of state as resizeDrag above, for a StackResizeHandle drag
   // instead of a ResizePair one — kept separate rather than unified into
   // one type, since the two are genuinely different operations (a pair
@@ -5045,6 +5246,7 @@ export function NativePlannerEditor({
     deltaRows: number;
     // See StackBottom's followerMinSpans. Frozen at drag start with the rest.
     followerMinSpans?: number[];
+    followerBoundRow?: number;
     // Instances riding along with the member's own span change instead
     // of changing their own span — see StackBottom's own followerIds
     // comment. Empty for every ordinary stack resize.
@@ -5067,6 +5269,7 @@ export function NativePlannerEditor({
       memberMinSpans: number[];
       followerIds: string[];
       followerMinSpans?: number[];
+      followerBoundRow?: number;
       rowHeightSnaps?: StackBottom["rowHeightSnaps"];
     }>;
     // Present on a row-height drag. What is below the hours is then not
@@ -5158,6 +5361,7 @@ export function NativePlannerEditor({
           memberMinSpans: stackResizeDrag.memberMinSpans,
           followerIds: stackResizeDrag.followerIds,
           followerMinSpans: stackResizeDrag.followerMinSpans,
+          followerBoundRow: stackResizeDrag.followerBoundRow,
           rowHeightSnaps: stackResizeDrag.rowHeightSnaps,
         },
         ...stackResizeDrag.mirrors,
@@ -5222,7 +5426,7 @@ export function NativePlannerEditor({
                 minRowSpan: group.followerMinSpans?.[group.followerIds.indexOf(f.id)] ?? MIN_ROW_SPAN,
               })),
               member.rowStart + member.rowSpan + snap.gapRows,
-              followerPageGrid.gridRows
+              group.followerBoundRow ?? followerPageGrid.gridRows
             ).rows;
           } else {
             // Only an increments-on drag whose span names no row height can
@@ -5256,12 +5460,22 @@ export function NativePlannerEditor({
       }
       }
     }
+    if (widthDrag) {
+      const at = next[widthDrag.id];
+      if (at && (at.columnStart !== widthDrag.columnStart || at.columnSpan !== widthDrag.columnSpan)) {
+        next = { ...next, [widthDrag.id]: { ...at, columnStart: widthDrag.columnStart, columnSpan: widthDrag.columnSpan } };
+      }
+    }
     return next;
-  }, [placements, resizeDrag, stackResizeDrag, pageGridByPageId]);
+  }, [placements, resizeDrag, stackResizeDrag, widthDrag, pageGridByPageId]);
 
   const resizingIds = useMemo(() => {
-    if (!resizeDrag && !stackResizeDrag) return null;
+    if (!resizeDrag && !stackResizeDrag && !widthDrag && !widthEase) return null;
     return new Set([
+      // A width being dragged, or still sweeping after its last step: drawn
+      // live at its width like any other resize.
+      ...(widthDrag ? [widthDrag.id] : []),
+      ...(widthEase ? [widthEase.id] : []),
       ...(resizeDrag ? [resizeDrag.topId, resizeDrag.bottomId] : []),
       ...(stackResizeDrag ? stackResizeDrag.memberIds : []),
       // Followers too, now that they give up height rather than only
@@ -5275,7 +5489,7 @@ export function NativePlannerEditor({
       ...(stackResizeDrag ? stackResizeDrag.mirrors.flatMap((m) => [...m.memberIds, ...m.followerIds]) : []),
       ...(stackResizeDrag?.spread ?? []).flatMap((s) => [s.spineId, ...s.followerIds]),
     ]);
-  }, [resizeDrag, stackResizeDrag]);
+  }, [resizeDrag, stackResizeDrag, widthDrag, widthEase]);
 
   // Frozen (last-committed, pre-drag) pixel size for whichever pair is
   // currently resizing — lets PolotnoJsonRenderer recognize and hide one
@@ -5309,8 +5523,13 @@ export function NativePlannerEditor({
   // NativeModule's own CSS outline (always computed from the live
   // `placement`, never stale) is a live-accurate stand-in for it.
   const resizeFrozenSize = useMemo(() => {
-    if (!resizeDrag && !stackResizeDrag) return null;
+    if (!resizeDrag && !stackResizeDrag && !widthDrag) return null;
     const result: Record<string, { width: number; height: number }> = {};
+    if (widthDrag) {
+      const pageGrid = pageGridByPageId[widthDrag.pageId];
+      const committed = placements[widthDrag.id];
+      if (pageGrid && committed) result[widthDrag.id] = gridCellToPixels(pageGrid, committed);
+    }
     if (resizeDrag) {
       const pageGrid = pageGridByPageId[resizeDrag.pageId];
       const top = placements[resizeDrag.topId];
@@ -5330,7 +5549,7 @@ export function NativePlannerEditor({
       }
     }
     return result;
-  }, [resizeDrag, stackResizeDrag, placements, pageGridByPageId]);
+  }, [resizeDrag, stackResizeDrag, widthDrag, placements, pageGridByPageId]);
 
   // Recomputed from the LIVE displayPlacements (not the static `pages`
   // prop, and not the last-committed `placements` either) on every
@@ -5456,26 +5675,43 @@ export function NativePlannerEditor({
         });
         byColumn.set(columnKey, group);
       }
-      const stackBottoms: StackBottom[] = [];
+      // A stack is a CONTIGUOUS run in one column range, as
+      // resizeStackFromBottom walks it. While every module filled its zone
+      // the two were the same thing; with horizontal resizing, a module of
+      // another width can sit between two of the same columns, and grouping
+      // by columns alone made one stack of modules on either side of it.
+      const runs: Array<[string, NonNullable<ReturnType<typeof byColumn.get>>]> = [];
       for (const [columnKey, group] of byColumn) {
-        const [columnStart, columnSpan] = columnKey.split(":").map(Number);
         const sorted = [...group].sort((a, b) => a.rowStart - b.rowStart);
+        let run = [sorted[0]];
+        for (const member of sorted.slice(1)) {
+          const last = run[run.length - 1];
+          if (member.rowStart === last.rowStart + last.rowSpan) run.push(member);
+          else {
+            runs.push([columnKey, run]);
+            run = [member];
+          }
+        }
+        runs.push([columnKey, run]);
+      }
+      const stackBottoms: StackBottom[] = [];
+      for (const [columnKey, group] of runs) {
+        const [columnStart, columnSpan] = columnKey.split(":").map(Number);
+        const sorted = group;
         const bottomMember = sorted[sorted.length - 1];
         const stackBottomRowEnd = bottomMember.rowStart + bottomMember.rowSpan;
-        // How far the stack may grow — mirrors resizeStackFromBottom's own
-        // server-side bound (actions.ts): whatever locked block shares
-        // this column range and sits at or below the stack's own current
-        // bottom, or the page's own gridRows if nothing does.
-        const columnsOverlap = (o: { columnStart: number; columnSpan: number }) =>
-          o.columnStart < columnStart + columnSpan && o.columnStart + o.columnSpan > columnStart;
-        let maxBottomBound = page.pageGrid.gridRows;
-        for (const otherId of pageIds) {
-          const otherInfo = moduleLookup.get(otherId);
-          const otherPlacement = displayPlacements[otherId];
-          if (!otherInfo?.locked || !otherPlacement) continue;
-          if (otherPlacement.rowStart < stackBottomRowEnd || !columnsOverlap(otherPlacement)) continue;
-          maxBottomBound = Math.min(maxBottomBound, otherPlacement.rowStart);
-        }
+        // How far the stack may grow - the first row anything else holds
+        // in these columns below it, locked or not, or the page's foot:
+        // firstRowBelow, the bound resizeStackFromBottom commits with.
+        const maxBottomBound = firstRowBelow(
+          { columnStart, columnSpan },
+          stackBottomRowEnd,
+          pageIds.flatMap((otherId) => {
+            const otherPlacement = displayPlacements[otherId];
+            return otherPlacement && !group.some((m) => m.id === otherId) ? [otherPlacement] : [];
+          }),
+          page.pageGrid.gridRows
+        );
         stackBottoms.push({
           key: `stack:${bottomMember.id}`,
           pageId: page.pageId,
@@ -5566,39 +5802,24 @@ export function NativePlannerEditor({
           pixelHeightToRowSpan(page.pageGrid, getHourlyGridCoreOffModeMinHeightPx())
         );
         const stackBottomRowEnd = placement.rowStart + placement.rowSpan;
-        // The below-zone "followers": every unlocked instance sharing the
-        // spine's exact column range at or below its bottom, top to bottom
-        // - the same membership test resizeHourlyGridCore uses.
-        const followers = pageIds
-          .filter((otherId) => {
-            if (otherId === id) return false;
+        // The below-zone "followers", top to bottom, and what stops them -
+        // stackUnderSpine (grid.ts), the rule resizeHourlyGridCore and the
+        // hours settings read too.
+        const under = stackUnderSpine(
+          placement,
+          pageIds.flatMap((otherId) => {
             const other = moduleLookup.get(otherId);
             const otherPlacement = displayPlacements[otherId];
-            if (!other || other.locked || !otherPlacement) return false;
-            return (
-              otherPlacement.columnStart === placement.columnStart &&
-              otherPlacement.columnSpan === placement.columnSpan &&
-              otherPlacement.rowStart >= stackBottomRowEnd
-            );
-          })
-          .sort((a, b) => (displayPlacements[a]?.rowStart ?? 0) - (displayPlacements[b]?.rowStart ?? 0));
-        // What bounds them from below: a LOCKED block in the same columns,
-        // or the page. An unlocked one there would be a follower already.
+            return otherId !== id && other && otherPlacement ? [{ ...otherPlacement, id: otherId, locked: other.locked }] : [];
+          }),
+          page.pageGrid.gridRows
+        );
+        const followers = under.followers.map((f) => f.id);
         const tailRowEnd =
           followers.length > 0
             ? Math.max(...followers.map((fid) => (displayPlacements[fid]?.rowStart ?? 0) + (displayPlacements[fid]?.rowSpan ?? 0)))
             : stackBottomRowEnd;
-        let boundBelowTail = page.pageGrid.gridRows;
-        for (const otherId of pageIds) {
-          if (otherId === id || followers.includes(otherId)) continue;
-          const other = moduleLookup.get(otherId);
-          const otherPlacement = displayPlacements[otherId];
-          if (!other?.locked || !otherPlacement) continue;
-          const sameColumn =
-            otherPlacement.columnStart === placement.columnStart && otherPlacement.columnSpan === placement.columnSpan;
-          if (otherPlacement.rowStart < tailRowEnd || !sameColumn) continue;
-          boundBelowTail = Math.min(boundBelowTail, otherPlacement.rowStart);
-        }
+        const boundBelowTail = under.boundRow;
         // Each follower's OWN minimum - the one its own handle stops at, and
         // the one updateHourlySettings and resizeHourlyGridCore shrink to.
         const followerMinSpans = followers.map((fid) => {
@@ -5621,6 +5842,7 @@ export function NativePlannerEditor({
             minRowSpan: followerMinSpans[i],
           })),
           boundRow: boundBelowTail,
+          boundByModule: under.boundByModule,
         };
         spineStacks.set(id, { offModeMinRowSpan, followers, followerMinSpans, tailRowEnd, boundBelowTail, stack });
         ceilingBySlug.set(info.slug, Math.min(ceilingBySlug.get(info.slug) ?? Infinity, spineMaxRowSpan(stack)));
@@ -5669,7 +5891,10 @@ export function NativePlannerEditor({
           ? placement.rowStart + spreadCeiling
           : stackBottomRowEnd +
             (boundBelowTail - tailRowEnd) +
-            followers.reduce((sum, fid) => sum + (displayPlacements[fid]?.rowSpan ?? 0), 0);
+            followers.reduce((sum, fid) => sum + (displayPlacements[fid]?.rowSpan ?? 0), 0) -
+            // Nothing following, a module below: the gap stays, as
+            // spineMaxRowSpan keeps it.
+            (followers.length === 0 && stack.boundByModule ? stack.gapRows : 0);
 
         // The heights this block can actually take with increments on, one
         // per row-height option, filtered to those that fit in the room the
@@ -5793,7 +6018,7 @@ export function NativePlannerEditor({
                     minRowSpan: followerMinSpans[i],
                   })),
                   placement.rowStart + option.rowSpan + option.gapRows,
-                  page.pageGrid.gridRows
+                  boundBelowTail
                 ).unmet === 0
               : // A calendar span, offered where the commit can reach it:
                 // where BOTH pages' stacks still fit at their minimums. The
@@ -5878,6 +6103,7 @@ export function NativePlannerEditor({
           maxBottomBound,
           followerIds: followers,
           followerMinSpans,
+          followerBoundRow: boundBelowTail,
           spine: { slug: info.slug, stack },
           rowHeightSnaps: rowHeightOptions?.map(({ rowSpan, rowHeightPt, gapRows }) => ({
             rowSpan,
@@ -6655,6 +6881,20 @@ export function NativePlannerEditor({
       const existing = stackBottomsByPageId[page.pageId] ?? [];
       const hasZone = (columnStart: number, columnSpan: number) =>
         existing.some((sb) => sb.columnStart === columnStart && sb.columnSpan === columnSpan);
+      // Anything unlocked reaching into the zone's columns below its top
+      // fills it too, whatever its own columns. A module widened across
+      // both zones (horizontal resizing) is a stack of neither, and the
+      // exact-columns test above drew both zones' "+" over it.
+      const reachesInto = (columnStart: number, columnSpan: number, zoneTop: number) =>
+        pageIds.some((id) => {
+          const placement = displayPlacements[id];
+          if (!placement || moduleLookup.get(id)?.locked || placement.rowSpan <= 0) return false;
+          return (
+            placement.columnStart < columnStart + columnSpan &&
+            placement.columnStart + placement.columnSpan > columnStart &&
+            placement.rowStart + placement.rowSpan > zoneTop
+          );
+        });
       const zones: StackBottom[] = [];
 
       const hourlyGridId = pageIds.find((id) => isSpineSlug(moduleLookup.get(id)?.slug ?? ""));
@@ -6688,6 +6928,11 @@ export function NativePlannerEditor({
       if (
         hourlyGridPlacement &&
         !hasZone(hourlyGridPlacement.columnStart, hourlyGridPlacement.columnSpan) &&
+        !reachesInto(
+          hourlyGridPlacement.columnStart,
+          hourlyGridPlacement.columnSpan,
+          hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan
+        ) &&
         previewZoneKey !== `${page.pageId}:${hourlyGridPlacement.columnStart}:${hourlyGridPlacement.columnSpan}`
       ) {
         const zoneTop = hourlyGridPlacement.rowStart + hourlyGridPlacement.rowSpan + 1;
@@ -6731,18 +6976,20 @@ export function NativePlannerEditor({
           if (!info?.locked || !placement || placement.columnStart !== 0 || placement.columnSpan !== sidebarSpan) continue;
           zoneTop = Math.max(zoneTop, placement.rowStart + placement.rowSpan);
         }
-        zones.push({
-          key: `emptyzone:${page.pageId}:0:${sidebarSpan}`,
-          pageId: page.pageId,
-          bottomId: `__emptysidezone__${page.pageId}`,
-          columnStart: 0,
-          columnSpan: sidebarSpan,
-          members: [],
-          stackTopRowStart: zoneTop,
-          stackBottomRowEnd: zoneTop,
-          maxBottomBound: page.pageGrid.gridRows,
-          followerIds: [],
-        });
+        if (!reachesInto(0, sidebarSpan, zoneTop)) {
+          zones.push({
+            key: `emptyzone:${page.pageId}:0:${sidebarSpan}`,
+            pageId: page.pageId,
+            bottomId: `__emptysidezone__${page.pageId}`,
+            columnStart: 0,
+            columnSpan: sidebarSpan,
+            members: [],
+            stackTopRowStart: zoneTop,
+            stackBottomRowEnd: zoneTop,
+            maxBottomBound: page.pageGrid.gridRows,
+            followerIds: [],
+          });
+        }
       }
 
       byPage[page.pageId] = zones;
@@ -7055,18 +7302,33 @@ export function NativePlannerEditor({
       hourlyGridPlacement: Placement | undefined,
       slug: string,
       targetColumnStart: number,
-      targetRowStart: number
+      targetRowStart: number,
+      // The page under the pointer and the module moving, for the page's
+      // SECTIONS (pageSections) - the width where there is no spine. Built
+      // from committed placements without the mover, as the server builds
+      // them without the instance it moves.
+      pageId: string,
+      movingId: string
     ): { columnStart: number; columnSpan: number; isBottomZone: boolean } | null => {
       if (!canCrossZones(slug)) return null;
+      const pageGrid = pageGridByPageId[pageId];
+      const sections = pageGrid
+        ? pageSections(
+            (instanceIdsByPageId[pageId] ?? []).flatMap((id) =>
+              id !== movingId && id !== PHANTOM_ID && placements[id] ? [placements[id]] : []
+            ),
+            pageGrid.gridColumns,
+            dayUnitColumns(pageGrid)
+          )
+        : [];
       // resolveZone (grid.ts) is the shared rule; the server calls it too.
-      // BOTTOM_ZONE_ROW_TOLERANCE is this side's row test - see that
-      // function on why the server passes Infinity instead.
       return resolveZone(
         hourlyGridPlacement ?? null,
-        { columnStart: targetColumnStart, rowStart: targetRowStart }
+        { columnStart: targetColumnStart, rowStart: targetRowStart },
+        sections
       );
     },
-    []
+    [pageGridByPageId, instanceIdsByPageId, placements]
   );
 
   const handleDragMove = useCallback(
@@ -7385,7 +7647,9 @@ export function NativePlannerEditor({
         phantomHourlyId ? placements[phantomHourlyId] : undefined,
         slug,
         target.columnStart,
-        target.rowStart
+        target.rowStart,
+        target.pageId,
+        PHANTOM_ID
       );
       if (!phantomZone) return;
       const phantomColumnSpan = phantomZone.columnSpan;
@@ -7662,7 +7926,9 @@ export function NativePlannerEditor({
         hoveredHourlyGridPlacement ?? undefined,
         info.slug,
         pointerCell.columnStart,
-        pointerCell.rowStart
+        pointerCell.rowStart,
+        hoveredPageId,
+        instanceId
       );
       const currentIsBottomZone =
         !!sourceHourlyGridPlacement &&
@@ -9425,6 +9691,96 @@ export function NativePlannerEditor({
     [handleResizeAdjacent, recordGeometry]
   );
 
+  // HORIZONTAL RESIZE (2026-10-01). Start: the drag becomes the live one
+  // unless a commit is still pending (gestureBlockedByPendingCommit, as every
+  // other gesture). Move: each new day step arms the content ease from the
+  // width on screen to the new one. End: saved by where the pointer put the
+  // edge - resizeModuleWidth resolves it again from the stored page - and the
+  // preview held until the result lands, cleared in the same batch.
+  const handleWidthResizeStart = useCallback(
+    (target: WidthTarget, edge: WidthEdge) => {
+      if (gestureBlockedByPendingCommit()) return;
+      activeWidthRef.current = {
+        id: target.id,
+        start: target.placement,
+        columnStart: target.placement.columnStart,
+        columnSpan: target.placement.columnSpan,
+      };
+      setResizeDrag(null);
+      setStackResizeDrag(null);
+      setWidthDrag({
+        id: target.id,
+        pageId: target.pageId,
+        edge,
+        start: target.placement,
+        columnStart: target.placement.columnStart,
+        columnSpan: target.placement.columnSpan,
+      });
+    },
+    [gestureBlockedByPendingCommit]
+  );
+  const easeWidth = useCallback((id: string, from: Placement, to: Placement) => {
+    const left = Math.min(from.columnStart, to.columnStart);
+    const right = Math.max(from.columnStart + from.columnSpan, to.columnStart + to.columnSpan);
+    setWidthEase({ id, content: { ...to, columnStart: left, columnSpan: right - left } });
+    if (widthEaseTimerRef.current !== null) window.clearTimeout(widthEaseTimerRef.current);
+    widthEaseTimerRef.current = window.setTimeout(() => {
+      widthEaseTimerRef.current = null;
+      setWidthEase(null);
+    }, WIDTH_EASE_MS);
+  }, []);
+  const handleWidthResizeMove = useCallback(
+    (target: WidthTarget, resolved: { columnStart: number; columnSpan: number }) => {
+      const live = activeWidthRef.current;
+      if (!live || live.id !== target.id) return;
+      if (live.columnStart === resolved.columnStart && live.columnSpan === resolved.columnSpan) return;
+      easeWidth(target.id, { ...live.start, columnStart: live.columnStart, columnSpan: live.columnSpan }, { ...live.start, ...resolved });
+      live.columnStart = resolved.columnStart;
+      live.columnSpan = resolved.columnSpan;
+      setWidthDrag((prev) => (prev && prev.id === target.id ? { ...prev, ...resolved } : prev));
+    },
+    [easeWidth]
+  );
+  const handleWidthResizeEnd = useCallback(
+    (target: WidthTarget, edge: WidthEdge, edgeColumn: number, resolved: { columnStart: number; columnSpan: number }) => {
+      const live = activeWidthRef.current;
+      if (live?.id !== target.id) return;
+      activeWidthRef.current = null;
+      // The width when the drag BEGAN. target.placement is the live one by
+      // now - the preview has already moved it - so comparing against it
+      // found every drag unchanged and saved nothing.
+      const start = live.start;
+      if (resolved.columnStart === start.columnStart && resolved.columnSpan === start.columnSpan) {
+        setWidthDrag(null);
+        return;
+      }
+      recordGeometry();
+      const pageGrid = pageGridByPageId[target.pageId];
+      void (async () => {
+        try {
+          const result = await serializeCommit(() => resizeModuleWidth(target.id, edge, edgeColumn));
+          const placement = { ...start, columnStart: result.columnStart, columnSpan: result.columnSpan };
+          const origin = pageGrid ? gridCellToPixels(pageGrid, placement) : null;
+          setPlacements((prev) => (prev[target.id] ? { ...prev, [target.id]: { ...prev[target.id], columnStart: result.columnStart, columnSpan: result.columnSpan } } : prev));
+          setModuleLookup((prev) => {
+            const info = prev.get(target.id);
+            if (!info || !origin) return prev;
+            const next = new Map(prev);
+            next.set(target.id, { ...info, elements: [result.element], originX: origin.x, originY: origin.y });
+            return next;
+          });
+          // Same batch as the placements it hands over to - see
+          // handleResizeAdjacent on why a later microtask double-applies.
+          setWidthDrag((prev) => (prev && prev.id === target.id ? null : prev));
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : String(err));
+          setWidthDrag((prev) => (prev && prev.id === target.id ? null : prev));
+        }
+      })();
+    },
+    [recordGeometry, pageGridByPageId, serializeCommit]
+  );
+
   // Cascading resize from a stack's own outer bottom edge — see
   // StackBottom's own type comment and resizeStackFromBottom's own
   // comment (actions.ts) for the full reasoning on why this is a
@@ -9521,6 +9877,7 @@ export function NativePlannerEditor({
         deltaRows: 0,
         followerIds: stackBottom.followerIds,
         followerMinSpans: stackBottom.followerMinSpans,
+        followerBoundRow: stackBottom.followerBoundRow,
         rowHeightSnaps: stackBottom.rowHeightSnaps,
         // The row-height drag mirrors: it commits a SETTING, and
         // updateHourlySettings applies that to every page's hourly grid.
@@ -9536,6 +9893,7 @@ export function NativePlannerEditor({
                   memberMinSpans: entry.members.map((m) => m.minRowSpan),
                   followerIds: entry.followerIds,
                   followerMinSpans: entry.followerMinSpans,
+                  followerBoundRow: entry.followerBoundRow,
                   rowHeightSnaps: entry.rowHeightSnaps,
                 }))
               )
@@ -10362,6 +10720,11 @@ export function NativePlannerEditor({
                     easeContent={easeContent}
                     reflowContent={reflowContentAll}
                     resizeFrozenSize={effectiveResizeFrozenSize}
+                    widthEase={widthEase}
+                    widthResizeId={widthDrag?.id ?? null}
+                    onWidthResizeStart={handleWidthResizeStart}
+                    onWidthResizeMove={handleWidthResizeMove}
+                    onWidthResizeEnd={handleWidthResizeEnd}
                     onResizeStart={handleResizeStart}
                     onResizeMove={handleResizeMove}
                     onResizeEnd={handleResizeEnd}
