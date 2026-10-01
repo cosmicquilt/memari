@@ -14,6 +14,7 @@ import { wholeCellColumns } from "./modules/columnTable";
 import { withCurrentSettings } from "./moduleRegistry";
 import { textWidthPx } from "./modules/textFit";
 import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
+import { progressMeterLayout } from "./modules/progressMeter";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -358,6 +359,69 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     // A circle sits a point inside its segment; a box or bar meets the border.
     const slack = style === "circles" ? 6 : 0.5;
     check(minX - left <= slack && right - maxX <= slack, `${style}: the meter meets both sides (gaps ${(minX - left).toFixed(1)} and ${(right - maxX).toFixed(1)}px)`);
+  }
+
+  // PER ROW AND FILL (2026-10-01): "settings for how many per row or it can
+  // fill the whole module the amount even as close to a grid of squares".
+  const rowBoxes = (drawn: RenderedPolotnoElement[]) => ids(drawn, /-row\d+-box$/);
+  const counted = (drawn: RenderedPolotnoElement[]) => rowBoxes(drawn).length + ids(drawn, /-div\d+$/).length;
+  const gapAtFoot = (drawn: RenderedPolotnoElement[]) => {
+    const border = ids(drawn, /-border$/)[0];
+    return (border.y ?? 0) + (border.height ?? 0) - Math.max(...rowBoxes(drawn).map((r) => (r.y ?? 0) + (r.height ?? 0)));
+  };
+  const perRowOf = (drawn: RenderedPolotnoElement[]) => {
+    const first = rowBoxes(drawn)[0];
+    return ids(drawn, /-div\d+$/).filter((d) => Math.abs((d.y ?? 0) - (first.y ?? 0)) < 0.5).length + 1;
+  };
+  // Per row: that many on each row, still side to side.
+  const seven = draw("progress-meter", { heading: "Pages", total: 30, perRow: 7 }, 12, 6);
+  check(rowBoxes(seven).length === 5 && perRowOf(seven) === 7 && counted(seven) === 30, `30 at 7 a row: five rows of seven (got ${rowBoxes(seven).length} rows of ${perRowOf(seven)}, ${counted(seven)} in all)`);
+  const sevenBorder = ids(seven, /-border$/)[0];
+  check(rowBoxes(seven).slice(0, 4).every((r) => Math.abs((r.x ?? 0) - (sevenBorder.x ?? 0)) < 0.5 && Math.abs((r.width ?? 0) - (sevenBorder.width ?? 0)) < 0.5), "each full row of seven runs side to side");
+  check(rowBoxes(seven).every((r) => Math.abs((r.height ?? 0) - PITCH / 2) < 0.01), "per row alone keeps the rows half a cell tall");
+  // More than fit at half a cell wide is as many as fit - what Auto draws.
+  const many = draw("progress-meter", { heading: "Pages", total: 60, perRow: 100 }, 6, 8);
+  const auto = draw("progress-meter", { heading: "Pages", total: 60 }, 6, 8);
+  check(perRowOf(many) === perRowOf(auto), `100 a row on a narrow meter is as many as fit (${perRowOf(many)} vs ${perRowOf(auto)})`);
+  // Fill: the count spread over the whole module, as near square as it goes.
+  const filled = draw("progress-meter", { heading: "Days", total: 30, fill: true }, 12, 6);
+  check(rowBoxes(filled).length === 3 && perRowOf(filled) === 10 && counted(filled) === 30, `30 filling a 12x6 meter: three rows of ten (got ${rowBoxes(filled).length} of ${perRowOf(filled)}, ${counted(filled)} in all)`);
+  check(Math.abs(gapAtFoot(filled)) < 0.5, `and they meet the module's foot (${gapAtFoot(filled).toFixed(1)}px short)`);
+  const filledHeights = rowBoxes(filled).map((r) => r.height ?? 0);
+  check(filledHeights.every((h) => Math.abs(h - filledHeights[0]) < 0.01 && h >= PITCH / 2), `the rows share the height evenly (${filledHeights.map((h) => h.toFixed(1)).join(", ")})`);
+  // At the many heights a row count does not divide in half cells - the
+  // first version kept to them and left as much as half the module empty.
+  for (const rowSpan of [9, 10, 11, 13]) {
+    const drawn = draw("progress-meter", { heading: "100 days", total: 100, milestoneEvery: 10, fill: true }, 6, rowSpan);
+    check(Math.abs(gapAtFoot(drawn)) < 0.5 && counted(drawn) === 100, `100 filling a 6x${rowSpan} meter meets its foot (${gapAtFoot(drawn).toFixed(1)}px short, ${counted(drawn)} drawn)`);
+  }
+  // A hundred days with a rule every ten fills as ten rows of ten - the first
+  // version chose seven rows of fifteen, the rules staggered and the last
+  // row short.
+  const hundred = draw("progress-meter", { heading: "100 days", total: 100, milestoneEvery: 10, fill: true }, 16, 12);
+  check(rowBoxes(hundred).length === 10 && perRowOf(hundred) === 10, `100 filling a 16x12 meter, a rule every ten: ten rows of ten (got ${rowBoxes(hundred).length} of ${perRowOf(hundred)})`);
+  // Where nothing else decides, the rule does: a narrow meter of a hundred
+  // keeps to tens with a rule every ten, and need not without one.
+  const narrow = (every: number) => progressMeterLayout(100, 6 * PITCH - 12, 732.5, { fill: true, milestoneEvery: every }).columns;
+  check(narrow(10) === 10 && narrow(0) !== 10, `a narrow hundred keeps to its tens (${narrow(10)} a row with a rule every ten, ${narrow(0)} without)`);
+  const plain = draw("progress-meter", { heading: "100 days", total: 100, milestoneEvery: 0, fill: true }, 16, 12);
+  check(100 % perRowOf(plain) === 0, `and with no rule, still no short last row (${perRowOf(plain)} a row)`);
+  // A milestone at a row's end is numbered like any other.
+  const tens = texts(draw("progress-meter", { heading: "100 days", total: 100, milestoneEvery: 10, perRow: 10, numbers: "milestones" }, 16, 12), /-mile\d+-label$/);
+  check(tens.join(",") === "10,20,30,40,50,60,70,80,90,100", `ten a row numbers every row's end (got ${tens.join(",")})`);
+  // Fill with a number per row: those columns, the rows sharing the height.
+  const tenFill = draw("progress-meter", { heading: "Days", total: 40, perRow: 10, fill: true }, 12, 8);
+  check(rowBoxes(tenFill).length === 4 && perRowOf(tenFill) === 10 && (rowBoxes(tenFill)[0].height ?? 0) > PITCH / 2, `40 at 10 a row, filling: four taller rows of ten (got ${rowBoxes(tenFill).length} of ${perRowOf(tenFill)})`);
+  // The end labels keep their room.
+  const labelled = draw("progress-meter", { heading: "Days", total: 30, fill: true, startLabel: "Start", endLabel: "Goal" }, 12, 6);
+  const labelBorder = ids(labelled, /-border$/)[0];
+  const endLabels = ids(labelled, /-(start|end)-label$/);
+  check(endLabels.length === 2 && endLabels.every((l) => (l.y ?? 0) + (l.height ?? 0) <= (labelBorder.y ?? 0) + (labelBorder.height ?? 0) + 0.5), "filling, the start and end labels still print, inside the box");
+  // At the smallest height it may take, a filled meter draws its whole count.
+  for (const props of [{ total: 100, fill: true }, { total: 52, perRow: 13, fill: true }, { total: 45, perRow: 9 }]) {
+    const rowSpan = getMinRowSpanForSlug("progress-meter", PAGE, 6, { heading: "Days", ...props });
+    const drawn = draw("progress-meter", { heading: "Days", ...props }, 6, rowSpan);
+    check(counted(drawn) === props.total, `${JSON.stringify(props)} at its smallest (6x${rowSpan}) draws all ${props.total} (got ${counted(drawn)})`);
   }
 }
 

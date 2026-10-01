@@ -1554,6 +1554,14 @@ const PRIMITIVES = {
           "endLabel": {
             "type": "string",
             "default": ""
+          },
+          "perRow": {
+            "type": "integer",
+            "default": 0
+          },
+          "fill": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1571,6 +1579,10 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       { kind: "number", key: "total", label: "Segments", min: 1, max: 400 },
+      // How the count is laid out (2026-10-01): "settings for how many per
+      // row or it can fill the whole module". See progressMeterLayout.
+      { kind: "number", key: "perRow", label: "Per row", min: 0, max: 100, stepper: true, zeroLabel: "Auto" },
+      { kind: "boolean", key: "fill", label: "Fill the module" },
       { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
       {
         kind: "rule",
@@ -1606,7 +1618,8 @@ const PRIMITIVES = {
     minContentHeightPx: (pageGrid, columnSpan, propValues) =>
       getProgressMeterMinHeightPx(
         Number(propValues.total ?? 30),
-        gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width
+        gridCellToPixels(pageGrid, { columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1 }).width,
+        Number(propValues.perRow ?? 0)
       ),
     // Widening it moves every segment to a different row. Nothing about
     // this drawing survives a resize unchanged.

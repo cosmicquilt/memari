@@ -272,6 +272,13 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   ["mini-month", { year: 2026, month: 3, heading: "", mark: "box", neighbours: false }],
   ["progress-meter", { heading: "Omer", total: 49, milestoneEvery: 7, numbers: "every", segments: "circles" }],
   ["progress-meter", { heading: "Savings", total: 40, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "$0", endLabel: "A long goal label that has to fit" }],
+  // Per row and Fill (2026-10-01), held to the text and totality rules. The
+  // rows are outlines, which rule 2 does not measure - and a filled meter's
+  // share the height, so they sit between dots where it does not divide (see
+  // progressMeterLayout).
+  ["progress-meter", { heading: "Days", total: 100, milestoneEvery: 10, fill: true }],
+  ["progress-meter", { heading: "Weeks", total: 52, perRow: 13, fill: true, segments: "circles", numbers: "every", startLabel: "Jan", endLabel: "Dec" }],
+  ["progress-meter", { heading: "Pages", total: 30, perRow: 7, segments: "bar" }],
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, border: true, groupLabels: "days", stripLabels: ["Water", "A very long strip label"] }],
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, groupLabels: "days", stripIcons: ["leaf", "plant"], groupIcons: ["", "star", "moon"] }],
   // The day chart's four looks, a month of each and a long ten-point scale.

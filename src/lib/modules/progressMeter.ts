@@ -16,7 +16,8 @@
 // meter is a block of graph paper: half a cell divides the cell, which is
 // the pitch rule (see moduleRegistry and the check:behaviour classifier) -
 // widening the box changes how many squares are on a row but never moves a
-// row off the lattice.
+// row off the lattice. Unless it is asked to FILL its module, when its rows
+// share the height - see progressMeterLayout.
 //
 // milestoneEvery draws a heavier rule at each multiple, which is what
 // turns a field of identical squares into something countable: every ten
@@ -55,6 +56,19 @@ export type ProgressMeterConfig = {
   /** Printed under the two ends: "$0" and the goal, page 1 and the last. */
   startLabel?: string;
   endLabel?: string;
+  /**
+   * How many segments on a row - a week of seven, a hundred days as ten
+   * tens. 0 or absent: as many as fit half a cell wide. More than fit is as
+   * many as fit. Asked 2026-10-01, with `fill`.
+   */
+  perRow?: number;
+  /**
+   * The count spread over the whole module, the rows sharing its height,
+   * rather than rows half a cell tall from the top: "fill the whole module
+   * the amount even as close to a grid of squares". With no `perRow`, the
+   * columns are chosen to make the squares as square as the box allows.
+   */
+  fill?: boolean;
 };
 
 export type RenderedElement = {
@@ -98,16 +112,78 @@ export function getProgressMeterRowMetricsPx() {
  * this, and both numbers have to come from the same place or they drift -
  * which is the defect this codebase keeps meeting.
  */
-export function progressMeterColumns(widthPx: number): number {
+export function progressMeterColumns(widthPx: number, perRow = 0): number {
   // The whole width: the meter runs side to side (see renderProgressMeter).
-  return Math.max(1, Math.floor(widthPx / ptToPx(SEGMENT_PT) + 1e-6));
+  // As many as fit half a cell wide, or as many as were asked for if fewer.
+  const fit = Math.max(1, Math.floor(widthPx / ptToPx(SEGMENT_PT) + 1e-6));
+  const asked = Math.floor(Number(perRow)) || 0;
+  return asked > 0 ? Math.min(asked, fit) : fit;
+}
+
+/**
+ * HOW THE COUNT IS LAID OUT: how many segments on a row, and how tall a row
+ * is, in a body `heightPx` tall.
+ *
+ * Without `fill`, a row is half a cell - the graph-paper tile, every line on
+ * the lattice. With it, the rows SHARE THE HEIGHT, so the meter meets the
+ * module's foot as it meets its sides. They first kept to whole half cells,
+ * and a survey of 3,576 sizes found 448 leaving far more of the module
+ * empty than they had to: ten rows fill exactly only where the height is a
+ * multiple of ten half cells. "Fill the whole module" (2026-10-01) is the
+ * ask, so a filled meter's rows land where the height puts them - on the
+ * lattice where it divides, between dots where it does not.
+ *
+ * With a number per row, those rows share it. On Auto, every column count
+ * that fits half a cell wide and half a cell tall is tried and the cheapest
+ * kept, adding up:
+ *  - how far a segment is from square, as a ratio's log, so twice too wide
+ *    costs what twice too tall does;
+ *  - three times the share of the meter a short last row leaves empty, and a
+ *    quarter more for being short at all - it reads as unfinished;
+ *  - rows that do not keep to the milestones - a hundred days with a rule
+ *    every ten is ten rows of ten, not seven of fifteen with the rules
+ *    staggered (the first version chose that).
+ */
+export function progressMeterLayout(
+  total: number,
+  widthPx: number,
+  heightPx: number,
+  options: { perRow?: number; fill?: boolean; milestoneEvery?: number }
+): { columns: number; rowHeight: number } {
+  const half = ptToPx(SEGMENT_PT);
+  const count = Math.max(1, Math.floor(total) || 1);
+  const asked = Math.floor(Number(options.perRow)) || 0;
+  if (!options.fill) return { columns: progressMeterColumns(widthPx, asked), rowHeight: half };
+  // Never under half a cell: below its minimum height the meter is the tile.
+  const shared = (columns: number) => Math.max(half, heightPx / Math.ceil(count / columns));
+  if (asked > 0) {
+    const columns = progressMeterColumns(widthPx, asked);
+    return { columns, rowHeight: shared(columns) };
+  }
+  const fit = progressMeterColumns(widthPx);
+  const milestone = Math.max(0, Math.floor(Number(options.milestoneEvery)) || 0);
+  let best = { columns: fit, rowHeight: half, score: Infinity };
+  for (let columns = 1; columns <= Math.min(fit, count); columns++) {
+    const rows = Math.ceil(count / columns);
+    if (rows * half > heightPx + 0.5) continue;
+    const rowHeight = heightPx / rows;
+    const offMilestones = milestone > 1 && milestone < count && columns % milestone !== 0 && milestone % columns !== 0;
+    const score =
+      Math.abs(Math.log(widthPx / columns / rowHeight)) +
+      3 * (1 - count / (rows * columns)) +
+      (count % columns !== 0 && rows > 1 ? 0.25 : 0) +
+      (offMilestones ? 0.3 : 0);
+    if (score < best.score - 1e-9) best = { columns, rowHeight, score };
+  }
+  return { columns: best.columns, rowHeight: best.rowHeight };
 }
 
 /** Header and every segment the total asks for - a meter that cannot show
  *  its whole count is not showing a count. */
-export function getProgressMeterMinHeightPx(total: number, widthPx: number): number {
+export function getProgressMeterMinHeightPx(total: number, widthPx: number, perRow = 0): number {
+  // Filling never needs more: at its smallest a filled meter is the tile.
   const m = getProgressMeterRowMetricsPx();
-  const columns = progressMeterColumns(widthPx);
+  const columns = progressMeterColumns(widthPx, perRow);
   const rows = Math.max(1, Math.ceil(Math.max(1, Math.floor(total) || 1) / columns));
   return m.headerHeightPx + m.segmentPx * rows;
 }
@@ -135,12 +211,22 @@ export function renderProgressMeter(
   elements.push(borderElement(geometry, id));
   elements.push(...headerElements(geometry, config.heading ?? "", id, fontFamily, bodyTop));
 
-  const columns = progressMeterColumns(geometry.width);
   const numbers = progressMeterNumbers(config);
   const segments = config.segments === "circles" || config.segments === "bar" ? config.segments : "boxes";
   let lastRowBottom = bodyTop;
   let lastRight = 0;
   const bodyBottom = geometry.y + geometry.height;
+  const endSize = ptToPx(END_LABEL_FONT_PT);
+  // What the end labels take under the meter: their gap and their line.
+  const endBand = ptToPx(1.5) + endSize * 1.2;
+  // The body - less the end labels' line when there are any, which a filled
+  // meter would otherwise take.
+  const labelled = !!((config.startLabel ?? "").trim() || (config.endLabel ?? "").trim());
+  const { columns, rowHeight } = progressMeterLayout(total, geometry.width, bodyBottom - bodyTop - (labelled ? endBand : 0), {
+    perRow: config.perRow,
+    fill: config.fill === true,
+    milestoneEvery: milestone,
+  });
   // SIDE TO SIDE: the segments share the box's whole width, so the meter
   // meets the module's border on both sides - asked 2026-10-01, "there
   // doesn't need to be a gap between the meter and the sides of the overall
@@ -152,7 +238,7 @@ export function renderProgressMeter(
   const segmentWidth = geometry.width / columns;
   const milestoneFontSize = ptToPx(MILESTONE_FONT_PT);
 
-  // The line between segment n-1 and segment n, a segment tall.
+  // The line between segment n-1 and segment n, a row tall.
   const divider = (n: number, x: number, top: number, opacity: number): RenderedElement => ({
     id: id(`div${n}`),
     type: "figure",
@@ -160,7 +246,7 @@ export function renderProgressMeter(
     x: x - ptToPx(SEGMENT_STROKE_PT) / 2,
     y: top,
     width: ptToPx(SEGMENT_STROKE_PT),
-    height: segment,
+    height: rowHeight,
     fill: NEAR_BLACK,
     stroke: "none",
     ...(opacity < 1 ? { opacity } : {}),
@@ -171,21 +257,21 @@ export function renderProgressMeter(
   for (let n = 0; n < total; n++) {
     const row = Math.floor(n / columns);
     const column = n % columns;
-    const top = bodyTop + row * segment;
+    const top = bodyTop + row * rowHeight;
     // A segment with nowhere to go is not drawn. getProgressMeterMinHeightPx
     // sizes the box so this does not happen, but a renderer takes the
     // geometry it is given.
-    if (top + segment > bodyBottom + 0.5) break;
+    if (top + rowHeight > bodyBottom + 0.5) break;
 
     const segX = blockLeft + column * segmentWidth;
     if (segments === "circles") {
-      const r = Math.min(segment, segmentWidth) / 2 - ptToPx(1);
+      const r = Math.min(rowHeight, segmentWidth) / 2 - ptToPx(1);
       elements.push({
         id: id(`seg${n}`),
         type: "figure",
         subType: "rect",
         x: segX + segmentWidth / 2 - r,
-        y: top + segment / 2 - r,
+        y: top + rowHeight / 2 - r,
         width: r * 2,
         height: r * 2,
         cornerRadius: r,
@@ -206,7 +292,7 @@ export function renderProgressMeter(
           x: segX,
           y: top,
           width: inRow * segmentWidth,
-          height: segment,
+          height: rowHeight,
           fill: "transparent",
           stroke: NEAR_BLACK,
           strokeWidth: ptToPx(SEGMENT_STROKE_PT),
@@ -221,7 +307,7 @@ export function renderProgressMeter(
           type: "figure",
           subType: "rect",
           x: segX - ptToPx(SEGMENT_STROKE_PT) / 2,
-          y: top + segment - tick,
+          y: top + rowHeight - tick,
           width: ptToPx(SEGMENT_STROKE_PT),
           height: tick,
           fill: NEAR_BLACK,
@@ -244,7 +330,7 @@ export function renderProgressMeter(
         x: segX,
         y: top,
         width: inRow * segmentWidth,
-        height: segment,
+        height: rowHeight,
         fill: "transparent",
         stroke: NEAR_BLACK,
         strokeWidth: ptToPx(SEGMENT_STROKE_PT),
@@ -259,7 +345,7 @@ export function renderProgressMeter(
         id: id(`n${n + 1}-label`),
         type: "text",
         x: segX,
-        y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
+        y: capCentredTextY(top, rowHeight, milestoneFontSize, fontFamily),
         width: segmentWidth,
         height: milestoneFontSize * 1.2,
         text: String(n + 1),
@@ -270,20 +356,22 @@ export function renderProgressMeter(
         opacity: 0.5,
       });
     }
-    lastRowBottom = top + segment;
+    lastRowBottom = top + rowHeight;
     lastRight = segX + segmentWidth;
 
     // The milestone rule sits on the segment's RIGHT edge - after the
     // tenth day, not before it - so the count reads as complete up to the
     // line rather than starting at it.
     const count = n + 1;
-    if (milestone > 0 && count % milestone === 0 && column < columns - 1) {
+    // Numbered in its own segment, so at a row's end too - ten a row with a
+    // rule every ten numbered nothing while this skipped the last column.
+    if (milestone > 0 && count % milestone === 0) {
       if (numbers === "milestones") {
         elements.push({
           id: id(`mile${count}-label`),
           type: "text",
           x: blockLeft + column * segmentWidth,
-          y: capCentredTextY(top, segment, milestoneFontSize, fontFamily),
+          y: capCentredTextY(top, rowHeight, milestoneFontSize, fontFamily),
           width: segmentWidth,
           height: milestoneFontSize * 1.2,
           text: String(count),
@@ -308,8 +396,7 @@ export function renderProgressMeter(
     { key: "start", text: (config.startLabel ?? "").trim(), x: blockLeft + inset, align: "left" },
     { key: "end", text: (config.endLabel ?? "").trim(), x: meterRight - inset, align: "right" },
   ];
-  const endSize = ptToPx(END_LABEL_FONT_PT);
-  if (lastRowBottom + endSize * 1.4 <= geometry.y + geometry.height + 0.5) {
+  if (lastRowBottom + endBand <= geometry.y + geometry.height + 0.5) {
     for (const end of ends) {
       if (!end.text) continue;
       const width = Math.max(segment * 4, (meterRight - blockLeft) / 2 - segment / 2);
