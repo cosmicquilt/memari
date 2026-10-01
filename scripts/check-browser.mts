@@ -1859,6 +1859,14 @@ const roundTwoPickers: Probe = {
       await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
       await tab.waitForTimeout(3000);
 
+      // THE FOLD (2026-10-01): the weekly spread's two pages shade toward
+      // each other where they meet - the left page's shadow offset left,
+      // the right page's right - and nothing else carries one.
+      const folds = (await tab.evaluate(`[...document.querySelectorAll("div")].map((d) => d.style.boxShadow).filter((s) => s.includes("inset"))`)) as string[];
+      const sideOf = (shadow: string) => (/\) -[\d.]+px 0px/.test(shadow) ? "left" : /\) [\d.]+px 0px/.test(shadow) ? "right" : "?");
+      if (folds.length !== 2 || sideOf(folds[0]) !== "left" || sideOf(folds[1]) !== "right") problems.push(`the spread's fold is ${folds.length} shade(s): ${folds.join(" | ") || "none"}`);
+      else notesSeen.push("the spread's two pages shade toward the fold");
+
       /** Hover a module and press its pencil; the dialog once it has flown. */
       const open = async (instanceId: string) => {
         const target = tab.locator(`[data-module-instance-id="${instanceId}"]`);

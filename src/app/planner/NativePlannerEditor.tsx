@@ -181,6 +181,22 @@ import { useAsyncAction } from "./useAsyncAction";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
+/**
+ * THE FOLD between a spread's two pages: a soft shade on each page, deepest
+ * where they meet - asked 2026-10-01 after the horizontal-resize demo drew
+ * one ("I actually like a faded page divider of the whole spread in the
+ * artifact, can you add that to canvas"). The demo's shade, in page pixels:
+ * an inset shadow offset about 1.8% of a page's width and blurred 2.2%, at
+ * 12% ink. It reaches about 85 of the 187.5 margin pixels from the fold, so
+ * it never lies under a module, and it is the editor's only - the PDF and
+ * the print know nothing of it.
+ */
+function foldShadow(side: "left" | "right" | null, pageWidthPx: number): string | undefined {
+  if (!side) return undefined;
+  const offset = pageWidthPx * 0.018, blur = pageWidthPx * 0.022;
+  return `inset ${side === "left" ? -offset : offset}px 0 ${blur}px ${-offset}px rgba(0, 0, 0, 0.12)`;
+}
+
 // Zoom bounds/step match Polotno's own ZoomGroup (node_modules/polotno/
 // toolbar/zoom-buttons.js: presets [.1, .25, .5, .75, 1, 1.5, 2, 3, 5],
 // step factor 1.2 per click) closely enough to feel like the same tool,
@@ -1744,8 +1760,11 @@ function NativePage({
   fontFamily,
   events,
   calendars,
+  fold,
 }: {
   page: LoadedPage;
+  /** Which side of a two-page spread this page is, for the fold's shade; null alone. */
+  fold: "left" | "right" | null;
   // Which instance ids actually live on this page right now — see
   // instanceIdsByPageId's own comment in the main component for why this
   // drives the render loop instead of `page.moduleInstances` (a module
@@ -1854,6 +1873,7 @@ function NativePage({
         width: page.pageGrid.widthPx,
         height: page.pageGrid.heightPx,
         background: "white",
+        boxShadow: foldShadow(fold, page.pageGrid.widthPx),
         boxSizing: "border-box",
         display: "grid",
         gridTemplateColumns: `repeat(${page.pageGrid.gridColumns}, 1fr)`,
@@ -10311,10 +10331,11 @@ export function NativePlannerEditor({
               }}
             >
               <div style={{ display: "flex", gap: PAGE_GAP_PX }}>
-                {pages.map((page) => (
+                {pages.map((page, pageIndex) => (
                   <NativePage
                     key={page.pageId}
                     page={page}
+                    fold={pages.length === 2 ? (pageIndex === 0 ? "left" : "right") : null}
                     instanceIds={instanceIdsByPageId[page.pageId] ?? EMPTY_INSTANCE_IDS}
                     onEditModule={openModuleEditor}
                     placements={liveDisplayPlacements}
