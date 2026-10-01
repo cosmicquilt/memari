@@ -11,7 +11,10 @@
 // is one line, and it is the one that matters.
 //
 // Run as part of: npm test
-import { flipTransform, type MarkGeometry } from "@/app/planner/PolotnoJsonRenderer";
+import { flipTransform, oneDrawing, type MarkGeometry } from "@/app/planner/PolotnoJsonRenderer";
+import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { flatten } from "@/lib/proofSvg";
+import type { PageGrid } from "@/lib/grid";
 
 const box = (x: number, y: number, width: number, height: number): MarkGeometry => ({ x, y, width, height });
 
@@ -90,6 +93,33 @@ function translateOf(transform: string | null): [number, number] {
 {
   const t = flipTransform(box(0, 0, 100, 1), box(10, 10, 0, 0));
   check("zero-sized destination yields a finite transform", t === null || !/(NaN|Infinity)/.test(t), `got ${t}`);
+}
+
+// --- oneDrawing: two sizes of one drawing, or two different drawings ------
+// Decides whether text slides between a sweep's two renders (one drawing:
+// a to-do gaining a day column) or holds still in the wider one until the
+// sweep lands (different drawings: a habit tracker's wide layout and its
+// sidebar one) - Andrew's rule for a layout change, 2026-10-01.
+{
+  const grid: PageGrid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 75 };
+  const draw = (slug: string, columnSpan: number, propValues: Record<string, unknown>) =>
+    flatten(
+      renderModuleInstance(
+        { id: "m", locked: false, columnStart: 0, rowStart: 0, columnSpan, rowSpan: 15, propValues, moduleType: { slug } },
+        grid,
+        "serif"
+      ) as never
+    ) as RenderedPolotnoElement[];
+  const todo = { heading: "To-do" };
+  check("a to-do with three day columns and with four is one drawing", oneDrawing(draw("todo-checklist", 24, todo), draw("todo-checklist", 18, todo)));
+  check("a to-do with one day column and with two is one drawing", oneDrawing(draw("todo-checklist", 12, todo), draw("todo-checklist", 6, todo)));
+  const habits = { heading: "Habits", habits: ["Read", "Walk", "Water"] };
+  check("a habit tracker at three days and at two is one drawing (both wide)", oneDrawing(draw("habit-tracker", 18, habits), draw("habit-tracker", 12, habits)));
+  check(
+    "a habit tracker's wide layout and its sidebar layout are different drawings",
+    !oneDrawing(draw("habit-tracker", 12, habits), draw("habit-tracker", 6, habits))
+  );
+  check("a note box at any width is one drawing", oneDrawing(draw("labeled-box", 24, { heading: "Notes" }), draw("labeled-box", 6, { heading: "Notes" })));
 }
 
 process.on("exit", () => {

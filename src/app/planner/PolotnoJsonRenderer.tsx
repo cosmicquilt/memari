@@ -618,6 +618,26 @@ export function sameMarkSet(
   return true;
 }
 
+/**
+ * Whether two renders of one module are the same DRAWING at two sizes -
+ * a to-do with three day columns and with four - rather than two different
+ * layouts of it - a habit tracker's wide layout and its sidebar one. Read
+ * from the rects' semantic ids: the to-do keeps most of its marks across a
+ * column more or less, the habit tracker's two layouts share 2 of 58. Half
+ * the smaller set is the line. Renders with no rects (text only) count as
+ * one drawing.
+ */
+export function oneDrawing(a: RenderedPolotnoElement[], b: RenderedPolotnoElement[]): boolean {
+  const rectIds = (list: RenderedPolotnoElement[]) =>
+    list.filter((element) => element.type === "figure" && element.subType === "rect").map((element) => element.id);
+  const idsA = rectIds(a);
+  const idsB = new Set(rectIds(b));
+  const smaller = Math.min(idsA.length, idsB.size);
+  if (smaller === 0) return true;
+  const shared = idsA.filter((id) => idsB.has(id)).length;
+  return shared * 2 >= smaller;
+}
+
 // Groups are transparent pass-throughs at the same origin (see
 // ElementNode's own group branch), so flattening them here lets the
 // renderer split a module's elements by type without caring how deeply
@@ -820,7 +840,18 @@ function PolotnoJsonRendererImpl({
   // An earlier version rejected the text render when the counts
   // differed, which fell back to the swept render's text and made a
   // todo's title snap at the end of the sweep rather than move with it.
-  const rest = (textElements ? flattenElements(textElements) : flat).filter(
+  //
+  // EXCEPT between two different DRAWINGS (oneDrawing). A habit tracker
+  // narrowed into its sidebar layout drew the sidebar layout's names and
+  // day letters over the wide layout's grid for the whole sweep - text from
+  // the final render sliding across rects from the swept one, the overlap
+  // Andrew rejected in the demo ("the habit slides over and overlaps with
+  // the days of the week letters"). His rule for a layout change, 2026-10-01:
+  // the wider drawing stays whole, text and all, cut by the moving edge, and
+  // the new layout appears when the sweep lands - as a crossing does. So
+  // then the text comes from the swept render too, and holds still.
+  const differentDrawings = !!textFlat && !oneDrawing(textFlat, flat);
+  const rest = (textFlat && !differentDrawings ? textFlat : flat).filter(
     (element) => !isRect(element)
   );
   // Marks that were in the previous render and are not in this one, kept
@@ -945,7 +976,11 @@ function PolotnoJsonRendererImpl({
           element={element}
           originX={originX}
           originY={originY}
-          textEaseMs={textEaseMs}
+          // Held still between different drawings, as the rects are: the
+          // swept drawing is redrawn at each day step of a drag, and its
+          // text gliding between two of those was the heading drifting
+          // across the page in the middle of a layout change.
+          textEaseMs={differentDrawings ? 0 : textEaseMs}
         />
       ))}
       {/* Text that has just gone, kept mounted for exactly one fade so it
