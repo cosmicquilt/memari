@@ -13,7 +13,7 @@
 // lets the same form sit in a side panel and in a full-page editor without
 // either of them arguing about when a save happens.
 
-import { EDITOR_RADIUS } from "./editorStyle";
+import { EDITOR_RADIUS, PREVIEW_RADIUS } from "./editorStyle";
 import type { CSSProperties } from "react";
 import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
@@ -103,10 +103,10 @@ export const FOCUS_CSS = `
    browser's white put it on white - "light grey text on white", reported
    2026-09-29. The panel is also colour-scheme dark (see ModuleEditor). */
 .memari-field option { background-color: #2c2c2e; color: #f2f2f2; }
-/* The selection ring sits 2px out from a picture rounded 2px, so its own
-   corners come out at the editor's small 4px (an outline's radius is the
-   element's plus its offset) - asked 2026-09-30, "make the selector of the
-   previews have a low border radius". */
+/* The selection ring sits 2px out from a picture rounded PREVIEW_RADIUS, so
+   its own corners are that plus 2 (an outline's radius is the element's plus
+   its offset) - smaller than the panel's: "make it even smaller for the
+   preview and selection within" (2026-09-30). */
 .memari-swatch { outline: none; outline-offset: 2px; }
 .memari-swatch[data-selected="true"] { outline: 2px solid ${ACCENT}; }
 .memari-swatch:focus-visible { outline: 2px solid #ffffff; }
@@ -162,7 +162,7 @@ function GlyphSwatch({
         height: size,
         padding: 0,
         border: "none",
-        borderRadius: EDITOR_RADIUS - 2,
+        borderRadius: PREVIEW_RADIUS,
         background: "#fdfcf9",
         opacity: selected ? 1 : 0.65,
         cursor: "pointer",
@@ -243,7 +243,7 @@ export function RuleSwatch({
         width,
         padding: 0,
         border: "none",
-        borderRadius: EDITOR_RADIUS - 2,
+        borderRadius: PREVIEW_RADIUS,
         background: "transparent",
         cursor: "pointer",
         display: "flex",
@@ -263,7 +263,7 @@ export function RuleSwatch({
           display: "block",
           pointerEvents: "none",
           background: "#fdfcf9",
-          borderRadius: EDITOR_RADIUS - 2,
+          borderRadius: PREVIEW_RADIUS,
           opacity: selected ? 1 : 0.85,
           transition: "opacity 150ms ease-out",
         }}

@@ -79,6 +79,7 @@ import { useSavedItems, type SavedPageOption } from "./savedContext";
 import { SavedThumb } from "./SavedThumb";
 import { useAsyncAction } from "./useAsyncAction";
 import { PagePreview } from "./PagePreview";
+import { PREVIEW_RADIUS } from "./editorStyle";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/anchoredPanel";
 
 // --- geometry, from the spec -----------------------------------------
@@ -2201,10 +2202,10 @@ function PageCardInner({
     display: "flex",
     padding: 0,
     border: highContrast && !selected ? "1px solid #777777" : "none",
-    // 2px, so the selection ring 2px outside it is a small 4px - the
-    // editor's corner (asked 2026-09-30, "make the selector of the previews
-    // have a low border radius").
-    borderRadius: 2,
+    // A preview's corner, so the selection ring 2px outside it is a small
+    // one too - see PREVIEW_RADIUS ("make the selector of the previews have
+    // a low border radius", then "even smaller", 2026-09-30).
+    borderRadius: PREVIEW_RADIUS,
     background: "#fdfcf9",
     // Dimming the unselected is what keeps a row of thumbnails from
     // competing with the canvas it describes. Under Increase Contrast it

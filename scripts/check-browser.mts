@@ -2082,8 +2082,10 @@ const textOnThePage: Probe = {
       // --- A TO-DO'S ITEMS, FROM ITS FIRST EMPTY ROW -----------------------
       if (!(await open(todo.id))) problems.push("the to-do's editor would not open");
       else {
-        // EVERY CORNER IN THE EDITOR IS SMALL - asked 2026-09-30: 4px, and a
-        // switch's knob 2px inside it (see editorStyle.ts).
+        // THE EDITOR'S CORNERS - asked 2026-09-30: small, then "a bit higher"
+        // (5px, a switch's knob 3px inside it), "even smaller for the
+        // preview and selection within" (the pictures 1px, so 3px rings).
+        // See editorStyle.ts.
         const radii = (await tab.getByRole("dialog").evaluate((dialog) => {
           const found = new Set<string>();
           for (const el of dialog.querySelectorAll("*")) {
@@ -2093,9 +2095,20 @@ const textOnThePage: Probe = {
           }
           return [...found];
         })) as string[];
-        const odd = radii.filter((r) => r !== "4px" && r !== "2px");
-        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not the small 4px`);
-        else seen.push(`every editor corner small (${radii.join(", ")})`);
+        const odd = radii.filter((r) => r !== "5px" && r !== "3px" && r !== "1px");
+        const pictures = (await tab.getByRole("dialog").evaluate((dialog) =>
+          [...dialog.querySelectorAll(".memari-swatch")].map((el) => getComputedStyle(el).borderTopLeftRadius)
+        )) as string[];
+        const panel = (await tab.getByRole("dialog").evaluate((dialog) => {
+          const done = [...dialog.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Done");
+          let el = done as HTMLElement | null;
+          while (el && el.parentElement !== dialog) el = el.parentElement;
+          return el ? getComputedStyle(el).borderTopLeftRadius : "";
+        })) as string;
+        if (odd.length > 0) problems.push(`the editor has corners of ${odd.join(", ")} - not 5px, a knob's 3px or a picture's 1px`);
+        else if (panel !== "5px") problems.push(`the editor's panel is rounded ${panel}, not 5px`);
+        else if (pictures.length === 0 || pictures.some((r) => r !== "1px")) problems.push(`the pickers' pictures are rounded ${[...new Set(pictures)].join(", ")}, not 1px`);
+        else seen.push(`editor corners 5px, knobs 3px, pictures 1px (${radii.join(", ")})`);
         // THE INTERFACE IS THE LANDING PAGE'S FACE - San Francisco, else
         // Inter (asked 2026-09-30) - and the page it edits is not.
         const faces = (await tab.getByRole("dialog").evaluate(async (dialog) => {
