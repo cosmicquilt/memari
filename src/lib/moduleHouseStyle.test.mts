@@ -161,8 +161,8 @@ const SMALLEST_LEGIBLE_PT = 5;
  */
 const COMPACTABLE = new Set(slugsDrawnBy("habit-tracker"));
 
-function isCompactException(slug: string, widthPx: number): boolean {
-  return COMPACTABLE.has(slug) && isHabitTrackerCompact(widthPx);
+function isCompactException(slug: string, widthPx: number, props: Record<string, unknown>): boolean {
+  return COMPACTABLE.has(slug) && isHabitTrackerCompact(widthPx, props);
 }
 
 /**
@@ -445,7 +445,7 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
       const widthPx = gridCellToPixels(PAGE, {
         columnStart: 0, rowStart: 0, columnSpan, rowSpan: 1,
       }).width;
-      if (isCompactException(slug, widthPx)) continue;
+      if (isCompactException(slug, widthPx, preview)) continue;
       const debt = LATTICE_DEBT[slug];
       const offsets = elements
         // What a rule IS lives in ruleMarks.ts, shared with check:page -

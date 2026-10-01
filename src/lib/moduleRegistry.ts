@@ -1062,17 +1062,18 @@ const PRIMITIVES = {
       // the row height for a five-prayer tracker and overstated it for a
       // twelve-month one. getHabitTrackerRowMetricsPx has taken this
       // argument all along and had no way to be given it.
-      const columns = (propValues.columns as unknown[]) ?? [];
-      const m = getHabitTrackerRowMetricsPx(
-        widthPx,
-        columns.length > 0 ? columns.length : undefined
-      );
+      const columnsConfig = {
+        columns: propValues.columns as string[] | undefined,
+        totalColumn: propValues.totalColumn === true,
+        weekStartDay: propValues.weekStartDay as number | undefined,
+      };
+      const m = getHabitTrackerRowMetricsPx(widthPx, columnsConfig);
       // A compact (sidebar) placement needs room for two full habit pairs,
       // not one - asked for directly: "can the habits side module have a
       // minimum vertical height of two habits (4 rows)." The wide layout
       // keeps the header-plus-one-row floor. That is the floor for a
       // tracker with nothing named; a named one needs all of its rows.
-      const pairsNeeded = isHabitTrackerCompact(widthPx) ? 2 : 1;
+      const pairsNeeded = isHabitTrackerCompact(widthPx, columnsConfig) ? 2 : 1;
       return m.headerHeightPx + m.nominalRowHeightPx * Math.max(pairsNeeded, named);
     },
     contentIsLive: ALWAYS,

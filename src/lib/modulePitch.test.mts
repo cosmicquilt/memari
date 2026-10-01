@@ -59,7 +59,8 @@ const COMPACTABLE = new Set(slugsDrawnBy("habit-tracker"));
 
 function isDeliberatelyOffPitch(slug: string, widthPx: number): boolean {
   const compactable = COMPACTABLE.has(slug);
-  return compactable && isHabitTrackerCompact(widthPx);
+  // With the props rowRuleYs draws with - the columns decide compactness.
+  return compactable && isHabitTrackerCompact(widthPx, moduleDefinition(slug)?.previewProps ?? {});
 }
 
 /** Modules that rule one line per ITEM rather than filling their body, so

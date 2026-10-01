@@ -183,18 +183,67 @@ const DAY_COLUMN_WIDTH_PT = 18;
  */
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
-// Below this allocated width, renderHabitTracker switches to the compact
-// (stacked name-row + square-row) layout instead of the side-by-side one.
-// 250pt is a wide safety margin on either side of this app's two actual
-// placements — a single sidebar column is ~119pt, 3-4 hourly-grid columns
-// are ~363-486pt — not a value tuned to sit close to either.
-const COMPACT_LAYOUT_MAX_WIDTH_PX = ptToPx(250);
-// Exposed so getMinRowSpanForSlug (both copies) can key its own compact-
-// vs-wide floor off the exact same test this file's own render/metrics
-// functions already use internally, instead of a second, independently-
-// tuned width check that could drift out of sync with this one.
-export function isHabitTrackerCompact(widthPx: number): boolean {
-  return widthPx <= COMPACT_LAYOUT_MAX_WIDTH_PX;
+/** The settings that decide the wide layout's columns. */
+export type HabitTrackerColumnsConfig = Pick<HabitTrackerConfig, "columns" | "totalColumn" | "weekStartDay">;
+
+/**
+ * THE WIDE LAYOUT'S COLUMNS at a width: each day column, the total column,
+ * and the habit-name column, which takes what they leave. One description,
+ * used by the renderer and by the compact test below, so the test cannot
+ * judge a name column other than the one that would be drawn.
+ *
+ * A column is DAY_COLUMN_WIDTH_PT wide - a checkable cell, sized for one
+ * letter - unless its own label needs more than that.
+ *
+ * Fixed at 18pt it was right for the week this primitive was written for
+ * and wrong for every catalogue set that is not initials: a salah tracker
+ * printed "Magh…" for Maghrib and a future log "Even…" for Events, both at
+ * full page width, with a name column taking half the box beside them.
+ * Growing the column instead leaves a week exactly where it was - one letter
+ * at 8pt is about 34px against the 75px cell - and takes the space from the
+ * name column, which is the one holding slack it does not need.
+ *
+ * Capped so the labels can never squeeze the names out entirely; past that
+ * cap fitLabelSet shrinks and, in the last resort, truncates. The total
+ * column is its own width - two cells, room for "5/7" and for its label at
+ * the day letters' size - so the week keeps its one-cell columns rather than
+ * every column widening to fit "TOTAL".
+ */
+export function habitTrackerWideColumns(widthPx: number, config: HabitTrackerColumnsConfig = {}) {
+  const columns = (config.columns ?? []).length > 0 ? config.columns! : weekdayInitials(config.weekStartDay);
+  const labelWidthNeeded = Math.max(
+    ...columns.map((label) => estimateTextWidthPx(label, ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(4))
+  );
+  const totalWidth = config.totalColumn
+    ? Math.max(ptToPx(DAY_COLUMN_WIDTH_PT * 2), estimateTextWidthPx("TOTAL", ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(6))
+    : 0;
+  const dayColumnWidth = Math.min(
+    Math.max(ptToPx(DAY_COLUMN_WIDTH_PT), labelWidthNeeded),
+    (widthPx * 0.72 - totalWidth) / columns.length
+  );
+  return { columns, totalWidth, dayColumnWidth, nameColumnWidth: widthPx - dayColumnWidth * columns.length - totalWidth };
+}
+
+/**
+ * ROOM TO WRITE A HABIT'S NAME: an inch. Below it the wide layout's name
+ * column is too narrow to write in, and the tracker draws its compact layout
+ * instead - the sidebar one, a full-width name row over each habit's row of
+ * squares.
+ *
+ * This was a width, 250pt, set as "a wide safety margin" between the only
+ * two places a tracker could be: a sidebar column (~119pt) and the 3-4 days
+ * under the hours (~363-486pt). Horizontal resizing (2026-10-01) made two
+ * days (~213pt) a real width, and it fell under the margin: each habit took
+ * two rows, a 3in name line over seven oversized squares, half as many
+ * habits as the wide layout's 1.2in name column beside the week. Asked:
+ * "make sure there is enough space to write base on what the column within
+ * the modules will be used for". So the test is now the column itself.
+ */
+const NAME_COLUMN_MIN_PT = 72;
+// Exposed so getMinRowSpanForSlug can key its compact-vs-wide floor off the
+// exact test the renderer uses, rather than a second check that could drift.
+export function isHabitTrackerCompact(widthPx: number, config: HabitTrackerColumnsConfig = {}): boolean {
+  return habitTrackerWideColumns(widthPx, config).nameColumnWidth < ptToPx(NAME_COLUMN_MIN_PT);
 }
 // Compact layout only: height of each habit's own name/placeholder row.
 // Shorter than ROW_HEIGHT_PT (a wide-layout row is also the checkable
@@ -230,22 +279,23 @@ const PLACEHOLDER_OPACITY = 0.45;
 // the wide layout's fixed ROW_HEIGHT_PT.
 export function getHabitTrackerRowMetricsPx(
   widthPx?: number,
-  // How many columns this tracker actually has. The compact row is a name
-  // row plus ONE SQUARE CELL, and a cell is width/columns, so a tracker of
-  // twelve months has a shorter row than a tracker of seven days. This
-  // divided by DAY_LETTERS.length unconditionally, from back when a
-  // tracker was always a week - which over-stated the floor for a bill
-  // tracker (harmless) and UNDER-stated it for a five-prayer one, letting
-  // it be placed too short for the two pairs the floor is meant to
-  // guarantee. The floor rule passes the real count now; the default is
-  // for a tracker that names no columns, which is a week.
-  columnCount: number = DAY_LETTERS.length
+  // The tracker's own columns. The compact row is a name row plus ONE
+  // SQUARE CELL, and a cell is width/columns, so a tracker of twelve months
+  // has a shorter row than a tracker of seven days. This divided by
+  // DAY_LETTERS.length unconditionally, from back when a tracker was always
+  // a week - which over-stated the floor for a bill tracker (harmless) and
+  // UNDER-stated it for a five-prayer one, letting it be placed too short
+  // for the two pairs the floor is meant to guarantee. The columns also
+  // decide WHETHER it is compact (isHabitTrackerCompact). With none given,
+  // a week.
+  config: HabitTrackerColumnsConfig = {}
 ): {
   headerHeightPx: number;
   nominalRowHeightPx: number;
   rowLineWidthPx: number;
 } {
-  const isCompact = widthPx !== undefined && isHabitTrackerCompact(widthPx);
+  const isCompact = widthPx !== undefined && isHabitTrackerCompact(widthPx, config);
+  const columnCount = (config.columns ?? []).length > 0 ? config.columns!.length : DAY_LETTERS.length;
   const nominalRowHeightPx = isCompact
     ? ptToPx(NAME_ROW_HEIGHT_PT) + widthPx! / Math.max(1, columnCount)
     : ptToPx(ROW_HEIGHT_PT);
@@ -263,7 +313,7 @@ export function renderHabitTracker(
   fontFamily: string,
   lattice?: FrameLattice
 ): RenderedElement[] {
-  if (isHabitTrackerCompact(geometry.width)) {
+  if (isHabitTrackerCompact(geometry.width, config)) {
     return renderHabitTrackerCompact(geometry, config, idPrefix, fontFamily);
   }
 
@@ -281,8 +331,6 @@ export function renderHabitTracker(
   // directly beneath one; now that it's freely user-placed, that
   // assumption doesn't hold everywhere else it might land.
   const contentY = geometry.y;
-  // The columns this tracker actually has - its own, or a week.
-  const columns = (config.columns ?? []).length > 0 ? config.columns! : weekdayInitials(config.weekStartDay);
   const contentHeight = geometry.height;
 
   // The header band ends on the first LATTICE line - same change, same
@@ -294,35 +342,9 @@ export function renderHabitTracker(
   // Day-letter columns are fixed-width (square against the header
   // height); the name column takes whatever's left, growing to fill a
   // wider allocation rather than the day-letter columns stretching to
-  // fill it (which was making them wide rectangles, not squares).
-  // A column is DAY_COLUMN_WIDTH_PT wide - a checkable cell, sized for one
-  // letter - unless its own label needs more than that.
-  //
-  // Fixed at 18pt it was right for the week this primitive was written
-  // for and wrong for every catalogue set that is not initials: a salah
-  // tracker printed "Magh…" for Maghrib and a future log "Even…" for
-  // Events, both at full page width, with a name column taking half the
-  // box beside them. Growing the column instead leaves a week exactly
-  // where it was - one letter at 8pt is about 34px against the 75px cell -
-  // and takes the space from the name column, which is the one holding
-  // slack it does not need.
-  //
-  // Capped so the labels can never squeeze the names out entirely; past
-  // that cap fitLabelSet shrinks and, in the last resort, truncates.
-  const labelWidthNeeded = Math.max(
-    ...columns.map((label) => estimateTextWidthPx(label, ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(4))
-  );
-  // The total column is its own width - two cells, room for "5/7" and for
-  // its label at the day letters' size - so the week keeps its one-cell
-  // columns rather than every column widening to fit "TOTAL".
-  const totalWidth = config.totalColumn
-    ? Math.max(ptToPx(DAY_COLUMN_WIDTH_PT * 2), estimateTextWidthPx("TOTAL", ptToPx(DAY_LETTER_FONT_PT)) + ptToPx(6))
-    : 0;
-  const dayColumnWidth = Math.min(
-    Math.max(ptToPx(DAY_COLUMN_WIDTH_PT), labelWidthNeeded),
-    (geometry.width * 0.72 - totalWidth) / columns.length
-  );
-  const nameColumnWidth = geometry.width - dayColumnWidth * columns.length - totalWidth;
+  // fill it (which was making them wide rectangles, not squares). The
+  // arithmetic is habitTrackerWideColumns, shared with the compact test.
+  const { columns, totalWidth, dayColumnWidth, nameColumnWidth } = habitTrackerWideColumns(geometry.width, config);
   const marked = config.cells === "circles";
 
   const rowCount = Math.max(

@@ -15,6 +15,7 @@ import { withCurrentSettings } from "./moduleRegistry";
 import { textWidthPx } from "./modules/textFit";
 import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
 import { progressMeterColumns, progressMeterLayout } from "./modules/progressMeter";
+import { habitTrackerWideColumns, isHabitTrackerCompact } from "./modules/habitTracker";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -167,6 +168,26 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(letters.length === 7 && letters.every((l) => Math.abs((l.width ?? 0) - (ids(grid, /-day0-letter$/)[0].width ?? 0)) < 0.5), "the week keeps its one-cell columns");
   check((label?.width ?? 0) >= 2 * PITCH - 0.5, "the total is two cells wide");
   check(ids(draw("habit-tracker", { heading: "Habits", habits, totalColumn: true }, 6, 8), /-total-/).length === 0, "not in the sidebar layout");
+
+  // ROOM TO WRITE (2026-10-01, for horizontal resizing): the sidebar layout
+  // only when the wide one's name column would be under an inch. A week at
+  // one day is the sidebar layout; at two days it is the wide one, with an
+  // inch and more for names - it was two rows a habit there, a 3in name
+  // line over seven oversized squares.
+  const inch = 300;
+  const widthAt = (days: number) => days * 6 * PITCH - 12;
+  check(isHabitTrackerCompact(widthAt(1)), "a week at one day is the sidebar layout");
+  for (const days of [2, 3, 4]) {
+    const name = habitTrackerWideColumns(widthAt(days)).nameColumnWidth;
+    check(!isHabitTrackerCompact(widthAt(days)) && name >= inch, `a week at ${days} days is the wide layout, ${(name / inch).toFixed(2)}in for names`);
+  }
+  const twoDays = draw("habit-tracker", { heading: "Habits", habits }, 12, 6);
+  check(ids(twoDays, /-pair\d+-/).length === 0 && ids(twoDays, /^m-row\d+$/).length > 0, "and draws it: a row a habit, the week beside the names");
+  // The test is the column, so labels that need wider columns tip a tracker
+  // into the sidebar layout sooner: five prayers by name at two days.
+  const prayers = { columns: ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"] };
+  check(habitTrackerWideColumns(widthAt(2), prayers).nameColumnWidth < inch && isHabitTrackerCompact(widthAt(2), prayers), "five named prayers at two days leave under an inch, so the sidebar layout");
+  check(!isHabitTrackerCompact(widthAt(3), prayers), "and at three days, the wide one");
 }
 
 // --- table -----------------------------------------------------------------
