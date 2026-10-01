@@ -1558,10 +1558,6 @@ const PRIMITIVES = {
           "perRow": {
             "type": "integer",
             "default": 0
-          },
-          "fill": {
-            "type": "boolean",
-            "default": false
           }
         }
       },
@@ -1579,10 +1575,10 @@ const PRIMITIVES = {
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
       { kind: "number", key: "total", label: "Segments", min: 1, max: 400 },
-      // How the count is laid out (2026-10-01): "settings for how many per
-      // row or it can fill the whole module". See progressMeterLayout.
+      // How many on a row (2026-10-01); the count always fills the module -
+      // the Fill switch that stood here went the same day. See
+      // progressMeterLayout.
       { kind: "number", key: "perRow", label: "Per row", min: 0, max: 100, stepper: true, zeroLabel: "Auto" },
-      { kind: "boolean", key: "fill", label: "Fill the module" },
       { kind: "number", key: "milestoneEvery", label: "Heavier rule every", min: 0, max: 100 },
       {
         kind: "rule",

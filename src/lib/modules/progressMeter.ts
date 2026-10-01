@@ -16,8 +16,8 @@
 // meter is a block of graph paper: half a cell divides the cell, which is
 // the pitch rule (see moduleRegistry and the check:behaviour classifier) -
 // widening the box changes how many squares are on a row but never moves a
-// row off the lattice. Unless it is asked to FILL its module, when its rows
-// share the height - see progressMeterLayout.
+// row off the lattice. That is the meter at its smallest; given more room
+// it FILLS its module, the rows sharing the height - see progressMeterLayout.
 //
 // milestoneEvery draws a heavier rule at each multiple, which is what
 // turns a field of identical squares into something countable: every ten
@@ -59,16 +59,9 @@ export type ProgressMeterConfig = {
   /**
    * How many segments on a row - a week of seven, a hundred days as ten
    * tens. 0 or absent: as many as fit half a cell wide. More than fit is as
-   * many as fit. Asked 2026-10-01, with `fill`.
+   * many as fit. Asked 2026-10-01.
    */
   perRow?: number;
-  /**
-   * The count spread over the whole module, the rows sharing its height,
-   * rather than rows half a cell tall from the top: "fill the whole module
-   * the amount even as close to a grid of squares". With no `perRow`, the
-   * columns are chosen to make the squares as square as the box allows.
-   */
-  fill?: boolean;
 };
 
 export type RenderedElement = {
@@ -124,14 +117,17 @@ export function progressMeterColumns(widthPx: number, perRow = 0): number {
  * HOW THE COUNT IS LAID OUT: how many segments on a row, and how tall a row
  * is, in a body `heightPx` tall.
  *
- * Without `fill`, a row is half a cell - the graph-paper tile, every line on
- * the lattice. With it, the rows SHARE THE HEIGHT, so the meter meets the
- * module's foot as it meets its sides. They first kept to whole half cells,
+ * THE COUNT FILLS ITS MODULE: the rows SHARE THE HEIGHT, so the meter meets
+ * the module's foot as it meets its sides - "fill the whole module the amount
+ * even as close to a grid of squares", and then "default fill module ... and
+ * remove the switch" (both 2026-10-01): it was a "Fill the module" switch for
+ * an afternoon. At its smallest a row is half a cell - the graph-paper tile,
+ * every line on the lattice. The filled rows first kept to whole half cells,
  * and a survey of 3,576 sizes found 448 leaving far more of the module
  * empty than they had to: ten rows fill exactly only where the height is a
  * multiple of ten half cells. "Fill the whole module" (2026-10-01) is the
- * ask, so a filled meter's rows land where the height puts them - on the
- * lattice where it divides, between dots where it does not.
+ * ask, so the rows land where the height puts them - on the lattice where it
+ * divides, between dots where it does not.
  *
  * With a number per row, those rows share it. On Auto, every column count
  * that fits half a cell wide and half a cell tall is tried and the cheapest
@@ -148,12 +144,11 @@ export function progressMeterLayout(
   total: number,
   widthPx: number,
   heightPx: number,
-  options: { perRow?: number; fill?: boolean; milestoneEvery?: number }
+  options: { perRow?: number; milestoneEvery?: number }
 ): { columns: number; rowHeight: number } {
   const half = ptToPx(SEGMENT_PT);
   const count = Math.max(1, Math.floor(total) || 1);
   const asked = Math.floor(Number(options.perRow)) || 0;
-  if (!options.fill) return { columns: progressMeterColumns(widthPx, asked), rowHeight: half };
   // Never under half a cell: below its minimum height the meter is the tile.
   const shared = (columns: number) => Math.max(half, heightPx / Math.ceil(count / columns));
   if (asked > 0) {
@@ -181,7 +176,7 @@ export function progressMeterLayout(
 /** Header and every segment the total asks for - a meter that cannot show
  *  its whole count is not showing a count. */
 export function getProgressMeterMinHeightPx(total: number, widthPx: number, perRow = 0): number {
-  // Filling never needs more: at its smallest a filled meter is the tile.
+  // At its smallest the meter is the tile; filling only ever spreads it.
   const m = getProgressMeterRowMetricsPx();
   const columns = progressMeterColumns(widthPx, perRow);
   const rows = Math.max(1, Math.ceil(Math.max(1, Math.floor(total) || 1) / columns));
@@ -219,12 +214,11 @@ export function renderProgressMeter(
   const endSize = ptToPx(END_LABEL_FONT_PT);
   // What the end labels take under the meter: their gap and their line.
   const endBand = ptToPx(1.5) + endSize * 1.2;
-  // The body - less the end labels' line when there are any, which a filled
-  // meter would otherwise take.
+  // The body - less the end labels' line when there are any, which the
+  // filled rows would otherwise take.
   const labelled = !!((config.startLabel ?? "").trim() || (config.endLabel ?? "").trim());
   const { columns, rowHeight } = progressMeterLayout(total, geometry.width, bodyBottom - bodyTop - (labelled ? endBand : 0), {
     perRow: config.perRow,
-    fill: config.fill === true,
     milestoneEvery: milestone,
   });
   // SIDE TO SIDE: the segments share the box's whole width, so the meter

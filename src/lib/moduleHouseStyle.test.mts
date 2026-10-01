@@ -276,8 +276,8 @@ const OPTION_VARIANTS: Array<[string, Record<string, unknown>]> = [
   // rows are outlines, which rule 2 does not measure - and a filled meter's
   // share the height, so they sit between dots where it does not divide (see
   // progressMeterLayout).
-  ["progress-meter", { heading: "Days", total: 100, milestoneEvery: 10, fill: true }],
-  ["progress-meter", { heading: "Weeks", total: 52, perRow: 13, fill: true, segments: "circles", numbers: "every", startLabel: "Jan", endLabel: "Dec" }],
+  ["progress-meter", { heading: "Days", total: 100, milestoneEvery: 10 }],
+  ["progress-meter", { heading: "Weeks", total: 52, perRow: 13, segments: "circles", numbers: "every", startLabel: "Jan", endLabel: "Dec" }],
   ["progress-meter", { heading: "Pages", total: 30, perRow: 7, segments: "bar" }],
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, border: true, groupLabels: "days", stripLabels: ["Water", "A very long strip label"] }],
   ["icon-strip", { heading: "Water", icon: "droplet", count: 8, groupLabels: "days", stripIcons: ["leaf", "plant"], groupIcons: ["", "star", "moon"] }],
