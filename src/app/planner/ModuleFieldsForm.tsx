@@ -64,6 +64,12 @@ export function selectStyle(field: CSSProperties): CSSProperties {
  * exactly the kind of near-miss that survives being looked at. There is no
  * subtle boundary on a near-black ground; it either carries or it does not.
  * scripts/check-contrast.mts holds the arithmetic.
+ *
+ * NO BORDER SINCE 2026-10-01: Andrew set it on a page of sliders that showed
+ * each border's contrast live, and pasted back "none" for fields, dropdowns,
+ * steppers and the save-name field. A field's edge is now its fill alone,
+ * about 1.2:1 - under 1.4.11's 3:1, which he saw. check:contrast reports it
+ * as his exception and measures any border put back against 3:1 again.
  */
 const inputStyle: CSSProperties = {
   width: "100%",
@@ -73,7 +79,7 @@ const inputStyle: CSSProperties = {
   fontFamily: "inherit",
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
-  border: "1px solid rgba(255, 255, 255, 0.33)",
+  border: "none",
   borderRadius: CONTROL_RADIUS,
 };
 
@@ -379,7 +385,7 @@ export function ModuleFieldsForm({
                     <span
                       role="group"
                       aria-label={`Lines under ${String(item ?? "") || `prompt ${i + 1}`}`}
-                      style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                      style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)" }}
                     >
                       <button
                         type="button"
@@ -434,7 +440,7 @@ export function ModuleFieldsForm({
                     fontFamily: "inherit",
                     color: "#f2f2f2",
                     background: "rgba(255, 255, 255, 0.06)",
-                    border: "1px solid rgba(255, 255, 255, 0.33)",
+                    border: "none",
                     borderRadius: CONTROL_RADIUS,
                     cursor: "pointer",
                   }}
@@ -545,7 +551,7 @@ export function ModuleFieldsForm({
               <span
                 role="group"
                 aria-label={field.label}
-                style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+                style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)" }}
               >
                 {button(-1, `${field.label}: fewer`, "\u2212")}
                 <span style={{ minWidth: 34, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>

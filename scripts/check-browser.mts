@@ -1616,6 +1616,14 @@ const moduleEditor: Probe = {
         if (arrows.length === 0) problems.push("the hours editor has no dropdown to measure");
         else if (askew.length > 0) problems.push(`a dropdown's arrow is not ${askew[0].left}px in from the right: ${JSON.stringify(askew[0])}`);
         else notes.push(`${arrows.length} dropdown arrows ${arrows[0].right}px in, as the words are`);
+        // NO BORDERS on the editor's fields or the header's buttons - Andrew's
+        // pick from the borders page, 2026-10-01 ("none" for every one).
+        const bordered = (await tab.evaluate(`(() => [
+          ...document.querySelectorAll('[role="dialog"] input:not([type="checkbox"]):not([data-canvas-slot]), [role="dialog"] select, [role="dialog"] textarea:not([data-canvas-slot]), [role="dialog"] [role="group"], header button, header a'),
+        ].filter((el) => parseFloat(getComputedStyle(el).borderTopWidth) > 0 && getComputedStyle(el).borderTopStyle !== "none")
+          .map((el) => (el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30)))()`)) as string[];
+        if (bordered.length > 0) problems.push(`still bordered: ${bordered.join(", ")}`);
+        else notes.push("no borders on its fields or the header's buttons");
         // BOTH PAGES' HOURS, each with its own days.
         const pieces = (await dialog.evaluate((el) =>
           [...el.querySelectorAll("[data-editor-piece]")].map((piece) => piece.textContent ?? "")
@@ -2187,6 +2195,24 @@ const textOnThePage: Probe = {
         const first = tab.locator('[data-canvas-slot="items#0"]');
         if ((await first.count()) === 0) problems.push("an empty to-do offers no place for its first item");
         else {
+          // AT REST an empty place says it is there - a faint placeholder
+          // whenever the editor is open (2026-10-01) - and a printed default
+          // shows only the drawing, not its words a second time.
+          await tab.mouse.move(2, 2);
+          await tab.waitForTimeout(150);
+          const rest = (await tab.evaluate(`(() => {
+            const alpha = (c) => { const m = (c.match(/[0-9.]+/g) || []).map(Number); return c.startsWith("rgba") ? m[3] : m.length >= 3 ? 1 : 0; };
+            const empty = document.querySelector('[data-canvas-slot="items#0"]');
+            const printed = [...document.querySelectorAll("[data-canvas-slot]")].find((el) => !el.value && el.placeholder && el.getAttribute("data-canvas-slot") !== "items#0" && !el.getAttribute("data-canvas-slot").startsWith("items#"));
+            return {
+              empty: alpha(getComputedStyle(empty, "::placeholder").color),
+              printed: printed ? alpha(getComputedStyle(printed, "::placeholder").color) : null,
+              printedSlot: printed ? printed.getAttribute("data-canvas-slot") : null,
+            };
+          })()`)) as { empty: number; printed: number | null; printedSlot: string | null };
+          if (!(rest.empty > 0.1 && rest.empty < 0.38)) problems.push(`at rest the empty first row's placeholder is at ${rest.empty} opacity, not faint (0.1 to 0.38)`);
+          else if (rest.printed !== null && rest.printed > 0) problems.push(`at rest ${rest.printedSlot}'s printed default shows its placeholder too (${rest.printed})`);
+          else seen.push(`at rest the empty row's placeholder at ${rest.empty}${rest.printedSlot ? `, ${rest.printedSlot}'s printed default not doubled` : ""}`);
           const box = (await first.boundingBox())!;
           await tab.mouse.move(box.x + 12, box.y + box.height / 2);
           await tab.waitForTimeout(200);

@@ -82,9 +82,14 @@ const read = (source: string, where: string, pattern: RegExp): string => {
 
 const surface = hex(read(editor, "the panel colour (SURFACE in ModuleEditor)", /const SURFACE = "(#[0-9a-f]{6})"/i));
 const accent = hex(read(form, "the accent (ACCENT in ModuleFieldsForm)", /const ACCENT = "(#[0-9a-f]{6})"/i));
-const borderAlpha = Number(
-  read(form, "the input border in inputStyle", /border: "1px solid rgba\(255, 255, 255, ([\d.]+)\)"/)
-);
+// THE FIELD'S EDGE, read from inputStyle itself: its border, or - with none,
+// Andrew's call on 2026-10-01, made on a page that showed him this number -
+// its fill alone, reported as his exception rather than failed. A border put
+// back is held to 3:1 again.
+const inputBlock = read(form, "inputStyle", /const inputStyle: CSSProperties = \{([\s\S]*?)\n\};/);
+const borderMatch = /border: "1px solid rgba\(255, 255, 255, ([\d.]+)\)"/.exec(inputBlock);
+const borderless = /border: "none"/.test(inputBlock);
+const fillAlpha = Number(read(inputBlock, "the input fill in inputStyle", /background: "rgba\(255, 255, 255, ([\d.]+)\)"/));
 const labelAlpha = Number(
   read(form, "the field label colour in labelStyle", /color: "rgba\(255, 255, 255, ([\d.]+)\)"/)
 );
@@ -107,13 +112,25 @@ const check = (label: string, got: number, need: number, criterion: string) => {
 
 console.log(`panel ${format(surface)}, accent ${format(accent)}, paper ${format(paper)}\n`);
 
-const border = composite(surface, borderAlpha);
-check(
-  `input border rgba(255,255,255,${borderAlpha}) = ${format(border)} on the panel`,
-  contrast(border, surface),
-  BOUNDARY,
-  "1.4.11"
-);
+if (borderMatch) {
+  const borderAlpha = Number(borderMatch[1]);
+  const border = composite(surface, borderAlpha);
+  check(
+    `input border rgba(255,255,255,${borderAlpha}) = ${format(border)} on the panel`,
+    contrast(border, surface),
+    BOUNDARY,
+    "1.4.11"
+  );
+} else if (borderless) {
+  const fill = composite(surface, fillAlpha);
+  console.log(
+    `  note  ${contrast(fill, surface).toFixed(2)}:1  (1.4.11 asks ${BOUNDARY}:1)  a field's edge is its fill ` +
+      `${format(fill)}, no border - Andrew's call, 2026-10-01`
+  );
+} else {
+  problems++;
+  console.log("  FAIL  inputStyle's border is neither 1px of white nor none - this check cannot measure it");
+}
 check("focus ring (accent on the panel)", contrast(accent, surface), BOUNDARY, "1.4.11");
 check("selection ring on a swatch (accent on the panel)", contrast(accent, surface), BOUNDARY, "1.4.11");
 check("focus ring on a swatch (white on the panel)", contrast(hex("#ffffff"), surface), BOUNDARY, "1.4.11");
@@ -202,4 +219,8 @@ if (problems > 0) {
   console.error(`\n${problems} problem(s): parts of the editor are harder to see than the standard allows.`);
   process.exit(1);
 }
-console.log("\nThe editor's controls meet WCAG 2.2 for boundary, focus and text contrast.");
+console.log(
+  borderless
+    ? "\nThe editor's controls meet WCAG 2.2 for focus and text contrast; a field's edge is the noted exception."
+    : "\nThe editor's controls meet WCAG 2.2 for boundary, focus and text contrast."
+);

@@ -70,7 +70,7 @@ const labelStyle: CSSProperties = {
 };
 
 // The fields panel's own input look - see ModuleFieldsForm's inputStyle for
-// why the border is 0.33 white.
+// why it has no border (it was 0.33 white, for contrast, until 2026-10-01).
 const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
@@ -79,7 +79,7 @@ const inputStyle: CSSProperties = {
   fontFamily: "inherit",
   color: "#f2f2f2",
   background: "rgba(255, 255, 255, 0.06)",
-  border: "1px solid rgba(255, 255, 255, 0.33)",
+  border: "none",
   borderRadius: CONTROL_RADIUS,
   // The time inputs' picker button, light on the dark panel - reported
   // directly: "the view time picker button isn't very visible because it

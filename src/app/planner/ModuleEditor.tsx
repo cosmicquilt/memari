@@ -974,7 +974,8 @@ export function ModuleEditor({
                     fontSize: 12,
                     color: "#fff",
                     background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.15)",
+                    // No border, as the fields have none (2026-10-01).
+                    border: "none",
                     borderRadius: CONTROL_RADIUS,
                     outline: "none",
                   }}

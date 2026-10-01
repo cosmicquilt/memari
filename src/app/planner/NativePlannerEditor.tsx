@@ -4493,7 +4493,8 @@ function HistoryButton({
         flexShrink: 0,
         padding: 0,
         borderRadius: 8,
-        border: "1px solid #3a3a3a",
+        // No border - the header's buttons are fills (2026-10-01).
+        border: "none",
         background: "#2a2a2a",
         color: disabled ? "#5a5a5a" : "#ddd",
         cursor: disabled ? "default" : "pointer",
@@ -10094,7 +10095,9 @@ export function NativePlannerEditor({
               fontSize: 12,
               color: "#fff",
               textDecoration: "none",
-              border: "1px solid rgba(255, 255, 255, 0.33)",
+              // No border (asked 2026-10-01, every header button): the
+              // undo buttons' fill instead, so it still reads as a button.
+              background: "#2a2a2a",
               borderRadius: 999,
               padding: "4px 10px",
               whiteSpace: "nowrap",
@@ -10131,7 +10134,7 @@ export function NativePlannerEditor({
             fontSize: 12,
             background: "#3a3a3a",
             color: "#ddd",
-            border: "1px solid #555",
+            border: "none",
             borderRadius: 6,
             cursor: isResettingPlanner ? "default" : "pointer",
             opacity: isResettingPlanner ? 0.6 : 1,
