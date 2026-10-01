@@ -166,7 +166,9 @@ export type CanvasList = CanvasText & {
 
 export type ModuleField =
   | { kind: "text"; key: string; label: string; canvas?: CanvasText }
-  | { kind: "boolean"; key: string; label: string }
+  // A switch. `on`/`off` are what it stores, where the setting is not a
+  // plain true/false - the icon strip's "days"/"none" day names.
+  | { kind: "boolean"; key: string; label: string; on?: string | boolean; off?: string | boolean }
   // POSITIONAL lists keep a blank where it is - the icon strip's second
   // strip label, the matrix's third corner, a scale's unnamed level - where
   // dropping it would move everything after it up a place. Others lose
@@ -177,7 +179,18 @@ export type ModuleField =
   // apart from `text` because a number arriving from an <input type="text">
   // is a string, and a schema default of 5 then meets a saved value of
   // "5" - the two-descriptions-of-one-fact problem in miniature.
-  | { kind: "number"; key: string; label: string; min?: number; max?: number }
+  | {
+      kind: "number";
+      key: string;
+      label: string;
+      min?: number;
+      max?: number;
+      // Shown as a - n + stepper on one line with its label, rather than a
+      // box to type in; `zeroLabel` names 0 where 0 means "work it out"
+      // (the icon strip's Groups: Auto).
+      stepper?: boolean;
+      zeroLabel?: string;
+    }
   // A closed set, where free text would just be a way to misspell one of
   // the options.
   | { kind: "select"; key: string; label: string; options: Array<{ value: string; label: string }> }
@@ -187,6 +200,21 @@ export type ModuleField =
   // A separate kind rather than a flag on select, because which control to
   // use IS what a field kind says.
   | { kind: "icon"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // A SHAPE FOR EACH ROW AND DAY OF AN ICON STRIP, chosen on the preview:
+  // each group of marks there is a button, and clicking one opens a chooser
+  // beside it - how far the choice reaches (strip, row, day) and the icons.
+  // Nothing in the panel. See IconPicksOnPage.
+  | {
+      kind: "iconsOnPage";
+      key: string;
+      label: string;
+      iconKey: string;
+      rowKey: string;
+      dayKey: string;
+      /** A mark's id after the instance id, its row and day captured. */
+      mark: string;
+      options: Array<{ value: string; label: string }>;
+    }
   // A closed set of LINE STYLES - a note box's body, a to-do's rules, what
   // fills the hours with increments off. Each option is drawn as a zoomed-in
   // corner of the module ITSELF, by the renderer that prints it, so the
@@ -211,27 +239,6 @@ export type ModuleField =
   // prompt - shown as that list with a stepper beside every entry. An item
   // without its own number takes `defaultKey`'s.
   | { kind: "countEach"; key: string; itemsKey: string; defaultKey: string; label: string; min: number; max: number }
-  // A SHAPE FOR EACH of something the module draws - each row of an icon
-  // strip, each day - picked from the same drawn previews as `icon`. How many
-  // there are is read off the drawing (`countPattern`, a regex over mark ids),
-  // since a strip's rows follow its height and its days its width; each is
-  // named from `labelsKey` as typed, or from a drawn label (`namePattern`, a
-  // regex over mark ids with the index in place of `#`), else "`itemLabel`
-  // n". Offered only for two or more - one is the module's own icon.
-  | {
-      kind: "iconEach";
-      key: string;
-      label: string;
-      itemLabel: string;
-      countPattern: string;
-      labelsKey?: string;
-      namePattern?: string;
-      /** Where `namePattern` finds a drawn label, name the item by the
-       *  journal's own week ("Sun", "Mon") - the drawing may abbreviate. */
-      weekdayNames?: boolean;
-      defaultKey: string;
-      options: Array<{ value: string; label: string }>;
-    }
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
@@ -1645,59 +1652,28 @@ const PRIMITIVES = {
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-s0-heading", placeholder: "Heading" } },
-      {
-        kind: "icon",
-        key: "icon",
-        label: "Icon",
-        options: [
-          { value: "circle", label: "Circles" },
-          { value: "square", label: "Squares" },
-          { value: "rounded", label: "Rounded squares" },
-          { value: "droplet", label: "Droplets" },
-          { value: "heart", label: "Hearts" },
-          { value: "star", label: "Stars" },
-          { value: "moon", label: "Moons" },
-          { value: "flame", label: "Flames" },
-          { value: "leaf", label: "Leaves" },
-          { value: "plant", label: "Potted plants" },
-        ],
-      },
-      { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24 },
-      { kind: "number", key: "groups", label: "Groups across (0 = one per column)", min: 0, max: 12 },
+      // SIMPLE AND COMPACT - asked 2026-10-01, "as simple and compact as
+      // possible without sacrificing usability ... and if needed edit it by
+      // clicking on the one". The strip's icon as one row of drawings; two
+      // steppers; a switch. A row's or a day's own icon is chosen on the
+      // preview (iconsOnPage) - the two lists of ten per row and per day that
+      // stood here made it the one panel that scrolled.
+      { kind: "icon", key: "icon", label: "Icon", options: GLYPH_PICKER_OPTIONS },
+      { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24, stepper: true },
+      { kind: "number", key: "groups", label: "Groups", min: 0, max: 12, stepper: true, zeroLabel: "Auto" },
+      { kind: "boolean", key: "groupLabels", label: "Day names", on: "days", off: "none" },
       // Strip 0 is the heading; each other strip shows the heading until it
       // has a label of its own. As many as the height draws.
       { kind: "lines", key: "stripLabels", label: "A label for each strip (one per line)", rows: 4, positional: true, canvas: { element: "-s#-heading", placeholder: "Label", add: false, from: 1 } },
       {
-        kind: "iconEach",
+        kind: "iconsOnPage",
         key: "stripIcons",
-        label: "Icon for each row",
-        itemLabel: "Row",
-        countPattern: "-s(\\d+)-g0-i0$",
-        labelsKey: "stripLabels",
-        defaultKey: "icon",
+        label: "Icons",
+        iconKey: "icon",
+        rowKey: "stripIcons",
+        dayKey: "groupIcons",
+        mark: "-s(\\d+)-g(\\d+)-i\\d+$",
         options: GLYPH_PICKER_OPTIONS,
-      },
-      {
-        kind: "iconEach",
-        key: "groupIcons",
-        label: "Icon for each day",
-        itemLabel: "Day",
-        countPattern: "-s0-g(\\d+)-i0$",
-        namePattern: "-g#-day$",
-        // Named as the week names them, not as drawn: a narrow strip draws
-        // initials, and "S" does not say Sunday or Saturday.
-        weekdayNames: true,
-        defaultKey: "icon",
-        options: GLYPH_PICKER_OPTIONS,
-      },
-      {
-        kind: "select",
-        key: "groupLabels",
-        label: "Label the groups",
-        options: [
-          { value: "none", label: "No labels" },
-          { value: "days", label: "Days of the week" },
-        ],
       },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>

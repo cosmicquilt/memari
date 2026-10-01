@@ -1911,50 +1911,77 @@ const roundTwoPickers: Probe = {
       if (onPage.length > 0) problems.push(`the water strip on the page: ${onPage.join("; ")}`);
       else notesSeen.push("every droplet inside its module on the page");
 
-      // --- AN ICON FOR EACH ROW AND EACH DAY -----------------------------
+      // --- AN ICON FOR EACH ROW AND EACH DAY, CHOSEN ON THE PREVIEW --------
+      // The panel is the strip's icon in one row, two steppers and a switch;
+      // a row's or a day's own icon is chosen by clicking it (2026-10-01).
       if (!(await open(strip.id))) problems.push("the water strip's editor would not open");
       else {
         const inEditor = await strays('[role="dialog"] [data-editor-piece]');
         if (inEditor.length > 0) problems.push(`the water strip in the editor: ${inEditor.join("; ")}`);
-        const rows = await pickers("Icon for each row: ");
-        const days = await pickers("Icon for each day: ");
-        if (rows.length < 2) problems.push(`an eleven-row strip offers ${rows.length} row picker(s)`);
-        else if (days.length < 2) problems.push(`a week of water offers ${days.length} day picker(s)`);
+        const editor = tab.getByRole("dialog", { name: /^Edit / });
+        const panel = (await editor.evaluate((dialog) => {
+          const scroller = [...dialog.querySelectorAll<HTMLElement>("*")].find((el) => /(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.querySelector("[role=radiogroup]"));
+          const icons = [...dialog.querySelectorAll('[role="radiogroup"][aria-label="Icon"] [role="radio"]')].map((el) => Math.round(el.getBoundingClientRect().top));
+          return {
+            scrolls: scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false,
+            iconRows: new Set(icons).size,
+            icons: icons.length,
+            lists: dialog.querySelectorAll('[role="radiogroup"][aria-label^="Icon for each"]').length,
+            text: (dialog as HTMLElement).innerText,
+          };
+        })) as { scrolls: boolean; iconRows: number; icons: number; lists: number; text: string };
+        if (panel.lists > 0) problems.push("the per-row and per-day lists are still in the panel");
+        else if (panel.scrolls) problems.push("the icon strip's panel still scrolls");
+        else if (panel.icons !== 10 || panel.iconRows !== 1) problems.push(`the Icon picker is ${panel.icons} drawings on ${panel.iconRows} rows, not one row of ten`);
+        else if (!/Icons per group/i.test(panel.text) || !/Groups/i.test(panel.text) || !/Day names/i.test(panel.text)) problems.push("the panel lacks Icons per group, Groups or Day names");
+        else notesSeen.push("icon strip panel: one row of ten, two steppers, a switch, no scrolling");
+
+        const chooser = tab.getByRole("dialog", { name: /^Icon for / });
+        const reachOf = () => chooser.getByRole("radio", { checked: true }).first().textContent();
+        const before = await drawnOnPage(strip.id);
+        // Sunday of the first row: a day's own icon.
+        await tab.locator('[data-icon-group="0:0"]').click();
+        if (!(await chooser.isVisible())) problems.push("clicking an icon on the preview opened no chooser");
         else {
-          const all = [...rows, ...days];
-          if (all.some((p) => p.options !== 10 || p.drawings !== 10)) {
-            problems.push(`a per-item picker is not ten different drawn icons: ${all.map((p) => `${p.options}/${p.drawings}`).join(" ")}`);
-          } else if (all.some((p) => !/: Droplets$/.test(p.chosen))) {
-            problems.push(`before any pick, not every row and day shows the strip's droplet: ${all.map((p) => p.chosen).join(", ")}`);
-          } else if (days[0].name !== "Sun" || days[1].name !== "Mon") {
-            problems.push(`the days are named ${days.map((d) => d.name).join(",")}, not the week's days`);
-          } else if (rows[0].name !== "Row 1") {
-            problems.push(`the first row is named "${rows[0].name}"`);
-          } else notesSeen.push(`${rows.length} rows and ${days.length} days (${days.map((d) => d.name).join(",")}), each ten drawn icons`);
-          const before = await drawnOnPage(strip.id);
-          await tab.getByRole("radio", { name: `${days[0].name}: Stars` }).click();
-          await tab.getByRole("radio", { name: `${rows[1].name}: Leaves` }).click();
-          await tab.waitForTimeout(200);
-          const reset = await tab.getByRole("dialog").getByRole("button", { name: "Reset" }).count();
-          if (reset !== 2) problems.push(`after a pick in each, ${reset} Reset button(s) show, not 2`);
-          await done();
-          const stored = (await storedModules(guest.journalId)).find((m) => m.id === strip.id)?.propValues ?? {};
-          const groupIcons = stored.groupIcons as string[] | undefined;
-          const stripIcons = stored.stripIcons as string[] | undefined;
-          if (groupIcons?.[0] !== "star" || groupIcons.slice(1).some(Boolean)) problems.push(`saved groupIcons ${JSON.stringify(groupIcons)}`);
-          else if (stripIcons?.[1] !== "leaf" || stripIcons.some((icon, i) => i !== 1 && icon)) problems.push(`saved stripIcons ${JSON.stringify(stripIcons)}`);
-          else notesSeen.push(`saved Sun as stars and row 2 as leaves`);
-          if ((await drawnOnPage(strip.id)) === before) problems.push("the strip on the page drew the same after the picks");
-          // Opened again, the pickers read what was saved.
-          if (await open(strip.id)) {
-            const again = [...(await pickers("Icon for each row: ")), ...(await pickers("Icon for each day: "))];
-            const starred = again.filter((p) => /: Stars$/.test(p.chosen)).map((p) => p.name);
-            const leaved = again.filter((p) => /: Leaves$/.test(p.chosen)).map((p) => p.name);
-            if (starred.join() !== "Sun" || leaved.join() !== "Row 2") problems.push(`reopened, stars on ${starred.join(",") || "nothing"} and leaves on ${leaved.join(",") || "nothing"}`);
-            await tab.keyboard.press("Escape");
-            await tab.waitForTimeout(900);
-          } else problems.push("the strip's editor would not open a second time");
+          const reaches = await chooser.getByRole("radiogroup", { name: "How far it reaches" }).getByRole("radio").allTextContents();
+          if (reaches.join(",") !== "Strip,Row,Day") problems.push(`the chooser reaches ${reaches.join(",")}, not Strip, Row and Day`);
+          if ((await reachOf()) !== "Strip") problems.push(`an icon with nothing of its own opens on ${await reachOf()}, not Strip`);
+          await chooser.getByRole("radio", { name: "Day" }).click();
+          await chooser.getByRole("radio", { name: "Stars" }).click();
+          // Escape closes the chooser, not the editor.
+          await tab.keyboard.press("Escape");
+          await tab.waitForTimeout(150);
+          if (await chooser.isVisible()) problems.push("Escape left the chooser open");
+          else if (!(await editor.isVisible())) problems.push("Escape in the chooser closed the editor");
         }
+        // The second row's Monday: a row's own icon.
+        await tab.locator('[data-icon-group="1:1"]').click();
+        if (await chooser.isVisible()) {
+          await chooser.getByRole("radio", { name: "Row" }).click();
+          await chooser.getByRole("radio", { name: "Leaves" }).click();
+          await tab.keyboard.press("Escape");
+        } else problems.push("the second row's icons opened no chooser");
+        await done();
+        const stored = (await storedModules(guest.journalId)).find((m) => m.id === strip.id)?.propValues ?? {};
+        const groupIcons = stored.groupIcons as string[] | undefined;
+        const stripIcons = stored.stripIcons as string[] | undefined;
+        if (groupIcons?.[0] !== "star" || groupIcons.slice(1).some(Boolean)) problems.push(`saved groupIcons ${JSON.stringify(groupIcons)}`);
+        else if (stripIcons?.[1] !== "leaf" || stripIcons.some((icon, i) => i !== 1 && icon)) problems.push(`saved stripIcons ${JSON.stringify(stripIcons)}`);
+        else notesSeen.push("chosen on the preview: Sunday as stars, row 2 as leaves");
+        if ((await drawnOnPage(strip.id)) === before) problems.push("the strip on the page drew the same after the picks");
+        // Opened again, the chooser opens on the reach each icon has.
+        if (await open(strip.id)) {
+          await tab.locator('[data-icon-group="0:0"]').click();
+          const dayReach = await reachOf();
+          const dayStars = await chooser.getByRole("radio", { name: "Stars" }).getAttribute("aria-checked");
+          await tab.keyboard.press("Escape");
+          await tab.locator('[data-icon-group="1:2"]').click();
+          const rowReach = await reachOf();
+          await tab.keyboard.press("Escape");
+          if (dayReach !== "Day" || dayStars !== "true" || rowReach !== "Row") problems.push(`reopened, Sunday opens on ${dayReach} (stars ${dayStars}) and row 2 on ${rowReach}`);
+          await tab.keyboard.press("Escape");
+          await tab.waitForTimeout(900);
+        } else problems.push("the strip's editor would not open a second time");
       }
 
       // --- THE TO-DO'S TICK MARK ------------------------------------------

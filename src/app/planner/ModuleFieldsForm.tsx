@@ -19,7 +19,6 @@ import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { flatten, toSvg } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
-import { weekdayShortNames } from "@/lib/weekDays";
 
 const ACCENT = "#4a5cff";
 
@@ -128,7 +127,7 @@ const rowStyle: CSSProperties = { display: "flex", flexDirection: "column", gap:
  * rather than a recoloured version of it - and it needs no recolouring, which
  * would have meant rewriting the markup the renderer emitted.
  */
-function GlyphSwatch({
+export function GlyphSwatch({
   shape,
   label,
   selected,
@@ -288,8 +287,6 @@ export function ModuleFieldsForm({
   onChange,
   defaults,
   drawRule,
-  drawn,
-  weekStartDay = 0,
   textOnPage,
 }: {
   fields: ModuleField[];
@@ -302,11 +299,6 @@ export function ModuleFieldsForm({
   /** Draws the module with one line-style option, for a `rule` field. Without
    *  it, a rule field is an ordinary list of names. */
   drawRule?: (key: string, value: string | number) => RuleSample | null;
-  /** The module as drawn - an `iconEach` field counts and names its rows
-   *  and days from it. */
-  drawn?: RenderedPolotnoElement[];
-  /** The journal's first day of the week, for fields that name days. */
-  weekStartDay?: number;
   /** The module's text is edited on the preview - so an empty panel is not
    *  "nothing to set". */
   textOnPage?: boolean;
@@ -325,84 +317,8 @@ export function ModuleFieldsForm({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <style>{FOCUS_CSS}</style>
       {fields.map((field, index) => {
-        if (field.kind === "iconEach") {
-          // A picker per row or day of the drawing, each a line of the same
-          // drawn icons as the module's own picker, smaller. How many, and
-          // their names, are read off the drawing - rows follow the height,
-          // days the width.
-          const counting = new RegExp(field.countPattern);
-          let count = 0;
-          for (const element of drawn ?? []) {
-            const match = counting.exec(String(element.id));
-            if (match) count = Math.max(count, Number(match[1]) + 1);
-          }
-          if (count < 2) return null;
-          const own = Array.isArray(values[field.key]) ? (values[field.key] as unknown[]) : [];
-          const valid = new Set(field.options.map((option) => option.value));
-          const ownAt = (i: number) => (typeof own[i] === "string" && valid.has(own[i] as string) ? (own[i] as string) : null);
-          const fallback = String(values[field.defaultKey] ?? defaults?.[field.defaultKey] ?? field.options[0]?.value);
-          const typed = field.labelsKey ? values[field.labelsKey] ?? defaults?.[field.labelsKey] : undefined;
-          const nameOf = (i: number) => {
-            const label = Array.isArray(typed) ? typed[i] : undefined;
-            if (typeof label === "string" && label.trim()) return label.trim();
-            if (field.namePattern) {
-              const naming = new RegExp(field.namePattern.replace("#", String(i)));
-              const text = (drawn ?? []).find((element) => naming.test(String(element.id)))?.text;
-              const word = (name: string) => name.charAt(0) + name.slice(1).toLowerCase();
-              // Drawn in capitals ("MON"), maybe as an initial; named as a word ("Mon").
-              if (typeof text === "string" && text.trim()) {
-                return field.weekdayNames ? word(weekdayShortNames(weekStartDay)[i % 7]) : word(text.trim());
-              }
-            }
-            return `${field.itemLabel} ${i + 1}`;
-          };
-          const pick = (i: number, value: string) => {
-            const next = Array.from({ length: count }, (_, k) => ownAt(k) ?? "");
-            next[i] = value;
-            onChange(field.key, next);
-          };
-          const anyOwn = Array.from({ length: count }, (_, i) => ownAt(i)).some(Boolean);
-          return (
-            <div key={field.key} style={rowStyle}>
-              <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                <span style={labelStyle}>{field.label}</span>
-                {anyOwn && (
-                  <button
-                    type="button"
-                    onClick={() => onChange(field.key, [])}
-                    className="memari-field"
-                    style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", fontSize: 11.5, color: "rgba(255, 255, 255, 0.7)" }}
-                  >
-                    Reset
-                  </button>
-                )}
-              </span>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {Array.from({ length: count }, (_, i) => (
-                  <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.85)" }}>{nameOf(i)}</span>
-                    <div
-                      role="radiogroup"
-                      aria-label={`${field.label}: ${nameOf(i)}`}
-                      style={{ display: "flex", flexWrap: "wrap", gap: 4 }}
-                    >
-                      {field.options.map((option) => (
-                        <GlyphSwatch
-                          key={option.value}
-                          size={22}
-                          shape={option.value as GlyphShape}
-                          label={`${nameOf(i)}: ${option.label}`}
-                          selected={(ownAt(i) ?? fallback) === option.value}
-                          onPick={() => pick(i, option.value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
+        // Chosen on the preview - see IconPicksOnPage.
+        if (field.kind === "iconsOnPage") return null;
 
         if (field.kind === "countEach") {
           // One stepper per item of the list it follows - lines under each
@@ -530,7 +446,8 @@ export function ModuleFieldsForm({
           // Unset is the schema's default, which is not always off: a module
           // stored before "Days from the months either side" existed draws
           // them, and the switch has to say so.
-          const on = (values[field.key] ?? defaults?.[field.key]) === true;
+          const onValue = field.on ?? true;
+          const on = (values[field.key] ?? defaults?.[field.key]) === onValue;
           return (
             <label
               key={field.key}
@@ -571,7 +488,7 @@ export function ModuleFieldsForm({
               <input
                 type="checkbox"
                 checked={on}
-                onChange={(event) => onChange(field.key, event.target.checked)}
+                onChange={(event) => onChange(field.key, event.target.checked ? onValue : field.off ?? false)}
                 // Off screen rather than display:none - a hidden input is
                 // out of the accessibility tree and unreachable by keyboard,
                 // which is the whole reason a real checkbox is here at all.
@@ -579,6 +496,42 @@ export function ModuleFieldsForm({
               />
               {field.label}
             </label>
+          );
+        }
+
+        if (field.kind === "number" && field.stepper) {
+          // - n + on the label's own line: a count is nudged, not typed.
+          const value = Number(values[field.key] ?? defaults?.[field.key] ?? field.min ?? 0) || 0;
+          const min = field.min ?? 0;
+          const max = field.max ?? 99;
+          const step = (by: number) => onChange(field.key, Math.max(min, Math.min(max, value + by)));
+          const button = (by: number, label: string, glyph: string) => (
+            <button
+              type="button"
+              aria-label={label}
+              disabled={by < 0 ? value <= min : value >= max}
+              onClick={() => step(by)}
+              className="memari-field"
+              style={{ width: 26, height: 26, border: "none", background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: (by < 0 ? value <= min : value >= max) ? 0.35 : 1 }}
+            >
+              {glyph}
+            </button>
+          );
+          return (
+            <div key={field.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={labelStyle}>{field.label}</span>
+              <span
+                role="group"
+                aria-label={field.label}
+                style={{ display: "inline-flex", alignItems: "center", borderRadius: EDITOR_RADIUS, background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.2)" }}
+              >
+                {button(-1, `${field.label}: fewer`, "\u2212")}
+                <span style={{ minWidth: 34, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>
+                  {value === 0 && field.zeroLabel ? field.zeroLabel : value}
+                </span>
+                {button(1, `${field.label}: more`, "+")}
+              </span>
+            </div>
           );
         }
 
@@ -631,11 +584,15 @@ export function ModuleFieldsForm({
               <div
                 role="radiogroup"
                 aria-label={field.label}
-                style={{ display: "flex", flexWrap: "wrap", gap: 6 }}
+                // ONE ROW of ten, small - the drawings read at this size, and
+                // two rows of large ones were the bulk of the icon strip's
+                // panel (2026-10-01, "as simple and compact as possible").
+                style={{ display: "flex", flexWrap: "nowrap", gap: 3 }}
               >
                 {field.options.map((option) => (
                   <GlyphSwatch
                     key={option.value}
+                    size={24}
                     shape={option.value as GlyphShape}
                     label={option.label}
                     selected={values[field.key] === option.value}

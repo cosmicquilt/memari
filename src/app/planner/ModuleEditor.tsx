@@ -33,6 +33,8 @@ import { DEFAULT_HOURLY_SETTINGS, getHourlyGridCoreContentHeightPx } from "@/lib
 import { HEADING_SIZES_PT, headingFits } from "@/lib/modules/moduleFrame";
 import { canvasFields, canvasSlots, ghostValues, withItemAfter, withSlotText, withoutItem, type CanvasSlot } from "@/lib/canvasText";
 import { CanvasTextFields } from "./CanvasTextFields";
+import { IconPicksOnPage } from "./IconPicksOnPage";
+import { weekdayShortNames } from "@/lib/weekDays";
 import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
@@ -781,6 +783,31 @@ export function ModuleEditor({
           />
         )}
 
+        {/* A row's or a day's own icon, chosen where it prints - see
+            IconPicksOnPage. */}
+        {pieces.length === 1 &&
+          definition?.fields?.map((field) =>
+            field.kind === "iconsOnPage" ? (
+              <IconPicksOnPage
+                key={field.key}
+                field={field}
+                marks={everyMark}
+                instanceId={editing.instanceId}
+                values={draft}
+                onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
+                box={box}
+                scale={scale}
+                pad={FRAME_PAD}
+                frame={{ width: groupWidth * scale + FRAME_PAD * 2, height: groupHeight * scale + FRAME_PAD * 2 }}
+                dayNames={
+                  draft.groupLabels === "days"
+                    ? weekdayShortNames(weekStart).map((day) => day.charAt(0) + day.slice(1).toLowerCase())
+                    : null
+                }
+              />
+            ) : null
+          )}
+
         {/* The table's column widths, dragged where they print. */}
         {!hours && definition?.fields?.some((field) => field.kind === "columnWidths") && (
           <ColumnDividers
@@ -876,8 +903,6 @@ export function ModuleEditor({
               values={draft}
               defaults={defaults}
               drawRule={drawRule}
-              drawn={everyMark}
-              weekStartDay={weekStart}
               // No hint that the words are edited on the preview - asked
               // 2026-10-01 to remove it; the text cursor on hover says so.
               textOnPage={onCanvasKeys.size > 0}
