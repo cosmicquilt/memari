@@ -187,14 +187,17 @@ const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
  * one ("I actually like a faded page divider of the whole spread in the
  * artifact, can you add that to canvas"). The demo's shade, in page pixels:
  * an inset shadow offset about 1.8% of a page's width and blurred 2.2%, at
- * 12% ink. It reaches about 85 of the 187.5 margin pixels from the fold, so
+ * 6% ink - halved from 12% the same day ("make the gradient less opacity ...
+ * it looks fainter on the artifact": measured, the canvas's band was a broad
+ * even 16 levels deep where the demo's lighter band only dipped at a thin
+ * line). It reaches about 85 of the 187.5 margin pixels from the fold, so
  * it never lies under a module, and it is the editor's only - the PDF and
  * the print know nothing of it.
  */
 function foldShadow(side: "left" | "right" | null, pageWidthPx: number): string | undefined {
   if (!side) return undefined;
   const offset = pageWidthPx * 0.018, blur = pageWidthPx * 0.022;
-  return `inset ${side === "left" ? -offset : offset}px 0 ${blur}px ${-offset}px rgba(0, 0, 0, 0.12)`;
+  return `inset ${side === "left" ? -offset : offset}px 0 ${blur}px ${-offset}px rgba(0, 0, 0, 0.06)`;
 }
 
 // Zoom bounds/step match Polotno's own ZoomGroup (node_modules/polotno/
