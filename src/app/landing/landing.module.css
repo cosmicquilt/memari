@@ -968,9 +968,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Leans out a little further when reached for - a little (34 was "too
+   much" toward the viewer, 2026-10-01). */
 .postit:hover,
 .postit:focus-visible {
-  --lift-n: 34;
+  --lift-n: 27;
 }
 
 .postit:focus-visible {
@@ -998,14 +1000,19 @@
 .postitStuck {
   bottom: 0;
   height: calc(var(--note) * 0.24 + 1px);
-  box-shadow: 0 1px 1.5px rgba(60, 40, 10, 0.22);
+  box-shadow: 0 1.5px 2px rgba(60, 40, 10, 0.18);
 }
 
+/* The fold where the glue stops: one soft bend, no lines - a shade on the
+   strip where the paper turns away from the light, a lift of light on the
+   free part where it turns toward it. (A drawn crease, the free part's own
+   drop shadow and the strip's edge shadow made three lines there: "the
+   double crease ... doesn't look good".) */
 .postitStuck::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 70%);
+  background: linear-gradient(to bottom, rgba(120, 88, 10, 0.13), rgba(120, 88, 10, 0) 38%);
 }
 
 /* The part that lifts: hinged at the fold, curling toward us. Lit more the
@@ -1017,26 +1024,13 @@
   transform-origin: 50% 100%;
   transform: rotateX(calc(-1 * var(--lift)));
   transition: transform 260ms cubic-bezier(0.3, 0.7, 0.3, 1);
-  filter: drop-shadow(1px 9px 7px rgba(30, 18, 6, 0.32));
 }
 
 .postitFree::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(120, 90, 10, 0.16), rgba(120, 90, 10, 0) 26%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.16));
-}
-
-/* The fold where the glue stops, showing through from the back: a crease
-   with its light side above and its shadow below. */
-.postitFree::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.35), rgba(110, 80, 10, 0.3));
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 22%, rgba(255, 255, 255, 0) 72%, rgba(255, 255, 255, 0.14));
 }
 
 /* The lifted part's shadow on the page under it: further out, and softer,
