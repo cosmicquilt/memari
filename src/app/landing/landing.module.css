@@ -2,6 +2,14 @@
    (San Francisco, or Inter where there is none), and room around everything. */
 
 .page {
+  /* The hero's height: shorter than the screen by --peek % of it, so that
+     much of the next section shows on opening (set from
+     bodyWallSettings.json). Here rather than on .hero so the post-it below
+     it can size itself by it too. The floor is low (it was 640px, which in
+     a laptop's browser window - about 650px tall - pinned the hero to the
+     screen's height and left "Cream on load" doing nothing, 2026-10-02):
+     the film scales to the hero, and the title and post-it with it. */
+  --hero-h: max(420px, calc(100svh * (1 - var(--peek, 0) / 100)));
   --ink: #1c1917;
   --muted: rgba(28, 25, 23, 0.66);
   /* Cream, like the journal's pages in the hero (2026-09-25: "set the
@@ -194,12 +202,10 @@
 /* --- hero ---------------------------------------------------------------- */
 
 .hero {
-  /* Shorter than the screen by --peek % of it, so that much of the next
-     section shows on opening (set from bodyWallSettings.json). */
-  --hero-h: max(640px, calc(100svh * (1 - var(--peek, 0) / 100)));
+  /* --hero-h is .page's. */
   position: relative;
   height: var(--hero-h);
-  min-height: 640px;
+  min-height: 420px;
   overflow: hidden;
   isolation: isolate;
 }
@@ -208,8 +214,10 @@
    middle of the hero with room above and below, so a shorter hero crops
    nothing of it. */
 @media (max-width: 760px) {
-  .hero {
+  .page {
     --hero-h: max(520px, calc(100svh * (1 - var(--peek-phone, 0) / 100)));
+  }
+  .hero {
     min-height: 520px;
   }
 }
@@ -531,6 +539,24 @@
 .titleOverFilm {
   /* "a bit higher", then "a little lower" (2026-09-25): between the two. */
   top: calc(42px + 2.25vh);
+}
+
+/* In a short hero the title would reach the book: the wordmark shrinks so
+   the tagline ends 10px above the book's top edge. That edge is 0.305 of
+   the film's height down it, and the film (as tall as the stage: the
+   larger of the hero's height and 0.375 of the screen's width) is centred
+   on the hero; the tagline's line takes 1.4 times its size. A screen of
+   the usual shape keeps the wordmark's full size. */
+@media (min-aspect-ratio: 1/1) {
+  .titleOverFilm .wordmark {
+    font-size: max(
+      34px,
+      min(
+        clamp(40px, 6.3vw, 88px),
+        calc(var(--hero-h) / 2 - 0.195 * max(37.5vw, var(--hero-h)) - 52px - 2.25vh - 1.4 * clamp(17px, 1.9vw, 24px))
+      )
+    );
+  }
 }
 
 /* A phone's nav is a button's height nearer: keep the title clear of it. */
@@ -1013,7 +1039,9 @@
    sticky strip, on the cream section; the fold is GAP (0.08) of it below the
    hero's edge; the rest lifts over the hero by --lift. */
 .postit {
-  --note: 168px;
+  /* 168px under a full-height hero, and as much smaller as the hero is
+     ("Cream on load") - so it covers as much of the book at any height. */
+  --note: clamp(104px, calc(var(--hero-h) * 0.177), 168px);
   /* The lift as a number, so the shadow can follow it in px too. */
   --lift-n: 22;
   --lift: calc(var(--lift-n) * 1deg);
