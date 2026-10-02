@@ -1,0 +1,17 @@
+{
+  "otter-1": {
+    "width": 640,
+    "height": 205,
+    "lineY": 154.9
+  },
+  "otter-2": {
+    "width": 640,
+    "height": 203,
+    "lineY": 152.8
+  },
+  "otter-3": {
+    "width": 640,
+    "height": 204,
+    "lineY": 154.7
+  }
+}

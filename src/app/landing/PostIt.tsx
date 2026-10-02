@@ -18,10 +18,18 @@
 // its tilt (see LINE_Y). A link to "How it works", so it works without
 // script; with script it scrolls there smoothly unless motion is reduced.
 //
-// THE OTTER IS A STAND-IN, drawn here in code, until the Flow drawing
-// (handoff/flow/otter-kilroy-prompt.md) is imported.
+// The otter is Flow's (handoff/flow/otter-kilroy-prompt.md), three takes of
+// it, imported by handoff/flow/otter/import_otters.py: the paper divided out
+// to graphite on transparent, cropped to its own pencil line's ends, and
+// where that line sits recorded (otters.json) - so the line it was drawn
+// with is the one put on the hero's edge.
 
+import otters from "../../../public/landing/otter/otters.json";
 import styles from "./landing.module.css";
+
+/** Which otter: 1 glances up and away, 2 lifts a paw, 3 looks straight at
+ *  you (chosen 2026-10-01 - the classic Kilroy, both paws over the wall). */
+const OTTER = "otter-3" as keyof typeof otters;
 
 /** Shares of the note's side: the sticky strip, and how far below the hero's
  *  edge the fold is. Mirrored in the stylesheet (.postit). */
@@ -52,41 +60,16 @@ export function PostIt() {
       <span className={styles.postitStuck} />
       <span className={styles.postitFree}>
         <svg className={styles.postitDrawing} viewBox={`0 0 100 ${FREE_H}`} aria-hidden="true">
-          <Otter lineY={LINE_Y} />
+          <OtterDrawing />
         </svg>
       </span>
     </a>
   );
 }
 
-/** A pencil otter over a wall, Kilroy-style: head, ears, eyes, nose and
- *  whiskers above the line, paws curled over it. (Stand-in.) */
-function Otter({ lineY: y }: { lineY: number }) {
-  const g = { fill: "none", stroke: "#3d3a36", strokeLinecap: "round", strokeLinejoin: "round" } as const;
-  return (
-    <g>
-      {/* The wall: a hand-drawn line, edge to edge. */}
-      <path d={`M3 ${y + 0.4} C 20 ${y - 0.5}, 38 ${y + 0.6}, 52 ${y} S 82 ${y - 0.4}, 97 ${y + 0.3}`} {...g} strokeWidth={1.1} opacity={0.85} />
-      {/* Head, peeking over. */}
-      <path d={`M33 ${y} C 32 ${y - 15}, 40 ${y - 24}, 50 ${y - 24} C 60 ${y - 24}, 68 ${y - 15}, 67 ${y}`} {...g} strokeWidth={1.2} />
-      {/* Ears. */}
-      <path d={`M37 ${y - 17} C 34 ${y - 20}, 35 ${y - 24}, 39 ${y - 22}`} {...g} strokeWidth={1} />
-      <path d={`M63 ${y - 17} C 66 ${y - 20}, 65 ${y - 24}, 61 ${y - 22}`} {...g} strokeWidth={1} />
-      {/* Eyes, looking down at us. */}
-      <circle cx={44} cy={y - 12} r={1.9} fill="#2f2c29" />
-      <circle cx={56} cy={y - 12} r={1.9} fill="#2f2c29" />
-      <circle cx={44.6} cy={y - 12.7} r={0.5} fill="#fff7c2" />
-      <circle cx={56.6} cy={y - 12.7} r={0.5} fill="#fff7c2" />
-      {/* Muzzle and nose resting on the wall. */}
-      <path d={`M43 ${y} C 43 ${y - 6}, 57 ${y - 6}, 57 ${y}`} {...g} strokeWidth={0.9} opacity={0.8} />
-      <ellipse cx={50} cy={y - 4.6} rx={2.6} ry={1.7} fill="#2f2c29" />
-      {/* Whiskers. */}
-      <path d={`M41 ${y - 4} L33 ${y - 6} M41 ${y - 2.6} L32 ${y - 2.8} M59 ${y - 4} L67 ${y - 6} M59 ${y - 2.6} L68 ${y - 2.8}`} {...g} strokeWidth={0.6} opacity={0.75} />
-      {/* Paws over the wall, fingers hanging below it. */}
-      <path d={`M22 ${y + 0.3} C 22 ${y - 4}, 30 ${y - 4}, 30 ${y + 0.3} M23.5 ${y + 0.3} L23.5 ${y + 3.2} M26 ${y + 0.3} L26 ${y + 3.6} M28.5 ${y + 0.3} L28.5 ${y + 3.2}`} {...g} strokeWidth={1} />
-      <path d={`M70 ${y + 0.3} C 70 ${y - 4}, 78 ${y - 4}, 78 ${y + 0.3} M71.5 ${y + 0.3} L71.5 ${y + 3.2} M74 ${y + 0.3} L74 ${y + 3.6} M76.5 ${y + 0.3} L76.5 ${y + 3.2}`} {...g} strokeWidth={1} />
-      {/* A little fur, pencil-hatched. */}
-      <path d={`M46 ${y - 21} l1 -1.6 M50 ${y - 22} l0.4 -1.8 M54 ${y - 21} l-0.6 -1.6`} {...g} strokeWidth={0.6} opacity={0.6} />
-    </g>
-  );
+/** The otter, as wide as the note, its line on LINE_Y. */
+function OtterDrawing() {
+  const { width, height, lineY } = otters[OTTER];
+  const h = (100 * height) / width;
+  return <image href={`/landing/otter/${OTTER}.webp`} x={0} y={LINE_Y - (lineY / height) * h} width={100} height={h} />;
 }

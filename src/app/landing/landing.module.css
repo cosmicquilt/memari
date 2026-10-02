@@ -945,7 +945,10 @@
   left: 50%;
   width: var(--note);
   height: var(--note);
-  transform: translate(-50%, calc(var(--note) * (-1 + 0.24 + 0.08))) rotate(-2.5deg);
+  /* Square to the page, not tilted: its line has to lie along the hero's
+     edge, and a tilted line meets a level edge at one point (measured
+     -2.5 to +3 px across the note at 2.5 degrees). */
+  transform: translate(-50%, calc(var(--note) * (-1 + 0.24 + 0.08)));
   perspective: 520px;
   transform-style: preserve-3d;
   cursor: pointer;
