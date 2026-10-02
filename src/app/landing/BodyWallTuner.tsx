@@ -19,6 +19,8 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "size", label: "Doodle size", min: 0.4, max: 1.8, step: 0.05, unit: "x" },
   { key: "density", label: "How many", min: 0.05, max: 2, step: 0.05, unit: "x" },
   { key: "ink", label: "Ink strength", min: 0.05, max: 1, step: 0.01, unit: "" },
+  { key: "sideBlur", label: "Hero side blur, at the edge", min: 0, max: 16, step: 0.5, unit: "px" },
+  { key: "sideBlurWidth", label: "Hero side blur, reaches in", min: 0, max: 40, step: 1, unit: "% of screen" },
 ];
 
 export function BodyWallTuner() {
@@ -33,6 +35,8 @@ export function BodyWallTuner() {
     const page = document.querySelector("main")?.parentElement;
     page?.style.setProperty("--peek", String(next.peekDesktop));
     page?.style.setProperty("--peek-phone", String(next.peekMobile));
+    page?.style.setProperty("--side-blur", String(next.sideBlur));
+    page?.style.setProperty("--side-blur-w", String(next.sideBlurWidth));
     setMessage(null);
   };
   const save = async () => {
@@ -62,7 +66,7 @@ export function BodyWallTuner() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <strong style={{ flex: 1 }}>Body doodles (dev)</strong>
+        <strong style={{ flex: 1 }}>Landing tuning (dev)</strong>
         <button type="button" onClick={() => setOpen((o) => !o)} style={btn}>
           {open ? "Hide" : "Tune"}
         </button>

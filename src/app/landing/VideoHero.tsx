@@ -12,7 +12,7 @@
 // rest, about a second after the book has landed open (drawFrom), mapped
 // onto the last frame's pages.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
@@ -26,6 +26,10 @@ import styles from "./landing.module.css";
  *  one outright, as asked for. */
 const LAYOUT_FADE = 1.2;
 
+/** The blur at the screen's sides (.sideBlur): each side is this many
+ *  layers, each reaching further in, so the blur grows toward the edge. */
+const SIDE_BLUR_LAYERS = [1, 2, 3];
+
 export function VideoHero() {
   const hero = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -35,6 +39,10 @@ export function VideoHero() {
   const [still, setStill] = useState(false);
   /** The clip has reached the frame the drawing is laid on. */
   const [resting, setResting] = useState(false);
+  /** The clip has ended, and its last frame as a picture has loaded. */
+  const [ended, setEnded] = useState(false);
+  const [lastReady, setLastReady] = useState(false);
+  const frozen = still || (ended && lastReady);
 
   useEffect(() => {
     const v = video.current;
@@ -62,7 +70,11 @@ export function VideoHero() {
       setResting(true);
       loop.start(now() + LAYOUT_FADE);
     };
-    v.addEventListener("ended", begin);
+    const onEnded = () => {
+      setEnded(true);
+      begin();
+    };
+    v.addEventListener("ended", onEnded);
 
     // The loose sheets' drawings go under the book as it opens over them:
     // each is clipped to where the book is in the frame on screen.
@@ -161,7 +173,7 @@ export function VideoHero() {
       cancelAnimationFrame(raf);
       io.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
-      v.removeEventListener("ended", begin);
+      v.removeEventListener("ended", onEnded);
       cleanup();
     };
   }, []);
@@ -183,18 +195,34 @@ export function VideoHero() {
           playsInline
           preload="auto"
           disableRemotePlayback
-          style={{ visibility: still ? "hidden" : "visible" }}
+          style={{ visibility: frozen ? "hidden" : "visible" }}
         >
           {/* The 4K film only where the screen has the pixels for it; the
               browser takes the first source whose media matches. */}
           <source src={HERO_VIDEO.src4k} type="video/mp4" media={HERO_VIDEO.media4k} />
           <source src={HERO_VIDEO.src} type="video/mp4" />
         </video>
-        {still && (
-          // The resting frame, for reduced motion - the page is drawn on it
-          // without the clip ever playing.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className={styles.videoFrame} src={HERO_VIDEO.last} alt="" />
+        {(still || ended) && (
+          // The resting frame as a picture. For reduced motion the page is
+          // drawn on it without the clip ever playing; otherwise it takes the
+          // ended clip's place once loaded, so nothing rests on the video: a
+          // window in the background can lose a video's picture, and the app
+          // switcher's preview showed no hero (Andrew, 2026-10-02).
+          <picture>
+            <source srcSet={HERO_VIDEO.last4k} media={HERO_VIDEO.media4k} type="image/webp" />
+            <img
+              className={styles.videoFrame}
+              src={HERO_VIDEO.last}
+              alt=""
+              style={{ visibility: frozen ? "visible" : "hidden" }}
+              onLoad={(e) => {
+                void e.currentTarget
+                  .decode()
+                  .catch(() => {})
+                  .then(() => setLastReady(true));
+              }}
+            />
+          </picture>
         )}
         <canvas
           ref={overlay}
@@ -231,6 +259,17 @@ export function VideoHero() {
           );
         })}
       </div>
+      {/* The blur toward the screen's sides - see .sideBlur. */}
+      {(["left", "right"] as const).map((side) =>
+        SIDE_BLUR_LAYERS.map((k) => (
+          <div
+            key={`${side}${k}`}
+            className={`${styles.sideBlur} ${side === "left" ? styles.sideBlurLeft : styles.sideBlurRight}`}
+            style={{ "--k": k } as CSSProperties}
+            aria-hidden="true"
+          />
+        )),
+      )}
       <div className={styles.videoScrim} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark className={styles.titleOverFilm} />

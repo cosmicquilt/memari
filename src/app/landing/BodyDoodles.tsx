@@ -129,7 +129,17 @@ export function BodyDoodles() {
       timer = window.setTimeout(() => void pack(), 250);
     });
     ro.observe(holder);
+    // Not for the sliders that are the hero's (its side blur).
+    const wallKey = () => {
+      const wall: Partial<ReturnType<typeof bodyWallSettings>> = { ...bodyWallSettings() };
+      delete wall.sideBlur;
+      delete wall.sideBlurWidth;
+      return JSON.stringify(wall);
+    };
+    let packedFor = wallKey();
     const off = onBodyWallSettings(() => {
+      if (wallKey() === packedFor) return;
+      packedFor = wallKey();
       window.clearTimeout(timer);
       timer = window.setTimeout(() => void pack(), 120);
     });

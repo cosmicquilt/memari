@@ -46,8 +46,16 @@ export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?
   return (
     <div
       className={`${styles.page} ${script.variable} ${sans.variable}`}
-      // How much of the section below the hero shows on opening (bodyWall.ts).
-      style={{ "--peek": BODY_WALL_DEFAULTS.peekDesktop, "--peek-phone": BODY_WALL_DEFAULTS.peekMobile } as CSSProperties}
+      // How much of the section below the hero shows on opening, and the
+      // hero's side blur (bodyWall.ts).
+      style={
+        {
+          "--peek": BODY_WALL_DEFAULTS.peekDesktop,
+          "--peek-phone": BODY_WALL_DEFAULTS.peekMobile,
+          "--side-blur": BODY_WALL_DEFAULTS.sideBlur,
+          "--side-blur-w": BODY_WALL_DEFAULTS.sideBlurWidth,
+        } as CSSProperties
+      }
     >
       <SiteHeader signedIn={signedIn} />
 

@@ -44,6 +44,12 @@ export type BodyWallSettings = {
   /** The arrangement: a seed, or a new one each load. */
   seed: number;
   newEachLoad: boolean;
+  /** The hero's blur toward the screen's sides (.sideBlur in
+   *  landing.module.css): its strength at the very edge, CSS px, and how far
+   *  in it reaches, % of the screen's width. Here because these sliders are
+   *  the page's one toolbar. */
+  sideBlur: number;
+  sideBlurWidth: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;

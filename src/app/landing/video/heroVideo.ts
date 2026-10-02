@@ -48,8 +48,11 @@ export const HERO_VIDEO = {
   media4k: "(min-width: 1450px) and (min-resolution: 2dppx), (min-width: 1930px) and (min-resolution: 1.5dppx), (min-width: 2900px)",
   /** Shown while the clip loads, and where it begins. */
   first: "/landing/hero-open-first.jpg",
-  /** The resting frame: shown instead of the clip for reduced motion. */
+  /** The resting frame: shown instead of the clip for reduced motion, and
+   *  in its place once it has ended (VideoHero) - with last4k where the 4K
+   *  film plays (media4k), the frame decoded from it. */
   last: "/landing/hero-open-last.jpg",
+  last4k: "/landing/hero-open-last-4k.webp",
   width: 3840,
   height: 2160,
   /** When the layouts appear, in the file's seconds: as it comes to rest
