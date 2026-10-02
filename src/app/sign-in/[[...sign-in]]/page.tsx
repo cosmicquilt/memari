@@ -2,6 +2,7 @@ import { SignIn } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { guestModeAvailable } from "@/lib/guest";
+import { CREAM, cream, onCream } from "@/lib/cream";
 
 // memari.studio/sign-in - our own sign-in page, so it can offer "Continue as
 // guest" (asked for 2026-09-21). Clerk's component does the signing in and
@@ -30,7 +31,7 @@ export default async function SignInPage({
       style={{
         minHeight: "100vh",
         background: "#111113",
-        color: "#f2f2f2",
+        color: onCream(0xf2),
         display: "grid",
         placeItems: "center",
         padding: "32px 16px",
@@ -40,23 +41,25 @@ export default async function SignInPage({
         <strong style={{ fontSize: 20 }}>
           Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
         </strong>
+        {/* The card and its fields in the app's cream, not Clerk's white
+            (2026-10-01, src/lib/cream.ts). */}
         <SignIn
           routing="path"
           path="/sign-in"
           withSignUp
           fallbackRedirectUrl={returnTo}
           signUpFallbackRedirectUrl={returnTo}
-          appearance={{ variables: { colorPrimary: "#4a5cff" } }}
+          appearance={{ variables: { colorPrimary: "#4a5cff", colorBackground: CREAM, colorInput: CREAM } }}
         />
         {guestModeAvailable() && (
           <form action="/guest" method="post" style={{ display: "grid", gap: 8, justifyItems: "center", width: "100%" }}>
             <div
               aria-hidden="true"
-              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", color: "rgba(255,255,255,0.45)", fontSize: 12 }}
+              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", color: cream(0.45), fontSize: 12 }}
             >
-              <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.15)" }} />
+              <span style={{ flex: 1, height: 1, background: cream(0.15) }} />
               or
-              <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.15)" }} />
+              <span style={{ flex: 1, height: 1, background: cream(0.15) }} />
             </div>
             <button
               type="submit"
@@ -68,14 +71,14 @@ export default async function SignInPage({
                 padding: "9px 22px",
                 minHeight: 38,
                 cursor: "pointer",
-                border: "1.5px solid rgba(255,255,255,0.7)",
+                border: `1.5px solid ${cream(0.7)}`,
                 background: "transparent",
-                color: "#fff",
+                color: CREAM,
               }}
             >
               Continue as guest
             </button>
-            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,0.6)", textAlign: "center" }}>
+            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: cream(0.6), textAlign: "center" }}>
               No account needed. Your journals stay in this browser, and signing in later keeps them.
             </p>
           </form>

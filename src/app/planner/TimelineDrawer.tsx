@@ -81,6 +81,7 @@ import { useAsyncAction } from "./useAsyncAction";
 import { PagePreview } from "./PagePreview";
 import { PREVIEW_RADIUS } from "./editorStyle";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/anchoredPanel";
+import { CREAM, cream, onCream } from "@/lib/cream";
 
 // --- geometry, from the spec -----------------------------------------
 //
@@ -1240,7 +1241,7 @@ export function TimelineDrawer({
           // As siblings, each keeps its own width and its own solid surface,
           // and the only thing they share is the edge they meet at.
           background: SURFACE,
-          border: "1px solid rgba(255, 255, 255, 0.1)",
+          border: `1px solid ${cream(0.1)}`,
           borderBottom: "none",
           pointerEvents: "auto",
           width: `calc(${TAB_WIDTH}px + ${openness} * (100% - ${TAB_WIDTH}px))`,
@@ -1276,7 +1277,7 @@ export function TimelineDrawer({
             width: GRABBER_WIDTH,
             height: GRABBER_HEIGHT,
             borderRadius: GRABBER_HEIGHT / 2,
-            background: "rgba(255, 255, 255, 0.3)",
+            background: cream(0.3),
           }}
         />
       </div>
@@ -1465,7 +1466,7 @@ function LevelGroupInner({
         height: SUB_LABEL_HEIGHT,
         lineHeight: `${SUB_LABEL_HEIGHT}px`,
         fontSize: 9.5,
-        color: highContrast ? "#ffffff" : "rgba(255, 255, 255, 0.55)",
+        color: highContrast ? CREAM : cream(0.55),
         whiteSpace: "nowrap",
         textAlign: "center",
         overflow: "hidden",
@@ -1708,7 +1709,7 @@ function LevelGroupInner({
             fontWeight: 600,
             letterSpacing: "0.06em",
             textTransform: "uppercase",
-            color: highContrast ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+            color: highContrast ? CREAM : cream(0.6),
           }}
         >
           {LEVEL_LABELS[level]}
@@ -1804,7 +1805,7 @@ function CogButton({
         padding: 0,
         border: "none",
         background: "transparent",
-        color: bright ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+        color: bright ? CREAM : cream(0.6),
         cursor: "pointer",
         transition: reduceMotion ? "none" : "color 150ms ease-out",
       }}
@@ -1929,11 +1930,11 @@ function AnchoredPanel({
           maxHeight: at.maxHeight,
           overflowY: "auto",
           background: "#1c1c1e",
-          border: "1px solid rgba(255, 255, 255, 0.12)",
+          border: `1px solid ${cream(0.12)}`,
           borderRadius: 10,
           boxShadow: "0 8px 28px rgba(0, 0, 0, 0.5)",
           padding: 8,
-          color: "#ddd",
+          color: onCream(0xdd),
           fontSize: 12,
         }}
       >
@@ -1979,12 +1980,12 @@ function OccurrencePopover({
       {list === null ? (
         // NOT an empty list, which would read as "this book has no months".
         // It simply has not been told how long it is yet.
-        <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>
+        <div style={{ padding: "10px 8px", color: cream(0.6), lineHeight: 1.5 }}>
           Set the start and end dates under Page Settings, and every{" "}
           {LEVEL_NOUN[level]} the book covers will be listed here.
         </div>
       ) : list.length === 0 ? (
-        <div style={{ padding: "10px 8px", color: "rgba(255,255,255,0.6)" }}>
+        <div style={{ padding: "10px 8px", color: cream(0.6) }}>
           This book&rsquo;s term covers none.
         </div>
       ) : (
@@ -2008,7 +2009,7 @@ function OccurrencePopover({
               <span
                 style={{
                   fontSize: 10,
-                  color: isCustom ? "#8fdc9a" : "rgba(255,255,255,0.4)",
+                  color: isCustom ? "#8fdc9a" : cream(0.4),
                   whiteSpace: "nowrap",
                 }}
               >
@@ -2042,9 +2043,9 @@ function OccurrencePopover({
                   padding: "3px 8px",
                   fontSize: 10.5,
                   borderRadius: 5,
-                  border: "1px solid rgba(255,255,255,0.15)",
+                  border: `1px solid ${cream(0.15)}`,
                   background: "transparent",
-                  color: isCustom ? "#ff8f5c" : "#ddd",
+                  color: isCustom ? "#ff8f5c" : onCream(0xdd),
                   cursor: pending ? "default" : "pointer",
                   opacity: pending ? 0.5 : 1,
                   whiteSpace: "nowrap",
@@ -2206,7 +2207,7 @@ function PageCardInner({
     // one too - see PREVIEW_RADIUS ("make the selector of the previews have
     // a low border radius", then "even smaller", 2026-09-30).
     borderRadius: PREVIEW_RADIUS,
-    background: "#fdfcf9",
+    background: CREAM,
     // Dimming the unselected is what keeps a row of thumbnails from
     // competing with the canvas it describes. Under Increase Contrast it
     // goes, and the selection ring thickens to carry the distinction alone.
@@ -2292,7 +2293,7 @@ function PageCardInner({
               alignItems: "center",
               justifyContent: "center",
               background: ACCENT,
-              color: "#ffffff",
+              color: CREAM,
               pointerEvents: "none",
             }}
           >
@@ -2476,8 +2477,8 @@ function CornerRemoveButton({
             : armed
             ? REMOVE_RED
             : lit
-            ? "#ffffff"
-            : "rgba(255,255,255,0.35)",
+            ? CREAM
+            : cream(0.35),
           color: "#1c1c1e",
           transition: reduceMotion ? "none" : [ease("width"), ease("background")].join(", "),
         }}
@@ -2507,7 +2508,7 @@ function CornerRemoveButton({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#ffffff",
+            color: CREAM,
             fontSize: 10.5,
             fontWeight: 600,
             lineHeight: 1,
@@ -2529,9 +2530,11 @@ const REMOVE_TARGET = 24;
 /** The disc once armed, wide enough for "Remove" with room either side. */
 const REMOVE_PILL_WIDTH = 58;
 /** The armed disc. Not Apple's system red (#ff3b30 / #ff453a): white type
- *  on that is 3.55:1, under the 4.5 that 10.5px text needs. This one is
- *  4.83:1 and still unmistakably red. check:contrast holds it there. */
-const REMOVE_RED = "#d92d20";
+ *  on that is 3.55:1, under the 4.5 that 10.5px text needs. It was #d92d20,
+ *  4.83:1 with white; the type became the app's cream (2026-10-01), which
+ *  is darker, and on #d92d20 measured 4.05:1. A shade darker (x0.93), cream
+ *  is 4.56:1 and it is still unmistakably red. check:contrast holds it there. */
+const REMOVE_RED = "#ca2a1e";
 
 /**
  * The card that adds a page to a level.
@@ -2602,7 +2605,7 @@ function AddPageCardInner({
           borderRadius: 3,
           border: `2px dashed ${error ? "#ff8f5c" : lit ? "rgba(255,255,255,0.5)" : "rgba(255, 255, 255, 0.2)"}`,
           background: "transparent",
-          color: error ? "#ff8f5c" : lit ? "#ffffff" : "rgba(255, 255, 255, 0.35)",
+          color: error ? "#ff8f5c" : lit ? CREAM : cream(0.35),
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2628,7 +2631,7 @@ function AddPageCardInner({
           <MenuButton disabled={pending} onClick={addBlank}>
             <span
               aria-hidden="true"
-              style={{ width: 22, height: 30, flexShrink: 0, border: "1.5px dashed rgba(255,255,255,0.4)", borderRadius: 2 }}
+              style={{ width: 22, height: 30, flexShrink: 0, border: `1.5px dashed ${cream(0.4)}`, borderRadius: 2 }}
             />
             <span style={{ flex: 1 }}>Blank page</span>
           </MenuButton>
@@ -2683,12 +2686,12 @@ function EmptyLevelInner() {
         height: "var(--memari-card-h)",
         flexShrink: 0,
         borderRadius: 3,
-        border: "2px dashed rgba(255, 255, 255, 0.2)",
+        border: `2px dashed ${cream(0.2)}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontSize: 10,
-        color: "rgba(255, 255, 255, 0.35)",
+        color: cream(0.35),
       }}
     >
       empty
@@ -2799,7 +2802,7 @@ function CornerMenuButton({
           alignItems: "center",
           justifyContent: "center",
           gap: 2,
-          background: open || lit ? "#ffffff" : "rgba(255,255,255,0.35)",
+          background: open || lit ? CREAM : cream(0.35),
           transition: reduceMotion ? "none" : "background 150ms ease-out",
         }}
       >
@@ -2840,8 +2843,8 @@ function MenuButton({
         padding: "6px 8px",
         border: "none",
         borderRadius: 6,
-        background: lit && !disabled ? "rgba(255,255,255,0.08)" : "transparent",
-        color: disabled ? "rgba(255,255,255,0.4)" : "#ddd",
+        background: lit && !disabled ? cream(0.08) : "transparent",
+        color: disabled ? cream(0.4) : onCream(0xdd),
         font: "inherit",
         fontSize: 12,
         textAlign: "left",
@@ -2862,7 +2865,7 @@ function MenuHeading({ children }: { children: React.ReactNode }) {
         fontWeight: 600,
         letterSpacing: "0.06em",
         textTransform: "uppercase",
-        color: "rgba(255,255,255,0.6)",
+        color: cream(0.6),
       }}
     >
       {children}
@@ -2906,7 +2909,7 @@ function SavedOption({
           style={{
             display: "block",
             fontSize: 10.5,
-            color: armed ? "#ff8f5c" : "rgba(255,255,255,0.5)",
+            color: armed ? "#ff8f5c" : cream(0.5),
           }}
         >
           {armed ?? unavailable ?? (option.pageCount === 2 ? "Spread" : "Page")}
@@ -2948,13 +2951,13 @@ function CardMenu({
     <>
       {linked ? (
         <div style={{ padding: "6px 8px 4px", lineHeight: 1.45 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#ffffff", fontWeight: 600 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: CREAM, fontWeight: 600 }}>
             <LinkGlyph />
             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Saved as &ldquo;{linked.name}&rdquo;
             </span>
           </div>
-          <div style={{ marginTop: 4, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+          <div style={{ marginTop: 4, fontSize: 11, color: cream(0.6) }}>
             Linked: a change to this {kind} changes it in every journal that uses it.
           </div>
         </div>
@@ -2969,7 +2972,7 @@ function CardMenu({
           }}
           style={{ display: "grid", gap: 6, padding: "4px 8px 6px" }}
         >
-          <label htmlFor="memari-save-page-name" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+          <label htmlFor="memari-save-page-name" style={{ fontSize: 11, color: cream(0.6) }}>
             Save this {kind}
           </label>
           <div style={{ display: "flex", gap: 6 }}>
@@ -2984,9 +2987,9 @@ function CardMenu({
                 padding: "5px 8px",
                 font: "inherit",
                 fontSize: 12,
-                color: "#ffffff",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.15)",
+                color: CREAM,
+                background: cream(0.06),
+                border: `1px solid ${cream(0.15)}`,
                 borderRadius: 6,
                 outline: "none",
               }}
@@ -3002,7 +3005,7 @@ function CardMenu({
                 border: "none",
                 borderRadius: 6,
                 background: ACCENT,
-                color: "#ffffff",
+                color: CREAM,
                 cursor: pending ? "default" : "pointer",
                 opacity: pending || name.trim().length === 0 ? 0.5 : 1,
               }}
@@ -3010,7 +3013,7 @@ function CardMenu({
               Save
             </button>
           </div>
-          <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", lineHeight: 1.4 }}>
+          <div style={{ fontSize: 10.5, color: cream(0.5), lineHeight: 1.4 }}>
             Add it to any journal from the &ldquo;+&rdquo; at the end of a row. It stays linked: a change to any use
             changes them all.
           </div>

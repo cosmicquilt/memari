@@ -29,6 +29,7 @@
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type MutableRefObject } from "react";
 import type { CanvasSlot } from "@/lib/canvasText";
 
+import { CREAM } from "@/lib/cream";
 
 export type CanvasTextFieldsProps = {
   slots: CanvasSlot[];
@@ -151,7 +152,7 @@ function CanvasTextField({
     overflow: "hidden",
     // Paper behind a stacked label while it is a line being typed, so the
     // plot's rules do not run through it; nothing anywhere else.
-    background: focused && slot.rect.height * scale > height * 1.5 ? "#fdfcf9" : "transparent",
+    background: focused && slot.rect.height * scale > height * 1.5 ? CREAM : "transparent",
     outline: "none",
     fontFamily: font.family,
     fontSize,

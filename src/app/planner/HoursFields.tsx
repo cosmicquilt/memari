@@ -20,6 +20,7 @@ import { CONTROL_RADIUS } from "./editorStyle";
 import type { CSSProperties } from "react";
 import { ROW_HEIGHT_OPTIONS_PT } from "@/lib/modules/hourlyGridCore";
 import { FOCUS_CSS, RuleSwatch, ruleSwatchWidth, selectStyle, type RuleSample } from "./ModuleFieldsForm";
+import { cream, onCream } from "@/lib/cream";
 
 export const WEEK_START_DAY_LABELS = [
   "Sunday",
@@ -66,7 +67,7 @@ const labelStyle: CSSProperties = {
   fontWeight: 600,
   letterSpacing: "0.06em",
   textTransform: "uppercase",
-  color: "rgba(255, 255, 255, 0.6)",
+  color: cream(0.6),
 };
 
 // The fields panel's own input look - see ModuleFieldsForm's inputStyle for
@@ -77,8 +78,8 @@ const inputStyle: CSSProperties = {
   padding: "7px 9px",
   fontSize: 13,
   fontFamily: "inherit",
-  color: "#f2f2f2",
-  background: "rgba(255, 255, 255, 0.06)",
+  color: onCream(0xf2),
+  background: cream(0.06),
   border: "none",
   borderRadius: CONTROL_RADIUS,
   // The time inputs' picker button, light on the dark panel - reported
@@ -203,7 +204,7 @@ export function HoursFields({
             </select>
           </label>
           {values.intervalMinutes === 60 && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#ddd" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: onCream(0xdd) }}>
               <input
                 type="checkbox"
                 checked={values.compactHourRows}
@@ -260,7 +261,7 @@ export function HoursFields({
         </select>
       </label>
 
-      <p style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: "rgba(255, 255, 255, 0.5)" }}>
+      <p style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: cream(0.5) }}>
         Applies to the hours on every page of this journal.
       </p>
     </div>

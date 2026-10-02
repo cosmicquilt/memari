@@ -45,6 +45,7 @@ import { saveModuleToSaved, updateHourlySettings, updateJournalModuleSettings, u
 import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRefreshPages } from "./pagesRefreshContext";
+import { CREAM, cream, onCream } from "@/lib/cream";
 
 const ACCENT = "#4a5cff";
 const SURFACE = "#1c1c1e";
@@ -709,7 +710,7 @@ export function ModuleEditor({
           width: groupWidth * scale + FRAME_PAD * 2,
           height: groupHeight * scale + FRAME_PAD * 2,
           flexShrink: 0,
-          background: "#fdfcf9",
+          background: CREAM,
           // Square-cornered, as the palette cards are.
           outline: `2px solid ${ACCENT}`,
           outlineOffset: 3,
@@ -834,10 +835,10 @@ export function ModuleEditor({
           flexDirection: "column",
           position: "relative",
           background: SURFACE,
-          border: "1px solid rgba(255, 255, 255, 0.12)",
+          border: `1px solid ${cream(0.12)}`,
           borderRadius: PANEL_RADIUS,
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
-          color: "#ddd",
+          color: onCream(0xdd),
           overflow: "hidden",
           // The browser's own controls in here - a dropdown's open list, a
           // checkbox, a time picker, the scrollbar - drawn for a dark panel.
@@ -852,10 +853,10 @@ export function ModuleEditor({
             alignItems: "center",
             gap: 10,
             padding: "14px 16px",
-            borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+            borderBottom: `1px solid ${cream(0.08)}`,
           }}
         >
-          <strong style={{ flex: 1, minWidth: 0, fontSize: 13, color: "#fff" }}>
+          <strong style={{ flex: 1, minWidth: 0, fontSize: 13, color: CREAM }}>
             {definition?.label ?? editing.slug}
           </strong>
           <button
@@ -872,7 +873,7 @@ export function ModuleEditor({
               border: "none",
               borderRadius: CONTROL_RADIUS,
               background: "transparent",
-              color: "rgba(255,255,255,0.5)",
+              color: cream(0.5),
               cursor: "pointer",
             }}
           >
@@ -917,10 +918,10 @@ export function ModuleEditor({
         <div
           style={{
             padding: "10px 16px",
-            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+            borderTop: `1px solid ${cream(0.08)}`,
             fontSize: 11,
             lineHeight: 1.45,
-            color: "rgba(255,255,255,0.6)",
+            color: cream(0.6),
           }}
         >
           {hours ? (
@@ -929,7 +930,7 @@ export function ModuleEditor({
             <>This is part of every page&rsquo;s layout, so it cannot be saved to place again.</>
           ) : editing.savedModule ? (
             <>
-              <div style={{ color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ color: CREAM, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 Saved as &ldquo;{editing.savedModule.name}&rdquo;
               </div>
               Linked: a change here changes it everywhere it is used.
@@ -942,7 +943,7 @@ export function ModuleEditor({
                 padding: 0,
                 border: "none",
                 background: "transparent",
-                color: "#fff",
+                color: CREAM,
                 font: "inherit",
                 fontSize: 12,
                 fontWeight: 600,
@@ -972,8 +973,8 @@ export function ModuleEditor({
                     padding: "5px 8px",
                     font: "inherit",
                     fontSize: 12,
-                    color: "#fff",
-                    background: "rgba(255,255,255,0.06)",
+                    color: CREAM,
+                    background: cream(0.06),
                     // No border, as the fields have none (2026-10-01).
                     border: "none",
                     borderRadius: CONTROL_RADIUS,
@@ -990,7 +991,7 @@ export function ModuleEditor({
                     border: "none",
                     borderRadius: CONTROL_RADIUS,
                     background: ACCENT,
-                    color: "#fff",
+                    color: CREAM,
                     cursor: pending ? "default" : "pointer",
                     opacity: pending || saveName.trim().length === 0 ? 0.5 : 1,
                   }}
@@ -1009,7 +1010,7 @@ export function ModuleEditor({
             alignItems: "center",
             gap: 10,
             padding: "12px 16px",
-            borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+            borderTop: `1px solid ${cream(0.08)}`,
           }}
         >
           {error && (
@@ -1018,7 +1019,7 @@ export function ModuleEditor({
           {!error && (
             <span
               role="status"
-              style={{ flex: 1, minWidth: 0, fontSize: 11, color: headingFull || focusedSlot?.truncated ? "#ffffff" : "rgba(255,255,255,0.35)" }}
+              style={{ flex: 1, minWidth: 0, fontSize: 11, color: headingFull || focusedSlot?.truncated ? CREAM : cream(0.35) }}
             >
               {headingFull
                 ? `The heading is as long as fits at ${HEADING_SIZES_PT[HEADING_SIZES_PT.length - 1]}pt, the smallest print size`
@@ -1039,8 +1040,8 @@ export function ModuleEditor({
               fontWeight: 600,
               border: "none",
               borderRadius: CONTROL_RADIUS,
-              background: dirty ? ACCENT : "rgba(255,255,255,0.1)",
-              color: dirty ? "#fff" : "rgba(255,255,255,0.4)",
+              background: dirty ? ACCENT : cream(0.1),
+              color: dirty ? CREAM : cream(0.4),
               cursor: pending || !dirty ? "default" : "pointer",
               opacity: pending ? 0.6 : 1,
             }}

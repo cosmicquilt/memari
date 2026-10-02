@@ -7,6 +7,7 @@
 import { Fragment } from "react";
 import type { PreviewMark } from "@/lib/previewMarks";
 import { PagePreview } from "./PagePreview";
+import { CREAM } from "@/lib/cream";
 
 export function SavedThumb({
   previews,
@@ -32,7 +33,7 @@ export function SavedThumb({
         width: pageWidth * previews.length + (previews.length - 1),
         borderRadius: 2,
         overflow: "hidden",
-        background: "#fdfcf9",
+        background: CREAM,
       }}
     >
       {previews.map((marks, index) => (

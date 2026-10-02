@@ -184,6 +184,7 @@ import { ModuleEditor, type EditingModule, type ScreenRect, type SpreadPiece } f
 import { useSavedItems } from "./savedContext";
 import type { SavedModuleCard } from "./savedItems";
 import { useAsyncAction } from "./useAsyncAction";
+import { CANVAS_CREAM, CREAM, cream, onCream } from "@/lib/cream";
 
 const PAGE_GAP_PX = 0; // matches PlannerEditorCanvas's Workspace pageGap={0}
 
@@ -499,13 +500,13 @@ function computeDraggedTransformPagePx(
 // The palette is a light panel on a dark app chrome — requested
 // directly. Tokens rather than scattered hex so the panel and the
 // settings controls inside it cannot drift apart.
-const PANEL_BG = "#ffffff";
-const PANEL_EDGE = "#e4e4e4";
+const PANEL_BG = CREAM;
+const PANEL_EDGE = onCream(0xe4);
 const PANEL_TEXT = "#1a1a1a";
 const PANEL_MUTED = "#6b6b6b";
 const PANEL_FAINT = "#9a9a9a";
-const PANEL_FILL = "#f6f6f6";
-const PANEL_FILL_HOVER = "#ededed";
+const PANEL_FILL = onCream(0xf6);
+const PANEL_FILL_HOVER = onCream(0xed);
 const PALETTE_ID_PREFIX = "palette:";
 /** A saved module's card: `palette:saved:<id>`. Still a palette id - every
  *  "is this a palette drag" test reads the prefix above. */
@@ -1458,7 +1459,7 @@ function NativeModule({
             // otherwise swallow the page around it.
             clipPath: "circle(50%)",
             border: "none",
-            background: "#c7c7c7",
+            background: onCream(0xc7),
             color: "#666666",
             display: "flex",
             alignItems: "center",
@@ -1539,7 +1540,7 @@ function NativeModule({
             left: 0,
             right: 0,
             height: editOverlayHeight,
-            background: "#ffffff",
+            background: CREAM,
             display: "flex",
             alignItems: "center",
             gap: 6,
@@ -1648,7 +1649,7 @@ function NativeModule({
             // See the delete badge's own note: the circle is the hit area.
             clipPath: "circle(50%)",
             border: "none",
-            background: "#c7c7c7",
+            background: onCream(0xc7),
             color: "#444444",
             display: "flex",
             alignItems: "center",
@@ -1694,7 +1695,7 @@ function NativeModule({
           style={{
             position: "absolute",
             inset: 0,
-            background: "#ffffff",
+            background: CREAM,
             boxSizing: "border-box",
             outline: "2px solid #4a90d9",
             outlineOffset: -2,
@@ -1903,7 +1904,7 @@ function NativePage({
         position: "relative",
         width: page.pageGrid.widthPx,
         height: page.pageGrid.heightPx,
-        background: "white",
+        background: CREAM,
         boxShadow: foldShadow(fold, page.pageGrid.widthPx),
         boxSizing: "border-box",
         display: "grid",
@@ -3494,7 +3495,7 @@ function SectionAddButton({
         borderRadius: "50%",
         clipPath: "circle(50%)",
         border: "none",
-        background: "#c7c7c7",
+        background: onCream(0xc7),
         color: "#666666",
         display: "flex",
         alignItems: "center",
@@ -4315,7 +4316,7 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
     padding: "5px 6px",
     fontSize: 11.5,
     borderRadius: 6,
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: `1px solid ${cream(0.12)}`,
     background: PANEL_BG,
     color: PANEL_TEXT,
   };
@@ -4358,7 +4359,7 @@ function TermFields({ term }: { term: { start: string | null; end: string | null
             borderRadius: 6,
             border: "none",
             background: "#4a5cff",
-            color: "#fff",
+            color: CREAM,
             cursor: pending ? "default" : "pointer",
             opacity: pending ? 0.6 : 1,
           }}
@@ -4705,7 +4706,7 @@ function HistoryButton({
         // No border - the header's buttons are fills (2026-10-01).
         border: "none",
         background: "#2a2a2a",
-        color: disabled ? "#5a5a5a" : "#ddd",
+        color: disabled ? "#5a5a5a" : onCream(0xdd),
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.55 : 1,
         transition: "opacity 0.15s ease, color 0.15s ease",
@@ -4875,7 +4876,7 @@ function ExportPdfButton() {
           // The accent, alone in this header: it is the one control that
           // produces the thing the whole app is for.
           background: busy ? "#2f3a8a" : "#4a5cff",
-          color: "#fff",
+          color: CREAM,
           border: "none",
           borderRadius: 6,
           cursor: busy ? "default" : "pointer",
@@ -10461,12 +10462,12 @@ export function NativePlannerEditor({
   }, [settling]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#e8e8e8" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: CANVAS_CREAM }}>
       <header
         style={{
           padding: "8px 16px",
           background: "#1a1a1a",
-          color: "white",
+          color: CREAM,
           display: "flex",
           alignItems: "center",
           gap: 12,
@@ -10491,7 +10492,7 @@ export function NativePlannerEditor({
             background: paletteOpen ? "#4a5cff" : "#2a2a2a",
             border: "none",
             borderRadius: 10,
-            color: "#fff",
+            color: CREAM,
             fontSize: 14,
             lineHeight: 1,
             cursor: "pointer",
@@ -10516,7 +10517,7 @@ export function NativePlannerEditor({
           <span
             title={journalTitle}
             style={{
-              color: "rgba(255, 255, 255, 0.6)",
+              color: cream(0.6),
               fontSize: 13,
               minWidth: 0,
               maxWidth: 260,
@@ -10535,7 +10536,7 @@ export function NativePlannerEditor({
             style={{
               flexShrink: 0,
               fontSize: 12,
-              color: "#fff",
+              color: CREAM,
               textDecoration: "none",
               // No border (asked 2026-10-01, every header button): the
               // undo buttons' fill instead, so it still reads as a button.
@@ -10575,7 +10576,7 @@ export function NativePlannerEditor({
             padding: "4px 10px",
             fontSize: 12,
             background: "#3a3a3a",
-            color: "#ddd",
+            color: onCream(0xdd),
             border: "none",
             borderRadius: 6,
             cursor: isResettingPlanner ? "default" : "pointer",
@@ -10910,7 +10911,7 @@ function ZoomControls({
   const buttonStyle = (active: boolean): React.CSSProperties => ({
     border: "none",
     background: active ? "#4a5cff" : "transparent",
-    color: active ? "white" : "#333",
+    color: active ? CREAM : "#333",
     borderRadius: 6,
     padding: "6px 10px",
     fontSize: 13,
@@ -10951,7 +10952,7 @@ function ZoomControls({
         display: "flex",
         alignItems: "center",
         gap: 2,
-        background: "white",
+        background: CREAM,
         borderRadius: 10,
         boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
         padding: 4,
@@ -10981,7 +10982,7 @@ function ZoomControls({
       <button onClick={onZoomIn} title="Zoom in" style={buttonStyle(false)}>
         +
       </button>
-      <div style={{ width: 1, alignSelf: "stretch", background: "#ddd", margin: "0 4px" }} />
+      <div style={{ width: 1, alignSelf: "stretch", background: onCream(0xdd), margin: "0 4px" }} />
       <button onClick={onFitWidth} title="Fill screen with page width (default)" style={buttonStyle(zoomMode === "fit-width")}>
         Fit width
       </button>

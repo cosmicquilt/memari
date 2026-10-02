@@ -17,6 +17,7 @@ import { GlyphSwatch } from "./ModuleFieldsForm";
 import { CONTROL_RADIUS, PANEL_RADIUS, concentric } from "./editorStyle";
 import type { GlyphShape } from "@/lib/modules/glyphs";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { CREAM, cream, onCream } from "@/lib/cream";
 
 type Reach = "strip" | "row" | "day";
 
@@ -226,17 +227,17 @@ export function IconPicksOnPage({
             flexDirection: "column",
             gap: 8,
             background: "#26262a",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
+            border: `1px solid ${cream(0.12)}`,
             borderRadius: PANEL_RADIUS,
             boxShadow: "0 8px 24px rgba(0, 0, 0, 0.45)",
-            color: "#eee",
+            color: onCream(0xee),
             fontSize: 12,
             zIndex: 2,
             colorScheme: "dark",
           }}
         >
           {reaches.length > 1 && (
-            <div role="radiogroup" aria-label="How far it reaches" style={{ display: "flex", background: "rgba(255,255,255,0.06)", borderRadius: CONTROL_RADIUS, padding: 2 }}>
+            <div role="radiogroup" aria-label="How far it reaches" style={{ display: "flex", background: cream(0.06), borderRadius: CONTROL_RADIUS, padding: 2 }}>
               {reaches.map((reach) => (
                 <button
                   key={reach}
@@ -249,8 +250,8 @@ export function IconPicksOnPage({
                     padding: "4px 0",
                     border: "none",
                     borderRadius: concentric(CONTROL_RADIUS, 2),
-                    background: open.reach === reach ? "rgba(255,255,255,0.16)" : "transparent",
-                    color: open.reach === reach ? "#fff" : "rgba(255,255,255,0.65)",
+                    background: open.reach === reach ? cream(0.16) : "transparent",
+                    color: open.reach === reach ? CREAM : cream(0.65),
                     font: "inherit",
                     cursor: "pointer",
                   }}
@@ -276,7 +277,7 @@ export function IconPicksOnPage({
             <button
               type="button"
               onClick={() => (open.reach === "row" ? set(field.rowKey, open.s, "") : set(field.dayKey, open.g, ""))}
-              style={{ alignSelf: "flex-start", padding: 0, border: "none", background: "transparent", color: "rgba(255,255,255,0.7)", font: "inherit", cursor: "pointer" }}
+              style={{ alignSelf: "flex-start", padding: 0, border: "none", background: "transparent", color: cream(0.7), font: "inherit", cursor: "pointer" }}
             >
               Use the {open.reach === "day" && own(field.rowKey, open.s) ? "row's" : "strip's"} icon
             </button>

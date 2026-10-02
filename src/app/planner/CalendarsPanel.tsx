@@ -30,6 +30,7 @@ import { useJournalId } from "./journalContext";
 import type { LoadedCalendar } from "./loadPlannerPages";
 import { CALENDAR_COLOURS } from "@/lib/calendarColours";
 import { useRefreshPages } from "./pagesRefreshContext";
+import { CREAM, onCream } from "@/lib/cream";
 
 /** The one list - see src/lib/calendarColours.ts. It was a hand copy here
  *  until the drag preview became a third reader. */
@@ -42,8 +43,8 @@ export type { LoadedCalendar as CalendarRow } from "./loadPlannerPages";
 const TEXT = "#1a1a1a";
 const MUTED = "#6b6b6b";
 const FAINT = "#9a9a9a";
-const EDGE = "#e4e4e4";
-const FILL = "#f6f6f6";
+const EDGE = onCream(0xe4);
+const FILL = onCream(0xf6);
 
 export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
   const journalId = useJournalId();
@@ -172,7 +173,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
                 style={{
                   font: "12px/1.3 var(--font-ui)",
                   color: TEXT,
-                  background: "#ffffff",
+                  background: CREAM,
                   border: `1px solid ${EDGE}`,
                   borderRadius: 6,
                   padding: "5px 7px",
@@ -258,7 +259,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
             style={{
               font: "12px/1.3 var(--font-ui)",
               color: TEXT,
-              background: "#ffffff",
+              background: CREAM,
               border: `1px solid ${EDGE}`,
               borderRadius: 6,
               padding: "6px 8px",
@@ -295,7 +296,7 @@ export function CalendarsPanel({ calendars }: { calendars: LoadedCalendar[] }) {
 const secondary: React.CSSProperties = {
   font: "11px/1 var(--font-ui)",
   color: TEXT,
-  background: "#ffffff",
+  background: CREAM,
   border: `1px solid ${EDGE}`,
   borderRadius: 6,
   padding: "6px 9px",
@@ -306,5 +307,5 @@ const primary: React.CSSProperties = {
   ...secondary,
   background: "#2f2d29",
   borderColor: "#2f2d29",
-  color: "#ffffff",
+  color: CREAM,
 };

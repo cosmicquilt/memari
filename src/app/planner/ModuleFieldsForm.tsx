@@ -19,6 +19,7 @@ import type { ModuleField } from "@/lib/moduleRegistry";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { flatten, toSvg } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { CREAM, cream, onCream } from "@/lib/cream";
 
 const ACCENT = "#4a5cff";
 
@@ -27,7 +28,7 @@ const labelStyle: CSSProperties = {
   fontWeight: 600,
   letterSpacing: "0.06em",
   textTransform: "uppercase",
-  color: "rgba(255, 255, 255, 0.6)",
+  color: cream(0.6),
 };
 
 /**
@@ -77,8 +78,8 @@ const inputStyle: CSSProperties = {
   padding: "7px 9px",
   fontSize: 13,
   fontFamily: "inherit",
-  color: "#f2f2f2",
-  background: "rgba(255, 255, 255, 0.06)",
+  color: onCream(0xf2),
+  background: cream(0.06),
   border: "none",
   borderRadius: CONTROL_RADIUS,
 };
@@ -127,14 +128,14 @@ export const FOCUS_CSS = `
    fields' text is near-white, and an open list that fell back to the
    browser's white put it on white - "light grey text on white", reported
    2026-09-29. The panel is also colour-scheme dark (see ModuleEditor). */
-.memari-field option { background-color: #2c2c2e; color: #f2f2f2; }
+.memari-field option { background-color: #2c2c2e; color: ${onCream(0xf2)}; }
 /* The selection ring sits 2px out from a picture rounded PREVIEW_RADIUS, so
    its own corners are that plus 2 (an outline's radius is the element's plus
    its offset) - smaller than the panel's: "make it even smaller for the
    preview and selection within" (2026-09-30). */
 .memari-swatch { outline: none; outline-offset: 2px; }
 .memari-swatch[data-selected="true"] { outline: 2px solid ${ACCENT}; }
-.memari-swatch:focus-visible { outline: 2px solid #ffffff; }
+.memari-swatch:focus-visible { outline: 2px solid ${CREAM}; }
 `;
 
 const rowStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6 };
@@ -188,7 +189,7 @@ export function GlyphSwatch({
         padding: 0,
         border: "none",
         borderRadius: PREVIEW_RADIUS,
-        background: "#fdfcf9",
+        background: CREAM,
         opacity: selected ? 1 : 0.65,
         cursor: "pointer",
         transition: "opacity 150ms ease-out",
@@ -275,7 +276,7 @@ export function RuleSwatch({
         flexDirection: "column",
         gap: 5,
         alignItems: "stretch",
-        color: selected ? "#ffffff" : "rgba(255, 255, 255, 0.6)",
+        color: selected ? CREAM : cream(0.6),
         font: "inherit",
         fontSize: 11,
       }}
@@ -287,7 +288,7 @@ export function RuleSwatch({
         style={{
           display: "block",
           pointerEvents: "none",
-          background: "#fdfcf9",
+          background: CREAM,
           borderRadius: PREVIEW_RADIUS,
           opacity: selected ? 1 : 0.85,
           transition: "opacity 150ms ease-out",
@@ -377,7 +378,7 @@ export function ModuleFieldsForm({
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                         fontSize: 12.5,
-                        color: "rgba(255, 255, 255, 0.85)",
+                        color: cream(0.85),
                       }}
                     >
                       {String(item ?? "") || `Prompt ${i + 1}`}
@@ -385,7 +386,7 @@ export function ModuleFieldsForm({
                     <span
                       role="group"
                       aria-label={`Lines under ${String(item ?? "") || `prompt ${i + 1}`}`}
-                      style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)" }}
+                      style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: cream(0.06) }}
                     >
                       <button
                         type="button"
@@ -393,11 +394,11 @@ export function ModuleFieldsForm({
                         disabled={countOf(i) <= field.min}
                         onClick={() => step(i, -1)}
                         className="memari-field"
-                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) <= field.min ? 0.35 : 1 }}
+                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: onCream(0xf2), cursor: "pointer", fontSize: 14, opacity: countOf(i) <= field.min ? 0.35 : 1 }}
                       >
                         &minus;
                       </button>
-                      <span style={{ minWidth: 18, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>
+                      <span style={{ minWidth: 18, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: CREAM }}>
                         {countOf(i)}
                       </span>
                       <button
@@ -406,7 +407,7 @@ export function ModuleFieldsForm({
                         disabled={countOf(i) >= field.max}
                         onClick={() => step(i, 1)}
                         className="memari-field"
-                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: countOf(i) >= field.max ? 0.35 : 1 }}
+                        style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: onCream(0xf2), cursor: "pointer", fontSize: 14, opacity: countOf(i) >= field.max ? 0.35 : 1 }}
                       >
                         +
                       </button>
@@ -425,7 +426,7 @@ export function ModuleFieldsForm({
           return (
             <div key={field.key} style={rowStyle}>
               <span style={labelStyle}>{field.label}</span>
-              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "rgba(255, 255, 255, 0.6)" }}>
+              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: cream(0.6) }}>
                 Drag the lines between the columns on the preview. They snap to the dots.
               </p>
               {set && (
@@ -438,8 +439,8 @@ export function ModuleFieldsForm({
                     padding: "5px 10px",
                     fontSize: 12,
                     fontFamily: "inherit",
-                    color: "#f2f2f2",
-                    background: "rgba(255, 255, 255, 0.06)",
+                    color: onCream(0xf2),
+                    background: cream(0.06),
                     border: "none",
                     borderRadius: CONTROL_RADIUS,
                     cursor: "pointer",
@@ -460,7 +461,7 @@ export function ModuleFieldsForm({
                 margin: 0,
                 fontSize: 12,
                 lineHeight: 1.6,
-                color: "rgba(255, 255, 255, 0.5)",
+                color: cream(0.5),
               }}
             >
               {field.text}
@@ -495,7 +496,7 @@ export function ModuleFieldsForm({
                   // A capsule, as Apple's switches are; the knob 2px inside
                   // it is concentric, which on a 16px knob is a circle.
                   borderRadius: 10,
-                  background: on ? ACCENT : "rgba(255,255,255,0.15)",
+                  background: on ? ACCENT : cream(0.15),
                   position: "relative",
                   transition: "background 150ms ease-out",
                 }}
@@ -508,7 +509,7 @@ export function ModuleFieldsForm({
                     width: 16,
                     height: 16,
                     borderRadius: concentric(10, 2),
-                    background: "#fff",
+                    background: CREAM,
                     transition: "left 150ms ease-out",
                   }}
                 />
@@ -540,7 +541,7 @@ export function ModuleFieldsForm({
               disabled={by < 0 ? value <= min : value >= max}
               onClick={() => step(by)}
               className="memari-field"
-              style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: "#f2f2f2", cursor: "pointer", fontSize: 14, opacity: (by < 0 ? value <= min : value >= max) ? 0.35 : 1 }}
+              style={{ width: 26, height: 26, border: "none", borderRadius: concentric(CONTROL_RADIUS, 1), background: "transparent", color: onCream(0xf2), cursor: "pointer", fontSize: 14, opacity: (by < 0 ? value <= min : value >= max) ? 0.35 : 1 }}
             >
               {glyph}
             </button>
@@ -551,10 +552,10 @@ export function ModuleFieldsForm({
               <span
                 role="group"
                 aria-label={field.label}
-                style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: "rgba(255, 255, 255, 0.06)" }}
+                style={{ display: "inline-flex", alignItems: "center", borderRadius: CONTROL_RADIUS, background: cream(0.06) }}
               >
                 {button(-1, `${field.label}: fewer`, "\u2212")}
-                <span style={{ minWidth: 34, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#ffffff" }}>
+                <span style={{ minWidth: 34, textAlign: "center", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: CREAM }}>
                   {value === 0 && field.zeroLabel ? field.zeroLabel : value}
                 </span>
                 {button(1, `${field.label}: more`, "+")}
@@ -708,7 +709,7 @@ export function ModuleFieldsForm({
                 className="memari-field"
                 style={growingTextareaStyle(field.rows ?? 6)}
               />
-              <span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.35)" }}>
+              <span style={{ fontSize: 10.5, color: cream(0.35) }}>
                 One per line.
               </span>
             </label>

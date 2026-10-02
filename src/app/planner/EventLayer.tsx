@@ -61,6 +61,7 @@ import {
 } from "./actions";
 import { useJournalId } from "./journalContext";
 import { useRefreshPages } from "./pagesRefreshContext";
+import { CREAM, onCream } from "@/lib/cream";
 
 // Same shape the settings list uses, from the server - see LoadedCalendar.
 export type { LoadedCalendar as CalendarChoice } from "./loadPlannerPages";
@@ -634,7 +635,7 @@ function EventPopup({
   const field: React.CSSProperties = {
     font: "13px/1.3 var(--font-ui)",
     color: "#1a1a1a",
-    background: "#ffffff",
+    background: CREAM,
     border: "1px solid #d5d3cd",
     borderRadius: 6,
     padding: "6px 8px",
@@ -667,7 +668,7 @@ function EventPopup({
           maxHeight: Math.max(place.maxHeight, 240),
           overflowY: "auto",
           zIndex: 61,
-          background: "#faf9f6",
+          background: onCream(0xf9),
           border: "1px solid #ddd9d1",
           borderRadius: 10,
           boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
@@ -689,7 +690,7 @@ function EventPopup({
           style={{
             ...field,
             font: "14px/1.3 var(--font-ui)",
-            ...(readOnly ? { background: "#f1efea", color: "#55534e" } : {}),
+            ...(readOnly ? { background: onCream(0xef), color: "#55534e" } : {}),
           }}
         />
 
@@ -805,7 +806,7 @@ function EventPopup({
           <div
             role="radiogroup"
             aria-label="Change which"
-            style={{ display: "flex", gap: 2, background: "#efede8", borderRadius: 8, padding: 2 }}
+            style={{ display: "flex", gap: 2, background: onCream(0xed), borderRadius: 8, padding: 2 }}
           >
             {(
               [
@@ -831,7 +832,7 @@ function EventPopup({
                   border: "none",
                   borderRadius: 6,
                   cursor: "pointer",
-                  background: draft.scope === value ? "#ffffff" : "transparent",
+                  background: draft.scope === value ? CREAM : "transparent",
                   color: draft.scope === value ? "#1a1a1a" : "#7a7871",
                   boxShadow: draft.scope === value ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
                 }}
@@ -860,7 +861,7 @@ function EventPopup({
               borderRadius: 7,
               border: "1px solid #2f2d29",
               background: saving ? "#8b8880" : "#2f2d29",
-              color: "#ffffff",
+              color: CREAM,
               cursor: saving ? "default" : "pointer",
             }}
           >
@@ -876,7 +877,7 @@ function EventPopup({
                 padding: "8px 10px",
                 borderRadius: 7,
                 border: "1px solid #d5d3cd",
-                background: "#ffffff",
+                background: CREAM,
                 color: "#a3352f",
                 cursor: saving ? "default" : "pointer",
               }}

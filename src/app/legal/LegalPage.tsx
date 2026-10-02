@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { cream, onCream } from "@/lib/cream";
 
 // The shell both legal pages sit in.
 //
@@ -33,7 +34,7 @@ export function LegalPage({
       style={{
         minHeight: "100vh",
         background: "#0c0c0c",
-        color: "#e8e8e8",
+        color: onCream(0xe8),
         padding: "48px 20px 96px",
         font: "16px/1.65 var(--font-ui)",
       }}
@@ -41,17 +42,17 @@ export function LegalPage({
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
         <Link
           href="/"
-          style={{ color: "rgba(255,255,255,0.55)", textDecoration: "none", fontSize: 14 }}
+          style={{ color: cream(0.55), textDecoration: "none", fontSize: 14 }}
         >
           Memari <span style={{ fontWeight: 200, letterSpacing: "0.1em" }}>STUDIO</span>
         </Link>
         <h1 style={{ fontSize: 30, margin: "22px 0 6px", lineHeight: 1.2 }}>{title}</h1>
-        <p style={{ margin: "0 0 34px", color: "rgba(255,255,255,0.5)", fontSize: 14 }}>
+        <p style={{ margin: "0 0 34px", color: cream(0.5), fontSize: 14 }}>
           Last updated {updated}
         </p>
         {children}
-        <hr style={{ border: 0, borderTop: "1px solid rgba(255,255,255,0.12)", margin: "44px 0 20px" }} />
-        <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>
+        <hr style={{ border: 0, borderTop: `1px solid ${cream(0.12)}`, margin: "44px 0 20px" }} />
+        <p style={{ color: cream(0.5), fontSize: 14 }}>
           Questions about either document: <a href={`mailto:${LEGAL_CONTACT}`} style={linkStyle}>{LEGAL_CONTACT}</a>.
           {" "}
           <Link href="/privacy" style={linkStyle}>Privacy</Link>
@@ -96,8 +97,8 @@ export function Summary({ children }: { children: ReactNode }) {
   return (
     <div
       style={{
-        background: "rgba(255,255,255,0.045)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: cream(0.045),
+        border: `1px solid ${cream(0.1)}`,
         borderRadius: 10,
         padding: "16px 18px",
         margin: "0 0 26px",

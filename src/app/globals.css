@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  /* The app's white is the landing page's cream (2026-10-01) - see
+     src/lib/cream.ts, which the components read; this is its value for CSS. */
+  --background: #f5ead5;
   --foreground: #171717;
   /* THE INTERFACE FONT - the landing page's: San Francisco where the system
      has it (a Mac, an iPhone, an iPad), Inter, the open face closest to it,
@@ -21,7 +23,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
-    --foreground: #ededed;
+    --foreground: #e4d9c6; /* #ededed in the cream's tone - onCream(0xed) */
   }
 }
 

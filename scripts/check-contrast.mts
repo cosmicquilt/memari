@@ -21,6 +21,7 @@
 //
 //   npm run check:contrast
 import { readFileSync } from "node:fs";
+import { CREAM, CREAM_RGB, onCream } from "../src/lib/cream";
 
 type Rgb = [number, number, number];
 
@@ -37,9 +38,10 @@ const contrast = (a: Rgb, b: Rgb) => {
 };
 const hex = (value: string): Rgb => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)) as Rgb;
 const format = (c: Rgb) => "#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
-/** What a translucent white actually becomes once it is over something. */
+/** What a translucent cream - the app's white since 2026-10-01, see
+ *  src/lib/cream.ts - actually becomes once it is over something. */
 const composite = (ground: Rgb, alpha: number): Rgb =>
-  ground.map((c) => Math.round(c + alpha * (255 - c))) as Rgb;
+  ground.map((c, i) => Math.round(c + alpha * (CREAM_RGB[i] - c))) as Rgb;
 
 // --- prove the arithmetic before trusting it ---------------------------
 //
@@ -87,14 +89,16 @@ const accent = hex(read(form, "the accent (ACCENT in ModuleFieldsForm)", /const 
 // its fill alone, reported as his exception rather than failed. A border put
 // back is held to 3:1 again.
 const inputBlock = read(form, "inputStyle", /const inputStyle: CSSProperties = \{([\s\S]*?)\n\};/);
-const borderMatch = /border: "1px solid rgba\(255, 255, 255, ([\d.]+)\)"/.exec(inputBlock);
+const borderMatch = /border: `1px solid \$\{cream\(([\d.]+)\)\}`/.exec(inputBlock);
 const borderless = /border: "none"/.test(inputBlock);
-const fillAlpha = Number(read(inputBlock, "the input fill in inputStyle", /background: "rgba\(255, 255, 255, ([\d.]+)\)"/));
+const fillAlpha = Number(read(inputBlock, "the input fill in inputStyle", /background: cream\(([\d.]+)\)/));
 const labelAlpha = Number(
-  read(form, "the field label colour in labelStyle", /color: "rgba\(255, 255, 255, ([\d.]+)\)"/)
+  read(form, "the field label colour in labelStyle", /color: cream\(([\d.]+)\)/)
 );
 const focusWidth = Number(read(form, "the focus ring width", /outline: (\d)px solid \$\{ACCENT\}/));
-const paper = hex(read(form, "the swatch ground", /background: "(#[0-9a-f]{6})",\n\s+opacity: selected/i));
+// The swatch ground is the page's paper - CREAM since 2026-10-01.
+read(form, "the swatch ground", /background: (CREAM),\n\s+opacity: selected/);
+const paper = hex(CREAM);
 
 // --- what has to be true -----------------------------------------------
 const BOUNDARY = 3; // 1.4.11
@@ -116,7 +120,7 @@ if (borderMatch) {
   const borderAlpha = Number(borderMatch[1]);
   const border = composite(surface, borderAlpha);
   check(
-    `input border rgba(255,255,255,${borderAlpha}) = ${format(border)} on the panel`,
+    `input border cream(${borderAlpha}) = ${format(border)} on the panel`,
     contrast(border, surface),
     BOUNDARY,
     "1.4.11"
@@ -129,19 +133,19 @@ if (borderMatch) {
   );
 } else {
   problems++;
-  console.log("  FAIL  inputStyle's border is neither 1px of white nor none - this check cannot measure it");
+  console.log("  FAIL  inputStyle's border is neither 1px of cream nor none - this check cannot measure it");
 }
 check("focus ring (accent on the panel)", contrast(accent, surface), BOUNDARY, "1.4.11");
 check("selection ring on a swatch (accent on the panel)", contrast(accent, surface), BOUNDARY, "1.4.11");
-check("focus ring on a swatch (white on the panel)", contrast(hex("#ffffff"), surface), BOUNDARY, "1.4.11");
+check("focus ring on a swatch (cream on the panel)", contrast(hex(CREAM), surface), BOUNDARY, "1.4.11");
 const label = composite(surface, labelAlpha);
 check(
-  `field labels rgba(255,255,255,${labelAlpha}) = ${format(label)} on the panel`,
+  `field labels cream(${labelAlpha}) = ${format(label)} on the panel`,
   contrast(label, surface),
   BODY_TEXT,
   "1.4.3"
 );
-check("field text #f2f2f2 on the input fill", contrast(hex("#f2f2f2"), composite(surface, 0.06)), BODY_TEXT, "1.4.3");
+check(`field text ${onCream(0xf2)} on the input fill`, contrast(hex(onCream(0xf2)), composite(surface, fillAlpha)), BODY_TEXT, "1.4.3");
 
 // --- the drawer, and the rule the standard does not cover ---------------
 //
@@ -154,13 +158,13 @@ check("field text #f2f2f2 on the input fill", contrast(hex("#f2f2f2"), composite
 const drawer = readFileSync("src/app/planner/TimelineDrawer.tsx", "utf8");
 const drawerSurface = hex(read(drawer, "the drawer surface", /const SURFACE = "(#[0-9a-f]{6})"/i));
 const cogAlpha = Number(
-  read(drawer, "the cog's resting colour", /color: bright \? "#ffffff" : "rgba\(255, 255, 255, ([\d.]+)\)"/)
+  read(drawer, "the cog's resting colour", /color: bright \? CREAM : cream\(([\d.]+)\)/)
 );
 const levelLabelAlpha = Number(
   read(
     drawer,
     "the level label's colour",
-    /textTransform: "uppercase",\s*\n\s*color: highContrast \? "#ffffff" : "rgba\(255, 255, 255, ([\d.]+)\)"/
+    /textTransform: "uppercase",\s*\n\s*color: highContrast \? CREAM : cream\(([\d.]+)\)/
   )
 );
 
@@ -192,7 +196,7 @@ if (cogAlpha < levelLabelAlpha) {
 // 10.5px - body text, so 4.5:1. Apple's system reds do not make it with
 // white type (#ff3b30 is 3.55:1), which is why this is its own colour.
 const removeRed = hex(read(drawer, "the armed remove colour (REMOVE_RED)", /const REMOVE_RED = "(#[0-9a-f]{6})"/i));
-check(`"Remove" in white on ${format(removeRed)}`, contrast(hex("#ffffff"), removeRed), BODY_TEXT, "1.4.3");
+check(`"Remove" in cream on ${format(removeRed)}`, contrast(hex(CREAM), removeRed), BODY_TEXT, "1.4.3");
 
 if (focusWidth < FOCUS_MIN_WIDTH) {
   console.log(`  FAIL  focus ring is ${focusWidth}px; 2.4.13 wants at least ${FOCUS_MIN_WIDTH}px`);
@@ -209,7 +213,7 @@ if (problems > 0) {
   for (let alpha = 0.01; alpha <= 1.0001; alpha += 0.001) {
     if (contrast(composite(surface, alpha), surface) >= BOUNDARY) {
       console.error(
-        `\nOn ${format(surface)}, white first reaches ${BOUNDARY}:1 at alpha ` +
+        `\nOn ${format(surface)}, cream first reaches ${BOUNDARY}:1 at alpha ` +
           `${alpha.toFixed(3)} (${format(composite(surface, alpha))}). Anything ` +
           `lighter than the panel and darker than that cannot carry a boundary here.`
       );
