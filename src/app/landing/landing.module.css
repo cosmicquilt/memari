@@ -906,3 +906,156 @@
     animation: fadeIn 0.6s ease-out 0.9s both;
   }
 }
+
+/* ---- The body below the hero: its doodle wall and the post-it (2026-10-01) */
+
+/* Everything after the hero, so the doodle wall can lie under all of it. */
+.body {
+  position: relative;
+}
+
+.bodyDoodles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* One drawing: filled with the blue through its own lines (BodyDoodles). */
+.bodyDoodle {
+  position: absolute;
+  display: block;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* The post-it (PostIt.tsx). --note is its side; STUCK (0.24) of it is the
+   sticky strip, on the cream section; the fold is GAP (0.08) of it below the
+   hero's edge; the rest lifts over the hero by --lift. */
+.postit {
+  --note: 168px;
+  /* The lift as a number, so the shadow can follow it in px too. */
+  --lift-n: 22;
+  --lift: calc(var(--lift-n) * 1deg);
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  left: 50%;
+  width: var(--note);
+  height: var(--note);
+  transform: translate(-50%, calc(var(--note) * (-1 + 0.24 + 0.08))) rotate(-2.5deg);
+  perspective: 520px;
+  transform-style: preserve-3d;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.postit:hover,
+.postit:focus-visible {
+  --lift-n: 34;
+}
+
+.postit:focus-visible {
+  outline: none;
+}
+
+.postit:focus-visible .postitFree {
+  box-shadow: 0 0 0 3px var(--hand);
+}
+
+/* Canary yellow paper, its fibre from the journal's own paper tile. */
+.postitStuck,
+.postitFree {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background-color: #fbec7c;
+  background-image: url(/landing/paper.jpg);
+  background-size: 160px 160px;
+  background-blend-mode: soft-light;
+}
+
+/* The sticky strip, flat on the page: a tight contact shadow, and a hair of
+   sheen where the glue holds it. */
+.postitStuck {
+  bottom: 0;
+  height: calc(var(--note) * 0.24 + 1px);
+  box-shadow: 0 1px 1.5px rgba(60, 40, 10, 0.22);
+}
+
+.postitStuck::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 70%);
+}
+
+/* The part that lifts: hinged at the fold, curling toward us. Lit more the
+   further it lifts into the light; darker into the fold; a soft shadow cast
+   on the page under it. */
+.postitFree {
+  top: 0;
+  height: calc(var(--note) * 0.76);
+  transform-origin: 50% 100%;
+  transform: rotateX(calc(-1 * var(--lift)));
+  transition: transform 260ms cubic-bezier(0.3, 0.7, 0.3, 1);
+  filter: drop-shadow(1px 9px 7px rgba(30, 18, 6, 0.32));
+}
+
+.postitFree::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(120, 90, 10, 0.16), rgba(120, 90, 10, 0) 26%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.16));
+}
+
+/* The fold where the glue stops, showing through from the back: a crease
+   with its light side above and its shadow below. */
+.postitFree::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.35), rgba(110, 80, 10, 0.3));
+}
+
+/* The lifted part's shadow on the page under it: further out, and softer,
+   the further the note lifts. */
+.postitShadow {
+  position: absolute;
+  left: 6%;
+  right: 2%;
+  top: 4%;
+  height: calc(var(--note) * 0.72);
+  background: rgba(20, 12, 4, 0.42);
+  border-radius: 2px;
+  filter: blur(calc(var(--lift-n) * 0.45px));
+  transform: translate(calc(var(--lift-n) * 0.22px), calc(var(--lift-n) * 0.5px));
+  transition: transform 260ms cubic-bezier(0.3, 0.7, 0.3, 1), filter 260ms;
+  pointer-events: none;
+}
+
+.postitDrawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: multiply;
+}
+
+@media (max-width: 760px) {
+  .postit {
+    --note: 124px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .postitFree,
+  .postitShadow {
+    transition: none;
+  }
+}

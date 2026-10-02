@@ -14,7 +14,7 @@ import { BOOK_ON_SHEETS, SHEET_IDS, SHEETS, sheetShows, type SheetId } from "@/a
 import { HERO_VIDEO } from "@/app/landing/video/heroVideo";
 
 type Index = Record<string, Record<string, Array<[string, number, number]>>>;
-type Choices = { wall: string[]; sketchBox: string[]; sheets: string[] };
+type Choices = { wall: string[]; sketchBox: string[]; sheets: string[]; body: string[] };
 type Mode = keyof Choices;
 
 const ACCENT = "#4a5cff";
@@ -35,6 +35,11 @@ const MODES: Array<{ key: Mode; label: string; note: string }> = [
     note: "Drawn large in the hero's sketch boxes. Each spread favours its own person's things when any are on; anything on can appear.",
   },
   {
+    key: "body",
+    label: "Body wall",
+    note: "Behind the landing page below the hero, packed live round the content - tune its spacing with the sliders on the page itself (localhost). Changes show on the next load.",
+  },
+  {
     key: "sheets",
     label: "Loose sheets",
     note: "The two sheets on the desk in the hero film, in blue pen, shared between them so each is its own drawing. All off leaves plain paper (with its texture).",
@@ -44,9 +49,10 @@ const MARKS: Array<[Mode, string, string]> = [
   ["wall", "W", "On the wall"],
   ["sketchBox", "S", "In sketch boxes"],
   ["sheets", "L", "On the loose sheets"],
+  ["body", "B", "On the body wall"],
 ];
 const classOf = (full: string) => wallClassOf(full.split("/")[1].replace(/-\d+$/, ""));
-const asSets = (c: Choices) => ({ wall: new Set(c.wall), sketchBox: new Set(c.sketchBox), sheets: new Set(c.sheets ?? []) });
+const asSets = (c: Choices) => ({ wall: new Set(c.wall), sketchBox: new Set(c.sketchBox), sheets: new Set(c.sheets ?? []), body: new Set(c.body ?? c.wall) });
 
 const sorted = (s: Set<string>) => [...s].sort();
 const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
@@ -211,13 +217,13 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
       const res = await fetch("/dev/doodles/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), walls, sheetImages: sheets }),
+        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), body: sorted(chosen.body), walls, sheetImages: sheets }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? res.statusText);
-      setSaved(asSets({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets) }));
+      setSaved(asSets({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), body: sorted(chosen.body) }));
       setMessage(
-        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes, ${result.sheets} for the loose sheets` +
+        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes, ${result.sheets} for the loose sheets, ${result.body} for the body wall` +
           (result.walls ? `, ${result.walls} walls redrawn (${Math.round(result.wallBytes / 1024)} KB)` : "") +
           (result.sheetImages ? `, both sheets redrawn` : "") +
           ". Reload the app or the landing page to see it; commit and push to put it live."
@@ -366,7 +372,7 @@ const CSS = `
 .dp-card:hover { opacity: 0.85; }
 .dp-card[data-on="true"]:hover { opacity: 1; }
 .dp-card img { width: 100%; aspect-ratio: 1; object-fit: contain; }
-.dp-name { font-size: 12px; color: ${MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 48px; }
+.dp-name { font-size: 12px; color: ${MUTED}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 64px; }
 .dp-marks { position: absolute; right: 6px; bottom: 5px; display: flex; gap: 3px; }
 .dp-marks span { font-size: 10px; font-weight: 700; width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; background: rgba(28,25,23,0.08); color: rgba(28,25,23,0.35); }
 .dp-marks span[data-on="true"] { background: ${ACCENT}; color: #fff; }

@@ -1,0 +1,11 @@
+{
+  "gap": 10,
+  "clearance": 28,
+  "size": 0.9,
+  "density": 0.7,
+  "ink": 0.32,
+  "bandDesktop": 45,
+  "bandMobile": 25,
+  "seed": 20261001,
+  "newEachLoad": false
+}

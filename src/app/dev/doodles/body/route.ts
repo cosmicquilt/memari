@@ -1,0 +1,45 @@
+// Saves the body doodle wall's settings from the sliders on the landing page
+// (BodyWallTuner.tsx) into src/app/landing/bodyWallSettings.json.
+//
+// DEVELOPMENT ONLY, and only from this machine - see ../save/route.ts.
+
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+
+export const dynamic = "force-dynamic";
+
+const FILE = path.join(process.cwd(), "src/app/landing/bodyWallSettings.json");
+const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+/** Each number's allowed range - the sliders' own. */
+const RANGES: Record<string, [number, number]> = {
+  gap: [0, 48],
+  clearance: [0, 96],
+  size: [0.4, 1.8],
+  density: [0.05, 2],
+  ink: [0.05, 1],
+  bandDesktop: [0, 150],
+  bandMobile: [0, 150],
+  seed: [0, 1e9],
+};
+
+export async function POST(request: Request) {
+  if (process.env.NODE_ENV !== "development") return new Response("Not found", { status: 404 });
+  const url = new URL(request.url);
+  const origin = request.headers.get("origin");
+  if (!LOCAL.has(url.hostname) || (origin && !LOCAL.has(new URL(origin).hostname))) {
+    return new Response("Only from this machine", { status: 403 });
+  }
+  const body = (await request.json()) as Record<string, unknown>;
+  const out: Record<string, number | boolean> = {};
+  for (const [key, [lo, hi]] of Object.entries(RANGES)) {
+    const v = body[key];
+    if (typeof v !== "number" || !Number.isFinite(v) || v < lo || v > hi) {
+      return Response.json({ error: `${key} must be a number from ${lo} to ${hi}` }, { status: 400 });
+    }
+    out[key] = v;
+  }
+  if (typeof body.newEachLoad !== "boolean") return Response.json({ error: "newEachLoad must be true or false" }, { status: 400 });
+  out.newEachLoad = body.newEachLoad;
+  await writeFile(FILE, `${JSON.stringify(out, null, 2)}\n`);
+  return Response.json({ ok: true });
+}

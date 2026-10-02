@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return new Response("Only from this machine", { status: 403 });
   }
 
-  const body = (await request.json()) as { wall?: unknown; sketchBox?: unknown; sheets?: unknown; walls?: unknown; sheetImages?: unknown };
+  const body = (await request.json()) as { wall?: unknown; sketchBox?: unknown; sheets?: unknown; body?: unknown; walls?: unknown; sheetImages?: unknown };
   // Every id must be a drawing the library has: "style/subject-n".
   const index = JSON.parse(await readFile(INDEX, "utf8")) as Record<string, Record<string, Array<[string, number, number]>>>;
   const known = new Set(Object.entries(index).flatMap(([style, subjects]) => Object.values(subjects).flat().map(([id]) => `${style}/${id}`)));
@@ -43,7 +43,8 @@ export async function POST(request: Request) {
   const wall = list(body.wall);
   const sketchBox = list(body.sketchBox);
   const sheets = list(body.sheets ?? []);
-  if (!wall || !sketchBox || !sheets) return Response.json({ error: "Unknown drawing in the choices" }, { status: 400 });
+  const bodyWall = list(body.body ?? body.wall);
+  if (!wall || !sketchBox || !sheets || !bodyWall) return Response.json({ error: "Unknown drawing in the choices" }, { status: 400 });
 
   // Every picture checked before anything is written, so a bad one cannot
   // leave a half-replaced set.
@@ -71,12 +72,12 @@ export async function POST(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
 
-  await writeFile(CHOICES, `${JSON.stringify({ wall, sketchBox, sheets }, null, 2)}\n`);
+  await writeFile(CHOICES, `${JSON.stringify({ wall, sketchBox, sheets, body: bodyWall }, null, 2)}\n`);
   let wallBytes = 0;
   for (const { name, bytes } of walls) {
     await writeFile(path.join(WALLS, `${name}.webp`), bytes);
     wallBytes += bytes.length;
   }
   for (const { name, bytes } of sheetImages) await writeFile(path.join(SHEETS, `${name}.webp`), bytes);
-  return Response.json({ ok: true, wall: wall.length, sketchBox: sketchBox.length, sheets: sheets.length, walls: walls.length, wallBytes, sheetImages: sheetImages.length });
+  return Response.json({ ok: true, wall: wall.length, sketchBox: sketchBox.length, sheets: sheets.length, body: bodyWall.length, walls: walls.length, wallBytes, sheetImages: sheetImages.length });
 }
