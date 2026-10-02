@@ -11,5 +11,6 @@
   "seed": 20261001,
   "newEachLoad": false,
   "sideBlur": 3,
-  "sideBlurWidth": 18
+  "sideBlurWidth": 18,
+  "openSeconds": 3
 }

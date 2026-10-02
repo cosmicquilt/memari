@@ -24,6 +24,7 @@ const RANGES: Record<string, [number, number]> = {
   seed: [0, 1e9],
   sideBlur: [0, 16],
   sideBlurWidth: [0, 40],
+  openSeconds: [1, 6],
 };
 
 export async function POST(request: Request) {

@@ -50,6 +50,11 @@ export type BodyWallSettings = {
    *  the page's one toolbar. */
   sideBlur: number;
   sideBlurWidth: number;
+  /** How long the book takes to open in the hero, seconds: the film is
+   *  played faster (or slower) to take that long (2026-10-02: "make book
+   *  open duration to be shorter so speed it up add slider"). Its own
+   *  length is HERO_VIDEO.seconds. */
+  openSeconds: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;

@@ -55,6 +55,8 @@ export const HERO_VIDEO = {
   last4k: "/landing/hero-open-last-4k.webp",
   width: 3840,
   height: 2160,
+  /** Its length: 111 frames at 24 fps. */
+  seconds: 111 / 24,
   /** When the layouts appear, in the file's seconds: as it comes to rest
    *  ("after it is open a second or two of it then start overlaying the
    *  pages"). Frame 108 of 111, the first with the dot grid cleaned off. */

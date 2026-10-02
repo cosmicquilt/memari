@@ -17,9 +17,10 @@ import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
-import { BOOK_ON_SHEETS, filmFrame, sheetShows, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
+import { BOOK_ON_SHEETS, filmFrame, sheetClip, sheetShows, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
 import { loadPicture, paintPicture } from "./video/canvasPicture";
 import EXTEND from "./video/heroExtend.json";
+import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
 import styles from "./landing.module.css";
 
 /** Seconds the first layout takes to fade onto the resting pages (Andrew,
@@ -36,7 +37,8 @@ export function VideoHero() {
   const hero = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
-  const sheets = useRef<Array<HTMLCanvasElement | null>>([]);
+  const sheets = useRef<Array<HTMLImageElement | null>>([]);
+  const sheetCanvases = useRef<Array<HTMLCanvasElement | null>>([]);
   const sides = useRef<Array<HTMLCanvasElement | null>>([]);
   const lastFrame = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState(false);
@@ -47,6 +49,11 @@ export function VideoHero() {
   const [ended, setEnded] = useState(false);
   const [lastReady, setLastReady] = useState(false);
   const frozen = still || (ended && lastReady);
+  /** The side desk's and the sheets' canvases are drawn (see
+   *  video/canvasPicture.ts). Until then - and the sheets' until the film
+   *  rests - they are plain pictures, there from the first frame. */
+  const [sidesReady, setSidesReady] = useState(false);
+  const [sheetsReady, setSheetsReady] = useState(false);
 
   // The side blur only while the page is at its own scale: pinched in, the
   // page's sides are no longer the screen's, the blur is magnified with the
@@ -62,15 +69,33 @@ export function VideoHero() {
     return () => vv.removeEventListener("resize", update);
   }, []);
 
-  // The desk beyond the film's sides, each side drawn into its canvas.
+  // The desk beyond the film's sides, each side drawn into its canvas, and
+  // the sheets' drawings into theirs as they will be at rest - each taking
+  // its picture's place once drawn (the sheets' once the film rests).
   useEffect(() => {
     let disposed = false;
-    (["left", "right"] as const).forEach((side, i) => {
-      void loadPicture(`/landing/hero-extend-${side}.webp`).then((pic) => {
-        const c = sides.current[i];
-        if (!disposed && c) paintPicture(c, pic);
-      });
-    });
+    const sidesDone = Promise.all(
+      (["left", "right"] as const).map((side, i) =>
+        loadPicture(`/landing/hero-extend-${side}.webp`).then((pic) => {
+          const c = sides.current[i];
+          if (!disposed && c) paintPicture(c, pic);
+        }),
+      ),
+    );
+    void sidesDone.then(() => !disposed && setSidesReady(true)).catch(() => {});
+    const atRest = BOOK_ON_SHEETS.right.length - 1;
+    const sheetsDone = Promise.all(
+      SHEET_IDS.map((id, i) =>
+        loadPicture(sheetPath(id)).then((pic) => {
+          const c = sheetCanvases.current[i];
+          if (disposed || !c) return;
+          const [x0, y0, w, h] = SHEETS[id].box;
+          const shows = sheetShows(id, atRest);
+          paintPicture(c, pic, { clip: shows?.map(([X, Y]) => [((X - x0) / w) * pic.naturalWidth, ((Y - y0) / h) * pic.naturalHeight]) });
+        }),
+      ),
+    );
+    void sheetsDone.then(() => !disposed && setSheetsReady(true)).catch(() => {});
     return () => {
       disposed = true;
     };
@@ -104,7 +129,14 @@ export function VideoHero() {
     let cleanup = () => {};
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // Play at once; the drawing machinery loads alongside.
+    // As fast as the book should open (bodyWallSettings' openSeconds; the
+    // dev sliders change it live). Then play at once; the drawing machinery
+    // loads alongside.
+    const setRate = () => {
+      v.playbackRate = v.defaultPlaybackRate = HERO_VIDEO.seconds / bodyWallSettings().openSeconds;
+    };
+    setRate();
+    const offRate = onBodyWallSettings(setRate);
     if (!reduce) void v.play().catch(() => {});
 
     let loop: import("./video/pageLoop").PageLoop | null = null;
@@ -128,30 +160,16 @@ export function VideoHero() {
     v.addEventListener("ended", onEnded);
 
     // The loose sheets' drawings go under the book as it opens over them:
-    // each is drawn clipped to where the book is in the frame on screen.
+    // each is clipped to where the book is in the frame on screen.
     let sheetFrame = 0;
-    const sheetPics: Array<HTMLImageElement | undefined> = [];
-    const drawSheets = () =>
-      SHEET_IDS.forEach((id, i) => {
-        const c = sheets.current[i];
-        const pic = sheetPics[i];
-        if (!c || !pic) return;
-        const [x0, y0, w, h] = SHEETS[id].box;
-        const shows = sheetShows(id, sheetFrame);
-        paintPicture(c, pic, { clip: shows?.map(([X, Y]) => [((X - x0) / w) * pic.naturalWidth, ((Y - y0) / h) * pic.naturalHeight]) });
-      });
     const clipSheets = (frame: number) => {
       if (frame === sheetFrame) return;
       sheetFrame = frame;
-      drawSheets();
-    };
-    SHEET_IDS.forEach((id, i) => {
-      void loadPicture(sheetPath(id)).then((pic) => {
-        if (disposed) return;
-        sheetPics[i] = pic;
-        drawSheets();
+      SHEET_IDS.forEach((id, i) => {
+        const img = sheets.current[i];
+        if (img) img.style.clipPath = sheetClip(id, frame);
       });
-    });
+    };
     if (reduce) clipSheets(BOOK_ON_SHEETS.right.length - 1);
 
     let visible = true;
@@ -239,6 +257,7 @@ export function VideoHero() {
       io.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       v.removeEventListener("ended", onEnded);
+      offRate();
       cleanup();
     };
   }, []);
@@ -260,16 +279,25 @@ export function VideoHero() {
         <div className={styles.videoExtend}>
           {(["left", "right"] as const).map((side, i) => {
             const [x, w] = EXTEND[side];
-            return (
+            const place = { left: `${(x / EXTEND.width) * 100}%`, width: `${(w / EXTEND.width) * 100}%` };
+            return [
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={`${side}-img`}
+                className={styles.videoExtendSide}
+                src={`/landing/hero-extend-${side}.webp`}
+                alt=""
+                style={{ ...place, visibility: sidesReady ? "hidden" : "visible" }}
+              />,
               <canvas
                 key={side}
                 ref={(el) => {
                   sides.current[i] = el;
                 }}
                 className={styles.videoExtendSide}
-                style={{ left: `${(x / EXTEND.width) * 100}%`, width: `${(w / EXTEND.width) * 100}%` }}
-              />
-            );
+                style={{ ...place, visibility: sidesReady ? "visible" : "hidden" }}
+              />,
+            ];
           })}
         </div>
         <video
@@ -305,21 +333,40 @@ export function VideoHero() {
             clipped to the book as it opens across them. See video/sheets.ts. */}
         {SHEET_IDS.map((id, i) => {
           const [x, y, w, h] = SHEETS[id].box;
-          return (
-            <canvas
-              key={id}
+          const place = {
+            left: `${(x / HERO_VIDEO.width) * 100}%`,
+            top: `${(y / HERO_VIDEO.height) * 100}%`,
+            width: `${(w / HERO_VIDEO.width) * 100}%`,
+            height: `${(h / HERO_VIDEO.height) * 100}%`,
+          };
+          const canvasUp = frozen && sheetsReady;
+          return [
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`${id}-img`}
               ref={(el) => {
                 sheets.current[i] = el;
               }}
+              src={sheetPath(id)}
+              alt=""
+              fetchPriority="high"
               className={styles.videoSheet}
               style={{
-                left: `${(x / HERO_VIDEO.width) * 100}%`,
-                top: `${(y / HERO_VIDEO.height) * 100}%`,
-                width: `${(w / HERO_VIDEO.width) * 100}%`,
-                height: `${(h / HERO_VIDEO.height) * 100}%`,
+                ...place,
+                visibility: canvasUp ? "hidden" : "visible",
+                // The first frame's; the film's own frames take over as it plays.
+                clipPath: sheetClip(id, 0),
               }}
-            />
-          );
+            />,
+            <canvas
+              key={id}
+              ref={(el) => {
+                sheetCanvases.current[i] = el;
+              }}
+              className={styles.videoSheet}
+              style={{ ...place, visibility: canvasUp ? "visible" : "hidden" }}
+            />,
+          ];
         })}
       </div>
       {/* The blur toward the screen's sides - see .sideBlur. */}

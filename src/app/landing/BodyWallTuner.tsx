@@ -6,8 +6,8 @@
 // (/dev/doodles/body), which is how they reach the live site: committed and
 // pushed like any other change.
 
-import { useState } from "react";
-import { BODY_WALL_DEFAULTS, bodyWallSettings, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
+import { useEffect, useState } from "react";
+import { BODY_WALL_DEFAULTS, bodyWallSettings, onBodyWallSettings, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
 
 const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; max: number; step: number; unit: string }> = [
   { key: "peekDesktop", label: "Cream on load, desktop", min: 0, max: 40, step: 1, unit: "% of screen" },
@@ -21,7 +21,24 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "ink", label: "Ink strength", min: 0.05, max: 1, step: 0.01, unit: "" },
   { key: "sideBlur", label: "Hero side blur, at the edge", min: 0, max: 16, step: 0.5, unit: "px" },
   { key: "sideBlurWidth", label: "Hero side blur, reaches in", min: 0, max: 40, step: 1, unit: "% of screen" },
+  { key: "openSeconds", label: "Book opening takes", min: 1, max: 6, step: 0.1, unit: "s" },
 ];
+
+/** Replay keeps the sliders as they are through the reload it takes (not
+ *  saved - the page reads the saved file again otherwise). */
+const REPLAY_KEY = "memari-tuner-replay";
+
+/** The settings, live: the page's wall, hero and film follow at once. */
+function apply(next: BodyWallSettings) {
+  setBodyWallSettings(next);
+  // The hero's height and side blur: the page sets these from the saved
+  // settings (Landing.tsx), so they are set on the same element here.
+  const page = document.querySelector("main")?.parentElement;
+  page?.style.setProperty("--peek", String(next.peekDesktop));
+  page?.style.setProperty("--peek-phone", String(next.peekMobile));
+  page?.style.setProperty("--side-blur", String(next.sideBlur));
+  page?.style.setProperty("--side-blur-w", String(next.sideBlurWidth));
+}
 
 export function BodyWallTuner() {
   const [open, setOpen] = useState(true);
@@ -29,15 +46,32 @@ export function BodyWallTuner() {
   const [message, setMessage] = useState<string | null>(null);
   const update = (next: BodyWallSettings) => {
     setS(next);
-    setBodyWallSettings(next);
-    // The hero's height follows at once: the page sets these from the saved
-    // settings (Landing.tsx), so they are set on the same element here.
-    const page = document.querySelector("main")?.parentElement;
-    page?.style.setProperty("--peek", String(next.peekDesktop));
-    page?.style.setProperty("--peek-phone", String(next.peekMobile));
-    page?.style.setProperty("--side-blur", String(next.sideBlur));
-    page?.style.setProperty("--side-blur-w", String(next.sideBlurWidth));
+    apply(next);
     setMessage(null);
+  };
+  // After a Replay: the sliders as they were (the panel follows the
+  // settings it is subscribed to).
+  useEffect(() => {
+    const off = onBodyWallSettings(() => setS(bodyWallSettings()));
+    try {
+      const kept = sessionStorage.getItem(REPLAY_KEY);
+      if (kept) {
+        sessionStorage.removeItem(REPLAY_KEY);
+        apply({ ...BODY_WALL_DEFAULTS, ...(JSON.parse(kept) as Partial<BodyWallSettings>) });
+      }
+    } catch {
+      // No session storage: Replay shows the saved settings.
+    }
+    return () => void off();
+  }, []);
+  const replay = () => {
+    try {
+      sessionStorage.setItem(REPLAY_KEY, JSON.stringify(s));
+    } catch {
+      // Replays with the saved settings.
+    }
+    window.scrollTo(0, 0);
+    location.reload();
   };
   const save = async () => {
     setMessage("Saving...");
@@ -101,6 +135,9 @@ export function BodyWallTuner() {
             </button>
             <button type="button" style={btn} onClick={() => update(BODY_WALL_DEFAULTS)}>
               Reset
+            </button>
+            <button type="button" style={btn} onClick={replay} title="Reload the page to watch the book open again, keeping these sliders">
+              Replay
             </button>
             <span style={{ flex: 1 }} />
             <button type="button" style={{ ...btn, background: "#4a5cff", borderColor: "#4a5cff", color: "#fff" }} onClick={save}>
