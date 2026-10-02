@@ -96,12 +96,32 @@ export function PostIt() {
               <OtterDrawing key={o} otter={o} shown={o === shown} />
             ))}
           </svg>
-          <span className={`${styles.postitSeg} ${styles.postitSeg2}`}>
-            <span className={`${styles.postitSeg} ${styles.postitSeg3}`} />
-          </span>
+          <Band k={0} />
         </span>
       </span>
     </a>
+  );
+}
+
+/** The bands of the curl above the otter, each hinged on the last
+ *  (.postitBand), as shares of the note - thin, so the twist bends the sides
+ *  smoothly; the top one taller, holding the turned-over corner. Their
+ *  paper's fibre runs on from the band below, the light ramping across. */
+const BANDS = [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.12];
+function Band({ k }: { k: number }) {
+  // Its top, from the top of the lifted part.
+  const top = BANDS.slice(k + 1).reduce((a, b) => a + b, 0);
+  const done = (i: number) => BANDS.slice(0, i).reduce((a, b) => a + b, 0) / (1 - STUCK - FLAT / 100);
+  const light = (i: number) => (0.02 + 0.13 * done(i)).toFixed(3);
+  const last = k === BANDS.length - 1;
+  return (
+    <span
+      className={`${styles.postitSeg} ${styles.postitBand} ${last ? styles.postitCorner : ""}`}
+      style={{ backgroundPosition: `0 calc(var(--note) * ${-top})`, ["--band" as string]: BANDS[k] }}
+    >
+      <span className={styles.postitLight} style={{ background: `linear-gradient(to top, rgba(255,255,255,${light(k)}), rgba(255,255,255,${light(k + 1)}))` }} />
+      {!last && <Band k={k + 1} />}
+    </span>
   );
 }
 

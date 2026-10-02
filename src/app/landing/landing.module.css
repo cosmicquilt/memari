@@ -1048,73 +1048,49 @@
   background-position: 0 calc(var(--note) * -0.4);
 }
 
-.postitSeg2 {
-  bottom: calc(var(--note) * 0.36 - 3px);
-  height: calc(var(--note) * 0.2 + 3px);
-  transform: rotateX(-6deg) rotateY(0.7deg);
-  background-position: 0 calc(var(--note) * -0.2 + 3px);
-}
-
-.postitSeg3 {
+/* The bands above the otter: each turned on from the last - curling toward
+   us, twisting about the note's long axis, and its top edge rolling - so
+   the twist builds to about 9 / 3 degrees at the top. Eight bands, so the
+   sides bend instead of stepping (three showed notches on the edges, five
+   a 1px stair); the top one taller, to hold the turned-over corner. Each overlaps the one below by
+   3px: at 1px a hairline of the film showed where the two anti-aliased
+   edges met. */
+.postitBand {
   bottom: calc(100% - 3px);
-  height: calc(var(--note) * 0.2 + 3px);
-  transform: rotateX(-9deg) rotateY(1.1deg);
-  background-position: 0 6px;
-  /* Its top right corner turned over (below). */
-  clip-path: polygon(0 0, calc(100% - var(--note) * 0.13) 0, 100% calc(var(--note) * 0.13), 100% 100%, 0 100%);
+  height: calc(var(--note) * var(--band) + 3px);
+  transform: rotateX(-1.7deg) rotateY(1.12deg) rotateZ(0.41deg);
 }
 
-/* Light: the soft bend at the fold on the first band; the curl catching
-   more of it the higher it rises - one ramp across the bands, each starting
-   where the last ends, so no band shows as a stripe. */
-.postitSeg1::before,
-.postitSeg2::before,
-.postitSeg3::before {
-  content: "";
+/* The light on a band: one ramp across the whole curl (set per band). */
+.postitLight {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
 .postitSeg1::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background: linear-gradient(to top, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 45%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.02));
 }
 
-.postitSeg2::before {
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.07));
+/* The top right corner turned over: the note's back, barely duller, and the
+   faintest shadow on the front ("the turned corner gradients less obvious"). */
+.postitCorner {
+  clip-path: polygon(0 0, calc(100% - var(--note) * 0.075) 0, 100% calc(var(--note) * 0.075), 100% 100%, 0 100%);
 }
 
-.postitSeg3::before {
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.15));
-}
-
-/* The turned-over corner: the note's back, a shade duller, with the faint
-   shadow it throws on the front. */
-.postitSeg3::after {
+.postitCorner::after {
   content: "";
   position: absolute;
   top: 0;
   right: 0;
-  width: calc(var(--note) * 0.13);
-  height: calc(var(--note) * 0.13);
-  background: linear-gradient(to top right, #e9d867 0%, #f6e98e 46%, rgba(246, 233, 142, 0) 50%);
-  filter: drop-shadow(-1.5px 1.5px 1.5px rgba(80, 60, 10, 0.28));
-}
-
-/* The lifted part's shadow on the page under it: further out, and softer,
-   the further the note lifts. */
-.postitShadow {
-  position: absolute;
-  left: 6%;
-  right: 2%;
-  top: 4%;
-  height: calc(var(--note) * 0.72);
-  background: rgba(20, 12, 4, 0.42);
-  border-radius: 2px;
-  filter: blur(calc(var(--lift-n) * 0.45px));
-  transform: translate(calc(var(--lift-n) * 0.22px), calc(var(--lift-n) * 0.5px));
-  transition: transform 260ms cubic-bezier(0.3, 0.7, 0.3, 1), filter 260ms;
-  pointer-events: none;
+  width: calc(var(--note) * 0.075);
+  height: calc(var(--note) * 0.075);
+  background: linear-gradient(to top right, #f1e276 0%, #f5e683 48%, rgba(245, 230, 131, 0) 50%);
+  filter: drop-shadow(-0.5px 0.5px 1px rgba(80, 60, 10, 0.14));
 }
 
 .postitDrawing {
