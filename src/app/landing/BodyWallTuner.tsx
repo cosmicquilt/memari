@@ -10,13 +10,13 @@ import { useState } from "react";
 import { BODY_WALL_DEFAULTS, bodyWallSettings, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
 
 const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; max: number; step: number; unit: string }> = [
+  { key: "peekDesktop", label: "Cream on load, desktop", min: 0, max: 40, step: 1, unit: "% of screen" },
+  { key: "peekMobile", label: "Cream on load, phone", min: 0, max: 40, step: 1, unit: "% of screen" },
   { key: "gap", label: "Gap between doodles", min: 0, max: 48, step: 1, unit: "px" },
   { key: "clearance", label: "Clearance round content", min: 0, max: 96, step: 1, unit: "px" },
   { key: "size", label: "Doodle size", min: 0.4, max: 1.8, step: 0.05, unit: "x" },
   { key: "density", label: "How many", min: 0.05, max: 2, step: 0.05, unit: "x" },
   { key: "ink", label: "Ink strength", min: 0.05, max: 1, step: 0.01, unit: "" },
-  { key: "bandDesktop", label: "Cream band, desktop", min: 0, max: 150, step: 1, unit: "% of screen" },
-  { key: "bandMobile", label: "Cream band, phone", min: 0, max: 150, step: 1, unit: "% of screen" },
 ];
 
 export function BodyWallTuner() {
@@ -26,6 +26,11 @@ export function BodyWallTuner() {
   const update = (next: BodyWallSettings) => {
     setS(next);
     setBodyWallSettings(next);
+    // The hero's height follows at once: the page sets these from the saved
+    // settings (Landing.tsx), so they are set on the same element here.
+    const page = document.querySelector("main")?.parentElement;
+    page?.style.setProperty("--peek", String(next.peekDesktop));
+    page?.style.setProperty("--peek-phone", String(next.peekMobile));
     setMessage(null);
   };
   const save = async () => {

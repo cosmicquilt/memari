@@ -16,6 +16,7 @@
 // journal's own doodles in the margins (ink/).
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
 import { SiteHeader } from "./SiteHeader";
@@ -26,6 +27,7 @@ import { LayoutGallery } from "./LayoutGallery";
 import { BodyDoodles } from "./BodyDoodles";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
+import { BODY_WALL_DEFAULTS } from "./bodyWall";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
 import { Ink } from "./ink/Ink";
 import { circleDrawing } from "./ink/pen";
@@ -42,7 +44,11 @@ function Brand() {
 
 export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?: "desk" | "video" }) {
   return (
-    <div className={`${styles.page} ${script.variable} ${sans.variable}`}>
+    <div
+      className={`${styles.page} ${script.variable} ${sans.variable}`}
+      // How much of the section below the hero shows on opening (bodyWall.ts).
+      style={{ "--peek": BODY_WALL_DEFAULTS.peekDesktop, "--peek-phone": BODY_WALL_DEFAULTS.peekMobile } as CSSProperties}
+    >
       <SiteHeader signedIn={signedIn} />
 
       <main>

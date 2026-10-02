@@ -81,8 +81,9 @@ export function BodyDoodles() {
       lastHeight = height;
       const phone = width < PHONE_WIDTH;
       const keep = measure(holder, el);
-      // The cream band under the hero, before the doodles begin.
-      const band = ((phone ? settings.bandMobile : settings.bandDesktop) / 100) * window.innerHeight;
+      // The cream that shows under the hero when the page opens: the doodles
+      // begin below it.
+      const band = ((phone ? settings.peekMobile : settings.peekDesktop) / 100) * window.innerHeight;
       keep.push([0, 0, width, band]);
       const drawings = (
         await Promise.all(

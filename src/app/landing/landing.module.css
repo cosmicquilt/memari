@@ -194,11 +194,24 @@
 /* --- hero ---------------------------------------------------------------- */
 
 .hero {
+  /* Shorter than the screen by --peek % of it, so that much of the next
+     section shows on opening (set from bodyWallSettings.json). */
+  --hero-h: max(640px, calc(100svh * (1 - var(--peek, 0) / 100)));
   position: relative;
-  height: 100svh;
+  height: var(--hero-h);
   min-height: 640px;
   overflow: hidden;
   isolation: isolate;
+}
+
+/* A phone: its own share, and a lower floor - a phone's spread sits in the
+   middle of the hero with room above and below, so a shorter hero crops
+   nothing of it. */
+@media (max-width: 760px) {
+  .hero {
+    --hero-h: max(520px, calc(100svh * (1 - var(--peek-phone, 0) / 100)));
+    min-height: 520px;
+  }
 }
 
 /* What shows before the desk has loaded, where WebGL is missing, and if a
@@ -452,7 +465,7 @@
   background: #24160d center / cover no-repeat;
   left: 50%;
   top: 50%;
-  width: max(100%, calc(max(100svh, 640px) * 16 / 9));
+  width: max(100%, calc(var(--hero-h, max(100svh, 640px)) * 16 / 9));
   aspect-ratio: 16 / 9;
   transform: translate(-50%, -50%);
 }

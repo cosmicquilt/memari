@@ -12,13 +12,13 @@ const FILE = path.join(process.cwd(), "src/app/landing/bodyWallSettings.json");
 const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 /** Each number's allowed range - the sliders' own. */
 const RANGES: Record<string, [number, number]> = {
+  peekDesktop: [0, 40],
+  peekMobile: [0, 40],
   gap: [0, 48],
   clearance: [0, 96],
   size: [0.4, 1.8],
   density: [0.05, 2],
   ink: [0.05, 1],
-  bandDesktop: [0, 150],
-  bandMobile: [0, 150],
   seed: [0, 1e9],
 };
 

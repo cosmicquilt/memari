@@ -19,6 +19,15 @@
 import saved from "./bodyWallSettings.json";
 
 export type BodyWallSettings = {
+  /** How much of the section below the hero shows when the page opens, % of
+   *  the screen's height: the hero is that much shorter, and that much of
+   *  the section is plain cream - the doodles begin below it (Andrew,
+   *  2026-10-01: "i cant see the section below hero when i load in thats
+   *  what the percentage slider was supposed to be"; "thats what i meant by
+   *  cream band was the section below the hero being visible from the top
+   *  scroll position"). Desktop and phone. */
+  peekDesktop: number;
+  peekMobile: number;
   /** Paper kept between drawings, CSS px. */
   gap: number;
   /** Paper kept round the page's content, CSS px. */
@@ -29,10 +38,6 @@ export type BodyWallSettings = {
   density: number;
   /** How strong the blue is. */
   ink: number;
-  /** Plain cream below the hero before the doodles begin, % of the screen's
-   *  height - on a desktop and on a phone. */
-  bandDesktop: number;
-  bandMobile: number;
   /** The arrangement: a seed, or a new one each load. */
   seed: number;
   newEachLoad: boolean;
