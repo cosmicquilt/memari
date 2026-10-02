@@ -346,7 +346,8 @@ export const CATALOGUE: CatalogueEntry[] = [
   },
   // THE DAY CHARTS (2026-09-30): a measure up the side, the days along the
   // bottom, filled in by hand - see dayChart.ts. No look set here, so they
-  // follow the chart's own default.
+  // follow the chart's own default. Mood's measure is faces (2026-10-01,
+  // faces.ts); the others keep their words and numbers.
   {
     slug: "mood-chart-week",
     primitive: "day-chart",
@@ -354,7 +355,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Health & body",
     cadence: "week",
     paletteName: "Mood chart",
-    props: { heading: "Mood", span: "week", levels: ["Great", "Good", "Okay", "Low", "Awful"] },
+    props: { heading: "Mood", span: "week", levels: ["😃", "🙂", "😐", "😞", "😢"] },
     columnSpan: 12,
     rowSpan: 7,
   },
@@ -365,7 +366,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Health & body",
     cadence: "month",
     paletteName: "Mood month",
-    props: { heading: "Mood", span: "month", levels: ["Great", "Good", "Okay", "Low", "Awful"] },
+    props: { heading: "Mood", span: "month", levels: ["😃", "🙂", "😐", "😞", "😢"] },
     columnSpan: 24,
     rowSpan: 7,
   },
@@ -751,6 +752,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     // new one: the schema defaults it, and a default wins over an old key -
     // the trap that left Gratitude lined on its card and blank when dropped.
     props: { heading: "Savings", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "$0", endLabel: "Goal" },
+    // At its floor once the end labels' line counts (2026-10-01) - the
+    // meter's own 4 rows are one short for a bar with words under it.
+    rowSpan: 5,
   },
   {
     slug: "debt-payoff",
@@ -760,6 +764,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "journal",
     paletteName: "Payoff",
     props: { heading: "Payoff", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "Owed", endLabel: "Paid off" },
+    // At its floor once the end labels' line counts (2026-10-01) - the
+    // meter's own 4 rows are one short for a bar with words under it.
+    rowSpan: 5,
   },
   {
     slug: "bill-tracker",

@@ -30,6 +30,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { glyphElement } from "@/lib/modules/glyphs";
+import { MOOD_FACES, faceElements, isMoodFace } from "@/lib/modules/faces";
 import { capCentredTextY, estimateTextWidthPx, fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
@@ -63,7 +64,13 @@ export type DayChartConfig = {
   monthDays?: number | null;
 };
 
-export const DEFAULT_DAY_CHART_LEVELS = ["Great", "Good", "Okay", "Low", "Awful"];
+// A mood chart's axis is faces - the doodle people's, 2026-10-01 (faces.ts).
+// Any level that is exactly one of them is drawn as it; anything else is
+// words, as written.
+export const DEFAULT_DAY_CHART_LEVELS: string[] = [...MOOD_FACES];
+/** A face's share of its level's band - a cell - so it reads at print size
+ *  and keeps clear of the faces above and below it. */
+const FACE_SHARE = 0.8;
 
 const LEVEL_FONT_PT = [7, 6, 5];
 const DAY_FONT_PT = [6.5, 6, 5];
@@ -105,10 +112,18 @@ export function dayChartLabelCells(
   days: number
 ): { cells: number; onLattice: boolean } {
   const halfUp = (cells: number) => Math.max(1, Math.ceil(cells * 2 - 1e-9) / 2);
-  const ideal = halfUp(needed.largest);
+  // THE PLOT KEEPS THREE QUARTERS of the box. The column may grow past what
+  // its labels need to put the days on the lattice, but not into the plot's
+  // share: a week one day wide gave its labels two and a half of its six
+  // cells for half a cell a day, and read as "doesn't have enough space for
+  // graphing, too much whitespace to the left of labels" (2026-10-01). It
+  // never goes under what the labels need at their smallest, whatever.
+  const smallest = halfUp(needed.smallest);
+  const most = Math.max(smallest, Math.floor(allocationCells * 0.25 * 2 + 1e-9) / 2);
+  const ideal = Math.min(halfUp(needed.largest), most);
   const multiple = (value: number, step: number) => Math.abs(value / step - Math.round(value / step)) < 1e-9;
   let best = { cells: ideal, grade: 0 };
-  for (let cells = halfUp(needed.smallest); cells <= ideal + 2; cells += 0.5) {
+  for (let cells = smallest; cells <= Math.min(ideal + 2, most); cells += 0.5) {
     const perDay = (allocationCells - cells) / days;
     if (perDay <= 0) break;
     const grade = multiple(perDay, 1) ? 2 : multiple(perDay, 0.5) ? 1 : 0;
@@ -158,8 +173,10 @@ export function renderDayChart(
 
   // The level labels' column - see dayChartLabelCells.
   const levelSizes = LEVEL_FONT_PT.map(ptToPx);
+  const faceSize = pitch * FACE_SHARE;
   const needs = (size: number) =>
-    (Math.max(0, ...levels.map((level) => estimateTextWidthPx(level, size))) + pad * 2 + inset) / pitch;
+    (Math.max(0, ...levels.map((level) => (isMoodFace(level) ? faceSize : estimateTextWidthPx(level, size)))) + pad * 2 + inset) /
+    pitch;
   const labelColumn = dayChartLabelCells(
     allocationCells,
     { largest: needs(levelSizes[0]), smallest: needs(levelSizes[levelSizes.length - 1]) },
@@ -175,10 +192,21 @@ export function renderDayChart(
   const dayCentre = (d: number) => plotLeft + (d + 0.5) * dayWidth;
 
   const levelLabels = fitLabelSet(
-    levels.slice(0, shown).map((text) => ({ text, widthPx: plotLeft - geometry.x - pad * 2 })),
+    levels.slice(0, shown).map((text) => ({ text: isMoodFace(text) ? "" : text, widthPx: plotLeft - geometry.x - pad * 2 })),
     levelSizes
   );
   for (let i = 0; i < shown; i++) {
+    const level = levels[i];
+    if (isMoodFace(level)) {
+      // Against the axis, as a label is, centred in its band.
+      const size = Math.min(faceSize, plotLeft - geometry.x - pad * 2);
+      if (size > 0) {
+        elements.push(
+          ...faceElements(level.trim() as (typeof MOOD_FACES)[number], plotLeft - pad - size, bandCentre(i) - size / 2, size, (part) => id(`l${i}-face-${part}`))
+        );
+      }
+      continue;
+    }
     if (!levelLabels.texts[i]) continue;
     elements.push({
       id: id(`l${i}-label`),

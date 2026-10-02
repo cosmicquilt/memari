@@ -157,9 +157,11 @@ export const SPREAD_DEFS: SpreadDef[] = [
     belowLeft: [below("spending-log", 6, BELOW_ROW, 18, 15)],
     belowRight: [
       below("budget", 0, BELOW_ROW, 12, 15),
-      below("savings-goal", 12, BELOW_ROW, 12, 4),
-      below("debt-payoff", 12, BELOW_ROW + 4, 12, 4),
-      below("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Notes")),
+      // Five rows each: a bar with words under it, its floor since the end
+      // labels' line counts (2026-10-01).
+      below("savings-goal", 12, BELOW_ROW, 12, 5),
+      below("debt-payoff", 12, BELOW_ROW + 5, 12, 5),
+      below("labeled-box", 12, BELOW_ROW + 10, 12, 5, box("Notes")),
     ],
   },
   {

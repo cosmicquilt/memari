@@ -175,12 +175,24 @@ export function progressMeterLayout(
 
 /** Header and every segment the total asks for - a meter that cannot show
  *  its whole count is not showing a count. */
+/** The end labels' line under the meter, gap included - kept whether or not
+ *  they are set (see renderProgressMeter). One number for the renderer and
+ *  the floor, which disagreed about it. */
+export function progressMeterEndBandPx(): number {
+  return ptToPx(1.5) + ptToPx(END_LABEL_FONT_PT) * 1.2;
+}
+
 export function getProgressMeterMinHeightPx(total: number, widthPx: number, perRow = 0): number {
   // At its smallest the meter is the tile; filling only ever spreads it.
   const m = getProgressMeterRowMetricsPx();
   const columns = progressMeterColumns(widthPx, perRow);
   const rows = Math.max(1, Math.ceil(Math.max(1, Math.floor(total) || 1) / columns));
-  return m.headerHeightPx + m.segmentPx * rows;
+  // And the end labels' line. Left out, a box at its floor was that line
+  // short of its rows: no layout fitted, so the meter fell back to the tile -
+  // eleven to a row, a short last one, the empty line under it - and the
+  // palette, which draws every module at its floor, showed exactly that
+  // (2026-10-01: "progress meter in palette preview should be fill module on").
+  return m.headerHeightPx + m.segmentPx * rows + progressMeterEndBandPx();
 }
 
 export function renderProgressMeter(
@@ -213,7 +225,7 @@ export function renderProgressMeter(
   const bodyBottom = geometry.y + geometry.height;
   const endSize = ptToPx(END_LABEL_FONT_PT);
   // What the end labels take under the meter: their gap and their line.
-  const endBand = ptToPx(1.5) + endSize * 1.2;
+  const endBand = progressMeterEndBandPx();
   // The body less the end labels' line, KEPT WHETHER OR NOT THEY ARE SET. It
   // was kept only once one had words, and the filled rows took the line
   // otherwise - so the editor's faint "Start" and "Goal", always showing

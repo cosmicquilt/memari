@@ -69,7 +69,57 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   check(ids(blank, /-l\d-label$/).length === 0, "blank levels print no labels, to be written in");
   check(ids(blank, /-d\d-l\d$/).length === 7 * 6, "and still a mark for every day at every level");
   const defaults = draw({});
-  check(ids(defaults, /-l\d-label$/).length === 5 && ids(defaults, /-d\d-label$/).length === 7, "drawn from nothing: five levels and a week");
+  // A mood chart from nothing has faces up the side (2026-10-01), not words.
+  check(
+    ids(defaults, /-l\d-face-head$/).length === 5 && ids(defaults, /-l\d-label$/).length === 0 && ids(defaults, /-d\d-label$/).length === 7,
+    "drawn from nothing: five faces up the side and a week"
+  );
+}
+
+// --- one day wide: the plot keeps three quarters (2026-10-01) -------------------
+// It was half a cell a day with the labels given two and a half of the six
+// cells - "doesn't have enough space for graphing, too much whitespace to the
+// left of labels". Now the labels get what they need and no more than a
+// quarter, and the days share the rest, off the lattice if they must be.
+{
+  for (const [what, levels] of [["words", mood.levels], ["faces", ["😃", "🙂", "😐", "😞", "😢"]]] as const) {
+    const chart = draw({ heading: "Mood", levels: [...levels], span: "week", look: "bars" }, 6);
+    const axis = ids(chart, /-axis-y$/)[0];
+    const axisCells = ((axis?.x ?? 0) + (axis?.width ?? 0) / 2 - PAGE.marginPx) / CELL;
+    check(!!axis && axisCells <= 1.5 + 1e-6, `one day wide with ${what}, the axis is at most a quarter of the box in (got ${axisCells.toFixed(2)} cells)`);
+    const centres = ids(chart, /-d\d-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+    const perDay = (centres[1] - centres[0]) / CELL;
+    check(perDay * 7 >= 4.2, `and the week takes the rest (${(perDay * 7).toFixed(2)} of 6 cells)`);
+  }
+}
+
+// --- faces (2026-10-01) ------------------------------------------------------------
+// A level that is exactly 😃 🙂 😐 😞 or 😢 is drawn as the doodle people's
+// face: a head, two eyes, a mouth - and a tear on the last.
+{
+  const faces = ["😃", "🙂", "😐", "😞", "😢"];
+  const chart = draw({ heading: "Mood", levels: faces, span: "week", look: "dots" });
+  check(ids(chart, /-l\d-face-head$/).length === 5, "five faces, one a level");
+  check(ids(chart, /-l\d-label$/).length === 0, "and no words for them");
+  check(ids(chart, /-l\d-face-eye-[lr]$/).length === 10 && ids(chart, /-l\d-face-mouth$/).length === 5, "each with two eyes and a mouth");
+  const tears = ids(chart, /-face-tear$/);
+  check(tears.length === 1 && /-l4-face-tear$/.test(String(tears[0].id)), "a tear on the saddest only");
+  // Each is a path the PDF can draw - M, L, C, Z - and sits in its own band,
+  // left of the axis.
+  const axis = ids(chart, /-axis-y$/)[0];
+  const heads = ids(chart, /-l\d-face-head$/);
+  const pathOk = ids(chart, /-l\d-face-/).every((e) => typeof e.pathD === "string" && /^[MLCZ0-9.\s-]+$/.test(e.pathD as string));
+  check(pathOk, "every face mark is a path of M, L, C and Z");
+  check(
+    heads.every((h, i) => i === 0 || (h.y ?? 0) >= (heads[i - 1].y ?? 0) + (heads[i - 1].height ?? 0) - 1e-6),
+    "the faces stack down the side, one under the next"
+  );
+  check(heads.every((h) => (h.x ?? 0) + (h.width ?? 0) <= (axis?.x ?? 0) + 1e-6), "every face is left of the axis");
+  const eyes = ids(chart, /-l\d-face-eye-l$/);
+  check(eyes.every((e) => e.fill !== "transparent" && e.stroke === "none"), "the eyes are solid");
+  // Words and faces mix: a face where it is one, words where they are not.
+  const mixed = draw({ heading: "Mood", levels: ["😃", "Fine", "😢"], span: "week" });
+  check(ids(mixed, /-l\d-face-head$/).length === 2 && texts(mixed, /-l\d-label$/).join() === "Fine", "faces and words mix, level by level");
 }
 
 // --- the four looks -----------------------------------------------------------
@@ -91,11 +141,10 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
 // --- the lattice ---------------------------------------------------------------
 {
   // A week across the page is three cells a day, across three-quarters of it
-  // two, across half of it a cell and a half (with its labels a size down),
-  // and in a sidebar half a cell - every day boundary on a lattice line or
-  // exactly between two.
+  // two, across half of it a cell and a half (with its labels a size down) -
+  // every day boundary on a lattice line or exactly between two.
   const onHalf = (v: number) => onLattice(v) || onLattice(v + CELL / 2);
-  for (const [columns, perDay] of [[24, 3], [18, 2], [12, 1.5], [6, 0.5]] as const) {
+  for (const [columns, perDay] of [[24, 3], [18, 2], [12, 1.5]] as const) {
     const chart = draw({ ...mood, span: "week", look: "bars" }, columns);
     const centres = ids(chart, /-d\d-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
     const pitch = centres[1] - centres[0];
