@@ -265,6 +265,14 @@ export function renderRatingStrip(
     // box shrank.
     if (rowTop + rowHeight > bodyBottom + inset + 0.5) break;
 
+    // THE ROW'S OWN BAND: the last is the box inset short of a cell (the box
+    // ends one inset inside its last cell), and its marks centre in what is
+    // there - centred in the full cell, they sat 6px low, half the air
+    // under the last circles there was over them (2026-10-02, "there is very
+    // little space below the last circles in the rating strip"). The to-do
+    // and the habit tracker do the same.
+    const band = Math.min(rowHeight, bodyBottom - rowTop);
+
     // Shrunk, then cut, so a long row name cannot run into the scale -
     // see textFit.ts, and columnTable.ts for the case that found it.
     const label = { text: labels.texts[i] ?? "", fontSizePx: labels.fontSizePx };
@@ -272,7 +280,7 @@ export function renderRatingStrip(
       id: id(`i${i}-label`),
       type: "text",
       x: geometry.x + padding,
-      y: capCentredTextY(rowTop, rowHeight, label.fontSizePx, fontFamily),
+      y: capCentredTextY(rowTop, band, label.fontSizePx, fontFamily),
       width: labelWidth,
       height: label.fontSizePx * 1.2,
       text: label.text,
@@ -289,7 +297,7 @@ export function renderRatingStrip(
         glyphElement({
           id: id(`i${i}-v${value}`),
           x: centreOf(value) - glyph / 2,
-          y: rowTop + (rowHeight - glyph) / 2,
+          y: rowTop + (band - glyph) / 2,
           sizePx: glyph,
           shape,
         })
@@ -302,7 +310,7 @@ export function renderRatingStrip(
           id: id(`i${i}-v${value}-number`),
           type: "text",
           x: centreOf(value) - glyph / 2,
-          y: capCentredTextY(rowTop + (rowHeight - glyph) / 2, glyph, insideSize, fontFamily),
+          y: capCentredTextY(rowTop + (band - glyph) / 2, glyph, insideSize, fontFamily),
           width: glyph,
           height: insideSize * 1.2,
           text: String(value),

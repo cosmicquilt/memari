@@ -87,6 +87,17 @@ const centreY = (e: RenderedPolotnoElement) => (e.y ?? 0) + (e.height ?? 0) / 2;
     check(ids(taller, /-i\d+-label$/).filter((e) => String(e.text ?? "").trim()).length === n, "only the items are named");
     const box = boxOf(6, floor + 2);
     check(ids(taller, /-i\d+-rule$/).every((e) => centreY(e) < box.y + box.height - 1), "no rule under the last row: the border is its rule");
+    // The last row is the box inset short of a cell, and its circles centre
+    // in what is there: as much air under them as over them ("there is very
+    // little space below the last circles in the rating strip", 2026-10-02).
+    for (const [what, drawing, rowSpan] of [["at its least", atFloor, floor], ["taller", taller, floor + 2]] as const) {
+      const foot = boxOf(6, rowSpan).y + boxOf(6, rowSpan).height;
+      const rules = ids(drawing, /-(head-rule|i\d+-rule)$/).map(centreY).sort((a, b) => a - b);
+      const last = ids(drawing, /-i\d+-v1$/).sort((a, b) => (a.y ?? 0) - (b.y ?? 0)).pop()!;
+      const above = (last.y ?? 0) - rules[rules.length - 1];
+      const below = foot - bottomOf(last);
+      check(Math.abs(above - below) < 0.5, `${n} items ${what}: the last circles have as much air below as above (${above.toFixed(1)} over, ${below.toFixed(1)} under)`);
+    }
   }
 }
 
