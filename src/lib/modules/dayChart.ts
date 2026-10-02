@@ -7,8 +7,8 @@
 // so each look is a way of being filled in:
 //
 //   dots     a dot where every day meets every level - join them into a line
-//   ruled    a rule under each level - plot a point in its band, join them
-//   bars     a column of boxes for each day - shade it up to the level
+//   ruled    a line through each level - plot a point on it, join them
+//   bars     a column for each day, crossed at each level - shade it up
 //   circles  a circle where every day meets every level - colour in one a day
 //
 // THE LEVELS ARE LATTICE ROWS AT THE FLOOR. Each is one cell under the
@@ -16,8 +16,9 @@
 // that fills its height (2026-10-02, see dayChartRowsBetween): the levels
 // spread apart, and once there is a cell for a row of dots between each
 // pair, the rows jump to that - every row a cell, on the lattice again - and
-// spread from there. A level's label and its marks are centred in its band;
-// the ruled look's rules sit between the bands.
+// spread from there. A level's label and its marks are centred in its band,
+// and the ruled and bars looks draw their lines THROUGH the rows - the
+// levels' and the dots' between - not along the page's cells (2026-10-02).
 //
 // THE DAYS DIVIDE THE PLOT, as a to-do's or a habit tracker's do. The level
 // labels take exactly what they need, no more than a quarter of the box where
@@ -133,8 +134,12 @@ const DAY_FONT_PT = [6.5, 6, 5];
 const LABEL_PAD_PT = 4;
 /** A plotted dot: big enough to read as the chart's own, not the lattice's. */
 const DOT_PT = 1.9;
-/** A dot in a row between two levels: smaller, and lighter (see THE FILL). */
+/** A dot in a row between two levels: smaller, and lighter (see THE FILL) -
+ *  the halfway row's, and the quarters' either side of it smaller again. */
 const BETWEEN_DOT_PT = 1.5;
+const QUARTER_DOT_PT = 1.1;
+/** How strong each kind of row's line is, in the ruled and bars looks. */
+const LINE_OPACITY = { level: 0.4, half: 0.25, quarter: 0.15 } as const;
 
 export function dayChartLevels(config: DayChartConfig): string[] {
   const levels = Array.isArray(config.levels) ? config.levels.map((level) => (typeof level === "string" ? level.trim() : "")) : [];
@@ -161,18 +166,22 @@ export function dayChartDayCount(config: DayChartConfig): number {
  * THE FILL (2026-10-02). A chart taller than its floor fills its height: the
  * levels spread apart, and once there is a whole cell for a row of dots
  * between each pair of levels, the rows jump to that - every row a cell
- * again - and spread from there; then two rows between, and so on. Andrew:
- * "scale but at a certain point jump and add a row of dots in between each
- * symbol row and scale again from there". The floor, and each jump, are on
- * the lattice; between them the rows share the height evenly, off it, as
- * the days share the width.
+ * again - and spread from there. Andrew: "scale but at a certain point jump
+ * and add a row of dots in between each symbol row and scale again from
+ * there". The floor, and each jump, are on the lattice; between them the
+ * rows share the height evenly, off it, as the days share the width.
+ *
+ * AN ODD NUMBER BETWEEN, so one of them is always halfway: one, then
+ * straight to three - quarters - then five. "not do two rows in between go
+ * straight to three, it helps to always have a halfway marker between".
  *
  * Returns how many rows go between each pair of levels, for `levels` levels
  * in a plot `plotCells` cells tall.
  */
 export function dayChartRowsBetween(levels: number, plotCells: number): number {
   if (levels < 2 || plotCells <= levels) return 0;
-  return Math.floor((plotCells - levels) / (levels - 1));
+  const most = Math.floor((plotCells - levels) / (levels - 1));
+  return most % 2 === 1 ? most : Math.max(0, most - 1);
 }
 
 /** The header, a cell per level and a cell of day names - in the box's own
@@ -231,6 +240,11 @@ export function renderDayChart(
     const level = Math.floor(r / (between + 1));
     const step = r % (between + 1);
     return step === 0 ? `l${level}` : `l${level}h${step}`;
+  };
+  // A level, the row halfway to the next, or one of the rows either side.
+  const rowKind = (r: number): keyof typeof LINE_OPACITY => {
+    const step = r % (between + 1);
+    return step === 0 ? "level" : step * 2 === between + 1 ? "half" : "quarter";
   };
 
   // The level labels' column - see where plotLeft is set.
@@ -357,11 +371,12 @@ export function renderDayChart(
 
   // THE MARKS, one look at a time.
   if (look === "ruled") {
-    // A rule between each pair of rows, faint, from the axis to the border:
-    // a level is the band its label sits in, and a row between two levels a
-    // band of its own.
-    for (let r = 1; r < rowCount; r++) {
-      elements.push(rule(`${rowName(r)}-rule`, plotLeft, plotTop + r * rowPitch - ruleWidth / 2, boxRight - plotLeft, ruleWidth, 0.4));
+    // A line through each row, faint, from the axis to the border: through
+    // each level, level with its label, and through each row of dots between
+    // - "the ruled, bars horizontal lines should follow these dot guides not
+    // the underlying page cells" (2026-10-02). A point is plotted on its line.
+    for (let r = 0; r < rowCount; r++) {
+      elements.push(rule(`${rowName(r)}-rule`, plotLeft, rowCentre(r) - ruleWidth / 2, boxRight - plotLeft, ruleWidth, LINE_OPACITY[rowKind(r)]));
     }
   }
   const tickHeight = ptToPx(2.5);
@@ -372,8 +387,9 @@ export function renderDayChart(
       elements.push(rule(`d${d}-tick`, x - ruleWidth / 2, plotBottom - tickHeight, ruleWidth, tickHeight, 0.6));
     }
     if (look === "bars" && shown > 0) {
-      // A column of boxes, one per level, with air either side so the days
-      // read as bars and not as a grid.
+      // A column a day from the axis up to the top level, crossed at each
+      // row below it as the ruled look's lines are, with air either side so
+      // the days read as bars and not as a grid. Shaded up to a line.
       const gap = Math.max(ptToPx(1), dayWidth * 0.2);
       const left = plotLeft + d * dayWidth + gap;
       const width = Math.max(1, dayWidth - gap * 2);
@@ -382,9 +398,9 @@ export function renderDayChart(
         type: "figure",
         subType: "rect",
         x: left,
-        y: plotTop + pitch * 0.12,
+        y: rowCentre(0),
         width,
-        height: plotBottom - plotTop - pitch * 0.12,
+        height: plotBottom - rowCentre(0),
         fill: "transparent",
         stroke: NEAR_BLACK,
         strokeWidth: ruleWidth,
@@ -392,16 +408,16 @@ export function renderDayChart(
       });
       for (let r = 1; r < rowCount; r++) {
         const name = rowName(r);
-        elements.push(rule(`d${d}-rule${name.slice(1)}`, left, plotTop + r * rowPitch - ruleWidth / 2, width, ruleWidth, 0.45));
+        elements.push(rule(`d${d}-rule${name.slice(1)}`, left, rowCentre(r) - ruleWidth / 2, width, ruleWidth, LINE_OPACITY[rowKind(r)] + 0.05));
       }
     }
     for (let r = 0; r < rowCount && (look === "dots" || look === "circles"); r++) {
       const y = rowCentre(r);
       const name = rowName(r);
       // A row between levels is a row of dots in either look - lighter, a
-      // half step rather than a level of its own.
+      // half step rather than a level of its own, and a quarter smaller still.
       if (name.includes("h")) {
-        const size = ptToPx(BETWEEN_DOT_PT);
+        const size = ptToPx(rowKind(r) === "half" ? BETWEEN_DOT_PT : QUARTER_DOT_PT);
         elements.push({
           id: id(`d${d}-${name}`),
           type: "figure",
@@ -413,7 +429,7 @@ export function renderDayChart(
           cornerRadius: size / 2,
           fill: NEAR_BLACK,
           stroke: "none",
-          opacity: 0.35,
+          opacity: rowKind(r) === "half" ? 0.35 : 0.28,
         });
         continue;
       }

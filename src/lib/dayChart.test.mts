@@ -152,7 +152,7 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   const circles = draw({ ...mood, span: "week", look: "circles" });
   check(ids(circles, /-d\d-l\d$/).length === days * n && ids(circles, /-d\d-l\d$/).every((e) => e.fill === "transparent"), "circles: an open circle at every day and level");
   const ruled = draw({ ...mood, span: "week", look: "ruled" });
-  check(ids(ruled, /-l\d-rule$/).length === n - 1 && ids(ruled, /-d\d-tick$/).length === days, "ruled: a rule between each two levels and a tick at each day");
+  check(ids(ruled, /-l\d-rule$/).length === n && ids(ruled, /-d\d-tick$/).length === days, "ruled: a line through each level and a tick at each day");
   check(ids(ruled, /-d\d-l\d$/).length === 0, "ruled: no dots");
   const bars = draw({ ...mood, span: "week", look: "bars" });
   check(ids(bars, /-d\d-bar$/).length === days && ids(bars, /-d\d-rule\d$/).length === days * (n - 1), "bars: a column a day, divided at each level");
@@ -203,8 +203,10 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
     Math.abs(monthDays[0] - axisX - (border - monthDays[monthDays.length - 1])) < 0.5,
     `a month's first day is as far from the axis as its last from the border (${(monthDays[0] - axisX).toFixed(1)} and ${(border - monthDays[monthDays.length - 1]).toFixed(1)})`
   );
+  // Through each level - half a cell off the lattice rows at the floor,
+  // clearly between two dots, never a near miss.
   const rules = ids(chart, /-l\d-rule$/).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2);
-  check(rules.length === 4 && rules.every(onLattice), "the rules between levels are on lattice rows");
+  check(rules.length === 5 && rules.every((y) => onLattice(y - CELL / 2)), "the lines run through the levels, between the lattice rows");
   const box = ids(chart, /-border$/)[0];
   const lastDay = ids(chart, /-d30-label$/)[0];
   check(!!lastDay && (lastDay.x ?? 0) + (lastDay.width ?? 0) <= (box.x ?? 0) + (box.width ?? 0) + 1e-6, "a month's last day stays inside the border");
@@ -283,21 +285,37 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
     lastSpacing = gaps[0];
     // Rows between the levels: none until there is a cell for each, then one
     // (from 11 rows: nine cells of plot for five levels and four between),
-    // then two (from 15), then three (from 19).
+    // then straight to three (from 19) - never two, so one is always halfway
+    // ("not do two rows in between go straight to three, it helps to always
+    // have a halfway marker between").
     const between = ids(chart, /-d0-l\dh\d$/).length;
-    const expected = rowSpan >= 19 ? 12 : rowSpan >= 15 ? 8 : rowSpan >= 11 ? 4 : 0;
+    const expected = rowSpan >= 19 ? 12 : rowSpan >= 11 ? 4 : 0;
     check(between === expected, `${rowSpan} rows: ${expected} rows of dots between the levels (got ${between})`);
   }
-  // At a jump every row is a cell again, so a ruled chart's rules are back on
-  // the lattice; between jumps they share the height evenly.
-  for (const rowSpan of [7, 11, 15]) {
-    const ruled = draw({ ...mood, span: "week", look: "ruled" }, 12, rowSpan);
-    const off = ids(ruled, /-rule$/).filter((e) => !onLattice(centreY(e)));
-    check(off.length === 0, `${rowSpan} rows (a jump): every rule on the lattice (off: ${off.map((e) => e.id).join(", ")})`);
+  // THE LINES FOLLOW THE DOTS, not the page's cells: the ruled look's lines
+  // and the bars' crossings run through exactly the rows the dots look puts
+  // its dots on - the levels and the rows between - at every height.
+  for (const rowSpan of [7, 9, 11, 14, 19, 22]) {
+    const dotRows = ids(draw({ ...mood, span: "week", look: "dots" }, 12, rowSpan), /-d0-l\d(h\d)?$/).map(centreY);
+    const lines = ids(draw({ ...mood, span: "week", look: "ruled" }, 12, rowSpan), /-l\d(h\d)?-rule$/).map(centreY);
+    const crossings = ids(draw({ ...mood, span: "week", look: "bars" }, 12, rowSpan), /-d0-rule\d(h\d)?$/).map(centreY);
+    const same = (a: number[], b: number[]) => a.length === b.length && a.every((y, i) => Math.abs(y - b[i]) < 0.01);
+    check(same(lines, dotRows), `${rowSpan} rows: a ruled line through every row of dots (${lines.length} lines, ${dotRows.length} rows)`);
+    check(same(crossings, dotRows.slice(1)), `${rowSpan} rows: the bars crossed at every row of dots below the top (${crossings.length} of ${dotRows.length - 1})`);
+    const bar = ids(draw({ ...mood, span: "week", look: "bars" }, 12, rowSpan), /-d0-bar$/)[0];
+    check(!!bar && Math.abs((bar.y ?? 0) - dotRows[0]) < 0.01, `${rowSpan} rows: a bar starts at the top level's line`);
   }
   const stretched = ids(draw({ ...mood, span: "week", look: "ruled" }, 12, 9), /-l\d-rule$/).map(centreY);
   const pitches = stretched.slice(1).map((y, i) => y - stretched[i]);
-  check(pitches.length === 3 && pitches.every((p) => Math.abs(p - (7 * CELL) / 5) < 0.01), `9 rows: the ruled bands share seven cells five ways (${pitches.map((p) => p.toFixed(1)).join(", ")})`);
+  check(pitches.length === 4 && pitches.every((p) => Math.abs(p - (7 * CELL) / 5) < 0.01), `9 rows: the levels' lines share seven cells five ways (${pitches.map((p) => p.toFixed(1)).join(", ")})`);
+  // With three between, the middle one is the halfway marker - a bigger dot
+  // and a stronger line than the quarters either side.
+  const quarters = draw({ ...mood, span: "week", look: "dots" }, 12, 19);
+  const size = (name: string) => ids(quarters, new RegExp(`-d0-${name}$`))[0]?.width ?? 0;
+  check(size("l0h2") > size("l0h1") && size("l0h1") === size("l0h3"), `the halfway row's dots stand out from the quarters' (${size("l0h1").toFixed(1)}, ${size("l0h2").toFixed(1)}, ${size("l0h3").toFixed(1)})`);
+  const quarterLines = draw({ ...mood, span: "week", look: "ruled" }, 12, 19);
+  const strength = (name: string) => Number(ids(quarterLines, new RegExp(`-${name}-rule$`))[0]?.opacity ?? 0);
+  check(strength("l0") > strength("l0h2") && strength("l0h2") > strength("l0h1"), "a level's line, then the halfway line, then the quarters'");
   // A box too short for its levels still draws the top ones a cell apart.
   const short = ids(draw(mood, 12, 5), /-d0-l\d$/).map(centreY);
   check(short.length === 3 && Math.abs(short[1] - short[0] - CELL) < 0.01, "a box too short keeps a cell a level");

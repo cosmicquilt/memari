@@ -16,6 +16,7 @@ import { textWidthPx } from "./modules/textFit";
 import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
 import { progressMeterColumns, progressMeterLayout } from "./modules/progressMeter";
 import { habitTrackerWideColumns, isHabitTrackerCompact } from "./modules/habitTracker";
+import { promptLinesFor } from "./modules/promptedLines";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -257,12 +258,21 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 // --- prompts -----------------------------------------------------------------
 {
   const base = { heading: "Reflection", prompts: ["What went well?", "What would I change?"], linesPerPrompt: 2 };
-  const lines = (props: Record<string, unknown>, p: number) => ids(draw("prompted-lines", props, 6, 12), new RegExp(`-p${p}-line\\d+$`)).length;
+  // Drawn at EXACTLY the height the blocks need - the heading's cell and
+  // each prompt's cell and lines - since a taller box shares its spare
+  // lines among the prompts (2026-10-02, moduleFill.test). The last line's
+  // rule is the border, so it is counted from the drawing's own band.
+  const exact = (props: Record<string, unknown>) =>
+    1 + (props.prompts as string[]).reduce((sum, _, p) => sum + 1 + promptLinesFor(props, p), 0);
+  const lines = (props: Record<string, unknown>, p: number) => {
+    const drawn = ids(draw("prompted-lines", props, 6, exact(props)), new RegExp(`-p${p}-line\\d+$`)).length;
+    return p === (props.prompts as string[]).length - 1 ? drawn + 1 : drawn;
+  };
   check(lines(base, 0) === 2 && lines(base, 1) === 2, "every prompt takes the default");
   const set = { ...base, promptLines: [1, 4] };
   check(lines(set, 0) === 1 && lines(set, 1) === 4, `each prompt its own count (got ${lines(set, 0)} and ${lines(set, 1)})`);
-  const second = ids(draw("prompted-lines", set, 6, 12), /-p1-prompt$/)[0];
-  const secondDefault = ids(draw("prompted-lines", base, 6, 12), /-p1-prompt$/)[0];
+  const second = ids(draw("prompted-lines", set, 6, exact(set)), /-p1-prompt$/)[0];
+  const secondDefault = ids(draw("prompted-lines", base, 6, exact(base)), /-p1-prompt$/)[0];
   check(!!second && !!secondDefault && Math.abs((secondDefault.y ?? 0) - (second.y ?? 0) - PITCH) < 0.5, "the next prompt moves up by exactly the cell given back");
   check(lines({ ...base, promptLines: [3] }, 1) === 2, "a prompt with no count of its own takes the default");
   const dotted = draw("prompted-lines", { ...base, answers: "dotted" }, 6, 12);
@@ -310,13 +320,16 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     const x0 = d.x ?? 0;
     const x1 = x0 + (d.width ?? 0);
     const w = Number(/-w(\d)-/.exec(String(d.id))![1]);
+    // The month's weeks fill the box (2026-10-02), so the last week's foot
+    // is the module's own border, which closes it.
+    const foot = (border.y ?? 0) + (border.height ?? 0);
     const top = edges.filter((e) => (e.width ?? 0) > (e.height ?? 0)).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2).sort((a, b) => a - b);
-    const rows = [...new Set(top.map((y) => Math.round(y * 10) / 10))];
+    const rows = [...new Set([...top, foot].map((y) => Math.round(y * 10) / 10))];
     const y0 = rows[w];
     const y1 = rows[w + 1];
     const sideL = Math.abs(x0 - left) < 0.5 || covers(false, x0, y0, y1);
     const sideR = Math.abs(x1 - right) < 0.5 || covers(false, x1, y0, y1);
-    return y0 !== undefined && y1 !== undefined && covers(true, y0, x0, x1) && covers(true, y1, x0, x1) && sideL && sideR;
+    return y0 !== undefined && y1 !== undefined && covers(true, y0, x0, x1) && (Math.abs(y1 - foot) < 0.5 || covers(true, y1, x0, x1)) && sideL && sideR;
   });
   check(closed, "every day of the month is closed on all four sides");
   const firstRowTop = Math.min(...edges.filter((e) => (e.width ?? 0) > (e.height ?? 0)).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2));
@@ -538,7 +551,9 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 // --- ratings -----------------------------------------------------------------
 {
   const base = { heading: "Ratings", items: ["Mood", "Energy"], scaleMin: 1, scaleMax: 5 };
-  const hearts = ids(draw("rating-strip", { ...base, shape: "heart" }, 6, 6), /-i\d-v\d$/);
+  // At its least - the heading, the scale and the two items; a taller strip
+  // adds blank rows to write in (2026-10-02).
+  const hearts = ids(draw("rating-strip", { ...base, shape: "heart" }, 6, 4), /-i\d-v\d$/);
   check(hearts.length === 10 && hearts.every((h) => typeof h.pathD === "string"), "hearts are drawn as the glyph");
   check(ids(draw("rating-strip", { ...base, shape: "nonsense" }, 6, 6), /-i\d-v\d$/).every((m) => Number(m.cornerRadius ?? 0) > 0), "an unknown mark is a circle");
   const numbers = texts(draw("rating-strip", base, 6, 6), /-scale\d+$/);

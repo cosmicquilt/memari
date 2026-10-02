@@ -1467,8 +1467,8 @@ const PRIMITIVES = {
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderPromptedLines(geometry, propValues as PromptedLinesConfig, idPrefix, fontFamily, lattice),
-    minContentHeightPx: (_pageGrid, _columnSpan, propValues) =>
-      getPromptedLinesMinHeightPx(promptLinesFor(propValues, 0)),
+    minContentHeightPx: (pageGrid, _columnSpan, propValues) =>
+      getPromptedLinesMinHeightPx(promptLinesFor(propValues, 0), pageGrid.boxInsetPx),
     contentIsLive: ALWAYS,
   },
 
@@ -1853,7 +1853,8 @@ const PRIMITIVES = {
       renderRatingStrip(geometry, propValues as RatingStripConfig, idPrefix, fontFamily, lattice),
     // Mood rates each day of a week, so its rows start on the journal's day.
     weekStart: (props, weekStartDay) => ({ ...props, items: rotateWeekList(props.items, weekStartDay) }),
-    minContentHeightPx: () => getRatingStripMinHeightPx(),
+    minContentHeightPx: (pageGrid, _columnSpan, propValues) =>
+      getRatingStripMinHeightPx(Array.isArray(propValues.items) ? propValues.items.length : 1, pageGrid.boxInsetPx),
     contentIsLive: ALWAYS,
   },
 

@@ -165,15 +165,9 @@ export function renderMiniMonth(
   const markable = mark === "box";
   const stripTop = contentTopPx(geometry, lattice);
   const stripHeight = ptToPx(WEEKDAY_STRIP_HEIGHT_PT);
+  // The least a week's row takes - see rowPitch for what it does take.
   const rowHeight = ptToPx(mark !== "none" ? MARKABLE_ROW_HEIGHT_PT : DATE_ROW_HEIGHT_PT);
-  // A RING TAKES A WHOLE ROW, as a box does: in the half-cell row a plain
-  // month uses, a ring small enough to fit could not hold a two-digit date -
-  // "the numbers dont fit within the ring" (2026-09-30). The date centres in
-  // the row and the ring round it - and, since 2026-10-01, the box round it
-  // too: the box IS the day's cell.
-  const dateBandHeight = mark === "none" ? ptToPx(DATE_ROW_HEIGHT_PT) : rowHeight;
   const columnWidth = geometry.width / 7;
-  const ringRadius = Math.min(columnWidth, rowHeight) * 0.38;
 
   elements.push(borderElement(geometry, id));
   elements.push(
@@ -212,6 +206,22 @@ export function renderMiniMonth(
   const dateFontSize = ptToPx(DATE_FONT_PT);
   const bodyBottom = geometry.y + geometry.height;
 
+  // THE WEEKS FILL THE BOX (2026-10-02: "theres white space at bottom ...
+  // do a sweep"). The box is never less than six weeks of rows - see
+  // getMiniMonthMinHeightPx - so a five-week month left a row empty under
+  // it, and a box made taller left more. Now the month's own weeks share
+  // whatever height the box has, as a day chart's levels do, and nothing is
+  // left under the last.
+  const weekCount = calendar ? calendar.weekCount : blankWeeks;
+  const rowPitch = weekCount > 0 ? Math.max(rowHeight, (bodyBottom - gridTop) / weekCount) : rowHeight;
+  // A RING TAKES A WHOLE ROW, as a box does: in the half-cell row a plain
+  // month uses, a ring small enough to fit could not hold a two-digit date -
+  // "the numbers dont fit within the ring" (2026-09-30). The date centres in
+  // the row and the ring round it - and, since 2026-10-01, the box round it
+  // too: the box IS the day's cell.
+  const dateBandHeight = rowPitch;
+  const ringRadius = Math.min(columnWidth, rowPitch) * 0.38;
+
   // THE BOX MARK IS A GRID OF THE MONTH'S OWN DAYS. Asked 2026-10-01: "the
   // dates are inside the box and theres no gap between adjacent boxes or
   // days above or below", and "to the side of where the days numbers are
@@ -224,7 +234,7 @@ export function renderMiniMonth(
   // runs; none where the module's own border already is.
   const weeksShown = (() => {
     let n = 0;
-    while (n < (calendar ? calendar.weekCount : blankWeeks) && gridTop + rowHeight * (n + 1) <= bodyBottom + 0.5) n++;
+    while (n < weekCount && gridTop + rowPitch * (n + 1) <= bodyBottom + 0.5) n++;
     return n;
   })();
   if (markable) {
@@ -238,7 +248,7 @@ export function renderMiniMonth(
       elements.push({ id: id(name), type: "figure", subType: "rect", x, y, width, height, fill: NEAR_BLACK, stroke: "none", opacity: 0.8 });
     // Across: the boundary above row k, wherever a day lies on either side.
     for (let k = 0; k <= weeksShown; k++) {
-      const y = gridTop + rowHeight * k;
+      const y = gridTop + rowPitch * k;
       if (Math.abs(y - bodyBottom) < 0.5) continue;
       for (let c = 0; c < 7; c++) {
         if (!(boxed(k - 1, c) || boxed(k, c)) || (c > 0 && (boxed(k - 1, c - 1) || boxed(k, c - 1)))) continue;
@@ -254,13 +264,13 @@ export function renderMiniMonth(
         if (!(boxed(w, j - 1) || boxed(w, j)) || (w > 0 && (boxed(w - 1, j - 1) || boxed(w - 1, j)))) continue;
         let end = w;
         while (end + 1 < weeksShown && (boxed(end + 1, j - 1) || boxed(end + 1, j))) end++;
-        line(`grid-v${j}-${w}`, x - stroke / 2, gridTop + rowHeight * w, stroke, rowHeight * (end - w + 1));
+        line(`grid-v${j}-${w}`, x - stroke / 2, gridTop + rowPitch * w, stroke, rowPitch * (end - w + 1));
       }
     }
   }
 
   for (let w = 0; w < weeksShown; w++) {
-    const rowTop = gridTop + rowHeight * w;
+    const rowTop = gridTop + rowPitch * w;
 
     for (let c = 0; c < 7; c++) {
       const cell = calendar?.weeks[w][c];

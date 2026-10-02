@@ -97,16 +97,43 @@ export function getPromptedLinesRowMetricsPx() {
 }
 
 /** Header, one prompt and one line to answer on - the least this can be
- *  and still be the thing it is. */
-export function getPromptedLinesMinHeightPx(linesPerPrompt: number): number {
+ *  and still be the thing it is - in the box's own pixels, which end one
+ *  inset short of the last cell. Without the inset off, the floor was a
+ *  row taller than its block and arrived with that row empty (the
+ *  2026-10-02 sweep). */
+export function getPromptedLinesMinHeightPx(linesPerPrompt: number, insetPx = 0): number {
   // The FIRST prompt's lines, when they are set per prompt - it is the block
   // that has to fit for the module to be itself.
   const m = getPromptedLinesRowMetricsPx();
   return (
     m.headerHeightPx +
     m.promptHeightPx +
-    m.answerLineHeightPx * Math.max(1, Math.round(linesPerPrompt) || 1)
+    m.answerLineHeightPx * Math.max(1, Math.round(linesPerPrompt) || 1) -
+    insetPx
   );
+}
+
+/**
+ * HOW MANY LINES EACH PROMPT GETS in a body `bodyCells` cells tall: the
+ * prompts that fit whole, from the top, and the cells left under them
+ * shared out as more lines - evenly, the first prompts taking any odd one -
+ * so nothing is left empty under the last (2026-10-02: "theres white space
+ * at bottom ... do a sweep"; prompted lines "share the extra lines among
+ * the prompts"). A prompt's own count is the least it gets.
+ */
+export function promptLineCounts(config: { prompts?: unknown; linesPerPrompt?: unknown; promptLines?: unknown }, bodyCells: number): number[] {
+  const prompts = Array.isArray(config.prompts) ? config.prompts : [];
+  const counts: number[] = [];
+  let used = 0;
+  for (let p = 0; p < prompts.length; p++) {
+    const lines = promptLinesFor(config, p);
+    if (used + 1 + lines > bodyCells) break;
+    counts.push(lines);
+    used += 1 + lines;
+  }
+  const spare = bodyCells - used;
+  if (counts.length === 0 || spare <= 0) return counts;
+  return counts.map((lines, p) => lines + Math.floor(spare / counts.length) + (p < spare % counts.length ? 1 : 0));
 }
 
 export function renderPromptedLines(
@@ -153,14 +180,17 @@ export function renderPromptedLines(
     prompts.map((text) => ({ text: text ?? "", widthPx: geometry.width - padding * 2 - numberWidth })),
     promptSizes
   );
+  // The body in whole cells, counting the last, which is the box inset
+  // short of a cell as every module's last band is. A block that would not
+  // fit whole is not drawn at all - a prompt printed with nowhere to answer
+  // it is worse than one page short; the ones that do share what is left.
+  const inset = lattice?.insetPx ?? 0;
+  const bodyCells = Math.max(0, Math.floor((bodyBottom + inset - bodyTop + 0.5) / pitch));
+  const counts = promptLineCounts(config, bodyCells);
   let cursor = bodyTop;
-  for (let p = 0; p < prompts.length; p++) {
-    const linesPerPrompt = promptLinesFor(config, p);
+  for (let p = 0; p < counts.length; p++) {
+    const linesPerPrompt = counts[p];
     const blockHeight = promptHeight + answerLineHeight * linesPerPrompt;
-    // A block that would not fit whole is not drawn at all. A prompt
-    // printed with nowhere to answer it is worse than one page short:
-    // the question is the part that has to be reachable.
-    if (cursor + blockHeight > bodyBottom + 0.5) break;
 
     // A prompt sits on ONE line, in a band half a cell high, so a long
     // question shrinks and then truncates rather than running out of the
@@ -201,6 +231,8 @@ export function renderPromptedLines(
     for (let line = 0; line < linesPerPrompt; line++) {
       const lineBottom = cursor + promptHeight + answerLineHeight * (line + 1);
       if (answers === "none") continue;
+      // The last line's rule is the border.
+      if (lineBottom > bodyBottom - 0.5) continue;
       if (answers === "dotted") {
         // The answer line's own lattice row, broken into the page's dots.
         const row = Math.round((lineBottom - latticeY) / pitch);

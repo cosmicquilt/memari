@@ -63,9 +63,10 @@ function isDeliberatelyOffPitch(slug: string, widthPx: number): boolean {
   return compactable && isHabitTrackerCompact(widthPx, moduleDefinition(slug)?.previewProps ?? {});
 }
 
-/** Modules that rule one line per ITEM rather than filling their body, so
- *  the space under the last item is however many empty rows remain. */
-const ITEM_DRIVEN = new Set(slugsDrawnBy("rating-strip"));
+// There used to be ITEM_DRIVEN here: the rating strip ruled one line per
+// item and left the rest of its box empty, so its final band could be any
+// number of rows. Since 2026-10-02 it fills its box with blank rows to write
+// in, and is held to a final band like everything else.
 
 function flatten(elements: RenderedPolotnoElement[]): RenderedPolotnoElement[] {
   return elements.flatMap((e) => (e.type === "group" ? flatten(e.children ?? []) : [e]));
@@ -189,13 +190,6 @@ for (const slug of RULED) {
         // contentTopPx.
         if (Math.abs(gap - (pitch - PAGE.boxInsetPx)) < 0.5) return;
         if (Math.abs(gap - pitch) < 0.5) return;
-        // ...or, for a module that rules one line per ITEM rather than
-        // filling its body, whatever empty rows are left under the last
-        // item. That is blank space, not a misshapen row.
-        if (ITEM_DRIVEN.has(slug)) {
-          const rows = (gap + PAGE.boxInsetPx) / pitch;
-          if (Math.abs(rows - Math.round(rows)) < 0.02) return;
-        }
         offGrid.push(`${gap.toFixed(1)} (final band, expected ${(pitch - PAGE.boxInsetPx).toFixed(1)})`);
       });
 

@@ -343,7 +343,10 @@ export const CATALOGUE: CatalogueEntry[] = [
       // A mood reads better as low and high than as 1 and 5.
       scaleHead: "words",
     },
-    rowSpan: 10,
+    // The header, the scale and the seven days - exactly: a rating strip
+    // fills any more with blank rows to write in (2026-10-02), and an
+    // eighth day is not a thing.
+    rowSpan: 9,
   },
   // THE DAY CHARTS (2026-09-30): a measure up the side, the days along the
   // bottom, filled in by hand - see dayChart.ts. No look set here, so they
@@ -543,6 +546,7 @@ export const CATALOGUE: CatalogueEntry[] = [
       // A 1 to 10 scale is printed as numbered circles.
       scaleHead: "inside",
     },
+    rowSpan: 6,
   },
 
   // ───────────────────────────────────────────────────────────────────── Food

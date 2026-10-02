@@ -100,10 +100,15 @@ export function getRatingStripRowMetricsPx() {
   };
 }
 
-/** Header, the scale head and one item to rate. */
-export function getRatingStripMinHeightPx(): number {
+/**
+ * Header, the scale head and EVERY item to rate, in the box's own pixels,
+ * which end one inset short of the last cell. A strip missing its last items
+ * is not a short strip but a wrong one - the floor used to be one item, and
+ * a three-item strip arrived showing one (the 2026-10-02 sweep).
+ */
+export function getRatingStripMinHeightPx(itemCount = 1, insetPx = 0): number {
   const m = getRatingStripRowMetricsPx();
-  return m.headerHeightPx + m.scaleHeadHeightPx + m.rowHeightPx;
+  return m.headerHeightPx + m.scaleHeadHeightPx + m.rowHeightPx * Math.max(1, itemCount) - insetPx;
 }
 
 export function renderRatingStrip(
@@ -244,12 +249,21 @@ export function renderRatingStrip(
   // Any glyph the icon strip has - see glyphs.ts; anything else is a circle.
   const shape: GlyphShape = GLYPH_SHAPES.includes(config.shape as GlyphShape) ? (config.shape as GlyphShape) : "circle";
 
-  for (let i = 0; i < items.length; i++) {
+  // THE BOX IS FILLED WITH ROWS (2026-10-02, "theres white space at
+  // bottom ... do a sweep"): the items, then blank rows to write more in,
+  // marks and all, down to the border - where it used to stop at the last
+  // item and leave the rest empty. The last row is the box inset short of a
+  // cell, as every module's last band is (the box ends one inset inside its
+  // last cell), so it counts as a row and its rule is the border.
+  const inset = lattice?.insetPx ?? 0;
+  const fits = Math.max(0, Math.floor((bodyBottom + inset - bodyTop + 0.5) / rowHeight));
+  const rows = Math.max(items.length, fits);
+  for (let i = 0; i < rows; i++) {
     const rowTop = bodyTop + rowHeight * i;
     // An item with no row to sit in is not drawn. Rows are anchored to the
     // top, so the ones that do fit are exactly where they were before the
     // box shrank.
-    if (rowTop + rowHeight > bodyBottom + 0.5) break;
+    if (rowTop + rowHeight > bodyBottom + inset + 0.5) break;
 
     // Shrunk, then cut, so a long row name cannot run into the scale -
     // see textFit.ts, and columnTable.ts for the case that found it.
@@ -306,7 +320,7 @@ export function renderRatingStrip(
     // made it look like the rows alternated weight. Reported on the to-do
     // in exactly those words.
     const rowBottom = rowTop + rowHeight;
-    if (Math.abs(rowBottom - bodyBottom) >= 0.5) {
+    if (rowBottom < bodyBottom - 0.5) {
       elements.push({
         id: id(`i${i}-rule`),
         type: "figure",
