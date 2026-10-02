@@ -35,15 +35,18 @@ type Otter = keyof typeof otters;
  *  again. All are drawn, only one shown, so a change never waits on a
  *  download. */
 const AT: Record<"hover" | "press", Otter> = { hover: "otter-3", press: "otter-2" };
-/** At rest (2026-10-02: "start on just uploaded one on load and every once
- *  and a while min of a few seconds switch back and forth to current
- *  default one and back"): waving (otter-4) from the start, now and then
- *  glancing up and away (otter-1) and back - each held for a random while
- *  between these, ms. Not with reduced motion: it stays waving. */
+/** At rest (2026-10-02): looking at you (otter-3, the hover one) from the
+ *  start, now and then glancing up and away (otter-1) and back - each held
+ *  for a random while between these, ms. First with the waving one
+ *  (otter-4), then "replace the new one with the hover one ... make it swap
+ *  back and forth a bit quicker". Not with reduced motion: it stays on the
+ *  first. */
 const REST: Array<{ otter: Otter; ms: [number, number] }> = [
-  { otter: "otter-4", ms: [4000, 10000] },
-  { otter: "otter-1", ms: [3000, 6000] },
+  { otter: "otter-3", ms: [2500, 5500] },
+  { otter: "otter-1", ms: [2000, 4000] },
 ];
+/** The ones drawn: those in use (otter-4, waving, is imported but unused). */
+const DRAWN = [...new Set<Otter>([...REST.map((r) => r.otter), AT.hover, AT.press])];
 /** How long the paw stays up after a press, ms. */
 const PRESS_MS = 420;
 
@@ -117,7 +120,7 @@ export function PostIt() {
             slice of the lifted part, FREE_H - FLAT down to FREE_H. */}
         <span className={`${styles.postitSeg} ${styles.postitSeg1}`}>
           <svg className={styles.postitDrawing} viewBox={`0 ${FREE_H - FLAT} 100 ${FLAT}`} aria-hidden="true">
-            {(Object.keys(otters) as Otter[]).map((o) => (
+            {DRAWN.map((o) => (
               <OtterDrawing key={o} otter={o} shown={o === shown} />
             ))}
           </svg>
