@@ -26,6 +26,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import otters from "../../../public/landing/otter/otters.json";
+import flat from "./postitFlat.json";
+import { loadPicture, paintPicture } from "./video/canvasPicture";
 import styles from "./landing.module.css";
 
 type Otter = keyof typeof otters;
@@ -50,6 +52,19 @@ const DRAWN = [...new Set<Otter>([...REST.map((r) => r.otter), AT.hover, AT.pres
 /** How long the paw stays up after a press, ms. */
 const PRESS_MS = 420;
 
+/** While the page is pinched in, the post-it is shown as flat pictures of
+ *  itself (2026-10-02: "flatten the post-it while zoomed if it doesnt affect
+ *  visual quality"): its curl is a chain of 3D layers, drawn again at every
+ *  step of a zoom - most of what was still left white while zooming. The
+ *  pictures are the real post-it drawn at 5x, alone, in each pose it can
+ *  show (resting or reached for, with each otter then), by
+ *  handoff/flow/otter/bake_postit_flat.mjs; postitFlat.json says where
+ *  they sit, in note sides. Bake them again whenever its look changes.
+ *  Fetched at the first zoom; shown, once all have loaded, in one canvas -
+ *  which a zoom only scales, where pictures are drawn in tiles that can be
+ *  missing as they come into view (video/canvasPicture.ts). */
+const LIFT_REACHED = 27;
+
 /** Shares of the note's side: the sticky strip, and how far below the hero's
  *  edge the fold is. Mirrored in the stylesheet (.postit). */
 const STUCK = 0.24;
@@ -68,7 +83,23 @@ export function PostIt() {
   const [over, setOver] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [rest, setRest] = useState(0);
+  const [zoomed, setZoomed] = useState(false);
+  const [flatWanted, setFlatWanted] = useState(false);
+  const [flatPics, setFlatPics] = useState<Record<string, HTMLImageElement> | null>(null);
+  const flatCanvas = useRef<HTMLCanvasElement>(null);
   const timer = useRef(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const z = vv.scale > 1.001;
+      setZoomed(z);
+      if (z) setFlatWanted(true);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    return () => vv.removeEventListener("resize", update);
+  }, []);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -86,6 +117,23 @@ export function PostIt() {
     return () => window.clearTimeout(t);
   }, []);
   const shown: Otter = pressed ? AT.press : over ? AT.hover : REST[rest].otter;
+  const pose = `${over ? LIFT_REACHED : LIFT}-${shown}`;
+  const flatOn = zoomed && !!flatPics?.[pose];
+  useEffect(() => {
+    if (!flatWanted) return;
+    let disposed = false;
+    void Promise.all(flat.states.map((s) => loadPicture(`/landing/postit/flat-${s}.webp`))).then((pics) => {
+      if (!disposed) setFlatPics(Object.fromEntries(flat.states.map((s, i) => [s, pics[i]])));
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [flatWanted]);
+  useEffect(() => {
+    const c = flatCanvas.current;
+    const pic = flatPics?.[pose];
+    if (c && pic) paintPicture(c, pic);
+  }, [flatPics, pose]);
   const press = () => {
     setPressed(true);
     window.clearTimeout(timer.current);
@@ -95,7 +143,7 @@ export function PostIt() {
   return (
     <a
       href="#how"
-      className={styles.postit}
+      className={flatOn ? `${styles.postit} ${styles.postitZoomed}` : styles.postit}
       aria-label="Scroll down to how Memari works"
       onPointerEnter={(e) => e.pointerType === "mouse" && setOver(true)}
       onPointerLeave={() => setOver(false)}
@@ -127,6 +175,19 @@ export function PostIt() {
           <Band k={0} />
         </span>
       </span>
+      {flatWanted && (
+        <canvas
+          ref={flatCanvas}
+          className={styles.postitFlat}
+          style={{
+            left: `calc(var(--note) * ${flat.x})`,
+            top: `calc(var(--note) * ${flat.y})`,
+            width: `calc(var(--note) * ${flat.w})`,
+            height: `calc(var(--note) * ${flat.h})`,
+            visibility: flatOn ? "visible" : "hidden",
+          }}
+        />
+      )}
     </a>
   );
 }

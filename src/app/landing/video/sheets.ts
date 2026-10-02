@@ -146,11 +146,3 @@ export function sheetShows(id: SheetId, frame: number): Array<[number, number]> 
   const edge = (Y: number) => 2 * a + s * Y;
   return [[edge(y0), y0], [x0 + w, y0], [x0 + w, y0 + h], [edge(y0 + h), y0 + h]];
 }
-
-/** The same as the CSS clip-path of the sheet's picture, in its own box. */
-export function sheetClip(id: SheetId, frame: number): string {
-  const shows = sheetShows(id, frame);
-  if (!shows) return "none";
-  const [x0, y0, w, h] = SHEETS[id].box;
-  return `polygon(${shows.map(([X, Y]) => `${(((X - x0) / w) * 100).toFixed(2)}% ${(((Y - y0) / h) * 100).toFixed(2)}%`).join(", ")})`;
-}

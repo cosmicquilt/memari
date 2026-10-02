@@ -17,7 +17,8 @@ import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
-import { BOOK_ON_SHEETS, filmFrame, sheetClip, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
+import { BOOK_ON_SHEETS, filmFrame, sheetShows, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
+import { loadPicture, paintPicture } from "./video/canvasPicture";
 import EXTEND from "./video/heroExtend.json";
 import styles from "./landing.module.css";
 
@@ -35,12 +36,14 @@ export function VideoHero() {
   const hero = useRef<HTMLElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
-  const sheets = useRef<Array<HTMLImageElement | null>>([]);
+  const sheets = useRef<Array<HTMLCanvasElement | null>>([]);
+  const sides = useRef<Array<HTMLCanvasElement | null>>([]);
+  const lastFrame = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState(false);
   const [still, setStill] = useState(false);
   /** The clip has reached the frame the drawing is laid on. */
   const [resting, setResting] = useState(false);
-  /** The clip has ended, and its last frame as a picture has loaded. */
+  /** The clip has ended, and its last frame has been drawn in its place. */
   const [ended, setEnded] = useState(false);
   const [lastReady, setLastReady] = useState(false);
   const frozen = still || (ended && lastReady);
@@ -58,6 +61,39 @@ export function VideoHero() {
     vv.addEventListener("resize", update);
     return () => vv.removeEventListener("resize", update);
   }, []);
+
+  // The desk beyond the film's sides, each side drawn into its canvas.
+  useEffect(() => {
+    let disposed = false;
+    (["left", "right"] as const).forEach((side, i) => {
+      void loadPicture(`/landing/hero-extend-${side}.webp`).then((pic) => {
+        const c = sides.current[i];
+        if (!disposed && c) paintPicture(c, pic);
+      });
+    });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  // The resting frame, once wanted: the 4K one where the 4K film plays, its
+  // edges faded as the film's are (hero-video-mask.png) - drawn in rather
+  // than masked on the page, so a zoom has nothing to draw again.
+  const wantLast = still || ended;
+  useEffect(() => {
+    if (!wantLast) return;
+    let disposed = false;
+    const src = window.matchMedia(HERO_VIDEO.media4k).matches ? HERO_VIDEO.last4k : HERO_VIDEO.last;
+    void Promise.all([loadPicture(src), loadPicture("/landing/hero-video-mask.png")]).then(([pic, mask]) => {
+      const c = lastFrame.current;
+      if (disposed || !c) return;
+      paintPicture(c, pic, { mask });
+      setLastReady(true);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [wantLast]);
 
   useEffect(() => {
     const v = video.current;
@@ -92,16 +128,30 @@ export function VideoHero() {
     v.addEventListener("ended", onEnded);
 
     // The loose sheets' drawings go under the book as it opens over them:
-    // each is clipped to where the book is in the frame on screen.
+    // each is drawn clipped to where the book is in the frame on screen.
     let sheetFrame = 0;
+    const sheetPics: Array<HTMLImageElement | undefined> = [];
+    const drawSheets = () =>
+      SHEET_IDS.forEach((id, i) => {
+        const c = sheets.current[i];
+        const pic = sheetPics[i];
+        if (!c || !pic) return;
+        const [x0, y0, w, h] = SHEETS[id].box;
+        const shows = sheetShows(id, sheetFrame);
+        paintPicture(c, pic, { clip: shows?.map(([X, Y]) => [((X - x0) / w) * pic.naturalWidth, ((Y - y0) / h) * pic.naturalHeight]) });
+      });
     const clipSheets = (frame: number) => {
       if (frame === sheetFrame) return;
       sheetFrame = frame;
-      SHEET_IDS.forEach((id, i) => {
-        const img = sheets.current[i];
-        if (img) img.style.clipPath = sheetClip(id, frame);
-      });
+      drawSheets();
     };
+    SHEET_IDS.forEach((id, i) => {
+      void loadPicture(sheetPath(id)).then((pic) => {
+        if (disposed) return;
+        sheetPics[i] = pic;
+        drawSheets();
+      });
+    });
     if (reduce) clipSheets(BOOK_ON_SHEETS.right.length - 1);
 
     let visible = true;
@@ -208,16 +258,15 @@ export function VideoHero() {
       >
         {/* The desk beyond the film's sides - see .videoExtend. */}
         <div className={styles.videoExtend}>
-          {(["left", "right"] as const).map((side) => {
+          {(["left", "right"] as const).map((side, i) => {
             const [x, w] = EXTEND[side];
             return (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <canvas
                 key={side}
+                ref={(el) => {
+                  sides.current[i] = el;
+                }}
                 className={styles.videoExtendSide}
-                src={`/landing/hero-extend-${side}.webp`}
-                alt=""
-                decoding="async"
                 style={{ left: `${(x / EXTEND.width) * 100}%`, width: `${(w / EXTEND.width) * 100}%` }}
               />
             );
@@ -238,28 +287,12 @@ export function VideoHero() {
           <source src={HERO_VIDEO.src4k} type="video/mp4" media={HERO_VIDEO.media4k} />
           <source src={HERO_VIDEO.src} type="video/mp4" />
         </video>
-        {(still || ended) && (
-          // The resting frame as a picture. For reduced motion the page is
-          // drawn on it without the clip ever playing; otherwise it takes the
-          // ended clip's place once loaded, so nothing rests on the video: a
-          // window in the background can lose a video's picture, and the app
-          // switcher's preview showed no hero (Andrew, 2026-10-02).
-          <picture>
-            <source srcSet={HERO_VIDEO.last4k} media={HERO_VIDEO.media4k} type="image/webp" />
-            <img
-              className={styles.videoFrame}
-              src={HERO_VIDEO.last}
-              alt=""
-              style={{ visibility: frozen ? "visible" : "hidden" }}
-              onLoad={(e) => {
-                void e.currentTarget
-                  .decode()
-                  .catch(() => {})
-                  .then(() => setLastReady(true));
-              }}
-            />
-          </picture>
-        )}
+        {/* The resting frame. For reduced motion the page is drawn on it
+            without the clip ever playing; otherwise it takes the ended clip's
+            place once drawn, so nothing rests on the video: a window in the
+            background can lose a video's picture, and the app switcher's
+            preview showed no hero (Andrew, 2026-10-02). */}
+        <canvas ref={lastFrame} className={styles.videoStill} style={{ visibility: frozen ? "visible" : "hidden" }} />
         <canvas
           ref={overlay}
           className={styles.videoDrawing}
@@ -273,23 +306,17 @@ export function VideoHero() {
         {SHEET_IDS.map((id, i) => {
           const [x, y, w, h] = SHEETS[id].box;
           return (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <canvas
               key={id}
               ref={(el) => {
                 sheets.current[i] = el;
               }}
-              src={sheetPath(id)}
-              alt=""
-              fetchPriority="high"
               className={styles.videoSheet}
               style={{
                 left: `${(x / HERO_VIDEO.width) * 100}%`,
                 top: `${(y / HERO_VIDEO.height) * 100}%`,
                 width: `${(w / HERO_VIDEO.width) * 100}%`,
                 height: `${(h / HERO_VIDEO.height) * 100}%`,
-                // The first frame's; the film's own frames take over as it plays.
-                clipPath: sheetClip(id, 0),
               }}
             />
           );

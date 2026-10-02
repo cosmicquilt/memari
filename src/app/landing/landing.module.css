@@ -501,12 +501,9 @@
   pointer-events: none;
 }
 
-/* Its two sides (hero-extend-left/right.webp, placed by heroExtend.json).
-   Each its own layer, as the film's resting frame and the sheets' drawings
-   are: a pinch zoom then only scales them on the GPU, where as part of the
-   page they were decoded and drawn again at each step of the zoom - slow
-   enough that the sides showed white and the sheets' drawings came in
-   pieces (2026-10-02). */
+/* Its two sides (hero-extend-left/right.webp, placed by heroExtend.json),
+   drawn into canvases - as the resting frame and the sheets' drawings are -
+   so a pinch zoom only scales them (video/canvasPicture.ts). */
 .videoExtendSide {
   position: absolute;
   top: 0;
@@ -514,10 +511,13 @@
   display: block;
 }
 
-.videoExtendSide,
-.videoFrame,
-.videoSheet {
-  will-change: transform;
+/* The film's resting frame, its edges already faded in (VideoHero). */
+.videoStill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .videoFrame {
@@ -1083,7 +1083,10 @@
      edge, and a tilted line meets a level edge at one point (measured
      -2.5 to +3 px across the note at 2.5 degrees). */
   transform: translate(-50%, calc(var(--note) * (-1 + 0.24 + 0.08)));
-  perspective: 520px;
+  /* 520px at the full 168px note, and in proportion at any other size, so
+     it curls alike at every size - and its flat pictures for zooming
+     (.postitFlat), drawn from it at 168px, match it at every size. */
+  perspective: calc(var(--note) * 3.095);
   transform-style: preserve-3d;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1226,6 +1229,20 @@
   .postit {
     --note: 124px;
   }
+}
+
+/* Pinched in: the post-it's flat picture (PostIt.tsx, a canvas) in place
+   of its 3D layers - hidden by visibility, so they are not drawn at all. */
+.postitFlat {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.postitZoomed .postitShadow,
+.postitZoomed .postitStuck,
+.postitZoomed .postitFree {
+  visibility: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
