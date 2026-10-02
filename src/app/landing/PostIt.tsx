@@ -48,6 +48,9 @@ const LIFT = 22;
  *  GAP above the fold, as it lies on the tilted part. */
 const FREE_H = (1 - STUCK) * 100;
 const LINE_Y = FREE_H - (GAP * 100) / Math.cos((LIFT * Math.PI) / 180);
+/** How much of the lifted part stays flat, from the fold: through the
+ *  otter's head (.postitSeg1, 0.36 of the note). */
+const FLAT = 36;
 
 export function PostIt() {
   const [over, setOver] = useState(false);
@@ -84,11 +87,19 @@ export function PostIt() {
       <span className={styles.postitShadow} />
       <span className={styles.postitStuck} />
       <span className={styles.postitFree}>
-        <svg className={styles.postitDrawing} viewBox={`0 0 100 ${FREE_H}`} aria-hidden="true">
-          {(Object.keys(otters) as Otter[]).map((o) => (
-            <OtterDrawing key={o} otter={o} shown={o === shown} />
-          ))}
-        </svg>
+        {/* Flat from the fold through the otter; the bands above it curl
+            (see .postitSeg). The drawing is all in the first band: its
+            slice of the lifted part, FREE_H - FLAT down to FREE_H. */}
+        <span className={`${styles.postitSeg} ${styles.postitSeg1}`}>
+          <svg className={styles.postitDrawing} viewBox={`0 ${FREE_H - FLAT} 100 ${FLAT}`} aria-hidden="true">
+            {(Object.keys(otters) as Otter[]).map((o) => (
+              <OtterDrawing key={o} otter={o} shown={o === shown} />
+            ))}
+          </svg>
+          <span className={`${styles.postitSeg} ${styles.postitSeg2}`}>
+            <span className={`${styles.postitSeg} ${styles.postitSeg3}`} />
+          </span>
+        </span>
       </span>
     </a>
   );
