@@ -1,6 +1,8 @@
 {
   "peekDesktop": 0,
   "peekMobile": 12,
+  "bandDesktop": 0,
+  "bandMobile": 0,
   "gap": 48,
   "clearance": 8,
   "size": 1.25,

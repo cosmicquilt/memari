@@ -14,6 +14,8 @@ const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const RANGES: Record<string, [number, number]> = {
   peekDesktop: [0, 40],
   peekMobile: [0, 40],
+  bandDesktop: [0, 150],
+  bandMobile: [0, 150],
   gap: [0, 48],
   clearance: [0, 96],
   size: [0.4, 1.8],

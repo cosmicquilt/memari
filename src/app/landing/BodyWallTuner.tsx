@@ -12,6 +12,8 @@ import { BODY_WALL_DEFAULTS, bodyWallSettings, setBodyWallSettings, type BodyWal
 const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; max: number; step: number; unit: string }> = [
   { key: "peekDesktop", label: "Cream on load, desktop", min: 0, max: 40, step: 1, unit: "% of screen" },
   { key: "peekMobile", label: "Cream on load, phone", min: 0, max: 40, step: 1, unit: "% of screen" },
+  { key: "bandDesktop", label: "No doodles below hero, desktop", min: 0, max: 150, step: 1, unit: "% of screen" },
+  { key: "bandMobile", label: "No doodles below hero, phone", min: 0, max: 150, step: 1, unit: "% of screen" },
   { key: "gap", label: "Gap between doodles", min: 0, max: 48, step: 1, unit: "px" },
   { key: "clearance", label: "Clearance round content", min: 0, max: 96, step: 1, unit: "px" },
   { key: "size", label: "Doodle size", min: 0.4, max: 1.8, step: 0.05, unit: "x" },

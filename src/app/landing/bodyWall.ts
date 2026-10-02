@@ -20,14 +20,17 @@ import saved from "./bodyWallSettings.json";
 
 export type BodyWallSettings = {
   /** How much of the section below the hero shows when the page opens, % of
-   *  the screen's height: the hero is that much shorter, and that much of
-   *  the section is plain cream - the doodles begin below it (Andrew,
-   *  2026-10-01: "i cant see the section below hero when i load in thats
-   *  what the percentage slider was supposed to be"; "thats what i meant by
-   *  cream band was the section below the hero being visible from the top
-   *  scroll position"). Desktop and phone. */
+   *  the screen's height: the hero is that much shorter (Andrew, 2026-10-01:
+   *  "i cant see the section below hero when i load in thats what the
+   *  percentage slider was supposed to be"). Desktop and phone. */
   peekDesktop: number;
   peekMobile: number;
+  /** Plain cream below the hero before the doodles begin, % of the screen's
+   *  height - 0, the doodles fill the peek ("do want the doodle wall
+   *  doodles in that cream portion peeking through at top scroll so add
+   *  that back as a slider"). Desktop and phone. */
+  bandDesktop: number;
+  bandMobile: number;
   /** Paper kept between drawings, CSS px. */
   gap: number;
   /** Paper kept round the page's content, CSS px. */
