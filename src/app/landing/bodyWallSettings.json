@@ -1,13 +1,13 @@
 {
-  "peekDesktop": 0,
+  "peekDesktop": 12,
   "peekMobile": 12,
-  "bandDesktop": 0,
+  "bandDesktop": 1,
   "bandMobile": 0,
-  "gap": 48,
-  "clearance": 8,
-  "size": 1.25,
-  "density": 0.5,
-  "ink": 1,
+  "gap": 19,
+  "clearance": 18,
+  "size": 0.65,
+  "density": 0.15,
+  "ink": 0.96,
   "seed": 20261001,
   "newEachLoad": false
 }

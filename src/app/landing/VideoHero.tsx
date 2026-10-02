@@ -173,6 +173,8 @@ export function VideoHero() {
           last. A background tab may drop the video's picture, and a window
           or tab preview then shows this instead of an empty page. */}
       <div className={styles.videoStage} style={{ backgroundImage: `url(${resting ? HERO_VIDEO.last : HERO_VIDEO.first})` }} aria-hidden="true">
+        {/* The desk beyond the film's sides - see .videoExtend. */}
+        <div className={styles.videoExtend} />
         <video
           ref={video}
           className={styles.videoFrame}

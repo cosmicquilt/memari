@@ -465,9 +465,34 @@
   background: #24160d center / cover no-repeat;
   left: 50%;
   top: 50%;
-  width: max(100%, calc(var(--hero-h, max(100svh, 640px)) * 16 / 9));
+  /* The film's height fits the hero's; its sides run on in the extended
+     desk behind it (.videoExtend), out to 1.5 times its width - so a
+     shorter hero ("Cream on load") crops nothing. Only a screen wider than
+     that (2.67:1) scales the film up past the hero's height. */
+  width: max(calc(100% / 1.5), calc(var(--hero-h, max(100svh, 640px)) * 16 / 9));
   aspect-ratio: 16 / 9;
   transform: translate(-50%, -50%);
+}
+
+/* The desk beyond the film's sides (Andrew, 2026-10-01): Flow's extension of
+   its resting frame, softened to its sharpness (handoff/veo/extend/
+   build_extend.py). Transparent where the film always covers it, so the
+   stage's first frame shows there while the film loads. The film's own
+   edges fade into it (hero-video-mask.png): thinly along its sides, and
+   wider where Flow's additions cross its edge, so they show whole. */
+.videoExtend {
+  position: absolute;
+  top: 0;
+  left: -25%;
+  width: 150%;
+  height: 100%;
+  background: url(/landing/hero-extend.webp) center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+.videoFrame {
+  -webkit-mask: url(/landing/hero-video-mask.png) center / 100% 100% no-repeat;
+  mask: url(/landing/hero-video-mask.png) center / 100% 100% no-repeat;
 }
 
 .videoFrame,
@@ -529,6 +554,15 @@
    SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1933 x 1248 (50.34%,
    57.78%). */
 @media (max-aspect-ratio: 1/1) {
+  /* Upright: the film is narrower than the screen's height allows anyway,
+     its sides cropped; no extended desk, and the film's edges unmasked. */
+  .videoExtend {
+    display: none;
+  }
+  .videoFrame {
+    -webkit-mask: none;
+    mask: none;
+  }
   .videoStage {
     width: calc(100vw * 3840 / 1840);
     top: 57%;
