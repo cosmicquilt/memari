@@ -24,12 +24,19 @@
 // where that line sits recorded (otters.json) - so the line it was drawn
 // with is the one put on the hero's edge.
 
+import { useEffect, useRef, useState } from "react";
 import otters from "../../../public/landing/otter/otters.json";
 import styles from "./landing.module.css";
 
-/** Which otter: 1 glances up and away, 2 lifts a paw, 3 looks straight at
- *  you (chosen 2026-10-01 - the classic Kilroy, both paws over the wall). */
-const OTTER = "otter-3" as keyof typeof otters;
+type Otter = keyof typeof otters;
+/** Which otter when (Andrew, 2026-10-01): at rest the one glancing up and
+ *  away (otter-1, "A_single_drawing..."); with the pointer on the note, the
+ *  one looking straight at you (otter-3); pressed, the one lifting a paw
+ *  (otter-2), then back to otter-3; the pointer gone, otter-1 again. All
+ *  three are drawn, only one shown, so a change never waits on a download. */
+const AT: Record<"rest" | "hover" | "press", Otter> = { rest: "otter-1", hover: "otter-3", press: "otter-2" };
+/** How long the paw stays up after a press, ms. */
+const PRESS_MS = 420;
 
 /** Shares of the note's side: the sticky strip, and how far below the hero's
  *  edge the fold is. Mirrored in the stylesheet (.postit). */
@@ -43,12 +50,30 @@ const FREE_H = (1 - STUCK) * 100;
 const LINE_Y = FREE_H - (GAP * 100) / Math.cos((LIFT * Math.PI) / 180);
 
 export function PostIt() {
+  const [over, setOver] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const shown: Otter = pressed ? AT.press : over ? AT.hover : AT.rest;
+  const press = () => {
+    setPressed(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setPressed(false), PRESS_MS);
+  };
+
   return (
     <a
       href="#how"
       className={styles.postit}
       aria-label="Scroll down to how Memari works"
+      onPointerEnter={(e) => e.pointerType === "mouse" && setOver(true)}
+      onPointerLeave={() => setOver(false)}
+      onFocus={() => setOver(true)}
+      onBlur={() => setOver(false)}
+      onPointerDown={press}
       onClick={(e) => {
+        // A key press (Enter) has no pointer down: the paw goes up here.
+        if (e.detail === 0) press();
         const target = document.getElementById("how");
         if (!target) return;
         e.preventDefault();
@@ -60,16 +85,27 @@ export function PostIt() {
       <span className={styles.postitStuck} />
       <span className={styles.postitFree}>
         <svg className={styles.postitDrawing} viewBox={`0 0 100 ${FREE_H}`} aria-hidden="true">
-          <OtterDrawing />
+          {(Object.keys(otters) as Otter[]).map((o) => (
+            <OtterDrawing key={o} otter={o} shown={o === shown} />
+          ))}
         </svg>
       </span>
     </a>
   );
 }
 
-/** The otter, as wide as the note, its line on LINE_Y. */
-function OtterDrawing() {
-  const { width, height, lineY } = otters[OTTER];
+/** An otter, as wide as the note, its own line on LINE_Y. */
+function OtterDrawing({ otter, shown }: { otter: Otter; shown: boolean }) {
+  const { width, height, lineY } = otters[otter];
   const h = (100 * height) / width;
-  return <image href={`/landing/otter/${OTTER}.webp`} x={0} y={LINE_Y - (lineY / height) * h} width={100} height={h} />;
+  return (
+    <image
+      href={`/landing/otter/${otter}.webp`}
+      x={0}
+      y={LINE_Y - (lineY / height) * h}
+      width={100}
+      height={h}
+      opacity={shown ? 1 : 0}
+    />
+  );
 }
