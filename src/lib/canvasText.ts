@@ -147,13 +147,18 @@ export function ghostValues(
       // its place (a week's initials) or nothing at all; either way the
       // ghost adds one item, where a first item would go.
       const filled = list.map((item) => item.trim() || field.canvas.placeholder);
-      if (field.canvas.add && next) filled.push(field.canvas.placeholder);
+      if (canAdd(field.canvas, values, defaults) && next) filled.push(field.canvas.placeholder);
       out[field.key] = filled;
     } else if (!storedText(values, defaults, field.key).trim()) {
       out[field.key] = field.canvas.placeholder;
     }
   }
   return out;
+}
+
+/** Whether a list takes another item - see CanvasList's `add`. */
+function canAdd(canvas: CanvasList, values: Record<string, unknown>, defaults?: Record<string, unknown>): boolean {
+  return typeof canvas.add === "function" ? canvas.add({ ...defaults, ...values }) : canvas.add;
 }
 
 export type CanvasPlaces = {
@@ -288,7 +293,7 @@ export function canvasSlots(options: {
           placed++;
         }
       }
-      if (field.canvas.add) {
+      if (canAdd(field.canvas, values, defaults)) {
         const slot = place(field, Math.max(from, list.length), "", true);
         if (slot) {
           slots.push(slot);

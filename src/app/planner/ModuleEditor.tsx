@@ -25,7 +25,7 @@
 
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults, withCurrentSettings } from "@/lib/moduleRegistry";
+import { moduleDefinition, cleanPropsForSave, moduleSchemaDefaults, withCurrentSettings, type RuleValue } from "@/lib/moduleRegistry";
 import { renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import type { PageGrid } from "@/lib/grid";
 import { cellHeightPx, gridCellToPixels, pixelHeightToRowSpan } from "@/lib/grid";
@@ -39,6 +39,7 @@ import { flatten } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
+import { getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import { HoursFields, type HoursDraft } from "./HoursFields";
 import { ColumnDividers } from "./ColumnDividers";
 import { saveModuleToSaved, updateHourlySettings, updateJournalModuleSettings, updateModuleConfig } from "./actions";
@@ -276,8 +277,9 @@ export function ModuleEditor({
   );
 
   // Redrawn from the DRAFT, so the preview is what saving would produce.
+  // `rows` draws it at another height - a picture option's, see SwatchWindow.
   const draw = useCallback(
-    (propValues: Record<string, unknown>) =>
+    (propValues: Record<string, unknown>, rows?: number) =>
       renderOnPage(
         {
           id: editing.instanceId,
@@ -285,7 +287,7 @@ export function ModuleEditor({
           columnStart: editing.columnStart,
           rowStart: editing.rowStart,
           columnSpan: editing.columnSpan,
-          rowSpan,
+          rowSpan: rows ?? rowSpan,
           propValues,
           moduleType: { slug: editing.slug },
         },
@@ -303,7 +305,7 @@ export function ModuleEditor({
   // it is where the rules meet the border, which is most of what tells one
   // style from another.
   const drawRule = useCallback(
-    (key: string, value: string | number): RuleSample => {
+    (key: string, value: RuleValue): RuleSample => {
       const cell = cellHeightPx(pageGrid);
       // The part of the module the option changes - see SwatchWindow. The
       // bottom-left corner unless the field says otherwise.
@@ -317,13 +319,15 @@ export function ModuleEditor({
           : spec?.x === "right"
             ? box.x + box.width - width + 4
             : box.x - 4;
-      const y = spec?.y === "top" ? box.y - 4 : box.y + box.height - height + 4;
+      const inset = cell * (spec?.inRows ?? 0);
+      const y = spec?.y === "top" ? box.y - 4 + inset : box.y + box.height - height + 4 - inset;
+      const props = { ...draft, [key]: value };
       return {
-        elements: draw({ ...draft, [key]: value }),
+        elements: draw(props, spec?.atFloor ? getMinRowSpanForSlug(editing.slug, pageGrid, editing.columnSpan, props) : undefined),
         window: { x, y, width, height },
       };
     },
-    [draw, draft, pageGrid, box, definition]
+    [draw, draft, pageGrid, box, definition, editing.slug, editing.columnSpan]
   );
   const defaults = useMemo(() => moduleSchemaDefaults(editing.slug), [editing.slug]);
 
@@ -900,7 +904,13 @@ export function ModuleEditor({
             />
           ) : (
             <ModuleFieldsForm
-              fields={(definition?.fields ?? []).filter((field) => !("key" in field) || !onCanvasKeys.has(field.key))}
+              // A field typed on the preview leaves the panel - only that
+              // field: the day chart's Scale shares `levels` with the
+              // level labels typed on the page, and stays.
+              fields={(definition?.fields ?? []).filter(
+                (field) => !("canvas" in field && field.canvas && onCanvasKeys.has(field.key))
+              )}
+              pageLevel={renderContext?.level ?? renderContext?.occurrence?.level ?? null}
               values={draft}
               defaults={defaults}
               drawRule={drawRule}

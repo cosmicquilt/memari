@@ -33,7 +33,9 @@ import {
   WEEKDAY_NAMES,
   dateRangeLabel,
   columnDates,
+  dayNamed,
   type OccurrenceContext,
+  type PageLevel,
 } from "@/lib/pageLevels";
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
@@ -52,7 +54,11 @@ import {
 } from "@/lib/modules/habitTracker";
 import { renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
 import {
+  DAY_CHART_ALONG_BY_LEVEL,
+  DAY_CHART_SCALES,
   DEFAULT_DAY_CHART_LEVELS,
+  dayChartAlong,
+  dayChartLevelsAreWords,
   getDayChartMinHeightPx,
   renderDayChart,
   type DayChartConfig,
@@ -157,8 +163,10 @@ export type CanvasText = {
 export type CanvasList = CanvasText & {
   /** Can an item be added - Return after an item, or typed into the place
    *  after the last where there is one - or is the count the drawing's own
-   *  (the icon strip's strips follow its height)? */
-  add: boolean;
+   *  (the icon strip's strips follow its height)? A function where it
+   *  depends on the list: a day chart's levels take another typed level
+   *  when they are words, not when they are faces or bolts. */
+  add: boolean | ((values: Record<string, unknown>) => boolean);
   /** Items from this index; the ones before are another field's (the icon
    *  strip's first strip is its heading). */
   from?: number;
@@ -192,8 +200,17 @@ export type ModuleField =
       zeroLabel?: string;
     }
   // A closed set, where free text would just be a way to misspell one of
-  // the options.
-  | { kind: "select"; key: string; label: string; options: Array<{ value: string; label: string }> }
+  // the options. An option with `levels` is offered only on those levels of
+  // page - the day chart's "Along the bottom" (2026-10-02). `shows` is what
+  // the setting reads as where the key is unset and an older one stands in
+  // for it, so the menu shows what is drawn.
+  | {
+      kind: "select";
+      key: string;
+      label: string;
+      options: Array<{ value: string; label: string; levels?: readonly PageLevel[] }>;
+      shows?: (values: Record<string, unknown>) => string;
+    }
   // A closed set of SHAPES. The same values a select would carry, but the
   // control draws each one instead of naming it: "Droplets" is a word for a
   // thing you would recognise instantly and cannot picture from the word.
@@ -223,8 +240,10 @@ export type ModuleField =
   // show a visual zoomed in preview of the line/rule for its toggle". A kind
   // of its own for the reason `icon` is one.
   // Values are stored as given - a number for a count like Columns, which a
-  // string "2" would not equal.
-  | { kind: "rule"; key: string; label: string; options: Array<{ value: string | number; label: string }>; window?: SwatchWindow }
+  // string "2" would not equal - or a whole LIST, where one picture sets a
+  // list outright: the day chart's scales (faces, bolts, the moon), which
+  // are its levels. A list is chosen when it equals the stored one.
+  | { kind: "rule"; key: string; label: string; options: Array<{ value: RuleValue; label: string }>; window?: SwatchWindow }
   // Multi-line text kept as ONE string, newlines and all - a passage,
   // where `lines` would turn a prayer into an array of its lines and lose
   // the fact that it is a single piece of writing. The two look identical
@@ -243,6 +262,13 @@ export type ModuleField =
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
 
+/** The levels of page that offer `along` - see DAY_CHART_ALONG_BY_LEVEL. */
+function levelsOffering(along: string): PageLevel[] {
+  return (Object.keys(DAY_CHART_ALONG_BY_LEVEL) as PageLevel[]).filter((level) =>
+    (DAY_CHART_ALONG_BY_LEVEL[level] as readonly string[]).includes(along)
+  );
+}
+
 /**
  * Which part of the module a picture option shows, in lattice cells: the
  * corner or edge it is anchored to, and how much of it. Undefined is the
@@ -256,7 +282,17 @@ export type SwatchWindow = {
   y: "top" | "bottom";
   columns: number;
   rows: number;
+  /** Cells in from the top or bottom edge - past the heading, for a choice
+   *  about what sits under it. */
+  inRows?: number;
+  /** Drawn at the module's least height rather than its own - for a choice
+   *  shown by what the module spreads out when it is taller: a day chart's
+   *  scale, whose levels draw a cell apart only at its floor. */
+  atFloor?: boolean;
 };
+
+/** What a picture option stores. */
+export type RuleValue = string | number | readonly string[];
 
 /**
  * The palette's sections, in the order they are shown.
@@ -1838,6 +1874,9 @@ const PRIMITIVES = {
             "default": DEFAULT_DAY_CHART_LEVELS,
           },
           "look": { "type": "string", "enum": ["dots", "ruled", "bars", "circles"], "default": "dots" },
+          // No default: unset follows `span`, which every chart saved before
+          // this has - see dayChartAlong.
+          "along": { "type": "string", "enum": ["weekdays", "dates", "days", "weeks"] },
         },
       },
       "defaultWidth": 900,
@@ -1854,17 +1893,40 @@ const PRIMITIVES = {
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
+      // THE SCALE, as pictures - the chart's own top levels, drawn with each
+      // one (2026-10-02). It sets the levels; the list below is for words.
+      {
+        kind: "rule",
+        key: "levels",
+        label: "Scale",
+        options: DAY_CHART_SCALES.map(({ value, label }) => ({ value, label })),
+        window: { x: "left", y: "top", columns: 2.7, rows: 3, inRows: 1, atFloor: true },
+      },
+      // By the page's level - see DAY_CHART_ALONG_BY_LEVEL. Replaces `span`,
+      // which a chart that has never been set here still draws by.
       {
         kind: "select",
-        key: "span",
+        key: "along",
         label: "Along the bottom",
         options: [
-          { value: "week", label: "The days of the week" },
-          { value: "month", label: "The days of the month" },
+          { value: "weekdays", label: "Days of the week", levels: levelsOffering("weekdays") },
+          { value: "dates", label: "The week's dates", levels: levelsOffering("dates") },
+          { value: "days", label: "Days of the month", levels: levelsOffering("days") },
+          { value: "weeks", label: "Weeks of the month", levels: levelsOffering("weeks") },
         ],
+        shows: (values) => dayChartAlong(values as DayChartConfig),
       },
       // A blank level is one left to write in, so it keeps its place.
-      { kind: "lines", key: "levels", label: "Levels, highest first (one per line)", rows: 5, positional: true, canvas: { element: "-l#-label", placeholder: "Level", add: true } },
+      {
+        kind: "lines",
+        key: "levels",
+        label: "Levels, highest first (one per line)",
+        rows: 5,
+        positional: true,
+        // A typed level after the faces, bolts or moons would be a word in a
+        // scale of pictures: the scale is chosen above instead.
+        canvas: { element: "-l#-label", placeholder: "Level", add: (values) => dayChartLevelsAreWords(values as DayChartConfig) },
+      },
       {
         kind: "rule",
         key: "look",
@@ -1883,13 +1945,33 @@ const PRIMITIVES = {
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderDayChart(geometry, propValues as DayChartConfig, idPrefix, fontFamily, lattice),
     weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
-    // A month's own number of days when the page is dated; 31 on a template
-    // or an undated planner, to be crossed off.
-    dated: (props, at) => ({
-      ...props,
-      monthDays: new Date(Date.UTC(at.start.getUTCFullYear(), at.start.getUTCMonth() + 1, 0)).getUTCDate(),
-    }),
-    undated: (props) => ({ ...props, monthDays: null }),
+    // What a dated page puts along the bottom: its month's own number of
+    // days (31 on a template or an undated planner, to be crossed off), the
+    // weeks the month runs across (5 there), and its week's dates (blank
+    // there, to be written in). A week page's dates are its hours' - the same
+    // dayNamed - and a day page charts the week around the day.
+    dated: (props, at) => {
+      const year = at.start.getUTCFullYear();
+      const month = at.start.getUTCMonth();
+      const monthDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      const weekStartDay = Number(props.weekStartDay ?? 0);
+      const lead = (new Date(Date.UTC(year, month, 1)).getUTCDay() - weekStartDay + 7) % 7;
+      const weeksInMonth = Math.ceil((lead + monthDays) / 7);
+      const DAY = 86_400_000;
+      const weekFirst =
+        at.level === "DAILY" ? new Date(at.start.getTime() - ((at.start.getUTCDay() - weekStartDay + 7) % 7) * DAY) : at.start;
+      const weekDates =
+        at.level === "WEEKLY" || at.level === "DAILY"
+          ? Array.from({ length: 7 }, (_, i) => dayNamed(weekFirst, WEEKDAY_NAMES[(weekStartDay + i) % 7])?.getUTCDate() ?? null)
+          : null;
+      return {
+        ...props,
+        monthDays,
+        weeksInMonth,
+        weekDates: weekDates && weekDates.every((d) => d !== null) ? weekDates : null,
+      };
+    },
+    undated: (props) => ({ ...props, monthDays: null, weeksInMonth: null, weekDates: null }),
     minContentHeightPx: (pageGrid, _columnSpan, propValues) =>
       getDayChartMinHeightPx(propValues as DayChartConfig, pageGrid.boxInsetPx),
     contentIsLive: ALWAYS,

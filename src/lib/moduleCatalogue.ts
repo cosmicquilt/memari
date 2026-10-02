@@ -83,6 +83,7 @@ const table = (columns: string[], weights: number[], extra: Record<string, unkno
  */
 import { estimateTextWidthPx } from "@/lib/modules/textFit";
 import { promptLinesFor } from "@/lib/modules/promptedLines";
+import { BEDTIME_LEVELS, ENERGY_BOLTS } from "@/lib/modules/scaleSymbols";
 
 const CELL_PADDING_PX = (4 / 72) * 300;
 const HEAD_FONT_PX = (7 / 72) * 300;
@@ -377,18 +378,27 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Health & body",
     cadence: "week",
     paletteName: "Energy",
-    props: { heading: "Energy", span: "week", levels: ["5", "4", "3", "2", "1"] },
+    // Lightning bolts (2026-10-02, Andrew's pick): three, two, one, half of
+    // one, an outline. See scaleSymbols.ts.
+    props: { heading: "Energy", span: "week", levels: [...ENERGY_BOLTS] },
     columnSpan: 12,
     rowSpan: 7,
   },
   {
     slug: "sleep-chart",
     primitive: "day-chart",
-    name: "Sleep Chart",
+    name: "Bedtime Chart",
     category: "Health & body",
     cadence: "week",
-    paletteName: "Sleep chart",
-    props: { heading: "Sleep", span: "week", levels: ["10h", "9h", "8h", "7h", "6h", "5h"] },
+    paletteName: "Bedtime",
+    // Bedtime, under the moon (2026-10-02): "I like b's symbols then maybe
+    // we can have even smaller fine print text with the time near the lower
+    // right corner ... it should say bedtime as title and hours should start
+    // 9PM to past midnight". A full moon for the earliest, waning to a thin
+    // crescent past midnight. The slug stays: it is the stored type's key.
+    // Later is UP ("reverse direction of hours bedtime (up is later)") - each
+    // moon keeps its time, so the moon still fills as the night is shorter.
+    props: { heading: "Bedtime", span: "week", levels: BEDTIME_LEVELS },
     columnSpan: 12,
     rowSpan: 8,
   },

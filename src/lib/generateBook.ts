@@ -177,6 +177,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     const spreadLabels = spreadDayLabels(chosen, weekStartDay);
     for (const [pageIndex, page] of chosen.entries()) {
       const context: PageRenderContext = {
+        level: slot.at.level,
         dated: planner.dated,
         occurrence: slot.at,
         dayLabels: spreadLabels[pageIndex] ?? null,

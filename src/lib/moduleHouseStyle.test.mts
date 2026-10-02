@@ -111,14 +111,31 @@ const WEIGHTED_COLUMNS = new Set([
   ),
   "hourly-grid-core",
   "month-grid-core",
-  // Its one vertical rule, the level axis, is on the lattice wherever its
-  // days are - dayChart.test holds it there at a page, three quarters and
-  // half - and where the days cannot be (a week one day wide, a month), it
-  // sits where the labels end instead, so there is no slack before them and
-  // the days are even to both edges. Andrew, 2026-10-02. Nothing is written
-  // across that rule, as nothing is across a day column.
+  // Its one vertical rule, the level axis, sits exactly where the labels
+  // end, so there is no slack before them and the days are even to both
+  // edges - Andrew, 2026-10-02; dayChart.test holds it there at every width.
+  // Its day columns divide the plot by a day count, as a to-do's do, and
+  // nothing is written across either.
   ...slugsDrawnBy("day-chart"),
 ]);
+
+/**
+ * The ONE kind of horizontal rule that divides a box by a count rather than
+ * by the lattice: the rules between a day chart's rows, in its ruled and
+ * bars looks. A chart taller than its floor fills its height - its levels
+ * spread apart, and once there is a cell for a row between each pair they
+ * jump to that and spread again (Andrew, 2026-10-02: "scale but at a cetain
+ * point jump and add a row of dots inbetween each symbol row and scale
+ * again from there"). So its rows are one share of the plot each, as its
+ * days are, and land on the lattice only at its floor and at each jump -
+ * which dayChart.test holds them to. The border, the heading's rule and
+ * the axis under the plot are held here as everything else is.
+ *
+ * By element id, so only those rules: a module listed whole would let
+ * every other rule it draws off the lattice too.
+ */
+const WEIGHTED_ROW_RULE = /-(l\d+(h\d+)?-rule|d\d+-rule\d+(h\d+)?)$/;
+const WEIGHTED_ROWS = new Set(slugsDrawnBy("day-chart"));
 
 /** Modules whose heading is drawn by something other than the frame, and
  *  is a page title rather than a module heading - a different thing, set
@@ -465,6 +482,7 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
         // where a border's top and bottom would - on the ink box, like every
         // border - so it is held to the border's rule, not a writing rule's.
         .filter((e) => e !== box && !/-border-(top|bottom)$/.test(String(e.id)) && ruleAxisOf(e, PITCH) === "horizontal")
+        .filter((e) => !(WEIGHTED_ROWS.has(slug) && WEIGHTED_ROW_RULE.test(String(e.id))))
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
           const k = Math.round((centre - PAGE.marginPx) / PITCH);

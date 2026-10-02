@@ -159,30 +159,41 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   check(draw({ ...mood, look: "nonsense" }).filter((e) => /-d\d-l\d$/.test(String(e.id))).length === days * n, "an unknown look draws dots");
 }
 
-// --- the lattice ---------------------------------------------------------------
+// --- the label column and the days (2026-10-02) --------------------------------
+// The labels take exactly what they need and the days share the rest to the
+// border, each end half a day from its edge: no slack before the labels, at
+// any width, whatever the scale.
 {
-  // A week across the page is three cells a day, across three-quarters of it
-  // two, across half of it a cell and a half (with its labels a size down) -
-  // every day boundary on a lattice line or exactly between two.
-  const onHalf = (v: number) => onLattice(v) || onLattice(v + CELL / 2);
-  for (const [columns, perDay] of [[24, 3], [18, 2], [12, 1.5]] as const) {
-    const chart = draw({ ...mood, span: "week", look: "bars" }, columns);
-    const centres = ids(chart, /-d\d-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
-    const pitch = centres[1] - centres[0];
-    check(Math.abs(pitch - perDay * CELL) < 1e-6, `a week across ${columns} cells is ${perDay} cell(s) a day (got ${(pitch / CELL).toFixed(3)})`);
-    check(centres.every((x) => onHalf(x - (perDay * CELL) / 2)), `and every day starts on the lattice at ${columns}`);
+  const scales: Array<[string, string[]]> = [
+    ["words", ["Great", "Good", "Okay", "Low", "Awful"]],
+    ["faces", ["😃", "🙂", "😐", "😞", "😢"]],
+    ["bolts", ["⚡⚡⚡", "⚡⚡", "⚡", "⚡½", "⚡○"]],
+    ["bedtimes", ["🌕 9PM", "🌖 10PM", "🌗 11PM", "🌘 12AM", "🌒 1AM", "🌑 2AM"]],
+  ];
+  const pad = (4 * 300) / 72;
+  for (const columns of [24, 18, 12, 6]) {
+    for (const [what, levels] of scales) {
+      const chart = draw({ heading: "Chart", levels, span: "week", look: "dots" }, columns, levels.length + 3);
+      const boxLeft = PAGE.marginPx + PAGE.boxInsetPx;
+      const boxRight = PAGE.marginPx + columns * CELL - PAGE.boxInsetPx;
+      const axis = ids(chart, /-axis-y$/)[0];
+      const axisX = (axis?.x ?? 0) + (axis?.width ?? 0) / 2;
+      const days = ids(chart, /-d\d-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+      check(
+        days.length === 7 && Math.abs(days[0] - axisX - (boxRight - days[6])) < 0.5,
+        `${what} at ${columns}: Sunday as far from the axis as Saturday from the border (${(days[0] - axisX).toFixed(1)}, ${(boxRight - days[6]).toFixed(1)})`
+      );
+      if (what !== "words") {
+        // The symbols' left edge: one padding in from the border, no more.
+        const lefts = ids(chart, /-l\d-(face-head|sym-[a-z]+0?)$/).map((e) => e.x ?? 0);
+        const before = Math.min(...lefts) - boxLeft;
+        check(Math.abs(before - pad) < 1.5, `${what} at ${columns}: nothing but the padding before the symbols (${before.toFixed(1)}px, padding ${pad.toFixed(1)})`);
+      }
+    }
   }
   const half = texts(draw({ ...mood, span: "week" }, 12), /-l\d-label$/);
   check(half.join(",") === "Great,Good,Okay,Low,Awful", `a half-page week keeps its level labels whole (got ${half.join(",")})`);
-  // Where the days ARE on the lattice, so is the axis - it is their left edge.
-  for (const columns of [24, 18, 12]) {
-    const latticed = draw({ ...mood, span: "week", look: "bars" }, columns);
-    const latticeAxis = ids(latticed, /-axis-y$/)[0];
-    check(!!latticeAxis && onHalf((latticeAxis.x ?? 0) + (latticeAxis.width ?? 0) / 2), `the level axis is on the lattice at ${columns}`);
-  }
-  // A month's 31 days are never on it, so the axis is where the labels end
-  // and the days reach the border: the first is as far from the axis as the
-  // last is from the border (2026-10-02).
+  // A month's 31 days as well.
   const chart = draw({ ...mood, span: "month", look: "ruled" }, 24);
   const axis = ids(chart, /-axis-y$/)[0];
   const monthDays = ids(chart, /-d\d+-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
@@ -216,4 +227,78 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   check(dated("2027-02-01T00:00:00Z") === 28 && dated("2028-02-01T00:00:00Z") === 29 && dated("2026-09-01T00:00:00Z") === 30, "a dated page gives its month's own length");
   check((withoutDates("day-chart", { monthDays: 30 }) as { monthDays?: unknown }).monthDays === null, "an undated page has no month length");
   check((withWeekStart("day-chart", {}, 1) as { weekStartDay?: number }).weekStartDay === 1, "the journal's week start reaches it");
+}
+
+// --- what runs along the bottom, dated (2026-10-02) ---------------------------
+{
+  type Dated = { weekDates?: number[] | null; weeksInMonth?: number | null };
+  const on = (level: string, iso: string, weekStartDay = 0) =>
+    withDates("day-chart", { weekStartDay }, { key: null, label: "", start: new Date(iso), level, index: 0, total: 1 } as never) as Dated;
+  // 4 October 2026 is a Sunday.
+  check(on("WEEKLY", "2026-10-04T00:00:00Z").weekDates?.join(",") === "4,5,6,7,8,9,10", `a week page's dates are its own (got ${on("WEEKLY", "2026-10-04T00:00:00Z").weekDates})`);
+  check(on("WEEKLY", "2026-10-05T00:00:00Z", 1).weekDates?.join(",") === "5,6,7,8,9,10,11", `a Monday journal's week runs Monday to Sunday`);
+  check(on("DAILY", "2026-10-07T00:00:00Z").weekDates?.join(",") === "4,5,6,7,8,9,10", `a day page charts the week around the day (got ${on("DAILY", "2026-10-07T00:00:00Z").weekDates})`);
+  check(on("DAILY", "2026-10-31T00:00:00Z").weekDates?.join(",") === "25,26,27,28,29,30,31", "a week ending on the month's last day");
+  check(on("DAILY", "2026-11-01T00:00:00Z", 1).weekDates?.join(",") === "26,27,28,29,30,31,1", "a week running over into the next month");
+  check(on("MONTHLY", "2026-10-01T00:00:00Z").weekDates === null, "a month page has no one week's dates");
+  // October 2026 starts on a Thursday; February 2026 on a Sunday; August on a Saturday.
+  check(on("MONTHLY", "2026-10-01T00:00:00Z").weeksInMonth === 5, "October 2026 runs across five weeks");
+  check(on("MONTHLY", "2026-02-01T00:00:00Z").weeksInMonth === 4, "February 2026, Sunday first, fits four");
+  check(on("MONTHLY", "2026-02-01T00:00:00Z", 1).weeksInMonth === 5, "and five when the week starts on Monday");
+  check(on("MONTHLY", "2026-08-01T00:00:00Z").weeksInMonth === 6, "August 2026 runs across six");
+  const undated = withoutDates("day-chart", { weekDates: [1, 2, 3, 4, 5, 6, 7], weeksInMonth: 6 }) as Dated;
+  check(undated.weekDates === null && undated.weeksInMonth === null, "an undated page has neither");
+  // And the drawing reads them.
+  const dates = texts(draw({ ...mood, along: "dates", weekDates: [28, 29, 30, 31, 1, 2, 3] }), /-d\d-label$/);
+  check(dates.join(",") === "28,29,30,31,1,2,3", `the week's dates along the bottom (got ${dates.join(",")})`);
+  check(texts(draw({ ...mood, along: "dates" }), /-d\d-label$/).length === 0, "a template's dates are left to be written in");
+  const weeks = texts(draw({ ...mood, along: "weeks", weeksInMonth: 6 }, 24), /-d\d-label$/);
+  check(weeks.length === 6 && weeks[5] === "WEEK 6", `six weeks where the month runs across six (got ${weeks.join(",")})`);
+  check(texts(draw({ ...mood, along: "weeks" }, 24), /-d\d-label$/).length === 5, "five on a template");
+}
+
+// --- the fill (2026-10-02) ------------------------------------------------------
+// "scale but at a cetain point jump and add a row of dots inbetween each
+// symbol row and scale again from there". A chart taller than its floor
+// leaves nothing empty under its days; its levels spread evenly; with a cell
+// for a row between each pair, a row of dots goes in, every row a cell again.
+{
+  const boxBottom = (rowSpan: number) => PAGE.marginPx + rowSpan * CELL - PAGE.boxInsetPx;
+  const centreY = (e: RenderedPolotnoElement) => (e.y ?? 0) + (e.height ?? 0) / 2;
+  let lastSpacing = 0;
+  for (let rowSpan = 7; rowSpan <= 22; rowSpan++) {
+    const chart = draw({ ...mood, span: "week", look: "dots" }, 12, rowSpan);
+    // The axis under the plot is a cell above the box's foot: the day names
+    // fill that cell and nothing is left under them.
+    const axisX = ids(chart, /-axis-x$/)[0];
+    check(
+      !!axisX && Math.abs(centreY(axisX) - (boxBottom(rowSpan) + PAGE.boxInsetPx - CELL)) < 0.5,
+      `${rowSpan} rows: the plot runs down to the day names' cell (axis at ${axisX ? centreY(axisX).toFixed(1) : "none"})`
+    );
+    // The levels evenly apart, and further apart the taller the chart.
+    const levels = ids(chart, /-d0-l\d$/).map(centreY);
+    const gaps = levels.slice(1).map((y, i) => y - levels[i]);
+    check(gaps.length === 4 && gaps.every((g) => Math.abs(g - gaps[0]) < 0.01), `${rowSpan} rows: the levels are evenly spaced (${gaps.map((g) => g.toFixed(1)).join(", ")})`);
+    check(gaps[0] >= lastSpacing - 0.01, `${rowSpan} rows: the levels are no closer than one row shorter (${gaps[0].toFixed(1)} after ${lastSpacing.toFixed(1)})`);
+    lastSpacing = gaps[0];
+    // Rows between the levels: none until there is a cell for each, then one
+    // (from 11 rows: nine cells of plot for five levels and four between),
+    // then two (from 15), then three (from 19).
+    const between = ids(chart, /-d0-l\dh\d$/).length;
+    const expected = rowSpan >= 19 ? 12 : rowSpan >= 15 ? 8 : rowSpan >= 11 ? 4 : 0;
+    check(between === expected, `${rowSpan} rows: ${expected} rows of dots between the levels (got ${between})`);
+  }
+  // At a jump every row is a cell again, so a ruled chart's rules are back on
+  // the lattice; between jumps they share the height evenly.
+  for (const rowSpan of [7, 11, 15]) {
+    const ruled = draw({ ...mood, span: "week", look: "ruled" }, 12, rowSpan);
+    const off = ids(ruled, /-rule$/).filter((e) => !onLattice(centreY(e)));
+    check(off.length === 0, `${rowSpan} rows (a jump): every rule on the lattice (off: ${off.map((e) => e.id).join(", ")})`);
+  }
+  const stretched = ids(draw({ ...mood, span: "week", look: "ruled" }, 12, 9), /-l\d-rule$/).map(centreY);
+  const pitches = stretched.slice(1).map((y, i) => y - stretched[i]);
+  check(pitches.length === 3 && pitches.every((p) => Math.abs(p - (7 * CELL) / 5) < 0.01), `9 rows: the ruled bands share seven cells five ways (${pitches.map((p) => p.toFixed(1)).join(", ")})`);
+  // A box too short for its levels still draws the top ones a cell apart.
+  const short = ids(draw(mood, 12, 5), /-d0-l\d$/).map(centreY);
+  check(short.length === 3 && Math.abs(short[1] - short[0] - CELL) < 0.01, "a box too short keeps a cell a level");
 }

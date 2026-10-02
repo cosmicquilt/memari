@@ -11,26 +11,23 @@
 //   bars     a column of boxes for each day - shade it up to the level
 //   circles  a circle where every day meets every level - colour in one a day
 //
-// THE LEVELS ARE LATTICE ROWS. Each is one cell, top-anchored under the
-// header, with the day names in one more cell beneath - rows of one cell for
-// the reason every module's are (see ratingStrip.ts): the pitch has to divide
-// the cell, or every resize moves every mark. A level's label and its marks
-// are centred in its band, so the ruled look's rules sit on the lattice rows
-// between the bands and the others' marks clearly between them.
+// THE LEVELS ARE LATTICE ROWS AT THE FLOOR. Each is one cell under the
+// header, with the day names in one more cell beneath. A chart taller than
+// that fills its height (2026-10-02, see dayChartRowsBetween): the levels
+// spread apart, and once there is a cell for a row of dots between each
+// pair, the rows jump to that - every row a cell, on the lattice again - and
+// spread from there. A level's label and its marks are centred in its band;
+// the ruled look's rules sit between the bands.
 //
-// THE DAYS DIVIDE THE PLOT, as a to-do's or a habit tracker's do - seven or
-// thirty-one do not divide twenty-four cells. But the level labels' column is
-// chosen, within a couple of cells of what the labels need, so that the days
-// come out a whole number of cells where they can: a week across a page is
-// three cells a day, across three-quarters of one two. Then every boundary is
-// a lattice column. Where no such width is near, the days share the plot
-// evenly. No rule is drawn down a day boundary, so either way the only
-// vertical rule is the axis, which is always on a lattice column - and
-// moduleHouseStyle holds it to that, with no exemption.
-
+// THE DAYS DIVIDE THE PLOT, as a to-do's or a habit tracker's do. The level
+// labels take exactly what they need, no more than a quarter of the box where
+// a smaller size allows, and the days share the rest evenly to the border -
+// each end half a day from its edge (2026-10-02). The only vertical rule is
+// the axis, where the labels end.
 import { ptToPx } from "@/lib/print-spec";
 import { glyphElement } from "@/lib/modules/glyphs";
-import { MOOD_FACES, faceElements, isMoodFace } from "@/lib/modules/faces";
+import { MOOD_FACES } from "@/lib/modules/faces";
+import { BEDTIME_LEVELS, ENERGY_BOLTS, scaleSymbolAspect, scaleSymbolElements, splitLevel } from "@/lib/modules/scaleSymbols";
 import { capCentredTextY, estimateTextWidthPx, fitLabelSet } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
@@ -45,14 +42,68 @@ import {
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
 import { weekdayInitials, weekdayShortNames } from "@/lib/weekDays";
+import type { PageLevel } from "@/lib/pageLevels";
 
 export type DayChartLook = "dots" | "ruled" | "bars" | "circles";
+export type DayChartAlong = "weekdays" | "dates" | "days" | "weeks";
+export const DAY_CHART_ALONG: readonly DayChartAlong[] = ["weekdays", "dates", "days", "weeks"];
+
+/** What runs along the bottom - `along`, or what `span` meant before it. */
+export function dayChartAlong(config: DayChartConfig): DayChartAlong {
+  if (DAY_CHART_ALONG.includes(config.along as DayChartAlong)) return config.along as DayChartAlong;
+  return config.span === "month" ? "days" : "weekdays";
+}
 export const DAY_CHART_LOOKS: readonly DayChartLook[] = ["dots", "ruled", "bars", "circles"];
+
+/**
+ * WHAT CAN RUN ALONG THE BOTTOM ON EACH LEVEL OF PAGE, the usual one first
+ * (2026-10-02: "weekdays letter or days or weeks. depending on level of
+ * page"). A week's page and a day's - which charts the week around it - show
+ * the week by its days' names or its dates; a month's page, and the journal
+ * pages at the front and back, the month by its days or its weeks. The
+ * editor offers only these, so nothing is offered that the page cannot fill.
+ */
+export const DAY_CHART_ALONG_BY_LEVEL: Record<PageLevel, readonly DayChartAlong[]> = {
+  WEEKLY: ["weekdays", "dates"],
+  DAILY: ["weekdays", "dates"],
+  MONTHLY: ["days", "weeks"],
+  FRONT_MATTER: ["days", "weeks"],
+  BACK_MATTER: ["days", "weeks"],
+};
+
+/** Words, for a scale that is neither faces, bolts nor the moon. */
+export const DAY_CHART_WORDS = ["Great", "Good", "Okay", "Low", "Awful"];
+
+/**
+ * THE SCALES the editor offers, drawn (2026-10-02: "relevant module editor
+ * setting that would be as intuitive as possible"). Each one sets the levels
+ * outright - they are still a list of strings, so the list stays editable
+ * for anything else, and a list that is none of these picks none of them.
+ */
+export const DAY_CHART_SCALES: ReadonlyArray<{ value: string[]; label: string }> = [
+  { value: [...MOOD_FACES], label: "Faces" },
+  { value: [...ENERGY_BOLTS], label: "Bolts" },
+  { value: [...BEDTIME_LEVELS], label: "Bedtime" },
+  { value: DAY_CHART_WORDS, label: "Words" },
+];
 
 export type DayChartConfig = {
   heading?: string;
-  /** The seven days of a week, or the days of a month. */
+  /** The seven days of a week, or the days of a month. Read when `along`
+   *  is unset - the older setting, which `along` grew out of. */
   span?: "week" | "month";
+  /**
+   * WHAT RUNS ALONG THE BOTTOM (2026-10-02): the week's days by name, the
+   * week's dates, the month's days, or its weeks - offered by the level of
+   * the page the chart is on. Unset follows `span`.
+   */
+  along?: DayChartAlong;
+  /** The dates of the week's seven days, set by the dated hook; unset on a
+   *  template, where the dates are left to be written in. */
+  weekDates?: number[] | null;
+  /** How many weeks the month runs across, set by the dated hook; 5 on a
+   *  template. */
+  weeksInMonth?: number | null;
   /** The y axis, TOP DOWN - the highest level first, as it is read. Blank
    *  strings are levels left for the writer to name. */
   levels?: string[];
@@ -69,68 +120,65 @@ export type DayChartConfig = {
 // words, as written.
 export const DEFAULT_DAY_CHART_LEVELS: string[] = [...MOOD_FACES];
 /** A face's share of its level's band - a cell - so it reads at print size
- *  and keeps clear of the faces above and below it. */
+ *  and keeps clear of the faces above and below it. Every symbol's. */
 const FACE_SHARE = 0.8;
+/** Words with a symbol - a bedtime under its moon - are FINE PRINT at the
+ *  symbol's lower right: the house's smallest legible size (see the icon
+ *  strip's heading), "even smaller fine print text with the time near the
+ *  lower right corner" (2026-10-02). */
+const FINE_PRINT_PT = 5;
 
 const LEVEL_FONT_PT = [7, 6, 5];
 const DAY_FONT_PT = [6.5, 6, 5];
 const LABEL_PAD_PT = 4;
 /** A plotted dot: big enough to read as the chart's own, not the lattice's. */
 const DOT_PT = 1.9;
+/** A dot in a row between two levels: smaller, and lighter (see THE FILL). */
+const BETWEEN_DOT_PT = 1.5;
 
 export function dayChartLevels(config: DayChartConfig): string[] {
   const levels = Array.isArray(config.levels) ? config.levels.map((level) => (typeof level === "string" ? level.trim() : "")) : [];
   return levels.length > 0 ? levels : DEFAULT_DAY_CHART_LEVELS;
 }
 
+/** Are the levels all words - none a face, a bolt or the moon? */
+export function dayChartLevelsAreWords(config: DayChartConfig): boolean {
+  return dayChartLevels(config).every((level) => !splitLevel(level).symbol);
+}
+
 export function dayChartDayCount(config: DayChartConfig): number {
-  if (config.span !== "month") return 7;
+  const along = dayChartAlong(config);
+  if (along === "weeks") {
+    const weeks = Math.round(Number(config.weeksInMonth));
+    return weeks >= 4 && weeks <= 6 ? weeks : 5;
+  }
+  if (along !== "days") return 7;
   const days = Math.round(Number(config.monthDays));
   return days >= 28 && days <= 31 ? days : 31;
+}
+
+/**
+ * THE FILL (2026-10-02). A chart taller than its floor fills its height: the
+ * levels spread apart, and once there is a whole cell for a row of dots
+ * between each pair of levels, the rows jump to that - every row a cell
+ * again - and spread from there; then two rows between, and so on. Andrew:
+ * "scale but at a certain point jump and add a row of dots in between each
+ * symbol row and scale again from there". The floor, and each jump, are on
+ * the lattice; between them the rows share the height evenly, off it, as
+ * the days share the width.
+ *
+ * Returns how many rows go between each pair of levels, for `levels` levels
+ * in a plot `plotCells` cells tall.
+ */
+export function dayChartRowsBetween(levels: number, plotCells: number): number {
+  if (levels < 2 || plotCells <= levels) return 0;
+  return Math.floor((plotCells - levels) / (levels - 1));
 }
 
 /** The header, a cell per level and a cell of day names - in the box's own
  *  pixels, which end one inset short of the last cell. */
 export function getDayChartMinHeightPx(config: DayChartConfig, insetPx: number): number {
   return ptToPx(HEADER_HEIGHT_PT) + (dayChartLevels(config).length + 1) * rowHeightPx() - insetPx;
-}
-
-/**
- * How many cells the level labels take, and so where the plot starts.
- *
- * Tried in half cells from what the labels need at their SMALLEST size to
- * two cells past what they need at their largest, taking the first that
- * makes each day a whole number of cells, else a whole number of half cells,
- * nearest the labels' own largest size - and failing both, just that size,
- * with the days sharing what is left. A smaller label is worth a lattice:
- * a week across half a page gets its labels at 6pt and exactly a cell and a
- * half a day, where 7pt labels left it 1.4 and off every line.
- */
-export function dayChartLabelCells(
-  allocationCells: number,
-  needed: { largest: number; smallest: number },
-  days: number
-): { cells: number; onLattice: boolean } {
-  const halfUp = (cells: number) => Math.max(1, Math.ceil(cells * 2 - 1e-9) / 2);
-  // THE PLOT KEEPS THREE QUARTERS of the box. The column may grow past what
-  // its labels need to put the days on the lattice, but not into the plot's
-  // share: a week one day wide gave its labels two and a half of its six
-  // cells for half a cell a day, and read as "doesn't have enough space for
-  // graphing, too much whitespace to the left of labels" (2026-10-01). It
-  // never goes under what the labels need at their smallest, whatever.
-  const smallest = halfUp(needed.smallest);
-  const most = Math.max(smallest, Math.floor(allocationCells * 0.25 * 2 + 1e-9) / 2);
-  const ideal = Math.min(halfUp(needed.largest), most);
-  const multiple = (value: number, step: number) => Math.abs(value / step - Math.round(value / step)) < 1e-9;
-  let best = { cells: ideal, grade: 0 };
-  for (let cells = smallest; cells <= Math.min(ideal + 2, most); cells += 0.5) {
-    const perDay = (allocationCells - cells) / days;
-    if (perDay <= 0) break;
-    const grade = multiple(perDay, 1) ? 2 : multiple(perDay, 0.5) ? 1 : 0;
-    const nearer = Math.abs(cells - ideal) < Math.abs(best.cells - ideal);
-    if (grade > best.grade || (grade > 0 && grade === best.grade && nearer)) best = { cells, grade };
-  }
-  return { cells: best.cells, onLattice: best.grade > 0 };
 }
 
 export function renderDayChart(
@@ -145,7 +193,7 @@ export function renderDayChart(
   // level 2" rather than replacing it. See todoChecklist.ts.
   const id = (name: string) => `${idPrefix}-${name}`;
 
-  const pitch = rowHeightPx(lattice);
+  const pitch = rowHeightPx(lattice); // a cell
   const inset = lattice?.insetPx ?? 0;
   const ruleWidth = ptToPx(RULE_WIDTH_PT);
   const pad = ptToPx(LABEL_PAD_PT);
@@ -166,59 +214,110 @@ export function renderDayChart(
 
   // The levels that fit, from the top: a box too short for all of them draws
   // the ones it has room for, exactly where they were.
-  const shown = Math.max(0, Math.min(levels.length, Math.floor((boxBottom - top - pitch + inset + 0.5) / pitch)));
+  const plotCells = Math.max(0, Math.floor((boxBottom - top - pitch + inset + 0.5) / pitch));
+  const shown = Math.min(levels.length, plotCells);
+  // A box with room to spare fills it - see dayChartRowsBetween. ROWS are
+  // the levels and the rows between them; level i is row i * (between + 1).
+  const between = shown === levels.length ? dayChartRowsBetween(shown, plotCells) : 0;
+  const rowCount = shown + Math.max(0, shown - 1) * between;
+  const rowPitch = shown === levels.length && rowCount > 0 ? (plotCells * pitch) / rowCount : pitch;
   const plotTop = top;
-  const plotBottom = top + shown * pitch;
-  const bandCentre = (i: number) => plotTop + (i + 0.5) * pitch;
+  const plotBottom = top + rowCount * rowPitch;
+  const levelRow = (i: number) => i * (between + 1);
+  const rowCentre = (r: number) => plotTop + (r + 0.5) * rowPitch;
+  const bandCentre = (i: number) => rowCentre(levelRow(i));
+  // A row's name: a level's own, or the level above it and how far below.
+  const rowName = (r: number) => {
+    const level = Math.floor(r / (between + 1));
+    const step = r % (between + 1);
+    return step === 0 ? `l${level}` : `l${level}h${step}`;
+  };
 
-  // The level labels' column - see dayChartLabelCells.
+  // The level labels' column - see where plotLeft is set.
   const levelSizes = LEVEL_FONT_PT.map(ptToPx);
-  const faceSize = pitch * FACE_SHARE;
+  // A level is words, a symbol (scaleSymbols.ts), or a symbol before words -
+  // "🌙 10h" - where the symbol is small enough to sit with the text.
+  const symbolSize = pitch * FACE_SHARE;
+  const fineSize = ptToPx(FINE_PRINT_PT);
+  const fineGap = ptToPx(0.75);
+  const parts = levels.map((level) => splitLevel(level));
+  const levelWidth = (i: number, size: number) => {
+    const { symbol, words } = parts[i];
+    if (!symbol) return estimateTextWidthPx(words, size);
+    return symbolSize * scaleSymbolAspect(symbol) + (words ? fineGap + estimateTextWidthPx(words, fineSize) : 0);
+  };
   const needs = (size: number) =>
-    (Math.max(0, ...levels.map((level) => (isMoodFace(level) ? faceSize : estimateTextWidthPx(level, size)))) + pad * 2 + inset) /
-    pitch;
-  const labelColumn = dayChartLabelCells(
-    allocationCells,
-    { largest: needs(levelSizes[0]), smallest: needs(levelSizes[levelSizes.length - 1]) },
-    days
-  );
-  // DAYS ON THE LATTICE: the axis on a lattice column (or half way), the
-  // days running to the allocation's edge, where the last boundary is a
-  // lattice column (the border stands in for it, 6px inside, as the to-do's
-  // does).
+    (Math.max(0, ...levels.map((_, i) => levelWidth(i, size))) + pad * 2 + inset) / pitch;
+  // THE COLUMN IS WHAT THE LABELS NEED, at the largest size that keeps it
+  // within a quarter of the box (or at the smallest, if even that is wider),
+  // and the days share the rest, running to the border - so the first is
+  // half a day from the axis and the last half a day from the border.
   //
-  // DAYS OFF IT - a week one day wide - have nothing to line up with, so
-  // neither does the axis: it goes exactly where the labels end, not rounded
-  // out to the next half cell, and the days run all the way to the border.
-  // Rounding put a slack 13px before the faces, and stopping the days short
-  // of the border left Saturday further from it than Sunday from the axis.
-  // Andrew, 2026-10-02: "take slight extra space before smileys and add it so
-  // S first day Sunday is same distance from border on its left and S
-  // Saturday last day is from the border on its right". Each is now half a
-  // day from its edge.
-  const exactCells = Math.min(
-    Math.max(needs(levelSizes[levelSizes.length - 1]), Math.min(needs(levelSizes[0]), labelColumn.cells)),
-    labelColumn.cells
-  );
-  const plotLeft = allocationLeft + (labelColumn.onLattice ? labelColumn.cells : exactCells) * pitch;
-  const plotRight = labelColumn.onLattice ? allocationLeft + allocationCells * pitch : boxRight;
+  // It used to be rounded out so the days landed on the lattice, and that
+  // rounding was slack before the labels - 13px before a three-day chart's
+  // faces, nearly two cells before a page-wide one's. Andrew, 2026-10-02:
+  // "take slight extra space before smileys and add it so S first day Sunday
+  // is same distance from border on its left and S Saturday last day is from
+  // the border on its right", and for the energy and sleep charts the same.
+  // The day columns are off the lattice now as a month's always were; the
+  // level rows still sit on it. Nothing is drawn down a day boundary.
+  const quarter = allocationCells * 0.25;
+  const fitting = levelSizes.find((size) => needs(size) <= quarter) ?? levelSizes[levelSizes.length - 1];
+  const plotLeft = allocationLeft + needs(fitting) * pitch;
+  const plotRight = boxRight;
   const dayWidth = (plotRight - plotLeft) / days;
   const dayCentre = (d: number) => plotLeft + (d + 0.5) * dayWidth;
 
+  const columnWidth = plotLeft - geometry.x - pad * 2;
+  // Words alone share one size, fitted; a symbol's words are fine print.
   const levelLabels = fitLabelSet(
-    levels.slice(0, shown).map((text) => ({ text: isMoodFace(text) ? "" : text, widthPx: plotLeft - geometry.x - pad * 2 })),
+    parts.slice(0, shown).map(({ symbol, words }) => ({ text: symbol ? "" : words, widthPx: columnWidth })),
     levelSizes
   );
+  // The widest fine print beside a symbol: the column the symbols stand in
+  // is that far from the axis.
+  const widestNote = Math.max(0, ...parts.map(({ symbol, words }) => (symbol && words ? estimateTextWidthPx(words, fineSize) : 0)));
+  const symbolId = (i: number, kind: string) => (part: string) => id(kind === "face" ? `l${i}-face-${part}` : `l${i}-sym-${part}`);
   for (let i = 0; i < shown; i++) {
-    const level = levels[i];
-    if (isMoodFace(level)) {
+    const { symbol, words } = parts[i];
+    const right = plotLeft - pad;
+    if (symbol && !words) {
       // Against the axis, as a label is, centred in its band.
-      const size = Math.min(faceSize, plotLeft - geometry.x - pad * 2);
-      if (size > 0) {
-        elements.push(
-          ...faceElements(level.trim() as (typeof MOOD_FACES)[number], plotLeft - pad - size, bandCentre(i) - size / 2, size, (part) => id(`l${i}-face-${part}`))
-        );
+      const height = Math.min(symbolSize, columnWidth / scaleSymbolAspect(symbol));
+      if (height > 0) {
+        const width = height * scaleSymbolAspect(symbol);
+        elements.push(...scaleSymbolElements(symbol, right - width, bandCentre(i) - height / 2, height, symbolId(i, symbol.kind)));
       }
+      continue;
+    }
+    if (symbol) {
+      // The symbol at full size, its words in fine print at its lower right.
+      // The symbols stand in one column, the widest words against the axis,
+      // so a short time does not push its moon out of line. The words'
+      // baseline sits level with the symbol's foot. Not "-label": typing
+      // over a level on the page would replace the moon with the words -
+      // they are edited in the panel.
+      const textWidth = estimateTextWidthPx(words, fineSize);
+      const height = Math.min(symbolSize, (columnWidth - widestNote - fineGap) / scaleSymbolAspect(symbol));
+      if (height <= 0) continue;
+      const width = height * scaleSymbolAspect(symbol);
+      const top = bandCentre(i) - height / 2;
+      const symbolRight = right - widestNote - fineGap;
+      elements.push(...scaleSymbolElements(symbol, symbolRight - width, top, height, symbolId(i, symbol.kind)));
+      elements.push({
+        id: id(`l${i}-note`),
+        type: "text",
+        x: symbolRight + fineGap,
+        y: top + height - fineSize * 1.05,
+        width: textWidth,
+        height: fineSize * 1.2,
+        text: words,
+        fontSize: fineSize,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: "left",
+        opacity: 0.75,
+      });
       continue;
     }
     if (!levelLabels.texts[i]) continue;
@@ -226,7 +325,7 @@ export function renderDayChart(
       id: id(`l${i}-label`),
       type: "text",
       x: geometry.x + pad,
-      y: capCentredTextY(plotTop + i * pitch, pitch, levelLabels.fontSizePx, fontFamily),
+      y: capCentredTextY(plotTop + levelRow(i) * rowPitch, rowPitch, levelLabels.fontSizePx, fontFamily),
       width: plotLeft - geometry.x - pad * 2,
       height: levelLabels.fontSizePx * 1.2,
       text: levelLabels.texts[i],
@@ -258,10 +357,11 @@ export function renderDayChart(
 
   // THE MARKS, one look at a time.
   if (look === "ruled") {
-    // A rule on each lattice row between the bands, faint, from the axis to
-    // the border: a level is the band its label sits in.
-    for (let i = 1; i < shown; i++) {
-      elements.push(rule(`l${i}-rule`, plotLeft, plotTop + i * pitch - ruleWidth / 2, boxRight - plotLeft, ruleWidth, 0.4));
+    // A rule between each pair of rows, faint, from the axis to the border:
+    // a level is the band its label sits in, and a row between two levels a
+    // band of its own.
+    for (let r = 1; r < rowCount; r++) {
+      elements.push(rule(`${rowName(r)}-rule`, plotLeft, plotTop + r * rowPitch - ruleWidth / 2, boxRight - plotLeft, ruleWidth, 0.4));
     }
   }
   const tickHeight = ptToPx(2.5);
@@ -290,12 +390,34 @@ export function renderDayChart(
         strokeWidth: ruleWidth,
         opacity: 0.7,
       });
-      for (let i = 1; i < shown; i++) {
-        elements.push(rule(`d${d}-rule${i}`, left, plotTop + i * pitch - ruleWidth / 2, width, ruleWidth, 0.45));
+      for (let r = 1; r < rowCount; r++) {
+        const name = rowName(r);
+        elements.push(rule(`d${d}-rule${name.slice(1)}`, left, plotTop + r * rowPitch - ruleWidth / 2, width, ruleWidth, 0.45));
       }
     }
-    for (let i = 0; i < shown && (look === "dots" || look === "circles"); i++) {
-      const y = bandCentre(i);
+    for (let r = 0; r < rowCount && (look === "dots" || look === "circles"); r++) {
+      const y = rowCentre(r);
+      const name = rowName(r);
+      // A row between levels is a row of dots in either look - lighter, a
+      // half step rather than a level of its own.
+      if (name.includes("h")) {
+        const size = ptToPx(BETWEEN_DOT_PT);
+        elements.push({
+          id: id(`d${d}-${name}`),
+          type: "figure",
+          subType: "rect",
+          x: x - size / 2,
+          y: y - size / 2,
+          width: size,
+          height: size,
+          cornerRadius: size / 2,
+          fill: NEAR_BLACK,
+          stroke: "none",
+          opacity: 0.35,
+        });
+        continue;
+      }
+      const i = Number(name.slice(1));
       if (look === "dots") {
         const size = ptToPx(DOT_PT);
         elements.push({
@@ -329,10 +451,19 @@ export function renderDayChart(
       texts.every((text) => estimateTextWidthPx(text, daySizes[daySizes.length - 1]) <= dayWidth - ptToPx(1));
     let names: Array<string | null>;
     let thinned = false;
-    if (config.span === "month") {
+    const along = dayChartAlong(config);
+    if (along === "days") {
       const numbers = Array.from({ length: days }, (_, d) => String(d + 1));
       thinned = !fitsAll(numbers);
       names = thinned ? numbers.map((n, d) => (d === 0 || (d + 1) % 5 === 0 ? n : null)) : numbers;
+    } else if (along === "weeks") {
+      const long = Array.from({ length: days }, (_, w) => `WEEK ${w + 1}`);
+      names = fitsAll(long) ? long : Array.from({ length: days }, (_, w) => `W${w + 1}`);
+    } else if (along === "dates") {
+      // The week's own dates where the page is dated; on a template, nothing
+      // - the dates are written in.
+      const dates = Array.isArray(config.weekDates) && config.weekDates.length === 7 ? config.weekDates : null;
+      names = dates ? dates.map((n) => String(n)) : Array.from({ length: 7 }, () => null);
     } else {
       const short = weekdayShortNames(config.weekStartDay);
       names = fitsAll(short) ? short : weekdayInitials(config.weekStartDay);

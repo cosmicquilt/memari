@@ -35,6 +35,10 @@ import {
 import { rotateWeekDays, type DayLabel } from "./weekDays";
 
 export type PageRenderContext = {
+  /** The level of the page - what a setting may offer can depend on it (the
+   *  day chart's "Along the bottom"). Optional for a context built before
+   *  it existed. */
+  level?: PageLevel;
   /** False on a book you write the dates into yourself: dates come out. */
   dated: boolean;
   /** The occurrence this page is edited AS. Null when the book has no term
@@ -151,6 +155,7 @@ export function renderContextForPage(
       : null;
 
   return {
+    level: page.level,
     dated,
     occurrence,
     dayLabels,

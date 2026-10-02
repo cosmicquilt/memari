@@ -15,7 +15,8 @@
 
 import { CONTROL_RADIUS, PREVIEW_RADIUS, concentric } from "./editorStyle";
 import type { CSSProperties } from "react";
-import type { ModuleField } from "@/lib/moduleRegistry";
+import type { ModuleField, RuleValue } from "@/lib/moduleRegistry";
+import type { PageLevel } from "@/lib/pageLevels";
 import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { flatten, toSvg } from "@/lib/proofSvg";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
@@ -301,6 +302,11 @@ export function RuleSwatch({
   );
 }
 
+/** Two lists the same, item for item. */
+function sameList(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
+}
+
 /** How wide each of `count` swatches is in the fields panel. */
 export function ruleSwatchWidth(count: number): number {
   const room = 268;
@@ -315,6 +321,7 @@ export function ModuleFieldsForm({
   defaults,
   drawRule,
   textOnPage,
+  pageLevel,
 }: {
   fields: ModuleField[];
   values: Record<string, unknown>;
@@ -325,10 +332,13 @@ export function ModuleFieldsForm({
   defaults?: Record<string, unknown>;
   /** Draws the module with one line-style option, for a `rule` field. Without
    *  it, a rule field is an ordinary list of names. */
-  drawRule?: (key: string, value: string | number) => RuleSample | null;
+  drawRule?: (key: string, value: RuleValue) => RuleSample | null;
   /** The module's text is edited on the preview - so an empty panel is not
    *  "nothing to set". */
   textOnPage?: boolean;
+  /** The level of the page the module is on, where it is known - a select
+   *  option for other levels is not offered. */
+  pageLevel?: PageLevel | null;
 }) {
   if (fields.length === 0 && textOnPage) return null;
   if (fields.length === 0) {
@@ -587,16 +597,23 @@ export function ModuleFieldsForm({
         }
 
         if (field.kind === "select") {
+          const current = field.shows ? field.shows(values) : ((values[field.key] as string | undefined) ?? "");
+          // This page's options - and whatever is set now, if this page would
+          // not offer it, so the menu never shows something other than what
+          // is drawn.
+          const offered = field.options.filter(
+            (option) => !pageLevel || !option.levels || option.levels.includes(pageLevel) || option.value === current
+          );
           return (
             <label key={field.key} style={rowStyle}>
               <span style={labelStyle}>{field.label}</span>
               <select
-                value={(values[field.key] as string | undefined) ?? ""}
+                value={current}
                 onChange={(event) => onChange(field.key, event.target.value)}
                 className="memari-field"
                 style={selectStyle(inputStyle)}
               >
-                {field.options.map((option) => (
+                {offered.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -635,24 +652,25 @@ export function ModuleFieldsForm({
 
         if (field.kind === "rule") {
           const current = values[field.key] ?? defaults?.[field.key];
+          const isCurrent = (value: RuleValue) =>
+            Array.isArray(value) ? Array.isArray(current) && sameList(current, value) : current === value;
+          // A list is stored as a copy, never the option's own array.
+          const pick = (value: RuleValue) => onChange(field.key, Array.isArray(value) ? [...value] : value);
           const samples = drawRule ? field.options.map((option) => drawRule(field.key, option.value)) : [];
           if (!drawRule || samples.some((sample) => sample === null)) {
             return (
               <label key={field.key} style={rowStyle}>
                 <span style={labelStyle}>{field.label}</span>
                 <select
-                  value={current === undefined || current === null ? "" : String(current)}
+                  value={String(field.options.find((option) => isCurrent(option.value))?.value ?? current ?? "")}
                   onChange={(event) =>
-                    onChange(
-                      field.key,
-                      field.options.find((option) => String(option.value) === event.target.value)?.value ?? event.target.value
-                    )
+                    pick(field.options.find((option) => String(option.value) === event.target.value)?.value ?? event.target.value)
                   }
                   className="memari-field"
                   style={selectStyle(inputStyle)}
                 >
                   {field.options.map((option) => (
-                    <option key={String(option.value)} value={String(option.value)}>
+                    <option key={option.label} value={String(option.value)}>
                       {option.label}
                     </option>
                   ))}
@@ -667,11 +685,11 @@ export function ModuleFieldsForm({
               <div role="radiogroup" aria-label={field.label} style={{ display: "flex", gap: 10 }}>
                 {field.options.map((option, index) => (
                   <RuleSwatch
-                    key={option.value}
+                    key={option.label}
                     sample={samples[index] as RuleSample}
                     label={option.label}
-                    selected={current === option.value}
-                    onPick={() => onChange(field.key, option.value)}
+                    selected={isCurrent(option.value)}
+                    onPick={() => pick(option.value)}
                     width={width}
                   />
                 ))}
