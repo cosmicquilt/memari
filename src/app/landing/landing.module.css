@@ -252,7 +252,11 @@
   pointer-events: none;
   background:
     radial-gradient(130% 100% at 50% 40%, rgba(0, 0, 0, 0) 55%, rgba(30, 18, 8, 0.28) 100%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    /* The noise once drawn, at 2x: it was an SVG feTurbulence filter, worked
+       out again at every step of a pinch zoom (2026-10-02). Same noise -
+       drawn from that SVG (fractalNoise, baseFrequency 0.85, 2 octaves, grey
+       at 0.55 alpha). */
+    url(/landing/grain.webp) 0 0 / 160px 160px;
   mix-blend-mode: soft-light;
   opacity: 0.55;
 }
@@ -494,8 +498,26 @@
   left: -25%;
   width: 150%;
   height: 100%;
-  background: url(/landing/hero-extend.webp) center / 100% 100% no-repeat;
   pointer-events: none;
+}
+
+/* Its two sides (hero-extend-left/right.webp, placed by heroExtend.json).
+   Each its own layer, as the film's resting frame and the sheets' drawings
+   are: a pinch zoom then only scales them on the GPU, where as part of the
+   page they were decoded and drawn again at each step of the zoom - slow
+   enough that the sides showed white and the sheets' drawings came in
+   pieces (2026-10-02). */
+.videoExtendSide {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: block;
+}
+
+.videoExtendSide,
+.videoFrame,
+.videoSheet {
+  will-change: transform;
 }
 
 .videoFrame {
@@ -594,6 +616,12 @@
   backdrop-filter: blur(calc(var(--side-blur, 0) * 0.577px));
   -webkit-mask-image: linear-gradient(var(--toward-edge), transparent calc(100% - var(--k) * 33.34%), #000 100%);
   mask-image: linear-gradient(var(--toward-edge), transparent calc(100% - var(--k) * 33.34%), #000 100%);
+}
+
+/* Hidden by opacity, not display: that is only the compositor's to change,
+   where display: none had the whole hero repainted as the zoom began. */
+.hero[data-zoomed] .sideBlur {
+  opacity: 0;
 }
 
 .sideBlurLeft {

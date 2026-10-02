@@ -18,6 +18,7 @@ import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
 import { BOOK_ON_SHEETS, filmFrame, sheetClip, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
+import EXTEND from "./video/heroExtend.json";
 import styles from "./landing.module.css";
 
 /** Seconds the first layout takes to fade onto the resting pages (Andrew,
@@ -43,6 +44,20 @@ export function VideoHero() {
   const [ended, setEnded] = useState(false);
   const [lastReady, setLastReady] = useState(false);
   const frozen = still || (ended && lastReady);
+
+  // The side blur only while the page is at its own scale: pinched in, the
+  // page's sides are no longer the screen's, the blur is magnified with the
+  // page (the desk there "gets blurry"), and redone at every step of the
+  // zoom it cost most of the frames dropped (2026-10-02). See .sideBlur.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = hero.current;
+    if (!vv || !el) return;
+    const update = () => el.toggleAttribute("data-zoomed", vv.scale > 1.001);
+    update();
+    vv.addEventListener("resize", update);
+    return () => vv.removeEventListener("resize", update);
+  }, []);
 
   useEffect(() => {
     const v = video.current;
@@ -184,9 +199,30 @@ export function VideoHero() {
       {/* Behind the clip, the still it is showing: its first frame, then its
           last. A background tab may drop the video's picture, and a window
           or tab preview then shows this instead of an empty page. */}
-      <div className={styles.videoStage} style={{ backgroundImage: `url(${resting ? HERO_VIDEO.last : HERO_VIDEO.first})` }} aria-hidden="true">
+      <div
+        className={styles.videoStage}
+        // Not once the resting frame's picture is up: it would only be
+        // drawn again, under it, at every step of a zoom.
+        style={{ backgroundImage: frozen ? "none" : `url(${resting ? HERO_VIDEO.last : HERO_VIDEO.first})` }}
+        aria-hidden="true"
+      >
         {/* The desk beyond the film's sides - see .videoExtend. */}
-        <div className={styles.videoExtend} />
+        <div className={styles.videoExtend}>
+          {(["left", "right"] as const).map((side) => {
+            const [x, w] = EXTEND[side];
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={side}
+                className={styles.videoExtendSide}
+                src={`/landing/hero-extend-${side}.webp`}
+                alt=""
+                decoding="async"
+                style={{ left: `${(x / EXTEND.width) * 100}%`, width: `${(w / EXTEND.width) * 100}%` }}
+              />
+            );
+          })}
+        </div>
         <video
           ref={video}
           className={styles.videoFrame}
