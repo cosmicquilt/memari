@@ -18,7 +18,7 @@
 // its tilt (see LINE_Y). A link to "How it works", so it works without
 // script; with script it scrolls there smoothly unless motion is reduced.
 //
-// The otter is Flow's (handoff/flow/otter-kilroy-prompt.md), three takes of
+// The otter is Flow's (handoff/flow/otter-kilroy-prompt.md), four takes of
 // it, imported by handoff/flow/otter/import_otters.py: the paper divided out
 // to graphite on transparent, cropped to its own pencil line's ends, and
 // where that line sits recorded (otters.json) - so the line it was drawn
@@ -29,12 +29,21 @@ import otters from "../../../public/landing/otter/otters.json";
 import styles from "./landing.module.css";
 
 type Otter = keyof typeof otters;
-/** Which otter when (Andrew, 2026-10-01): at rest the one glancing up and
- *  away (otter-1, "A_single_drawing..."); with the pointer on the note, the
+/** Which otter when (Andrew, 2026-10-01): with the pointer on the note, the
  *  one looking straight at you (otter-3); pressed, the one lifting a paw
- *  (otter-2), then back to otter-3; the pointer gone, otter-1 again. All
- *  three are drawn, only one shown, so a change never waits on a download. */
-const AT: Record<"rest" | "hover" | "press", Otter> = { rest: "otter-1", hover: "otter-3", press: "otter-2" };
+ *  (otter-2), then back to otter-3; the pointer gone, the resting ones
+ *  again. All are drawn, only one shown, so a change never waits on a
+ *  download. */
+const AT: Record<"hover" | "press", Otter> = { hover: "otter-3", press: "otter-2" };
+/** At rest (2026-10-02: "start on just uploaded one on load and every once
+ *  and a while min of a few seconds switch back and forth to current
+ *  default one and back"): waving (otter-4) from the start, now and then
+ *  glancing up and away (otter-1) and back - each held for a random while
+ *  between these, ms. Not with reduced motion: it stays waving. */
+const REST: Array<{ otter: Otter; ms: [number, number] }> = [
+  { otter: "otter-4", ms: [4000, 10000] },
+  { otter: "otter-1", ms: [3000, 6000] },
+];
 /** How long the paw stays up after a press, ms. */
 const PRESS_MS = 420;
 
@@ -55,9 +64,25 @@ const FLAT = 36;
 export function PostIt() {
   const [over, setOver] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [rest, setRest] = useState(0);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  const shown: Otter = pressed ? AT.press : over ? AT.hover : AT.rest;
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let at = 0;
+    let t = 0;
+    const next = () => {
+      const [lo, hi] = REST[at].ms;
+      t = window.setTimeout(() => {
+        at = (at + 1) % REST.length;
+        setRest(at);
+        next();
+      }, lo + Math.random() * (hi - lo));
+    };
+    next();
+    return () => window.clearTimeout(t);
+  }, []);
+  const shown: Otter = pressed ? AT.press : over ? AT.hover : REST[rest].otter;
   const press = () => {
     setPressed(true);
     window.clearTimeout(timer.current);
