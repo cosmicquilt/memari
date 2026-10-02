@@ -92,8 +92,9 @@ export function faceElements(
   ];
   if (face === "😢") {
     // Solid, like the eyes, under the left one's outer corner - an outline
-    // this small read as a stray "6".
-    const tear = glyphPathD("droplet", x + 0.235 * s, y + 0.585 * s, 0.13 * s);
+    // this small read as a stray "6". A little drop, not a blot: 0.13 of the
+    // face was "can make teardrop smaller" (2026-10-02).
+    const tear = glyphPathD("droplet", x + 0.255 * s, y + 0.595 * s, 0.09 * s);
     if (tear) marks.push(mark("tear", tear, true));
   }
   return marks;
