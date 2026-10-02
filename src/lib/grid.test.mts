@@ -28,6 +28,7 @@ import {
   resizeSpineSpread,
   spineMaxRowSpan,
   pageSections,
+  fillSection,
   stackUnderSpine,
   firstRowBelow,
   type SpineStack,
@@ -1293,6 +1294,56 @@ const sectionsOf = (spine: GridRect) =>
   const beside = resolveZone(null, { columnStart: 9, rowStart: 4 }, pageSections([{ columnStart: 0, rowStart: 4, columnSpan: 6, rowSpan: 9 }], 24, 6));
   assert(!!beside && beside.columnStart === 6 && beside.columnSpan === 18, `beside a one-day module: the empty rest (got ${JSON.stringify(beside)})`);
 }
+// --- fillSection (2026-10-01): "fill the space available up to a full section" ---
+{
+  const title = { columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: 3, locked: true };
+  const hours = { columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: 20, locked: true };
+  const grateful = { columnStart: 0, rowStart: 3, columnSpan: 6, rowSpan: 9 };
+  const reminders = { columnStart: 0, rowStart: 12, columnSpan: 6, rowSpan: 9 };
+  const sidebar = { columnStart: 0, columnSpan: 6 };
+  const bottom = { columnStart: 6, columnSpan: 18 };
+  const two = () => 2;
+  const show = (r: { columnStart: number; columnSpan: number }) => `${r.columnStart}:${r.columnSpan}`;
+  const fill = (section: typeof sidebar, column: number, row: number, others: Array<GridRect & { locked?: boolean }>, rowSpanAt: (span: number) => number = two) =>
+    show(fillSection(section, { columnStart: column, rowStart: row }, others, 6, rowSpanAt));
+
+  // The template: what it always was.
+  const page = [title, hours, grateful, reminders];
+  assert(fill(sidebar, 2, 14, page) === "0:6", "over Reminders: the sidebar, its stack");
+  assert(fill(sidebar, 2, 25, page) === "0:6", "under the sidebar stack: the sidebar");
+  const fullTodo = { columnStart: 6, rowStart: 21, columnSpan: 18, rowSpan: 15 };
+  assert(fill(bottom, 13, 25, [...page, fullTodo]) === "6:18", "over the to-do: the three days");
+  assert(fill(bottom, 13, 25, page) === "6:18", "an empty bottom section: the three days");
+
+  // A to-do narrowed to the last two days.
+  const narrow = { columnStart: 12, rowStart: 21, columnSpan: 12, rowSpan: 15 };
+  assert(fill(bottom, 8, 22, [...page, narrow]) === "6:6", `beside it: the one free day (got ${fill(bottom, 8, 22, [...page, narrow])})`);
+  assert(fill(bottom, 14, 25, [...page, narrow]) === "12:12", "over it: its own two days, into its stack");
+  const middle = { columnStart: 12, rowStart: 21, columnSpan: 6, rowSpan: 15 };
+  assert(fill(bottom, 8, 22, [...page, middle]) === "6:6" && fill(bottom, 20, 22, [...page, middle]) === "18:6", "either side of a one-day module: that side's day");
+  // Free above it: the whole section until the rows reach it.
+  const low = { columnStart: 12, rowStart: 30, columnSpan: 12, rowSpan: 6 };
+  assert(fill(bottom, 8, 22, [...page, low]) === "6:18", "free rows above a narrowed module: the whole section");
+  assert(fill(bottom, 8, 28, [...page, low]) === "6:18", "two rows tall from row 28 stops short of it at row 30: still the whole section");
+  assert(fill(bottom, 8, 29, [...page, low]) === "6:6", `reaching into its rows: the free day (got ${fill(bottom, 8, 29, [...page, low])})`);
+
+  // Narrower is taller, and taller can meet more: read again until it holds.
+  const step1 = { columnStart: 18, rowStart: 21, columnSpan: 6, rowSpan: 15 };
+  const step2 = { columnStart: 12, rowStart: 26, columnSpan: 6, rowSpan: 10 };
+  const taller = (span: number) => (span >= 18 ? 2 : span >= 12 ? 6 : 8);
+  assert(fill(bottom, 8, 22, [...page, step1, step2], taller) === "6:6", `two days would be six rows tall and meet the module below: one day (got ${fill(bottom, 8, 22, [...page, step1, step2], taller)})`);
+  assert(fill(bottom, 8, 22, [...page, step1, step2]) === "6:12", "at two rows tall it clears it: two days");
+
+  // A to-do widened under the sidebar is not the sidebar's: the section,
+  // as before, which the placement then fits or refuses.
+  const wide = { columnStart: 0, rowStart: 21, columnSpan: 24, rowSpan: 15 };
+  assert(fill(sidebar, 2, 25, [...page, wide]) === "0:6", "over a module wider than the section: the section");
+  // The right page: one section of four days.
+  const rightHours = { columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan: 20, locked: true };
+  const rightNarrow = { columnStart: 0, rowStart: 21, columnSpan: 6, rowSpan: 15 };
+  assert(fill({ columnStart: 0, columnSpan: 24 }, 15, 22, [rightHours, rightNarrow]) === "6:18", "beside a one-day to-do on the right page: the other three days");
+}
+console.log("All fillSection checks passed.");
 console.log("All resolveZone checks passed.");
 
 // --- minRowSpansForStack ---------------------------------------------------

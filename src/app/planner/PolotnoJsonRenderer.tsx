@@ -360,6 +360,77 @@ function markGeometry(
   };
 }
 
+/**
+ * A MODULE'S OWN FRAME - its outer border - on a path of its own.
+ *
+ * While a box eases (a width step, a crossing) the rest of its drawing is
+ * the wider of two renders, cut by the moving edge, and that render's frame
+ * sits at a size the box has not reached. It used to be hidden for the ease
+ * and a 2px black outline drawn round the box instead; when the ease ended
+ * the outline went and the frame came back through the arrival fade. Andrew,
+ * 2026-10-01: "the border fades out and back in between jumps", and on the
+ * icon strip, which has no frame at all, "box flashes around icon strip".
+ *
+ * So the frame is never hidden and never remounted. One node, always here;
+ * while the box eases it is the FINAL render's frame, its x, y, width and
+ * height transitioning on the box's own duration and curve, so its edges
+ * travel with the box's. Geometry, not a transform: a scaled stroke would
+ * change weight on the way (see flipTransform).
+ */
+function FrameLayer({
+  frame,
+  originX,
+  originY,
+  scale,
+  easeMs,
+}: {
+  frame: RenderedPolotnoElement | null;
+  originX: number;
+  originY: number;
+  scale: number;
+  easeMs: number;
+}) {
+  const dpr = useDevicePixelRatio();
+  if (!frame) return null;
+  const geometry = markGeometry(frame, originX, originY, scale * dpr, null);
+  if (!geometry) return null;
+  const strokeWidth = frame.strokeWidth ?? 0;
+  return (
+    <svg
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: "100%",
+        height: "100%",
+        overflow: "visible",
+        pointerEvents: "none",
+      }}
+    >
+      <rect
+        x={geometry.x}
+        y={geometry.y}
+        width={geometry.width}
+        height={geometry.height}
+        rx={typeof frame.cornerRadius === "number" ? frame.cornerRadius : undefined}
+        fill="none"
+        stroke={frame.stroke as string}
+        strokeWidth={strokeWidth}
+        opacity={frame.opacity ?? 1}
+        style={{
+          transition:
+            easeMs > 0
+              ? ["x", "y", "width", "height"].map((prop) => `${prop} ${easeMs}ms ${RESIZE_EASE_CURVE}`).join(", ")
+              : undefined,
+          // Fades in when the module first appears, with its other marks;
+          // a stable string, so later renders never restart it.
+          animation: `memari-mark-in ${MARK_FADE_IN_MS}ms ease-out`,
+        }}
+      />
+    </svg>
+  );
+}
+
 function RectLayer({
   rects,
   originX,
@@ -824,7 +895,29 @@ function PolotnoJsonRendererImpl({
   // being noticed. Growing needs none of this - the target IS the larger
   // geometry, so flat is already the final drawing.
 
-  const rects = (animateRects ? textFlat : flat).filter(isRect);
+  // The module's own frame goes on its own layer (FrameLayer): from the
+  // FINAL render while the box eases, so it can travel with the box, and
+  // never among the rects, so it is never hidden or faded with them. Picked
+  // out by name and place - every renderer draws it with borderElement's
+  // "-border" id, flush with its origin (checked across the catalogue).
+  const isFrame = (element: RenderedPolotnoElement) =>
+    isRect(element) &&
+    /-border$/.test(String(element.id)) &&
+    !!element.stroke &&
+    element.stroke !== "none" &&
+    Math.abs((element.x ?? 0) - originX) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs((element.y ?? 0) - originY) < OUTER_BORDER_MATCH_EPSILON_PX;
+  const frameRender = textFlat ?? flat;
+  const ownFrame = frameRender.find(isFrame) ?? null;
+  // A resize whose content is not redrawn live keeps the frame of the size
+  // it was, so it is hidden there as before, behind the box's outline.
+  const frozenFrame =
+    !textFlat &&
+    !!ownFrame &&
+    !!suppressOuterBorderSize &&
+    Math.abs((ownFrame.width ?? 0) - suppressOuterBorderSize.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs((ownFrame.height ?? 0) - suppressOuterBorderSize.height) < OUTER_BORDER_MATCH_EPSILON_PX;
+  const rects = (animateRects ? textFlat : flat).filter((element) => isRect(element) && !isFrame(element));
   // Text comes from its own render when one is supplied - see
   // textElements. Same origin either way: the two renders differ only
   // in span, never in columnStart/rowStart, so they share a top-left.
@@ -948,6 +1041,13 @@ function PolotnoJsonRendererImpl({
 
   return (
     <>
+      <FrameLayer
+        frame={frozenFrame ? null : ownFrame}
+        originX={originX}
+        originY={originY}
+        scale={scale}
+        easeMs={textFlat ? textEaseMs : 0}
+      />
       <RectLayer
         rects={rects}
         originX={originX}

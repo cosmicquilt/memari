@@ -120,6 +120,7 @@ import {
   resizeSpineSpread,
   spineMaxRowSpan,
   pageSections,
+  fillSection,
   stackUnderSpine,
   firstRowBelow,
   type SpineStack,
@@ -1352,17 +1353,16 @@ function NativeModule({
         // gray/dashed — a faint dashed gray line against mostly-white
         // content read as the box looking dimmed/disabled, not as an
         // active resize indicator.
-        // Also while a box is easing between zone shapes. Its content
-        // is drawn at the larger of the two sizes so the box can clip
-        // it, which means the content's own outer border sits at a size
-        // the box has not got to - clipped away entirely while growing,
-        // so the module loses its bottom and right edges for the length
-        // of the animation. Reported as the bottom lines of the
-        // remaining side modules disappearing. The outline follows the
-        // real box, so the frame stays put while the contents are
-        // revealed or cut off inside it.
-        outline: (isResizing && !contentIsLive) || clipToBox ? "2px solid #000000" : undefined,
-        outlineOffset: (isResizing && !contentIsLive) || clipToBox ? "-2px" : undefined,
+        // NOT while a box eases between shapes any more. The content's own
+        // outer border used to be hidden for the ease (it is drawn at the
+        // larger of the two sizes, so it sat where the box had not got to)
+        // and this outline stood in for it - which read as the border
+        // fading out and back in at every width step, and as a box
+        // flashing round the icon strip, which has none (2026-10-01). The
+        // module's own frame now travels with the box instead: see
+        // FrameLayer in PolotnoJsonRenderer.
+        outline: isResizing && !contentIsLive ? "2px solid #000000" : undefined,
+        outlineOffset: isResizing && !contentIsLive ? "-2px" : undefined,
         touchAction: locked ? undefined : "none",
       }}
     >
@@ -7656,7 +7656,19 @@ export function NativePlannerEditor({
         PHANTOM_ID
       );
       if (!phantomZone) return;
-      const phantomColumnSpan = phantomZone.columnSpan;
+      // Entered at the width it would arrive at - the free space under the
+      // pointer, up to the section (fillSection), as resolveDrag reads it.
+      const phantomArrival = fillSection(
+        phantomZone,
+        { columnStart: target.columnStart, rowStart: target.rowStart },
+        (instanceIdsByPageId[target.pageId] ?? []).flatMap((id) => {
+          const at = placements[id];
+          return id !== PHANTOM_ID && at ? [{ ...at, locked: moduleLookup.get(id)?.locked ?? false }] : [];
+        }),
+        dayUnitColumns(phantomPageGrid),
+        (span) => getMinRowSpanForSlug(slug, phantomPageGrid, span, previewProps)
+      );
+      const phantomColumnSpan = phantomArrival.columnSpan;
       const phantomRowSpan = getMinRowSpanForSlug(
         slug,
         phantomPageGrid,
@@ -7667,12 +7679,12 @@ export function NativePlannerEditor({
       );
       const placement: Placement = {
         ...clampGridPlacement(phantomPageGrid, {
-          columnStart: phantomZone.columnStart,
+          columnStart: phantomArrival.columnStart,
           rowStart: target.rowStart,
           columnSpan: phantomColumnSpan,
           rowSpan: phantomRowSpan,
         }),
-        columnStart: phantomZone.columnStart,
+        columnStart: phantomArrival.columnStart,
         columnSpan: phantomColumnSpan,
         rowSpan: phantomRowSpan,
       };
@@ -7934,10 +7946,25 @@ export function NativePlannerEditor({
         hoveredPageId,
         instanceId
       );
+      // WHICH SECTION IT IS IN NOW, by containment: within the hours'
+      // columns is the bottom zone, within the columns left of them the
+      // sidebar. It was "exactly the hours' columns", the same thing while
+      // every module filled its zone - but a module narrowed or widened then
+      // counted as in neither, every move of it read as arriving, and it
+      // spread to fill the free space. Andrew, 2026-10-01: "things
+      // shouldn't expand to fill space unless dragged accross a boundary
+      // like side panel or page in weekly spread". Moved within its own
+      // section it keeps its width; only a crossing fills (fillSection).
+      const sourceHours = sourceHourlyGridPlacement;
       const currentIsBottomZone =
-        !!sourceHourlyGridPlacement &&
-        current.columnStart === sourceHourlyGridPlacement.columnStart &&
-        current.columnSpan === sourceHourlyGridPlacement.columnSpan;
+        !!sourceHours &&
+        current.columnStart >= sourceHours.columnStart &&
+        current.columnStart + current.columnSpan <= sourceHours.columnStart + sourceHours.columnSpan;
+      const currentIsSidebar =
+        !!sourceHours && sourceHours.columnStart > 0 && current.columnStart + current.columnSpan <= sourceHours.columnStart;
+      // Widened across the boundary - from the sidebar in under the hours -
+      // it is in neither, and whichever it is dragged into it arrives in.
+      const straddlesSections = !!sourceHours && !currentIsBottomZone && !currentIsSidebar;
       // A palette phantom is ALWAYS crossing. It has no home zone: it
       // is arriving from outside the page entirely, so there is nothing
       // for "is this a different zone than the one I live in" to mean.
@@ -7955,6 +7982,7 @@ export function NativePlannerEditor({
       const crossingZones =
         !!targetZone &&
         (instanceId === PHANTOM_ID ||
+          straddlesSections ||
           targetZone.isBottomZone !== currentIsBottomZone ||
           hoveredPageId !== info.pageId);
 
@@ -7972,7 +8000,19 @@ export function NativePlannerEditor({
       const targetOthers = crossingZones ? hoveredOthers : sourceOthers;
       const targetHourlyGridPlacement = crossingZones ? hoveredHourlyGridPlacement : sourceHourlyGridPlacement;
 
-      const effectiveColumnSpan = crossingZones ? targetZone!.columnSpan : current.columnSpan;
+      // THE WIDTH IT ARRIVES AT: the free space under the pointer, up to a
+      // full section - fillSection (grid.ts), the rule addPaletteModuleAt and
+      // moveModuleAcrossZones save with, from this same aim, which the drop
+      // sends. Andrew, 2026-10-01: "fill the space available upto a full
+      // section". Over a module of the section it takes that module's
+      // columns, which on a page nobody has resized is the section.
+      const aim = { columnStart: pointerCell.columnStart, rowStart: pointerCell.rowStart };
+      const arrival = crossingZones
+        ? fillSection(targetZone!, aim, hoveredOthers, dayUnitColumns(hoveredPageGrid), (span) =>
+            getMinRowSpanForSlug(info.slug, hoveredPageGrid, span, info.propValues)
+          )
+        : null;
+      const effectiveColumnSpan = arrival ? arrival.columnSpan : current.columnSpan;
       const effectiveRowSpan = crossingZones
         ? getMinRowSpanForSlug(info.slug, targetPageGrid, effectiveColumnSpan, info.propValues)
         : current.rowSpan;
@@ -8077,7 +8117,7 @@ export function NativePlannerEditor({
             }).height,
       }).rowStart;
       const nearestCell = clampGridPlacement(targetPageGrid, {
-        columnStart: crossingZones ? targetZone!.columnStart : current.columnStart,
+        columnStart: arrival ? arrival.columnStart : current.columnStart,
         // The box as drawn either way: a crossing's from the pointer (see
         // arrivingTopRow), a same-zone reorder's from its own top edge.
         rowStart: overOwnColumn
@@ -8290,7 +8330,14 @@ export function NativePlannerEditor({
       // made "back in my own zone" indistinguishable from "over dead
       // space" - and the sticky rule below has to tell those apart,
       // because one should release the held zone and the other must not.
-      const zoneKey = targetZone ? `${targetPageId}:${targetZone.columnStart}:${targetZone.columnSpan}` : null;
+      // The columns it would take, so a pointer moving between a free day
+      // and a narrowed module's two is held by the same hysteresis as one
+      // moving between zones.
+      const zoneKey = arrival
+        ? `${targetPageId}:${arrival.columnStart}:${arrival.columnSpan}`
+        : targetZone
+          ? `${targetPageId}:${targetZone.columnStart}:${targetZone.columnSpan}`
+          : null;
       return {
         pageGrid: sourcePageGrid,
         current,
@@ -8310,6 +8357,8 @@ export function NativePlannerEditor({
         targetPageGrid,
         zoneKey,
         blocked,
+        // Where it was aimed, for the save to read the same fill from.
+        aim: arrival ? aim : null,
       };
     },
     [
@@ -8723,7 +8772,9 @@ export function NativePlannerEditor({
       savedModule: PaletteEntry["savedModule"] = null,
       // What the drop's preview showed - the server saves exactly this when
       // the page can hold it (see proposalHolds). The "+" button has none.
-      proposal: DropProposal | null = null
+      proposal: DropProposal | null = null,
+      // Where the drop was aimed - see resolveDrag's `aim`.
+      aim: { columnStart: number; rowStart: number } | null = null
     ) => {
       const beforeSnapshot = before ?? captureGeometry();
       // See gestureBlockedByPendingCommit's own comment — the requested
@@ -8744,7 +8795,7 @@ export function NativePlannerEditor({
         // shouldn't read a stale "what's occupied" view server-side
         // either.
         const result = await serializeCommit(() =>
-          addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart, savedModule?.id ?? null, proposal)
+          addPaletteModuleAt(pageId, moduleTypeSlug, columnStart, rowStart, savedModule?.id ?? null, proposal, aim)
         );
         if (result.columnStart === null || result.rowStart === null) return; // unreachable — GRID-mode instances always have both
         const finalColumnStart = result.columnStart;
@@ -9138,7 +9189,8 @@ export function NativePlannerEditor({
           dropped.rowStart,
           phantomBefore,
           phantom.savedModule,
-          { rowStart: dropped.rowStart, reflow: phantomResult.targetReflow }
+          { rowStart: dropped.rowStart, reflow: phantomResult.targetReflow },
+          phantomResult.aim
         );
         return;
       }
@@ -9186,6 +9238,7 @@ export function NativePlannerEditor({
         sourcePageId,
         targetPageId,
         targetPageGrid,
+        aim,
       } = result;
       if (
         resolved.columnStart === current.columnStart &&
@@ -9391,10 +9444,14 @@ export function NativePlannerEditor({
         // With what the preview showed, which is what gets saved whenever
         // the page can hold it - see proposalHolds.
         serializeCommit(() =>
-          moveModuleAcrossZones(instanceId, targetPageId, resolved.columnStart, resolved.rowStart, {
-            rowStart: resolved.rowStart,
-            reflow: targetReflow,
-          })
+          moveModuleAcrossZones(
+            instanceId,
+            targetPageId,
+            resolved.columnStart,
+            resolved.rowStart,
+            { rowStart: resolved.rowStart, reflow: targetReflow },
+            aim
+          )
         )
           // Both pages to where they were saved, the moved modules with the
           // server's drawings - see adoptSavedLayout. This used to take the

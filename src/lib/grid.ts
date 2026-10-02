@@ -682,6 +682,79 @@ export function pageSections(
   return sections;
 }
 
+/**
+ * HOW WIDE AN ARRIVAL IS - a palette drop, or a module moved into a
+ * section: "fill the space available up to a full section" (Andrew,
+ * 2026-10-01). Read at `aim`, the cell under the pointer:
+ *
+ *  1. Over an unlocked module of the section: that module's own columns.
+ *     It goes into that module's stack, above or below it, as a drop on a
+ *     full-width stack always has.
+ *  2. Over free space: the free days around the aimed day, at the rows
+ *     the arrival would take from the aimed row down - up to the whole
+ *     section. Beside a to-do narrowed to two days, the third day.
+ *  3. The aimed day not free there: the whole section, as before, which
+ *     the placement then fits by shrinking the stack or refuses.
+ *
+ * Its height depends on its width (rowSpanAt - a narrow habit tracker is
+ * taller), so the run is read again at each width it narrows to until it
+ * holds; it only ever narrows, so that ends.
+ *
+ * One rule for the editor's preview and the server's save, from the same
+ * aim - which the editor sends with the drop, because the row a module
+ * lands at is no stand-in for where it was aimed: one dropped under a
+ * narrowed to-do lands on free rows, and read there would take the whole
+ * section the preview never showed.
+ */
+export function fillSection(
+  section: { columnStart: number; columnSpan: number },
+  aim: { columnStart: number; rowStart: number },
+  others: Array<GridRect & { locked?: boolean }>,
+  step: number,
+  rowSpanAt: (columnSpan: number) => number
+): { columnStart: number; columnSpan: number } {
+  const sectionEnd = section.columnStart + section.columnSpan;
+  const holds = (o: GridRect, column: number, row: number) =>
+    column >= o.columnStart && column < o.columnStart + o.columnSpan && row >= o.rowStart && row < o.rowStart + o.rowSpan;
+  const under = others.find(
+    (o) =>
+      !o.locked &&
+      o.rowSpan > 0 &&
+      o.columnStart >= section.columnStart &&
+      o.columnStart + o.columnSpan <= sectionEnd &&
+      holds(o, aim.columnStart, aim.rowStart)
+  );
+  if (under) return { columnStart: under.columnStart, columnSpan: under.columnSpan };
+
+  const units = Math.max(1, Math.ceil(section.columnSpan / step));
+  const columnOf = (u: number) => section.columnStart + u * step;
+  const endOf = (u: number) => Math.min(sectionEnd, columnOf(u) + step);
+  const aimed = Math.max(0, Math.min(units - 1, Math.floor((aim.columnStart - section.columnStart) / step)));
+  let lo = 0;
+  let hi = units;
+  for (;;) {
+    const rowEnd = aim.rowStart + rowSpanAt(endOf(hi - 1) - columnOf(lo));
+    const free = (u: number) =>
+      !others.some(
+        (o) =>
+          o.rowSpan > 0 &&
+          o.columnStart < endOf(u) &&
+          o.columnStart + o.columnSpan > columnOf(u) &&
+          o.rowStart < rowEnd &&
+          o.rowStart + o.rowSpan > aim.rowStart
+      );
+    if (!free(aimed)) return { ...section };
+    let a = aimed;
+    let b = aimed + 1;
+    while (a > lo && free(a - 1)) a--;
+    while (b < hi && free(b)) b++;
+    if (a === lo && b === hi) break;
+    lo = a;
+    hi = b;
+  }
+  return { columnStart: columnOf(lo), columnSpan: endOf(hi - 1) - columnOf(lo) };
+}
+
 export function resolveZone(
   hourly: GridRect | null | undefined,
   target: { columnStart: number; rowStart: number },

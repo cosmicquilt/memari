@@ -25,6 +25,7 @@ import {
   gravityRepackAfterDeparture,
   dayUnitColumns,
   pageSections,
+  fillSection,
   stackUnderSpine,
   firstRowBelow,
   type PageGrid,
@@ -38,6 +39,16 @@ import { resolveWidthResize, type WidthEdge } from "@/lib/widthResize";
  *  getMinRowSpanForSlug layers whatever it gets over the schema defaults. */
 const configOf = (mi: { propValues: unknown }): Record<string, unknown> =>
   (mi.propValues as Record<string, unknown> | null) ?? {};
+
+/** Where a drop or move was aimed - the cell under the pointer, which
+ *  fillSection reads the arrival's width at. A missing or malformed one is
+ *  the landing cell, which is what every caller sent before there was an
+ *  aim: on a page nobody has resized, the same answer. */
+function aimOf(aim: { columnStart: number; rowStart: number } | null | undefined, columnStart: number, rowStart: number) {
+  return aim && Number.isFinite(aim.columnStart) && Number.isFinite(aim.rowStart)
+    ? { columnStart: Math.round(aim.columnStart), rowStart: Math.round(aim.rowStart) }
+    : { columnStart, rowStart };
+}
 
 /** A page's grid-placed instances other than `exceptId`, as the shared
  *  geometry rules take them (stackUnderSpine), each holding its row. */
@@ -799,7 +810,9 @@ export async function addPaletteModuleAt(
   /** A module from Saved: placed with its settings, and linked to it. */
   savedModuleId: string | null = null,
   /** What the drop's preview showed - saved as shown when the page can hold it. */
-  proposal: DropProposal | null = null
+  proposal: DropProposal | null = null,
+  /** Where it was aimed - the arrival's width is read there (fillSection). */
+  aim: { columnStart: number; rowStart: number } | null = null
 ) {
   const userId = await currentOwnerId();
   if (!userId) {
@@ -955,7 +968,7 @@ export async function addPaletteModuleAt(
             ? { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
                 columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan }
             : null,
-          { columnStart, rowStart },
+          aimOf(aim, columnStart, rowStart),
           pageSections(placedOthers(page.moduleInstances, ""), pageGrid.gridColumns, dayUnitColumns(pageGrid))
         );
         const inBottomZone = zone?.isBottomZone ?? false;
@@ -1027,6 +1040,31 @@ export async function addPaletteModuleAt(
           // resolveModulePlacement, which unlike the old fixed-size
           // search can ask siblings to shrink - the same thing the
           // preview was already showing.
+        }
+      }
+
+      // THE WIDTH IT ARRIVES AT: the free space where it was aimed, up to
+      // the zone's whole section - fillSection, the rule the drop's preview
+      // drew with, read from the same aim. Andrew, 2026-10-01: "fill the
+      // space available upto a full section". On a page nobody has resized
+      // it is the section, as above.
+      {
+        const aimed = aimOf(aim, columnStart, rowStart);
+        const zone = resolveZone(
+          hourlyGrid && hourlyGrid.columnStart !== null && hourlyGrid.rowStart !== null
+            ? { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
+                columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan }
+            : null,
+          aimed,
+          pageSections(placedOthers(page.moduleInstances, ""), pageGrid.gridColumns, dayUnitColumns(pageGrid))
+        );
+        const arrivalProps = saved ? { ...(saved.propValues as Record<string, unknown>), ...configOverrides } : configOverrides;
+        if (zone) {
+          const arrival = fillSection(zone, aimed, placedOthers(page.moduleInstances, ""), dayUnitColumns(pageGrid), (span) =>
+            getMinRowSpanForSlug(moduleTypeSlug, pageGrid, span, arrivalProps)
+          );
+          effectiveColumnStart = arrival.columnStart;
+          effectiveColumnSpan = arrival.columnSpan;
         }
       }
 
@@ -1425,7 +1463,9 @@ export async function moveModuleAcrossZones(
   columnStart: number,
   rowStart: number,
   /** What the move's preview showed - saved as shown when the page can hold it. */
-  proposal: DropProposal | null = null
+  proposal: DropProposal | null = null,
+  /** Where it was aimed - the arrival's width is read there (fillSection). */
+  aim: { columnStart: number; rowStart: number } | null = null
 ) {
   const userId = await currentOwnerId();
   if (!userId) {
@@ -1495,7 +1535,7 @@ export async function moveModuleAcrossZones(
       ? { columnStart: hourlyGrid.columnStart, rowStart: hourlyGrid.rowStart,
           columnSpan: hourlyGrid.columnSpan, rowSpan: hourlyGrid.rowSpan }
       : null,
-    { columnStart, rowStart },
+    aimOf(aim, columnStart, rowStart),
     pageSections(placedOthers(targetPage.moduleInstances, instance.id), targetPageGrid.gridColumns, dayUnitColumns(targetPageGrid))
   );
   const inBottomZone = zone?.isBottomZone ?? false;
@@ -1522,6 +1562,21 @@ export async function moveModuleAcrossZones(
     if (slug === "todo-checklist") {
       configOverrides.dayCount = columnSpanToDayCount(targetPageGrid, effectiveColumnSpan);
     }
+  }
+  // THE WIDTH IT ARRIVES AT: the free space where it was aimed, up to the
+  // whole section - fillSection, read from the aim the preview read, with
+  // the stored props the preview sized it from. On a page nobody has
+  // resized it is the section, as above.
+  if (zone) {
+    const arrival = fillSection(
+      zone,
+      aimOf(aim, columnStart, rowStart),
+      placedOthers(targetPage.moduleInstances, instance.id),
+      dayUnitColumns(targetPageGrid),
+      (span) => getMinRowSpanForSlug(slug, targetPageGrid, span, configOf(instance))
+    );
+    effectiveColumnStart = arrival.columnStart;
+    effectiveColumnSpan = arrival.columnSpan;
   }
   const effectiveRowSpan = getMinRowSpanForSlug(slug, targetPageGrid, effectiveColumnSpan, {
     // Its own stored props, plus anything this move overrides (a to-do's

@@ -2745,6 +2745,29 @@ const widthResize: Probe = {
         await tab.waitForTimeout(1500);
         return true;
       };
+      /** Records every painted frame of a module for 1.5s: its box's edges,
+       *  its own frame's (the stroked unfilled rect FrameLayer draws) and
+       *  that frame's opacity, and any outline drawn round the box. */
+      const film = (id: string) =>
+        tab.evaluate(
+          `(() => { window.__film = []; const t0 = performance.now(); const el = document.querySelector('[data-module-instance-id="${id}"]'); const loop = () => { const b = el.getBoundingClientRect(); const frame = [...el.querySelectorAll('rect')].find((r) => r.getAttribute('stroke') && r.getAttribute('fill') === 'none'); const fb = frame ? frame.getBoundingClientRect() : null; window.__film.push({ t: performance.now() - t0, left: b.left, right: b.right, frameLeft: fb ? fb.left : null, frameRight: fb ? fb.right : null, opacity: frame ? +getComputedStyle(frame).opacity : null, outline: getComputedStyle(el).outlineStyle }); if (performance.now() - t0 < 1500) requestAnimationFrame(loop); }; requestAnimationFrame(loop); })()`
+        );
+      type Filmed = { t: number; left: number; right: number; frameLeft: number | null; frameRight: number | null; opacity: number | null; outline: string };
+      const filmed = async () => (await tab.evaluate(`window.__film`)) as Filmed[];
+      /** The module's own frame on the box's edges in every frame, never
+       *  faded, and no outline. "the border fades out and back in between
+       *  jumps", and an outline round the icon strip, 2026-10-01. */
+      const frameTravels = (frames: Filmed[], what: string, framed = true) => {
+        const outlined = frames.filter((f) => f.outline !== "none").length;
+        if (outlined > 0) fail("width resize", `${what}: an outline was drawn round the box in ${outlined} frame(s)`);
+        if (!framed) return;
+        const missing = frames.filter((f) => f.frameRight === null).length;
+        const off = frames.filter((f) => f.frameLeft !== null && f.frameRight !== null && (Math.abs(f.frameLeft - f.left) > 1.5 || Math.abs(f.frameRight - f.right) > 1.5));
+        const faded = frames.filter((f) => f.opacity !== null && f.opacity < 0.99).length;
+        if (missing > 0) fail("width resize", `${what}: the module's frame was not drawn in ${missing} frame(s)`);
+        if (off.length > 0) fail("width resize", `${what}: the frame left the box's edge in ${off.length} frame(s), e.g. box ${Math.round(off[0].left)}-${Math.round(off[0].right)}, frame ${Math.round(off[0].frameLeft!)}-${Math.round(off[0].frameRight!)}`);
+        if (faded > 0) fail("width resize", `${what}: the frame faded in ${faded} frame(s)`);
+      };
       const columns = async (id: string) => {
         const s = await stored(id);
         return s ? `${s.columnStart}:${s.columnSpan}` : "gone";
@@ -2769,10 +2792,19 @@ const widthResize: Probe = {
           await tab.mouse.move(x0 + ((x - x0) * i) / 25, y0 + ((y - y0) * i) / 25);
           await tab.waitForTimeout(16);
         }
+        // Held there for a few moves, as a hand does: a new target has to
+        // be read three moves running before it takes over (ZONE_SWITCH_TICKS),
+        // so a pointer that arrives and lets go at once drops on the last one.
+        for (const wiggle of [2, -2, 1, -1, 0]) {
+          await tab.mouse.move(x + wiggle, y);
+          await tab.waitForTimeout(16);
+        }
         await tab.waitForTimeout(400);
+        // What the preview showed, for comparing with what lands.
+        const shown = await tab.locator('[data-module-instance-id="__palette_phantom__"]').boundingBox({ timeout: 2000 }).catch(() => null);
         await tab.mouse.up();
         await tab.waitForTimeout(2500);
-        return true;
+        return shown ?? true;
       };
 
       // 1. Blocked: Reminders is in the to-do's top row.
@@ -2813,17 +2845,17 @@ const widthResize: Probe = {
       // 3. One row shorter, it widens - swept over several frames, not one jump.
       await setWeeklySidebar(guest.journalId, [["Things I'm Grateful For", 3, 9], ["Reminders", 12, R - 12]]);
       await open();
-      await tab.evaluate(
-        `(() => { window.__widths = []; const t0 = performance.now(); const el = document.querySelector('[data-module-instance-id="${todo.id}"]'); const loop = () => { window.__widths.push([performance.now() - t0, el.getBoundingClientRect().width]); if (performance.now() - t0 < 1500) requestAnimationFrame(loop); }; requestAnimationFrame(loop); })()`
-      );
+      await film(todo.id);
       await dragEdge(todo.id, "left", -1);
       if ((await columns(todo.id)) !== "0:24") {
         fail("width resize", `with Reminders a row shorter the to-do did not widen into the sidebar (saved ${await columns(todo.id)})`);
         return;
       }
-      const widths = ((await tab.evaluate(`window.__widths`)) as number[][]).map((w) => Math.round(w[1]));
+      const widenFrames = await filmed();
+      const widths = widenFrames.map((f) => Math.round(f.right - f.left));
       const between = new Set(widths.filter((w) => w > widths[0] && w < widths[widths.length - 1]));
       if (between.size < 2) fail("width resize", `the widening jumped rather than swept (${between.size} width(s) between the two)`);
+      frameTravels(widenFrames, "widening the to-do");
       if (!(await matches("after widening"))) return;
 
       // 4. No dashed "+" box drawn over it - the sidebar stack's free space,
@@ -2873,7 +2905,10 @@ const widthResize: Probe = {
       await dropCard("labeled-box", widened.x + widened.width * 0.6, widened.y + 12);
       if (!(await matches("a box dropped into the bottom zone, on the widened to-do"))) return;
 
-      // 6. Narrowed back from the left to two days, and a drop beside it.
+      const landedAround = (await storedModules(guest.journalId)).length - beforeDrops;
+
+      // 6. Narrowed back from the left to two days, and drops beside it and
+      // on it: "fill the space available upto a full section" (2026-10-01).
       await open();
       const before = await stored(todo.id);
       if (before && before.columnStart === 0 && before.columnSpan === 24) {
@@ -2881,15 +2916,90 @@ const widthResize: Probe = {
         if ((await columns(todo.id)) !== "12:12") fail("width resize", `narrowing from the left by two days saved ${await columns(todo.id)}, not 12:12`);
       }
       if (!(await matches("after narrowing"))) return;
+      // Shorter, with free rows under it. A drop on its lower half goes in
+      // UNDER it, onto those free rows - where, read at the landing cell
+      // rather than where it was aimed, the free space is the whole
+      // section. That is what the aim sent with the drop is for.
+      await prisma.moduleInstance.update({ where: { id: todo.id }, data: { rowSpan: 9 } });
+      await open();
       await openPalette();
       const narrowed = (await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
       if (!narrowed) {
         fail("width resize", "the narrowed to-do is not on the page");
         return;
       }
-      await dropCard("labeled-box", narrowed.x - narrowed.width / 4, narrowed.y + 12);
+      const onPage = async () => new Set((await prisma.moduleInstance.findMany({ where: { pageId: todo.pageId }, select: { id: true } })).map((m) => m.id));
+      const arrivedSince = async (before: Set<string>) =>
+        (await prisma.moduleInstance.findMany({ where: { pageId: todo.pageId } })).find((m) => !before.has(m.id));
+      /** The landed module drawn where the preview drew it - the save
+       *  agreeing with the preview, not only with the rule. */
+      const asShown = async (id: string, shown: unknown, what: string) => {
+        if (!shown || shown === true) return;
+        const preview = shown as { x: number; width: number };
+        const landedBox = await tab.locator(`[data-module-instance-id="${id}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+        if (landedBox && (Math.abs(landedBox.x - preview.x) > 3 || Math.abs(landedBox.width - preview.width) > 3)) {
+          fail("width resize", `${what}: previewed ${Math.round(preview.width)}px wide at x ${Math.round(preview.x)}, landed ${Math.round(landedBox.width)}px at x ${Math.round(landedBox.x)}`);
+        }
+      };
+      let before6 = await onPage();
+      const besideShown = await dropCard("labeled-box", narrowed.x - narrowed.width / 4, narrowed.y + 12);
       if (!(await matches("a box dropped beside the narrowed to-do"))) return;
-      const landed = (await storedModules(guest.journalId)).length - beforeDrops;
+      const beside = await arrivedSince(before6);
+      if (!beside) fail("width resize", "a box dropped in the free day beside the narrowed to-do was refused - the free space was not filled");
+      else if (`${beside.columnStart}:${beside.columnSpan}` !== "6:6") {
+        fail("width resize", `a box dropped beside the narrowed to-do took columns ${beside.columnStart}:${beside.columnSpan}, not the one free day (6:6)`);
+      } else await asShown(beside.id, besideShown, "the box dropped beside the narrowed to-do");
+      // On it: its own two days, into its stack.
+      before6 = await onPage();
+      const onTodo = await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+      if (!onTodo) {
+        fail("width resize", "the narrowed to-do is not on the page after the drop beside it");
+        return;
+      }
+      const joinedShown = await dropCard("labeled-box", onTodo.x + onTodo.width / 2, onTodo.y + onTodo.height * 0.75);
+      if (!(await matches("a box dropped on the narrowed to-do"))) return;
+      const joined = await arrivedSince(before6);
+      if (!joined) fail("width resize", "a box dropped on the narrowed to-do was refused");
+      else if ((joined.rowStart ?? 0) < (todo.rowStart ?? 0) + 9 - 1) {
+        fail("width resize", `a box dropped on the narrowed to-do's lower half landed at row ${joined.rowStart}, not under it - the case this checks did not happen`);
+      }
+      else if (`${joined.columnStart}:${joined.columnSpan}` !== "12:12") {
+        fail("width resize", `a box dropped on the narrowed to-do took columns ${joined.columnStart}:${joined.columnSpan}, not its two days (12:12)`);
+      } else await asShown(joined.id, joinedShown, "the box dropped under the narrowed to-do");
+
+      // Moved within its own section, it keeps its width: "things shouldn't
+      // expand to fill space unless dragged accross a boundary like side
+      // panel or page in weekly spread" (2026-10-01). Carried down onto the
+      // free rows at the foot of the section, where an arrival would take
+      // all three days.
+      await tab.keyboard.press("Escape");
+      await open();
+      const todoNow = await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+      const lowest = joined ? await tab.locator(`[data-module-instance-id="${joined.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null) : null;
+      if (todoNow && lowest) {
+        const x0 = todoNow.x + todoNow.width / 2;
+        const y0 = todoNow.y + todoNow.height / 2;
+        const x1 = x0;
+        const y1 = lowest.y + lowest.height + 30;
+        await tab.mouse.move(x0, y0);
+        await tab.mouse.down();
+        for (let i = 1; i <= 25; i++) {
+          await tab.mouse.move(x0 + ((x1 - x0) * i) / 25, y0 + ((y1 - y0) * i) / 25);
+          await tab.waitForTimeout(16);
+        }
+        for (const wiggle of [2, -2, 1, -1, 0]) {
+          await tab.mouse.move(x1 + wiggle, y1);
+          await tab.waitForTimeout(16);
+        }
+        await tab.waitForTimeout(400);
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        if ((await columns(todo.id)) !== "12:12") {
+          fail("width resize", `the narrowed to-do moved within its own section saved ${await columns(todo.id)} - it spread to fill the space instead of keeping its two days`);
+        }
+        if (!(await matches("after moving the narrowed to-do within its section"))) return;
+      } else fail("width resize", "the narrowed to-do, or the box under it, is not on the page to move");
+      await openPalette();
 
       // 7. The icon strip arrives one row tall, and narrows to one day.
       const rightBox = (await tab.locator(`[data-module-instance-id="${rightTodo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null));
@@ -2908,7 +3018,9 @@ const widthResize: Probe = {
       if (arrived?.rowSpan !== 1) fail("width resize", `the icon strip arrived ${arrived?.rowSpan} rows tall, not one`);
       if (!(await matches("after the icon strip landed"))) return;
       await open();
+      await film(strip.id);
       await dragEdge(strip.id, "right", -3);
+      frameTravels(await filmed(), "narrowing the one-row icon strip", false);
       const narrowedStrip = await stored(strip.id);
       if (narrowedStrip?.columnSpan !== 6 || narrowedStrip.rowSpan !== 1) {
         fail(
@@ -2919,7 +3031,7 @@ const widthResize: Probe = {
       if (!(await matches("after narrowing the icon strip"))) return;
       if (failures === failuresBefore) note(
         "width resize",
-        `held by Reminders, refused by the server for a stale page, widened with it a row shorter (${between.size} widths swept through), no "+" over it, three drops around it kept the page true (${landed} landed, the rest refused), narrowed back to two days, and an icon strip landed one row tall and narrowed to one day`
+        `held by Reminders, refused by the server for a stale page, widened with it a row shorter (${between.size} widths swept through), no "+" over it, two drops around it kept the page true (${landedAround} landed, the rest refused), narrowed back to two days, a drop beside it filled the free day and one under it took its two days, moved within its section it kept them, and an icon strip landed one row tall and narrowed to one day`
       );
     } finally {
       await context.close();
