@@ -111,6 +111,13 @@ const WEIGHTED_COLUMNS = new Set([
   ),
   "hourly-grid-core",
   "month-grid-core",
+  // Its one vertical rule, the level axis, is on the lattice wherever its
+  // days are - dayChart.test holds it there at a page, three quarters and
+  // half - and where the days cannot be (a week one day wide, a month), it
+  // sits where the labels end instead, so there is no slack before them and
+  // the days are even to both edges. Andrew, 2026-10-02. Nothing is written
+  // across that rule, as nothing is across a day column.
+  ...slugsDrawnBy("day-chart"),
 ]);
 
 /** Modules whose heading is drawn by something other than the frame, and

@@ -182,12 +182,26 @@ export function renderDayChart(
     { largest: needs(levelSizes[0]), smallest: needs(levelSizes[levelSizes.length - 1]) },
     days
   );
-  const plotLeft = allocationLeft + labelColumn.cells * pitch;
-  // Days on the lattice run to the allocation's edge, where the last
-  // boundary is a lattice column (the border stands in for it, 6px inside,
-  // as the to-do's does). Days that cannot be on it anyway stop short of the
-  // border instead, so the last one does not crowd it.
-  const plotRight = labelColumn.onLattice ? allocationLeft + allocationCells * pitch : boxRight - pad / 2;
+  // DAYS ON THE LATTICE: the axis on a lattice column (or half way), the
+  // days running to the allocation's edge, where the last boundary is a
+  // lattice column (the border stands in for it, 6px inside, as the to-do's
+  // does).
+  //
+  // DAYS OFF IT - a week one day wide - have nothing to line up with, so
+  // neither does the axis: it goes exactly where the labels end, not rounded
+  // out to the next half cell, and the days run all the way to the border.
+  // Rounding put a slack 13px before the faces, and stopping the days short
+  // of the border left Saturday further from it than Sunday from the axis.
+  // Andrew, 2026-10-02: "take slight extra space before smileys and add it so
+  // S first day Sunday is same distance from border on its left and S
+  // Saturday last day is from the border on its right". Each is now half a
+  // day from its edge.
+  const exactCells = Math.min(
+    Math.max(needs(levelSizes[levelSizes.length - 1]), Math.min(needs(levelSizes[0]), labelColumn.cells)),
+    labelColumn.cells
+  );
+  const plotLeft = allocationLeft + (labelColumn.onLattice ? labelColumn.cells : exactCells) * pitch;
+  const plotRight = labelColumn.onLattice ? allocationLeft + allocationCells * pitch : boxRight;
   const dayWidth = (plotRight - plotLeft) / days;
   const dayCentre = (d: number) => plotLeft + (d + 0.5) * dayWidth;
 

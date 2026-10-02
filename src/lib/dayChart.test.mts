@@ -93,6 +93,27 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   }
 }
 
+// --- one day wide, faces: no slack before them, Sunday and Saturday even ------------
+// "take slight extra space before smileys and add it so S first day Sunday is
+// same distance from border on its left and S Saturday last day is from the
+// border on its right" (2026-10-02).
+{
+  const chart = draw({ heading: "Mood", levels: ["😃", "🙂", "😐", "😞", "😢"], span: "week", look: "dots" }, 6);
+  const head = ids(chart, /-l0-face-head$/)[0];
+  const axis = ids(chart, /-axis-y$/)[0];
+  const boxLeft = PAGE.marginPx + PAGE.boxInsetPx;
+  const boxRight = PAGE.marginPx + 6 * CELL - PAGE.boxInsetPx;
+  const before = (head?.x ?? 0) - boxLeft;
+  const after = (axis?.x ?? 0) - ((head?.x ?? 0) + (head?.width ?? 0));
+  check(Math.abs(before - after) < 1.5, `the faces sit as far from the border as from the axis (${before.toFixed(1)} and ${after.toFixed(1)})`);
+  const days = ids(chart, /-d\d-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+  const axisX = (axis?.x ?? 0) + (axis?.width ?? 0) / 2;
+  check(
+    Math.abs(days[0] - axisX - (boxRight - days[6])) < 0.5,
+    `Sunday is as far from the axis as Saturday from the border (${(days[0] - axisX).toFixed(1)} and ${(boxRight - days[6]).toFixed(1)})`
+  );
+}
+
 // --- faces (2026-10-01) ------------------------------------------------------------
 // A level that is exactly 😃 🙂 😐 😞 or 😢 is drawn as the doodle people's
 // face: a head, two eyes, a mouth - and a tear on the last.
@@ -153,9 +174,24 @@ const mood = { heading: "Mood", levels: ["Great", "Good", "Okay", "Low", "Awful"
   }
   const half = texts(draw({ ...mood, span: "week" }, 12), /-l\d-label$/);
   check(half.join(",") === "Great,Good,Okay,Low,Awful", `a half-page week keeps its level labels whole (got ${half.join(",")})`);
+  // Where the days ARE on the lattice, so is the axis - it is their left edge.
+  for (const columns of [24, 18, 12]) {
+    const latticed = draw({ ...mood, span: "week", look: "bars" }, columns);
+    const latticeAxis = ids(latticed, /-axis-y$/)[0];
+    check(!!latticeAxis && onHalf((latticeAxis.x ?? 0) + (latticeAxis.width ?? 0) / 2), `the level axis is on the lattice at ${columns}`);
+  }
+  // A month's 31 days are never on it, so the axis is where the labels end
+  // and the days reach the border: the first is as far from the axis as the
+  // last is from the border (2026-10-02).
   const chart = draw({ ...mood, span: "month", look: "ruled" }, 24);
   const axis = ids(chart, /-axis-y$/)[0];
-  check(!!axis && onLattice((axis.x ?? 0) + (axis.width ?? 0) / 2), "the level axis is on a lattice column");
+  const monthDays = ids(chart, /-d\d+-label$/).map((e) => (e.x ?? 0) + (e.width ?? 0) / 2);
+  const axisX = (axis?.x ?? 0) + (axis?.width ?? 0) / 2;
+  const border = PAGE.marginPx + 24 * CELL - PAGE.boxInsetPx;
+  check(
+    Math.abs(monthDays[0] - axisX - (border - monthDays[monthDays.length - 1])) < 0.5,
+    `a month's first day is as far from the axis as its last from the border (${(monthDays[0] - axisX).toFixed(1)} and ${(border - monthDays[monthDays.length - 1]).toFixed(1)})`
+  );
   const rules = ids(chart, /-l\d-rule$/).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2);
   check(rules.length === 4 && rules.every(onLattice), "the rules between levels are on lattice rows");
   const box = ids(chart, /-border$/)[0];
