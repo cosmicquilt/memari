@@ -22,10 +22,11 @@ export const ENERGY_BOLTS = ["⚡⚡⚡", "⚡⚡", "⚡", "⚡½", "⚡○"] as
 /** Sleep, most first: a full moon waning to a thin crescent. */
 export const SLEEP_MOONS = ["🌕", "🌖", "🌗", "🌘", "🌒", "🌑"] as const;
 /** BEDTIME, latest first - later is up (2026-10-02, "reverse direction of
- *  hours bedtime (up is later)"). Each time keeps its moon, so the moon
- *  still fills as the bedtime is earlier: a thin crescent at 2AM, full at
- *  9PM. The times are fine print at each moon's lower right. */
-export const BEDTIME_LEVELS = ["🌑 2AM", "🌒 1AM", "🌘 12AM", "🌗 11PM", "🌖 10PM", "🌕 9PM"];
+ *  hours bedtime (up is later)") - and the moons turned with the hours
+ *  ("for bedtime can you reverse direction of symbols too"): full at the
+ *  top, by 2AM, waning down to a thin crescent at 9PM, so the moon fills as
+ *  the night goes on. The times are fine print at each moon's lower right. */
+export const BEDTIME_LEVELS = ["🌕 2AM", "🌖 1AM", "🌗 12AM", "🌘 11PM", "🌒 10PM", "🌑 9PM"];
 // Spaced so each step reads at a fifth of an inch: closer than this, the
 // middle three looked alike.
 const MOON_LIT: Record<(typeof SLEEP_MOONS)[number], number> = {

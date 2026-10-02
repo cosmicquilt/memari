@@ -397,10 +397,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     // Bedtime, under the moon (2026-10-02): "I like b's symbols then maybe
     // we can have even smaller fine print text with the time near the lower
     // right corner ... it should say bedtime as title and hours should start
-    // 9PM to past midnight". A full moon for the earliest, waning to a thin
-    // crescent past midnight. The slug stays: it is the stored type's key.
-    // Later is UP ("reverse direction of hours bedtime (up is later)") - each
-    // moon keeps its time, so the moon still fills as the night is shorter.
+    // 9PM to past midnight". Later is UP ("reverse direction of hours
+    // bedtime (up is later)"), and the moons with it - full at the top by
+    // 2AM, a thin crescent at 9PM ("reverse direction of symbols too"). See
+    // BEDTIME_LEVELS. The slug stays: it is the stored type's key.
     props: { heading: "Bedtime", span: "week", levels: BEDTIME_LEVELS },
     columnSpan: 12,
     rowSpan: 8,
