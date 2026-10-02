@@ -333,9 +333,30 @@ export function tabOpenness(detent: DrawerDetent): 0 | 1 {
  * which one it is - the filmstrip's own answer to what a stack's fan-out
  * was for.
  */
+/**
+ * THE BAND ABOVE THE CARDS, at a drawer height. At the resting detent and
+ * up it is GROUP_PAD_TOP, which centres the cards in their box. At the
+ * compact detent it is GROUP_PAD_TOP_COMPACT, and the cards have the rest:
+ * there the centring band was the biggest thing in the drawer - 39px over
+ * cards 51px tall - and read as "the previews look a bit small ... especially
+ * on the top theres space" (2026-10-01). Between the two it moves evenly
+ * with the height, so a drag from one to the other is continuous, the cards
+ * growing all the way. The compact drawer is the same height it was; only
+ * what it spends that height on changed.
+ */
+const GROUP_PAD_TOP_COMPACT = 10;
+function groupPadTop(drawerHeight: number): number {
+  const t = (drawerHeight - DRAWER_COMPACT_HEIGHT) / (DRAWER_RESTING_HEIGHT - DRAWER_COMPACT_HEIGHT);
+  return GROUP_PAD_TOP_COMPACT + (GROUP_PAD_TOP - GROUP_PAD_TOP_COMPACT) * Math.max(0, Math.min(1, t));
+}
+
 function cardSize(drawerHeight: number) {
-  // The room left is a row, and a row is ACTIVE_SCALE cards tall.
-  const height = Math.max(CARD_HEIGHT_COMPACT, Math.floor((drawerHeight - CHROME_HEIGHT) / ACTIVE_SCALE));
+  // The room left is a row, and a row is ACTIVE_SCALE cards tall. The
+  // chrome is CHROME_HEIGHT with its band at this height's size, and the
+  // floor is the compact detent's card, where the drawer stops resizing them.
+  const chrome = (h: number) => CHROME_HEIGHT - GROUP_PAD_TOP + groupPadTop(h);
+  const smallest = Math.floor((DRAWER_COMPACT_HEIGHT - chrome(DRAWER_COMPACT_HEIGHT)) / ACTIVE_SCALE);
+  const height = Math.max(smallest, Math.floor((drawerHeight - chrome(drawerHeight)) / ACTIVE_SCALE));
   return { height, width: Math.round(height * PAGE_RATIO) };
 }
 
@@ -1186,6 +1207,7 @@ export function TimelineDrawer({
           "--memari-drawer-height": `${height}px`,
           "--memari-card-h": `${cardSize(panelHeight).height}px`,
           "--memari-card-w": `${cardSize(panelHeight).width}px`,
+          "--memari-group-pad-top": `${groupPadTop(panelHeight)}px`,
         } as CSSProperties),
       }}
     >
@@ -1550,7 +1572,10 @@ function LevelGroupInner({
         position: "relative",
         border: `${GROUP_BORDER_PX}px solid ${highContrast ? "#777777" : GROUP_BORDER}`,
         borderRadius: GROUP_RADIUS,
-        padding: `${GROUP_PAD_TOP}px ${GROUP_PAD_X}px ${GROUP_PAD_BOTTOM}px`,
+        // The band above the cards follows the drawer's height (groupPadTop),
+        // and eases on the cards' own clock so the two settle together.
+        padding: `var(--memari-group-pad-top, ${GROUP_PAD_TOP}px) ${GROUP_PAD_X}px ${GROUP_PAD_BOTTOM}px`,
+        transition: reduceMotion || !card.sizeTransition ? undefined : `padding-top ${SLIDE_MS}ms ${SETTLE}`,
       }}
     >
       {/* The rule between this box and the next - see LEVEL_DIVIDER_SHARE.

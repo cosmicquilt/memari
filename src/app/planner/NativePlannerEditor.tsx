@@ -10462,7 +10462,24 @@ export function NativePlannerEditor({
   }, [settling]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: CANVAS_CREAM }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        // THE CANVAS ROUND THE PAGES: the darker cream (cream.ts), with paper
+        // texture (2026-10-01: "add paper texture to canvas background") -
+        // the journal pages' own fibre tile, as the start dialog and the
+        // landing page lay it: mid-grey, so an overlay blend leaves the
+        // colour alone and only the fibres lighten and darken it; 256px so a
+        // 2x screen shows it at its own resolution. The colour is there before
+        // the tile loads, so the first frame is right, never blank.
+        backgroundColor: CANVAS_CREAM,
+        backgroundImage: "url(/landing/paper.jpg)",
+        backgroundSize: "256px 256px",
+        backgroundBlendMode: "overlay",
+      }}
+    >
       <header
         style={{
           padding: "8px 16px",
