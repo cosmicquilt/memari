@@ -21,6 +21,8 @@
     "check:layout": "tsx scripts/check-layout.mts",
     "check:journals": "tsx scripts/check-journals.mts",
     "check:saved": "tsx scripts/check-saved.mts",
+    "check:renewals": "tsx scripts/check-renewals.mts",
+    "print:webhooks": "tsx scripts/setup-webhooks.mts",
     "build:handwriting": "tsx scripts/build-handwriting-fonts.mts",
     "build:desk-textures": "tsx scripts/build-desk-textures.mts",
     "build:doodle-wall": "tsx scripts/build-doodle-wall.mts",
@@ -36,7 +38,7 @@
     "check:subscriptions": "tsx scripts/check-subscriptions.mts",
     "check:guest-sweep": "tsx scripts/check-guest-sweep.mts",
     "check:browser": "tsx scripts/check-browser.mts",
-    "check:all": "tsc --noEmit && eslint && npm test && npm run check:pdf && npm run check:print && npm run check:preview && npm run check:page && npm run check:layout && npm run check:levels && npm run check:contrast && npm run check:book && npm run check:gaps && npm run check:journals && npm run check:saved && npm run check:calendar && npm run check:subscriptions && npm run check:guest-sweep && npm run check:routes && npm run check:browser",
+    "check:all": "tsc --noEmit && eslint && npm test && npm run check:pdf && npm run check:print && npm run check:preview && npm run check:page && npm run check:layout && npm run check:levels && npm run check:contrast && npm run check:book && npm run check:gaps && npm run check:journals && npm run check:saved && npm run check:renewals && npm run check:calendar && npm run check:subscriptions && npm run check:guest-sweep && npm run check:routes && npm run check:browser",
     "check:events": "tsx src/lib/eventsProof.mts",
     "measure:fonts": "tsx scripts/measure-font-advances.mts"
   },

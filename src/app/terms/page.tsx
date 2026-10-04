@@ -2,11 +2,15 @@ import type { Metadata } from "next";
 import { LegalPage, Summary, H2, P, UL, LI, LEGAL_CONTACT, LEGAL_ENTITY } from "../legal/LegalPage";
 
 // Written against what the app actually does today, not what it is planned
-// to do. Two things follow from that and are easy to get wrong:
+// to do. Things that follow from that and are easy to get wrong:
 //
-//   - printing and posting a book DOES NOT EXIST yet. There is no Lulu
-//     integration, no checkout, no address collected. Terms that describe
-//     an order process would be describing nothing.
+//   - printed books are ordered through src/lib/print (2026-10-04): priced
+//     from Lulu's own quote and shown before paying, paid on Stripe's page,
+//     printed and posted by Lulu, auto-renew OFF unless switched on. The
+//     section below describes exactly that flow - if it changes, this page
+//     changes in the same commit.
+//   - a failed renewal is never retried: auto-renew is switched off and the
+//     Orders page says why (renewals.ts). The terms promise that.
 //   - guest journals really are deleted after 30 days idle. That is a
 //     material term, not a footnote, and it is stated where someone using
 //     guest mode will meet it.
@@ -18,13 +22,15 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of use" updated="22 September 2026">
+    <LegalPage title="Terms of use" updated="4 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Your planners are yours. Use the app for anything
-          lawful. If you use it as a guest, journals you do not open for 30 days are deleted. It is
-          early software, provided as it is, and we cannot promise it will never lose anything
-          &mdash; so export anything you would hate to lose.
+          lawful. If you use it as a guest, journals you do not open for 30 days are deleted. A
+          printed book is priced before you pay, made to order for you, and reprinted or refunded
+          if it arrives damaged or misprinted; auto-renew is off unless you turn it on. It is early
+          software, provided as it is, and we cannot promise it will never lose anything &mdash; so
+          export anything you would hate to lose.
         </P>
       </Summary>
 
@@ -85,13 +91,69 @@ export default function TermsPage() {
         <LI>resell access to it, or run it as a service for other people, without asking us first.</LI>
       </UL>
 
-      <H2>Printing</H2>
+      <H2>Printed books</H2>
 
       <P>
-        Printing and posting a physical book is <strong>not available yet</strong>. Today you can
-        export a PDF and print it yourself. When we do offer printing, its prices, delivery and
-        refunds will be set out before you order anything &mdash; nothing here commits you to a
-        purchase.
+        You can order a journal printed and bound, for any number of days and in coil, paperback or
+        hardcover. You need an account to order. Our print partner, Lulu, prints and posts it; you
+        pay us, on Stripe&rsquo;s payment page.
+      </P>
+
+      <P>
+        <strong>What you see is what we print.</strong> The book is made from your journal as it is
+        when you pay, for the days you chose. Check it first with Export PDF &mdash; that file is the
+        book. Changes you make afterwards go into your next book, not this one. You are responsible
+        for having the right to print what you put in it.
+      </P>
+
+      <P>
+        <strong>Price.</strong> The price of the book and of its postage is shown before you pay, in
+        US dollars. It depends on the length, the binding and where it is going. If we are required
+        to charge sales tax or VAT, it is shown before you pay too. Orders sent outside the United
+        States may be charged import duties or taxes by the country they arrive in; those are yours
+        to pay, and are not something we see or set.
+      </P>
+
+      <P>
+        <strong>Delivery.</strong> Printing usually takes 3&ndash;5 business days, then the post
+        takes what the shipping you chose takes. Times we show are estimates, not promises. You will
+        find where your book is under Orders.
+      </P>
+
+      <P>
+        <strong>Cancelling.</strong> Each book is made to order, for you. If you need to cancel,
+        email us straight away: we can stop it until the printer starts, usually within an hour of
+        your payment. After that it cannot be stopped, and we cannot take back a book for a change
+        of mind &mdash; where the law gives a right to cancel a purchase, it does not cover goods
+        made to the buyer&rsquo;s own design.
+      </P>
+
+      <P>
+        <strong>If something is wrong with it.</strong> If your book arrives damaged, misprinted or
+        not as you designed it, or does not arrive at all, tell us within 30 days of when it arrived
+        or was due, with a photo where there is something to see. We will reprint it or refund you,
+        whichever you prefer. This is on top of any rights the law gives you, not instead of them.
+      </P>
+
+      <H2>Auto-renew</H2>
+
+      <P>
+        <strong>Auto-renew is off unless you turn it on.</strong> When it is on, before your book
+        runs out we order the next one &mdash; the same number of days, starting the day after it
+        ends, to the same address and by the same shipping &mdash; and charge the card you paid with.
+        The next book is made from your journal as it is then, so its price is that book&rsquo;s own:
+        if your journal or the printing and postage costs have changed, the price can change too.
+      </P>
+
+      <P>
+        The date the next book will be ordered is shown under Orders. Turn auto-renew off there at
+        any time before that date and nothing more is ordered. If a renewal cannot be ordered
+        &mdash; your card is declined, or the book no longer fits its binding &mdash; nothing is
+        charged, auto-renew is turned off, and Orders says why. We do not try the card again.
+      </P>
+
+      <P>
+        Your card is saved only when auto-renew is on, and it is held by Stripe, not by us.
       </P>
 
       <H2>Availability</H2>

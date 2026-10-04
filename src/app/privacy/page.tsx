@@ -14,6 +14,15 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     src/app/guest/route.ts, and their saved items follow
 //   - the PDF is built on the server (src/app/app/export/route.ts) and
 //     handed back; it is not stored and not sent anywhere
+//   - ORDERS (src/lib/print, 2026-10-04): an order stores the delivery
+//     name, address, phone and email, what was ordered and its price, and
+//     the book's two PDFs (PrintFile). Lulu receives the address and the
+//     PDFs; Stripe takes the card itself (we never see it) and keeps it
+//     only when auto-renew is on. Print files are deleted a year after
+//     delivery or cancellation, an unpaid checkout's after a month - by
+//     the daily job (renewals.ts, pruneOldPrintFiles), which is what lets
+//     this page promise it. The account's email is copied onto an order,
+//     the one exception to "nothing from Clerk in our database"
 //   - Polotno was listed as a processor while the legacy /planner editor
 //     still loaded its SDK. That route and the dependency are gone, so the
 //     entry went with them - a processor you no longer use is a disclosure
@@ -28,14 +37,16 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="28 September 2026">
+    <LegalPage title="Privacy" updated="4 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
           an account, your sign-in details sit with our authentication provider. If you point it at
-          a calendar, it reads that calendar and never writes to it. There is no advertising, no
-          tracking, no analytics of any kind, and nothing is sold or shared for marketing. You can
-          use it without an account at all. The detail below is what actually binds.
+          a calendar, it reads that calendar and never writes to it. If you order a printed book,
+          we keep what is needed to make and deliver it, and share it only with the printer that
+          makes it and the company that takes the payment. There is no advertising, no tracking, no
+          analytics of any kind, and nothing is sold or shared for marketing. You can use it without
+          an account at all. The detail below is what actually binds.
         </P>
       </Summary>
 
@@ -82,8 +93,9 @@ export default function PrivacyPage() {
       <P>
         <strong>If you sign in.</strong> Authentication is handled by Clerk. They hold your email
         address, your name if you gave one, and whatever your provider returns if you sign in with
-        Google. <em>We do not copy any of that into our own database.</em> Our records identify you
-        only by the opaque account id Clerk issues.
+        Google. <em>We do not copy any of that into our own database</em>, except your email onto
+        an order if you order a printed book (below). Otherwise our records identify you only by
+        the opaque account id Clerk issues.
       </P>
 
       <P>
@@ -98,6 +110,14 @@ export default function PrivacyPage() {
         <strong>Technical records.</strong> Our host keeps ordinary server logs, which include IP
         addresses and request details, for security and for working out why something broke. We do
         not combine them with your journals to build a profile.
+      </P>
+
+      <P>
+        <strong>If you order a printed book.</strong> We keep the order: the name, address, phone
+        number and email you give for delivery, what you ordered (the journal, the days, the
+        binding, the shipping) and what it cost, and the two files the book is printed from
+        &mdash; its pages and its cover. If you turn auto-renew on we also keep a reference to the
+        card Stripe saved for it; the card itself never reaches us.
       </P>
 
       <H2>What we do not do</H2>
@@ -163,6 +183,16 @@ export default function PrivacyPage() {
           <A href="https://clerk.com/legal/privacy">Clerk</A> &mdash; accounts and sign-in, for
           people who choose to have one.
         </LI>
+        <LI>
+          <A href="https://stripe.com/privacy">Stripe</A> &mdash; payment for printed books. You
+          give your card to Stripe on their page, not to us. They receive your name, email and the
+          order&rsquo;s amount, and save your card only if you turn auto-renew on.
+        </LI>
+        <LI>
+          <A href="https://www.lulu.com/privacy-policy">Lulu</A> &mdash; printing and posting books. For
+          each order they receive the delivery name, address, phone number and email, and the
+          book&rsquo;s files, and pass the address to the carrier that delivers it.
+        </LI>
       </UL>
 
       <H2>How long anything is kept</H2>
@@ -183,6 +213,12 @@ export default function PrivacyPage() {
           to one journal, so removing a journal leaves them; removing a calendar deletes its
           address and every event on it. A guest&rsquo;s calendars go when their journals do.
         </LI>
+        <LI>
+          <strong>Orders are kept</strong> as a record of the sale, for as long as tax and
+          accounting rules require. <strong>A book&rsquo;s files are deleted a year after it is
+          delivered or cancelled</strong> &mdash; long enough to reprint one that arrives damaged
+          &mdash; and the files of a checkout that was never paid are deleted after a month.
+        </LI>
         <LI>Server logs are kept for a short period by our host, on their schedule.</LI>
       </UL>
 
@@ -191,8 +227,8 @@ export default function PrivacyPage() {
       <P>
         Exporting a PDF builds the file on our server from the journal already stored there and
         hands it straight back to your browser. The file is not kept and not sent anywhere else.
-        Printing and posting a physical book is not available yet; when it is, this page will say
-        who receives your address and what they receive, before it happens.
+        Ordering a printed book is different: its files are kept with the order and fetched by
+        Lulu to print it, as described above.
       </P>
 
       <H2>Your choices</H2>

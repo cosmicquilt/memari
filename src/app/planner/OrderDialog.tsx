@@ -322,7 +322,7 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
                       <span style={{ width: 16, height: 16, borderRadius: 8, background: CREAM, display: "block" }} />
                     </button>
                     <span>
-                      <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {quote.range.days} days automatically, before this book runs out, to the same address. Your card is saved for it only if this is on. Turn it off any time under Orders.
+                      <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {quote.range.days} days automatically before this book runs out, to the same address, at that book&apos;s own price (it is your journal as it is then). Your card is saved for it only if this is on. Turn it off any time under Orders.
                     </span>
                   </label>
 

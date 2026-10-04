@@ -69,7 +69,7 @@ async function token(): Promise<string> {
   return json.access_token;
 }
 
-async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const { base } = config();
   const response = await fetch(`${base}${path}`, {
     method,
@@ -239,4 +239,23 @@ export function verifyLuluWebhook(rawBody: string, signature: string | null, sec
   const expected = createHmac("sha256", Buffer.from(secret, "utf8")).update(Buffer.from(rawBody, "utf8")).digest("hex");
   const given = signature.trim().toLowerCase();
   return expected.length === given.length && timingSafeEqual(Buffer.from(expected), Buffer.from(given));
+}
+
+/** Cancel a print job - possible only before Lulu starts printing it (the
+ *  hour of production_delay, or while it is unpaid). */
+export async function cancelPrintJob(id: number | string): Promise<void> {
+  await call("PUT", `/print-jobs/${id}/status/`, { name: "CANCELED" });
+}
+
+export type LuluWebhook = { id: number | string; url: string; topics: string[]; is_active?: boolean };
+
+/** The webhooks registered on this Lulu account. */
+export async function listWebhooks(): Promise<LuluWebhook[]> {
+  const json = await call<{ results?: LuluWebhook[] } | LuluWebhook[]>("GET", "/webhooks/");
+  return Array.isArray(json) ? json : (json.results ?? []);
+}
+
+/** Ask Lulu to tell `url` whenever a print job's status changes. */
+export async function createWebhook(url: string): Promise<LuluWebhook> {
+  return call<LuluWebhook>("POST", "/webhooks/", { topics: ["PRINT_JOB_STATUS_CHANGED"], url });
 }

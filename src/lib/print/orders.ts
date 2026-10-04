@@ -15,7 +15,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { BINDING_SPECS, bindingAvailability, podPackageId, orderableTrim, type Binding, type BindingAvailability } from "./products";
+import { BINDING_ENUM, BINDING_SPECS, bindingAvailability, podPackageId, orderableTrim, type Binding, type BindingAvailability } from "./products";
 import { orderRange, renewalDate, SHIPPING_LEVELS, type OrderRange, type ShippingLevel } from "./orderRange";
 import { coverDimensions, createPrintJob, luluConfigured, quoteShipping, type PrintJob, type ShippingAddress } from "./lulu";
 import { priceFromCost, type Price } from "./pricing";
@@ -34,7 +34,6 @@ export const SHIPPING_LABELS: Record<ShippingLevel, string> = {
   EXPRESS: "Express",
 };
 
-const BINDING_ENUM = { coil: "COIL", paperback: "PAPERBACK", hardcover: "HARDCOVER" } as const;
 
 export type OrderInput = {
   journalId: string;
@@ -216,7 +215,7 @@ export async function startCheckout(
       ...(input.autoRenew ? { setup_future_usage: "off_session" as const } : {}),
     },
     ...(input.autoRenew
-      ? { custom_text: { submit: { message: "Auto-renew is on: your card is saved to order the next book before this one runs out. Turn it off any time under Orders." } } }
+      ? { custom_text: { submit: { message: "Auto-renew is on: your card is saved to order the next book, at its own price, before this one runs out. Turn it off any time under Orders." } } }
       : {}),
     success_url: `${origin}/app/orders?placed=${order.id}`,
     cancel_url: `${origin}/app/j/${journal.id}`,

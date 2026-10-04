@@ -6,7 +6,7 @@
 import { redirect } from "next/navigation";
 import { currentOwner, signInPath } from "@/lib/owner";
 import { prisma } from "@/lib/prisma";
-import { BINDING_SPECS, type Binding } from "@/lib/print/products";
+import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
 import { formatCents } from "@/lib/print/pricing";
 import { SHIPPING_LABELS } from "@/lib/print/orders";
 import { rangeLabel } from "@/lib/print/orderBook";
@@ -27,7 +27,6 @@ const STATUS_LABELS: Record<string, string> = {
   FAILED: "Needs attention - we will be in touch",
 };
 
-const BINDING_KEY: Record<string, Binding> = { COIL: "coil", PAPERBACK: "paperback", HARDCOVER: "hardcover" };
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ placed?: string }> }) {
   const owner = await currentOwner();
@@ -38,6 +37,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     : await prisma.printOrder.findMany({
         where: { ownerId: owner.id, OR: [{ status: { not: "QUOTED" } }, ...(placed ? [{ id: placed }] : [])] },
         orderBy: { createdAt: "desc" },
+        include: { _count: { select: { renewals: true } } },
       });
 
   return (
@@ -57,19 +57,34 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <p style={{ margin: 0, fontSize: 13, color: cream(0.6) }}>No printed books yet. Order one from a journal with Order print.</p>
         )}
         {orders.map((order) => {
-          const binding = BINDING_SPECS[BINDING_KEY[order.binding]];
+          const binding = BINDING_SPECS[bindingFromEnum(order.binding)];
           const tracking = Array.isArray(order.trackingUrls) ? (order.trackingUrls as string[]) : [];
+          // A renewal that was never ordered has no book and no price.
+          const unordered = order.status === "FAILED" && !!order.renewedFromId;
+          // The switch belongs to the book that will renew next: not one that
+          // failed or was cancelled, and not one already renewed - its
+          // renewal carries the switch on.
+          const renewable = ["PAID", "SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"].includes(order.status) && order._count.renewals === 0;
           return (
             <article key={order.id} style={{ padding: 14, background: "#1c1c1e", border: `1px solid ${cream(0.1)}`, borderRadius: 10, display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
                 <strong style={{ flex: 1, minWidth: 0, color: CREAM, fontSize: 14 }}>{order.title}</strong>
-                <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{formatCents(order.totalCents)}</span>
+                {!unordered && <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{formatCents(order.totalCents)}</span>}
               </div>
               <div style={{ fontSize: 12, color: cream(0.6), lineHeight: 1.5 }}>
-                {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {order.days} days · {binding.label} · {order.pageCount} pages ·{" "}
-                {SHIPPING_LABELS[order.shippingLevel as ShippingLevel] ?? order.shippingLevel}
+                {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {order.days} days · {binding.label}
+                {!unordered && ` · ${order.pageCount} pages · ${SHIPPING_LABELS[order.shippingLevel as ShippingLevel] ?? order.shippingLevel}`}
               </div>
-              <div style={{ fontSize: 13, color: order.status === "FAILED" ? "#ff8a80" : CREAM }}>{STATUS_LABELS[order.status] ?? order.status}</div>
+              <div style={{ fontSize: 13, color: order.status === "FAILED" ? "#ff8a80" : CREAM }}>
+                {order.status === "FAILED" && order.renewedFromId
+                  ? "Renewal not ordered"
+                  : (STATUS_LABELS[order.status] ?? order.status)}
+              </div>
+              {/* A failed RENEWAL's reason is written for the customer (renewals.ts);
+                  any other failure's is ours, and stays off the page. */}
+              {order.status === "FAILED" && order.renewedFromId && order.failureReason && (
+                <p style={{ margin: 0, fontSize: 12, color: cream(0.7), lineHeight: 1.5 }}>{order.failureReason}</p>
+              )}
               {tracking.length > 0 && (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
                   {tracking.map((url, index) => (
@@ -79,7 +94,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   ))}
                 </div>
               )}
-              {order.status !== "QUOTED" && order.status !== "CANCELED" && (
+              {renewable && (
                 <AutoRenewSwitch orderId={order.id} on={order.autoRenew} renewsAt={order.renewsAt?.toISOString() ?? null} days={order.days} />
               )}
             </article>

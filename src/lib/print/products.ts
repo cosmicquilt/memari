@@ -94,3 +94,9 @@ export function bindingAvailability(bookPages: number): BindingAvailability[] {
 export function orderableTrim(trim: PlannerTrimKey): boolean {
   return TRIM_CODES[trim] !== undefined;
 }
+
+/** The binding as the database names it, and back. */
+export const BINDING_ENUM = { coil: "COIL", paperback: "PAPERBACK", hardcover: "HARDCOVER" } as const satisfies Record<Binding, string>;
+export function bindingFromEnum(value: string): Binding {
+  return value === "PAPERBACK" ? "paperback" : value === "HARDCOVER" ? "hardcover" : "coil";
+}
