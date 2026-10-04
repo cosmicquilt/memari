@@ -39,7 +39,7 @@ type BindingSpec = {
 export const BINDING_SPECS: Record<Binding, BindingSpec> = {
   coil: { label: "Coil-bound", note: "Lies flat when open", code: "CO", minPages: 2, maxPages: 470 },
   paperback: { label: "Paperback", note: "Slim, like a book", code: "PB", minPages: 32, maxPages: 800 },
-  hardcover: { label: "Hardcover", note: "Rigid boards, lasts the year", code: "CW", minPages: 24, maxPages: 800 },
+  hardcover: { label: "Hardcover", note: "Rigid boards", code: "CW", minPages: 24, maxPages: 800 },
 };
 
 /** Lulu's trim field for each page size an order can be printed at. Letter

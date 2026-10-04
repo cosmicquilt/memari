@@ -102,6 +102,7 @@ import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/rend
 import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
 import { useJournalId } from "./journalContext";
+import { OrderPrintButton } from "./OrderDialog";
 import { useRefreshPages } from "./pagesRefreshContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -10608,6 +10609,7 @@ export function NativePlannerEditor({
             the status line carries minWidth:0 and an ellipsis, which is what
             lets it take the squeeze at this edge instead of pushing the
             button off it. */}
+        <OrderPrintButton journalId={journalId} weekStartDay={pageSettings.weekStartDay} />
         <ExportPdfButton />
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
       </header>

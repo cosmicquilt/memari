@@ -93,6 +93,8 @@ export function cleanAddress(raw: ShippingAddress): ShippingAddress {
 }
 
 async function priced(input: OrderInput, ownerId: string) {
+  const configured = orderingConfigured();
+  if (!configured.ok) throw new OrderError(`Ordering is not switched on yet: the ${configured.missing.join(" and ")} keys are not set.`);
   const journal = await loadJournal(ownerId, input.journalId);
   if (!journal) throw new OrderError("That journal could not be found.");
   const range = orderRange(parseStart(input.startISO), input.days);

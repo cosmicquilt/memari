@@ -72,3 +72,32 @@ export async function checkoutPrint(input: OrderInput & { level: ShippingLevel; 
     return failure(error, "opening the payment page");
   }
 }
+
+/**
+ * Auto-renew on or off for one of the person's orders. Off always works. On
+ * needs the card that was saved when it was paid for - the card is kept only
+ * when auto-renew was on at checkout - so an order paid without it says to
+ * turn it on with the next order instead.
+ */
+export async function setAutoRenew(orderId: string, on: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  const owner = await signedInOwner();
+  if ("ready" in owner) return { ok: false, error: owner.message };
+  const { prisma } = await import("@/lib/prisma");
+  const { renewalDate } = await import("@/lib/print/orderRange");
+  const order = await prisma.printOrder.findFirst({ where: { id: orderId, ownerId: owner.id } });
+  if (!order) return { ok: false, error: "That order could not be found." };
+  if (on && !order.stripePaymentMethodId) {
+    return { ok: false, error: "No card was saved with this order. Turn auto-renew on when you place your next order." };
+  }
+  const address = order.shippingAddress as { countryCode?: string };
+  await prisma.printOrder.update({
+    where: { id: order.id },
+    data: {
+      autoRenew: on,
+      renewsAt: on
+        ? renewalDate({ start: order.startDate, end: order.endDate, days: order.days }, order.shippingLevel as never, address.countryCode !== "US", new Date())
+        : null,
+    },
+  });
+  return { ok: true };
+}
