@@ -7,6 +7,7 @@
 // be callable from a browser.
 
 import { prisma } from "@/lib/prisma";
+import { journalSlugOf } from "./journalSlugs";
 import { renderContextForPage } from "@/lib/renderContext";
 import type { PageLevel } from "@/generated/prisma/enums";
 import { LEVEL_PAGE_COUNT, LEVELS_IN_BINDING_ORDER, bookPageCount } from "@/lib/pageLevels";
@@ -26,6 +27,8 @@ export type ThumbnailPage = { previewMarks: PreviewMark[]; pageWidthPx: number; 
 
 export type JournalCard = {
   id: string;
+  /** Its address in words, /app/j/<slug> - see journalSlug.ts. */
+  slug: string;
   title: string;
   dated: boolean;
   term: { start: string | null; end: string | null };
@@ -51,6 +54,11 @@ export async function journalsOf(ownerId: string): Promise<JournalCard[]> {
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     include: WITH_PAGES,
   });
+  // A journal made before addresses existed gets its words the first time
+  // it is listed, so every card opens at /app/j/<words>.
+  for (const planner of planners) {
+    if (!planner.slug) planner.slug = await journalSlugOf(planner.id);
+  }
   return planners.map((planner) => {
     const theme = planner.theme as PlannerTheme | null;
     const fontFamily = resolveFontFamily(theme?.fontFamily);
@@ -76,6 +84,7 @@ export async function journalsOf(ownerId: string): Promise<JournalCard[]> {
       : [];
     return {
       id: planner.id,
+      slug: planner.slug ?? planner.id,
       title: planner.title,
       dated: planner.dated,
       term: { start: iso(planner.startDate), end: iso(planner.endDate) },

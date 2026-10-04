@@ -50,6 +50,11 @@ model Planner {
   // `User` table via webhook is a later task, not a blocker for this.
   ownerId    String
   title      String
+  /// The journal's address in words - /app/j/frosty-otter-4821 (2026-10-04,
+  /// src/lib/journalSlug.ts). Unique across every journal. Null on one made
+  /// before slugs existed until it is next opened or listed, which gives it
+  /// one; templates never need one.
+  slug       String?   @unique
   // Does this planner carry DATES, or is it a template you write them into?
   // The free tier is the undated one (see the business model: the book is
   // derived from templates, and a template has no dates). Undated is applied

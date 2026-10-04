@@ -86,7 +86,15 @@ async function main() {
   const guest = await makeGuestJournal("Route check journal");
   const { cookie } = guest;
   const BASE = server.base;
-  const journal = { id: guest.journalId };
+  // A journal's address is its words since 2026-10-04 (journalSlug.ts); its
+  // id is the old address, which now redirects there.
+  const { prisma } = await import("../src/lib/prisma.js");
+  const slug = (await prisma.planner.findUnique({ where: { id: guest.journalId }, select: { slug: true } }))?.slug;
+  if (!slug) throw new Error("A new journal was made without its address in words (slug).");
+  const journal = { id: guest.journalId, slug };
+  // Somebody else's journal: its real words must be a 404 to this guest.
+  const stranger = await makeGuestJournal("Route check stranger");
+  const strangerSlug = (await prisma.planner.findUnique({ where: { id: stranger.journalId }, select: { slug: true } }))?.slug ?? "";
 
   const routes: Expectation[] = [
     // "/" IS the landing page now, for everyone, signed in or not (the
@@ -102,8 +110,12 @@ async function main() {
     { path: "/guest", expect: [303], as: "nobody", what: "GET /guest redirects rather than minting a guest" },
     { path: "/app", expect: [307, 302, 303], as: "nobody", what: "/app with no cookie is sent to sign-in" },
     { path: "/app", expect: [200], as: "guest", what: "the start dialog" },
-    { path: `/app/j/${journal.id}`, expect: [200], as: "guest", what: "A JOURNAL PAGE - the route 2598cc1 broke" },
+    { path: `/app/j/${journal.slug}`, expect: [200], as: "guest", what: "A JOURNAL PAGE, at its words - the route 2598cc1 broke" },
+    { path: `/app/j/${journal.id}`, expect: [307, 308], as: "guest", what: "an old id address redirects to the words" },
     { path: "/app/j/not-a-real-journal", expect: [404], as: "guest", what: "an unknown journal is 404, not 500" },
+    { path: "/app/j/frosty-otter-1234", expect: [404], as: "guest", what: "words that are no journal of yours are 404" },
+    { path: `/app/j/${strangerSlug}`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal, by its words, is 404 - as if it did not exist" },
+    { path: `/app/j/${journal.slug}`, expect: [307, 302, 303], as: "nobody", what: "a journal's words with no cookie are sent to sign-in" },
     { path: `/app/export?journal=${journal.id}`, expect: [200], as: "guest", what: "the PDF export" },
   ];
 
@@ -136,6 +148,7 @@ async function main() {
     }
   } finally {
     await guest.remove();
+    await stranger.remove();
   }
 }
 

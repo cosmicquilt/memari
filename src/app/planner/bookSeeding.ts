@@ -9,6 +9,7 @@
 
 import { isTimeZone } from "@/lib/timeZone";
 import { prisma } from "@/lib/prisma";
+import { withFreshSlug } from "./journalSlugs";
 import { Prisma } from "@/generated/prisma/client";
 import { PageLevel } from "@/generated/prisma/enums";
 import { LEVEL_PAGE_COUNT, LEVELS_IN_BINDING_ORDER } from "@/lib/pageLevels";
@@ -350,10 +351,12 @@ export function validateNewJournal(input: unknown): NewJournal {
 export async function createBookFor(ownerId: string, input: NewJournal): Promise<BookWithPages> {
   const term = parseTerm(input.startISO, input.endISO);
   const theme: PlannerTheme = { fontFamily: input.font, weekStartDay: input.weekStartDay };
-  let planner = await prisma.planner.create({
+  let planner = await withFreshSlug((slug) => prisma.planner.create({
     data: {
       ownerId,
       title: input.title,
+      // Its address in words - see journalSlug.ts.
+      slug,
       dated: input.dated,
       startDate: term?.start ?? null,
       endDate: term?.end ?? null,
@@ -361,7 +364,7 @@ export async function createBookFor(ownerId: string, input: NewJournal): Promise
       theme: theme as Prisma.InputJsonValue,
     },
     include: WITH_PAGES,
-  });
+  }));
   const size = sizeOfTrim(input.trim);
   for (const level of input.levels) {
     planner = await ensureLevel(planner, level, size);

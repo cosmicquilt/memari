@@ -17,21 +17,38 @@ import { PageLevel } from "@/generated/prisma/enums";
 import { VIEWPORT_COOKIE, parseViewportCookie } from "@/lib/viewportCookie";
 import { OPEN_LEVEL_COOKIE, parseOpenLevelCookie } from "@/lib/openLevelCookie";
 import { openBook } from "./actions";
+import { isJournalSlug } from "@/lib/journalSlug";
+import { journalIdForSlug, journalSlugOf } from "./journalSlugs";
+import { prisma } from "@/lib/prisma";
 import { loadPlannerPages } from "./loadPlannerPages";
 import { EditorShell } from "./EditorShell";
 import { savedItemsFor } from "./savedItems";
 
 /**
- * The editor on one of the signed-in person's journals - /app/j/<id>. A
- * journal id that is not theirs is a 404, the same as one that does not
- * exist, so the address cannot be used to learn which ids are real.
+ * The editor on one of the signed-in person's journals - /app/j/<address>.
+ * The address is the journal's words (frosty-otter-4821, journalSlug.ts);
+ * an old /app/j/<id> link redirects to them. A journal that is not theirs is
+ * a 404, the same as one that does not exist, so the address cannot be used
+ * to learn which journals are real.
  */
-export async function renderEditor(journalId: string) {
+export async function renderEditor(address: string) {
   const owner = await currentOwner();
-  if (!owner) redirect(signInPath(`/app/j/${journalId}`));
+  if (!owner) redirect(signInPath(`/app/j/${address}`));
   // Signed in on a browser that was used as a guest: bring that work along -
   // including this journal, if it was the guest's.
   if (!owner.guest) await claimGuestWork(owner.id);
+
+  let journalId = address;
+  if (isJournalSlug(address)) {
+    const found = await journalIdForSlug(owner.id, address);
+    if (!found) notFound();
+    journalId = found;
+  } else {
+    // An id: the journal's own, older address. Its words from now on.
+    const mine = await prisma.planner.findFirst({ where: { id: address, ownerId: owner.id, isTemplate: false }, select: { id: true } });
+    if (mine) redirect(`/app/j/${await journalSlugOf(mine.id)}`);
+    // Anything else falls through to openBook, which says "not found".
+  }
 
   const cookieStore = await cookies();
   // The window size this browser last reported, so the canvas renders at

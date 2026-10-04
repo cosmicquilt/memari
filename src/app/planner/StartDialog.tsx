@@ -204,9 +204,12 @@ export function StartDialog({
   const open = useCallback(
     (id: string) => {
       setLeaving(true);
-      router.push(`/app/j/${id}`);
+      // At its address in words (journalSlug.ts). A journal just created is
+      // not in the list yet: its id is sent, and the server redirects it.
+      const slug = journals.find((journal) => journal.id === id)?.slug ?? id;
+      router.push(`/app/j/${slug}`);
     },
-    [router]
+    [router, journals]
   );
   const close = useCallback(() => {
     if (backTo) open(backTo);
