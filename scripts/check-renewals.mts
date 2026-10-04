@@ -40,13 +40,20 @@ const DAY = 86_400_000;
 /** Lulu and Stripe, faked: a fixed cost, a cover size, and a charge that
  *  succeeds unless told otherwise. Every call is recorded. */
 function fakes(options: { decline?: boolean } = {}) {
-  const calls = { charge: [] as Array<{ orderId: string; amountCents: number; paymentMethodId: string }>, fulfil: [] as string[] };
+  const calls = { charge: [] as Array<{ orderId: string; amountCents: number; paymentMethodId: string }>, fulfil: [] as string[], printers: [] as string[], emails: [] as Array<{ to: string; subject: string; text: string }> };
   const deps: Deps = {
-    printCost: async () => ({ printCents: 1100, fulfillmentCents: 75, shippingCents: 599, taxCents: 0, totalCents: 1774, currency: "USD" }),
+    printCost: async (printer) => {
+      calls.printers.push(printer);
+      return { printCents: 1100, fulfillmentCents: 75, shippingCents: 599, taxCents: 0, totalCents: 1774, currency: "USD" };
+    },
     coverDimensions: async () => ({ widthPt: 1046, heightPt: 738 }),
     charge: async (input) => {
       calls.charge.push(input);
       return options.decline ? { ok: false, reason: "your card was declined (test)" } : { ok: true, paymentIntentId: `pi_${input.orderId}` };
+    },
+    email: async (email) => {
+      calls.emails.push(email);
+      return { sent: true };
     },
     fulfil: async (orderId) => {
       calls.fulfil.push(orderId);
@@ -116,6 +123,7 @@ try {
     check(!!renewal && renewal.files.length === 2 && renewal.pageCount > 0 && renewal.pageCount % 4 === 0, `its book built and kept with it (${renewal?.files.length} files, ${renewal?.pageCount} pages)`);
     check(calls.charge.length === 1 && calls.charge[0].orderId === renewal?.id && calls.charge[0].amountCents === renewal?.totalCents && calls.charge[0].paymentMethodId === "pm_check", `the saved card charged the renewal's own price once (${calls.charge.map((c) => c.amountCents).join(",")})`);
     check(calls.fulfil.length === 1 && calls.fulfil[0] === renewal?.id, "and the renewal sent to print");
+    check(calls.printers.length === 1 && calls.printers[0] === "lulu" && renewal?.printer === "lulu", "priced by the order's own printer, and recorded on the renewal");
     check(!!renewal && renewal.autoRenew && renewal.status === "SUBMITTED", "the renewal carries auto-renew on");
     const after = await prisma.printOrder.findUnique({ where: { id: first.id } });
     check(!!after && !after.autoRenew && after.renewsAt === null, "the order it renewed shows no switch any more");
@@ -145,6 +153,7 @@ try {
     const renewal = await prisma.printOrder.findFirst({ where: { renewedFromId: declined.id } });
     check(renewal?.status === "FAILED" && /declined/.test(renewal.failureReason ?? "") && /Nothing was charged/.test(renewal.failureReason ?? ""), `a declined card: a FAILED renewal saying so (${renewal?.failureReason})`);
     check(calls.fulfil.length === 0, "and nothing sent to print");
+    check(calls.emails.length === 1 && calls.emails[0].to === "check@example.com" && /declined/.test(calls.emails[0].text) && /Nothing was charged/.test(calls.emails[0].text), `and the customer is told why, by email (${calls.emails.map((e) => e.subject).join("; ")})`);
     const after = await prisma.printOrder.findUnique({ where: { id: declined.id } });
     check(!!after && !after.autoRenew && !renewal?.autoRenew, "and auto-renew off - no charging again tomorrow");
   }
@@ -175,6 +184,47 @@ try {
     const notDueRenewals = await prisma.printOrder.count({ where: { renewedFromId: notDue.id } });
     const unpaidRenewals = await prisma.printOrder.count({ where: { renewedFromId: unpaid.id } });
     check(notDueRenewals === 0 && unpaidRenewals === 0 && calls.charge.length === 0, "an order not yet due, and one never paid for, are left alone");
+  }
+
+  // --- the reminder, a week ahead, once ------------------------------------------------
+  {
+    const { sendRenewalReminders } = await import("../src/lib/print/emails.js");
+    const plannerId = await journal("Reminder check");
+    const soon = await order(plannerId, { title: "Reminder", renewsAt: new Date(Date.now() + 5 * DAY) });
+    const far = await order(plannerId, { title: "Far off", renewsAt: new Date(Date.now() + 30 * DAY) });
+    const tomorrow = await order(plannerId, { title: "Tomorrow", renewsAt: new Date(Date.now() + 0.5 * DAY) });
+    const off = await order(plannerId, { title: "Off", autoRenew: false, renewsAt: new Date(Date.now() + 5 * DAY) });
+    const sent: Array<{ to: string; subject: string; text: string }> = [];
+    const send = async (email: { to: string; subject: string; text: string }) => {
+      sent.push(email);
+      return { sent: true };
+    };
+    const [first, second] = [await sendRenewalReminders(new Date(), send), await sendRenewalReminders(new Date(), send)];
+    check(first.includes(soon.id) && second.length === 0 && sent.filter((e) => /Auto-renew|ordered soon/.test(e.subject + e.text)).length >= 1, `a renewal 5 days off is reminded, once (${first.length} then ${second.length})`);
+    const mine = sent.find((e) => e.text.includes("Reminder") || e.subject.includes("soon"));
+    check(!!mine && /turn auto-renew off/i.test(mine.text) && /own/.test(mine.text), "the reminder says how to stop, and that the price is the next book's own");
+    check(!first.includes(far.id) && !first.includes(tomorrow.id) && !first.includes(off.id), "not one a month off, not one renewing within the day, not one with auto-renew off");
+    // Run on the very same day and again - each renewal is reminded once.
+    await prisma.printOrder.updateMany({ where: { id: { in: [soon.id, far.id, tomorrow.id, off.id] } }, data: { autoRenew: false } });
+  }
+
+  // --- what the emails say ------------------------------------------------------------
+  {
+    const { placedEmail, shippedEmail, adminAlertEmail } = await import("../src/lib/print/emails.js");
+    const sample = { id: "o1", title: "Tom & Jerry's <Journal>", startDate: new Date("2027-01-04T00:00:00Z"), endDate: new Date("2027-04-03T00:00:00Z"), days: 90, binding: "COIL", pageCount: 128, totalCents: 3598, contactEmail: "c@example.com" };
+    const placed = placedEmail(sample);
+    check(placed.to === "c@example.com" && /\$35\.98/.test(placed.text) && /4 Jan – 3 Apr 2027/.test(placed.text) && /coil-bound/.test(placed.text), "the order email says what, when, how bound and how much");
+    check(placed.html.includes("Tom &amp; Jerry&#39;s".replace("&#39;", "'")) && placed.html.includes("&lt;Journal&gt;") && !placed.html.includes("<Journal>"), "a title is escaped in the HTML, never markup");
+    check(/auto-renew/i.test(placedEmail({ ...sample, renewedFromId: "o0" }).subject), "a renewal's order email says it was auto-renew");
+    const shipped = shippedEmail(sample, ["https://track.example/1"]);
+    check(shipped.text.includes("https://track.example/1"), "the shipped email carries the tracking link");
+    const saved = process.env.ADMIN_EMAIL;
+    delete process.env.ADMIN_EMAIL;
+    check(adminAlertEmail(sample, "why") === null, "no admin alert without ADMIN_EMAIL");
+    process.env.ADMIN_EMAIL = "admin@example.com";
+    check(adminAlertEmail(sample, "the printer refused")?.to === "admin@example.com", "and to ADMIN_EMAIL with it");
+    if (saved === undefined) delete process.env.ADMIN_EMAIL;
+    else process.env.ADMIN_EMAIL = saved;
   }
 
   // --- the admin's guards ----------------------------------------------------------------

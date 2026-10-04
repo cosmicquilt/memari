@@ -189,6 +189,11 @@ export default function PrivacyPage() {
           order&rsquo;s amount, and save your card only if you turn auto-renew on.
         </LI>
         <LI>
+          <A href="https://resend.com/legal/privacy-policy">Resend</A> &mdash; the emails about your
+          orders: that a book is printing, has shipped, or will renew. They receive your email
+          address and what the email says, and nothing else.
+        </LI>
+        <LI>
           <A href="https://www.lulu.com/privacy-policy">Lulu</A> &mdash; printing and posting books. For
           each order they receive the delivery name, address, phone number and email, and the
           book&rsquo;s files, and pass the address to the carrier that delivers it.

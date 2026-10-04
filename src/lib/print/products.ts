@@ -74,21 +74,8 @@ export function printedPageCount(bookPages: number): number {
 
 export type BindingAvailability = { binding: Binding; ok: true } | { binding: Binding; ok: false; reason: string };
 
-/** Which bindings a book of `bookPages` pages can be printed in, and why
- *  not where it cannot - a year of daily pages is too thick to coil. */
-export function bindingAvailability(bookPages: number): BindingAvailability[] {
-  const pages = printedPageCount(bookPages);
-  return BINDINGS.map((binding) => {
-    const spec = BINDING_SPECS[binding];
-    if (pages < spec.minPages) {
-      return { binding, ok: false, reason: `${spec.label} needs at least ${spec.minPages} pages; this book has ${pages}.` };
-    }
-    if (pages > spec.maxPages) {
-      return { binding, ok: false, reason: `${spec.label} holds at most ${spec.maxPages} pages; this book has ${pages}. Choose a shorter length, or another binding.` };
-    }
-    return { binding, ok: true };
-  });
-}
+/* Which bindings a book can be printed in is the PRINTER's to say - see
+   printer.ts, availabilityAt. BINDING_SPECS' limits are Lulu's, read there. */
 
 /** Can a journal at this page size be ordered at all? */
 export function orderableTrim(trim: PlannerTrimKey): boolean {
@@ -99,4 +86,20 @@ export function orderableTrim(trim: PlannerTrimKey): boolean {
 export const BINDING_ENUM = { coil: "COIL", paperback: "PAPERBACK", hardcover: "HARDCOVER" } as const satisfies Record<Binding, string>;
 export function bindingFromEnum(value: string): Binding {
   return value === "PAPERBACK" ? "paperback" : value === "HARDCOVER" ? "hardcover" : "coil";
+}
+
+/**
+ * ROOM FOR THE BINDING, in inches, added to the inside margin: Lulu's
+ * gutter table for a paperback or hardcover by printed pages (help.lulu.com,
+ * "Interior Formatting"): up to 60, none; 61-150, 1/8in; 151-400, 1/2in;
+ * 401-600, 5/8in; over 600, 3/4in. A coil book opens flat and needs none.
+ * The PDF makes the room by drawing each page a little smaller and away from
+ * the spine - see plannerPdf.ts, gutterTransform.
+ */
+export function gutterInches(binding: Binding, printedPages: number): number {
+  if (binding === "coil" || printedPages <= 60) return 0;
+  if (printedPages <= 150) return 0.125;
+  if (printedPages <= 400) return 0.5;
+  if (printedPages <= 600) return 0.625;
+  return 0.75;
 }

@@ -9,7 +9,10 @@
 // Run with: npx tsx src/lib/print/print.test.mts
 
 import { createHmac } from "node:crypto";
-import { bindingAvailability, podPackageId, printedPageCount } from "./products";
+import { gutterInches, podPackageId, printedPageCount } from "./products";
+import { LULU, availabilityAt, printerFor, DEFAULT_PRINTER } from "./printer";
+const bindingAvailability = (pages: number) => availabilityAt(LULU, pages);
+import { gutterTransform } from "../plannerPdf";
 import { leadDays, nextRange, orderRange, renewalDate, suggestedStart } from "./orderRange";
 import { priceFromCost, BOOK_MARGIN, MIN_BOOK_PRICE_CENTS } from "./pricing";
 import { printFileUrl, signPrintFile, verifyPrintFile } from "./fileUrls";
@@ -142,4 +145,50 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 {
   check(rangeLabel(orderRange(new Date("2027-01-04T00:00:00Z"), 90)) === "4 Jan – 3 Apr 2027", `one year (got ${rangeLabel(orderRange(new Date("2027-01-04T00:00:00Z"), 90))})`);
   check(rangeLabel(orderRange(new Date("2027-01-04T00:00:00Z"), 365)) === "4 Jan 2027 – 3 Jan 2028", "across a new year");
+}
+
+// --- room for the binding ----------------------------------------------------------
+{
+  // Lulu's table for a paperback or hardcover; a coil book needs none.
+  const table: Array<[number, number]> = [[48, 0], [60, 0], [64, 0.125], [150, 0.125], [152, 0.5], [400, 0.5], [404, 0.625], [600, 0.625], [604, 0.75]];
+  check(table.every(([pages, inches]) => gutterInches("paperback", pages) === inches && gutterInches("hardcover", pages) === inches), "Lulu's gutter table, paperback and hardcover");
+  check([48, 200, 470].every((pages) => gutterInches("coil", pages) === 0), "a coil book needs no gutter");
+  // The transform keeps the OUTER edge and moves the inner one by the gutter.
+  const grid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5 };
+  const pt = (px: number) => (px * 72) / 300;
+  const g = 0.5;
+  for (const rightHand of [true, false]) {
+    const t = gutterTransform(grid, g, rightHand);
+    // A point in the page's own px, through [s 0 0 s e f] in PDF space, back to px.
+    const map = (x: number, y: number) => {
+      const X = t.s * pt(x) + t.e;
+      const Y = t.s * (pt(grid.heightPx) - pt(y)) + t.f;
+      return { x: (X * 300) / 72, y: grid.heightPx - (Y * 300) / 72 };
+    };
+    const left = map(187.5, 187.5).x;
+    const right = map(187.5 + 1800, 187.5).x;
+    const top = map(187.5, 187.5).y;
+    const bottom = map(187.5, 187.5 + 2700).y;
+    const inside = rightHand ? left - 187.5 : 187.5 + 1800 - right;
+    const outside = rightHand ? 187.5 + 1800 - right : left - 187.5;
+    check(Math.abs(inside - g * 300) < 0.01 && Math.abs(outside) < 0.01, `${rightHand ? "a right-hand" : "a left-hand"} page: the inside edge moves ${g}in, the outside stays (${(inside / 300).toFixed(3)}, ${(outside / 300).toFixed(3)})`);
+    check(Math.abs(top - 187.5 - (187.5 + 2700 - bottom)) < 0.01, "and the page stays centred top to bottom");
+    check(Math.abs(t.s - (6 - g) / 6) < 1e-9, `drawn ${(t.s * 100).toFixed(1)}% of its size, never stretched`);
+  }
+}
+
+// --- the printer ----------------------------------------------------------------------
+{
+  check(DEFAULT_PRINTER === LULU && printerFor(null) === LULU && printerFor("lulu") === LULU, "Lulu prints, and an order without a printer went to Lulu");
+  let threw = false;
+  try {
+    printerFor("mixam");
+  } catch {
+    threw = true;
+  }
+  check(threw, "a printer this code does not know is an error, never quietly Lulu");
+  check(LULU.sku("hardcover", "bound7x10") === podPackageId("hardcover", "bound7x10") && LULU.sku("coil", "letter") === null, "Lulu's product codes");
+  check(LULU.gutterInches("paperback", 200) === gutterInches("paperback", 200) && LULU.gutterInches("coil", 200) === 0, "Lulu's binding margins");
+  const coil = LULU.pageLimits("coil");
+  check(coil.min === 2 && coil.max === 470, "Lulu's page limits");
 }

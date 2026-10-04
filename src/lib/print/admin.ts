@@ -8,7 +8,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { fulfilPaidOrder, OrderError } from "./orders";
-import { cancelPrintJob } from "./lulu";
+import { printerFor } from "./printer";
 import { stripe } from "./stripe";
 
 /** Is this account one of the people who run Memari? ADMIN_OWNER_IDS is a
@@ -45,7 +45,7 @@ export async function refundOrder(orderId: string, why: string): Promise<{ print
   let printerCancelled: boolean | null = null;
   if (order.luluPrintJobId && !["SHIPPED", "DELIVERED"].includes(order.status)) {
     try {
-      await cancelPrintJob(order.luluPrintJobId);
+      await printerFor(order.printer).cancel(order.luluPrintJobId);
       printerCancelled = true;
     } catch {
       printerCancelled = false;

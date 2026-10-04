@@ -504,6 +504,9 @@ model PrintOrder {
   /// straight after this one - is charged and ordered on `renewsAt`.
   autoRenew Boolean   @default(false)
   renewsAt  DateTime?
+  /// When the "your next book is ordered in a week" email went, so it goes
+  /// once - see src/lib/print/emails.ts.
+  renewalReminderSentAt DateTime?
   /// The order this one renewed, if it was a renewal.
   renewedFromId String?
   renewedFrom   PrintOrder?  @relation("Renewals", fields: [renewedFromId], references: [id], onDelete: SetNull)
@@ -514,6 +517,9 @@ model PrintOrder {
   /// The card saved for renewals - only when auto-renew was on at payment.
   stripePaymentMethodId   String?
 
+  /// Which printer it went to - src/lib/print/printer.ts. Renewals and
+  /// refunds go back to the same one.
+  printer        String  @default("lulu")
   luluPrintJobId String?
   /// Lulu's own status name, as last reported.
   luluStatus     String?

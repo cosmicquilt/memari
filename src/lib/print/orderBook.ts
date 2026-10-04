@@ -38,8 +38,11 @@ export type Interior = {
   problems: string[];
 };
 
-/** The journal's interior for the order's days. */
-export function buildInterior(journal: BookWithPages, range: OrderRange): Interior {
+/** The journal's interior for the order's days, with room for the binding:
+ *  `gutterFor` gives the inside margin to add for the printed page count -
+ *  the printer's own rule for the binding (printer.ts). Without it the
+ *  pages are as designed; the page count is the same either way. */
+export function buildInterior(journal: BookWithPages, range: OrderRange, gutterFor?: (printedPages: number) => number): Interior {
   const theme = journal.theme as PlannerTheme | null;
   const book = generateBook({ ...journal, startDate: range.start, endDate: range.end }, resolveFontFamily(theme?.fontFamily));
   if (book.pages.length === 0) {
@@ -47,10 +50,13 @@ export function buildInterior(journal: BookWithPages, range: OrderRange): Interi
   }
   const pageCount = printedPageCount(book.pages.length);
   const last = book.pages[book.pages.length - 1].pageGrid;
-  const built = buildPlannerPdf([
-    ...book.pages.map((page) => ({ pageGrid: page.pageGrid, elements: page.elements })),
-    ...Array.from({ length: pageCount - book.pages.length }, () => ({ pageGrid: last, elements: [] })),
-  ]);
+  const built = buildPlannerPdf(
+    [
+      ...book.pages.map((page) => ({ pageGrid: page.pageGrid, elements: page.elements })),
+      ...Array.from({ length: pageCount - book.pages.length }, () => ({ pageGrid: last, elements: [] })),
+    ],
+    { gutterIn: gutterFor ? gutterFor(pageCount) : 0 }
+  );
   return {
     bytes: built.bytes,
     pageCount,

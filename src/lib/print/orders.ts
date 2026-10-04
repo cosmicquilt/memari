@@ -15,14 +15,16 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { BINDING_ENUM, BINDING_SPECS, bindingAvailability, podPackageId, orderableTrim, type Binding, type BindingAvailability } from "./products";
+import { BINDING_ENUM, BINDING_SPECS, orderableTrim, type Binding, type BindingAvailability } from "./products";
+import { DEFAULT_PRINTER, availabilityAt, printerFor } from "./printer";
 import { orderRange, renewalDate, SHIPPING_LEVELS, type OrderRange, type ShippingLevel } from "./orderRange";
-import { coverDimensions, createPrintJob, luluConfigured, quoteShipping, type PrintJob, type ShippingAddress } from "./lulu";
+import type { PrintJob, ShippingAddress } from "./lulu";
 import { priceFromCost, type Price } from "./pricing";
 import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
+import { adminAlertEmail, notify, placedEmail, shippedEmail } from "./emails";
 
 export { OrderError };
 
@@ -55,7 +57,7 @@ export type Quote = {
 
 /** Is ordering switched on here? Both services' keys must be set. */
 export function orderingConfigured(): { ok: boolean; missing: string[] } {
-  const missing = [...(luluConfigured() ? [] : ["Lulu"]), ...(stripeConfigured() ? [] : ["Stripe"])];
+  const missing = [...(DEFAULT_PRINTER.configured() ? [] : [DEFAULT_PRINTER.label]), ...(stripeConfigured() ? [] : ["Stripe"])];
   return { ok: missing.length === 0, missing };
 }
 
@@ -97,18 +99,19 @@ async function priced(input: OrderInput, ownerId: string) {
   const journal = await loadJournal(ownerId, input.journalId);
   if (!journal) throw new OrderError("That journal could not be found.");
   const range = orderRange(parseStart(input.startISO), input.days);
-  const interior = buildInterior(journal, range);
+  const printer = DEFAULT_PRINTER;
+  const interior = buildInterior(journal, range, (pages) => printer.gutterInches(input.binding, pages));
   if (!orderableTrim(interior.trim)) {
     throw new OrderError("This journal is laid out at US Letter, the print-at-home size. Switch it to 7 × 10 in Page Settings to order it printed.");
   }
   if (interior.problems.length > 0) throw new OrderError(`This book is not ready to print: ${interior.problems.join("; ")}.`);
-  const availability = bindingAvailability(interior.bookPages);
-  const sku = podPackageId(input.binding, interior.trim)!;
+  const availability = availabilityAt(printer, interior.bookPages);
+  const sku = printer.sku(input.binding, interior.trim)!;
   const fits = availability.find((a) => a.binding === input.binding)?.ok ?? false;
   const address = cleanAddress(input.address);
-  const quotes = fits ? await quoteShipping(sku, interior.pageCount, address, SHIPPING_LEVELS) : [];
+  const quotes = fits ? await printer.quoteShipping(sku, interior.pageCount, address, SHIPPING_LEVELS) : [];
   if (fits && quotes.length === 0) throw new OrderError("Lulu cannot post to that address. Check the country and postcode.");
-  return { journal, range, interior, availability, sku, address, quotes };
+  return { journal, range, interior, availability, sku, address, quotes, printer };
 }
 
 function describeRange(range: OrderRange) {
@@ -147,7 +150,7 @@ export async function startCheckout(
   input: OrderInput & { level: ShippingLevel; autoRenew: boolean; email?: string },
   origin: string
 ): Promise<{ url: string; orderId: string }> {
-  const { journal, range, interior, availability, sku, address, quotes } = await priced(input, ownerId);
+  const { journal, range, interior, availability, sku, address, quotes, printer } = await priced(input, ownerId);
   const fit = availability.find((a) => a.binding === input.binding);
   if (!fit?.ok) throw new OrderError(fit && !fit.ok ? fit.reason : "Choose a binding.");
   const chosen = quotes.find((q) => q.level === input.level);
@@ -155,7 +158,7 @@ export async function startCheckout(
   const price = priceFromCost(chosen.cost);
 
   const trim = trimInches(interior.trim);
-  const dims = await coverDimensions(sku, interior.pageCount);
+  const dims = await printer.coverSize(sku, interior.pageCount);
   const cover = buildCoverPdf({ ...dims, trimWidthIn: trim.widthIn, trimHeightIn: trim.heightIn, title: journal.title, dates: journal.dated ? rangeLabel(range) : "" });
 
   const contactEmail = input.email || address.email;
@@ -169,6 +172,7 @@ export async function startCheckout(
       days: range.days,
       binding: BINDING_ENUM[input.binding],
       podPackageId: sku,
+      printer: printer.id,
       pageCount: interior.pageCount,
       shippingLevel: input.level,
       shippingAddress: address as unknown as Prisma.InputJsonValue,
@@ -236,10 +240,10 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
   const order = await prisma.printOrder.findUnique({ where: { id: orderId } });
   if (!order || order.status !== "PAID" || order.luluPrintJobId) return;
   try {
-    const job = await createPrintJob({
+    const job = await printerFor(order.printer).submit({
       externalId: order.id,
       title: order.title,
-      podPackageId: order.podPackageId,
+      sku: order.podPackageId,
       interiorUrl: printFileUrl(origin, order.id, "interior"),
       coverUrl: printFileUrl(origin, order.id, "cover"),
       address: order.shippingAddress as unknown as ShippingAddress,
@@ -248,20 +252,22 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
     });
     const range = { start: order.startDate, end: order.endDate, days: order.days };
     const address = order.shippingAddress as unknown as ShippingAddress;
-    await prisma.printOrder.update({
+    const submitted = await prisma.printOrder.update({
       where: { id: order.id },
       data: {
         status: "SUBMITTED",
-        luluPrintJobId: String(job.id),
-        luluStatus: job.status?.name ?? null,
+        // The column says Lulu for history; it holds the job's id at
+        // whichever printer the order went to (`printer`).
+        luluPrintJobId: job.jobId,
+        luluStatus: job.status,
         renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, address.countryCode !== "US", new Date()) : null,
       },
     });
+    await notify(placedEmail(submitted));
   } catch (error) {
-    await prisma.printOrder.update({
-      where: { id: order.id },
-      data: { status: "FAILED", failureReason: `Paid, but the printer refused the job: ${error instanceof Error ? error.message : String(error)}` },
-    });
+    const reason = `Paid, but the printer refused the job: ${error instanceof Error ? error.message : String(error)}`;
+    await prisma.printOrder.update({ where: { id: order.id }, data: { status: "FAILED", failureReason: reason } });
+    await notify(adminAlertEmail(order, reason));
     throw error;
   }
 }
@@ -280,10 +286,25 @@ const LULU_TO_STATUS: Record<string, "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" |
   ERROR: "FAILED",
 };
 
-/** Lulu's report on a print job, onto its order. */
+/** Lulu's report on a print job, onto its order - and the email when it
+ *  ships (or the alert when the printer gives up on it), sent on the CHANGE
+ *  only: Lulu may report the same status twice, and the conditional update
+ *  below lets just one delivery through. */
 export async function applyLuluStatus(job: PrintJob): Promise<void> {
   const status = LULU_TO_STATUS[job.status?.name ?? ""];
   const tracking = (job.line_items ?? []).flatMap((item) => item.tracking_urls ?? []);
+  const jobId = String(job.id);
+  if (status === "SHIPPED" || status === "FAILED") {
+    const before = await prisma.printOrder.findFirst({ where: { luluPrintJobId: jobId } });
+    const moved = await prisma.printOrder.updateMany({
+      where: { luluPrintJobId: jobId, status: { notIn: status === "SHIPPED" ? ["SHIPPED", "DELIVERED"] : ["FAILED"] } },
+      data: { status, ...(tracking.length > 0 ? { trackingUrls: tracking } : {}) },
+    });
+    if (before && moved.count > 0) {
+      if (status === "SHIPPED") await notify(shippedEmail(before, tracking));
+      else await notify(adminAlertEmail(before, `The printer reported ${job.status?.name}${job.status?.message ? `: ${job.status.message}` : ""}.`));
+    }
+  }
   await prisma.printOrder.updateMany({
     where: { luluPrintJobId: String(job.id) },
     data: {

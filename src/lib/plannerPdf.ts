@@ -178,7 +178,39 @@ function declarePageBoxes(doc: jsPDF, pageNumber: number, page: PageGrid): PdfPa
  * its own width and height, and taking the first one as gospel is exactly
  * the kind of restated geometry this pipeline exists to avoid.
  */
-export function buildPlannerPdf(pageInputs: PdfPageInput[]): BuiltPdf {
+/**
+ * ROOM FOR THE BINDING. A paperback or hardcover glues its pages into the
+ * spine, so the inside edge of each page needs more margin the thicker the
+ * book (Lulu's table - see products.ts, gutterInches); a coil book needs
+ * none. The design fills a lattice 0.5in inside the trim on every side, so
+ * to add `gutterIn` on the inside and keep the outside where it is, each
+ * page is drawn smaller - by (width - gutter) / width - and moved away from
+ * the spine: right on a right-hand page (page 1, 3, ...), left on a left-
+ * hand one. Uniform, so nothing is distorted; vertically it is centred.
+ *
+ * Returned as a PDF `cm` matrix [s 0 0 s e f], in PDF space (points, origin
+ * at the bottom left), for the page's drawing to be wrapped in.
+ */
+export function gutterTransform(grid: PdfPageInput["pageGrid"], gutterIn: number, rightHand: boolean): { s: number; e: number; f: number } {
+  const cell = (grid.widthPx - grid.marginPx * 2) / grid.gridColumns;
+  const width = grid.gridColumns * cell;
+  const height = grid.gridRows * cell;
+  const gutter = gutterIn * 300;
+  const s = (width - gutter) / width;
+  // In the page's own px, top-down: x' = a + s x, y' = b + s y.
+  const a = grid.marginPx * (1 - s) + (rightHand ? gutter : 0);
+  const b = grid.marginPx * (1 - s) + (height * (1 - s)) / 2;
+  // PDF space is bottom-up: Y = H - y, so Y' = (1 - s) H - b + s Y.
+  return { s, e: pxToPt(a), f: (1 - s) * pxToPt(grid.heightPx) - pxToPt(b) };
+}
+
+export type PdfOptions = {
+  /** Extra inside margin for a bound book, in inches - see gutterTransform.
+   *  Page 1 is a right-hand page. */
+  gutterIn?: number;
+};
+
+export function buildPlannerPdf(pageInputs: PdfPageInput[], options: PdfOptions = {}): BuiltPdf {
   if (pageInputs.length === 0) {
     throw new Error("Nothing to export: this planner has no pages.");
   }
@@ -197,7 +229,13 @@ export function buildPlannerPdf(pageInputs: PdfPageInput[]): BuiltPdf {
     // trim box written once would be wrong for any page that differed.
     sizes.push(declarePageBoxes(doc, index + 1, page.pageGrid));
     const before = { ...report };
+    const gutter = options.gutterIn ? gutterTransform(page.pageGrid, options.gutterIn, index % 2 === 0) : null;
+    if (gutter) {
+      doc.saveGraphicsState();
+      doc.setCurrentTransformationMatrix(doc.Matrix(gutter.s, 0, 0, gutter.s, gutter.e, gutter.f));
+    }
     drawPage(doc, page.elements, font, report);
+    if (gutter) doc.restoreGraphicsState();
     pages.push({
       elements: report.elements - before.elements,
       text: report.text - before.text,

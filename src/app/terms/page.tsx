@@ -146,10 +146,12 @@ export default function TermsPage() {
       </P>
 
       <P>
-        The date the next book will be ordered is shown under Orders. Turn auto-renew off there at
-        any time before that date and nothing more is ordered. If a renewal cannot be ordered
+        The date the next book will be ordered is shown under Orders, and we email you about a week
+        before it. Turn auto-renew off there at any time before that date and nothing more is
+        ordered. If a renewal cannot be ordered
         &mdash; your card is declined, or the book no longer fits its binding &mdash; nothing is
-        charged, auto-renew is turned off, and Orders says why. We do not try the card again.
+        charged, auto-renew is turned off, and we tell you why, by email and under Orders. We do
+        not try the card again.
       </P>
 
       <P>

@@ -24,30 +24,36 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { bindingAvailability, bindingFromEnum, podPackageId, orderableTrim, BINDING_SPECS } from "./products";
+import { bindingFromEnum, orderableTrim, BINDING_SPECS } from "./products";
+import { availabilityAt, printerFor } from "./printer";
 import { nextRange, type ShippingLevel } from "./orderRange";
-import { coverDimensions, printCost, type PrintCost, type ShippingAddress } from "./lulu";
+import type { PrintCost, ShippingAddress } from "./lulu";
 import { priceFromCost } from "./pricing";
 import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, rangeLabel, trimInches } from "./orderBook";
 import { fulfilPaidOrder } from "./orders";
 import { stripe } from "./stripe";
+import { notify, renewalFailedEmail } from "./emails";
+import { sendEmail, type EmailSender } from "@/lib/email";
 
 export type ChargeResult = { ok: true; paymentIntentId: string } | { ok: false; reason: string };
 
 export type RenewalDeps = {
-  printCost: (sku: string, pages: number, address: ShippingAddress, level: ShippingLevel) => Promise<PrintCost>;
-  coverDimensions: (sku: string, pages: number) => Promise<{ widthPt: number; heightPt: number }>;
+  /** What the order's printer charges - `printer` is the order's own. */
+  printCost: (printer: string, sku: string, pages: number, address: ShippingAddress, level: ShippingLevel) => Promise<PrintCost>;
+  coverDimensions: (printer: string, sku: string, pages: number) => Promise<{ widthPt: number; heightPt: number }>;
   /** Charge the saved card, without the customer present. */
   charge: (input: { orderId: string; amountCents: number; customerId: string; paymentMethodId: string; email?: string; description: string }) => Promise<ChargeResult>;
   /** Send a paid order to print. */
   fulfil: (orderId: string, payment: { paymentIntentId: string; paymentMethodId: string }) => Promise<void>;
+  /** Tell the customer a renewal was not ordered. */
+  email: EmailSender;
 };
 
 export function liveDeps(origin: string): RenewalDeps {
   return {
-    printCost,
-    coverDimensions,
+    printCost: (printer, ...rest) => printerFor(printer).printCost(...rest),
+    coverDimensions: (printer, ...rest) => printerFor(printer).coverSize(...rest),
     charge: async (input) => {
       try {
         const intent = await stripe().paymentIntents.create(
@@ -73,6 +79,7 @@ export function liveDeps(origin: string): RenewalDeps {
       }
     },
     fulfil: (orderId, payment) => fulfilPaidOrder(orderId, payment, origin),
+    email: sendEmail,
   };
 }
 
@@ -106,7 +113,7 @@ export async function runRenewals(now: Date, deps: RenewalDeps, limit = 25): Pro
       // Something unexpected: say so on a renewal order, as for any failure.
       const detail = error instanceof Error ? error.message : String(error);
       console.error(`[print] renewal of ${order.id} failed:`, error);
-      const renewalId = await failRenewal(order, "something went wrong ordering it, and nothing was charged");
+      const renewalId = await failRenewal(order, "something went wrong ordering it, and nothing was charged", deps);
       outcomes.push({ orderId: order.id, renewalId, outcome: "failed", detail });
     }
   }
@@ -118,7 +125,7 @@ type Order = Awaited<ReturnType<typeof prisma.printOrder.findMany>>[number];
 /** A FAILED renewal order saying why, auto-renew off on the order it was
  *  for. The reason is the customer's to read, and finishes a sentence that
  *  begins "This renewal was not ordered because". */
-async function failRenewal(order: Order, reason: string, details?: Partial<Prisma.PrintOrderUncheckedCreateInput>): Promise<string> {
+async function failRenewal(order: Order, reason: string, deps: RenewalDeps, details?: Partial<Prisma.PrintOrderUncheckedCreateInput>): Promise<string> {
   const range = nextRange({ start: order.startDate, end: order.endDate, days: order.days });
   const renewal = await prisma.printOrder.create({
     data: {
@@ -146,11 +153,12 @@ async function failRenewal(order: Order, reason: string, details?: Partial<Prism
     },
   });
   await prisma.printOrder.update({ where: { id: order.id }, data: { autoRenew: false, renewsAt: null } });
+  await notify(renewalFailedEmail(renewal), deps.email);
   return renewal.id;
 }
 
 async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome> {
-  const fail = async (reason: string) => ({ orderId: order.id, renewalId: await failRenewal(order, reason), outcome: "failed" as const, detail: reason });
+  const fail = async (reason: string) => ({ orderId: order.id, renewalId: await failRenewal(order, reason, deps), outcome: "failed" as const, detail: reason });
 
   if (!order.plannerId) return fail("its journal was deleted");
   if (!order.stripePaymentMethodId) return fail("no card was saved with the order");
@@ -160,25 +168,26 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   if (!journal) return fail("its journal was deleted");
 
   const range = nextRange({ start: order.startDate, end: order.endDate, days: order.days });
-  const interior = buildInterior(journal, range);
+  const printer = printerFor(order.printer);
+  const binding = bindingFromEnum(order.binding);
+  const interior = buildInterior(journal, range, (pages) => printer.gutterInches(binding, pages));
   if (!orderableTrim(interior.trim)) return fail("the journal was switched to US Letter, which is printed at home");
   if (interior.problems.length > 0) return fail(`the book could not be made ready to print (${interior.problems.join("; ")})`);
-  const binding = bindingFromEnum(order.binding);
-  const fit = bindingAvailability(interior.bookPages).find((a) => a.binding === binding);
+  const fit = availabilityAt(printer, interior.bookPages).find((a) => a.binding === binding);
   if (!fit?.ok) return fail(`the next book has ${interior.pageCount} pages, more than ${BINDING_SPECS[binding].label.toLowerCase()} can hold`);
 
-  const sku = podPackageId(binding, interior.trim)!;
+  const sku = printer.sku(binding, interior.trim)!;
   const address = order.shippingAddress as unknown as ShippingAddress;
   const level = order.shippingLevel as ShippingLevel;
   let cost: PrintCost;
   try {
-    cost = await deps.printCost(sku, interior.pageCount, address, level);
+    cost = await deps.printCost(order.printer, sku, interior.pageCount, address, level);
   } catch {
     return fail("the printer can no longer post it the same way to that address");
   }
   const price = priceFromCost(cost);
   const trim = trimInches(interior.trim);
-  const dims = await deps.coverDimensions(sku, interior.pageCount);
+  const dims = await deps.coverDimensions(order.printer, sku, interior.pageCount);
   const cover = buildCoverPdf({ ...dims, trimWidthIn: trim.widthIn, trimHeightIn: trim.heightIn, title: journal.title, dates: journal.dated ? rangeLabel(range) : "" });
 
   const renewal = await prisma.printOrder.create({
@@ -191,6 +200,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
       days: range.days,
       binding: order.binding,
       podPackageId: sku,
+      printer: order.printer,
       pageCount: interior.pageCount,
       shippingLevel: order.shippingLevel,
       shippingAddress: order.shippingAddress as Prisma.InputJsonValue,
@@ -222,7 +232,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   // Auto-renew moves to the renewal either way; this order is done.
   await prisma.printOrder.update({ where: { id: order.id }, data: { autoRenew: false, renewsAt: null } });
   if (!charged.ok) {
-    await prisma.printOrder.update({
+    const failed = await prisma.printOrder.update({
       where: { id: renewal.id },
       data: {
         status: "FAILED",
@@ -230,6 +240,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
         failureReason: `This renewal was not ordered because ${charged.reason}. Nothing was charged. Auto-renew is off; order the next book from your journal when you're ready.`,
       },
     });
+    await notify(renewalFailedEmail(failed), deps.email);
     return { orderId: order.id, renewalId: renewal.id, outcome: "failed", detail: charged.reason };
   }
   await deps.fulfil(renewal.id, { paymentIntentId: charged.paymentIntentId, paymentMethodId: order.stripePaymentMethodId });

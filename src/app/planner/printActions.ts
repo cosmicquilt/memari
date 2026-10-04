@@ -94,6 +94,8 @@ export async function setAutoRenew(orderId: string, on: boolean): Promise<{ ok: 
     where: { id: order.id },
     data: {
       autoRenew: on,
+      // Switched back on: a reminder is due again before the next renewal.
+      renewalReminderSentAt: null,
       renewsAt: on
         ? renewalDate({ start: order.startDate, end: order.endDate, days: order.days }, order.shippingLevel as never, address.countryCode !== "US", new Date())
         : null,

@@ -6,6 +6,7 @@
 import { runRenewals, liveDeps, pruneOldPrintFiles, type RenewalOutcome } from "@/lib/print/renewals";
 import { orderingConfigured } from "@/lib/print/orders";
 import { appUrl } from "@/lib/print/fileUrls";
+import { sendRenewalReminders } from "@/lib/print/emails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,9 @@ export async function GET(request: Request) {
   if (orderingConfigured().ok) {
     renewals = await runRenewals(now, liveDeps(appUrl(new URL(request.url).origin)), 10);
   }
+  // A week's notice before each renewal - sent whether or not the keys are
+  // set, since a reminder needs neither printer nor payment.
+  const reminded = await sendRenewalReminders(now);
   const pruned = await pruneOldPrintFiles(now);
-  return Response.json({ renewals, pruned });
+  return Response.json({ renewals, reminded, pruned });
 }
