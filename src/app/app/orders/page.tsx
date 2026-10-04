@@ -2,19 +2,29 @@
 // where it is, and whether it renews. Stripe's payment page returns here
 // (?placed=<order>), possibly before its webhook has said the order is paid,
 // so that order is shown even while it is still waiting.
+//
+// Two things to do from here besides auto-renew: ORDER THE NEXT one - on
+// each journal's latest book, unless auto-renew will order it anyway - which
+// opens the journal's order screen filled in from that book; and CANCEL a
+// book the printer has not begun (orders.ts, customerCanCancel).
 
 import { redirect } from "next/navigation";
 import { currentOwner, signInPath } from "@/lib/owner";
 import { prisma } from "@/lib/prisma";
 import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
 import { formatCents } from "@/lib/print/pricing";
-import { SHIPPING_LABELS } from "@/lib/print/orders";
+import { customerCanCancel, SHIPPING_LABELS } from "@/lib/print/orders";
 import { rangeLabel } from "@/lib/print/orderBook";
 import type { ShippingLevel } from "@/lib/print/orderRange";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { AutoRenewSwitch } from "./AutoRenewSwitch";
+import { CancelOrderButton } from "./CancelOrderButton";
+import { journalSlugOf } from "@/app/planner/journalSlugs";
 
 export const dynamic = "force-dynamic";
+
+/** A book that was, or is being, printed. */
+const PRINTED = ["PAID", "SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"];
 
 const STATUS_LABELS: Record<string, string> = {
   QUOTED: "Confirming payment…",
@@ -40,6 +50,28 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         include: { _count: { select: { renewals: true } } },
       });
 
+  // "Order the next": each journal's latest book - by the last day it
+  // covers - or a renewal that was never ordered, which IS the next one.
+  // Only the latest, so two books for one journal do not both offer the
+  // days the second already covers.
+  const latest = new Map<string, (typeof orders)[number]>();
+  for (const order of orders) {
+    const unordered = order.status === "FAILED" && !!order.renewedFromId;
+    if (!order.plannerId || !(PRINTED.includes(order.status) || unordered)) continue;
+    const held = latest.get(order.plannerId);
+    if (!held || order.endDate > held.endDate) latest.set(order.plannerId, order);
+  }
+  const nextLinks = new Map<string, string>();
+  for (const [plannerId, order] of latest) {
+    // Auto-renew will order it - no need to ask.
+    if (order.autoRenew && order.status !== "FAILED") continue;
+    try {
+      nextLinks.set(order.id, `/app/j/${await journalSlugOf(plannerId)}?reorder=${order.id}`);
+    } catch {
+      // The journal went between the two reads - no link.
+    }
+  }
+
   return (
     <main style={{ minHeight: "100vh", background: "#141414", color: onCream(0xdd), padding: "40px 16px", boxSizing: "border-box" }}>
       <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -64,7 +96,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           // The switch belongs to the book that will renew next: not one that
           // failed or was cancelled, and not one already renewed - its
           // renewal carries the switch on.
-          const renewable = ["PAID", "SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"].includes(order.status) && order._count.renewals === 0;
+          const renewable = PRINTED.includes(order.status) && order._count.renewals === 0;
+          const next = nextLinks.get(order.id);
           return (
             <article key={order.id} style={{ padding: 14, background: "#1c1c1e", border: `1px solid ${cream(0.1)}`, borderRadius: 10, display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
@@ -96,6 +129,16 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               )}
               {renewable && (
                 <AutoRenewSwitch orderId={order.id} on={order.autoRenew} renewsAt={order.renewsAt?.toISOString() ?? null} days={order.days} />
+              )}
+              {(customerCanCancel(order) || next) && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "flex-start" }}>
+                  {next && (
+                    <a href={next} style={{ padding: "5px 10px", fontSize: 12, background: "rgba(74, 92, 255, 0.28)", color: CREAM, borderRadius: 6, textDecoration: "none" }}>
+                      {unordered ? `Order these ${order.days} days` : `Order the next ${order.days} days`}
+                    </a>
+                  )}
+                  {customerCanCancel(order) && <CancelOrderButton orderId={order.id} total={formatCents(order.totalCents)} />}
+                </div>
               )}
             </article>
           );

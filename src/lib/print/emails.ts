@@ -9,6 +9,8 @@
 //                   advice.
 //   renewalFailed   a renewal was not ordered, why, and that nothing was
 //                   charged
+//   cancelled       the customer stopped it; the whole payment is coming
+//                   back
 //   adminAlert      to ADMIN_EMAIL: a paid order is not printing
 //
 // Plain words, short, one link back to Orders. The HTML is the text with a
@@ -102,6 +104,16 @@ export function renewalFailedEmail(renewal: OrderLike): Email {
     "Your next journal was not ordered",
     "Your renewal was not ordered",
     [renewal.failureReason ?? "Your renewal could not be ordered, and nothing was charged.", "You can order the next book from your journal whenever you're ready."],
+    ordersLink()
+  );
+}
+
+export function cancelledEmail(order: OrderLike): Email {
+  return compose(
+    order.contactEmail ?? "",
+    "Your journal order is cancelled",
+    "Your order is cancelled",
+    [describe(order), `The printer has stopped it, and the whole ${formatCents(order.totalCents)} is refunded to your card - banks take 5-10 business days to show it.`, "Auto-renew is off for it. You can order again from your journal whenever you like."],
     ordersLink()
   );
 }

@@ -117,6 +117,13 @@ async function main() {
     { path: `/app/j/${strangerSlug}`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal, by its words, is 404 - as if it did not exist" },
     { path: `/app/j/${journal.slug}`, expect: [307, 302, 303], as: "nobody", what: "a journal's words with no cookie are sent to sign-in" },
     { path: `/app/export?journal=${journal.id}`, expect: [200], as: "guest", what: "the PDF export" },
+    // THE BOOK BEFORE IT IS BOUGHT (app/print-preview): the pages and cover
+    // an order would print, for the journal's owner only.
+    { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=paperback&part=interior`, expect: [200], as: "guest", what: "an order's pages, previewed" },
+    { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=hardcover&part=cover`, expect: [200], as: "guest", what: "an order's cover, previewed" },
+    { path: `/app/print-preview?journal=${stranger.journalId}&start=2027-01-04&days=90&binding=coil&part=interior`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal cannot be previewed" },
+    { path: `/app/print-preview?journal=${journal.id}&days=90&binding=coil`, expect: [400], as: "guest", what: "a preview without its days is refused, plainly" },
+    { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=coil`, expect: [401], as: "nobody", what: "nobody signed in previews nothing" },
   ];
 
   try {

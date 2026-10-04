@@ -9,6 +9,9 @@
 //   fulfilPaidOrder  once Stripe says it is paid: PAID, then a print job at
 //                    Lulu - which charges our card - and SUBMITTED
 //   applyLuluStatus  Lulu's word on where the book is
+//   cancelByCustomer the customer stops their own book, while the printer
+//                    has not begun it - the printer asked first, the money
+//                    back only if it agrees
 //
 // Every step is safe to repeat: a webhook delivered twice finds the order
 // already past the step and does nothing.
@@ -24,7 +27,8 @@ import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
-import { adminAlertEmail, notify, placedEmail, shippedEmail } from "./emails";
+import { adminAlertEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
+import { sendEmail, type EmailSender } from "@/lib/email";
 
 export { OrderError };
 
@@ -306,14 +310,100 @@ export async function applyLuluStatus(job: PrintJob): Promise<void> {
     }
   }
   await prisma.printOrder.updateMany({
-    where: { luluPrintJobId: String(job.id) },
+    where: { luluPrintJobId: jobId },
     data: {
       luluStatus: job.status?.name ?? null,
-      ...(status ? { status } : {}),
       ...(tracking.length > 0 ? { trackingUrls: tracking } : {}),
+    },
+  });
+  // A cancelled order stays cancelled: Lulu's news can arrive out of order,
+  // and a late "waiting to print" must not bring back a book that was
+  // stopped and refunded.
+  if (!status) return;
+  await prisma.printOrder.updateMany({
+    where: { luluPrintJobId: jobId, status: { not: "CANCELED" } },
+    data: {
+      status,
       ...(status === "FAILED" ? { failureReason: `The printer reported ${job.status?.name}${job.status?.message ? `: ${job.status.message}` : ""}.` } : {}),
     },
   });
+}
+
+/** Lulu's statuses in which a job can still be stopped: before it is paid
+ *  for, and the hour of production_delay after (lulu.ts, createPrintJob). */
+const STOPPABLE_AT_PRINTER = new Set(["CREATED", "UNPAID", "PAYMENT_IN_PROGRESS", "PRODUCTION_DELAYED"]);
+
+/** Can the customer cancel this order themselves? While it is with the
+ *  printer and the printer has not begun it - as far as we have heard. The
+ *  printer has the last word (cancelByCustomer). A PAID order not yet sent
+ *  is seconds from being sent, and one that failed is ours to sort out; the
+ *  admin page refunds those. */
+export function customerCanCancel(order: { status: string; luluPrintJobId: string | null; luluStatus: string | null; stripePaymentIntentId: string | null }): boolean {
+  return order.status === "SUBMITTED" && !!order.luluPrintJobId && !!order.stripePaymentIntentId && (order.luluStatus === null || STOPPABLE_AT_PRINTER.has(order.luluStatus));
+}
+
+export type CancelDeps = {
+  /** Stop the job; throws if the printer has begun it. */
+  stopAtPrinter: (printerId: string, jobId: string) => Promise<void>;
+  /** All of the payment back. */
+  refund: (paymentIntentId: string, orderId: string) => Promise<void>;
+  email: EmailSender;
+};
+
+export function liveCancelDeps(): CancelDeps {
+  return {
+    stopAtPrinter: (printerId, jobId) => printerFor(printerId).cancel(jobId),
+    // The same key as the admin's refund (admin.ts): whoever presses first,
+    // the payment is refunded once.
+    refund: async (paymentIntentId, orderId) => {
+      await stripe().refunds.create({ payment_intent: paymentIntentId }, { idempotencyKey: `refund-${orderId}` });
+    },
+    email: sendEmail,
+  };
+}
+
+const AFTERWARDS = "If something is wrong with it when it arrives, tell us and we'll put it right.";
+/** What we know: the printer has said it began. */
+const STARTED = `The printer has started on this book, so it can no longer be stopped. ${AFTERWARDS}`;
+/** What the printer's refusal says - nearly always that it began, but it
+ *  may be the printer not answering, so the words do not claim more. */
+const REFUSED = `The printer could not stop this book - almost always because it has started printing it, and then it can no longer be stopped. ${AFTERWARDS}`;
+
+/**
+ * THE CUSTOMER CANCELS their own book. The printer is asked FIRST, and the
+ * money goes back only if it agrees: a book that will be printed anyway is
+ * not refunded here - that is the terms' "after that it cannot be stopped".
+ * Once stopped, the order is CANCELED, auto-renew off, and the whole payment
+ * refunded. A refund that fails is told to us to make by hand, and to the
+ * customer plainly; the book is stopped either way.
+ */
+export async function cancelByCustomer(ownerId: string, orderId: string, deps: CancelDeps = liveCancelDeps()): Promise<void> {
+  const order = await prisma.printOrder.findFirst({ where: { id: orderId, ownerId } });
+  if (!order) throw new OrderError("That order could not be found.");
+  if (order.status === "CANCELED") throw new OrderError("This order is already cancelled.");
+  if (!customerCanCancel(order)) throw new OrderError(STARTED);
+  try {
+    await deps.stopAtPrinter(order.printer, order.luluPrintJobId!);
+  } catch (error) {
+    console.error(`[print] the printer would not cancel ${order.id}:`, error);
+    throw new OrderError(REFUSED);
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  // Cancelled once, however many times it is pressed: only the press that
+  // moves the order sends the email.
+  const moved = await prisma.printOrder.updateMany({
+    where: { id: order.id, status: { not: "CANCELED" } },
+    data: { status: "CANCELED", luluStatus: "CANCELED", autoRenew: false, renewsAt: null, failureReason: `Cancelled by the customer ${day}.` },
+  });
+  try {
+    await deps.refund(order.stripePaymentIntentId!, order.id);
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    await prisma.printOrder.update({ where: { id: order.id }, data: { failureReason: `Cancelled by the customer ${day}; the refund failed and must be made by hand: ${why}` } });
+    await notify(adminAlertEmail(order, `The customer cancelled and the printer stopped it, but the refund failed: ${why}. Refund it from Stripe.`), deps.email);
+    throw new OrderError("Your book is stopped. The refund did not go through straight away - we have been told, and will make it by hand within two business days.");
+  }
+  if (moved.count > 0) await notify(cancelledEmail(order), deps.email);
 }
 
 export { orderRange };

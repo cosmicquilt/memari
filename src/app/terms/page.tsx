@@ -121,11 +121,11 @@ export default function TermsPage() {
       </P>
 
       <P>
-        <strong>Cancelling.</strong> Each book is made to order, for you. If you need to cancel,
-        email us straight away: we can stop it until the printer starts, usually within an hour of
-        your payment. After that it cannot be stopped, and we cannot take back a book for a change
-        of mind &mdash; where the law gives a right to cancel a purchase, it does not cover goods
-        made to the buyer&rsquo;s own design.
+        <strong>Cancelling.</strong> Each book is made to order, for you. You can cancel it yourself
+        under Orders until the printer starts it, which is about an hour after you pay; if it is
+        stopped, the whole payment is refunded to your card. After that it cannot be stopped, and we
+        cannot take back a book for a change of mind &mdash; where the law gives a right to cancel a
+        purchase, it does not cover goods made to the buyer&rsquo;s own design.
       </P>
 
       <P>
@@ -151,7 +151,8 @@ export default function TermsPage() {
         ordered. If a renewal cannot be ordered
         &mdash; your card is declined, or the book no longer fits its binding &mdash; nothing is
         charged, auto-renew is turned off, and we tell you why, by email and under Orders. We do
-        not try the card again.
+        not try the card again. A book auto-renew has ordered can be cancelled under Orders like
+        any other, until the printer starts it.
       </P>
 
       <P>

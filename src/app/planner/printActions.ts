@@ -1,8 +1,10 @@
 "use server";
 
-// The order screen's three calls: whether ordering works here, a price for
-// the choices on screen, and the payment page. See src/lib/print/orders.ts
-// for what each does; this file only says who is asking.
+// The order screen's calls: whether ordering works here, a price for the
+// choices on screen, the payment page, an earlier order to start from - and
+// the Orders page's: auto-renew on or off, and cancelling. See
+// src/lib/print/orders.ts for what each does; this file only says who is
+// asking.
 //
 // An order needs an ACCOUNT, not a guest cookie: it is paid for, posted to a
 // person, and may renew - all of which outlive a browser. A guest is asked
@@ -11,9 +13,11 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
 import { currentOwner } from "@/lib/owner";
-import { OrderError, orderingConfigured, quoteOrder, startCheckout, type OrderInput, type Quote } from "@/lib/print/orders";
+import { cancelByCustomer, OrderError, orderingConfigured, quoteOrder, startCheckout, type OrderInput, type Quote } from "@/lib/print/orders";
 import { appUrl } from "@/lib/print/fileUrls";
-import type { ShippingLevel } from "@/lib/print/orderRange";
+import { nextRange, type ShippingLevel } from "@/lib/print/orderRange";
+import { bindingFromEnum, type Binding } from "@/lib/print/products";
+import type { ShippingAddress } from "@/lib/print/lulu";
 
 export type OrderingStatus = { ready: true } | { ready: false; reason: "guest" | "not-configured" | "signed-out"; message: string };
 
@@ -102,4 +106,44 @@ export async function setAutoRenew(orderId: string, on: boolean): Promise<{ ok: 
     },
   });
   return { ok: true };
+}
+
+/** The customer stops one of their own books, while the printer has not
+ *  begun it - see cancelByCustomer in orders.ts. */
+export async function cancelOrder(orderId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const owner = await signedInOwner();
+  if ("ready" in owner) return { ok: false, error: owner.message };
+  try {
+    await cancelByCustomer(owner.id, orderId);
+    return { ok: true };
+  } catch (error) {
+    return failure(error, "cancelling the order");
+  }
+}
+
+export type ReorderDefaults = { startISO: string; days: number; binding: Binding; address: ShippingAddress; level: ShippingLevel };
+
+/**
+ * "Order the next one" (the Orders page): the order screen filled in from an
+ * earlier book - the same number of days straight after it, the same
+ * binding, address and shipping. A renewal that was never ordered is itself
+ * the next one, so it gives its own days. Only the person's own order, and
+ * only on the journal it was made from; anything else opens the screen
+ * empty, as Order print does.
+ */
+export async function reorderDefaults(orderId: string, journalId: string): Promise<ReorderDefaults | null> {
+  const owner = await signedInOwner();
+  if ("ready" in owner) return null;
+  const { prisma } = await import("@/lib/prisma");
+  const order = await prisma.printOrder.findFirst({ where: { id: orderId, ownerId: owner.id, plannerId: journalId } });
+  if (!order) return null;
+  const range = { start: order.startDate, end: order.endDate, days: order.days };
+  const next = order.status === "FAILED" && order.renewedFromId ? range : nextRange(range);
+  return {
+    startISO: next.start.toISOString().slice(0, 10),
+    days: next.days,
+    binding: bindingFromEnum(order.binding),
+    address: order.shippingAddress as unknown as ShippingAddress,
+    level: order.shippingLevel as ShippingLevel,
+  };
 }

@@ -12,11 +12,17 @@
 //
 // AUTO-RENEW IS OFF until switched on - "it should always default to auto
 // renew off with the option to turn it on".
+//
+// ORDER THE NEXT ONE: the Orders page links to the journal with
+// ?reorder=<order>, and the screen opens filled in from that book - the
+// days straight after it, its binding, address and shipping (printActions,
+// reorderDefaults). With auto-renew off by default, this is how most people
+// get their next book.
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
-import { checkoutPrint, orderingStatus, quotePrint, type OrderingStatus } from "./printActions";
+import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, type OrderingStatus } from "./printActions";
 import type { Quote } from "@/lib/print/orders";
 import { BINDINGS, BINDING_SPECS, type Binding } from "@/lib/print/products";
 import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
@@ -84,8 +90,13 @@ function isoDay(date: Date): string {
 
 const EMPTY_ADDRESS: ShippingAddress = { name: "", street1: "", street2: "", city: "", stateCode: "", countryCode: "US", postcode: "", phoneNumber: "" };
 
-export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: string; weekStartDay: number; onClose: () => void }) {
+export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { journalId: string; weekStartDay: number; reorderId?: string; onClose: () => void }) {
   const [status, setStatus] = useState<OrderingStatus | null>(null);
+  // Filled in from an earlier book: true once its choices are on screen, so
+  // the hint under Starting says where the date came from.
+  const [fromEarlier, setFromEarlier] = useState(false);
+  // That book's shipping, chosen again when it is still offered.
+  const [preferredLevel, setPreferredLevel] = useState<ShippingLevel | null>(null);
   const [days, setDays] = useState(90);
   const [customDays, setCustomDays] = useState("");
   const [startISO, setStartISO] = useState(() => isoDay(suggestedStart(new Date(), "GROUND", false, weekStartDay)));
@@ -100,11 +111,26 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
 
   useEffect(() => {
     let live = true;
-    void orderingStatus().then((value) => live && setStatus(value));
+    void (async () => {
+      const [value, earlier] = await Promise.all([orderingStatus(), reorderId ? reorderDefaults(reorderId, journalId) : null]);
+      if (!live) return;
+      if (earlier) {
+        setDays(earlier.days);
+        setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === earlier.days) ? "" : String(earlier.days));
+        setStartISO(earlier.startISO);
+        setBinding(earlier.binding);
+        setAddress({ ...EMPTY_ADDRESS, ...earlier.address });
+        setPreferredLevel(earlier.level);
+        setFromEarlier(true);
+      }
+      // The form shows once it is filled, so nothing on it changes under
+      // the person's eyes.
+      setStatus(value);
+    })();
     return () => {
       live = false;
     };
-  }, []);
+  }, [journalId, reorderId]);
 
   // Escape closes, as every other panel here does.
   useEffect(() => {
@@ -136,9 +162,11 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
       return;
     }
     setQuote(result.value);
-    // The cheapest way to post it, to start with.
+    // The way the earlier book was posted, if it is offered; otherwise the
+    // cheapest, to start with.
     const cheapest = [...result.value.options].sort((a, b) => a.price.totalCents - b.price.totalCents)[0];
-    setLevel(cheapest?.level ?? null);
+    const same = result.value.options.find((option) => option.level === preferredLevel);
+    setLevel(same?.level ?? cheapest?.level ?? null);
   };
 
   const pay = async () => {
@@ -155,10 +183,15 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
   };
 
   const chosen = quote?.options.find((option) => option.level === level) ?? null;
+  // "The next book" while that book's choices load and once they are in; an
+  // order that could not be found opens the ordinary, empty screen.
+  const title = reorderId && (status === null || fromEarlier) ? "Order the next book" : "Order a printed book";
+  const previewUrl = (part: "interior" | "cover") =>
+    `/app/print-preview?journal=${encodeURIComponent(journalId)}&start=${startISO}&days=${days}&binding=${binding}&part=${part}`;
   const fits = quote?.availability.find((a) => a.binding === binding);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Order a printed book" style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0, 0, 0, 0.55)" }} />
       <div
         style={{
@@ -178,7 +211,7 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
         }}
       >
         <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: `1px solid ${cream(0.08)}` }}>
-          <strong style={{ flex: 1, fontSize: 13, color: CREAM }}>Order a printed book</strong>
+          <strong style={{ flex: 1, fontSize: 13, color: CREAM }}>{title}</strong>
           <button type="button" onClick={onClose} aria-label="Close" style={{ width: 24, height: 24, padding: 0, border: "none", borderRadius: CONTROL_RADIUS, background: "transparent", color: cream(0.5), cursor: "pointer", fontSize: 16 }}>
             ×
           </button>
@@ -229,7 +262,9 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
               <Section title="Starting">
                 <input type="date" value={startISO} onChange={(event) => changed(setStartISO)(event.target.value)} style={{ ...inputStyle, width: 180 }} />
                 <span style={{ fontSize: 11, color: cream(0.45), lineHeight: 1.4 }}>
-                  Suggested: the first day of your week after a book posted today would arrive.
+                  {fromEarlier
+                    ? "The day after your last book ends - the same length, binding and address, all yours to change."
+                    : "Suggested: the first day of your week after a book posted today would arrive."}
                 </span>
               </Section>
 
@@ -252,6 +287,18 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
                   })}
                 </div>
                 {fits && !fits.ok && <span style={{ fontSize: 12, color: ERROR_INK }}>{fits.reason}</span>}
+                {/* What prints, for these days and this binding - the very
+                    file the printer gets (app/print-preview). */}
+                <span style={{ fontSize: 12, color: cream(0.6) }}>
+                  See exactly what prints:{" "}
+                  <a href={previewUrl("interior")} target="_blank" rel="noreferrer" style={{ color: "#8a97ff" }}>
+                    the pages
+                  </a>{" "}
+                  ·{" "}
+                  <a href={previewUrl("cover")} target="_blank" rel="noreferrer" style={{ color: "#8a97ff" }}>
+                    the cover
+                  </a>
+                </span>
               </Section>
 
               <Section title="Ship to">
@@ -359,6 +406,20 @@ export function OrderDialog({ journalId, weekStartDay, onClose }: { journalId: s
  *  header's buttons has one (Andrew's pick, 2026-10-01; check:browser). */
 export function OrderPrintButton({ journalId, weekStartDay }: { journalId: string; weekStartDay: number }) {
   const [open, setOpen] = useState(false);
+  const [reorderId, setReorderId] = useState<string | undefined>(undefined);
+  // Arriving from "Order the next" on the Orders page: open, filled in from
+  // that order. The parameter is taken off the address straight away, so a
+  // reload or a shared link does not open it again.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get("reorder");
+    if (!id) return;
+    url.searchParams.delete("reorder");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from the address on arrival
+    setReorderId(id);
+    setOpen(true);
+  }, []);
   return (
     <>
       <button
@@ -379,7 +440,17 @@ export function OrderPrintButton({ journalId, weekStartDay }: { journalId: strin
       >
         Order print
       </button>
-      {open && <OrderDialog journalId={journalId} weekStartDay={weekStartDay} onClose={() => setOpen(false)} />}
+      {open && (
+        <OrderDialog
+          journalId={journalId}
+          weekStartDay={weekStartDay}
+          reorderId={reorderId}
+          onClose={() => {
+            setOpen(false);
+            setReorderId(undefined);
+          }}
+        />
+      )}
     </>
   );
 }
