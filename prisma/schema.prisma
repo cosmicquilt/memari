@@ -83,6 +83,7 @@ model Planner {
   isTemplate Boolean   @default(false)
   theme      Json?
   pages      Page[]
+  printOrders PrintOrder[]
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
@@ -422,6 +423,118 @@ model OwnerSettings {
   /// has no browser, and two devices in two zones must not print the same
   /// book two ways. Seeded from the browser the first time it is missing.
   timeZone  String?
+  /// The person's customer at Stripe, made the first time they order, so
+  /// every order and any renewal is one customer with one saved card.
+  stripeCustomerId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─── Ordering a printed book (2026-10-04) ───────────────────────────────────
+// "start on checkout": one-off books of any number of days, coil, paperback
+// or hardcover, shipped worldwide, with auto-renew off unless turned on.
+// See src/lib/print.
+
+enum PrintBinding {
+  COIL
+  PAPERBACK
+  HARDCOVER
+}
+
+enum PrintOrderStatus {
+  /// Files built and priced; nothing paid.
+  QUOTED
+  /// Paid; not yet with the printer.
+  PAID
+  /// A print job exists at Lulu, which has charged us for it.
+  SUBMITTED
+  IN_PRODUCTION
+  SHIPPED
+  DELIVERED
+  CANCELED
+  /// Lulu rejected it, or a step failed - someone has to look.
+  FAILED
+}
+
+/// One printed book, from the price shown to the parcel delivered.
+///
+/// A SNAPSHOT, not a pointer: the title, dates, page count and the PDFs
+/// themselves are copied in when it is priced, so what is paid for is what
+/// prints - editing the journal afterwards changes the next book, never this
+/// one - and the order outlives the journal it came from.
+model PrintOrder {
+  id        String           @id @default(cuid())
+  ownerId   String
+  /// The journal it was made from; cleared, not deleted with it.
+  plannerId String?
+  planner   Planner?         @relation(fields: [plannerId], references: [id], onDelete: SetNull)
+  status    PrintOrderStatus @default(QUOTED)
+
+  title      String
+  /// First and last day covered, both included; `days` of them.
+  startDate  DateTime
+  endDate    DateTime
+  days       Int
+  binding    PrintBinding
+  /// Lulu's SKU - see src/lib/print/products.ts.
+  podPackageId String
+  /// Printed pages, padded to a multiple of four.
+  pageCount  Int
+
+  /// MAIL, PRIORITY_MAIL, GROUND, EXPEDITED or EXPRESS.
+  shippingLevel   String
+  /// Where it goes, as entered - see ShippingAddress in src/lib/print/lulu.ts.
+  shippingAddress Json
+  contactEmail    String?
+
+  /// What the customer pays, in cents of `currency`.
+  bookCents     Int
+  shippingCents Int
+  totalCents    Int
+  currency      String @default("USD")
+  /// What Lulu quoted to charge us, tax included.
+  costCents     Int
+
+  /// Off unless turned on. When on, the next book - the same number of days
+  /// straight after this one - is charged and ordered on `renewsAt`.
+  autoRenew Boolean   @default(false)
+  renewsAt  DateTime?
+  /// The order this one renewed, if it was a renewal.
+  renewedFromId String?
+  renewedFrom   PrintOrder?  @relation("Renewals", fields: [renewedFromId], references: [id], onDelete: SetNull)
+  renewals      PrintOrder[] @relation("Renewals")
+
+  stripeCheckoutSessionId String? @unique
+  stripePaymentIntentId   String?
+  /// The card saved for renewals - only when auto-renew was on at payment.
+  stripePaymentMethodId   String?
+
+  luluPrintJobId String?
+  /// Lulu's own status name, as last reported.
+  luluStatus     String?
+  trackingUrls   Json?
+  /// Why it FAILED, in words someone can act on.
+  failureReason  String?
+
+  files PrintFile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status, renewsAt])
+}
+
+/// A print-ready PDF of an order: its interior or its cover, kept with the
+/// order so Lulu fetches exactly what was priced (src/app/api/print-files).
+model PrintFile {
+  id        String     @id @default(cuid())
+  orderId   String
+  order     PrintOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// "interior" or "cover".
+  kind      String
+  bytes     Bytes
+  createdAt DateTime   @default(now())
+
+  @@unique([orderId, kind])
 }
