@@ -85,6 +85,7 @@ import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo
 import {
   DndContext,
   PointerSensor,
+  TouchSensor,
   useDraggable,
   useSensor,
   useSensors,
@@ -3656,7 +3657,10 @@ const PaletteCard = memo(function PaletteCard({
         color: PANEL_TEXT,
         cursor: isDragging ? "grabbing" : "grab",
         userSelect: "none",
-        touchAction: "none",
+        // A finger may scroll the palette from a card; a hold picks the
+        // card up (PaletteTouchSensor). No long-press menu on iOS.
+        touchAction: "pan-y",
+        WebkitTouchCallout: "none",
         transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
         boxShadow: isDragging ? "0 12px 28px rgba(0,0,0,0.22)" : undefined,
         zIndex: isDragging ? 10 : undefined,
@@ -3771,6 +3775,42 @@ const PALETTE_PREVIEW_WIDTH_PX = 186;
 // one "same") and 131-181ms frames in its flight - check:browser's module
 // editor probe failing twice in the full suite. See also TimeZoneField.
 const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+
+// A FINGER ON A PALETTE CARD SCROLLS THE PALETTE (2026-10-05). The cards fill
+// the panel's width, and a finger that moved 5px on one started a drag, so
+// on a touch screen the palette scrolled only from its 5px padding - checked
+// with CDP touches: 0px on a card, 281px from the padding. Andrew: "fix the
+// touch scrolling in the real palette". On a card a finger now HOLDS to
+// pick it up - 180ms, the palette browser's grab rule - and moving before
+// that scrolls. It takes touch events, not pointer events: once a card has
+// lifted, a pointer gesture the browser may pan can still be taken over by
+// the pan (pointercancel mid-drag), where dnd-kit's TouchSensor stops it
+// with preventDefault. The mouse, a pen, and a finger on a module on the
+// page are unchanged: they stay with the pointer sensor and its 5px.
+function onPaletteCard(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-palette-slug]") !== null;
+}
+type PointerActivator = (typeof PointerSensor.activators)[number];
+type TouchActivator = (typeof TouchSensor.activators)[number];
+class EditorPointerSensor extends PointerSensor {
+  static activators: PointerActivator[] = [
+    {
+      eventName: "onPointerDown",
+      handler: (event, options) =>
+        !(event.nativeEvent.pointerType === "touch" && onPaletteCard(event.nativeEvent.target)) &&
+        PointerSensor.activators[0].handler(event, options),
+    },
+  ];
+}
+class PaletteTouchSensor extends TouchSensor {
+  static activators: TouchActivator[] = [
+    {
+      eventName: "onTouchStart",
+      handler: (event, options) => onPaletteCard(event.nativeEvent.target) && TouchSensor.activators[0].handler(event, options),
+    },
+  ];
+}
+const TOUCH_SENSOR_OPTIONS = { activationConstraint: { delay: 180, tolerance: 5 } };
 
 function ModulePalette({
   activeId,
@@ -6854,7 +6894,7 @@ export function NativePlannerEditor({
   // A small activation distance, not an instant-trigger sensor — without
   // it, a plain click (no intended drag at all) can register as a
   // zero-distance "drag" and briefly flicker the dragging state.
-  const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
+  const sensors = useSensors(useSensor(EditorPointerSensor, POINTER_SENSOR_OPTIONS), useSensor(PaletteTouchSensor, TOUCH_SENSOR_OPTIONS));
 
   // Converts an absolute screen point (a palette card's own live center,
   // via event.active.rect.current.translated — see handleDragMove below)
