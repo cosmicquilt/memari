@@ -103,6 +103,7 @@ import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
 import { useJournalId } from "./journalContext";
 import { OrderPrintButton } from "./OrderDialog";
+import { BetaBadge } from "./BetaBadge";
 import { useRefreshPages } from "./pagesRefreshContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -10530,6 +10531,7 @@ export function NativePlannerEditor({
           <strong>
             Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
           </strong>
+          <BetaBadge />
         </Link>
         {journalTitle && (
           <span
@@ -10537,6 +10539,9 @@ export function NativePlannerEditor({
             style={{
               color: cream(0.6),
               fontSize: 13,
+              // Set apart from the wordmark and its badge (asked
+              // 2026-10-05): the header's 12px gap, and as much again.
+              marginLeft: 12,
               minWidth: 0,
               maxWidth: 260,
               overflow: "hidden",
