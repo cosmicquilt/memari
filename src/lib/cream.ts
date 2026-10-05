@@ -14,9 +14,21 @@
  * What does NOT change: what prints. The PDF has no page fill - the paper
  * is the stock - and the modules' own drawing colours (an event's fill
  * blended against paper, hourlyGridCore's PAPER) are print colours.
+ *
+ * HOW MUCH CREAM (2026-10-05). Andrew: "I actually like the white grey
+ * color better than the current cream... add slider from all the cream
+ * colors, I want it to be more subtle". Every warm colour in the app comes
+ * from CREAM_RGB, so one number sets them all: CREAM_STRENGTH runs from 0
+ * (white, and the greys neutral - the app before 1 October) to 1 (the
+ * landing page's cream). He picks it on a slider page made from the app at
+ * both ends. globals.css --background carries the result; change both.
  */
-export const CREAM_RGB = [245, 234, 213] as const;
-export const CREAM = "#f5ead5";
+/** The landing page's cream, at full strength. */
+const FULL_CREAM = [245, 234, 213] as const;
+/** 0 is white, 1 the landing's cream. */
+export const CREAM_STRENGTH = 1;
+export const CREAM_RGB = FULL_CREAM.map((c) => Math.round(255 + (c - 255) * CREAM_STRENGTH)) as unknown as readonly [number, number, number];
+export const CREAM = "#" + CREAM_RGB.map((c) => c.toString(16).padStart(2, "0")).join("");
 
 /** Cream at an opacity - what rgba(255, 255, 255, a) was, on the dark
  *  chrome: text, hairlines and fills that let the panel through. */

@@ -10546,17 +10546,10 @@ export function NativePlannerEditor({
         display: "flex",
         flexDirection: "column",
         height: "100vh",
-        // THE CANVAS ROUND THE PAGES: the darker cream (cream.ts), with paper
-        // texture (2026-10-01: "add paper texture to canvas background") -
-        // the journal pages' own fibre tile, as the start dialog and the
-        // landing page lay it: mid-grey, so an overlay blend leaves the
-        // colour alone and only the fibres lighten and darken it; 256px so a
-        // 2x screen shows it at its own resolution. The colour is there before
-        // the tile loads, so the first frame is right, never blank.
+        // THE CANVAS ROUND THE PAGES: the darker cream (cream.ts), plain. It
+        // carried the paper fibre texture from 2026-10-01 until Andrew took
+        // it off on 2026-10-05 ("don't like the paper texture the back").
         backgroundColor: CANVAS_CREAM,
-        backgroundImage: "url(/landing/paper.jpg)",
-        backgroundSize: "256px 256px",
-        backgroundBlendMode: "overlay",
       }}
     >
       <header
