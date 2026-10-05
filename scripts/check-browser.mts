@@ -2519,6 +2519,22 @@ const paletteDrop: Probe = {
        *  on anything the preview showed. */
       const dragTo = async (source: Locator, targetId: string, at: number, what: string, grabAt: number | null = null) => {
         await source.scrollIntoViewIfNeeded();
+        // A palette card is picked up from a palette scrolled to it, so
+        // the palette has an offset to lose. Reported 2026-10-05: the
+        // panel turns overflow:visible for a drag, which threw the list
+        // back to the top for the length of it (a card at -392px drawn at
+        // 208px). Another card must stay where it was while one is carried.
+        const fromPalette = (await source.getAttribute("data-palette-slug")) !== null;
+        const paletteCardTop = () =>
+          tab.evaluate(`(() => {
+            const cards = [...document.querySelectorAll('[data-palette-slug]')].filter((c) => !c.style.transform);
+            return cards.length ? Math.round(cards[0].getBoundingClientRect().top * 10) / 10 : null;
+          })()`) as Promise<number | null>;
+        if (fromPalette) {
+          await source.evaluate((el) => el.scrollIntoView({ block: "start" }));
+          await tab.waitForTimeout(150);
+        }
+        const paletteBefore = fromPalette ? await paletteCardTop() : null;
         const from = await source.boundingBox();
         const to = await tab.locator(`[data-module-instance-id="${targetId}"]`).boundingBox();
         if (!from || !to) return `could not find what to drag, or where to, for ${what}`;
@@ -2538,6 +2554,13 @@ const paletteDrop: Probe = {
         // `settled`).
         if (!(await settled(tab, inFlight))) return `${what}: the preview never came to rest`;
         const shown = await boxes();
+        if (fromPalette) {
+          const paletteDuring = await paletteCardTop();
+          if (paletteBefore !== null && paletteDuring !== null && Math.abs(paletteDuring - paletteBefore) > 1) {
+            await tab.mouse.up();
+            return `${what}: the palette jumped while a card was carried - its first card from ${paletteBefore}px to ${paletteDuring}px`;
+          }
+        }
         await tab.mouse.up();
         if (!(await settled(tab, inFlight, { quietMs: 500 }))) return `${what}: the page never came to rest after release`;
         const landed = await boxes();

@@ -3953,6 +3953,30 @@ function ModulePalette({
   // needs to scroll while nothing is being dragged out of it.
   const isDraggingPaletteCard = paletteGestureActive || (activeId?.startsWith(PALETTE_ID_PREFIX) ?? false);
 
+  // ...AND KEEPS ITS PLACE WHILE IT DOES (2026-10-05). A scroll container
+  // switched to overflow:visible forgets its offset, so a drag from a
+  // palette scrolled down - to Philosophy & faith, say - threw the whole
+  // list back to the top for the length of the drag (measured: the first
+  // card from -392px to 208px), and back again on release. The offset is
+  // kept from the last scroll, the content is shifted up by it before the
+  // drag's first paint, and the panel is clipped at its own top edge so
+  // the part shifted above it stays hidden under the header as it was.
+  // On release the shift comes off and the offset goes back.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const panelContentRef = useRef<HTMLDivElement | null>(null);
+  const panelScrollTopRef = useRef(0);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const content = panelContentRef.current;
+    if (!panel || !content) return;
+    if (isDraggingPaletteCard) {
+      content.style.transform = `translateY(${-panelScrollTopRef.current}px)`;
+    } else {
+      content.style.transform = "";
+      panel.scrollTop = panelScrollTopRef.current;
+    }
+  }, [isDraggingPaletteCard]);
+
   // The sections to draw: every one of them, or only what matches the
   // filter. Matching on the slug as well as the label because the slug is
   // what an error message or a URL names, and it is often the only handle
@@ -4059,6 +4083,12 @@ function ModulePalette({
 
   return (
     <div
+      ref={panelRef}
+      onScroll={(event) => {
+        // Only while it scrolls for real: switching to visible for a drag
+        // reads as a scroll back to 0.
+        if (!isDraggingPaletteCard) panelScrollTopRef.current = event.currentTarget.scrollTop;
+      }}
       style={{
         position: "fixed",
         top: panelHeaderHeightPx,
@@ -4087,15 +4117,18 @@ function ModulePalette({
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
         overflow: isDraggingPaletteCard ? "visible" : "auto",
+        // While dragging, nothing above the panel's own top edge (the
+        // content kept in place is shifted up past it) - and everything
+        // to the right and below, where the card is carried.
+        clipPath: isDraggingPaletteCard ? "inset(0 -200vw -200vh 0)" : undefined,
         // Extra room at the top so the first group header is not tight
         // against the header above it.
         padding: "26px 18px 14px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
         color: PANEL_TEXT,
       }}
     >
+      {/* One wrapper, so the drag can shift everything at once (above). */}
+      <div ref={panelContentRef} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {groupButton("Page Settings", pageSettingsOpen, () => setPageSettingsOpen((v) => !v))}
       <PaletteCollapse open={pageSettingsOpen} allowOverflow={false}>
         {/* Font and Hours sit directly here now rather than behind a
@@ -4270,6 +4303,7 @@ function ModulePalette({
           )}
         </div>
       </PaletteCollapse>
+      </div>
     </div>
   );
 }
