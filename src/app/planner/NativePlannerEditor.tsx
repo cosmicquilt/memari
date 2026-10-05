@@ -98,12 +98,15 @@ import type { WeekSettings } from "./WeekSettingsPanel";
 import { PolotnoJsonRenderer, RESIZE_EASE_CURVE } from "./PolotnoJsonRenderer";
 import { EventLayer, type CalendarChoice } from "./EventLayer";
 import { CalendarsPanel, type CalendarRow } from "./CalendarsPanel";
-import { renderModuleInstance, type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
+import { type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
 import { useJournalId } from "./journalContext";
 import { OrderPrintButton } from "./OrderDialog";
+import { ModulePreview } from "./ModulePreview";
+import { PaletteResizeHandle } from "./PaletteResizeHandle";
+import { BROWSE_PALETTE_PREFIX, BROWSE_SAVED_PREFIX, FloatingModule, ModuleBrowser } from "./ModuleBrowser";
 import { BetaBadge } from "./BetaBadge";
 import { useRefreshPages } from "./pagesRefreshContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
@@ -514,8 +517,14 @@ const PALETTE_ID_PREFIX = "palette:";
 /** A saved module's card: `palette:saved:<id>`. Still a palette id - every
  *  "is this a palette drag" test reads the prefix above. */
 const SAVED_PALETTE_PREFIX = `${PALETTE_ID_PREFIX}saved:`;
+/** A card in the drawer's Recently used, `palette:recent:<slug>` - its own
+ *  id, since the same module is a card in Basics too, and a drag id must be
+ *  one card's. */
+const RECENT_PALETTE_PREFIX = `${PALETTE_ID_PREFIX}recent:`;
 /** The palette section saved modules are listed in. */
 const SAVED_SECTION = "Saved";
+/** The drawer's section of modules placed lately. */
+const RECENT_SECTION = "Recently used";
 
 /** What a palette card places: a catalogue module at its preview settings,
  *  or a saved module at its own - linked to it. */
@@ -525,11 +534,16 @@ type PaletteEntry = {
   savedModule: { id: string; name: string } | null;
 };
 function paletteEntry(rawId: string, saved: SavedModuleCard[]): PaletteEntry | null {
-  if (rawId.startsWith(SAVED_PALETTE_PREFIX)) {
-    const item = saved.find((m) => m.id === rawId.slice(SAVED_PALETTE_PREFIX.length));
+  const savedPrefix = rawId.startsWith(SAVED_PALETTE_PREFIX) ? SAVED_PALETTE_PREFIX : rawId.startsWith(BROWSE_SAVED_PREFIX) ? BROWSE_SAVED_PREFIX : null;
+  if (savedPrefix) {
+    const item = saved.find((m) => m.id === rawId.slice(savedPrefix.length));
     return item ? { slug: item.slug, previewProps: item.propValues, savedModule: { id: item.id, name: item.name } } : null;
   }
-  const slug = rawId.slice(PALETTE_ID_PREFIX.length);
+  const slug = rawId.startsWith(RECENT_PALETTE_PREFIX)
+    ? rawId.slice(RECENT_PALETTE_PREFIX.length)
+    : rawId.startsWith(BROWSE_PALETTE_PREFIX)
+      ? rawId.slice(BROWSE_PALETTE_PREFIX.length)
+      : rawId.slice(PALETTE_ID_PREFIX.length);
   const meta = PALETTE_MODULES.find((m) => m.slug === slug);
   return meta ? { slug, previewProps: meta.previewProps as Record<string, unknown>, savedModule: null } : null;
 }
@@ -3571,72 +3585,6 @@ const PaletteCard = memo(function PaletteCard({
   drawPreview: boolean;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: dragId });
-  // The card shows the module as it would actually be drawn, at its
-  // narrowest single-column form — the same renderModuleInstance the
-  // page itself uses, not an illustration of it. Sized to ONE DAY UNIT -
-  // a quarter of the page's columns - because that is the narrowest a
-  // module ever really gets, so the card promises the least and every
-  // real drop is at least this legible.
-  //
-  // This used to say columnSpan: 1, which meant the same thing while a
-  // page was 4 columns wide. On the 24-column lattice a single column is
-  // one 1/4in dot, so the preview rendered a quarter-inch-wide module and
-  // then scaled it up 2.5x to fill the card - reported as "the preview
-  // looks crazy big, two squares and big text inside". The unit is the
-  // sidebar, not the cell.
-  // The box's size is always known - it is cheap, and it is what keeps the
-  // card the same height before and after its drawing arrives. The drawing
-  // is the expensive part, and waits for drawPreview.
-  const preview = useMemo(() => {
-    const previewColumns = dayUnitColumns(pageGrid);
-    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns, previewProps);
-    const placement = { columnStart: 0, rowStart: 0, columnSpan: previewColumns, rowSpan };
-    return { placement, rect: gridCellToPixels(pageGrid, placement) };
-  }, [slug, previewProps, pageGrid]);
-  const elements = useMemo(
-    () =>
-      drawPreview
-        ? renderModuleInstance(
-            {
-              id: `palette-preview-${slug}`,
-              locked: false,
-              ...preview.placement,
-              propValues: previewProps,
-              moduleType: { slug },
-            },
-            pageGrid,
-            fontFamily
-          )
-        : null,
-    [drawPreview, preview, slug, previewProps, pageGrid, fontFamily]
-  );
-
-  // Scaled to the card's own width. The rendered module is ~500 print
-  // pixels across at one column, so this is a large reduction - fine
-  // for the rects and rules, and the reason the label sits outside the
-  // preview rather than relying on the module's own type being
-  // readable at this size.
-  //
-  // MEASURED, not assumed. PALETTE_PREVIEW_WIDTH_PX is the panel's width
-  // less its paddings, which is right until the panel grows a scrollbar -
-  // opening both Page Settings and Modules at once does exactly that. The
-  // card itself flexes and narrows; the preview kept rendering at the full
-  // 186 and had its right edge clipped off. The constant is still the
-  // starting value, so the common case is correct on the first paint and
-  // the observer only ever corrects it.
-  const previewBoxRef = useRef<HTMLDivElement | null>(null);
-  const [previewWidthPx, setPreviewWidthPx] = useState(PALETTE_PREVIEW_WIDTH_PX);
-  useEffect(() => {
-    const node = previewBoxRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      const measured = entries[0]?.contentRect.width ?? 0;
-      if (measured > 0) setPreviewWidthPx(measured);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  const scale = previewWidthPx / preview.rect.width;
 
   return (
     <div
@@ -3688,48 +3636,42 @@ const PaletteCard = memo(function PaletteCard({
       >
         {label}
       </div>
-      {/* Fixed box sized to the scaled render, with the module drawn
-          inside it at page scale. Square-cornered on purpose: a
-          module's own outer border sits exactly on these bounds, so any
-          radius here clips the module's real corners off and the card
-          shows something the page will never print. This box used to
-          have borderRadius 4 and overflow:hidden to stop the border
-          spilling past that radius — the radius was causing the spill
-          it was hiding. overflow:hidden stays, for the half-pixel the
-          scale transform can round outward. */}
-      <div
-        ref={previewBoxRef}
-        style={{
-          position: "relative",
-          // The card is a flex column, so this fills whatever width the
-          // card actually has rather than asserting one.
-          width: "100%",
-          height: preview.rect.height * scale,
-          overflow: "hidden",
-          background: PANEL_BG,
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-          {elements && (
-            <PolotnoJsonRenderer
-              elements={elements}
-              originX={preview.rect.x}
-              originY={preview.rect.y}
-              scale={scale}
-              suppressOuterBorderSize={null}
-            />
-          )}
-        </div>
-      </div>
+      {/* The module as it would be drawn - see ModulePreview. Very tall
+          ones (a year in pixels) are cut and faded rather than running
+          a card the height of the screen. */}
+      <ModulePreview
+        slug={slug}
+        previewProps={previewProps}
+        pageGrid={pageGrid}
+        fontFamily={fontFamily}
+        draw={drawPreview}
+        initialWidthPx={PALETTE_PREVIEW_WIDTH_PX}
+        maxHeightPx={PALETTE_PREVIEW_MAX_HEIGHT_PX}
+        instanceKey="palette-preview"
+      />
     </div>
   );
 });
 
-const PALETTE_SIDEBAR_WIDTH_PX = 260;
-// Card preview width — the panel's own width less its padding, the
-// card's padding, and the nesting indent.
-const PALETTE_PREVIEW_WIDTH_PX = 186;
+// THE DRAWER'S WIDTH (2026-10-05, the palette revamp): 400px to start, from
+// 260 - "larger drawer and it should show a larger preview" - and the
+// person's to set between 320 and 520 by dragging its edge, kept in this
+// browser. The page re-fits as it moves, as it does when the drawer opens.
+const PALETTE_DEFAULT_WIDTH_PX = 400;
+const PALETTE_MIN_WIDTH_PX = 320;
+const PALETTE_MAX_WIDTH_PX = 520;
+const PALETTE_WIDTH_STORAGE_KEY = "memari:palette-width";
+// The modules last placed, newest first, for the drawer's Recently used -
+// in this browser, like the width.
+const RECENT_MODULES_STORAGE_KEY = "memari:recent-modules";
+const RECENT_MODULES_LIMIT = 6;
+// Card preview width at the default drawer: the drawer less its padding
+// (18 a side), the modules' indent (14), and the card's own padding and
+// border (22). A first-paint guess; each card measures its own.
+const PALETTE_PREVIEW_WIDTH_PX = PALETTE_DEFAULT_WIDTH_PX - 36 - 14 - 22;
+// The tallest a card's drawing gets before it is cut and faded - a year in
+// pixels is over a thousand pixels at the drawer's width.
+const PALETTE_PREVIEW_MAX_HEIGHT_PX = 400;
 
 // Drag-to-add sidebar — requested directly: "create a pallette on the
 // side to drag and add new module." A sibling of the scaled page
@@ -3788,7 +3730,7 @@ const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 // with preventDefault. The mouse, a pen, and a finger on a module on the
 // page are unchanged: they stay with the pointer sensor and its 5px.
 function onPaletteCard(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest("[data-palette-slug]") !== null;
+  return target instanceof Element && target.closest("[data-palette-slug], [data-browse-slug]") !== null;
 }
 type PointerActivator = (typeof PointerSensor.activators)[number];
 type TouchActivator = (typeof TouchSensor.activators)[number];
@@ -3816,6 +3758,9 @@ function ModulePalette({
   activeId,
   activeDelta,
   open,
+  width,
+  recentSlugs,
+  onBrowse,
   highlightModules,
   paletteGestureActive,
   pageSettings,
@@ -3825,6 +3770,12 @@ function ModulePalette({
   calendars,
 }: {
   activeId: string | null;
+  /** The drawer's width - see PALETTE_DEFAULT_WIDTH_PX. */
+  width: number;
+  /** Recently placed modules, newest first - see RECENT_MODULES_STORAGE_KEY. */
+  recentSlugs: string[];
+  /** Opens the module browser. */
+  onBrowse: () => void;
   /** The owner's calendars, for the Calendars section - see CalendarsPanel. */
   calendars: CalendarRow[];
   activeDelta: { x: number; y: number };
@@ -3903,6 +3854,7 @@ function ModulePalette({
   // hundred behind headers rather than in front of them.
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     Basics: true,
+    [RECENT_SECTION]: true,
     [SAVED_SECTION]: true,
   });
   // Saved > Modules, first: the ones somebody made are the ones they came
@@ -3996,7 +3948,20 @@ function ModulePalette({
             m.slug.includes(moduleQuery.replace(/\s+/g, "-"))
         ),
       })).filter((section) => section.modules.length > 0)
-    : PALETTE_SECTIONS;
+    : // Not searching: Recently used and Basics - the rest of the catalogue
+      // is the browser's (Browse all modules), where it can be seen as
+      // groups and sections rather than as a hundred folded headers.
+      [
+        ...(recentSlugs.length > 0
+          ? [
+              {
+                category: RECENT_SECTION,
+                modules: recentSlugs.flatMap((slug) => PALETTE_MODULES.filter((m) => m.slug === slug)),
+              },
+            ]
+          : []),
+        ...PALETTE_SECTIONS.filter((section) => section.category === "Basics"),
+      ];
 
   // The group header is the same kind of label as the "Font" and "Hours"
   // labels inside the groups, one step up: same uppercase-and-tracked
@@ -4094,7 +4059,7 @@ function ModulePalette({
         top: panelHeaderHeightPx,
         left: 0,
         bottom: 0,
-        width: PALETTE_SIDEBAR_WIDTH_PX,
+        width,
         background: PANEL_BG,
         borderRight: `1px solid ${PANEL_EDGE}`,
         // Two shadows: the panel's own edge against the canvas, and the
@@ -4113,7 +4078,7 @@ function ModulePalette({
         boxShadow: open
           ? "8px 0 32px rgba(0,0,0,0.12), inset 0 10px 20px -8px rgba(0,0,0,0.30)"
           : "none",
-        transform: open ? "translateX(0)" : `translateX(-${PALETTE_SIDEBAR_WIDTH_PX}px)`,
+        transform: open ? "translateX(0)" : `translateX(-${width}px)`,
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
         overflow: isDraggingPaletteCard ? "visible" : "auto",
@@ -4218,6 +4183,42 @@ function ModulePalette({
               outline: "none",
             }}
           />
+          {/* EVERY MODULE, BY GROUP: the browser (ModuleBrowser). The drawer
+              keeps what you reach for; the catalogue lives in one place. */}
+          <button
+            type="button"
+            onClick={onBrowse}
+            style={{
+              width: "calc(100% - 14px)",
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              padding: "9px 10px",
+              marginBottom: 4,
+              border: "none",
+              borderRadius: 8,
+              background: "rgba(74, 92, 255, 0.14)",
+              color: "#2b37b8",
+              fontFamily: "inherit",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <g fill="currentColor">
+                <rect x="1" y="1" width="6" height="6" rx="1.2" />
+                <rect x="9" y="1" width="6" height="6" rx="1.2" />
+                <rect x="1" y="9" width="6" height="6" rx="1.2" />
+                <rect x="9" y="9" width="6" height="6" rx="1.2" />
+              </g>
+            </svg>
+            Browse all modules
+            <span style={{ marginLeft: "auto", fontWeight: 500, color: "#5a64b8", fontVariantNumeric: "tabular-nums" }}>
+              {PALETTE_MODULES.length}
+            </span>
+          </button>
           {savedShown.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {sectionButton(SAVED_SECTION, savedShown.length, moduleQuery.length > 0 || openCategories[SAVED_SECTION] === true, () =>
@@ -4272,15 +4273,18 @@ function ModulePalette({
                       paddingBottom: 4,
                     }}
                   >
-                    {section.modules.map((m) => (
+                    {section.modules.map((m) => {
+                      const dragId = `${section.category === RECENT_SECTION ? RECENT_PALETTE_PREFIX : PALETTE_ID_PREFIX}${m.slug}`;
+                      return (
                       <PaletteCard
                         key={m.slug}
                         slug={m.slug}
+                        dragId={dragId}
                         label={m.label}
                         previewProps={m.previewProps}
                         pageGrid={pageGrid}
                         fontFamily={fontFamily}
-                        isDragging={activeId === `${PALETTE_ID_PREFIX}${m.slug}`}
+                        isDragging={activeId === dragId}
                         // THE LIVE DELTA GOES TO THE ONE CARD BEING DRAGGED,
                         // and a frozen zero to the other hundred and twenty
                         // six. A card only reads this when it is the one
@@ -4288,12 +4292,11 @@ function ModulePalette({
                         // nothing on screen and changed one prop identity on
                         // every pointermove - which is all it takes to defeat
                         // the memo below and re-render the whole palette.
-                        dragOffset={
-                          activeId === `${PALETTE_ID_PREFIX}${m.slug}` ? activeDelta : ZERO_OFFSET
-                        }
+                        dragOffset={activeId === dragId ? activeDelta : ZERO_OFFSET}
                         drawPreview={drawCards}
                       />
-                    ))}
+                      );
+                    })}
                   </div>
                 </PaletteCollapse>
               </div>
@@ -6288,6 +6291,75 @@ export function NativePlannerEditor({
   // logic that sets it) is enough. See paletteReservedWidth's own
   // comment for what this drives.
   const [paletteOpen, setPaletteOpen] = useState(initialUi?.paletteOpen ?? false);
+  // The drawer's width, this browser's (PALETTE_DEFAULT_WIDTH_PX). Read
+  // after mount, since the server cannot know it; the drawer usually opens
+  // closed, so nothing on screen moves when it arrives.
+  const [paletteWidth, setPaletteWidth] = useState(PALETTE_DEFAULT_WIDTH_PX);
+  const paletteWidthRef = useRef(PALETTE_DEFAULT_WIDTH_PX);
+  useEffect(() => {
+    paletteWidthRef.current = paletteWidth;
+  }, [paletteWidth]);
+  useEffect(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(PALETTE_WIDTH_STORAGE_KEY));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from this browser's storage on arrival
+      if (stored >= PALETTE_MIN_WIDTH_PX && stored <= PALETTE_MAX_WIDTH_PX) setPaletteWidth(stored);
+    } catch {
+      // Storage refused (a private window): the default stands.
+    }
+  }, []);
+  const commitPaletteWidth = useCallback((width: number) => {
+    try {
+      window.localStorage.setItem(PALETTE_WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      // Not kept; it still applies until the page is closed.
+    }
+  }, []);
+  // The modules placed lately, newest first - the drawer's Recently used.
+  // Kept in this browser; written only once it has been read, so the empty
+  // list of the first render never overwrites what was stored.
+  const [recentSlugs, setRecentSlugs] = useState<string[]>([]);
+  const recentLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!recentLoadedRef.current) return;
+    try {
+      window.localStorage.setItem(RECENT_MODULES_STORAGE_KEY, JSON.stringify(recentSlugs));
+    } catch {
+      // Not kept between visits; still listed for this one.
+    }
+  }, [recentSlugs]);
+  useEffect(() => {
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem(RECENT_MODULES_STORAGE_KEY) ?? "[]");
+      if (Array.isArray(stored)) {
+        const known = stored
+          .filter((slug): slug is string => typeof slug === "string" && PALETTE_MODULES.some((m) => m.slug === slug))
+          .slice(0, RECENT_MODULES_LIMIT);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- read once from this browser's storage on arrival
+        setRecentSlugs(known);
+      }
+    } catch {
+      // Unreadable or refused: start empty.
+    }
+    recentLoadedRef.current = true;
+  }, []);
+  const rememberRecent = useCallback((slug: string) => {
+    setRecentSlugs((prev) => [slug, ...prev.filter((s) => s !== slug)].slice(0, RECENT_MODULES_LIMIT));
+  }, []);
+  // The module browser (ModuleBrowser): every module, by group.
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const closeBrowser = useCallback(() => setBrowserOpen(false), []);
+  // A browser card held, not yet moved: the browser goes see-through.
+  const [browserLifted, setBrowserLifted] = useState(false);
+  // The module carried out of the browser, drawn under the pointer until
+  // the page's own preview takes over: where its card was, and what it is.
+  const [browseFloat, setBrowseFloat] = useState<{
+    slug: string;
+    previewProps: Record<string, unknown>;
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
   // Reported as it changes, so the next layout can start from it.
   useEffect(() => {
     onUiChange?.({ zoomMode, manualScale, paletteOpen });
@@ -6310,7 +6382,7 @@ export function NativePlannerEditor({
   // just because the palette opened; centeringOffsetX's own push still
   // applies in manual mode too (that half is about positioning, not
   // scale, and matters regardless of zoom mode).
-  const paletteReservedWidth = paletteOpen ? PALETTE_SIDEBAR_WIDTH_PX : 0;
+  const paletteReservedWidth = paletteOpen ? paletteWidth : 0;
 
   const fitWidthScale = clampScale((viewportSize.width - VIEWPORT_PADDING_PX * 2 - paletteReservedWidth) / spreadWidthPx);
   const fitPageScale = clampScale(
@@ -6770,7 +6842,10 @@ export function NativePlannerEditor({
   // paletteOpen itself is declared earlier (see paletteReservedWidth's
   // own comment for why) — this block just continues owning the rest
   // of the palette's state.
-  const [paletteHighlightModules, setPaletteHighlightModules] = useState(false);
+  // The drawer's "look here" flash for its module list. Unused since the
+  // "+" opens the browser instead (2026-10-05); kept as a prop so the
+  // drawer can be pointed at again.
+  const paletteHighlightModules = false;
   // True for the brief window right after paletteOpen changes —
   // requested directly ("when you expand side bar it zooms out a
   // little and scrolls... looks like the side bar pushes the canvas
@@ -6801,11 +6876,12 @@ export function NativePlannerEditor({
   // already uses. Doesn't clear `open`: opening is sticky (stays open
   // until the user closes it themselves), only the highlight is
   // transient.
+  // Since the palette's revamp (2026-10-05) the "+" opens the module
+  // BROWSER - every module, by group - rather than the drawer: a "+" is
+  // a question of what to add, which the browser answers.
   const handleOpenPaletteModules = useCallback(() => {
-    setPaletteOpenAnimated(true);
-    setPaletteHighlightModules(true);
-    setTimeout(() => setPaletteHighlightModules(false), 1400);
-  }, [setPaletteOpenAnimated]);
+    setBrowserOpen(true);
+  }, []);
   // Undo/redo over GEOMETRY only - where modules sit and how big they
   // are, including the reflow and gravity fill a move or resize sets
   // off. Every one of those mutations ends as a set of rows with new
@@ -7328,6 +7404,19 @@ export function NativePlannerEditor({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
     setActiveDelta(ZERO_OFFSET);
+    // Carried out of the browser: float a copy from exactly where its
+    // card's drawing sits, since the browser now steps aside.
+    const startedId = String(event.active.id);
+    if (startedId.startsWith(BROWSE_PALETTE_PREFIX) || startedId.startsWith(BROWSE_SAVED_PREFIX)) {
+      const entry = paletteEntry(startedId, savedModules);
+      const card = document.querySelector(`[data-browse-drag-id="${CSS.escape(startedId)}"]`);
+      const drawing = card?.firstElementChild?.getBoundingClientRect();
+      setBrowseFloat(
+        entry && drawing ? { slug: entry.slug, previewProps: entry.previewProps, left: drawing.left, top: drawing.top, width: drawing.width } : null
+      );
+    } else {
+      setBrowseFloat(null);
+    }
     // Origin for readPointerDelta (see its own comment) — the gesture's
     // own starting pointer position, in the same screen coordinate
     // space every later pointermove reports. Null for a non-pointer
@@ -7364,7 +7453,7 @@ export function NativePlannerEditor({
     // the ~150ms settle window) just cancels the old settle in place
     // rather than trying to run two independently-timed settles at once.
     setSettling(null);
-  }, [removePhantom]);
+  }, [removePhantom, savedModules]);
 
   // Shared zone-detection: given a target column/row and the page's own
   // hourly-grid-core placement, figure out which zone (bottom vs side)
@@ -7482,7 +7571,7 @@ export function NativePlannerEditor({
       // is nothing to roll back.
       if (phantomRef.current && paletteOpen) {
         const p = lastPointerRef.current;
-        if (p.x <= PALETTE_SIDEBAR_WIDTH_PX && p.y >= headerHeightPx) {
+        if (p.x <= paletteWidthRef.current && p.y >= headerHeightPx) {
           removePhantom();
           confirmedCrossingRef.current = null;
           setConfirmedCrossingPreview(null);
@@ -9117,6 +9206,8 @@ export function NativePlannerEditor({
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const rawId = String(event.active.id);
+      setBrowseFloat(null);
+      setBrowserLifted(false);
       if (rawId.startsWith(PALETTE_ID_PREFIX)) {
         const phantom = phantomRef.current;
         if (!phantom) {
@@ -9146,6 +9237,12 @@ export function NativePlannerEditor({
           removePhantom();
           return;
         }
+        // Placed: the drawer's Recently used offers it next time. A saved
+        // module is listed under Saved already.
+        if (!phantom.savedModule) rememberRecent(phantom.slug);
+        // Out of the browser and onto the page: the browser stays shut.
+        // Anything short of this brings it back where it was.
+        if (rawId.startsWith(BROWSE_PALETTE_PREFIX) || rawId.startsWith(BROWSE_SAVED_PREFIX)) setBrowserOpen(false);
         // The phantom STAYS, and the preview it was showing is
         // committed locally right here.
         //
@@ -9565,6 +9662,7 @@ export function NativePlannerEditor({
       });
     },
     [
+      rememberRecent,
       placements,
       renderContextByPageId,
       recordGeometry,
@@ -9599,6 +9697,8 @@ export function NativePlannerEditor({
   // is gated on activeId everywhere it is read, but a cancelled gesture
   // should not leave one behind for anything that forgets the gate.
   const handleDragCancel = useCallback(() => {
+    setBrowseFloat(null);
+    setBrowserLifted(false);
     setActiveId(null);
     setActiveDelta(ZERO_OFFSET);
     removePhantom();
@@ -10907,6 +11007,9 @@ export function NativePlannerEditor({
               activeId={activeId}
               activeDelta={activeDelta}
               open={paletteOpen}
+              width={paletteWidth}
+              recentSlugs={recentSlugs}
+              onBrowse={() => setBrowserOpen(true)}
               highlightModules={paletteHighlightModules}
               paletteGestureActive={phantomSlug !== null}
               pageSettings={pageSettings}
@@ -10915,6 +11018,39 @@ export function NativePlannerEditor({
               term={term}
               calendars={calendars}
             />
+            <ModuleBrowser
+              open={browserOpen}
+              handoff={activeId?.startsWith(BROWSE_PALETTE_PREFIX) === true || activeId?.startsWith(BROWSE_SAVED_PREFIX) === true}
+              lifted={browserLifted}
+              onClose={closeBrowser}
+              onLift={setBrowserLifted}
+              pageGrid={pages[0].pageGrid}
+              fontFamily={fontFamily}
+              savedModules={savedModules}
+              recentSlugs={recentSlugs}
+            />
+            {browseFloat && phantomSlug === null && (activeId?.startsWith(BROWSE_PALETTE_PREFIX) || activeId?.startsWith(BROWSE_SAVED_PREFIX)) && (
+              <FloatingModule
+                slug={browseFloat.slug}
+                previewProps={browseFloat.previewProps}
+                pageGrid={pages[0].pageGrid}
+                fontFamily={fontFamily}
+                left={browseFloat.left + activeDelta.x}
+                top={browseFloat.top + activeDelta.y}
+                width={browseFloat.width}
+              />
+            )}
+            {paletteOpen && (
+              <PaletteResizeHandle
+                width={paletteWidth}
+                top={headerHeightPx}
+                min={PALETTE_MIN_WIDTH_PX}
+                max={PALETTE_MAX_WIDTH_PX}
+                defaultWidth={PALETTE_DEFAULT_WIDTH_PX}
+                onChange={setPaletteWidth}
+                onCommit={commitPaletteWidth}
+              />
+            )}
           </DndContext>
         </div>
         <ZoomControls

@@ -3129,6 +3129,166 @@ const widthResize: Probe = {
   },
 };
 
+// ---------------------------------------------------------------------
+// MODULE BROWSER (2026-10-05): the palette's revamp - "larger drawer and it
+// should show a larger preview and do the canvas zoom out pan to keep
+// canvas in view", a pop-up of every module by group, and "grab hand once
+// you grab for a fraction of a second or move the pop disappears and you
+// can drag it to where you want with the current live drag".
+//
+// What it pins: the drawer opens at 400px with previews at its width, its
+// edge drags wider (the page re-fits, the width is kept) and a double-click
+// puts it back; the drawer lists Basics, not the hundred; the browser opens
+// with its groups and sections and a module's description; a HELD click
+// lifts the browser out of the way and brings it back without dropping
+// anything; a drag out of it lands on the page, closes it, and puts the
+// module in Recently used; one let go over the drawer adds nothing and
+// brings it back; Escape closes it.
+// ---------------------------------------------------------------------
+const moduleBrowser: Probe = {
+  name: "module browser",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Module browser check");
+    const context = await page.context().browser()!.newContext({ viewport: { width: VIEWPORT.width, height: 900 }, deviceScaleFactor: 1 });
+    const problems: string[] = [];
+    try {
+      await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(3000);
+      const zoom = () =>
+        tab.evaluate(`(() => { const e = [...document.querySelectorAll('span, div, button')].find((x) => x.children.length === 0 && /^\\d+%$/.test(x.textContent.trim())); return e ? Number(e.textContent.trim().slice(0, -1)) : null; })()`) as Promise<number | null>;
+      const drawerWidth = () =>
+        tab.evaluate(`(() => { let el = document.querySelector('[data-palette-slug]'); while (el && getComputedStyle(el).position !== 'fixed') el = el.parentElement; return el ? Math.round(el.getBoundingClientRect().width) : null; })()`) as Promise<number | null>;
+      const count = async () => (await storedModules(guest.journalId)).length;
+      const dialog = tab.getByRole("dialog", { name: "All modules" });
+      const dialogOpacity = () => tab.evaluate(`(() => { const d = document.querySelector('[role="dialog"][aria-label="All modules"]'); return d ? Number(getComputedStyle(d).opacity) : null; })()`) as Promise<number | null>;
+
+      // The drawer.
+      const zoomClosed = await zoom();
+      await tab.locator('button[title="Open module palette"]').click();
+      await tab.waitForTimeout(800);
+      await tab.getByRole("button", { name: "Modules", exact: true }).first().click();
+      await tab.waitForTimeout(1500);
+      const width = await drawerWidth();
+      const drawing = (await tab.evaluate(`Math.round(document.querySelector('[data-palette-slug]').children[1].getBoundingClientRect().width)`)) as number;
+      if (width !== 400) problems.push(`the drawer opened ${width}px wide, not 400`);
+      if (drawing < 300) problems.push(`a drawer card draws at ${drawing}px - the larger preview is ~330`);
+      const zoomOpen = await zoom();
+      if (zoomClosed === null || zoomOpen === null || zoomOpen >= zoomClosed) problems.push(`opening the drawer did not zoom the page out (${zoomClosed}% -> ${zoomOpen}%)`);
+      const listed = (await tab.evaluate(`[...new Set([...document.querySelectorAll('[data-palette-slug]')].map((c) => c.getAttribute('data-palette-slug')))]`)) as string[];
+      if (listed.length !== 14) problems.push(`the drawer lists ${listed.length} modules, not Basics' 14`);
+
+      // Its edge.
+      const handle = tab.getByRole("separator", { name: "Drawer width" });
+      const hb = (await handle.boundingBox())!;
+      await tab.mouse.move(hb.x + hb.width / 2, hb.y + 300);
+      await tab.mouse.down();
+      for (let i = 1; i <= 10; i++) {
+        await tab.mouse.move(hb.x + hb.width / 2 + i * 8, hb.y + 300);
+        await tab.waitForTimeout(16);
+      }
+      await tab.mouse.up();
+      await tab.waitForTimeout(500);
+      const wider = await drawerWidth();
+      const zoomWider = await zoom();
+      const stored = await tab.evaluate(`localStorage.getItem('memari:palette-width')`);
+      if (wider !== 480) problems.push(`dragging the edge 80px made the drawer ${wider}px, not 480`);
+      if (zoomWider === null || zoomOpen === null || zoomWider >= zoomOpen) problems.push(`a wider drawer did not re-fit the page (${zoomOpen}% -> ${zoomWider}%)`);
+      if (stored !== "480") problems.push(`the width was not kept (${stored})`);
+      await handle.dblclick();
+      await tab.waitForTimeout(400);
+      if ((await drawerWidth()) !== 400) problems.push(`a double-click left the drawer at ${await drawerWidth()}px`);
+
+      // The browser.
+      await tab.getByRole("button", { name: /Browse all modules/ }).click();
+      await dialog.waitFor({ timeout: 5000 });
+      await tab.waitForTimeout(1200);
+      await dialog.getByRole("button", { name: /^Philosophy & faith/ }).click();
+      await tab.waitForTimeout(800);
+      const sections = (await tab.evaluate(`[...document.querySelectorAll('[role="dialog"] section > div:first-child > span:first-child')].map((s) => s.textContent)`)) as string[];
+      if (sections.join("|") !== "Stoic|Taoist|Buddhist & meditation|Christian|Islamic|Jewish") problems.push(`Philosophy & faith's sections: ${sections.join(", ")}`);
+      await dialog.locator('[data-browse-slug="wu-wei-reflection"]').click();
+      await tab.waitForTimeout(400);
+      const detail = (await dialog.locator("aside").innerText()).replace(/\s+/g, " ");
+      if (!/Wu wei, usually translated/.test(detail) || !/On the page\./.test(detail)) problems.push(`the detail pane: "${detail.slice(0, 120)}"`);
+
+      // A held click: out of the way while held, back after, nothing added.
+      const before = await count();
+      const tao = (await dialog.locator('[data-browse-slug="tao-daily-verse"]').boundingBox())!;
+      await tab.mouse.move(tao.x + tao.width / 2, tao.y + 30);
+      await tab.mouse.down();
+      await tab.waitForTimeout(350);
+      const held = await dialogOpacity();
+      await tab.mouse.up();
+      await tab.waitForTimeout(400);
+      const released = await dialogOpacity();
+      if (held === null || held > 0.5) problems.push(`held for 350ms the browser stayed (opacity ${held})`);
+      if (released !== 1) problems.push(`let go without moving, the browser did not come back (opacity ${released})`);
+      if ((await count()) !== before) problems.push("a held click added a module");
+      if (!/^TAO/.test((await dialog.locator("aside").innerText()).trim())) problems.push("a held click did not select the card");
+
+      // A drag out of it onto the Notes box.
+      const notes = (await storedModules(guest.journalId)).find((m) => m.level === "WEEKLY" && m.slug === "labeled-box" && m.propValues.heading === "Notes");
+      const notesBox = notes ? await tab.locator(`[data-module-instance-id="${notes.id}"]`).boundingBox() : null;
+      const wu = (await dialog.locator('[data-browse-slug="wu-wei-reflection"]').boundingBox())!;
+      if (!notesBox) problems.push("no Notes box to drop on");
+      else {
+        const x0 = wu.x + wu.width / 2, y0 = wu.y + 30;
+        const x1 = notesBox.x + notesBox.width / 2, y1 = notesBox.y + 8;
+        await tab.mouse.move(x0, y0);
+        await tab.mouse.down();
+        for (let i = 1; i <= 25; i++) {
+          await tab.mouse.move(x0 + ((x1 - x0) * i) / 25, y0 + ((y1 - y0) * i) / 25);
+          await tab.waitForTimeout(20);
+        }
+        await tab.waitForTimeout(500);
+        await tab.mouse.up();
+        await tab.waitForTimeout(2500);
+        const after = await count();
+        if (after !== before + 1) problems.push(`a drag from the browser onto the page added ${after - before} module(s)`);
+        if ((await dialog.count()) !== 0) {
+          problems.push("the browser stayed open after a drop that landed");
+          await tab.keyboard.press("Escape");
+          await tab.waitForTimeout(300);
+        }
+        const firstCard = await tab.evaluate(`document.querySelector('[data-palette-slug]')?.getAttribute('data-palette-slug')`);
+        if (firstCard !== "wu-wei-reflection") problems.push(`Recently used does not lead with what was placed (${firstCard})`);
+      }
+
+      // One let go over the drawer: nothing added, the browser back.
+      await tab.getByRole("button", { name: /Browse all modules/ }).click();
+      await dialog.waitFor({ timeout: 5000 });
+      await tab.waitForTimeout(800);
+      const placed = await count();
+      const c = (await dialog.locator("[data-browse-slug]").first().boundingBox())!;
+      await tab.mouse.move(c.x + c.width / 2, c.y + 30);
+      await tab.mouse.down();
+      for (let i = 1; i <= 15; i++) {
+        await tab.mouse.move(c.x + c.width / 2 - i * 25, c.y + 30);
+        await tab.waitForTimeout(20);
+      }
+      await tab.mouse.up();
+      await tab.waitForTimeout(800);
+      if ((await count()) !== placed) problems.push("a drag let go over the drawer added a module");
+      if ((await dialog.count()) !== 1 || (await dialogOpacity()) !== 1) problems.push("a drag let go over the drawer did not bring the browser back");
+      await tab.keyboard.press("Escape");
+      await tab.waitForTimeout(300);
+      if ((await dialog.count()) !== 0) problems.push("Escape did not close the browser");
+
+      if (problems.length === 0) note("module browser", `drawer 400px (previews ${drawing}px), its edge to 480 and back with the page re-fitting (${zoomOpen}% -> ${zoomWider}%); the browser's groups, traditions and descriptions; a held click lifts and returns; a drag out lands and closes it, Recently used leads with it; let go off the page it comes back; Escape closes`);
+    } catch (error) {
+      problems.push(`threw: ${error instanceof Error ? error.message.split(String.fromCharCode(10))[0] : String(error)}`);
+    } finally {
+      // Everything found, even when a later step could not run.
+      for (const problem of problems) fail("module browser", problem);
+      await context.close();
+      await guest.remove();
+    }
+  },
+};
+
 const ALL_PROBES: Probe[] = [
   pillTravel,
   firstVisit,
@@ -3141,6 +3301,7 @@ const ALL_PROBES: Probe[] = [
   spineDrag,
   moduleEditor,
   paletteDrop,
+  moduleBrowser,
   widthResize,
   roundTwoPickers,
   textOnThePage,

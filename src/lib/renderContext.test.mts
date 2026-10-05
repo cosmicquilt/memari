@@ -128,15 +128,21 @@ const stored = (id: string) => book.pages.find((p) => p.id === id)!.moduleInstan
 //
 // Every drawing of a module that sits on a page goes through renderOnPage.
 // A raw renderModuleInstance there draws the template - which is the bug.
-// The palette's own card preview is the one legitimate raw call in the
-// editor: it belongs to no page.
+// A palette preview (ModulePreview, shared by the drawer's cards and the
+// module browser since 2026-10-05) is the one legitimate raw call: it
+// belongs to no page. The editor itself draws nothing raw.
 {
   const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
   const actions = source("../app/planner/actions.ts");
   check(!/renderModuleInstance\(/.test(actions), "actions.ts renders only through renderOnPage");
   const editor = source("../app/planner/NativePlannerEditor.tsx");
   const raw = editor.match(/renderModuleInstance\(/g)?.length ?? 0;
-  check(raw === 1, `NativePlannerEditor renders raw only for the palette card (found ${raw} raw calls)`);
+  check(raw === 0, `NativePlannerEditor renders nothing raw - previews are ModulePreview's (found ${raw} raw calls)`);
+  const preview = source("../app/planner/ModulePreview.tsx");
+  const previewRaw = preview.match(/renderModuleInstance\(/g)?.length ?? 0;
+  check(previewRaw === 1, `ModulePreview renders raw exactly once, for the palette's previews (found ${previewRaw})`);
+  const browser = source("../app/planner/ModuleBrowser.tsx");
+  check(!/renderModuleInstance\(/.test(browser), "the module browser draws only through ModulePreview");
   const moduleEditor = source("../app/planner/ModuleEditor.tsx");
   check(!/renderModuleInstance\(/.test(moduleEditor), "the module editor's preview is drawn as its page");
   const load = source("../app/planner/loadPlannerPages.ts");
