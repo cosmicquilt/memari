@@ -40,7 +40,7 @@
 // which fires in a visible window does not necessarily fire in a headless
 // one - see the pill travel probe.
 
-import { chromium, type Browser, type Locator, type Page } from "playwright-core";
+import { chromium, type Browser, type Locator, type Page, type Request } from "playwright-core";
 import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar, retypeModule } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
@@ -2382,6 +2382,63 @@ async function screenAgainstDatabase(tab: Page): Promise<string[]> {
   return problems;
 }
 
+/** Counts a tab's server calls still in flight - fetches, which is how a
+ *  server action and a refresh travel - for `settled`. */
+function trackServerCalls(tab: Page): () => number {
+  let inFlight = 0;
+  const counted = (request: Request) => request.resourceType() === "fetch" || request.resourceType() === "xhr";
+  const done = (request: Request) => {
+    if (counted(request)) inFlight = Math.max(0, inFlight - 1);
+  };
+  tab.on("request", (request) => {
+    if (counted(request)) inFlight++;
+  });
+  tab.on("requestfinished", done);
+  tab.on("requestfailed", done);
+  return () => inFlight;
+}
+
+/**
+ * WAIT FOR THE PAGE TO COME TO REST, rather than for a time: no server call
+ * in flight, no module mid-transition, and every module's box unchanged for
+ * `quietMs`. False if that never happens within `maxMs`, so a page that
+ * keeps moving is reported rather than waited on for ever.
+ *
+ * Why (2026-10-04): palette drop read the preview 400ms after the pointer
+ * stopped and the landing 2.5s after release. On a busy machine the 250ms
+ * slides had not finished by then - Reminders was caught at 612, 617 and
+ * 619px on its way to 624 - and the probe called that a preview the release
+ * did not keep, about one run in five inside the full suite and every run
+ * with the page's CPU slowed four times. The page was right; the probe had
+ * looked mid-slide.
+ */
+async function settled(tab: Page, inFlight: () => number, { quietMs = 300, maxMs = 15_000 } = {}): Promise<boolean> {
+  const started = Date.now();
+  let last = "";
+  let quietSince = Date.now();
+  while (Date.now() - started < maxMs) {
+    // A string, not a function - see the pill travel probe on __name.
+    const state = (await tab.evaluate(`(() => {
+      const modules = [...document.querySelectorAll('[data-module-instance-id]')];
+      const moving = modules.some((el) => el.getAnimations({ subtree: true }).some((a) =>
+        a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity));
+      const boxes = modules.map((el) => {
+        const r = el.getBoundingClientRect();
+        return el.getAttribute('data-module-instance-id') + ':' + [r.left, r.top, r.width, r.height].map((v) => v.toFixed(1)).join(',');
+      }).join('|');
+      return { moving, boxes };
+    })()`)) as { moving: boolean; boxes: string };
+    if (state.moving || inFlight() > 0 || state.boxes !== last) {
+      last = state.boxes;
+      quietSince = Date.now();
+    } else if (Date.now() - quietSince >= quietMs) {
+      return true;
+    }
+    await tab.waitForTimeout(50);
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------
 // PALETTE DROP: after a module is dropped from the palette, the page shows
 // exactly what was saved - every module, not only the ones the server moved.
@@ -2409,6 +2466,7 @@ const paletteDrop: Probe = {
     try {
       await context.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" }]);
       const tab = await context.newPage();
+      const inFlight = trackServerCalls(tab);
       await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
       await tab.waitForTimeout(3000);
       await tab.locator('button[title="Open module palette"]').click();
@@ -2475,10 +2533,13 @@ const paletteDrop: Probe = {
           await tab.mouse.move(x0 + ((x1 - x0) * i) / 25, y0 + ((y1 - y0) * i) / 25);
           await tab.waitForTimeout(16);
         }
-        await tab.waitForTimeout(400);
+        // The preview as it rests, and the page once the release has been
+        // saved and every slide has finished - never a frame mid-way (see
+        // `settled`).
+        if (!(await settled(tab, inFlight))) return `${what}: the preview never came to rest`;
         const shown = await boxes();
         await tab.mouse.up();
-        await tab.waitForTimeout(2500);
+        if (!(await settled(tab, inFlight, { quietMs: 500 }))) return `${what}: the page never came to rest after release`;
         const landed = await boxes();
         const saved = await storedRows(landed.map((b) => b.id));
         const targetPage = saved[targetId]?.pageId;
@@ -2502,7 +2563,12 @@ const paletteDrop: Probe = {
           return arrival.left < was.left + was.width - 2 && was.left < arrival.left + arrival.width - 2 &&
             arrival.top < was.top + was.height - 2 && was.top < arrival.top + arrival.height - 2;
         });
-        if (under) return `${what}: landed on a module the preview had shown where it landed, not in the gap it opened`;
+        if (under) {
+          const was = shownById.get(under.id)!;
+          const kind = (await storedModules(guest.journalId)).find((m) => m.id === under.id);
+          const named = kind ? `${kind.slug}${typeof kind.propValues.heading === "string" ? ` "${kind.propValues.heading}"` : ""}` : under.id;
+          return `${what}: landed on a module the preview had shown where it landed, not in the gap it opened - at ${arrival.top.toFixed(0)}+${arrival.height.toFixed(0)}px, over ${named} drawn at ${was.top.toFixed(0)}+${was.height.toFixed(0)}px (now ${under.top.toFixed(0)}+${under.height.toFixed(0)}px)`;
+        }
         // And on the side of each neighbour its drawn middle was on - the box
         // the palette draws round the pointer, or the module being carried.
         // Reported 2026-09-29 as "the space created for it would jump below

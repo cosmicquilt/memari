@@ -340,10 +340,23 @@ export async function flushUnderHours(journalId: string, position = 0): Promise<
   });
 }
 
+/** The box that first held each heading, per journal - see setWeeklySidebar. */
+const sidebarOriginals = new Map<string, Map<string, string>>();
+
 /**
  * Sets the weekly left page's sidebar to exactly these boxes, by heading, at
  * these rows - and removes anything else in the sidebar a previous drop put
  * there. For replaying a drop from a known starting layout.
+ *
+ * ONE MODULE PER HEADING, AND ALWAYS THE SAME ONE. A box dropped from the
+ * palette is headed "Notes" (labeled-box's default), the same as the
+ * journal's own Notes, and the database returns the two in no fixed order -
+ * rows it has updated move. Keeping whichever came first deleted the
+ * ORIGINAL about one run in three, and the probe that had recorded its id
+ * then found nothing to move between (palette drop, 2026-10-04). So the
+ * first call for a journal - on its fresh layout, one box per heading -
+ * records which module holds each heading, and every later call keeps
+ * those modules.
  */
 export async function setWeeklySidebar(journalId: string, boxes: Array<[heading: string, rowStart: number, rowSpan: number]>): Promise<void> {
   const { prisma } = await import("../src/lib/prisma.js");
@@ -353,17 +366,24 @@ export async function setWeeklySidebar(journalId: string, boxes: Array<[heading:
   });
   if (!page) throw new Error("no weekly left page");
   const sidebar = page.moduleInstances.filter((mi) => mi.columnStart === 0 && mi.moduleType.slug !== "week-title");
-  // One module per heading: a box dropped from the palette can share one.
-  const used = new Set<string>();
-  for (const mi of sidebar) {
-    const heading = (mi.propValues as { heading?: string } | null)?.heading;
-    const box =
-      mi.moduleType.slug === "labeled-box" && heading && !used.has(heading) ? boxes.find(([h]) => h === heading) : undefined;
-    if (!box) await prisma.moduleInstance.delete({ where: { id: mi.id } });
-    else {
-      used.add(box[0]);
-      await prisma.moduleInstance.update({ where: { id: mi.id }, data: { rowStart: box[1], rowSpan: box[2] } });
+  const headingOf = (mi: (typeof sidebar)[number]) =>
+    mi.moduleType.slug === "labeled-box" ? ((mi.propValues as { heading?: string } | null)?.heading ?? null) : null;
+  let originals = sidebarOriginals.get(journalId);
+  if (!originals) {
+    originals = new Map();
+    for (const mi of sidebar) {
+      const heading = headingOf(mi);
+      if (heading === null) continue;
+      if (originals.has(heading)) throw new Error(`the sidebar already has two "${heading}" boxes - call setWeeklySidebar before any drop`);
+      originals.set(heading, mi.id);
     }
+    sidebarOriginals.set(journalId, originals);
+  }
+  for (const mi of sidebar) {
+    const heading = headingOf(mi);
+    const box = heading !== null && originals.get(heading) === mi.id ? boxes.find(([h]) => h === heading) : undefined;
+    if (!box) await prisma.moduleInstance.delete({ where: { id: mi.id } });
+    else await prisma.moduleInstance.update({ where: { id: mi.id }, data: { rowStart: box[1], rowSpan: box[2] } });
   }
 }
 
