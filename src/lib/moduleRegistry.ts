@@ -297,22 +297,28 @@ export type RuleValue = string | number | readonly string[];
 /**
  * The palette's sections, in the order they are shown.
  *
- * "General" first - the primitives, blank - then the catalogue, roughly by
+ * "Basics" first - the primitives, blank - then the catalogue, roughly by
  * how many people want it. Philosophy & faith is large and is the niche
  * this project set out to serve, but it sits where it does because a
  * stranger opening the palette is looking for a to-do list.
+ *
+ * Renamed 2026-10-05 with the palette's revamp, plainer: General -> Basics,
+ * Core planning -> Planning, Health & body -> Mood & health, Self-help &
+ * growth -> Growth, Creative & leisure -> Hobbies & learning; and Packing
+ * List moved from Home & family to Travel. Each group's SECTIONS are in
+ * paletteGroups.ts.
  */
 export const CATEGORIES = [
-  "General",
-  "Core planning",
-  "Health & body",
+  "Basics",
+  "Planning",
+  "Mood & health",
   "Food",
   "Fitness",
   "Money",
   "Home & family",
   "Philosophy & faith",
-  "Self-help & growth",
-  "Creative & leisure",
+  "Growth",
+  "Hobbies & learning",
   "Recovery",
   "Travel",
 ] as const;
@@ -350,7 +356,7 @@ export type ModuleDefinition = {
   /**
    * Which palette section this module appears under.
    *
-   * "General" is the primitives themselves - a blank table, a blank set of
+   * "Basics" is the primitives themselves - a blank table, a blank set of
    * prompts - for someone who wants to configure one from scratch. Every
    * other section is a slice of the catalogue, where a module is the same
    * primitive with its words already filled in.
@@ -835,7 +841,7 @@ const PRIMITIVES = {
     },
     label: "Labeled box",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Note Box",
     previewProps: { heading: "Notes", ruled: false, templateHeading: "" },
     resizableWidth: true,
@@ -975,7 +981,7 @@ const PRIMITIVES = {
     },
     label: "To-do checklist",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "To-Do",
     previewProps: { dayCount: 1 },
     fields: [
@@ -1064,7 +1070,7 @@ const PRIMITIVES = {
     },
     label: "Habit tracker",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Habits",
     previewProps: { heading: "Habits" },
     fields: [
@@ -1344,7 +1350,7 @@ const PRIMITIVES = {
     },
     label: "Column table",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Table",
     previewProps: {
       heading: "Log",
@@ -1430,7 +1436,7 @@ const PRIMITIVES = {
     },
     label: "Prompted lines",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Prompts",
     previewProps: {
       heading: "Reflection",
@@ -1518,7 +1524,7 @@ const PRIMITIVES = {
     },
     label: "Mini month",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Mini Month",
     previewProps: { year: 2026, month: 1, heading: "", markable: false, keepDates: false },
     resizableWidth: true,
@@ -1632,7 +1638,7 @@ const PRIMITIVES = {
     },
     label: "Progress meter",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Meter",
     previewProps: { heading: "Progress", total: 30, milestoneEvery: 10, numbered: true },
     resizableWidth: true,
@@ -1719,7 +1725,7 @@ const PRIMITIVES = {
     },
     label: "Icon strip",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Icon Strip",
     previewProps: { heading: "Water", icon: "droplet", count: 8 },
     resizableWidth: true,
@@ -1806,7 +1812,7 @@ const PRIMITIVES = {
     },
     label: "Rating strip",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Ratings",
     previewProps: {
       heading: "Ratings",
@@ -1888,7 +1894,7 @@ const PRIMITIVES = {
     },
     label: "Day chart",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Chart",
     previewProps: { heading: "Mood", span: "week", levels: DEFAULT_DAY_CHART_LEVELS, look: "dots" },
     resizableWidth: true,
@@ -2023,7 +2029,7 @@ const PRIMITIVES = {
     },
     label: "Two-axis matrix",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Matrix",
     previewProps: {
       heading: "Matrix",
@@ -2124,7 +2130,7 @@ const PRIMITIVES = {
     },
     label: "Text block",
     inPalette: true,
-    category: "General",
+    category: "Basics",
     paletteName: "Text",
     previewProps: {
       heading: "",
@@ -2379,7 +2385,7 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
     // not its subject. A quote block is as much at home over a training log
     // as over an examen.
     inPalette: true,
-    category: "General",
+    category: "Basics",
     previewProps: {
       heading: "",
       body: "A journey of a thousand miles begins with a single step.",
@@ -2425,7 +2431,7 @@ export const PALETTE_MODULES = Object.entries(MODULE_REGISTRY)
     slug,
     label: definition.paletteName ?? definition.label ?? slug,
     previewProps: definition.previewProps ?? {},
-    category: definition.category ?? "General",
+    category: definition.category ?? "Basics",
   }));
 
 /** The palette's cards grouped into its sections, sections in CATEGORIES

@@ -3897,12 +3897,12 @@ function ModulePalette({
 
   // Which category sections inside Modules are expanded.
   //
-  // General starts open and the rest closed. General holds the eleven
-  // modules that WERE the whole palette before the catalogue, so the
-  // panel opens onto what it has always opened onto, with the other
+  // Basics (General until 2026-10-05) starts open and the rest closed.
+  // It holds the modules that WERE the whole palette before the catalogue,
+  // so the panel opens onto what it has always opened onto, with the other
   // hundred behind headers rather than in front of them.
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
-    General: true,
+    Basics: true,
     [SAVED_SECTION]: true,
   });
   // Saved > Modules, first: the ones somebody made are the ones they came
