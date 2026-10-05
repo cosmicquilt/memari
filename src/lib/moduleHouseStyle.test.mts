@@ -35,12 +35,17 @@
 // Row pitch has its own file, modulePitch.test.mts, because it needs to
 // measure gaps rather than individual marks.
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { REGISTERED_SLUGS, moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
+import { REGISTERED_SLUGS, getMinRowSpanForSlug, moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
 import { HEADING_SIZES_PT } from "./modules/moduleFrame";
 import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
 import { ruleAxisOf } from "./ruleMarks";
+// Modules that lay their content out in the ALLOCATION frame rather than the
+// ink box, so their own edges sit one box inset outside it. Shared with
+// check-week-page.mts - a hand-kept list of slugs there is how a one-row
+// icon strip came to fail the page check for its design.
+import { ALLOCATION_FRAME } from "./allocationFrame";
 import { textInkBand } from "@/lib/modules/textFit";
 
 const PAGE: PageGrid = {
@@ -147,18 +152,6 @@ const WEIGHTED_ROWS = new Map<string, RegExp>([
  *  differently on purpose. */
 const NOT_MODULE_HEADINGS = new Set(["week-title", "month-title", "hourly-grid-core"]);
 
-/**
- * Modules that lay their content out in the ALLOCATION frame rather than
- * the ink box, so their own edges sit one box inset outside it.
- *
- * Derived from the primitive, not listed by slug - a hand-kept list of
- * slugs is the defect this file has already had to undo four times.
- */
-const ALLOCATION_FRAME = new Set([
-  ...slugsDrawnBy("todo-checklist", "icon-strip"),
-  "hourly-grid-core",
-  "month-grid-core",
-]);
 
 /**
  * Primitives whose "-heading" is a STRIP LABEL, not a band heading, and
@@ -690,6 +683,58 @@ for (const [columnSpan, dayCount] of [
     const drawn = render("todo-checklist", columnSpan, 9, props).filter((e) => /-(dash\d+|edge|-h|-v)$/.test(String(e.id)) || /-(top|bottom)$/.test(String(e.id)));
     if (drawn.length > 0) fail(`todo-checklist ${JSON.stringify(props)}: drew ${drawn.length} cross mark(s)`);
   }
+}
+
+// ---------------------------------------------------------------------
+// EVERY MARK, DOWN TO THE SMALLEST BOX (2026-10-05).
+//
+// Rule 1 holds TEXT inside the box, at heights from four rows up. Neither
+// half reaches what check-week-page.mts found in a real journal: a one-row
+// Water strip, 18 columns, whose droplets - glyphs, not text - end 3px past
+// the box. That one is the design: a strip is one lattice cell with 3px of
+// air above and below, measured from the allocation, so its glyphs end 3px
+// into the inset. The page check failed it only because its own list of
+// allocation-frame modules had drifted (see allocationFrame.ts). But nothing
+// here could have told the design from a fault either way.
+//
+// So for the modules entitled to the inset: every mark of any kind, at the
+// module's own minimum height and the row above it, at four widths, stays
+// inside the allocation. And the strip as that journal has it, by name,
+// held to whatever ALLOCATION_FRAME grants it - so the strip falling out of
+// that list fails here too, not only on whichever journal has one.
+// ---------------------------------------------------------------------
+{
+  const outside = (slug: string, where: string, elements: RenderedPolotnoElement[], box: { x: number; y: number; width: number; height: number }) => {
+    const slack = ALLOCATION_FRAME.has(slug) ? PAGE.boxInsetPx + 1 : 1;
+    let worst = 0;
+    let worstId = "";
+    for (const e of elements) {
+      const x = e.x ?? 0;
+      const y = e.y ?? 0;
+      const over = Math.max(box.x - x, x + (e.width ?? 0) - (box.x + box.width), box.y - y, y + (e.height ?? 0) - (box.y + box.height));
+      if (over > worst) [worst, worstId] = [over, String(e.id)];
+    }
+    if (worst > slack) fail(`${where}: ${worstId} is ${worst.toFixed(1)}px outside the box - more than the ${slack - 1}px it may use`);
+  };
+  for (const slug of ALLOCATION_FRAME) {
+    const props = (moduleDefinition(slug)?.previewProps ?? {}) as Record<string, unknown>;
+    for (const columnSpan of [6, 12, 18, 24]) {
+      const floor = getMinRowSpanForSlug(slug, PAGE, columnSpan, props);
+      for (const rowSpan of [floor, floor + 1]) {
+        const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: PLACEMENT_ROW_START, columnSpan, rowSpan });
+        outside(slug, `${slug} ${columnSpan}x${rowSpan}`, render(slug, columnSpan, rowSpan, props), box);
+        checked++;
+      }
+    }
+  }
+  // Andrew's Water strip, 2026-10-05: one row under three days.
+  const water = { icon: "droplet", count: 8, border: false, groups: 0, heading: "Water", groupIcons: [], stripIcons: [], groupLabels: "days", stripLabels: [] };
+  const waterBox = gridCellToPixels(PAGE, { columnStart: 0, rowStart: PLACEMENT_ROW_START, columnSpan: 18, rowSpan: 1 });
+  const strip = render("icon-strip", 18, 1, water);
+  outside("icon-strip", "icon-strip 18x1 (the Water strip)", strip, waterBox);
+  const drops = strip.filter((e) => /-s0-g\d+-i\d+$/.test(String(e.id)));
+  if (drops.length !== 24) fail(`icon-strip 18x1 (the Water strip): ${drops.length} droplets, not 3 days of 8`);
+  checked++;
 }
 
 if (failures > 0) {

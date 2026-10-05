@@ -26,6 +26,11 @@ const { PrismaPg } = await import("@prisma/adapter-pg");
 const { PrismaClient } = await import("../src/generated/prisma/client.js");
 const { renderModuleInstance } = await import("../src/lib/renderModuleInstance.js");
 const { gridCellToPixels, cellHeightPx } = await import("../src/lib/grid.js");
+// Modules that lay their columns out in the allocation frame so the
+// boundaries land on the lattice - see the mark-escape check below. Shared
+// with moduleHouseStyle.test.mts: this was three slugs kept by hand here, and
+// missed the icon strip and every preset drawn by the to-do or the strip.
+const { ALLOCATION_FRAME } = await import("../src/lib/allocationFrame.js");
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -45,9 +50,6 @@ const PAGE = {
 const PITCH = cellHeightPx(PAGE);
 /** See moduleHouseStyle.test.mts - the two spines still sit 6px off. */
 const LATTICE_DEBT = new Set<string>();
-/** Modules that lay their columns out in the allocation frame so the
- *  boundaries land on the lattice - see the mark-escape check below. */
-const ALLOCATION_FRAME = new Set(["hourly-grid-core", "month-grid-core", "todo-checklist"]);
 /**
  * Overhang a module is already known to have, in print px, measured.
  *
