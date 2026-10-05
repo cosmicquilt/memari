@@ -4117,6 +4117,9 @@ function ModulePalette({
         transition: "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s ease",
         zIndex: 25,
         overflow: isDraggingPaletteCard ? "visible" : "auto",
+        // A scrollbar in the panel's own creams (asked 2026-10-05: "make
+        // that light colors"), not the browser's grey on white.
+        scrollbarColor: `${onCream(0xd2)} transparent`,
         // While dragging, nothing above the panel's own top edge (the
         // content kept in place is shifted up past it) - and everything
         // to the right and below, where the card is carried.
