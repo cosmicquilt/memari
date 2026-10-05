@@ -25,8 +25,9 @@
  */
 /** The landing page's cream, at full strength. */
 const FULL_CREAM = [245, 234, 213] as const;
-/** 0 is white, 1 the landing's cream. */
-export const CREAM_STRENGTH = 1;
+/** 0 is white, 1 the landing's cream. Andrew's pick on the slider page,
+ *  2026-10-05: 0 - white, and the greys neutral again. */
+export const CREAM_STRENGTH = 0;
 export const CREAM_RGB = FULL_CREAM.map((c) => Math.round(255 + (c - 255) * CREAM_STRENGTH)) as unknown as readonly [number, number, number];
 export const CREAM = "#" + CREAM_RGB.map((c) => c.toString(16).padStart(2, "0")).join("");
 
