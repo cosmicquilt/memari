@@ -206,6 +206,69 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "1:1",
     props: { heading: "1:1 Agenda", prompts: ["Wins", "Blockers", "Asks"], linesPerPrompt: 2 },
   },
+  // Archetype presets, part 2 (2026-10-06) - the rest of hero-archetypes.md
+  // section 6, words as the hero's stand-ins have them where it has one.
+  {
+    // A teacher's week: what each period covers and what it needs.
+    slug: "lesson-planner",
+    primitive: "column-table",
+    name: "Lesson Planner",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Lessons",
+    props: { heading: "Lesson Plan", ...table(["Period", "Topic", "Materials"], [0.9, 2.6, 2]) },
+  },
+  {
+    // The other half of a teacher's week: what is waiting to be graded.
+    slug: "grading-tracker",
+    primitive: "column-table",
+    name: "Grading Tracker",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Grading",
+    props: { heading: "Grading", ...table(["Class", "Assignment", "Back", "Done"], [0.9, 2.2, 0.9, 0.8]) },
+  },
+  {
+    // A maker's week: each order and the day it has to ship.
+    slug: "order-tracker",
+    primitive: "column-table",
+    name: "Order Tracker",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Orders",
+    props: { heading: "Orders", ...table(["Order", "Item", "Ship by", "Sent"], [1, 2.4, 1, 0.8]) },
+  },
+  {
+    // And what the shop posts, day by day.
+    slug: "content-plan",
+    primitive: "column-table",
+    name: "Content Plan",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Content",
+    props: { heading: "Content", ...table(["Day", "Post", "Done"], [0.8, 2.6, 0.8]) },
+  },
+  {
+    // Paid time off, a cell a day taken. Twenty is a start; the total is
+    // the person's to change.
+    slug: "pto-meter",
+    primitive: "progress-meter",
+    name: "PTO Meter",
+    category: "Planning",
+    cadence: "journal",
+    paletteName: "PTO",
+    props: { heading: "PTO", total: 20, milestoneEvery: 5, numbers: "milestones" },
+  },
+  {
+    // Thirty days up to an exam, crossed off one a day.
+    slug: "exam-countdown",
+    primitive: "progress-meter",
+    name: "Exam Countdown",
+    category: "Planning",
+    cadence: "journal",
+    paletteName: "Exam",
+    props: { heading: "Exam", total: 30, milestoneEvery: 10, numbers: "milestones", endLabel: "Exam day" },
+  },
   {
     slug: "ivy-lee-six",
     primitive: "todo-checklist",
@@ -381,6 +444,18 @@ export const CATALOGUE: CatalogueEntry[] = [
     // fills any more with blank rows to write in (2026-10-02), and an
     // eighth day is not a thing.
     rowSpan: 9,
+  },
+  {
+    // Things that lift a mood, by size, to pick from instead of scrolling.
+    // A labeled box cannot name its sections, so its three courses are
+    // prompts.
+    slug: "dopamine-menu",
+    primitive: "prompted-lines",
+    name: "Dopamine Menu",
+    category: "Mood & health",
+    cadence: "week",
+    paletteName: "Dopamine",
+    props: { heading: "Dopamine Menu", prompts: ["Starters", "Mains", "Desserts"], linesPerPrompt: 2 },
   },
   // THE DAY CHARTS (2026-09-30): a measure up the side, the days along the
   // bottom, filled in by hand - see dayChart.ts. No look set here, so they
@@ -758,6 +833,16 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "Rest", habits: ["Rest day", "Active rest", "Slept 8h"], columns: [] },
     rowSpan: 5,
   },
+  {
+    // Days out in a surf or ski season.
+    slug: "season-days",
+    primitive: "progress-meter",
+    name: "Season Days",
+    category: "Fitness",
+    cadence: "journal",
+    paletteName: "Season",
+    props: { heading: "Season", total: 30, milestoneEvery: 10, numbers: "milestones" },
+  },
 
   // ──────────────────────────────────────────────────────────────────── Money
   {
@@ -913,6 +998,16 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Maintenance",
     props: { heading: "Maintenance", ...table(["Task", "Last done", "Every", "Next"], [2.6, 1.3, 1.2, 1.3]) },
     columnSpan: 14,
+  },
+  {
+    // The parent's week: what the children said, before it is forgotten.
+    slug: "kids-said",
+    primitive: "labeled-box",
+    name: "Things the Kids Said",
+    category: "Home & family",
+    cadence: "week",
+    paletteName: "Kids Said",
+    props: { heading: "Kids Said", rule: "lined" },
   },
   {
     slug: "plant-care",
@@ -1478,6 +1573,57 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "Practice", habits: ["Warm-up", "Technique", "Repertoire", "Free play"], columns: [] },
     rowSpan: 7,
   },
+  {
+    slug: "climbing-log",
+    primitive: "column-table",
+    name: "Climbing Log",
+    category: "Hobbies & learning",
+    cadence: "month",
+    paletteName: "Climbing",
+    props: { heading: "Climbing", ...table(["Date", "Where", "Problem", "Grade", "Sent"], [1, 1.6, 2, 0.9, 0.8]) },
+  },
+  {
+    // For karaoke night - not the listening log, which is albums.
+    slug: "song-list",
+    primitive: "column-table",
+    name: "Song List",
+    category: "Hobbies & learning",
+    cadence: "journal",
+    paletteName: "Songs",
+    props: { heading: "Songs", ...table(["Song", "Artist", "Verdict"], [2.4, 2, 1.2]) },
+  },
+  {
+    // Skating: a tick when a trick is first landed, another when clean.
+    slug: "trick-list",
+    primitive: "column-table",
+    name: "Trick List",
+    category: "Hobbies & learning",
+    cadence: "journal",
+    paletteName: "Tricks",
+    props: { heading: "Tricks", ...table(["Trick", "Landed", "Clean"], [2.6, 1, 1]) },
+  },
+  {
+    // The research's "practice log", named for what it is: skill-practice
+    // already prints "Practice".
+    slug: "yoga-log",
+    primitive: "column-table",
+    name: "Yoga Log",
+    category: "Hobbies & learning",
+    cadence: "month",
+    paletteName: "Yoga",
+    props: { heading: "Yoga", ...table(["Class", "Teacher", "Felt"], [2, 1.6, 1.4]) },
+  },
+  {
+    // A passage, where it came from, and a thought of one's own. Prompts,
+    // as the dopamine menu is, for the same reason.
+    slug: "commonplace-book",
+    primitive: "prompted-lines",
+    name: "Commonplace Book",
+    category: "Hobbies & learning",
+    cadence: "week",
+    paletteName: "Commonplace",
+    props: { heading: "Commonplace", prompts: ["Quote", "Source", "Thought"], linesPerPrompt: 2 },
+  },
 
   // ───────────────────────────────────────────────────────────────── Recovery
   {
@@ -1547,6 +1693,17 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "journal",
     paletteName: "90 in 90",
     props: { heading: "90 in 90", total: 90, milestoneEvery: 30, numbers: "milestones" },
+  },
+  {
+    // Hungry, angry, lonely, tired: a check recovery groups teach, rated
+    // like the mood tracker. An acronym in common use, not program text.
+    slug: "halt-check-in",
+    primitive: "rating-strip",
+    name: "HALT Check-in",
+    category: "Recovery",
+    cadence: "day",
+    paletteName: "HALT",
+    props: { heading: "HALT", items: ["Hungry", "Angry", "Lonely", "Tired"], scaleMin: 1, scaleMax: 5, shape: "circle" },
   },
 
   // ─────────────────────────────────────────────────────────────────── Travel

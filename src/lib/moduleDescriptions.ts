@@ -48,6 +48,12 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "assignment-tracker": "Each assignment with its class and the day it is due, and a box to tick when it is handed in.",
   "done-list": "A ruled list of what you finished, written down as you finish it. A record of what the day did hold, for the days a to-do list makes it look like nothing happened.",
   "one-on-one-agenda": "Notes to bring to a meeting with your manager: what went well, what is in your way, and what you need from them.",
+  "lesson-planner": "Each period with its topic and the materials it needs, set out for a teaching week.",
+  "grading-tracker": "Assignments waiting to be graded, by class, with the day each goes back to students and a box to tick when it is done.",
+  "order-tracker": "Each order with what was bought and the day it has to ship, ticked once it is sent. For a small shop run alongside everything else.",
+  "content-plan": "What to post on which day, with a box to tick once it is out.",
+  "pto-meter": "Your paid time off, one cell for each day you take, with a mark every five. It starts at twenty days; change the total to match your allowance.",
+  "exam-countdown": "The thirty days before an exam, one cell to cross off each day, ending on exam day.",
   "time-blocking-column": "Split each day into morning, midday, afternoon and evening, and decide what each part is for.",
   "monthly-review": "Three questions at the end of each month: what worked, what did not, and what changes next month.",
   "future-log-months": "The Bullet Journal's future log: six months with a few lines each, for events and deadlines too far ahead for this week's pages.",
@@ -64,6 +70,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
 
   // ── Mood & health ─────────────────────────────────────────────────────
   "mood-tracker": "Rate your mood each day of the week on a five-step scale, by filling in a circle.",
+  "dopamine-menu": "A menu of things that lift your mood, by size: quick starters, bigger mains, and desserts to save for a treat. Something to choose from instead of scrolling.",
   "mood-chart-week": "Mark your mood each day of the week on a scale of five faces, and the week's ups and downs are there to see.",
   "mood-chart-month": "The five-face mood chart across a whole month, for patterns a single week hides.",
   "energy-chart": "Mark your energy each day of the week, from three lightning bolts down to an empty one.",
@@ -96,6 +103,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "progressive-overload": "Your main lifts across four weeks, so you can add a little weight or a rep each week and watch it climb.",
   "stretch-routine": "A checklist of stretches from neck to calves, to work through in order.",
   "rest-day-marker": "Mark rest days, active rest and nights with eight hours of sleep, so recovery gets planned like training.",
+  "season-days": "Days out in a surf or ski season, one cell for each, with a mark every ten.",
 
   // ── Money ─────────────────────────────────────────────────────────────
   "spending-log": "Every purchase with its date, category and cost, totaled at the bottom.",
@@ -111,6 +119,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "cleaning-rota": "Rooms and jobs down the side and the days across, to share out the cleaning and see what is done.",
   "chore-chart": "Chores down the side and the people who do them across, so everyone can see their jobs.",
   "home-maintenance": "Jobs that come around every few months, such as filters or gutters, with when each was last done and when it is next due.",
+  "kids-said": "A ruled box for the funny and strange things the children say, written down before they are forgotten.",
   "plant-care": "Your plants down the side and the days across. Tick each one when you water or feed it.",
   "birthday-calendar": "A line for each month, to write the birthdays that fall in it.",
   "gift-log": "Gift ideas for each person, with a budget and a box to tick once it is bought.",
@@ -165,6 +174,11 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "writing-prompt": "A prompt and room to follow it, five lines each, for a few minutes of writing a day.",
   "language-study": "New words with their meanings, and a sentence of your own that uses each one.",
   "skill-practice": "A practice session split into warm-up, technique, repertoire and free play, ticked off each day.",
+  "climbing-log": "Each climbing session with where you went, the problem or route, its grade, and whether you sent it.",
+  "song-list": "Songs you sing or want to try, with the artist and how it went. Made for karaoke night.",
+  "trick-list": "Tricks you are learning, with a tick when you first land one and another when you land it clean.",
+  "yoga-log": "Each yoga class with its teacher and how you felt afterward.",
+  "commonplace-book": "Passages worth keeping, each with where it came from and a thought of your own. The old habit of the commonplace book, a page at a time.",
 
   // ── Recovery ──────────────────────────────────────────────────────────
   "step-ten-inventory": "A daily check on the four things the Big Book asks you to watch for in the Tenth Step: resentment, selfishness, dishonesty and fear.",
@@ -173,6 +187,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "sponsor-contact-log": "Each contact with your sponsor: the date, whether you called and spoke, and a note.",
   "meeting-log": "Meetings you attended, with the date, group and format, and room for a signature where a court or program asks for one.",
   "ninety-in-ninety": "Ninety cells, one for each meeting, toward the ninety meetings in ninety days often suggested to someone new to a twelve-step program. Numbered at 30, 60 and 90, the days programs often mark.",
+  "halt-check-in": "The HALT check from recovery: are you hungry, angry, lonely or tired? Each is rated from one to five, so a hard moment has a likely cause written in front of you.",
 
   // ── Travel ────────────────────────────────────────────────────────────
   "trip-itinerary": "Day by day: where you will be, what you will do, and whether it is booked.",
