@@ -298,7 +298,7 @@ export const PEOPLE: Person[] = [
     archetype: "Nurse",
     name: "Priya",
     age: 29,
-    about: "ICU nurse on three twelve-hour nights this week. Pottery and the climbing gym on her days off.",
+    about: "ICU nurse on three twelve-hour nights this week. Pottery and the climbing gym on days off.",
     week: "three nights on",
     layout: {
       font: "sans",
@@ -508,7 +508,7 @@ export const PEOPLE: Person[] = [
     archetype: "Parent",
     name: "Lena",
     age: 36,
-    about: "A part-time pharmacist with two kids, Milo (7) and Ada (4). Yoga at 6am on Thursday is the hill she will die on.",
+    about: "A part-time pharmacist with two kids, Milo (7) and Ada (4). Yoga at 6am on Thursday is not up for negotiation.",
     week: "picture day and a party",
     layout: {
       font: "serif",
@@ -567,7 +567,7 @@ export const PEOPLE: Person[] = [
     archetype: "Fitness",
     name: "Rosa",
     age: 38,
-    about: "A physiotherapist running her first half marathon on Sunday. Lifts twice a week; has banned herself from bouldering until it is over.",
+    about: "A physiotherapist running a first half marathon on Sunday. Lifts twice a week; bouldering is banned until it is over.",
     week: "race week",
     layout: {
       font: "sans",
@@ -701,7 +701,7 @@ export const PEOPLE: Person[] = [
     archetype: "Philosophy",
     name: "Theo",
     age: 47,
-    about: "A cabinetmaker who reads the Stoics before the shop opens. Teaching his daughter June to drive. Chess club on Thursdays.",
+    about: "A cabinetmaker who reads the Stoics before the shop opens. Teaching June, sixteen, to drive. Chess club on Thursdays.",
     week: "a two-day install",
     layout: {
       font: "serif",
@@ -822,7 +822,7 @@ export const PEOPLE: Person[] = [
     name: "Grace",
     age: 41,
     about: "A bookkeeper and mother of two. Leads the women's Bible study on Wednesdays, sings alto, and bakes sourdough badly.",
-    week: "her turn to lead",
+    week: "leading Bible study",
     held: "Until someone of the faith has read it.",
     layout: {
       font: "serif",
@@ -876,8 +876,8 @@ export const PEOPLE: Person[] = [
     archetype: "Faith (Muslim)",
     name: "Yusuf",
     age: 24,
-    about: "An engineering grad student. Halaqa on Wednesdays, Jumu'ah on Friday, his sister's nikah on Saturday.",
-    week: "his sister's nikah",
+    about: "An engineering grad student. Halaqa on Wednesdays, Jumu'ah on Friday, and Amira's nikah on Saturday.",
+    week: "Amira's nikah",
     held: "Until someone of the faith has read it.",
     layout: {
       font: "sans",
@@ -987,7 +987,7 @@ export const PEOPLE: Person[] = [
     archetype: "Recovery",
     name: "Jen",
     age: 34,
-    about: "A sous chef, 87 days sober and doing 90 meetings in 90 days. Runs before her shifts. Found the sober karaoke night.",
+    about: "A sous chef, 87 days sober and doing 90 meetings in 90 days. Runs before shifts. Found the sober karaoke night.",
     week: "90 days on Sunday",
     held: "Until someone in recovery has read it.",
     layout: {
