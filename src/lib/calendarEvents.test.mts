@@ -124,16 +124,67 @@ check(days([event({ deletedAt: at("2026-09-23T00:00:00.000") })]).length === 0, 
 
 // --- A RULE THIS DOES NOT SUPPORT DRAWS NOTHING ---------------------------
 //
-// Not "draws something approximate". An imported MONTHLY rule keeps its
-// RRULE in the database so a round trip to Google does not destroy it, but
-// drawing it as if it were weekly would put a confidently wrong mark on a
-// printed page - which is worse than a missing one, because nobody checks a
-// page that looks right.
-for (const rule of ["FREQ=MONTHLY;BYMONTHDAY=22", "FREQ=YEARLY", "FREQ=HOURLY", "", "nonsense"]) {
+// Not "draws something approximate". An imported rule with a part this
+// cannot read keeps its RRULE in the database so a round trip to Google does
+// not destroy it, but drawing it approximately would put a confidently wrong
+// mark on a printed page - which is worse than a missing one, because nobody
+// checks a page that looks right. (MONTHLY and YEARLY were on this list until
+// 2026-10-06; they draw now - see below.)
+for (const rule of [
+  "FREQ=HOURLY",
+  "",
+  "nonsense",
+  "FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR",
+  "FREQ=MONTHLY;BYDAY=6TU",
+  "FREQ=WEEKLY;BYMONTHDAY=22",
+  "FREQ=YEARLY;BYWEEKNO=39",
+]) {
   check(
     days([event({ rrule: rule })]).length === (rule === "" ? 1 : 0),
     `"${rule}" should draw ${rule === "" ? "as a one-off" : "nothing"}, drew ${days([event({ rrule: rule })]).length}`
   );
+}
+
+// --- MONTHLY AND YEARLY (2026-10-06) -----------------------------------------
+// For day icons - "one off or repeated once every whatever or skip or first
+// monday" - and every imported monthly event with them. Each date below was
+// checked against a real 2026-2028 calendar.
+{
+  const on = (rrule: string, start: string, iso: string) =>
+    eventsForDays([event({ rrule, allDay: true, startsAt: at(`${start}T00:00:00.000`), endsAt: at(`${start}T00:00:00.000`) })], [{ date: at(`${iso}T00:00:00.000`) }]).length > 0;
+  const cases: Array<[string, string, string, boolean, string]> = [
+    ["FREQ=MONTHLY;BYMONTHDAY=22", "2026-09-22", "2026-10-22", true, "the 22nd, next month"],
+    ["FREQ=MONTHLY;BYMONTHDAY=22", "2026-09-22", "2026-10-21", false, "not the 21st"],
+    ["FREQ=MONTHLY", "2026-01-31", "2026-03-31", true, "a 31st recurs on the next 31st"],
+    ["FREQ=MONTHLY", "2026-01-31", "2026-02-28", false, "and is skipped in February, not slid to the 28th"],
+    ["FREQ=MONTHLY;BYMONTHDAY=-1", "2026-01-31", "2026-02-28", true, "the last day of February 2026"],
+    ["FREQ=MONTHLY;BYDAY=1MO", "2026-10-05", "2026-11-02", true, "the first Monday of November 2026 is the 2nd"],
+    ["FREQ=MONTHLY;BYDAY=1MO", "2026-10-05", "2026-12-07", true, "and of December the 7th"],
+    ["FREQ=MONTHLY;BYDAY=1MO", "2026-10-05", "2026-11-09", false, "not the second Monday"],
+    ["FREQ=MONTHLY;BYDAY=-1FR", "2026-10-30", "2026-11-27", true, "the last Friday of November 2026"],
+    ["FREQ=MONTHLY;BYDAY=-1FR", "2026-10-30", "2026-11-20", false, "not the one before it"],
+    // Where "last" arithmetic goes wrong: a last Friday that IS the month's
+    // last day (30 April 2027). Without this case an off-by-one passed.
+    ["FREQ=MONTHLY;BYDAY=-1FR", "2026-10-30", "2027-04-30", true, "a last Friday on the month's last day"],
+    ["FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1", "2026-01-01", "2026-04-01", true, "every three months from January: April"],
+    ["FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1", "2026-01-01", "2026-02-01", false, "not February"],
+    ["FREQ=MONTHLY;BYDAY=1MO;COUNT=2", "2026-10-05", "2026-11-02", true, "COUNT=2: the second"],
+    ["FREQ=MONTHLY;BYDAY=1MO;COUNT=2", "2026-10-05", "2026-12-07", false, "and no third"],
+    ["FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261115", "2026-09-15", "2026-11-15", true, "UNTIL includes its own day"],
+    ["FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261115", "2026-09-15", "2026-12-15", false, "and stops after it"],
+    ["FREQ=MONTHLY;BYDAY=1MO", "2026-10-05", "2026-09-07", false, "nothing before the series starts"],
+    ["FREQ=YEARLY", "2026-02-14", "2027-02-14", true, "every year on 14 Feb"],
+    ["FREQ=YEARLY", "2026-02-14", "2026-03-14", false, "not every month"],
+    ["FREQ=YEARLY", "2024-02-29", "2028-02-29", true, "a 29 Feb birthday in a leap year"],
+    ["FREQ=YEARLY", "2024-02-29", "2025-02-28", false, "and not slid to the 28th"],
+    ["FREQ=YEARLY;INTERVAL=2", "2026-06-01", "2027-06-01", false, "every other year skips 2027"],
+    ["FREQ=YEARLY;INTERVAL=2", "2026-06-01", "2028-06-01", true, "and lands in 2028"],
+    ["FREQ=YEARLY;BYMONTH=11;BYDAY=4TH", "2026-11-26", "2027-11-25", true, "the fourth Thursday of November 2027"],
+  ];
+  for (const [rule, start, iso, want, what] of cases) {
+    const got = on(rule, start, iso);
+    check(got === want, `${rule} from ${start}, on ${iso}: ${what} - drew ${got}`);
+  }
 }
 
 // --- the calendar's colour and source reach the mark ----------------------
@@ -412,5 +463,5 @@ if (failures > 0) {
 }
 console.log(
   "All calendar event checks passed (one-offs, overnight staying put, all-day spans banding every day, " +
-    "weekly and daily recurrence with BYDAY/INTERVAL/COUNT/UNTIL, and unsupported rules drawing nothing)."
+    "daily, weekly, monthly and yearly recurrence with BYDAY and its ordinals, BYMONTHDAY, BYMONTH, INTERVAL, COUNT and UNTIL, and unsupported rules drawing nothing)."
 );

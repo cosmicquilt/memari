@@ -92,19 +92,104 @@ const hhmm = (d: Date) =>
 /** RFC 5545 weekday codes, in getUTCDay order. */
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
+/** The rule parts this draws. A rule with any other part draws nothing. */
+const SUPPORTED_PARTS = new Set(["FREQ", "INTERVAL", "BYDAY", "BYMONTHDAY", "BYMONTH", "COUNT", "UNTIL", "WKST"]);
+
+/** A BYDAY entry: a weekday, with an ordinal for "the first Monday" (1MO)
+ *  or "the last Friday" (-1FR) - null where the rule means every one. */
+function parseByDay(entry: string): { weekday: number; nth: number | null } | null {
+  const match = /^([+-]?\d{1,2})?(SU|MO|TU|WE|TH|FR|SA)$/.exec(entry.trim());
+  if (!match) return null;
+  const nth = match[1] ? Number(match[1]) : null;
+  if (nth !== null && (nth === 0 || Math.abs(nth) > 5)) return null;
+  return { weekday: BYDAY.indexOf(match[2] as (typeof BYDAY)[number]), nth };
+}
+
+const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+/**
+ * Within a month the rule allows, is this day one of the rule's days? By
+ * BYDAY (every Tuesday, the first Monday, the last Friday), by BYMONTHDAY
+ * (the 15th, the last day as -1), or by default the start's own day of the
+ * month - and a 31st has no occurrence in a 30-day month, as RFC 5545 has
+ * it, rather than sliding to the 30th.
+ */
+function dayMatchesInMonth(rule: Record<string, string>, day: Date, start: Date): boolean | null {
+  const date = day.getUTCDate();
+  const dim = daysInMonth(day.getUTCFullYear(), day.getUTCMonth());
+  let ok = true;
+  if (rule.BYDAY) {
+    const entries = rule.BYDAY.split(",").map(parseByDay);
+    if (entries.some((e) => e === null)) return null;
+    ok = (entries as Array<{ weekday: number; nth: number | null }>).some(({ weekday, nth }) => {
+      if (day.getUTCDay() !== weekday) return false;
+      if (nth === null) return true;
+      return nth > 0 ? Math.ceil(date / 7) === nth : -Math.ceil((dim - date + 1) / 7) === nth;
+    });
+  }
+  if (rule.BYMONTHDAY) {
+    const days = rule.BYMONTHDAY.split(",").map((v) => Number(v));
+    if (days.some((n) => !Number.isInteger(n) || n === 0 || Math.abs(n) > 31)) return null;
+    ok = ok && days.some((n) => (n > 0 ? date === n : date === dim + n + 1));
+  }
+  if (!rule.BYDAY && !rule.BYMONTHDAY) ok = date === start.getUTCDate();
+  return ok;
+}
+
+/**
+ * MONTHLY and YEARLY: is the month a candidate (every INTERVAL months or
+ * years from the start; YEARLY in BYMONTH, by default the start's month),
+ * and the day one of its days? Null for a rule part this cannot read.
+ */
+function calendarRuleMatches(rule: Record<string, string>, freq: string, interval: number, day: Date, start: Date): boolean | null {
+  if (freq === "MONTHLY") {
+    if (rule.BYMONTH) return null;
+    const monthsSince = (day.getUTCFullYear() - start.getUTCFullYear()) * 12 + (day.getUTCMonth() - start.getUTCMonth());
+    if (monthsSince < 0 || monthsSince % interval !== 0) return false;
+    return dayMatchesInMonth(rule, day, start);
+  }
+  const yearsSince = day.getUTCFullYear() - start.getUTCFullYear();
+  if (yearsSince < 0 || yearsSince % interval !== 0) return false;
+  const months = rule.BYMONTH ? rule.BYMONTH.split(",").map((v) => Number(v) - 1) : [start.getUTCMonth()];
+  if (months.some((m) => !Number.isInteger(m) || m < 0 || m > 11)) return null;
+  if (!months.includes(day.getUTCMonth())) return false;
+  return dayMatchesInMonth(rule, day, start);
+}
+
+/** How many times a MONTHLY or YEARLY series has occurred before `dayStart`
+ *  - for COUNT, which counts instances. Walked a month at a time. */
+function calendarOccurrencesBefore(rule: Record<string, string>, freq: string, interval: number, start: Date, dayStart: number): number {
+  let count = 0;
+  const firstStart = utcMidnight(start);
+  for (let y = start.getUTCFullYear(), m = start.getUTCMonth(); Date.UTC(y, m, 1) < dayStart; m === 11 ? ((m = 0), y++) : m++) {
+    const dim = daysInMonth(y, m);
+    for (let d = 1; d <= dim; d++) {
+      const t = Date.UTC(y, m, d);
+      if (t < firstStart || t >= dayStart) continue;
+      if (calendarRuleMatches(rule, freq, interval, new Date(t), start)) count++;
+    }
+  }
+  return count;
+}
+
 /**
  * Does a recurring event fall on `day`?
  *
- * A DELIBERATELY SMALL SUBSET of RFC 5545: FREQ=DAILY and FREQ=WEEKLY, with
- * INTERVAL, BYDAY, COUNT and UNTIL. That is what a paper planner needs -
- * "every Tuesday", "every weekday", "every other Monday" - and it is what
- * the editor's Repeat row offers.
+ * A SUBSET of RFC 5545, chosen for a paper planner: FREQ DAILY, WEEKLY,
+ * MONTHLY and YEARLY, with INTERVAL, BYDAY (and ordinals - "the first
+ * Monday", "the last Friday" - for monthly and yearly), BYMONTHDAY, BYMONTH
+ * for yearly, COUNT and UNTIL. "Every Tuesday", "every other Monday", "the
+ * 15th of each month", "the first Monday", "every year on 14 Feb", "every 3
+ * months" - what a trash day or a payday or a birthday is. Monthly and
+ * yearly came in for day icons (2026-10-06: "one off or repeated once every
+ * whatever or skip or first monday"), and imported monthly events draw with
+ * them.
  *
- * ANYTHING ELSE RETURNS FALSE rather than guessing. An imported MONTHLY or
- * YEARLY rule keeps its RRULE in the database untouched, so a round trip back
- * to Google does not destroy it; it simply does not draw yet. Drawing a
- * monthly rule as though it were weekly would be worse than not drawing it,
- * because the page would be confidently wrong.
+ * ANYTHING ELSE RETURNS FALSE rather than guessing: BYSETPOS, BYWEEKNO,
+ * HOURLY, a BYDAY this cannot read. Such a rule keeps its RRULE in the
+ * database untouched, so a round trip back to Google does not destroy it; it
+ * simply does not draw. Drawing a rule approximately would be worse than not
+ * drawing it, because the page would be confidently wrong.
  */
 function recursOn(event: StoredEvent, dayStart: number): boolean {
   const rule = Object.fromEntries(
@@ -118,7 +203,11 @@ function recursOn(event: StoredEvent, dayStart: number): boolean {
       })
   );
   const freq = rule.FREQ;
-  if (freq !== "DAILY" && freq !== "WEEKLY") return false;
+  if (freq !== "DAILY" && freq !== "WEEKLY" && freq !== "MONTHLY" && freq !== "YEARLY") return false;
+  if (Object.keys(rule).some((part) => !SUPPORTED_PARTS.has(part))) return false;
+  // Daily and weekly by month day or month: not something a planner sets,
+  // and not drawn rather than drawn wrong.
+  if ((freq === "DAILY" || freq === "WEEKLY") && (rule.BYMONTHDAY || rule.BYMONTH)) return false;
 
   const firstStart = utcMidnight(event.startsAt);
   if (dayStart < firstStart) return false;
@@ -136,7 +225,12 @@ function recursOn(event: StoredEvent, dayStart: number): boolean {
 
   let occursToday: boolean;
   let ordinal: number;
-  if (freq === "DAILY") {
+  if (freq === "MONTHLY" || freq === "YEARLY") {
+    const matches = calendarRuleMatches(rule, freq, interval, new Date(dayStart), event.startsAt);
+    if (matches === null) return false;
+    occursToday = matches;
+    ordinal = occursToday && rule.COUNT ? calendarOccurrencesBefore(rule, freq, interval, event.startsAt, dayStart) : 0;
+  } else if (freq === "DAILY") {
     occursToday = daysSince % interval === 0;
     ordinal = Math.floor(daysSince / interval);
   } else {
