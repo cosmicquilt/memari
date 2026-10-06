@@ -24,6 +24,7 @@ import { ResizeDemo } from "./ResizeDemo";
 import { resizeDemo } from "./resizeDemoData";
 import { sans } from "./sansFont";
 import { LayoutGallery } from "./LayoutGallery";
+import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
@@ -63,10 +64,11 @@ export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?
         {hero === "video" ? <VideoHero /> : <Hero />}
 
         {/* Everything below the hero, on one doodle wall that packs itself
-            round it (BodyDoodles), with the post-it stuck to its top edge -
-            the way down from the hero (PostIt). */}
+            round it (BodyDoodles), its top edge torn (TornEdge), with the
+            post-it stuck to it - the way down from the hero (PostIt). */}
         <div className={styles.body}>
           <BodyDoodles />
+          <TornEdge />
           <PostIt />
 
           <section id="how" className={styles.section}>

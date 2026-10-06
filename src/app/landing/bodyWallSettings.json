@@ -12,5 +12,8 @@
   "sideBlur": 3,
   "sideBlurWidth": 18,
   "openSeconds": 3,
-  "newEachLoad": true
+  "tornScale": 0.45,
+  "tornShadow": 1,
+  "newEachLoad": true,
+  "tornEdge": "drawn"
 }

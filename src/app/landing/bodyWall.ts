@@ -55,6 +55,13 @@ export type BodyWallSettings = {
    *  open duration to be shorter so speed it up add slider"). Its own
    *  length is HERO_VIDEO.seconds. */
   openSeconds: number;
+  /** The cream's torn top edge (TornEdge.tsx): the drawn deckle, one of
+   *  Flow's photographs of a torn sheet, or the straight edge it replaced
+   *  (2026-10-06). A photograph's size is `tornScale` of its pixels; the
+   *  shadow on the hero is `tornShadow` of its measured strength. */
+  tornEdge: "drawn" | "flow-fine" | "flow-bold" | "none";
+  tornScale: number;
+  tornShadow: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;

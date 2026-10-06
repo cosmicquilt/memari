@@ -1,0 +1,34 @@
+{
+  "flow-fine": {
+    "src": "/landing/torn/flow-fine.webp",
+    "width": 1376,
+    "height": 81,
+    "right": {
+      "x": 1020,
+      "y": 49
+    },
+    "left": {
+      "x": 310,
+      "y": 48,
+      "dip": 1
+    },
+    "rise": 23,
+    "reach": 49
+  },
+  "flow-bold": {
+    "src": "/landing/torn/flow-bold.webp",
+    "width": 1376,
+    "height": 153,
+    "right": {
+      "x": 1308,
+      "y": 121
+    },
+    "left": {
+      "x": 541,
+      "y": 113,
+      "dip": 8
+    },
+    "rise": 73,
+    "reach": 121
+  }
+}

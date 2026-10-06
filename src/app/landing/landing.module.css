@@ -1029,6 +1029,30 @@
 /* Everything after the hero, so the doodle wall can lie under all of it. */
 .body {
   position: relative;
+  /* The post-it's side: 168px under a full-height hero, and as much smaller
+     as the hero is ("Cream on load") - so it covers as much of the book at
+     any height. Here rather than on .postit because the torn edge
+     (.tornEdge) is laid out from the note's sides too. */
+  --note: clamp(104px, calc(var(--hero-h) * 0.177), 168px);
+}
+
+/* The cream's torn top edge (TornEdge.tsx): a half each side of the
+   post-it, from its sides outward, reaching up over the hero's bottom edge.
+   Over the hero, under the post-it (z 6). Its far ends run off the screen,
+   which the page clips (.page's overflow-x). */
+.tornEdge {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tornEdgeLeft {
+  right: calc(50% + var(--note) / 2);
+}
+
+.tornEdgeRight {
+  left: calc(50% + var(--note) / 2);
 }
 
 .bodyDoodles {
@@ -1052,9 +1076,7 @@
    sticky strip, on the cream section; the fold is GAP (0.08) of it below the
    hero's edge; the rest lifts over the hero by --lift. */
 .postit {
-  /* 168px under a full-height hero, and as much smaller as the hero is
-     ("Cream on load") - so it covers as much of the book at any height. */
-  --note: clamp(104px, calc(var(--hero-h) * 0.177), 168px);
+  /* --note, its side, is .body's: the torn edge is laid out from it too. */
   /* The lift as a number, so the shadow can follow it in px too. */
   --lift-n: 22;
   --lift: calc(var(--lift-n) * 1deg);
@@ -1211,7 +1233,7 @@
 }
 
 @media (max-width: 760px) {
-  .postit {
+  .body {
     --note: 124px;
   }
 }

@@ -25,7 +25,11 @@ const RANGES: Record<string, [number, number]> = {
   sideBlur: [0, 16],
   sideBlurWidth: [0, 40],
   openSeconds: [1, 6],
+  tornScale: [0.2, 1],
+  tornShadow: [0, 2],
 };
+/** The torn edges there are (TornEdge.tsx). */
+const TORN_EDGES = new Set(["drawn", "flow-fine", "flow-bold", "none"]);
 
 export async function POST(request: Request) {
   if (process.env.NODE_ENV !== "development") return new Response("Not found", { status: 404 });
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
     return new Response("Only from this machine", { status: 403 });
   }
   const body = (await request.json()) as Record<string, unknown>;
-  const out: Record<string, number | boolean> = {};
+  const out: Record<string, number | boolean | string> = {};
   for (const [key, [lo, hi]] of Object.entries(RANGES)) {
     const v = body[key];
     if (typeof v !== "number" || !Number.isFinite(v) || v < lo || v > hi) {
@@ -45,6 +49,8 @@ export async function POST(request: Request) {
   }
   if (typeof body.newEachLoad !== "boolean") return Response.json({ error: "newEachLoad must be true or false" }, { status: 400 });
   out.newEachLoad = body.newEachLoad;
+  if (typeof body.tornEdge !== "string" || !TORN_EDGES.has(body.tornEdge)) return Response.json({ error: `tornEdge must be one of ${[...TORN_EDGES].join(", ")}` }, { status: 400 });
+  out.tornEdge = body.tornEdge;
   await writeFile(FILE, `${JSON.stringify(out, null, 2)}\n`);
   return Response.json({ ok: true });
 }

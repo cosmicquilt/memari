@@ -22,6 +22,17 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "sideBlur", label: "Hero side blur, at the edge", min: 0, max: 16, step: 0.5, unit: "px" },
   { key: "sideBlurWidth", label: "Hero side blur, reaches in", min: 0, max: 40, step: 1, unit: "% of screen" },
   { key: "openSeconds", label: "Book opening takes", min: 1, max: 6, step: 0.1, unit: "s" },
+  { key: "tornScale", label: "Torn edge photo size", min: 0.2, max: 1, step: 0.01, unit: "x" },
+  { key: "tornShadow", label: "Torn edge shadow", min: 0, max: 2, step: 0.05, unit: "x" },
+];
+
+/** The torn edges to choose from (TornEdge.tsx): the drawn deckle, Flow's
+ *  two photographs (handoff/flow/torn edge), or none. */
+const TORN_EDGES: Array<[BodyWallSettings["tornEdge"], string]> = [
+  ["drawn", "Drawn deckle"],
+  ["flow-fine", "Flow photo, fine"],
+  ["flow-bold", "Flow photo, bold"],
+  ["none", "None (straight)"],
 ];
 
 /** Replay keeps the sliders as they are through the reload it takes (not
@@ -125,6 +136,20 @@ export function BodyWallTuner() {
               />
             </label>
           ))}
+          <label style={{ display: "grid", gap: 2 }}>
+            <span>Torn edge under the hero</span>
+            <select
+              value={s.tornEdge}
+              onChange={(e) => update({ ...s, tornEdge: e.target.value as BodyWallSettings["tornEdge"] })}
+              style={{ font: "inherit", fontSize: 12, padding: "3px 6px", borderRadius: 6, background: "#2a2622", color: "inherit", border: "1px solid rgba(245,234,213,0.4)" }}
+            >
+              {TORN_EDGES.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input type="checkbox" checked={s.newEachLoad} onChange={(e) => update({ ...s, newEachLoad: e.target.checked })} />
             A new arrangement each load
