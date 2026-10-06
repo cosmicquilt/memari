@@ -16,10 +16,10 @@
 // copyright, and are HELD - shown in development, not on the live site -
 // until someone of that faith, or in recovery, has read them.
 //
-// Modules that do not exist yet are stood in for by the primitive they
-// would be a preset of, with its heading (an assignment tracker is a
-// column table headed "Assignments"). Each is marked "stand-in" below, and
-// listed on the archetypes page.
+// The modules these weeks wanted and the catalogue lacked - an assignment
+// tracker, a done list, Franklin's virtues, 90 in 90 and the rest - were
+// stood in for by their primitives until they were built (2026-10-06,
+// edcdbfd and 2602734); they are the real modules now.
 //
 // Data only: no registry, no React. Imported by the server (layouts) and
 // the browser (handwriting).
@@ -77,11 +77,6 @@ const at = (slug: string, columnStart: number, rowStart: number, columnSpan: num
   rowSpan,
   props,
 });
-/** A column table with its own heads - the stand-in for every table-shaped
- *  module that does not exist yet. */
-const table = (heading: string, columns: string[], weights: number[]) => ({ heading, columns, weights });
-/** A meter of marks - the stand-in for counters and countdowns. */
-const meter = (heading: string, total: number, milestoneEvery: number) => ({ heading, total, milestoneEvery, numbers: "milestones" });
 
 // ------------------------------------------------------------ handwriting
 
@@ -207,8 +202,7 @@ export const PEOPLE: Person[] = [
         ["brain-dump", 10],
       ],
       belowLeft: [
-        // Stand-in: the assignment tracker.
-        at("column-table", 6, BELOW_ROW, 18, 13, table("Assignments", ["Class", "Task", "Due", "Done"], [1.1, 3, 1, 0.8])),
+        at("assignment-tracker", 6, BELOW_ROW, 18, 13),
         at("focus-blocks", 6, BELOW_ROW + 13, 18, 1),
         at("water-week", 6, BELOW_ROW + 14, 18, 1),
       ],
@@ -283,10 +277,8 @@ export const PEOPLE: Person[] = [
       belowLeft: [at("time-blocking-column", 6, BELOW_ROW, 18, 6), at("todo-checklist", 6, BELOW_ROW + 6, 18, 9, { dayCount: 3 })],
       belowRight: [
         at("eisenhower-matrix", 0, BELOW_ROW, 12, 15),
-        // Stand-in: the 1:1 agenda.
-        at("prompted-lines", 12, BELOW_ROW, 12, 10, { heading: "1:1 Agenda", prompts: ["Wins", "Blockers", "Asks"], linesPerPrompt: 2 }),
-        // Stand-in: the PTO meter.
-        at("progress-meter", 12, BELOW_ROW + 10, 12, 5, meter("PTO", 20, 5)),
+        at("one-on-one-agenda", 12, BELOW_ROW, 12, 10),
+        at("pto-meter", 12, BELOW_ROW + 10, 12, 5),
       ],
     },
     // The reference photo's: felt-tip capitals throughout.
@@ -422,11 +414,9 @@ export const PEOPLE: Person[] = [
         ["labeled-box", 10, box("Copies to Make", true)],
         ["labeled-box", 15, box("Parent Emails", true)],
       ],
-      // Stand-in: the lesson planner.
-      belowLeft: [at("column-table", 6, BELOW_ROW, 18, 15, table("Lesson Plan", ["Period", "Topic", "Materials"], [0.9, 2.6, 2]))],
+      belowLeft: [at("lesson-planner", 6, BELOW_ROW, 18, 15)],
       belowRight: [
-        // Stand-in: the grading tracker.
-        at("column-table", 0, BELOW_ROW, 12, 15, table("Grading", ["Class", "Assignment", "Back", "Done"], [0.9, 2.2, 0.9, 0.8])),
+        at("grading-tracker", 0, BELOW_ROW, 12, 15),
         at("labeled-box", 12, BELOW_ROW, 12, 8, box("Robotics", true)),
         at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Setlist Sat", true)),
       ],
@@ -497,12 +487,10 @@ export const PEOPLE: Person[] = [
         ["labeled-box", 10, box("Kiln Schedule", true)],
         ["labeled-box", 15, box("Market Packing", true)],
       ],
-      // Stand-in: the order tracker.
-      belowLeft: [at("column-table", 6, BELOW_ROW, 18, 15, table("Orders", ["Order", "Item", "Ship by", "Sent"], [1, 2.4, 1, 0.8]))],
+      belowLeft: [at("order-tracker", 6, BELOW_ROW, 18, 15)],
       belowRight: [
         at("project-tracker", 0, BELOW_ROW, 24, 7),
-        // Stand-in: the content plan.
-        at("column-table", 0, BELOW_ROW + 7, 12, 8, table("Content", ["Day", "Post", "Done"], [0.8, 2.6, 0.8])),
+        at("content-plan", 0, BELOW_ROW + 7, 12, 8),
         at("spending-log", 12, BELOW_ROW + 7, 12, 8),
       ],
     },
@@ -581,8 +569,7 @@ export const PEOPLE: Person[] = [
       belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 6), at("chore-chart", 6, BELOW_ROW + 6, 18, 9)],
       belowRight: [
         at("todo-checklist", 0, BELOW_ROW, 24, 9, { dayCount: 4 }),
-        // Stand-in: things the kids said.
-        at("labeled-box", 0, BELOW_ROW + 9, 12, 6, box("Kids Said", true)),
+        at("kids-said", 0, BELOW_ROW + 9, 12, 6),
         at("gift-log", 12, BELOW_ROW + 9, 12, 6),
       ],
     },
@@ -713,15 +700,13 @@ export const PEOPLE: Person[] = [
       sidebar: [
         ["daily-big-three", 5],
         ["brain-dump", 16],
-        // Stand-in: the done list.
-        ["labeled-box", 12, box("Done!", true)],
+        ["done-list", 12],
       ],
       belowLeft: [at("focus-blocks", 6, BELOW_ROW, 18, 1), at("todo-checklist", 6, BELOW_ROW + 1, 18, 14, { dayCount: 3 })],
       belowRight: [
         at("project-tracker", 0, BELOW_ROW, 24, 7),
         at("waiting-on", 0, BELOW_ROW + 7, 12, 8),
-        // Stand-in: the dopamine menu.
-        at("labeled-box", 12, BELOW_ROW + 7, 12, 8, box("Dopamine Menu", true)),
+        at("dopamine-menu", 12, BELOW_ROW + 7, 12, 8),
       ],
     },
     hand: {
@@ -790,15 +775,9 @@ export const PEOPLE: Person[] = [
         ["quote-block", 5, { heading: "", body: "We suffer more often in imagination than in reality.", attribution: "Seneca, Letters 13 (tr. Gummere)" }],
         ["labeled-box", 7, box("Reading", true)],
       ],
-      // Stand-in: Franklin's virtue chart - his thirteen, from his
-      // Autobiography, a row each.
-      belowLeft: [
-        at("habit-tracker", 6, BELOW_ROW, 18, 15, {
-          heading: "Virtues",
-          habits: ["Temperance", "Silence", "Order", "Resolution", "Frugality", "Industry", "Sincerity", "Justice", "Moderation", "Cleanliness", "Tranquility", "Chastity", "Humility"],
-        }),
-      ],
-      belowRight: [at("stoic-evening-review", 0, BELOW_ROW, 12, 15), at("labeled-box", 12, BELOW_ROW, 12, 15, box("Commonplace", true))],
+      // Franklin's virtue chart: his thirteen, from his Autobiography.
+      belowLeft: [at("franklin-virtues", 6, BELOW_ROW, 18, 15)],
+      belowRight: [at("stoic-evening-review", 0, BELOW_ROW, 12, 15), at("commonplace-book", 12, BELOW_ROW, 12, 15)],
     },
     hand: {
       words: { font: "homemade", caps: false, scale: 0.8 },
@@ -862,8 +841,7 @@ export const PEOPLE: Person[] = [
       belowLeft: [at("medication-log", 6, BELOW_ROW, 18, 6), at("symptom-tracker", 6, BELOW_ROW + 6, 18, 9)],
       belowRight: [
         at("energy-chart", 0, BELOW_ROW, 12, 8),
-        // Stand-in: spoons - an icon strip waiting for its spoon glyph.
-        at("icon-strip", 0, BELOW_ROW + 8, 12, 2, { heading: "Spoons", icon: "circle", count: 12 }),
+        at("spoon-count", 0, BELOW_ROW + 8, 12, 2),
         at("labeled-box", 0, BELOW_ROW + 10, 12, 5, box("Appointments", true)),
         at("labeled-box", 12, BELOW_ROW, 12, 15, box("Rest Menu", true)),
       ],
@@ -1105,8 +1083,7 @@ export const PEOPLE: Person[] = [
       ],
       belowLeft: [
         at("meeting-log", 6, BELOW_ROW, 18, 9),
-        // Stand-in: the 90-in-90 counter.
-        at("progress-meter", 6, BELOW_ROW + 9, 18, 6, meter("90 in 90", 90, 10)),
+        at("ninety-in-ninety", 6, BELOW_ROW + 9, 18, 6),
       ],
       belowRight: [
         at("sponsor-contact-log", 0, BELOW_ROW, 12, 8),

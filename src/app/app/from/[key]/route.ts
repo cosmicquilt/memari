@@ -23,7 +23,7 @@ import { sweepIdleGuests } from "@/lib/guestSweep";
 import { prisma } from "@/lib/prisma";
 import { isTimeZone } from "@/lib/timeZone";
 import { PEOPLE_BY_KEY } from "@/app/landing/archetypes";
-import { createJournalFromWeek } from "@/app/planner/archetypeWeek";
+import { WeekUnavailable, createJournalFromWeek } from "@/app/planner/archetypeWeek";
 import { seedOwnerDefaultZone } from "@/app/planner/ownerSettings";
 
 export const runtime = "nodejs";
@@ -57,9 +57,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // A first journal is where a default zone comes from, as in createJournal.
   await seedOwnerDefaultZone(owner.id, isTimeZone(zone) ? zone : null);
-  const book = await createJournalFromWeek(owner.id, person, isTimeZone(zone) ? zone : null);
+  let where: string;
+  try {
+    const book = await createJournalFromWeek(owner.id, person, isTimeZone(zone) ? zone : null);
+    where = `/app/j/${book.slug}`;
+  } catch (error) {
+    // A module the database has no type for yet: the start dialog, where
+    // a journal can still be made, rather than an error page. Logged, since
+    // it means production needs seeding.
+    if (!(error instanceof WeekUnavailable)) throw error;
+    console.error(`[use this week] ${error.message}`);
+    where = "/app";
+  }
 
-  const response = NextResponse.redirect(new URL(`/app/j/${book.slug}`, request.url), 303);
+  const response = NextResponse.redirect(new URL(where, request.url), 303);
   if (newGuest) {
     response.cookies.set(GUEST_COOKIE, newGuest, {
       httpOnly: true,

@@ -54,22 +54,34 @@ export function journalFor(person: Person, browserTimeZone: string | null, today
   };
 }
 
+/**
+ * A week that cannot be made here: a module it places has no row in this
+ * database - in production, one registered since the module types were last
+ * seeded (`npx prisma db seed`). Thrown before anything is created.
+ */
+export class WeekUnavailable extends Error {}
+
 /** A new journal for `ownerId` whose weekly spread is `person`'s. */
 export async function createJournalFromWeek(ownerId: string, person: Person, browserTimeZone: string | null): Promise<BookWithPages> {
+  // Every module type first: a missing one used to throw after the journal
+  // was made, leaving a half-laid-out journal behind.
+  const placements = weekPlacements(person);
+  const slugs = [...new Set(placements.map((p) => p.slug))];
+  const types = await prisma.moduleType.findMany({ where: { slug: { in: slugs } } });
+  const bySlug = new Map(types.map((t) => [t.slug, t]));
+  const missing = slugs.filter((slug) => !bySlug.has(slug));
+  if (missing.length > 0) {
+    throw new WeekUnavailable(`${person.key}'s week places ${missing.join(", ")}, which this database has no module type for - run \`npx prisma db seed\``);
+  }
+
   const book = await createBookFor(ownerId, journalFor(person, browserTimeZone));
   const spread = book.pages
     .filter((page) => page.level === PageLevel.WEEKLY && (page.variantKey ?? null) === null)
     .sort((a, b) => a.position - b.position);
   if (spread.length < 2) throw new Error("The new journal has no weekly spread to lay out.");
 
-  const placements = weekPlacements(person);
-  const types = await prisma.moduleType.findMany({ where: { slug: { in: [...new Set(placements.map((p) => p.slug))] } } });
-  const bySlug = new Map(types.map((t) => [t.slug, t]));
   const rows: Prisma.ModuleInstanceCreateManyInput[] = placements.map((p) => {
-    const type = bySlug.get(p.slug);
-    // A person naming a module the database does not have is a bug in
-    // archetypes.ts; a hole in their spread would be the only sign of it.
-    if (!type) throw new Error(`${person.key} places "${p.slug}", which is not a registered module type`);
+    const type = bySlug.get(p.slug)!;
     return {
       pageId: spread[p.page].id,
       moduleTypeId: type.id,
