@@ -1,7 +1,7 @@
 {
-  "peekDesktop": 12,
+  "peekDesktop": 16,
   "peekMobile": 12,
-  "bandDesktop": 1,
+  "bandDesktop": 0,
   "bandMobile": 0,
   "gap": 19,
   "clearance": 18,
@@ -9,8 +9,8 @@
   "density": 0.15,
   "ink": 0.96,
   "seed": 20261001,
-  "newEachLoad": false,
   "sideBlur": 3,
   "sideBlurWidth": 18,
-  "openSeconds": 3
+  "openSeconds": 3,
+  "newEachLoad": true
 }
