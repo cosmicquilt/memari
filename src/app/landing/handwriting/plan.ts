@@ -257,6 +257,79 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     return w;
   };
 
+  /** How wide `text` comes out written with `face` at `size`, unsqueezed. */
+  const measureWords = (face: Face, text: string, size: number): number => {
+    const shown = face.caps ? text.toUpperCase() : text;
+    const em = size * face.scale * 1.35;
+    return face.font === "allure"
+      ? measure(shown, "script", em)
+      : layoutGlyphs(shown, { family: HAND_FONTS[face.font], weight: face.weight, size: em, x: 0, y: 0, seed: 1, color: "#000000" }).width;
+  };
+
+  /**
+   * Two lines for an entry too long for one, where there is room below
+   * (Andrew, 2026-10-06: "write in two lines as well if space permitted try
+   * to make these things look natural") - broken at the space that leaves
+   * the lines most even, the way a hand runs on. Null when it fits as it is,
+   * or has no break that leaves a word or more on each line. Shrinking is
+   * what is left for an entry with no room below, or still too long.
+   */
+  const twoLines = (face: Face, text: string, size: number, maxWidth: number): [string, string] | null => {
+    const struck = text.startsWith("~");
+    const body = struck ? text.slice(1) : text;
+    if (measureWords(face, body, size) <= maxWidth * 0.98) return null;
+    let best: [string, string] | null = null;
+    let bestWidth = Infinity;
+    for (const match of body.matchAll(/ /g)) {
+      const a = body.slice(0, match.index);
+      const b = body.slice(match.index + 1);
+      // A line of its own for a dash or "w/" reads as a slip of the pen.
+      if (a.replace(/^- /, "").length < 3 || b.length < 3) continue;
+      const width = Math.max(measureWords(face, a, size), measureWords(face, b, size));
+      if (width < bestWidth) {
+        bestWidth = width;
+        best = [a, b];
+      }
+    }
+    if (!best) return null;
+    return struck ? [`~${best[0]}`, `~${best[1]}`] : best;
+  };
+
+  /**
+   * An entry, on one line or two: `below` is where a second line may go -
+   * how far down, and how far in - or null for no room. The lines' boxes,
+   * first first; null if nothing could be written.
+   */
+  const entry = (
+    page: 0 | 1,
+    face: Face,
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    maxWidth: number,
+    pen: Pen,
+    below: { gap: number; indent: number } | null
+  ): Written[] | null => {
+    const split = below ? twoLines(face, text, size, maxWidth) : null;
+    if (!split) {
+      const one = words(page, face, text, x, y, size, maxWidth, pen);
+      return one ? [one] : null;
+    }
+    const first = words(page, face, split[0], x, y, size, maxWidth, pen);
+    if (!first) return null;
+    const second = words(page, face, split[1], x + below!.indent, y + below!.gap, size, maxWidth - below!.indent, pen);
+    return second ? [first, second] : [first];
+  };
+  /** The box round all of an entry's lines. */
+  const around = (lines: Written[]): Written => {
+    const x0 = Math.min(...lines.map((l) => l.box[0]));
+    const y0 = Math.min(...lines.map((l) => l.box[1]));
+    const x1 = Math.max(...lines.map((l) => l.box[0] + l.box[2]));
+    const y1 = Math.max(...lines.map((l) => l.box[1] + l.box[3]));
+    return { page: lines[0].page, box: [x0, y0, x1 - x0, y1 - y0] };
+  };
+
   // --- a word across the top of some days of the right page, like the
   // reference photo: one day, the weekend, or any run of days - the
   // person's own, over the days their week puts it.
@@ -299,8 +372,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   });
   /** Things given a mark of their own (a circle, an underline, the
    *  highlighter) - drawn last, the way a week gets marked up. */
-  const marked: Array<{ written: Written; mark: "circle" | "underline" | "highlight" }> = [];
-  for (const event of person?.events ?? []) {
+  const marked: Array<{ lines: Written[]; mark: "circle" | "underline" | "highlight" }> = [];
+  const events = person?.events ?? [];
+  for (const event of events) {
     const column = dayColumns[event.day];
     if (!column) continue;
     const { page, day, index } = column;
@@ -322,10 +396,17 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       items.push({ kind: "strokes", page, paths: [wobble(circleBullet(x + 8, top + slotH * 0.55, 8), 1, nextSeed())], pen: hand.pen });
       x += 26;
     }
-    const w = words(page, hand.words, event.text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen);
-    if (!w) continue;
+    // Room for a second line: the next thing that day starts three slots or
+    // more below (two for something inside a time block, whose line runs
+    // down beside it), and the day does not end first.
+    const nextAt = Math.min(...events.filter((e) => e.day === event.day && e.at > event.at).map((e) => e.at), Infinity);
+    const nextSlot = nextAt === Infinity ? day.slots.length : day.hours.findIndex((h) => h >= nextAt - 0.01);
+    const room = (nextSlot < 0 ? day.slots.length : nextSlot) - slot >= (event.until !== undefined ? 2 : 3) && slot + 1 < day.slots.length - 1;
+    const lines = entry(page, hand.words, event.text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen, room ? { gap: slotH, indent: 0 } : null);
+    if (!lines) continue;
+    const w = around(lines);
     writtenEvents.push(w);
-    if (event.mark) marked.push({ written: w, mark: event.mark });
+    if (event.mark) marked.push({ lines, mark: event.mark });
     // Its doodle, to the right of the words: about two slots tall.
     const kind = event.doodle ?? EVENT_DOODLES.find(([re]) => re.test(event.text))?.[1];
     if (kind && (event.doodle || r.chance(0.8))) {
@@ -561,9 +642,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const key = Math.round(seg[1] / 40);
       byColumn.set(key, [...(byColumn.get(key) ?? []), seg]);
     }
-    const picked: typeof segments = [];
     const columnsInOrder = [...byColumn.values()].sort((a, b) => a[0][1] - b[0][1]);
-    for (const [c, column] of columnsInOrder.entries()) {
+    columns: for (const [c, column] of columnsInOrder.entries()) {
       const sorted = column.sort((a, b) => a[0] - b[0]);
       // The first column always has something: a one-column checklist (a
       // watchlist, stretches) left bare reads as a blank module.
@@ -577,9 +657,22 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
             ? r.int(0, 4)
             : r.int(0, 2);
       const skip = !ownItems && region.checkX === null && r.chance(0.25) ? 1 : 0;
-      picked.push(...sorted.slice(skip, skip + count));
+      // Down the column a line at a time; an item too long for its line runs
+      // on to the next, a little in, when that line is there and free.
+      let at = skip;
+      for (let written = 0; written < count && at < sorted.length; ) {
+        const [ly, lx0, lx1] = sorted[at];
+        const used = writeLine(ly, lx0, lx1, sorted[at + 1] ?? null);
+        if (used === null) break columns;
+        at += Math.max(1, used);
+        if (used > 0) written++;
+      }
     }
-    for (const [ly, lx0, lx1] of picked) {
+
+    /** Write the next item on the line at `ly`, running on to `next` if it
+     *  needs to: how many lines it took (0 if this line was not free), or
+     *  null when the list has run out. */
+    function writeLine(ly: number, lx0: number, lx1: number, next: [number, number, number] | null): number | null {
       const hasCheck = region.checkX !== null && region.columns.some((x) => x > lx0 && x < lx0 + 90);
       const checkRight = hasCheck ? region.columns.find((x) => x > lx0 && x < lx0 + 90)! : lx0;
       // A numbered list prints its number at the start of the line: write
@@ -588,26 +681,39 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const number = region.printed.find(([px, py, pw, ph]) => px < checkRight + 90 && px + pw > checkRight && py < ly && py + ph > ly - pitch);
       const x = (number ? number[0] + number[2] : checkRight) + 16;
       const segEnd = Math.min(lx1, region.columns.find((c) => c > x + 60) ?? lx1);
-      if (!clearOf(region.printed, x, segEnd, ly - pitch, ly)) continue;
+      if (!clearOf(region.printed, x, segEnd, ly - pitch, ly)) return 0;
       const item = deal(source);
-      if (!item) break;
+      if (!item) return null;
       const text = `${region.checkX === null && r.chance(0.4) ? "- " : ""}${item}`;
-      const written = words(page, hand.words, text, x, ly - Math.max(9, pitch * 0.18), size, segEnd - x - 16, hand.pen);
-      if (written && hasCheck && r.chance(0.55)) {
+      // The next line, if it is the very next one down and nothing is
+      // printed along it. Not on a numbered list: the run-on would sit
+      // beside the next number.
+      const indent = size * 0.6;
+      const runOn = !number && next && next[0] - ly < pitch * 1.6 && clearOf(region.printed, x + indent, segEnd, next[0] - pitch, next[0]) ? { gap: next[0] - ly, indent } : null;
+      const lines = entry(page, hand.words, text, x, ly - Math.max(9, pitch * 0.18), size, segEnd - x - 16, hand.pen, runOn);
+      if (lines && hasCheck && r.chance(0.55)) {
         const s = Math.min(checkRight - lx0, pitch) * 0.7;
         items.push({ kind: "strokes", page, paths: checkMark(lx0 + (checkRight - lx0 - s) / 2, ly - pitch / 2 - s / 2, s, nextSeed()), pen: hand.accent });
       }
+      return lines ? lines.length : 1;
     }
   }
 
   // --- last: the highlighter, a circle, an underline, a doodle by the date.
   // The person's own marks where they gave some; otherwise one of each, on
   // things picked at random.
-  for (const { written, mark } of marked) {
-    const [x, y, w, hgt] = written.box;
-    if (mark === "highlight") items.push({ kind: "strokes", page: written.page, paths: [wobble([x - 10, y + hgt * 0.55, x + w + 12, y + hgt * 0.52], 2, nextSeed(), 30)], pen: hand.highlight, pause: 0.4 });
-    else if (mark === "circle") items.push({ kind: "strokes", page: written.page, paths: circleAround(x, y, w, hgt, nextSeed()), pen: hand.accent });
-    else items.push({ kind: "strokes", page: written.page, paths: underline(x, x + w, y + hgt + 6, nextSeed(), false), pen: hand.accent });
+  // A highlight runs along each line; a circle goes round them all; an
+  // underline is under the last.
+  for (const { lines, mark } of marked) {
+    const page = lines[0].page;
+    if (mark === "highlight") {
+      for (const { box: [x, y, w, hgt] } of lines) items.push({ kind: "strokes", page, paths: [wobble([x - 10, y + hgt * 0.55, x + w + 12, y + hgt * 0.52], 2, nextSeed(), 30)], pen: hand.highlight, pause: 0.4 });
+    } else if (mark === "circle") {
+      items.push({ kind: "strokes", page, paths: circleAround(...around(lines).box, nextSeed()), pen: hand.accent });
+    } else {
+      const [x, y, w, hgt] = lines[lines.length - 1].box;
+      items.push({ kind: "strokes", page, paths: underline(x, x + w, y + hgt + 6, nextSeed(), false), pen: hand.accent });
+    }
   }
   if (marked.length === 0 && writtenEvents.length > 0) {
     const h = r.pick(writtenEvents);
