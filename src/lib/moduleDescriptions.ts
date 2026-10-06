@@ -45,6 +45,9 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   // ── Planning ──────────────────────────────────────────────────────────
   "brain-dump": "An open box to empty your head into before you plan. Get everything down first, then sort it into lists.",
   "weekly-priorities": "A short numbered list of what matters most this week, written before the week fills up.",
+  "assignment-tracker": "Each assignment with its class and the day it is due, and a box to tick when it is handed in.",
+  "done-list": "A ruled list of what you finished, written down as you finish it. A record of what the day did hold, for the days a to-do list makes it look like nothing happened.",
+  "one-on-one-agenda": "Notes to bring to a meeting with your manager: what went well, what is in your way, and what you need from them.",
   "time-blocking-column": "Split each day into morning, midday, afternoon and evening, and decide what each part is for.",
   "monthly-review": "Three questions at the end of each month: what worked, what did not, and what changes next month.",
   "future-log-months": "The Bullet Journal's future log: six months with a few lines each, for events and deadlines too far ahead for this week's pages.",
@@ -143,6 +146,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "daily-affirmation": "One prompt, Today I am, with room to finish the sentence in your own words.",
   "thirty-day-challenge": "Thirty numbered days to fill in one at a time, for a habit you want to try for a month.",
   "ninety-day-sprint": "Ninety days marked in tens, for a goal that needs a quarter of a year.",
+  "franklin-virtues": "Benjamin Franklin's thirteen virtues, Temperance to Humility, charted as he kept them in his Autobiography: a line for each virtue, a column for each day, and a spot for every fault. He gave each week to one virtue, so one course takes thirteen weeks.",
   "smart-goal": "Write one goal five ways: specific, measurable, achievable, relevant and time-bound. George T. Doran published the SMART acronym in 1981.",
   "values-list": "A numbered list of what matters most to you, to check decisions against.",
   "habit-stacking": "Two columns, After I and I will, to tie each new habit to one you already do.",
@@ -168,6 +172,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "recovery-gratitude-list": "A short list of what you are grateful for today, a practice many in recovery keep daily.",
   "sponsor-contact-log": "Each contact with your sponsor: the date, whether you called and spoke, and a note.",
   "meeting-log": "Meetings you attended, with the date, group and format, and room for a signature where a court or program asks for one.",
+  "ninety-in-ninety": "Ninety cells, one for each meeting, toward the ninety meetings in ninety days often suggested to someone new to a twelve-step program. Numbered at 30, 60 and 90, the days programs often mark.",
 
   // ── Travel ────────────────────────────────────────────────────────────
   "trip-itinerary": "Day by day: where you will be, what you will do, and whether it is booked.",

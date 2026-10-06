@@ -172,6 +172,40 @@ export const CATALOGUE: CatalogueEntry[] = [
     columnSpan: 6,
     rowSpan: 11,
   },
+  // ARCHETYPE PRESETS (2026-10-06). The hero's people used these as
+  // stand-ins - a column table headed "Assignments" and so on - and the
+  // archetypes research put them first to build (handoff/research/
+  // hero-archetypes.md, section 6). Words exactly as the hero has them.
+  {
+    // A student's week: what is due, for which class, ticked when it is in.
+    slug: "assignment-tracker",
+    primitive: "column-table",
+    name: "Assignment Tracker",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Assignments",
+    props: { heading: "Assignments", ...table(["Class", "Task", "Due", "Done"], [1.1, 3, 1, 0.8]) },
+  },
+  {
+    // What got done, written as it gets done - the ADHD week's sidebar.
+    slug: "done-list",
+    primitive: "labeled-box",
+    name: "Done List",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "Done",
+    props: { heading: "Done!", rule: "lined" },
+  },
+  {
+    // A 9-to-5 week's meeting with a manager.
+    slug: "one-on-one-agenda",
+    primitive: "prompted-lines",
+    name: "1:1 Agenda",
+    category: "Planning",
+    cadence: "week",
+    paletteName: "1:1",
+    props: { heading: "1:1 Agenda", prompts: ["Wins", "Blockers", "Asks"], linesPerPrompt: 2 },
+  },
   {
     slug: "ivy-lee-six",
     primitive: "todo-checklist",
@@ -1272,6 +1306,27 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "90 Days", total: 90, milestoneEvery: 10, numbers: "milestones" },
   },
   {
+    // Benjamin Franklin's thirteen virtues, in his order and his spelling
+    // ("Tranquillity"), from the Autobiography - public domain, read from
+    // Project Gutenberg #20203, not from memory. His chart was this one: a
+    // line a virtue, a column a day, "a little black spot" for each fault,
+    // a week given to each virtue in turn - "a course compleat in thirteen
+    // weeks, and four courses in a year", which is a quarter: one book.
+    slug: "franklin-virtues",
+    primitive: "habit-tracker",
+    name: "Franklin's Virtues",
+    category: "Growth",
+    cadence: "week",
+    paletteName: "Virtues",
+    props: {
+      heading: "Virtues",
+      habits: ["Temperance", "Silence", "Order", "Resolution", "Frugality", "Industry", "Sincerity", "Justice", "Moderation", "Cleanliness", "Tranquillity", "Chastity", "Humility"],
+      columns: [],
+    },
+    // Thirteen rows of virtues and the head: the floor at a full page width.
+    rowSpan: 15,
+  },
+  {
     slug: "smart-goal",
     primitive: "prompted-lines",
     name: "SMART Goal",
@@ -1480,6 +1535,18 @@ export const CATALOGUE: CatalogueEntry[] = [
     // an app - a court card needs a wet signature.
     props: { heading: "Meetings", ...table(["Date", "Group", "Format", "Signature"], [1.2, 2, 1.2, 2]) },
     columnSpan: 14,
+  },
+  {
+    // Ninety meetings in ninety days, often suggested to someone new to a
+    // twelve-step program: a cell a meeting, numbered at 30, 60 and 90 -
+    // the days the chips mark. A phrase in common use, not program text.
+    slug: "ninety-in-ninety",
+    primitive: "progress-meter",
+    name: "90 in 90",
+    category: "Recovery",
+    cadence: "journal",
+    paletteName: "90 in 90",
+    props: { heading: "90 in 90", total: 90, milestoneEvery: 30, numbers: "milestones" },
   },
 
   // ─────────────────────────────────────────────────────────────────── Travel

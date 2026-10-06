@@ -20,16 +20,16 @@ function check(condition: boolean, message: string) {
 
 const EXPECTED_COUNTS: Record<string, number> = {
   Basics: 14,
-  Planning: 15,
+  Planning: 18,
   "Mood & health": 14,
   Food: 8,
   Fitness: 7,
   Money: 8,
   "Home & family": 8,
   "Philosophy & faith": 22,
-  Growth: 12,
+  Growth: 13,
   "Hobbies & learning": 8,
-  Recovery: 5,
+  Recovery: 6,
   Travel: 6,
 };
 
