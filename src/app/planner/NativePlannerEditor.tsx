@@ -1209,6 +1209,18 @@ function NativeModule({
       onPointerCancel={locked ? undefined : clearPressed}
       onMouseEnter={() => onHoverStart(instanceId)}
       onMouseLeave={() => onHoverEnd(instanceId)}
+      // AND ANY MOVE OVER IT, while it is not the hovered one - because an
+      // enter can be missed. When the element under a resting pointer is
+      // REMOVED (an editor closing, by Escape or Done), Chrome's next
+      // mouseover names that element's surviving parent as where the pointer
+      // came from, and sends no mouseout before it. React reads a mouseover
+      // from inside its own tree as half of an out/over pair, waits for the
+      // mouseout, and never fires the enter. So the module that was under the
+      // editor showed no pencil and no delete until the pointer left it and
+      // came back. Measured in check:browser's round-two pickers, which moves
+      // straight from a closed editor onto a to-do (2026-10-05). Unset once
+      // hovered, so a move over the hovered module costs nothing.
+      onMouseMove={isHovered ? undefined : () => onHoverStart(instanceId)}
       style={{
         // Out of grid flow while dragged (see rectPx), in it otherwise.
         // Every module carries an explicit grid-column/grid-row, so no
