@@ -35,6 +35,7 @@ import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/mo
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 import { capCentredTextY } from "@/lib/modules/textFit";
 import { latticeFill } from "./latticeFill";
+import { glyphElement, type GlyphShape } from "./glyphs";
 
 export type MonthGridCoreConfig = {
   dayCount: number; // 3 or 4, matching which half of the spread (same convention as hourly-grid-core)
@@ -43,7 +44,10 @@ export type MonthGridCoreConfig = {
   // weekCount rows x dayCount columns, already sliced to this page's day
   // range — see monthCalendar.ts's computeMonthCalendar, which produces
   // the full 7-column week that this gets sliced from.
-  cells: MonthCalendarCell[][];
+  //
+  // `icons`: the journal's day icons on that day - set at render time from
+  // the dates (renderContext's withDayIcons), never stored.
+  cells: Array<Array<MonthCalendarCell & { icons?: GlyphShape[] }>>;
   /** The journal's week start, 0 = Sunday - set at render time, never
    *  stored. Read by the registry's `dated` hook, which computes `cells`
    *  from it; the drawing itself only ever sees the cells. */
@@ -82,6 +86,11 @@ const DATE_STRIP_HEIGHT_PT = 9;
 // each cell's date-strip. Half a cell wide against a half-cell-high strip,
 // so the number sits in a square of half a cell each way.
 const DATE_BOX_WIDTH_PT = 9;
+// DAY ICONS (dayIcons.ts) in the date strip, beside the date box, as big as
+// the 9pt strip holds with a point of air above and below: 7pt, 2.5mm. The
+// strip rather than the day's writing space, which is the cell's point.
+const DAY_ICON_PT = 7;
+const DAY_ICON_GAP_PT = 1.5;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
 const ROW_LINE_WIDTH_PT = RULE_WIDTH_PT;
 
@@ -259,6 +268,18 @@ export function renderMonthGridCore(
           fontFamily: FONT_FAMILY,
           fill: "#555555",
           align: "center",
+        });
+
+        // Laid rightward from the date box, as many as the cell holds.
+        const size = ptToPx(DAY_ICON_PT);
+        const gap = ptToPx(DAY_ICON_GAP_PT);
+        let left = cellX + dateBoxWidth + gap;
+        (cell.icons ?? []).forEach((shape, k) => {
+          if (left + size > cellX + dayColumnWidth - gap) return;
+          elements.push(
+            glyphElement({ id: id(`w${w}-d${d}-dayicon${k}`), x: left, y: rowY + (dateStripHeight - size) / 2, sizePx: size, shape })
+          );
+          left += size + gap;
         });
       }
 

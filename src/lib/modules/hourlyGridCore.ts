@@ -13,6 +13,7 @@
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
 import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
+import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
@@ -87,6 +88,10 @@ export type HourlyGridCoreConfig = {
   compactHourRows?: boolean;
   // One of ROW_HEIGHT_OPTIONS_PT. Absent means the 9pt default.
   rowHeightPt?: number;
+  /** The journal's day icons on each day column, in dayLabels' order - set
+   *  at render time from the dates (renderContext's withDayIcons), never
+   *  stored. Drawn in the day tab, beside the date. */
+  dayIcons?: GlyphShape[][];
 };
 
 export type RenderedElement = {
@@ -295,6 +300,13 @@ const COLUMN_GUTTER_PT = 4.5;
 // inside the box's left edge; "31" bbox ends 6.9pt inside the right edge.
 const DAY_NAME_LEFT_INSET_PT = 4.4;
 const DATE_RIGHT_INSET_PT = 6.9;
+// DAY ICONS in the tab (dayIcons.ts): as big as the 13.7pt tab holds with
+// air above and below - 9pt is 3.2mm, inside the 3-12mm the icons are drawn
+// to be coloured in at. Laid leftward from the date, and as many as fit
+// before the day's name; the rest are left off rather than drawn over it.
+const DAY_ICON_PT = 9;
+const DAY_ICON_GAP_PT = 1.5;
+const DAY_ICON_CLEAR_PT = 2.5;
 // Small thin box wrapping each time label, bottom edge flush with the
 // row's ruled line — measured from a sample vector rect: ~14pt wide,
 // ~8.9pt tall, 0.1pt near-black stroke.
@@ -949,6 +961,25 @@ export function renderHourlyGridCore(
         fill: "#555555",
         align: "right",
       });
+
+      const icons = config.dayIcons?.[d] ?? [];
+      if (icons.length > 0 && typeof label.date === "number") {
+        const size = ptToPx(DAY_ICON_PT);
+        const gap = ptToPx(DAY_ICON_GAP_PT);
+        const clear = ptToPx(DAY_ICON_CLEAR_PT);
+        // Measured ink, not the boxes: the date is right-aligned in a box
+        // much wider than "28", and the name's box runs up to that one.
+        const dateLeft =
+          dayX + dayColumnWidth - dateRightInset - textWidthPx(String(label.date), dateFontSize, FONT_FAMILY);
+        const nameRight = dayX + nameLeftInset + textWidthPx(label.name, nameFontSize, FONT_FAMILY);
+        const iconY = geometry.y + (headerHeight - size) / 2;
+        let right = dateLeft - clear;
+        icons.forEach((shape, k) => {
+          if (right - size < nameRight + clear) return;
+          elements.push(glyphElement({ id: id(`d${d}-dayicon${k}`), x: right - size, y: iconY, sizePx: size, shape }));
+          right -= size + gap;
+        });
+      }
     }
 
     if (config.intervalMode === "off") {

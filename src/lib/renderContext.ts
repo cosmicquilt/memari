@@ -22,6 +22,8 @@
 // all call these two; none of them decides what a page is dated as.
 
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
+import { dayIconsOf, iconsOnDates, monthCellDates, type DayIcon } from "./dayIcons";
+import type { MonthCalendarCell } from "./monthCalendar";
 import { dayUnitColumns, type PageGrid } from "./grid";
 import { EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore";
 import { isSpineSlug, withDates, withDaysUnder, withWeekStart, withoutDates } from "./moduleRegistry";
@@ -68,6 +70,11 @@ export type PageRenderContext = {
    *  click into an instant, and it must land on the day the tab shows. This
    *  is the same columnDates call the tab's own number comes from. */
   columnDates: Array<string | null> | null;
+  /** The journal's day icons (trash day, payday), to be put on the days they
+   *  fall on - see dayIcons.ts and withDayIcons. Null on an undated book,
+   *  which has no days for them to fall on. Optional for a context built
+   *  before they existed. */
+  dayIcons?: DayIcon[] | null;
 };
 
 /** The parts of a book this needs - structural, so a Prisma row with its
@@ -206,6 +213,7 @@ export function renderContextForPage(
     spineColumns,
     events: placed.events,
     columnDates: placed.columnDates,
+    dayIcons: dated ? dayIconsOf(book.theme) : null,
   };
 }
 
@@ -302,7 +310,37 @@ export function propsForRender(
   const days = placement ? daysUnder(placement, context, placement.dayColumns) : null;
   const weekly = days ? withDaysUnder(slug, turned, days) : turned;
   if (!context.dated) return withoutDates(slug, weekly);
-  return context.occurrence ? withDates(slug, weekly, context.occurrence) : weekly;
+  return withDayIcons(slug, context.occurrence ? withDates(slug, weekly, context.occurrence) : weekly, context);
+}
+
+/**
+ * The journal's day icons, put on the days of a spine that shows dates: the
+ * hours' day tabs (weekly and daily pages) and the month calendar's cells.
+ *
+ * LAST, after the dates are filled in, and read off them: the hours' days
+ * are `columnDates`, the rule each tab's own number comes from, and a month
+ * cell's day is the number it prints (monthCellDates). Icons placed by any
+ * other reckoning could sit beside a date they are not for.
+ */
+function withDayIcons(slug: string, props: unknown, context: PageRenderContext): unknown {
+  const icons = context.dayIcons;
+  if (!icons || icons.length === 0 || !context.occurrence) return props;
+  if (slug === "hourly-grid-core" && context.columnDates) {
+    return { ...(props as object), dayIcons: iconsOnDates(icons, context.columnDates) };
+  }
+  if (slug === "month-grid-core") {
+    const cells = (props as { cells?: MonthCalendarCell[][] } | null)?.cells;
+    if (!Array.isArray(cells)) return props;
+    const dates = monthCellDates(cells, context.occurrence.start);
+    return {
+      ...(props as object),
+      cells: cells.map((week, w) => {
+        const onWeek = iconsOnDates(icons, dates[w] ?? []);
+        return week.map((cell, d) => (onWeek[d]?.length ? { ...cell, icons: onWeek[d] } : cell));
+      }),
+    };
+  }
+  return props;
 }
 
 /**

@@ -4,6 +4,8 @@
 // @font-face rules regardless of which component rendered the element
 // (confirmed against the same mechanism Newsreader already relied on).
 
+import type { DayIcon } from "./dayIcons";
+
 export const FONT_SERIF = "Newsreader";
 export const FONT_SANS = "Hanken Grotesk";
 
@@ -20,6 +22,9 @@ export function resolveFontFamily(choice: FontChoice | null | undefined): string
 export type PlannerTheme = {
   fontFamily?: FontChoice;
   weekStartDay?: number;
+  /** Icons on the days something happens - see dayIcons.ts. Read through
+   *  dayIconsOf, which drops anything malformed. */
+  dayIcons?: DayIcon[];
 };
 
 // Cast + resolve in one step — every server action that loads a planner

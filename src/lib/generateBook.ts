@@ -26,6 +26,7 @@
 // This walks occurrences and hands each page its context.
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
+import { dayIconsOf } from "./dayIcons";
 import { placePageEvents, propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
 import type { StoredEvent } from "./calendarEvents";
 import { effectiveZone } from "./timeZone";
@@ -112,6 +113,8 @@ export type GeneratedBook = {
  */
 export function generateBook(planner: BookSource, fontFamily: string): GeneratedBook {
   const weekStartDay = (planner.theme as { weekStartDay?: number } | null)?.weekStartDay ?? 0;
+  // Trash day and the rest, on the days they fall - as the editor shows them.
+  const dayIcons = planner.dated ? dayIconsOf(planner.theme) : null;
   const pagesByLevel = new Map<PageLevel, BookSource["pages"]>();
   for (const page of planner.pages) {
     pagesByLevel.set(page.level, [...(pagesByLevel.get(page.level) ?? []), page]);
@@ -206,6 +209,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
         weekStartDay,
         events: placed.events,
         columnDates: placed.columnDates,
+        dayIcons,
       };
       const pageGrid: PageGrid = {
         widthPx: page.widthPx,

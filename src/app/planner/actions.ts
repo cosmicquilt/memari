@@ -128,6 +128,7 @@ import {
   spineGapRows,
 } from "@/lib/modules/hourlyGridCore";
 import { fontFamilyFromTheme, type FontChoice, type PlannerTheme } from "@/lib/theme";
+import { cleanDayIcons, type DayIcon } from "@/lib/dayIcons";
 
 // Raw Polotno element shape we round-trip. Deliberately loose (Polotno's
 // own element types vary by kind) — we're not interpreting these yet,
@@ -2684,6 +2685,32 @@ export async function updatePlannerFont(journalId: string, fontFamily: FontChoic
     where: { id: planner.id },
     data: { theme: nextTheme as Prisma.InputJsonValue },
   });
+}
+
+/**
+ * The journal's day icons - trash day, payday - replaced whole. Journal-wide
+ * like the font: one list on Planner.theme that every dated page draws from
+ * (dayIcons.ts), so saving it from the hours' editor or the month's changes
+ * both. Cleaned on the way in: this is a public action, and anything it does
+ * not recognise is dropped rather than stored to be dropped on every read.
+ * Returns what was kept, which is what the editor shows from then on.
+ */
+export async function setDayIcons(journalId: string, icons: unknown): Promise<DayIcon[]> {
+  const userId = await currentOwnerId();
+  if (!userId) {
+    throw new Error("Not signed in");
+  }
+  const planner = await prisma.planner.findFirst({ where: journalWhere(userId, journalId) });
+  if (!planner) {
+    throw new Error("Planner not found");
+  }
+  const dayIcons = cleanDayIcons(icons);
+  const nextTheme: PlannerTheme = { ...(planner.theme as PlannerTheme | null), dayIcons };
+  await prisma.planner.update({
+    where: { id: planner.id },
+    data: { theme: nextTheme as Prisma.InputJsonValue },
+  });
+  return dayIcons;
 }
 
 /**
