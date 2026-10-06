@@ -152,27 +152,43 @@ const COLUMN_HEAD_FONT_PT = 7;
 const CELL_PADDING_PT = 4;
 /** A two-line head's second line, how far below the first, baseline to
  *  baseline, in ems - two lines of 7pt sit in the 18pt head band with the
- *  descender of "my" clear of its rule. Across, it ENDS WHERE THE FIRST
- *  ENDS: "my should be more to right below affects" (2026-10-05), picked
- *  from four drawn indents over the 0.8em first built. */
+ *  descender of "my" clear of its rule. */
 const HEAD_LINE_PITCH_EM = 1.15;
+/** And across: it ends this far PAST the first line's end, in ems. Asked
+ *  in steps on 2026-10-05 - a 0.8em indent first, then "my should be more
+ *  to right below affects" (ending under the end of Affects), then "a bit
+ *  more": half an em past it, picked from three drawn. */
+const HEAD_OVERHANG_EM = 0.5;
 
 /**
  * `name` as two lines that need less width than one, split at the space
  * that leaves the narrower block - or null when it fits on one line at the
- * head's full size, has no space, or two lines would not help. The second
- * line ends under the first's end, so the block is as wide as its wider
- * line.
+ * head's full size, has no space, or two lines would not help.
+ *
+ * The second line is placed by the face's MEASURED widths, to end
+ * HEAD_OVERHANG_EM past the first line's real end (`indentEms`). The block
+ * is then judged as every other label is, by the estimate (`ems`): the first
+ * line's own, or the second's from where it really starts. Adding the
+ * overhang to the estimate instead counted it on top of an already generous
+ * width, and shrank the Step Four inventory's heads from 3.5pt to 3.1pt for
+ * room "my" never used.
  */
-function twoLineHead(name: string, widthPx: number, fullSizePx: number): { lines: [string, string]; ems: number } | null {
+function twoLineHead(
+  name: string,
+  widthPx: number,
+  fullSizePx: number,
+  fontFamily: string
+): { lines: [string, string]; ems: number; indentEms: number } | null {
   const ems = (text: string) => estimateTextWidthPx(text, 1);
+  const measured = (text: string) => textWidthPx(text, 1, fontFamily);
   if (!name.includes(" ") || ems(name) * fullSizePx <= widthPx) return null;
   const words = name.split(" ");
-  let best: { lines: [string, string]; ems: number } | null = null;
+  let best: { lines: [string, string]; ems: number; indentEms: number } | null = null;
   for (let i = 1; i < words.length; i++) {
     const lines: [string, string] = [words.slice(0, i).join(" "), words.slice(i).join(" ")];
-    const block = Math.max(ems(lines[0]), ems(lines[1]));
-    if (!best || block < best.ems) best = { lines, ems: block };
+    const indentEms = Math.max(0, measured(lines[0]) - measured(lines[1])) + HEAD_OVERHANG_EM;
+    const block = Math.max(ems(lines[0]), indentEms + ems(lines[1]));
+    if (!best || block < best.ems) best = { lines, ems: block, indentEms };
   }
   return best && best.ems < ems(name) ? best : null;
 }
@@ -338,7 +354,7 @@ export function renderColumnTable(
   // Snapping to whole cells can take a little from a column the allocator
   // had sized exactly, so the set may step down the head ladder here.
   const twoLines = columns.map((name, c) =>
-    config.wrapHeads ? twoLineHead(name, widths[c] - headPadding * 2, ptToPx(COLUMN_HEAD_FONT_PT)) : null
+    config.wrapHeads ? twoLineHead(name, widths[c] - headPadding * 2, ptToPx(COLUMN_HEAD_FONT_PT), fontFamily) : null
   );
   const heads = fitLabelSet(
     columns.map((name, c) => ({
@@ -357,11 +373,10 @@ export function renderColumnTable(
       // `-l1` of the same head, so a click on either edits the one label.
       const headFontSize = heads.fontSizePx;
       const pitchPx = headFontSize * HEAD_LINE_PITCH_EM;
-      // Measured in the face it prints in, not estimated: an estimate is
+      // Measured in the face it prints in (see twoLineHead): an estimate is
       // generous, and "my" set by one overshot the end of "Affects".
-      const ends = (line: string) => textWidthPx(line, headFontSize, fontFamily);
       two.lines.forEach((line, l) => {
-        const indent = l > 0 ? Math.max(0, ends(two.lines[0]) - ends(line)) : 0;
+        const indent = l > 0 ? two.indentEms * headFontSize : 0;
         elements.push({
           id: id(l === 0 ? `c${c}-head` : `c${c}-head-l${l}`),
           type: "text",

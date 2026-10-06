@@ -219,10 +219,12 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     affects?.text === "Affects" && my?.text === "my" && (my.x ?? 0) > (affects.x ?? 0) && (my.y ?? 0) > (affects.y ?? 0) && my.fontSize === affects.fontSize,
     `the inventory's "Affects my" sets as Affects, then my below it and to the right (${affects?.text} / ${my?.text})`
   );
-  // "More to the right below affects": its end under Affects' end, measured
-  // in the face it prints in.
+  // "More to the right below affects", then "a bit more": its end half an
+  // em past Affects' end, measured in the face it prints in.
   const end = (e?: RenderedPolotnoElement) => (e?.x ?? 0) + textWidthPx(String(e?.text ?? ""), Number(e?.fontSize ?? 0), String(e?.fontFamily ?? ""));
-  check(Math.abs(end(my) - end(affects)) < 0.5, `and "my" ends where "Affects" ends (${(end(my) - end(affects)).toFixed(2)}px apart)`);
+  const past = (end(my) - end(affects)) / Number(affects?.fontSize ?? 1);
+  check(Math.abs(past - 0.5) < 0.02, `and "my" ends half an em past where "Affects" ends (${past.toFixed(2)}em)`);
+  check(end(my) <= (affects?.x ?? 0) + Number(affects?.width ?? 0) + 0.5, "and still inside its column");
   check(draw("step-four-inventory", { ...(moduleDefinition("step-four-inventory")?.previewProps ?? {}) }, 24, 8).every((e) => !/-head-l1$/.test(String(e.id))), "and on one line where it fits");
   // Item has the largest share (5 of 12); Category, a longer word, has 3.
   // Shared out by the words, Category took two cells and Item one.
