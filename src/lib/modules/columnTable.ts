@@ -23,7 +23,7 @@
 // none of the ones above.
 
 import { ptToPx } from "@/lib/print-spec";
-import { columnWidthsForLabels, estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
+import { columnWidthsForLabels, estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
 import { latticeFill, rowMarkerElement } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
@@ -67,6 +67,14 @@ export type ColumnTableConfig = {
   rows?: "lined" | "dotted" | "none";
   /** A narrow first column numbering the rows - books this year, albums. */
   rowNumbers?: boolean;
+  /**
+   * A head too long for its column sets on TWO lines, the second a little
+   * to the right, before the row of heads shrinks for it. Asked for the
+   * Step Four inventory at one day wide (2026-10-05): "put Affects and my on
+   * separate lines where my is a bit to the right below it". Off unless a
+   * table asks: its other users chose plain shrinking.
+   */
+  wrapHeads?: boolean;
 };
 
 /**
@@ -142,6 +150,32 @@ export type RenderedElement = {
 const COLUMN_HEAD_HEIGHT_PT = 18;
 const COLUMN_HEAD_FONT_PT = 7;
 const CELL_PADDING_PT = 4;
+/** A two-line head's second line, how far below the first, baseline to
+ *  baseline, in ems - two lines of 7pt sit in the 18pt head band with the
+ *  descender of "my" clear of its rule. Across, it ENDS WHERE THE FIRST
+ *  ENDS: "my should be more to right below affects" (2026-10-05), picked
+ *  from four drawn indents over the 0.8em first built. */
+const HEAD_LINE_PITCH_EM = 1.15;
+
+/**
+ * `name` as two lines that need less width than one, split at the space
+ * that leaves the narrower block - or null when it fits on one line at the
+ * head's full size, has no space, or two lines would not help. The second
+ * line ends under the first's end, so the block is as wide as its wider
+ * line.
+ */
+function twoLineHead(name: string, widthPx: number, fullSizePx: number): { lines: [string, string]; ems: number } | null {
+  const ems = (text: string) => estimateTextWidthPx(text, 1);
+  if (!name.includes(" ") || ems(name) * fullSizePx <= widthPx) return null;
+  const words = name.split(" ");
+  let best: { lines: [string, string]; ems: number } | null = null;
+  for (let i = 1; i < words.length; i++) {
+    const lines: [string, string] = [words.slice(0, i).join(" "), words.slice(i).join(" ")];
+    const block = Math.max(ems(lines[0]), ems(lines[1]));
+    if (!best || block < best.ems) best = { lines, ems: block };
+  }
+  return best && best.ems < ems(name) ? best : null;
+}
 
 export function getColumnTableRowMetricsPx() {
   return {
@@ -303,21 +337,51 @@ export function renderColumnTable(
   // "Catego…" in a table that had been sized precisely to hold it.
   // Snapping to whole cells can take a little from a column the allocator
   // had sized exactly, so the set may step down the head ladder here.
+  const twoLines = columns.map((name, c) =>
+    config.wrapHeads ? twoLineHead(name, widths[c] - headPadding * 2, ptToPx(COLUMN_HEAD_FONT_PT)) : null
+  );
   const heads = fitLabelSet(
     columns.map((name, c) => ({
       text: name,
       widthPx: widths[c] - headPadding * 2,
+      ...(twoLines[c] ? { ems: twoLines[c]!.ems } : {}),
     })),
     headSizes.filter((size) => size <= layout.fontSizePx + 0.01)
   );
 
   columns.forEach((name, c) => {
     const { start, end } = bounds[c];
-    if (name) {
-      // Shrunk, then cut. Nothing in the renderer clips a text node, so a
-      // head wider than its column runs out of the module and over
-      // whatever is beside it - which is exactly what "Amount" did in a
-      // six-column spending log, printing across the module next to it.
+    const two = twoLines[c];
+    if (name && two) {
+      // Two lines, centred as a pair in the head band; the second is the
+      // `-l1` of the same head, so a click on either edits the one label.
+      const headFontSize = heads.fontSizePx;
+      const pitchPx = headFontSize * HEAD_LINE_PITCH_EM;
+      // Measured in the face it prints in, not estimated: an estimate is
+      // generous, and "my" set by one overshot the end of "Affects".
+      const ends = (line: string) => textWidthPx(line, headFontSize, fontFamily);
+      two.lines.forEach((line, l) => {
+        const indent = l > 0 ? Math.max(0, ends(two.lines[0]) - ends(line)) : 0;
+        elements.push({
+          id: id(l === 0 ? `c${c}-head` : `c${c}-head-l${l}`),
+          type: "text",
+          x: start + headPadding + indent,
+          y: capCentredTextY(headsTop + (l - 0.5) * pitchPx, columnHeadHeight, headFontSize, fontFamily),
+          width: end - start - headPadding * 2 - indent,
+          height: headFontSize * 1.2,
+          text: line,
+          fontSize: headFontSize,
+          fontFamily,
+          fill: NEAR_BLACK,
+          align: "left",
+        });
+      });
+    } else if (name) {
+      // Shrunk - and cut only below the floor (see textFit). Nothing in the
+      // renderer clips a text node, so a head wider than its column runs
+      // out of the module and over whatever is beside it - which is
+      // exactly what "Amount" did in a six-column spending log, printing
+      // across the module next to it.
       const headFontSize = heads.fontSizePx;
       elements.push({
         id: id(`c${c}-head`),

@@ -226,7 +226,10 @@ export function renderIconStrip(
     const forms = [named(weekdayShortNames(config.weekStartDay)), named(weekdayInitials(config.weekStartDay))];
     const fits = (names: string[]) =>
       names.every((name) => estimateTextWidthPx(name, labelSizePx) <= groupWidth - groupPad * 2) &&
-      (!firstLabel || fitLabel(firstLabel, roomBeside(names), [labelSizePx]).text === firstLabel);
+      // Whole AT the strip's own size - asked directly, not through fitLabel,
+      // which now shrinks a label rather than cutting it (2026-10-05), so
+      // "came back uncut" no longer means "fits".
+      (!firstLabel || estimateTextWidthPx(firstLabel, labelSizePx) <= roomBeside(names) + 0.01);
     return forms.find(fits) ?? forms[forms.length - 1];
   })();
   const dayLabelWidth = (name: string) => estimateTextWidthPx(name, labelSizePx) + ptToPx(2);

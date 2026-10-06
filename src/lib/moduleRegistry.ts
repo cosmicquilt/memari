@@ -1342,6 +1342,10 @@ const PRIMITIVES = {
           "rowNumbers": {
             "type": "boolean",
             "default": false
+          },
+          "wrapHeads": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1367,7 +1371,9 @@ const PRIMITIVES = {
     resizableWidth: true,
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
-      { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5, canvas: { element: "-c#-head", placeholder: "Column", add: true } },
+      // `several`: a head the table sets on two lines is `-c#-head` and its
+      // `-c#-head-l1`, and a click on either edits the one label.
+      { kind: "lines", key: "columns", label: "Columns (one per line)", rows: 5, canvas: { element: "-c#-head(-l1)?", placeholder: "Column", add: true, several: true } },
       { kind: "columnWidths", key: "cellWidths", label: "Column widths" },
       {
         kind: "rule",

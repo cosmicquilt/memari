@@ -689,7 +689,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Fitness",
     cadence: "week",
     paletteName: "Runs",
-    props: { heading: "Runs", ...table(["Date", "Distance", "Time", "Pace", "Feel"], [1.2, 1.2, 1, 1, 1.4]) },
+    // "Dist.", not "Distance": the row of heads shrinks together for its
+    // longest at one day wide, and this was it (asked 2026-10-05).
+    props: { heading: "Runs", ...table(["Date", "Dist.", "Time", "Pace", "Feel"], [1.2, 1.2, 1, 1, 1.4]) },
     columnSpan: 13,
   },
   {
@@ -733,7 +735,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Spending",
     props: {
       heading: "Spending",
-      ...table(["Date", "Item", "Category", "Amount"], [1.2, 2.6, 1.6, 1.2], {
+      // "Cost", not "Amount", for the same reason as the run log's "Dist."
+      // (asked 2026-10-05).
+      ...table(["Date", "Item", "Category", "Cost"], [1.2, 2.6, 1.6, 1.2], {
         totalsRow: true,
         totalsLabel: "Total",
       }),
@@ -919,7 +923,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Home & family",
     cadence: "journal",
     paletteName: "Gifts",
-    props: { heading: "Gifts", ...table(["Person", "Idea", "Budget", "Got it"], [1.6, 2.4, 1.2, 0.9]) },
+    // "Got?", not "Got it" (asked 2026-10-05) - see the run log's "Dist.".
+    props: { heading: "Gifts", ...table(["Person", "Idea", "Budget", "Got?"], [1.6, 2.4, 1.2, 0.9]) },
     columnSpan: 13,
   },
   {
@@ -1440,7 +1445,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Recovery",
     cadence: "journal",
     paletteName: "Step 4",
-    props: { heading: "Resentments", ...table(["Person", "Cause", "Affects my", "My part"], [1.5, 2.2, 1.6, 1.8]) },
+    // "Affects my" sets on two lines at one day wide rather than shrinking
+    // the row for it (asked 2026-10-05) - see ColumnTableConfig.wrapHeads.
+    props: { heading: "Resentments", ...table(["Person", "Cause", "Affects my", "My part"], [1.5, 2.2, 1.6, 1.8], { wrapHeads: true }) },
     columnSpan: 14,
   },
   {

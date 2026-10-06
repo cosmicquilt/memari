@@ -193,19 +193,37 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 
 // --- table -----------------------------------------------------------------
 {
-  // ONE DAY WIDE (2026-10-01, for horizontal resizing): "i want three column
-  // table to go to one day, if column names become too long put the letter
-  // that will fit with ... at the end". Heads keep the table's head size and
-  // are cut, never shrunk; a column keeps its share by weight, so the one
+  // ONE DAY WIDE (horizontal resizing). Asked 2026-10-01 as "put the letter
+  // that will fit with ... at the end"; asked again 2026-10-05, after the two
+  // were drawn side by side for every module, as SHRUNK TOGETHER: a head
+  // that cannot fit at the table's size shrinks, and the row of heads with
+  // it, so nothing is cut. A column keeps its share by weight, so the one
   // written in is not starved for a long head beside it.
   const headsOf = (slug: string, days: number) =>
     ids(draw(slug, { ...(moduleDefinition(slug)?.previewProps ?? {}) }, days * 6, 8), /-c\d+-head$/);
+  const pt = (px: number) => (px * 72) / 300;
   const sevenPt = (7 * 300) / 72;
   const three = headsOf("column-table", 1);
   check(three.length === 3 && three.every((h) => Math.abs((h.fontSize ?? 0) - sevenPt) < 0.01 && !String(h.text).endsWith("…")), `a three-column table at one day: every head whole at 7pt (${three.map((h) => h.text).join(", ")})`);
   const four = headsOf("spending-log", 1);
-  check(four.every((h) => Math.abs((h.fontSize ?? 0) - sevenPt) < 0.01), "a four-column log at one day keeps 7pt heads");
-  check(four.some((h) => String(h.text).endsWith("…")) && four.filter((h) => String(h.text).endsWith("…")).every((h) => String(h.text).length >= 2), `and cuts the ones that cannot fit, letters then "…" (${four.map((h) => h.text).join(", ")})`);
+  const sizes = new Set(four.map((h) => (h.fontSize ?? 0).toFixed(3)));
+  const size = pt(four[0]?.fontSize ?? 0);
+  check(four.every((h) => !String(h.text).endsWith("…")) && four.map((h) => h.text).join() === "Date,Item,Category,Cost", `a four-column log at one day cuts no head (${four.map((h) => h.text).join(", ")})`);
+  check(sizes.size === 1 && size < 7 && size >= 3, `and shrinks them together, one size under 7pt and not under the 3pt floor (${[...sizes].map((s) => pt(Number(s)).toFixed(2)).join(", ")}pt)`);
+  // "Put Affects and my on separate lines where my is a bit to the right
+  // below it" (2026-10-05): the Step Four inventory's head, at one day.
+  const inventory = draw("step-four-inventory", { ...(moduleDefinition("step-four-inventory")?.previewProps ?? {}) }, 6, 8);
+  const affects = inventory.find((e) => /-c2-head$/.test(String(e.id)));
+  const my = inventory.find((e) => /-c2-head-l1$/.test(String(e.id)));
+  check(
+    affects?.text === "Affects" && my?.text === "my" && (my.x ?? 0) > (affects.x ?? 0) && (my.y ?? 0) > (affects.y ?? 0) && my.fontSize === affects.fontSize,
+    `the inventory's "Affects my" sets as Affects, then my below it and to the right (${affects?.text} / ${my?.text})`
+  );
+  // "More to the right below affects": its end under Affects' end, measured
+  // in the face it prints in.
+  const end = (e?: RenderedPolotnoElement) => (e?.x ?? 0) + textWidthPx(String(e?.text ?? ""), Number(e?.fontSize ?? 0), String(e?.fontFamily ?? ""));
+  check(Math.abs(end(my) - end(affects)) < 0.5, `and "my" ends where "Affects" ends (${(end(my) - end(affects)).toFixed(2)}px apart)`);
+  check(draw("step-four-inventory", { ...(moduleDefinition("step-four-inventory")?.previewProps ?? {}) }, 24, 8).every((e) => !/-head-l1$/.test(String(e.id))), "and on one line where it fits");
   // Item has the largest share (5 of 12); Category, a longer word, has 3.
   // Shared out by the words, Category took two cells and Item one.
   const item = four.find((h) => /^It/.test(String(h.text)))!, category = four.find((h) => /^Ca/.test(String(h.text)))!;

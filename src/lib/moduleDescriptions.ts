@@ -95,7 +95,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "rest-day-marker": "Mark rest days, active rest and nights with eight hours of sleep, so recovery gets planned like training.",
 
   // ── Money ─────────────────────────────────────────────────────────────
-  "spending-log": "Every purchase with its date, category and amount, totaled at the bottom.",
+  "spending-log": "Every purchase with its date, category and cost, totaled at the bottom.",
   "budget": "Planned against actual for each category, with the difference and a total.",
   "savings-goal": "A bar from nothing to your goal, marked in tenths, to fill in as the savings grow.",
   "debt-payoff": "A bar from what you owe to paid off, marked in tenths, to fill in with each payment.",

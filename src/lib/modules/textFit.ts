@@ -23,6 +23,7 @@
 // this file: it lived inside labeledBox.ts, which is a strange home for a
 // fact about a typeface, and the modules that arrived later needed it too.
 import { FONT_ADVANCES_EM } from "@/lib/modules/fontAdvances";
+import { ptToPx } from "@/lib/print-spec";
 
 /**
  * Average character advance as a fraction of the point size, BY CHARACTER
@@ -170,6 +171,34 @@ export function truncateToWidth(text: string, widthPx: number, fontSizePx: numbe
 }
 
 /**
+ * SHRINK, DON'T CUT (2026-10-05). A label too long for its box at the
+ * smallest size of its ladder keeps shrinking until it fits, rather than
+ * being cut to "Pe…". Asked after a sweep of every module at one day wide
+ * drew the two side by side ("shrunk together looks better"); it reverses
+ * 2026-10-01's "put the letter that will fit with ... at the end", which had
+ * replaced an older step down to 6pt and 5pt.
+ *
+ * Below this it is cut after all: 3pt, under the smallest default label at
+ * one day wide (the month tracker's heads, 3.4pt, which he accepted). What
+ * reaches it is a long label someone typed into a narrow column, where a
+ * few readable letters say more than unreadable whole words.
+ */
+const SHRINK_FLOOR_PT = 3;
+const SHRINK_FLOOR_PX = ptToPx(SHRINK_FLOOR_PT);
+
+/** The size, at most `fromPx`, at which a label `ems` wide fits `widthPx` -
+ *  never below the floor. */
+function shrinkToFitPx(ems: number, widthPx: number, fromPx: number): number {
+  if (ems * fromPx <= widthPx + FIT_TOLERANCE_PX || ems <= 0 || widthPx <= 0) return fromPx;
+  return Math.max(Math.min(SHRINK_FLOOR_PX, fromPx), widthPx / ems);
+}
+
+/** How many ems wide a label sets - its widest line when it has several. */
+function labelEms(text: string): number {
+  return estimateTextWidthPx(text, 1);
+}
+
+/**
  * Shrink first, then cut: the whole treatment for a label that has to sit
  * on one line inside a fixed box.
  *
@@ -184,7 +213,7 @@ export function fitLabel(
   widthPx: number,
   sizesPx: number[]
 ): { text: string; fontSizePx: number } {
-  const fontSizePx = fitFontSizePx(text, widthPx, sizesPx);
+  const fontSizePx = shrinkToFitPx(labelEms(text), widthPx, fitFontSizePx(text, widthPx, sizesPx));
   return { text: truncateToWidth(text, widthPx, fontSizePx), fontSizePx };
 }
 
@@ -200,24 +229,33 @@ export function fitLabel(
  * one typographic decision, not several.
  */
 export function fitLabelSet(
-  items: Array<{ text: string; widthPx: number }>,
+  items: Array<{
+    text: string;
+    widthPx: number;
+    /** How many ems wide it sets, where that is not its text's own width -
+     *  a head drawn on two lines measures as its widest line. */
+    ems?: number;
+  }>,
   sizesPx: number[]
 ): { fontSizePx: number; texts: string[] } {
   const named = items.filter((item) => item.text.length > 0);
+  const ems = (item: (typeof items)[number]) => item.ems ?? labelEms(item.text);
+  const smallest = sizesPx[sizesPx.length - 1];
+  // The largest size of the ladder at which every one fits - or, when none
+  // does, the size the most crowded one shrinks to, the others with it: ONE
+  // size, so a row of labels still reads as one decision. ("Shrunk
+  // together", chosen over each shrinking only as far as it must.)
   const fontSizePx =
     named.length === 0
       ? sizesPx[0]
-      : sizesPx.find((size) =>
-          named.every(
-            (item) => estimateTextWidthPx(item.text, size) <= item.widthPx + FIT_TOLERANCE_PX
-          )
-        ) ?? sizesPx[sizesPx.length - 1];
+      : sizesPx.find((size) => named.every((item) => ems(item) * size <= item.widthPx + FIT_TOLERANCE_PX)) ??
+        Math.min(...named.map((item) => shrinkToFitPx(ems(item), item.widthPx, smallest)));
   return {
     fontSizePx,
-    // Still truncated individually: one size for all of them does not mean
-    // one width, and a label that does not fit even at the smallest size
-    // has to be cut rather than allowed out of its box.
-    texts: items.map((item) => truncateToWidth(item.text, item.widthPx, fontSizePx)),
+    // Still truncated individually, which now happens only at the floor: a
+    // label that does not fit even there is cut rather than allowed out of
+    // its box. One measured by `ems` is the caller's to lay out.
+    texts: items.map((item) => (item.ems === undefined ? truncateToWidth(item.text, item.widthPx, fontSizePx) : item.text)),
   };
 }
 
