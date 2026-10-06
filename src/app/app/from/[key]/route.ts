@@ -1,5 +1,6 @@
-// "Use this week" - POST from the landing page's layout gallery
-// (LayoutGallery).
+// "Use this week" - a POST that nothing links to since the landing page's
+// buttons came off (2026-10-06: "i dont want the 'use this week' button");
+// kept for a start-dialog version of it.
 //
 // Makes a new journal whose weekly spread is that person's (see
 // planner/archetypeWeek.ts) and opens it in the editor. Someone who has

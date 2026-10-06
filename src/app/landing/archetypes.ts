@@ -4,10 +4,11 @@
 // everything they wrote on it. Thought through in
 // handoff/research/hero-archetypes.md; published as the archetypes page.
 //
-// ONE RECORD, THREE USES. The hero draws the layout (spreads.ts) and writes
-// the words (handwriting/plan.ts); "Use this week" turns the same layout
-// into a new journal (planner/archetypeWeek.ts). So a person's spread on the
-// landing page is exactly what they get when they press the button.
+// ONE RECORD, TWO USES. The hero draws the layout (spreads.ts, through
+// heroSpreads.ts) and writes the words (handwriting/plan.ts); "Use this
+// week" turns the same layout into a new journal (planner/archetypeWeek.ts)
+// - though nothing on the landing page offers it since its buttons came off
+// (2026-10-06).
 //
 // THE REGISTER is the hero's best line so far, "doomscroll" in the
 // Eisenhower's Delete quadrant: specific, honest, a little funny. Faith and
@@ -1143,9 +1144,3 @@ export const PEOPLE: Person[] = [
 ];
 
 export const PEOPLE_BY_KEY: Record<string, Person> = Object.fromEntries(PEOPLE.map((p) => [p.key, p]));
-
-/** Who the hero shows: everyone in development, and on the live site
- *  everyone not held for a read-through. */
-export function heroPeople(production = process.env.NODE_ENV === "production"): Person[] {
-  return PEOPLE.filter((p) => !(production && p.held));
-}

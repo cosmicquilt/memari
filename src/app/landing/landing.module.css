@@ -831,49 +831,6 @@
   background: var(--cream);
 }
 
-.spreadCard figcaption {
-  margin-top: 16px;
-  display: grid;
-  gap: 4px;
-}
-
-.spreadCard figcaption strong {
-  font-size: 17px;
-}
-
-.spreadCard figcaption span {
-  font-size: 15px;
-  color: var(--muted);
-}
-
-/* "Use this week", under each layout: a quiet text button in the editor's
-   blue, the way a caption's link reads. */
-.spreadUse {
-  margin: 4px 0 0;
-}
-
-.spreadUse button {
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  color: #4a5cff;
-  cursor: pointer;
-}
-
-.spreadUse button:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.spreadUse button:focus-visible {
-  outline: 2px solid #4a5cff;
-  outline-offset: 3px;
-  border-radius: 4px;
-}
-
 .facts {
   list-style: none;
   margin: 56px 0 0;

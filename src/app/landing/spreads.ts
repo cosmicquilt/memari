@@ -1,14 +1,15 @@
-// The weekly spreads the landing page's journal opens to and turns through.
+// The spreads the landing page's journal opens to and turns through.
 //
-// REAL LAYOUTS, DRAWN BY THE REAL RENDERERS. Each spread is the weekly
-// template's structure - the week title, the hours across both pages, a
-// sidebar and a zone under the hours - with those zones filled from the
-// module catalogue, and every module drawn by the same renderModuleInstance
-// the editor and the PDF export use. The landing page shows what Memari
-// actually prints, not an illustration of it.
+// REAL LAYOUTS, DRAWN BY THE REAL RENDERERS. Each spread is one of a book's
+// four kinds (heroSpreads.ts) - a week, a month, two facing days, or pages
+// of modules - with its spine where the app puts it (the hours, the month's
+// calendar) and its zones filled from the module catalogue, and every
+// module drawn by the same renderModuleInstance the editor and the PDF
+// export use. The landing page shows what Memari actually prints, not an
+// illustration of it.
 //
-// Consecutive weeks, starting with this one: turning the page is turning to
-// next week, the way it is in a real journal.
+// Dated from this week on: the n-th spread is in the n-th week from now -
+// its week, the month that week is in, or two of its days.
 //
 // Alongside the drawing, each page carries its WRITABLE REGIONS - where a day
 // column's half-hour slots are, where a box's ruled lines and a to-do's
@@ -26,9 +27,11 @@ import { gridCellToPixels, type PageGrid } from "@/lib/grid";
 import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily } from "@/lib/theme";
-import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
+import { MONTH_GRID_ROW_SPAN, MONTH_TITLE_ROW_SPAN, WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { dateRangeLabel } from "@/lib/pageLevels";
-import { PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type CalendarBlock, type WeekLayout } from "./archetypes";
+import { computeMonthCalendar, type MonthCalendarCell } from "@/lib/monthCalendar";
+import { layoutPlacements, type CalendarBlock, type Slot } from "./archetypes";
+import { HERO_SPREADS, heroSpreads, type HeroSpread, type HoursSettings } from "./heroSpreads";
 import { EVENT_PRINT_GREY, type HourlyGridEvent } from "@/lib/modules/hourlyGridCore";
 
 const TRIM = PLANNER_TRIMS.bound7x10;
@@ -41,21 +44,12 @@ export const LANDING_PAGE_GRID: PageGrid = {
   marginPx: TRIM.marginPx,
 };
 
-/** Hours on every spread: the template's. Starting earlier on some spreads
- *  would move nothing a visitor notices, so they share one. */
+/** The template's hours, which a spread's own settings go over. */
 const HOURS = { startTime: "05:30", endTime: "23:30", intervalMinutes: 30, hourLineStyle: "full", dayBorder: false };
 const HOURS_ROW_SPAN = 20;
 
-type SpreadDef = WeekLayout & { key: string };
-
-/**
- * The spreads: one per person in archetypes.ts, in its order - the student
- * first, then the jobs most people do, then the rest (2026-10-06). Each is
- * one real week someone plans, so turning the page shows how different one
- * journal can be from the next. They replaced six themed weeks (classic,
- * wellness, focus, training, money, creative) written from shared pools.
- */
-export const SPREAD_DEFS: SpreadDef[] = PEOPLE.map((person) => ({ key: person.key, ...person.layout }));
+/** The spreads, in the order the journal turns through them. */
+export const SPREAD_DEFS: HeroSpread[] = HERO_SPREADS;
 
 // ---------------------------------------------------------------- regions
 
@@ -68,8 +62,18 @@ export type Region =
       kind: "hours";
       /** Each day column: its header box, its writing area (right of the
        *  time labels) and the top of each half-hour slot. */
-      /** `hours` is each slot's time of day, 24-hour (13.5 is 1:30pm). */
-      days: Array<{ label: string; header: Box; area: Box; slots: number[]; hours: number[] }>;
+      /** `hours` is each slot's time of day, 24-hour (13.5 is 1:30pm).
+       *  With increments off a day is `free`: no times, and its slots are
+       *  the half-rows of the page's dot lattice, every other one a dot. */
+      days: Array<{ label: string; header: Box; area: Box; slots: number[]; hours: number[]; free?: boolean }>;
+    }
+  | {
+      kind: "month";
+      /** Each day of the month's calendar on this page, in reading order:
+       *  its date's box, the square under it, and whether it is in the
+       *  month (the calendar's first and last rows run into the months
+       *  either side). */
+      cells: Array<{ date: number | null; inMonth: boolean; dateBox: Box; body: Box }>;
     }
   | {
       kind: "box";
@@ -100,14 +104,15 @@ export type Region =
   | { kind: "title"; box: Box };
 
 export type LandingPage = { marks: PreviewMark[]; regions: Region[] };
-/** Whose week a spread is - for "Use this week" and the gallery's captions. */
-export type SpreadPerson = { name: string; age: number; archetype: string; week: string };
-export type LandingSpread = { key: string; fontFamily: string; person: SpreadPerson; pages: [LandingPage, LandingPage] };
+export type LandingSpread = { key: string; fontFamily: string; pages: [LandingPage, LandingPage] };
 
 const isHRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.h <= 3 && m.w >= 60;
 const isVRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.w <= 3 && m.h >= 150;
 
-function hoursRegion(marks: PreviewMark[]): Region {
+/** The page lattice's first row (a row of its dots) at or below y. */
+const latticeRow = (y: number) => LANDING_PAGE_GRID.marginPx + Math.ceil((y - LANDING_PAGE_GRID.marginPx) / 75 - 1e-6) * 75;
+
+function hoursRegion(marks: PreviewMark[], free: boolean, bottom: number): Region {
   // Day headers are the heavy-outlined boxes along the top; their names are
   // the upper-case words in them. Slots are the time labels, one per half
   // hour, repeated in each day's column.
@@ -131,9 +136,18 @@ function hoursRegion(marks: PreviewMark[]): Region {
         prev = hh + mm / 60 + pm;
         return prev;
       });
+      if (free) {
+        // No times to write by: the day is a field, written down from the
+        // top on the lattice's rows - in half rows, so that the banner and
+        // a two-line entry keep the proportions they have in the hours.
+        const area: Box = [h.x, h.y + h.h, h.w, bottom - (h.y + h.h)];
+        const first = latticeRow(h.y + h.h + 30);
+        const half = Array.from({ length: Math.max(0, Math.floor((bottom - 20 - first) / 37.5) + 1) }, (_, i) => first + i * 37.5);
+        return { label, header: [h.x, h.y, h.w, h.h] as Box, area, slots: half, hours: [], free: true };
+      }
       const labelRight = times.length ? Math.max(...times.map((t) => t.x + t.w)) + 6 : h.x;
-      const bottom = slots.length ? slots[slots.length - 1] + (slots[1] - slots[0] || 37.5) : h.y + h.h;
-      const area: Box = [labelRight, h.y + h.h, h.x + h.w - labelRight, bottom - (h.y + h.h)];
+      const end = slots.length ? slots[slots.length - 1] + (slots[1] - slots[0] || 37.5) : h.y + h.h;
+      const area: Box = [labelRight, h.y + h.h, h.x + h.w - labelRight, end - (h.y + h.h)];
       return { label, header: [h.x, h.y, h.w, h.h] as Box, area, slots, hours };
     });
   return { kind: "hours", days };
@@ -221,6 +235,34 @@ function boxRegion(slug: string, primitive: string, heading: string, rect: Box, 
   return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells, primitive, targets };
 }
 
+/**
+ * A month's calendar on one page: each date's box (the small outlined box in
+ * a day's top corner) in reading order, matched to the calendar the grid was
+ * drawn from, and the square under it to write in.
+ */
+function monthRegion(marks: PreviewMark[], cells: MonthCalendarCell[][], rect: Box): Region {
+  const [x, y, w, h] = rect;
+  const dayCount = cells[0]?.length ?? 1;
+  const boxes = marks
+    .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && !m.f && m.h >= 24 && m.h <= 56 && m.w >= 24 && m.w <= 200)
+    .filter((m) => m.x >= x - 2 && m.x + m.w <= x + w + 2 && m.y >= y - 2 && m.y + m.h <= y + h + 2)
+    .sort((a, b) => (Math.abs(a.y - b.y) > 4 ? a.y - b.y : a.x - b.x));
+  const flat = cells.flat();
+  if (boxes.length !== flat.length) return { kind: "month", cells: [] };
+  const columnWidth = w / dayCount;
+  const rows = [...new Set(boxes.map((b) => Math.round(b.y)))].sort((a, b) => a - b);
+  const rowHeight = rows.length > 1 ? rows[1] - rows[0] : y + h - rows[0];
+  return {
+    kind: "month",
+    cells: boxes.map((b, i) => ({
+      date: flat[i].date ?? null,
+      inMonth: flat[i].inCurrentMonth,
+      dateBox: [b.x, b.y, b.w, b.h] as Box,
+      body: [b.x, b.y + b.h, columnWidth, Math.min(rowHeight, y + h - b.y) - b.h] as Box,
+    })),
+  };
+}
+
 // ---------------------------------------------------------------- dates
 
 const DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
@@ -237,6 +279,7 @@ function weekOf(today: Date, weekStartsMonday: boolean, weeksAhead: number) {
   const yearStart = Date.UTC(start.getUTCFullYear(), 0, 1);
   const weekNumber = Math.floor((start.getTime() - yearStart) / (7 * 86400000)) + 1;
   return {
+    days,
     dayLabels: days.map((d) => ({ name: DAYS[d.getUTCDay()], date: d.getUTCDate() })),
     // The app's own label, so the landing page's week reads as a real one.
     title: { weekNumber, weekTotal: 52, dateRangeLabel: dateRangeLabel(days[0], days[6]) },
@@ -248,23 +291,38 @@ function weekOf(today: Date, weekStartsMonday: boolean, weeksAhead: number) {
 /** "HH:MM" for an hour of the day, 24-hour (13.5 is "13:30"). */
 const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
 
+/** Hours as a number, 24-hour ("13:30" is 13.5). */
+const hourOf = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h + m / 60;
+};
+
+/** A spread's hours: the template's, with its own settings over them. */
+const hoursFor = (settings?: HoursSettings) => ({ ...HOURS, ...(settings ?? {}) });
+
 /**
- * A person's calendar as the hours' event blocks, page by page - drawn by
+ * A calendar as the hours' event blocks, page by page - drawn by
  * hourly-grid-core the way the editor draws imported and typed-in events,
  * and in the print grey: the hero's journal is a PRINTED book ("colour on
  * screen, grey on paper", 2026-09-26; Andrew, 2026-10-06: "shouldn't they
  * be grey"). At the module's own event opacity, as everywhere.
  * A block running past midnight (a night shift) is two: the evening, and
  * the next morning from the hours' start. Clipped to the hours shown.
+ * `perPage` is how many days each page's hours hold: a week's three and
+ * four, or a day page's one.
  */
-export function calendarEvents(calendar: CalendarBlock[]): [HourlyGridEvent[], HourlyGridEvent[]] {
-  const [first, last] = [5.5, 23.5];
+export function calendarEvents(
+  calendar: CalendarBlock[],
+  perPage: [number, number] = [3, 4],
+  hours: { startTime: string; endTime: string } = HOURS
+): [HourlyGridEvent[], HourlyGridEvent[]] {
+  const [first, last] = [hourOf(hours.startTime), hourOf(hours.endTime)];
   const pages: [HourlyGridEvent[], HourlyGridEvent[]] = [[], []];
   const put = (day: number, start: number, end: number, block: CalendarBlock) => {
-    if (day > 6 || end <= first || start >= last) return;
-    const page = day < 3 ? 0 : 1;
+    if (day >= perPage[0] + perPage[1] || end <= first || start >= last) return;
+    const page = day < perPage[0] ? 0 : 1;
     pages[page].push({
-      day: page === 0 ? day : day - 3,
+      day: page === 0 ? day : day - perPage[0],
       startTime: hhmm(Math.max(first, start)),
       endTime: hhmm(Math.min(last, end)),
       label: block.title,
@@ -279,33 +337,84 @@ export function calendarEvents(calendar: CalendarBlock[]): [HourlyGridEvent[], H
   return pages;
 }
 
-type Placed = { slug: string; page: 0 | 1; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; locked: boolean; props: Record<string, unknown> };
+const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
 
-function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[] {
-  const events = calendarEvents(PEOPLE_BY_KEY[def.key]?.calendar ?? []);
-  const placed: Placed[] = [
-    { slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, locked: true, props: week.title },
-    {
-      slug: "hourly-grid-core",
-      page: 0,
-      columnStart: 6,
-      rowStart: 0,
-      columnSpan: 18,
-      rowSpan: HOURS_ROW_SPAN,
-      locked: true,
-      props: { dayCount: 3, dayLabels: week.dayLabels.slice(0, 3), ...HOURS, events: events[0] },
-    },
-    {
-      slug: "hourly-grid-core",
-      page: 1,
-      columnStart: 0,
-      rowStart: 0,
-      columnSpan: 24,
-      rowSpan: HOURS_ROW_SPAN,
-      locked: true,
-      props: { dayCount: 4, dayLabels: week.dayLabels.slice(3), ...HOURS, events: events[1] },
-    },
-  ];
+type Placed = { slug: string; page: 0 | 1; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; locked: boolean; props: Record<string, unknown> };
+type When = ReturnType<typeof weekOf>;
+
+/** A stack down the six-column sidebar from `row`. */
+function stack(sidebar: Array<[slug: string, rowSpan: number, props?: Record<string, unknown>]>, page: 0 | 1, row: number): Array<Slot & { page: 0 | 1 }> {
+  return sidebar.map(([slug, rowSpan, props]) => {
+    const at = row;
+    row += rowSpan;
+    return { slug, page, columnStart: 0, rowStart: at, columnSpan: 6, rowSpan, props };
+  });
+}
+
+/**
+ * Where everything on a spread goes. The spine first - the hours, or the
+ * month's calendar, locked where the app locks them - then the modules
+ * around it.
+ */
+function placementsOf(def: HeroSpread, when: When): Placed[] {
+  const { layout } = def;
+  const weekStartDay = layout.weekStartsMonday ? 1 : 0;
+  const placed: Placed[] = [];
+  const spine = (p: Omit<Placed, "locked">) => placed.push({ ...p, locked: true });
+  const modules: Array<Slot & { page: 0 | 1 }> = [];
+
+  if (layout.kind === "week") {
+    const hours = hoursFor(layout.hours);
+    const rowSpan = layout.hoursRows ?? HOURS_ROW_SPAN;
+    // With increments off the hours draw no events: nothing to place them by.
+    const events = hours.intervalMode === "off" ? [[], []] : calendarEvents(def.calendar, [3, 4], hours);
+    spine({ slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, props: when.title });
+    spine({ slug: "hourly-grid-core", page: 0, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan, props: { dayCount: 3, dayLabels: when.dayLabels.slice(0, 3), ...hours, events: events[0] } });
+    spine({ slug: "hourly-grid-core", page: 1, columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan, props: { dayCount: 4, dayLabels: when.dayLabels.slice(3), ...hours, events: events[1] } });
+    modules.push(...layoutPlacements(layout));
+  } else if (layout.kind === "month") {
+    // The month this week is in (its middle day's), as pageLayouts.ts's
+    // monthLayout lays it out: the calendar's first three days on the left
+    // page, the other four on the right.
+    const middle = when.days[3];
+    const month = middle.getUTCMonth() + 1;
+    const calendar = computeMonthCalendar(middle.getUTCFullYear(), month, weekStartDay);
+    const names = Array.from({ length: 7 }, (_, i) => DAYS[(weekStartDay + i) % 7]);
+    spine({ slug: "month-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: MONTH_TITLE_ROW_SPAN, props: { monthName: MONTHS[month - 1] } });
+    const grid = (page: 0 | 1, from: number, dayCount: number, columnStart: number, columnSpan: number) =>
+      spine({
+        slug: "month-grid-core",
+        page,
+        columnStart,
+        rowStart: 0,
+        columnSpan,
+        rowSpan: MONTH_GRID_ROW_SPAN,
+        props: {
+          dayCount,
+          dayLabels: names.slice(from, from + dayCount).map((name) => ({ name })),
+          weekCount: calendar.weekCount,
+          cells: calendar.weeks.map((week) => week.slice(from, from + dayCount)),
+          inside: layout.inside ?? "none",
+        },
+      });
+    grid(0, 0, 3, 6, 18);
+    grid(1, 3, 4, 0, 24);
+    modules.push(...stack(layout.sidebar, 0, MONTH_TITLE_ROW_SPAN));
+    modules.push(...layout.belowLeft.map((s) => ({ ...s, page: 0 as const })), ...layout.belowRight.map((s) => ({ ...s, page: 1 as const })));
+  } else if (layout.kind === "day") {
+    // One daily template, printed for two days: the same modules on both
+    // pages, each page's hours its own day (and that day's events).
+    const hours = hoursFor(layout.hours);
+    const events = hours.intervalMode === "off" ? [[], []] : calendarEvents(def.calendar, [1, 1], hours);
+    for (const page of [0, 1] as const) {
+      const label = when.dayLabels[layout.firstDay + page];
+      spine({ slug: "hourly-grid-core", page, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan: layout.hoursRows, props: { dayCount: 1, dayLabels: [label], ...hours, events: events[page] } });
+      modules.push(...stack(layout.sidebar, page, 0), ...layout.below.map((s) => ({ ...s, page })));
+    }
+  } else {
+    layout.pages.forEach((slots, page) => modules.push(...slots.map((s) => ({ ...s, page: page as 0 | 1 }))));
+  }
+
   // A module arrives the way the editor's palette drops it: filled with its
   // catalogue entry's words (its heading, its labels, its rows), and then
   // whatever the spread sets. Without the catalogue's, a preset draws as its
@@ -315,8 +424,7 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
   // Every module that prints weekdays starts them on the spread's week
   // start, as in a journal (the registry's weekStart) - a habit tracker on a
   // Monday week printed S M T W T F S until 2026-10-06.
-  const weekStartDay = def.weekStartsMonday ? 1 : 0;
-  for (const p of layoutPlacements(def)) {
+  for (const p of modules) {
     const props = { ...moduleSchemaDefaults(p.slug), ...(p.props ?? {}) };
     const rotate = moduleDefinition(p.slug)?.weekStart;
     placed.push({ ...p, locked: false, props: rotate ? rotate(props, weekStartDay) : props });
@@ -324,15 +432,20 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
   return placed;
 }
 
-/** Every placement fits its page, overlaps nothing and is at least as tall
- *  as its content needs. Thrown rather than drawn wrong - see
- *  spreads.test.mts, which runs it for every spread. */
-export function spreadProblems(def: SpreadDef): string[] {
+/**
+ * Every placement fits its page, overlaps nothing and is at least as tall
+ * as its content needs; and the pages are full - every cell covered but the
+ * row a spine keeps clear beneath it - since a hole in a spread reads as a
+ * module missing. Thrown rather than drawn wrong - see spreads.test.mts,
+ * which runs it for every spread.
+ */
+export function spreadProblems(def: HeroSpread): string[] {
   const problems: string[] = [];
-  const placed = placementsOf(def, weekOf(new Date(Date.UTC(2026, 0, 5)), def.weekStartsMonday, 0));
+  const placed = placementsOf(def, weekOf(new Date(Date.UTC(2026, 0, 5)), def.layout.weekStartsMonday, 0));
+  const rows = LANDING_PAGE_GRID.gridRows;
   for (const p of placed) {
     if (!(p.slug in MODULE_REGISTRY)) problems.push(`${def.key}: no module "${p.slug}"`);
-    if (p.columnStart < 0 || p.columnStart + p.columnSpan > 24 || p.rowStart < 0 || p.rowStart + p.rowSpan > LANDING_PAGE_GRID.gridRows) {
+    if (p.columnStart < 0 || p.columnStart + p.columnSpan > 24 || p.rowStart < 0 || p.rowStart + p.rowSpan > rows) {
       problems.push(`${def.key}: ${p.slug} runs off page ${p.page}`);
     }
     if (!p.locked) {
@@ -351,16 +464,29 @@ export function spreadProblems(def: SpreadDef): string[] {
       if (overlap && a.slug <= b.slug) problems.push(`${def.key}: ${a.slug} overlaps ${b.slug} on page ${a.page}`);
     }
   }
+  for (const page of [0, 1] as const) {
+    const covered = new Set<number>();
+    const mark = (p: { columnStart: number; rowStart: number; columnSpan: number; rowSpan: number }) => {
+      for (let r = p.rowStart; r < p.rowStart + p.rowSpan; r++) for (let c = p.columnStart; c < p.columnStart + p.columnSpan; c++) covered.add(r * 24 + c);
+    };
+    for (const p of placed.filter((q) => q.page === page)) {
+      mark(p);
+      // The row clear under the hours or the month's calendar.
+      if (p.locked && p.slug.endsWith("-core")) mark({ ...p, rowStart: p.rowStart + p.rowSpan, rowSpan: 1 });
+    }
+    const empty = Array.from({ length: rows * 24 }, (_, i) => i).filter((i) => !covered.has(i));
+    if (empty.length > 0) problems.push(`${def.key}: page ${page} has ${empty.length} empty cells, the first at row ${Math.floor(empty[0] / 24)}, column ${empty[0] % 24}`);
+  }
   return problems;
 }
 
-function buildSpread(def: SpreadDef, week: ReturnType<typeof weekOf>): LandingSpread {
-  const fontFamily = resolveFontFamily(def.font);
+function buildSpread(def: HeroSpread, when: When): LandingSpread {
+  const fontFamily = resolveFontFamily(def.layout.font);
   const pages: [LandingPage, LandingPage] = [
     { marks: [], regions: [] },
     { marks: [], regions: [] },
   ];
-  for (const p of placementsOf(def, week)) {
+  for (const p of placementsOf(def, when)) {
     const elements = flatten(
       renderModuleInstance(
         {
@@ -382,18 +508,17 @@ function buildSpread(def: SpreadDef, week: ReturnType<typeof weekOf>): LandingSp
     page.marks.push(...marks);
     const rect = gridCellToPixels(LANDING_PAGE_GRID, p);
     const box: Box = [rect.x, rect.y, rect.width, rect.height];
-    if (p.slug === "hourly-grid-core") page.regions.push(hoursRegion(marks));
-    else if (p.slug === "week-title") page.regions.push({ kind: "title", box });
+    if (p.slug === "hourly-grid-core") page.regions.push(hoursRegion(marks, p.props.intervalMode === "off", rect.y + rect.height));
+    else if (p.slug === "month-grid-core") page.regions.push(monthRegion(marks, p.props.cells as MonthCalendarCell[][], box));
+    else if (p.slug === "week-title" || p.slug === "month-title") page.regions.push({ kind: "title", box });
     else page.regions.push(boxRegion(p.slug, MODULE_REGISTRY[p.slug]?.primitive ?? p.slug, String(p.props.heading ?? MODULE_REGISTRY[p.slug]?.label ?? p.slug), box, marks));
   }
-  const { name, age, archetype, week: story } = PEOPLE_BY_KEY[def.key];
-  return { key: def.key, fontFamily, person: { name, age, archetype, week: story }, pages };
+  return { key: def.key, fontFamily, pages };
 }
 
-/** The spreads for the week containing `today`, then the weeks after it -
- *  everyone's in development, and on the live site everyone's not held for
- *  a read-through (see archetypes.ts). */
+/** The spreads, the first in the week containing `today` and each after it
+ *  a week on - everything in development, and on the live site everything
+ *  not held for a read-through (see archetypes.ts). */
 export function landingSpreads(today = new Date(), production = process.env.NODE_ENV === "production"): LandingSpread[] {
-  const shown = new Set(heroPeople(production).map((p) => p.key));
-  return SPREAD_DEFS.filter((def) => shown.has(def.key)).map((def, index) => buildSpread(def, weekOf(today, def.weekStartsMonday, index)));
+  return heroSpreads(production).map((def, index) => buildSpread(def, weekOf(today, def.layout.weekStartsMonday, index)));
 }

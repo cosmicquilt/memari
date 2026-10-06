@@ -124,7 +124,7 @@ export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?
             <Doodle kind="camera" seed={44} style={{ top: 120, left: -108, width: 66, transform: "rotate(-10deg)" }} outer />
             <p className={styles.eyebrow}>Layouts</p>
             <h2 className={styles.headline}>
-              Six weeks. Six different <Hand>people.</Hand>
+              Weeks, months and days. No two <Hand>alike.</Hand>
             </h2>
             <p className={styles.lede}>
               Every spread here is a real Memari layout, made from modules in the catalogue - the same ones the journal

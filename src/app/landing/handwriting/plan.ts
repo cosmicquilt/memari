@@ -7,7 +7,8 @@
 // highlighter and the doodles last. Each spread is a different person - a
 // different hand, pen and ink colour. Who, and everything they write - the
 // things in their hours at their own times, their lists, tables and
-// banner - is their record in ../archetypes.ts (2026-10-06).
+// banner - is their record in ../archetypes.ts (2026-10-06), or the spread's
+// own in ../heroExtras.ts: a month's squares, a dotted day's list.
 //
 // WORDS are real handwriting fonts laid out a letter at a time (glyphs.ts);
 // the joined script is the one exception, drawn along its pen path
@@ -26,7 +27,8 @@ import { doodle, type DoodleName } from "./doodles";
 import { artById, artIndex, findArt, subjectOf, type ArtRef } from "./art";
 import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
-import { PEOPLE_BY_KEY, type Face, type Hand, type Pen, type Person } from "../archetypes";
+import type { Face, Hand, Pen } from "../archetypes";
+import { HERO_BY_KEY, type HeroSpread } from "../heroSpreads";
 
 export type { Pen };
 
@@ -49,7 +51,7 @@ const DEFAULT_HAND: Hand = {
   accent: ink("#24439c", 3.6),
   highlight: highlighter("#ffe45c"),
 };
-const DEFAULT_DOODLES: Person["doodles"] = { style: "minimal", big: ["mountains", "houseplant", "paperplane", "camera", "books"], small: ["star", "sun", "sparkle", "heart"] };
+const DEFAULT_DOODLES: HeroSpread["doodles"] = { style: "minimal", big: ["mountains", "houseplant", "paperplane", "camera", "books"], small: ["star", "sun", "sparkle", "heart"] };
 
 /** The code-drawn doodle to fall back on when the library has not loaded
  *  (or has no drawing of a subject in a style). */
@@ -88,7 +90,7 @@ function doodleItems(page: 0 | 1, name: DoodleName, x: number, y: number, size: 
 
 /** The handwriting fonts a spread is written in, to load before writing. */
 export function familiesFor(spreadKey: string): string[] {
-  const hand = PEOPLE_BY_KEY[spreadKey]?.hand ?? DEFAULT_HAND;
+  const hand = HERO_BY_KEY[spreadKey]?.hand ?? DEFAULT_HAND;
   return [hand.words, hand.banner].filter((f) => f.font !== "allure").map((f) => HAND_FONTS[f.font as HandFontKey]);
 }
 
@@ -109,6 +111,13 @@ const EVENT_DOODLES: Array<[RegExp, string]> = [
   [/date night/i, "dancing"],
   [/d&d|game night/i, "dnd"],
   [/ship it/i, "paperplane"],
+  [/fado/i, "singing"],
+  [/beach|boat/i, "sailboat"],
+  [/tile|museum/i, "painting"],
+  [/postcard/i, "envelope"],
+  [/sardine/i, "fish"],
+  [/nata|tart/i, "cafe"],
+  [/teapot/i, "tea"],
   [/emails|invoice/i, "envelope"],
   [/farmers/i, "picnic"],
   [/long walk/i, "sun"],
@@ -193,6 +202,9 @@ const NOT_WRITTEN = new Set([
   "text-block",
   "year-in-pixels",
 ]);
+/** Grids of the habit tracker's kind that are filled in with words, not
+ *  ticks. */
+const UNTICKED = new Set(["in-season-produce", "country-map", "year-in-pixels", "birthday-calendar"]);
 const GENERIC_LIST = ["call Sam", "book flights", "fix bike", "buy stamps", "vet appt", "read ch. 4", "email landlord", "print photos", "return parcel"];
 const TODOS = ["laundry", "email landlord", "book flights", "buy stamps", "fix bike", "gym x3", "read ch. 4", "vet appt", "call bank", "pack bag", "pay parking", "renew license", "clean fridge", "order gift", "back up phone", "change sheets", "send invoice"];
 const HABITS = ["water", "read", "walk", "stretch", "vitamins", "no phone", "floss", "8h sleep"];
@@ -221,7 +233,7 @@ function circleBullet(cx: number, cy: number, radius: number): Path {
 
 export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const r = makeRng(seed);
-  const person: Person | undefined = PEOPLE_BY_KEY[spread.key];
+  const person: HeroSpread | undefined = HERO_BY_KEY[spread.key];
   const hand = person?.hand ?? DEFAULT_HAND;
   const theme = person?.doodles ?? DEFAULT_DOODLES;
   const items: InkItem[] = [];
@@ -336,7 +348,10 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const rightHours = spread.pages[1].regions.find((reg): reg is Extract<Region, { kind: "hours" }> => reg.kind === "hours");
   /** Days of the right page under the banner, whose events start below it. */
   const bannerDays = new Set<number>();
-  const bannerSlots = 4;
+  // The banner takes the top 150 px of its days - four half-hour slots, or
+  // two hour rows where the hours run by the hour at full height.
+  const firstSlotH = rightHours?.days[0] ? rightHours.days[0].slots[1] - rightHours.days[0].slots[0] : 37.5;
+  const bannerSlots = Math.ceil(150 / firstSlotH - 1e-6);
   if (rightHours && person?.banner) {
     const all = rightHours.days;
     const from = Math.max(0, Math.min(all.length - 1, person.banner.from));
@@ -345,7 +360,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     const days = all.slice(from, to + 1);
     const left = days[0].area[0];
     const right = days[days.length - 1].header[0] + days[days.length - 1].header[2];
-    const slotH = days[0].slots[1] - days[0].slots[0];
+    // Lettered at the size four half-hour slots give it, whatever the rows.
+    const slotH = 37.5;
     const text = person.banner.text;
     const size = slotH * (days.length === 1 ? 1.7 : 2.1);
     const face = hand.banner;
@@ -407,7 +423,11 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     );
     const nextSlot = nextAt === Infinity ? day.slots.length : day.hours.findIndex((h) => h >= nextAt - 0.01);
     const room = (nextSlot < 0 ? day.slots.length : nextSlot) - slot >= (event.until !== undefined ? 2 : 3) && slot + 1 < day.slots.length - 1;
-    const lines = entry(page, hand.words, event.text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen, room ? { gap: slotH, indent: 0 } : null);
+    // Words the size a half-hour slot gives them, set on the slot's line:
+    // an hour row at full height (75 px) holds the same writing, not twice
+    // as big.
+    const unit = Math.min(slotH, 40);
+    const lines = entry(page, hand.words, event.text, x, top + slotH - unit * 0.14, unit * 0.78, ax + aw - x - 12, hand.pen, room ? { gap: slotH, indent: 0 } : null);
     if (!lines) continue;
     const w = around(lines);
     writtenEvents.push(w);
@@ -415,9 +435,89 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // Its doodle, to the right of the words: about two slots tall.
     const kind = event.doodle ?? EVENT_DOODLES.find(([re]) => re.test(event.text))?.[1];
     if (kind && (event.doodle || r.chance(0.8))) {
-      const dx = w.box[0] + w.box[2] + slotH * 0.5;
-      const size = Math.min(slotH * 3, ax + aw - 14 - dx);
-      if (size >= slotH * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH * 0.9 - size * 0.62, size, nextSeed(), hand.accent));
+      const dx = w.box[0] + w.box[2] + unit * 0.5;
+      const size = Math.min(unit * 3, ax + aw - 14 - dx);
+      if (size >= unit * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH - unit * 0.1 - size * 0.62, size, nextSeed(), hand.accent));
+    }
+  }
+
+  // --- days with increments off: no times, so a list down the dots, the
+  // Bullet Journal's way - a dot for a task, a cross once done, an arrow for
+  // one moved on, a dash for a note. Each entry on a dot row, running on to
+  // the next where it is long.
+  for (const [i, { page, day, index }] of dayColumns.entries()) {
+    if (!day.free) continue;
+    const log = person?.log?.[i] ?? [];
+    const [ax, , aw] = day.area;
+    // Under the banner; then on the dots, every other half row.
+    let slot = page === 1 && bannerDays.has(index) ? bannerSlots : 0;
+    if (slot % 2) slot++;
+    for (const raw of log) {
+      if (slot >= day.slots.length) break;
+      const y = day.slots[slot];
+      const sig = /^([x>o•-]) /.exec(raw);
+      const text = sig ? raw.slice(2) : raw;
+      const kind = sig ? sig[1] : "•";
+      const bx = ax + 26;
+      const by = y - 12;
+      const bullet: Path[] =
+        kind === "x"
+          ? [wobble([bx - 7, by - 7, bx + 7, by + 7], 0.6, nextSeed()), wobble([bx + 7, by - 7, bx - 7, by + 7], 0.6, nextSeed())]
+          : kind === ">"
+            ? [wobble([bx - 6, by - 9, bx + 6, by, bx - 6, by + 9], 0.6, nextSeed())]
+            : kind === "o"
+              ? [wobble(circleBullet(bx, by, 7), 0.6, nextSeed())]
+              : kind === "-"
+                ? [wobble([bx - 8, by, bx + 8, by], 0.6, nextSeed())]
+                : [wobble(circleBullet(bx, by, 4), 0.4, nextSeed()), wobble(circleBullet(bx, by, 2), 0.3, nextSeed())];
+      items.push({ kind: "strokes", page, paths: bullet, pen: hand.pen });
+      const x = ax + 50;
+      const room = slot + 2 < day.slots.length;
+      const lines = entry(page, hand.words, text, x, y, 30, ax + aw - 18 - x, hand.pen, room ? { gap: 75, indent: 0 } : null);
+      if (!lines) break;
+      const w = around(lines);
+      writtenEvents.push(w);
+      slot += 2 * lines.length;
+      // Its doodle beside it, where one fits.
+      const art = EVENT_DOODLES.find(([re]) => re.test(text))?.[1];
+      const dx = w.box[0] + w.box[2] + 16;
+      const size = Math.min(84, ax + aw - 14 - dx);
+      if (art && size >= 56 && lines.length === 1 && r.chance(0.7)) items.push(...doodleAt(page, theme.style, art, dx, y + 10 - size, size, nextSeed(), hand.accent));
+    }
+  }
+
+  // --- a month's squares: the days so far crossed off (a stroke through
+  // the date's box), today ringed, and what was written in a day's square -
+  // after the fact, mostly, the way a monthly gets kept.
+  for (const page of [0, 1] as const) {
+    for (const region of spread.pages[page].regions) {
+      if (region.kind !== "month" || !person?.month) continue;
+      const { today, notes } = person.month;
+      for (const cell of region.cells) {
+        if (!cell.inMonth || cell.date === null) continue;
+        const [bx, by, bw, bh] = cell.dateBox;
+        if (cell.date < today) {
+          items.push({ kind: "strokes", page, paths: [wobble([bx + 3, by + bh - 3, bx + bw - 3, by + 3], 0.5, nextSeed())], pen: { ...hand.pen, width: Math.min(hand.pen.width, 3.4) } });
+        } else if (cell.date === today) {
+          items.push({ kind: "strokes", page, paths: circleAround(bx, by, bw, bh, nextSeed()), pen: hand.accent });
+        }
+      }
+      for (const cell of region.cells) {
+        if (!cell.inMonth || cell.date === null) continue;
+        const note = notes.find((n) => n.date === cell.date);
+        if (!note) continue;
+        const [x, y, w, h] = cell.body;
+        const doodleSize = note.doodle ? Math.min(h * 0.5, 86) : 0;
+        if (note.text) {
+          // Under the date's strip, a line or two across the square; the
+          // second only where the square is tall enough for it.
+          const size = Math.min(34, h * 0.2);
+          const lines = entry(page, hand.words, note.text, x + 16, y + size * 1.5, size, w - 32, hand.pen, h > size * 4.2 ? { gap: size * 1.45, indent: 0 } : null);
+          if (lines && note.mark) marked.push({ lines, mark: note.mark });
+          if (lines) writtenEvents.push(around(lines));
+        }
+        if (note.doodle && doodleSize >= 40) items.push(...doodleAt(page, theme.style, note.doodle, x + w - doodleSize - 12, y + h - doodleSize - 8, doodleSize, nextSeed(), hand.accent));
+      }
     }
   }
 
@@ -425,12 +525,48 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   // once per spread: each list is dealt from its own shuffled pool, shared
   // by every box that draws from it.
   const pools = new Map<string[], { items: string[]; at: number }>();
-  const deal = (source: string[]) => {
+  /** The next item a source would deal, without dealing it. */
+  const peek = (source: string[]) => {
+    deal(source, true);
+    const p = pools.get(source)!;
+    return p.at < p.items.length ? p.items[p.at] : null;
+  };
+  const deal = (source: string[], look = false) => {
     let p = pools.get(source);
     // A person's own list in their order; the shared ones shuffled.
     const theirs = person?.lists && Object.values(person.lists).includes(source);
     if (!p) pools.set(source, (p = { items: theirs ? [...source] : r.shuffle(source), at: 0 }));
+    if (look) return null;
     return p.at < p.items.length ? p.items[p.at++] : null;
+  };
+  // A person's own table, where the spread has it twice (two facing days of
+  // one template), is dealt across them in turn, as a list is - not written
+  // out twice.
+  const tableUses = new Map<string[][], number>();
+  const tableAt = new Map<string[][], number>();
+  for (const page of [0, 1] as const) {
+    for (const region of spread.pages[page].regions) {
+      if (region.kind !== "box") continue;
+      const rows = person?.tables?.[region.heading.toLowerCase()] ?? person?.tables?.[region.slug];
+      if (rows) tableUses.set(rows, (tableUses.get(rows) ?? 0) + 1);
+    }
+  }
+  // Lists the same: each box its share, so that the left page's does not
+  // take the whole list and leave the right page's blank.
+  const listUses = new Map<string[], number>();
+  for (const page of [0, 1] as const) {
+    for (const region of spread.pages[page].regions) {
+      if (region.kind !== "box") continue;
+      const items = person?.lists?.[region.heading.toLowerCase()] ?? person?.lists?.[region.slug];
+      if (items) listUses.set(items, (listUses.get(items) ?? 0) + 1);
+    }
+  }
+  /** This box's share of a table, in order. */
+  const shareOf = (rows: string[][]) => {
+    const share = Math.ceil(rows.length / (tableUses.get(rows) ?? 1));
+    const from = tableAt.get(rows) ?? 0;
+    tableAt.set(rows, from + share);
+    return rows.slice(from, from + share);
   };
   for (const page of [0, 1] as const) {
     for (const region of spread.pages[page].regions) {
@@ -459,11 +595,14 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   function groupsOf(row: Box[]): Box[][] {
     if (row.length < 3) return [row];
     const gaps = row.slice(1).map((b, i) => b[0] - (row[i][0] + row[i][2]));
-    const usual = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
     const groups: Box[][] = [[row[0]]];
-    // A day's break is about 16 px more than the gap inside a day (34 by 18
-    // between flames, 22 by 6 between circles) - measured, 2026-10-06.
-    gaps.forEach((g, i) => (g > usual + Math.max(8, usual * 0.4) ? groups.push([row[i + 1]]) : groups[groups.length - 1].push(row[i + 1])));
+    // A day's break is wider than the gap inside a day: 34 by 18 between
+    // flames, 22 by 6 between circles - and 110 by 95 between a starter's
+    // two jars a day, spread out across a full-width strip, which a margin
+    // over the median gap (the rule until 2026-10-06) took for one day.
+    // So: wider than the narrowest gap by more than a glyph's wobble.
+    const least = Math.min(...gaps);
+    gaps.forEach((g, i) => (g > least + Math.max(6, least * 0.1) ? groups.push([row[i + 1]]) : groups[groups.length - 1].push(row[i + 1])));
     return groups;
   }
   /** Colouring in, the way a marker does it: strokes back and forth across
@@ -664,9 +803,41 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       return;
     }
 
-    // A tracker: many narrow columns. Tick cells, and name the habit if the
-    // first column is wide and empty.
-    if (narrowColumns >= 4) {
+    // A grid whose rows are printed down its side - a meal planner's meals,
+    // a chore chart's chores, a month a row - with the person's words for
+    // it: each row's cells written across, in the columns after the names.
+    const gridRows = region.primitive === "habit-tracker" ? own(person?.tables) : undefined;
+    if (gridRows && region.columns.length > 0) {
+      const edges = [cx, ...region.columns.filter((x) => x > cx + 20 && x < cx + cw - 20), cx + cw];
+      const ys = [...new Set(rows.map(([y]) => Math.round(y)))].sort((a, b) => a - b);
+      const named = ys.filter((y) => y > cy + 20 && !clearOf(region.printed, cx, edges[1], y - pitch + 4, y - 4));
+      shareOf(gridRows).forEach((row, i) => {
+        const y = named[i];
+        if (y === undefined) return;
+        row.forEach((text, c) => {
+          if (!text || c + 2 >= edges.length) return;
+          if (text === "✓") {
+            // Drawn, the way the tracker's are: a chart's cells are a
+            // lattice cell across, too narrow for a written one.
+            const [x0, x1] = [edges[c + 1], edges[c + 2]];
+            const tick = Math.min(x1 - x0, pitch) * 0.62;
+            items.push({ kind: "strokes", page, paths: checkMark((x0 + x1) / 2 - tick / 2, y - pitch / 2 - tick / 2, tick, nextSeed()), pen: hand.pen });
+            return;
+          }
+          const x0 = edges[c + 1] + 10;
+          const x1 = edges[c + 2] - 8;
+          if (x1 - x0 < 30) return;
+          words(page, hand.words, text, x0, y - Math.max(9, pitch * 0.18), size * 0.78, x1 - x0, hand.pen);
+        });
+      });
+      return;
+    }
+
+    // A tracker: many narrow columns - or a tracker's own grid, a column a
+    // day, however wide - ticked. Tick cells, and name the habit if the
+    // first column is wide and empty. (Not a planner: a meal planner's days
+    // are for meals.)
+    if (narrowColumns >= 4 || (region.primitive === "habit-tracker" && region.columns.length >= 4 && !UNTICKED.has(region.slug))) {
       const cols = region.columns;
       const usable = rows.filter((row) => row[0] > cy + 30).slice(0, 8);
       const names = own(person?.trackers) ?? TRACKER_NAMES.find(([re]) => re.test(region.heading))?.[1] ?? null;
@@ -688,7 +859,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         for (let c = 0; c < cols.length - 1; c++) {
           const x0 = cols[c];
           const x1 = cols[c + 1];
-          if (x1 - x0 > 130 || !r.chance(dots ? 0.16 : 0.55) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
+          if (x1 - x0 > 220 || !r.chance(dots ? 0.16 : 0.55) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
           const s = Math.min(x1 - x0, pitch) * 0.62;
           const mark = r.next();
           const mx = (x0 + x1) / 2 - s / 2;
@@ -709,20 +880,26 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // A table: a row at a time, a cell at a time - the person's rows, all of
     // them in their order; otherwise a few of the module's own.
     const ownRows = own(person?.tables);
-    const table = ownRows ?? TABLE_ROWS[region.slug];
+    const table = ownRows ? shareOf(ownRows) : TABLE_ROWS[region.slug];
     if (table) {
       const [, , tw] = region.content;
       const edges = [cx, ...region.columns.filter((x) => x > cx + 20 && x < cx + tw - 20), cx + tw];
       const ys = [...new Set(rows.map(([y]) => Math.round(y)))].sort((a, b) => a - b);
-      const body = ys.filter((y) => y > cy + 20 && clearOf(region.printed, cx, cx + tw, y - pitch + 4, y - 4));
+      // A numbered table prints each row's number at its start, in a box
+      // of its own with no rule beside it (Books, Listening): a row with
+      // only its number printed is free, and is written after the number.
+      const numberIn = (y: number) => region.printed.find(([px, py, pw, ph]) => pw <= 70 && px < cx + 30 && py < y && py + ph > y - pitch);
+      const printedWords = region.printed.filter(([px, , pw]) => !(pw <= 70 && px < cx + 30));
+      const body = ys.filter((y) => y > cy + 20 && clearOf(printedWords, cx, cx + tw, y - pitch + 4, y - 4));
       // A few of the rows, kept in the week's order.
       const keep = new Set(ownRows ? table.map((_, i) => i) : r.shuffle(table.map((_, i) => i)).slice(0, r.int(2, Math.min(5, table.length))));
       const data = table.filter((_, i) => keep.has(i));
       data.forEach((row, i) => {
         const y = body[i];
         if (y === undefined) return;
+        const number = numberIn(y);
         for (let c = 0; c < Math.min(row.length, edges.length - 1); c++) {
-          const x0 = edges[c] + 12;
+          const x0 = c === 0 && number ? number[0] + number[2] + 12 : edges[c] + 12;
           const x1 = edges[c + 1] - 8;
           if (x1 - x0 < 30) continue;
           words(page, hand.words, row[c], x0, y - Math.max(9, pitch * 0.18), size * 0.78, x1 - x0, hand.pen);
@@ -744,6 +921,10 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     const ownItems = own(person?.lists);
     const source = ownItems ?? BY_SLUG[region.slug] ?? LISTS.find(([re]) => re.test(region.heading))?.[1] ?? (region.checkX !== null ? TODOS : GENERIC_LIST);
     const segments = rows.filter((row) => row[0] > cy + 40);
+    // This box's share of the person's own list, where it has the list
+    // twice; all of it otherwise.
+    const budget = ownItems ? Math.ceil(ownItems.length / (listUses.get(ownItems) ?? 1)) : Infinity;
+    let dealt = 0;
     const byColumn = new Map<number, typeof segments>();
     for (const seg of segments) {
       const key = Math.round(seg[1] / 40);
@@ -757,7 +938,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // The person's own list is written out, shared across a to-do's days;
       // anything else, a few items.
       const count = ownItems
-        ? Math.ceil(ownItems.length / columnsInOrder.length)
+        ? Math.min(Math.ceil(budget / columnsInOrder.length), budget - dealt)
         : c === 0
           ? r.int(2, region.checkX !== null ? 4 : 5)
           : region.checkX !== null
@@ -768,11 +949,29 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // on to the next, a little in, when that line is there and free.
       let at = skip;
       for (let written = 0; written < count && at < sorted.length; ) {
+        // A blank entry in a person's own list: on to the next prompt -
+        // past the line its printed words are on - so that a recipe's
+        // method is written under Method, not run on from its ingredients.
+        if (ownItems && peek(source) === "") {
+          deal(source);
+          // The next prompt sits in a gap in the rules below the last line
+          // written on; its lines start under it.
+          const last = at > 0 ? sorted[at - 1][0] : cy;
+          const prompt = region.printed.filter(([, py]) => py > last).sort((a, b) => a[1] - b[1])[0];
+          if (!prompt) break columns;
+          const next = sorted.findIndex(([y]) => y > prompt[1] + prompt[3]);
+          if (next < 0) break columns;
+          at = next;
+          continue;
+        }
         const [ly, lx0, lx1] = sorted[at];
         const used = writeLine(ly, lx0, lx1, sorted[at + 1] ?? null);
         if (used === null) break columns;
         at += Math.max(1, used);
-        if (used > 0) written++;
+        if (used > 0) {
+          written++;
+          dealt++;
+        }
       }
     }
 
@@ -785,13 +984,18 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // A numbered list prints its number at the start of the line: write
       // after it, not give the line up (every numbered list - Priorities,
       // Big Three - came out empty until 2026-10-06).
-      const number = region.printed.find(([px, py, pw, ph]) => px < checkRight + 90 && px + pw > checkRight && py < ly && py + ph > ly - pitch);
+      // (A number, not a printed item: a packing list's "Passport" took
+      // the line's item and wrote nothing until 2026-10-06.)
+      const number = region.printed.find(([px, py, pw, ph]) => pw <= 70 && px < checkRight + 90 && px + pw > checkRight && py < ly && py + ph > ly - pitch);
       const x = (number ? number[0] + number[2] : checkRight) + 16;
       const segEnd = Math.min(lx1, region.columns.find((c) => c > x + 60) ?? lx1);
       if (!clearOf(region.printed, x, segEnd, ly - pitch, ly)) return 0;
       const item = deal(source);
       if (!item) return null;
-      const text = `${region.checkX === null && r.chance(0.4) ? "- " : ""}${item}`;
+      // A dash before it, sometimes - after the strike mark, so that a
+      // struck item stays struck.
+      const struck = item.startsWith("~");
+      const text = `${struck ? "~" : ""}${region.checkX === null && r.chance(0.4) ? "- " : ""}${struck ? item.slice(1) : item}`;
       // The next line, if it is the very next one down and nothing is
       // printed along it. Not on a numbered list: the run-on would sit
       // beside the next number.
@@ -837,7 +1041,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     }
   }
   const title = spread.pages[0].regions.find((reg): reg is Extract<Region, { kind: "title" }> => reg.kind === "title");
-  if (title && r.chance(0.7)) {
+  // Only by a week's title: a month's name runs the width of its shorter box.
+  if (title && title.box[3] > 160 && r.chance(0.7)) {
     const [x, y, w] = title.box;
     items.push(...doodleAt(0, theme.style, r.pick(theme.small), x + w - 120, y + 4, 100, nextSeed(), hand.accent));
   }
