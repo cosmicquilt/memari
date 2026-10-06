@@ -1,4 +1,5 @@
-// "Use this week" - POST from the landing page's hero (VideoHero).
+// "Use this week" - POST from the landing page's layout gallery
+// (LayoutGallery).
 //
 // Makes a new journal whose weekly spread is that person's (see
 // planner/archetypeWeek.ts) and opens it in the editor. Someone who has
