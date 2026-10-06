@@ -26,7 +26,9 @@
 // This walks occurrences and hands each page its context.
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
+import { placePageEvents, propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
+import type { StoredEvent } from "./calendarEvents";
+import { effectiveZone } from "./timeZone";
 import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_LABELS,
@@ -47,6 +49,12 @@ export type BookSource = {
   theme?: unknown;
   startDate: Date | null;
   endDate: Date | null;
+  /** The book's own zone (null: its owner's default), the owner's default,
+   *  and the owner's events - which the book prints, in grey, on every dated
+   *  page with hours. Absent, it prints none. */
+  timeZone?: string | null;
+  ownerTimeZone?: string | null;
+  events?: StoredEvent[];
   pages: Array<{
     id: string;
     level: PageLevel;
@@ -176,14 +184,28 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     // journal's book opened its week on SUNDAY, dated the week's last day.
     const spreadLabels = spreadDayLabels(chosen, weekStartDay);
     for (const [pageIndex, page] of chosen.entries()) {
+      const dayLabels = spreadLabels[pageIndex] ?? null;
+      // The owner's events on this page's days, by the function the editor's
+      // pages use, in print grey: this is the book. It said `events: null`
+      // until 2026-10-06, so no PDF and no printed order had any.
+      const placed = placePageEvents({
+        level: slot.at.level,
+        dated: planner.dated,
+        occurrence: slot.at,
+        dayLabels,
+        hasHours: page.moduleInstances.some((mi) => mi.moduleType.slug === "hourly-grid-core"),
+        events: planner.events,
+        zone: effectiveZone(planner.timeZone, planner.ownerTimeZone),
+        print: true,
+      });
       const context: PageRenderContext = {
         level: slot.at.level,
         dated: planner.dated,
         occurrence: slot.at,
-        dayLabels: spreadLabels[pageIndex] ?? null,
+        dayLabels,
         weekStartDay,
-        events: null,
-        columnDates: null,
+        events: placed.events,
+        columnDates: placed.columnDates,
       };
       const pageGrid: PageGrid = {
         widthPx: page.widthPx,

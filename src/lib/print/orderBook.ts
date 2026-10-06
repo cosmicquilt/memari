@@ -9,6 +9,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { WITH_PAGES, type BookWithPages } from "@/app/planner/bookSeeding";
+import { printableEvents } from "@/app/planner/calendarStore";
+import type { StoredEvent } from "@/lib/calendarEvents";
 import { generateBook } from "@/lib/generateBook";
 import { buildPlannerPdf, printReadinessProblems } from "@/lib/plannerPdf";
 import { resolveFontFamily, type PlannerTheme } from "@/lib/theme";
@@ -20,10 +22,16 @@ import type { OrderRange } from "./orderRange";
 /** Something about the order the customer can fix, said so they can. */
 export class OrderError extends Error {}
 
+/** A journal as it prints: its pages, and its owner's events and default
+ *  zone, which the book draws in grey on every dated page with hours. */
+export type PrintJournal = BookWithPages & { events?: StoredEvent[]; ownerTimeZone?: string | null };
+
 /** A journal, with every page and module, by its owner - for an order
- *  placed by someone signed in, or a renewal placed by the server. */
-export async function loadJournal(ownerId: string, plannerId: string): Promise<BookWithPages | null> {
-  return prisma.planner.findFirst({ where: { id: plannerId, ownerId, isTemplate: false }, include: WITH_PAGES });
+ *  placed by someone signed in, or a renewal placed by the server - and the
+ *  events it prints. Until 2026-10-06 a printed book had none. */
+export async function loadJournal(ownerId: string, plannerId: string): Promise<PrintJournal | null> {
+  const journal = await prisma.planner.findFirst({ where: { id: plannerId, ownerId, isTemplate: false }, include: WITH_PAGES });
+  return journal ? { ...journal, ...(await printableEvents(ownerId, plannerId)) } : null;
 }
 
 export type Interior = {
@@ -42,7 +50,7 @@ export type Interior = {
  *  `gutterFor` gives the inside margin to add for the printed page count -
  *  the printer's own rule for the binding (printer.ts). Without it the
  *  pages are as designed; the page count is the same either way. */
-export function buildInterior(journal: BookWithPages, range: OrderRange, gutterFor?: (printedPages: number) => number): Interior {
+export function buildInterior(journal: PrintJournal, range: OrderRange, gutterFor?: (printedPages: number) => number): Interior {
   const theme = journal.theme as PlannerTheme | null;
   const book = generateBook({ ...journal, startDate: range.start, endDate: range.end }, resolveFontFamily(theme?.fontFamily));
   if (book.pages.length === 0) {

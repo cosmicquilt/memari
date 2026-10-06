@@ -19,7 +19,7 @@
 import { prisma } from "@/lib/prisma";
 import { UNTITLED_EVENT, type StoredEvent } from "@/lib/calendarEvents";
 import { DEFAULT_ZONE, FLOATING, instantFromWall, toWallTime, wallDate } from "@/lib/timeZone";
-import { zoneForBook } from "./ownerSettings";
+import { ownerDefaultZone, zoneForBook } from "./ownerSettings";
 import { readToken } from "./syncToken";
 
 // The colours live in src/lib/calendarColours.ts, where a component can
@@ -201,6 +201,17 @@ export async function eventsForJournal(ownerId: string, plannerId: string): Prom
     orderBy: { startsAt: "asc" },
     select: EVENT_SELECT,
   });
+}
+
+/**
+ * What a PRINTED book needs from the calendars: the events this journal
+ * shows, and the owner's default zone that a book with none of its own
+ * follows - the same two the editor's page load reads, so the PDF and a
+ * printed order place events exactly where the page does.
+ */
+export async function printableEvents(ownerId: string, plannerId: string): Promise<{ events: EditableEvent[]; ownerTimeZone: string | null }> {
+  const [events, ownerTimeZone] = await Promise.all([eventsForJournal(ownerId, plannerId), ownerDefaultZone(ownerId)]);
+  return { events, ownerTimeZone };
 }
 
 /** Is this journal the caller's? Every write below goes through it, so a

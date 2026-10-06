@@ -23,7 +23,7 @@
 
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
 import { dayUnitColumns, type PageGrid } from "./grid";
-import type { HourlyGridEvent } from "./modules/hourlyGridCore";
+import { EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore";
 import { isSpineSlug, withDates, withDaysUnder, withWeekStart, withoutDates } from "./moduleRegistry";
 import { WEEKDAY_NAMES, columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
 import { effectiveZone } from "./timeZone";
@@ -98,6 +98,49 @@ export type RenderContextBook = {
 };
 
 /**
+ * WHERE A PAGE'S EVENTS LAND: the one description of it, for the editor's
+ * pages (renderContextForPage) and the printed book (generateBook).
+ *
+ * The book used to set `events: null` on every page while the editor placed
+ * them here, so a journal's PDF and every printed order came out with no
+ * events at all (found 2026-10-06, "apparently events arent in the print?").
+ * Two callers deciding separately which week an event belongs to is the
+ * "two descriptions" problem the render context exists to stop.
+ *
+ * EVENTS ARE DATED THINGS, so they need all three: a real occurrence to be
+ * dated against, columns to sit in, and a book that admits dates at all.
+ * columnDates is the same rule the day tab's own number comes from, so an
+ * event cannot land under a date the tab does not show. In the BOOK's zone:
+ * an event is an instant, and the page prints the wall-clock time there -
+ * the whole of the fix for a 9am New York meeting printing in the 1pm row.
+ *
+ * `print`: COLOUR ON SCREEN, GREY ON PAPER (2026-09-26) - colour pages cost
+ * money, so anything printed takes EVENT_PRINT_GREY whichever calendar the
+ * event is on. A calendar's colour is a screen affordance.
+ */
+export function placePageEvents(args: {
+  level: PageLevel;
+  dated: boolean;
+  occurrence: OccurrenceContext | null;
+  dayLabels: DayLabel[] | null;
+  /** Whether the page has the hours, which are what draw events. */
+  hasHours: boolean;
+  /** The owner's stored events, unfiltered; absent, the page draws none. */
+  events?: StoredEvent[];
+  /** effectiveZone(book, owner). */
+  zone: string;
+  print?: boolean;
+}): { events: HourlyGridEvent[] | null; columnDates: Array<string | null> | null } {
+  const { level, dated, occurrence, dayLabels, hasHours, events, zone, print } = args;
+  const grid = dated && occurrence && dayLabels && hasHours ? columnDates(level, occurrence.start, dayLabels) : null;
+  const placed = grid && events ? eventsForDays(events, grid.map((date) => ({ date })), zone) : null;
+  return {
+    events: placed && print ? placed.map((event) => ({ ...event, colour: EVENT_PRINT_GREY })) : placed,
+    columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
+  };
+}
+
+/**
  * The context a page of `book` is drawn in.
  *
  * The occurrence is the page's OWN layout's - a variant page is edited as
@@ -113,7 +156,9 @@ export function renderContextForPage(
    *  job because only it knows which occurrence the page is drawn as and in
    *  what order its columns ended up. Omit it and the page draws none, which
    *  is what every caller did before events existed. */
-  events?: StoredEvent[]
+  events?: StoredEvent[],
+  /** Drawn for paper: events in print grey - see placePageEvents. */
+  options: { print?: boolean } = {}
 ): PageRenderContext | null {
   const page = book.pages.find((p) => p.id === pageId);
   if (!page) return null;
@@ -140,19 +185,17 @@ export function renderContextForPage(
       ? { columnStart: spine.columnStart, columnSpan: spine.columnSpan }
       : null;
 
-  // EVENTS ARE DATED THINGS, so they need all three: a real occurrence to be
-  // dated against, columns to sit in, and a book that admits dates at all.
-  // columnDates is the same rule the day tab's own number comes from, so an
-  // event cannot land under a date the tab does not show.
-  const grid = dated && occurrence && dayLabels && hasHours ? columnDates(page.level, occurrence.start, dayLabels) : null;
-  // In the BOOK's zone: an event is an instant, and the page prints the
-  // wall-clock time here. This one argument is the whole of the fix for a
-  // 9am New York meeting printing in the 1pm row - every drawing of a page
-  // comes through this call, so none of them can disagree about the clock.
-  const placed =
-    grid && events
-      ? eventsForDays(events, grid.map((date) => ({ date })), effectiveZone(book.timeZone, book.ownerTimeZone))
-      : null;
+  // Placed by the one function the printed book also calls.
+  const placed = placePageEvents({
+    level: page.level,
+    dated,
+    occurrence,
+    dayLabels,
+    hasHours,
+    events,
+    zone: effectiveZone(book.timeZone, book.ownerTimeZone),
+    print: options.print,
+  });
 
   return {
     level: page.level,
@@ -161,8 +204,8 @@ export function renderContextForPage(
     dayLabels,
     weekStartDay,
     spineColumns,
-    events: placed,
-    columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
+    events: placed.events,
+    columnDates: placed.columnDates,
   };
 }
 

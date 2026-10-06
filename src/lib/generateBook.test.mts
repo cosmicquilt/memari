@@ -19,6 +19,9 @@
 //      a spread must run in order - see pageLevels.test.mts for the second,
 //      which is where the rule lives.
 import { generateBook, type BookSource } from "./generateBook.js";
+import { placePageEvents } from "./renderContext.js";
+import { EVENT_PRINT_GREY } from "./modules/hourlyGridCore.js";
+import { occurrences } from "./pageLevels.js";
 import { flatten } from "./proofSvg.js";
 
 let failures = 0;
@@ -264,6 +267,49 @@ eq(
   eq(names.join(" "), "MONDAY TUESDAY WEDNESDAY", "a Monday journal's book opens its week on Monday");
   const firstDate = flatten(left.elements as never).find((e) => /-d0-date$/.test(String(e.id)));
   eq(String(firstDate?.text), "5", "and its first column is dated the week's first day");
+
+  // --- THE BOOK PRINTS THE OWNER'S EVENTS, IN GREY ---------------------------
+  // It set `events: null` on every page, so the PDF and every printed order
+  // had none while the editor drew them (2026-10-06, "apparently events arent
+  // in the print?"). Grey because "colour on screen, grey on paper".
+  const dentist = {
+    id: "ev1",
+    title: "Dentist",
+    startsAt: new Date("2026-01-06T09:00:00Z"), // a Tuesday
+    endsAt: new Date("2026-01-06T10:00:00Z"),
+    allDay: false,
+    rrule: null,
+    timeZone: "UTC",
+    calendar: { colour: "#ff0000", source: null },
+  };
+  const withEvents = generateBook(
+    book({
+      theme: { weekStartDay: 1 },
+      startDate: utc(2026, 1, 5),
+      endDate: utc(2026, 1, 18),
+      timeZone: "UTC",
+      events: [dentist],
+      pages: [hoursPage(0, ["SUNDAY", "MONDAY", "TUESDAY"]), hoursPage(1, ["WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])],
+    }),
+    FONT
+  );
+  const boxesOn = (pageIndex: number) =>
+    flatten(withEvents.pages[pageIndex].elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id)));
+  const box = boxesOn(0);
+  eq(box.map((e) => /-d(\d)-ev/.exec(String(e.id))?.[1]).join(), "1", "the book prints the event under its day: Tuesday, the left page's second column");
+  eq(box[0]?.fill, EVENT_PRINT_GREY, "in print grey, not its calendar's red");
+  check(textOf(withEvents.pages[0].elements).includes("Dentist"), "with its title");
+  eq(boxesOn(2).length, 0, "and not in the following week");
+  const without = generateBook(
+    book({ theme: { weekStartDay: 1 }, startDate: utc(2026, 1, 5), endDate: utc(2026, 1, 18), timeZone: "UTC", pages: [hoursPage(0, ["SUNDAY", "MONDAY", "TUESDAY"]), hoursPage(1, ["WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])] }),
+    FONT
+  );
+  eq(flatten(without.pages[0].elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id))).length, 0, "a book given no events prints none");
+  // One function places them for the page and the book; only paper is grey.
+  const firstWeek = occurrences("WEEKLY", utc(2026, 1, 5), utc(2026, 1, 18), 1)![0];
+  const placeArgs = { level: "WEEKLY" as const, dated: true, occurrence: { ...firstWeek, level: "WEEKLY" as const, index: 0, total: 2 }, dayLabels: [{ name: "MONDAY", date: 5 }, { name: "TUESDAY", date: 6 }, { name: "WEDNESDAY", date: 7 }], hasHours: true, events: [dentist], zone: "UTC" };
+  eq(placePageEvents(placeArgs).events?.[0]?.colour, "#ff0000", "on screen it keeps its calendar's colour");
+  eq(placePageEvents({ ...placeArgs, print: true }).events?.[0]?.colour, EVENT_PRINT_GREY, "on paper it is grey");
 }
 
 if (failures > 0) {

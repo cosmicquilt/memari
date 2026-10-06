@@ -254,7 +254,10 @@ export async function loadPlannerPages(
   level: PageLevel,
   /** Which occurrence's layout to put on the canvas. Null is the default -
    *  the one almost every book only ever has. */
-  variantKey: string | null = null
+  variantKey: string | null = null,
+  /** For a PDF: events in print grey, not their calendars' screen colours -
+   *  see placePageEvents. */
+  options: { print?: boolean } = {}
 ): Promise<LoadedPlanner> {
   // Everything below reads this, never planner.pages: an unfiltered read
   // would put the monthly spread's modules onto the weekly page - and, once
@@ -326,7 +329,7 @@ export async function loadPlannerPages(
     // way it was drawn here. The events go in here too, so THE CANVAS, THE
     // TIMELINE THUMBNAILS AND THE PDF all get them from one call rather than
     // three places each deciding which week an event belongs to.
-    const renderContext = renderContextForPage(book, page.id, events);
+    const renderContext = renderContextForPage(book, page.id, events, { print: options.print });
 
     const moduleInstances: LoadedModuleInstance[] = [];
     for (const instance of page.moduleInstances) {

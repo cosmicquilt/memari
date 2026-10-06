@@ -25,6 +25,7 @@
 
 import { currentOwnerId } from "@/lib/owner";
 import { openBook } from "@/app/planner/actions";
+import { printableEvents } from "@/app/planner/calendarStore";
 import { loadPlannerPages } from "@/app/planner/loadPlannerPages";
 import { buildPlannerPdf, pdfFilename, printReadinessProblems } from "@/lib/plannerPdf";
 import { generateBook } from "@/lib/generateBook";
@@ -84,7 +85,8 @@ export async function GET(request: Request) {
     const planner = await openBook(journalId, level);
     if (wholeBook) {
       const theme = planner.theme as PlannerTheme | null;
-      const book = generateBook(planner, resolveFontFamily(theme?.fontFamily));
+      // With the owner's events: the book prints them, in grey.
+      const book = generateBook({ ...planner, ...(await printableEvents(planner.ownerId, planner.id)) }, resolveFontFamily(theme?.fontFamily));
       if (book.pages.length === 0) {
         // Said plainly, with the way out. An empty PDF would be worse: it
         // looks like the export failed rather than like the book has not
@@ -108,7 +110,8 @@ export async function GET(request: Request) {
     } else {
       title = `${planner.title} ${LEVEL_LABELS[level]}`;
       scope = LEVEL_LABELS[level];
-      const loaded = await loadPlannerPages(planner, level);
+      // Paper: the events in print grey, as the whole book has them.
+      const loaded = await loadPlannerPages(planner, level, null, { print: true });
       loadedWidthPx = loaded.pages[0]?.pageGrid.widthPx ?? 0;
       built = buildPlannerPdf(
         loaded.pages.map((page) => ({
