@@ -1,22 +1,18 @@
 "use client";
 
-// Layouts: the same real spreads the journal turns through, laid out flat.
+// Layouts: the same real spreads the journal turns through, laid out flat -
+// one per person (archetypes.ts), each with "Use this week" as in the hero.
 // Fetched when the section comes near the screen, drawn by the same painter
 // the app's own timeline uses.
 
 import { useEffect, useRef, useState } from "react";
 import type { LandingSpread } from "./spreads";
 import { PagePreview } from "@/app/planner/PagePreview";
+import { heroPeople } from "./archetypes";
 import styles from "./landing.module.css";
 
-const NAMES: Record<string, [string, string]> = {
-  classic: ["The classic week", "Hours, gratitude, reminders, to-dos"],
-  wellness: ["A wellness week", "Mood, habits, meals and plants"],
-  focus: ["A focus week", "Big three, brain dump, Eisenhower"],
-  training: ["A training week", "Workouts, runs, stretches, sleep"],
-  money: ["A money week", "Spending, budget, savings, bills"],
-  creative: ["A creative week", "Sketches, prompts, a watchlist"],
-};
+/** The cards before the spreads arrive: their people, pages blank. */
+const PLACEHOLDERS = heroPeople().map(({ key, name, age, archetype, week }) => ({ key, person: { name, age, archetype, week } }) as LandingSpread);
 
 export function LayoutGallery() {
   const holder = useRef<HTMLDivElement>(null);
@@ -42,7 +38,7 @@ export function LayoutGallery() {
 
   return (
     <div ref={holder} className={styles.gallery}>
-      {(spreads ?? Object.keys(NAMES).map((key) => ({ key }) as LandingSpread)).map((spread) => (
+      {(spreads ?? PLACEHOLDERS).map((spread) => (
         <figure key={spread.key} className={styles.spreadCard}>
           <div className={styles.spreadPages}>
             {[0, 1].map((i) => (
@@ -52,8 +48,25 @@ export function LayoutGallery() {
             ))}
           </div>
           <figcaption>
-            <strong>{NAMES[spread.key]?.[0] ?? spread.key}</strong>
-            <span>{NAMES[spread.key]?.[1]}</span>
+            <strong>
+              {spread.person.archetype}: {spread.person.name}, {spread.person.age}
+            </strong>
+            <span>{spread.person.week}</span>
+            <form
+              method="post"
+              action={`/app/from/${spread.key}`}
+              className={styles.spreadUse}
+              // The browser's zone, for a first journal's default (as the
+              // start dialog sends it) - read as the form goes, since this
+              // card is drawn on the server, which does not know it.
+              onSubmit={(e) => {
+                const tz = e.currentTarget.elements.namedItem("tz");
+                if (tz instanceof HTMLInputElement) tz.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+              }}
+            >
+              <input type="hidden" name="tz" defaultValue="" />
+              <button type="submit">Use {spread.person.name}&rsquo;s week &rarr;</button>
+            </form>
           </figcaption>
         </figure>
       ))}

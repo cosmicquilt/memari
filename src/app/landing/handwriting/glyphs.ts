@@ -91,7 +91,16 @@ export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
   const tracking = o.tracking ?? 0;
   ctx.font = `${weight} ${o.size}px ${o.family}`;
   const natural = ctx.measureText(text).width * (1 + tracking * 2);
-  const fit = o.maxWidth && natural > o.maxWidth ? Math.max(0.7, o.maxWidth / natural) : 1;
+  // SHRINK TO FIT, always (Andrew, 2026-10-06: "entries go past their space
+  // shrink to fit"). Smaller down to half size, then narrower - the letters
+  // drawn closer and slimmer - the way the script hand already fits
+  // (strokes.ts). It stopped at 70% before and the rest ran past its box.
+  // The room is measured against 1.04 x the natural width: each letter's
+  // advance is jittered up to +6% below, which a measurement of the whole
+  // string cannot know.
+  const room = o.maxWidth ? o.maxWidth / (natural * 1.04) : 1;
+  const fit = Math.min(1, Math.max(0.5, room));
+  const squeeze = room < 0.5 ? room / 0.5 : 1;
   const size = o.size * fit;
   ctx.font = `${weight} ${size}px ${o.family}`;
   const angle = o.angle ?? r.range(-0.018, 0.018);
@@ -101,7 +110,7 @@ export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
   let pen = 0;
   for (const [i, ch] of [...text].entries()) {
     const m = ctx.measureText(ch);
-    const advance = m.width * r.range(0.95, 1.06) + tracking * size;
+    const advance = (m.width * r.range(0.95, 1.06) + tracking * size) * squeeze;
     if (ch !== " ") {
       const lx = pen;
       const ly = drift(pen / size / 2.2) * size * 0.045 + r.range(-0.012, 0.012) * size;
@@ -110,11 +119,11 @@ export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
         x: o.x + lx * cos - ly * sin,
         y: o.y + lx * sin + ly * cos,
         rot: angle + wander(i * 0.7) * 0.05 + r.range(-0.02, 0.02),
-        sx: r.range(0.94, 1.06),
+        sx: r.range(0.94, 1.06) * squeeze,
         sy: r.range(0.95, 1.05),
         shear: r.range(-0.06, 0.06),
-        left: m.actualBoundingBoxLeft + size * 0.04,
-        right: m.actualBoundingBoxRight + size * 0.04,
+        left: (m.actualBoundingBoxLeft + size * 0.04) * squeeze,
+        right: (m.actualBoundingBoxRight + size * 0.04) * squeeze,
         advance,
         color: shade(o.color, r.range(-0.07, 0.05)),
         seed: r.int(1, 1e9),

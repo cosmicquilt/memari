@@ -45,18 +45,18 @@ export class PageLoop {
     private readonly spreads: LandingSpread[],
     textureHeight: number,
     /** Called when a page's picture has changed (0 left, 1 right). */
-    private readonly changed: (page: 0 | 1, picture: HTMLCanvasElement) => void
+    private readonly changed: (page: 0 | 1, picture: HTMLCanvasElement) => void,
+    /** Called when a new spread is on the pages - whose week it is, for
+     *  "Use this week". */
+    private readonly turned: (spread: LandingSpread) => void = () => {}
   ) {
     const surface = () => new PageSurface(textureHeight, { bare: true });
     this.showing = [surface(), surface()];
     this.next = [surface(), surface()];
-    const rest = spreads.map((_, i) => i).filter((i) => spreads[i].key !== "classic");
-    for (let i = rest.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [rest[i], rest[j]] = [rest[j], rest[i]];
-    }
-    const first = spreads.findIndex((s) => s.key === "classic");
-    this.order = [first >= 0 ? first : 0, ...rest];
+    // In the order the server sends them: the student first, then the jobs
+    // most people do (archetypes.ts, 2026-10-06). They were shuffled after
+    // a fixed first one until then.
+    this.order = spreads.map((_, i) => i);
   }
 
   private spreadAt(step: number) {
@@ -77,6 +77,7 @@ export class PageLoop {
   private show() {
     this.changed(0, this.showing[0].canvas);
     this.changed(1, this.showing[1].canvas);
+    this.turned(this.spreadAt(this.cycle));
   }
 
   /** Print the first spread, blank, ready to appear. */

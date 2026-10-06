@@ -5,7 +5,9 @@
 // word lettered across the top, the days' plans in their hours, a few time
 // blocks, lists in the sidebar, to-dos ticked off, habits checked, then the
 // highlighter and the doodles last. Each spread is a different person - a
-// different hand, pen and ink colour.
+// different hand, pen and ink colour. Who, and everything they write - the
+// things in their hours at their own times, their lists, tables and
+// banner - is their record in ../archetypes.ts (2026-10-06).
 //
 // WORDS are real handwriting fonts laid out a letter at a time (glyphs.ts);
 // the joined script is the one exception, drawn along its pen path
@@ -24,13 +26,9 @@ import { doodle, type DoodleName } from "./doodles";
 import { artById, artIndex, findArt, subjectOf, type ArtRef } from "./art";
 import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
+import { PEOPLE_BY_KEY, type Face, type Hand, type Pen, type Person } from "../archetypes";
 
-export type Pen = {
-  color: string;
-  /** Line width in print px (300 per inch): 3 is a fine pen, 7 a marker. */
-  width: number;
-  kind: "ink" | "marker" | "highlighter" | "pencil";
-};
+export type { Pen };
 
 export type InkItem =
   | { kind: "strokes"; page: 0 | 1; paths: Path[]; pen: Pen; pause?: number }
@@ -38,84 +36,20 @@ export type InkItem =
   /** A drawn doodle (art.ts) in a box, print px. */
   | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; angle?: number; pen: Pen; pause?: number };
 
-/** A way of writing words: a handwriting font, or the stroke-drawn script. */
-type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
-
-type Hand = { words: Face; banner: Face; pen: Pen; accent: Pen; highlight: Pen };
-
 const ink = (color: string, width: number): Pen => ({ color, width, kind: "ink" });
 const marker = (color: string, width: number): Pen => ({ color, width, kind: "marker" });
 const highlighter = (color: string): Pen => ({ color, width: 46, kind: "highlighter" });
 
-/**
- * One person per spread. `scale` evens out the faces' very different
- * x-heights, so an event fills its slot whichever hand wrote it.
- */
-const HANDS: Record<string, Hand> = {
-  // The reference photo: felt-tip capitals throughout.
-  classic: {
-    words: { font: "marker", caps: true, scale: 0.92 },
-    banner: { font: "marker", caps: true, scale: 1 },
-    pen: marker("#1d1c21", 5.2),
-    accent: ink("#24439c", 3.6),
-    highlight: highlighter("#ffe45c"),
-  },
-  wellness: {
-    words: { font: "caveat", caps: false, weight: 500, scale: 1.42 },
-    banner: { font: "homemade", caps: false, scale: 0.8 },
-    pen: ink("#1f6f6c", 4),
-    accent: ink("#d4553f", 3.8),
-    highlight: highlighter("#ffb3cf"),
-  },
-  focus: {
-    words: { font: "nanum", caps: false, scale: 1.55 },
-    banner: { font: "marker", caps: true, scale: 1 },
-    pen: ink("#232228", 3.4),
-    accent: ink("#c2352b", 3.6),
-    highlight: highlighter("#fff06a"),
-  },
-  training: {
-    words: { font: "grace", caps: false, scale: 1.2 },
-    banner: { font: "marker", caps: true, scale: 1 },
-    pen: ink("#2848a6", 3.6),
-    accent: marker("#e27725", 5),
-    highlight: highlighter("#b8f08a"),
-  },
-  money: {
-    words: { font: "shadows", caps: false, scale: 1.3 },
-    banner: { font: "grace", caps: false, scale: 1.25 },
-    pen: ink("#2c6a40", 3.8),
-    accent: ink("#1d1c21", 3.4),
-    highlight: highlighter("#ffe45c"),
-  },
-  // A ballpoint in joined script, drawn stroke by stroke.
-  creative: {
-    words: { font: "allure", caps: false, scale: 1.25 },
-    banner: { font: "homemade", caps: false, scale: 0.8 },
-    pen: ink("#4a2f8f", 3.2),
-    accent: marker("#d23f79", 4.6),
-    highlight: highlighter("#9fdcff"),
-  },
+/** The hand and the doodles for a spread that is not one of the people
+ *  (none today): the reference photo's felt-tip capitals. */
+const DEFAULT_HAND: Hand = {
+  words: { font: "marker", caps: true, scale: 0.92 },
+  banner: { font: "marker", caps: true, scale: 1 },
+  pen: marker("#1d1c21", 5.2),
+  accent: ink("#24439c", 3.6),
+  highlight: highlighter("#ffe45c"),
 };
-
-/**
- * What each person doodles: their week's own things, big enough for a sketch
- * box, then small ones for beside the date.
- */
-/**
- * How each person doodles (Andrew, 2026-09-24: the generated drawings over
- * the code-drawn ones) - a drawing style of their own - and what: their
- * week's things, big enough for a sketch box, then small ones for beside
- * the date. Subjects are the doodle library's (handoff/flow/labels.json).
- */
-const DOODLE_THEMES: Record<string, { style: string; big: string[]; small: string[] }> = {
-  classic: { style: "minimal", big: ["mountains", "houseplant", "paperplane", "camera", "books"], small: ["star", "sun", "sparkle", "heart"] },
-  wellness: { style: "retro", big: ["houseplant", "sunflower", "tea", "meditating"], small: ["heart", "sun", "sparkle", "daisy"] },
-  focus: { style: "sketchnote", big: ["bulb", "books", "laptop", "coffee"], small: ["star", "lightning", "sparkle"] },
-  training: { style: "crayon", big: ["mountains", "sun", "running", "cycling"], small: ["lightning", "star", "sun"] },
-  money: { style: "pencil", big: ["houseplant", "bulb", "envelope", "coffee"], small: ["star", "sparkle", "heart"] },
-  creative: { style: "riso", big: ["painting", "guitar", "camera", "rainbow", "music", "movie"], small: ["moon", "sparkle", "heart", "star"] },
-};
+const DEFAULT_DOODLES: Person["doodles"] = { style: "minimal", big: ["mountains", "houseplant", "paperplane", "camera", "books"], small: ["star", "sun", "sparkle", "heart"] };
 
 /** The code-drawn doodle to fall back on when the library has not loaded
  *  (or has no drawing of a subject in a style). */
@@ -154,41 +88,9 @@ function doodleItems(page: 0 | 1, name: DoodleName, x: number, y: number, size: 
 
 /** The handwriting fonts a spread is written in, to load before writing. */
 export function familiesFor(spreadKey: string): string[] {
-  const hand = HANDS[spreadKey] ?? HANDS.classic;
+  const hand = PEOPLE_BY_KEY[spreadKey]?.hand ?? DEFAULT_HAND;
   return [hand.words, hand.banner].filter((f) => f.font !== "allure").map((f) => HAND_FONTS[f.font as HandFontKey]);
 }
-
-// A spread never repeats an event: once its pool is spent, a day gets fewer.
-const EVENTS: Record<string, string[]> = {
-  classic: ["work", "emails", "lunch w/ nat", "run w/ charlie", "call mom", "meal prep", "clean house", "dentist", "coffee w/ jess", "pack!", "groceries", "laundry", "date night", "pick up kids", "haircut", "book club", "vet 3pm", "brunch"],
-  wellness: ["yoga", "therapy", "long walk", "stretch", "journal", "meditate", "farmers mkt", "bath + book", "bed by 10", "smoothie", "pilates", "sauna", "tea w/ mo", "no screens", "massage"],
-  focus: ["deep work", "standup", "1:1 w/ Ana", "write draft", "review", "planning", "lunch", "inbox zero", "ship it!", "demo", "no mtgs", "retro", "study", "office hrs"],
-  training: ["5k easy", "legs", "upper body", "rest day", "long run", "intervals", "mobility", "swim", "hike", "core", "physio", "spin class", "foam roll"],
-  money: ["pay rent", "budget", "payday!", "bank", "sell bike", "bills", "invoice", "no spend", "taxes", "meal prep", "thrift run", "cancel subs"],
-  creative: ["sketch", "pottery", "museum", "write 500w", "film night", "guitar", "photo walk", "zine", "paint", "open mic", "life drawing", "knit", "D&D night"],
-};
-
-/**
- * When an event happens, if it has a time of its own: the earliest and latest
- * slot it may start in, 24-hour. Anything else goes anywhere. ("Make sure
- * every part makes sense": "bed by 10" was being written at 2pm.)
- */
-const EVENT_TIMES: Array<[RegExp, number, number]> = [
-  [/bed by 10/i, 21.5, 22],
-  [/3pm/i, 15, 15],
-  [/brunch/i, 10, 11.5],
-  [/^lunch/i, 11.5, 13],
-  [/night|open mic/i, 18, 21],
-  [/sauna|bath/i, 18, 21],
-  [/standup/i, 9, 10],
-  [/smoothie/i, 7, 9],
-  [/farmers|hike|long run|photo walk/i, 7, 11],
-  [/coffee|tea w/i, 8, 16],
-  [/work|emails|review|retro|demo|planning|office hrs|1:1|write draft|inbox/i, 8.5, 17],
-  [/pick up kids/i, 14.5, 16],
-  [/meal prep/i, 15, 19],
-  [/museum|dentist|bank|haircut|vet|physio|therapy|massage/i, 9, 17],
-];
 
 /**
  * The fun drawn in around the week: an event this matches gets a small
@@ -228,21 +130,6 @@ const EVENT_DOODLES: Array<[RegExp, string]> = [
 ];
 
 /**
- * The word lettered across the top of some days of the right page, with a
- * rule either side - sized to the days it spans (Andrew, 2026-09-23: not
- * always all four; "sometimes only being a weekend or a day, or any amount
- * of days"). Short words for one day, weekend words for a weekend.
- */
-const BANNERS: Record<string, { day: string[]; weekend: string[]; days: string[] }> = {
-  classic: { day: ["bday!", "day off", "movers"], weekend: ["weekend!", "cabin trip", "wedding"], days: ["Lisbon", "birthday week", "moving week", "visitors"] },
-  wellness: { day: ["rest", "spa day"], weekend: ["retreat", "unplug"], days: ["reset week", "slow down"] },
-  focus: { day: ["exam", "launch"], weekend: ["off!", "recharge"], days: ["launch week", "finals"] },
-  training: { day: ["race day", "10k!"], weekend: ["trail trip", "race wknd"], days: ["race week", "taper"] },
-  money: { day: ["payday", "rent"], weekend: ["no spend", "yard sale"], days: ["no-spend week", "tax time"] },
-  creative: { day: ["gallery", "show!"], weekend: ["art fair", "workshop"], days: ["summer", "residency"] },
-};
-
-/**
  * What a box is written with - by the module it is, then by what its heading
  * says. "Make sure every part makes sense" (Andrew, 2026-09-23): a stretch
  * list lists stretches, a watchlist films, a bills box bills - never the
@@ -278,8 +165,8 @@ const TABLE_ROWS: Record<string, string[][]> = {
   budget: [["rent", "1200", "1200", "0"], ["food", "400", "362", "+38"], ["fun", "150", "171", "-21"], ["transport", "90", "84", "+6"], ["savings", "300", "300", "0"]],
 };
 
-/** Tasks for the Eisenhower matrix, by quadrant in reading order: schedule,
- *  do, delete, delegate (the catalogue's). */
+/** Tasks for an Eisenhower matrix whose person gave none, by quadrant in
+ *  reading order: schedule, do, delete, delegate (the catalogue's). */
 const EISENHOWER: string[][] = [
   ["dentist", "plan Q4"],
   ["taxes!", "reply to Ana"],
@@ -287,6 +174,25 @@ const EISENHOWER: string[][] = [
   ["book venue", "order snacks"],
 ];
 
+/** Modules whose marks are dots, circles or icons, or a set passage - never
+ *  a list. */
+const NOT_WRITTEN = new Set([
+  "day-chart",
+  "mood-chart-week",
+  "mood-chart-month",
+  "energy-chart",
+  "sleep-chart",
+  "rating-strip",
+  "mood-tracker",
+  "energy-pain-scale",
+  "icon-strip",
+  "water-week",
+  "water-plants",
+  "focus-blocks",
+  "quote-block",
+  "text-block",
+  "year-in-pixels",
+]);
 const GENERIC_LIST = ["call Sam", "book flights", "fix bike", "buy stamps", "vet appt", "read ch. 4", "email landlord", "print photos", "return parcel"];
 const TODOS = ["laundry", "email landlord", "book flights", "buy stamps", "fix bike", "gym x3", "read ch. 4", "vet appt", "call bank", "pack bag", "pay parking", "renew license", "clean fridge", "order gift", "back up phone", "change sheets", "send invoice"];
 const HABITS = ["water", "read", "walk", "stretch", "vitamins", "no phone", "floss", "8h sleep"];
@@ -315,8 +221,9 @@ function circleBullet(cx: number, cy: number, radius: number): Path {
 
 export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const r = makeRng(seed);
-  const hand = HANDS[spread.key] ?? HANDS.classic;
-  const theme = DOODLE_THEMES[spread.key] ?? DOODLE_THEMES.classic;
+  const person: Person | undefined = PEOPLE_BY_KEY[spread.key];
+  const hand = person?.hand ?? DEFAULT_HAND;
+  const theme = person?.doodles ?? DEFAULT_DOODLES;
   const items: InkItem[] = [];
   const writtenEvents: Written[] = [];
   const writtenAll: Written[] = [];
@@ -328,6 +235,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
    * in print px - roughly a capital's - and each face scales to it.
    */
   const words = (page: 0 | 1, face: Face, text: string, x: number, y: number, size: number, maxWidth: number, pen: Pen): Written | null => {
+    // A plan that slipped: written, then crossed out.
+    const struck = text.startsWith("~");
+    if (struck) text = text.slice(1);
     const shown = face.caps ? text.toUpperCase() : text;
     const em = size * face.scale * 1.35;
     if (maxWidth < em * 1.2) return null;
@@ -342,42 +252,28 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       width = run.width;
     }
     const w: Written = { page, box: [x, y - size, width, size * 1.2] };
+    if (struck) items.push({ kind: "strokes", page, paths: [wobble([x - 6, y - size * 0.45, x + width + 8, y - size * 0.5], 1.5, nextSeed(), 20)], pen });
     writtenAll.push(w);
     return w;
   };
 
   // --- a word across the top of some days of the right page, like the
-  // reference photo: one day, the weekend, or any run of days.
+  // reference photo: one day, the weekend, or any run of days - the
+  // person's own, over the days their week puts it.
   const rightHours = spread.pages[1].regions.find((reg): reg is Extract<Region, { kind: "hours" }> => reg.kind === "hours");
   /** Days of the right page under the banner, whose events start below it. */
   const bannerDays = new Set<number>();
   const bannerSlots = 4;
-  if (rightHours && r.chance(0.8)) {
+  if (rightHours && person?.banner) {
     const all = rightHours.days;
-    const choices = BANNERS[spread.key] ?? BANNERS.classic;
-    const weekend = all.map((d, i) => (/^(SATURDAY|SUNDAY)$/.test(d.label) ? i : -1)).filter((i) => i >= 0);
-    const roll = r.next();
-    let from: number;
-    let to: number;
-    let pool: string[];
-    if (roll < 0.3) {
-      from = to = r.int(0, all.length - 1);
-      pool = choices.day;
-    } else if (roll < 0.55 && weekend.length > 0) {
-      [from, to] = [weekend[0], weekend[weekend.length - 1]];
-      pool = weekend.length > 1 ? choices.weekend : choices.day;
-    } else {
-      const length = r.int(2, all.length);
-      from = r.int(0, all.length - length);
-      to = from + length - 1;
-      pool = choices.days;
-    }
+    const from = Math.max(0, Math.min(all.length - 1, person.banner.from));
+    const to = Math.max(from, Math.min(all.length - 1, person.banner.to));
     for (let i = from; i <= to; i++) bannerDays.add(i);
     const days = all.slice(from, to + 1);
     const left = days[0].area[0];
     const right = days[days.length - 1].header[0] + days[days.length - 1].header[2];
     const slotH = days[0].slots[1] - days[0].slots[0];
-    const text = r.pick(pool);
+    const text = person.banner.text;
     const size = slotH * (days.length === 1 ? 1.7 : 2.1);
     const face = hand.banner;
     const shown = face.caps ? text.toUpperCase() : text;
@@ -395,63 +291,47 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     if (right - 20 - (x + shownWidth + 40) > 50) items.push({ kind: "strokes", page: 1, paths: [wobble([x + shownWidth + 40, mid, right - 20, mid + r.range(-4, 4)], 2, nextSeed(), 18)], pen: rule });
   }
 
-  // --- the days
-  const pool = r.shuffle(EVENTS[spread.key] ?? EVENTS.classic);
-  let poolAt = 0;
-  for (const page of [0, 1] as const) {
+  // --- the days: each thing at its own time, on its own day. Days run in
+  // the spread's order, the left page's three and then the right's four.
+  const dayColumns = ([0, 1] as const).flatMap((page) => {
     const hours = spread.pages[page].regions.find((reg): reg is Extract<Region, { kind: "hours" }> => reg.kind === "hours");
-    if (!hours) continue;
-    for (const [dayIndex, day] of hours.days.entries()) {
-      const slotH = day.slots[1] - day.slots[0];
-      const first = page === 1 && bannerDays.has(dayIndex) ? bannerSlots : 0;
-      const count = r.int(1, 4);
-      const taken: number[] = [];
-      for (let n = 0; n < count; n++) {
-        if (poolAt >= pool.length) break;
-        const text = pool[poolAt];
-        const when = EVENT_TIMES.find(([re]) => re.test(text));
-        const open = Array.from({ length: day.slots.length - 3 - first }, (_, i) => first + 1 + i).filter(
-          (s) => !when || (day.hours[s] >= when[1] && day.hours[s] <= when[2])
-        );
-        let slot = -1;
-        for (let tries = 0; tries < 12 && open.length; tries++) {
-          const s = r.pick(open);
-          if (taken.every((t) => Math.abs(t - s) >= 4)) {
-            slot = s;
-            break;
-          }
-        }
-        // No room at its time today: it waits for another day.
-        if (slot < 0) {
-          pool.push(pool.splice(poolAt, 1)[0]);
-          continue;
-        }
-        poolAt++;
-        taken.push(slot);
-        const [ax, , aw] = day.area;
-        const block = r.chance(0.3);
-        const blockLen = r.int(3, 8);
-        const top = day.slots[slot];
-        let x = ax + 14;
-        if (block) {
-          items.push({ kind: "strokes", page, paths: timeBlock(ax + 14, top + slotH * 0.35, top + slotH * Math.min(blockLen, day.slots.length - slot - 1), nextSeed()), pen: hand.pen });
-          for (let k = 1; k < blockLen; k++) taken.push(slot + k);
-          x += 26;
-        } else if (r.chance(0.25)) {
-          items.push({ kind: "strokes", page, paths: [wobble(circleBullet(x + 8, top + slotH * 0.55, 8), 1, nextSeed())], pen: hand.pen });
-          x += 26;
-        }
-        const w = words(page, hand.words, text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen);
-        if (w) writtenEvents.push(w);
-        // Its doodle, to the right of the words: about two slots tall, which
-        // the four slots between events leave room for.
-        const kind = EVENT_DOODLES.find(([re]) => re.test(text))?.[1];
-        if (w && kind && r.chance(0.8)) {
-          const dx = w.box[0] + w.box[2] + slotH * 0.5;
-          const size = Math.min(slotH * 3, ax + aw - 14 - dx);
-          if (size >= slotH * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH * 0.9 - size * 0.62, size, nextSeed(), hand.accent));
-        }
-      }
+    return hours ? hours.days.map((day, index) => ({ page, day, index })) : [];
+  });
+  /** Things given a mark of their own (a circle, an underline, the
+   *  highlighter) - drawn last, the way a week gets marked up. */
+  const marked: Array<{ written: Written; mark: "circle" | "underline" | "highlight" }> = [];
+  for (const event of person?.events ?? []) {
+    const column = dayColumns[event.day];
+    if (!column) continue;
+    const { page, day, index } = column;
+    const slotH = day.slots[1] - day.slots[0];
+    const first = page === 1 && bannerDays.has(index) ? bannerSlots : 0;
+    const startSlot = day.hours.findIndex((h) => h >= event.at - 0.01);
+    if (startSlot < 0) continue;
+    // Under the banner where one is lettered across the top of the day.
+    const slot = Math.min(Math.max(startSlot, first), day.slots.length - 2);
+    const [ax, , aw] = day.area;
+    const top = day.slots[slot];
+    let x = ax + 14;
+    if (event.until !== undefined) {
+      const endSlot = day.hours.findIndex((h) => h >= event.until! - 0.01);
+      const length = Math.max(1, (endSlot < 0 ? day.slots.length - 1 : endSlot) - slot);
+      items.push({ kind: "strokes", page, paths: timeBlock(ax + 14, top + slotH * 0.35, top + slotH * Math.min(length, day.slots.length - slot - 1), nextSeed()), pen: hand.pen });
+      x += 26;
+    } else if (r.chance(0.25)) {
+      items.push({ kind: "strokes", page, paths: [wobble(circleBullet(x + 8, top + slotH * 0.55, 8), 1, nextSeed())], pen: hand.pen });
+      x += 26;
+    }
+    const w = words(page, hand.words, event.text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen);
+    if (!w) continue;
+    writtenEvents.push(w);
+    if (event.mark) marked.push({ written: w, mark: event.mark });
+    // Its doodle, to the right of the words: about two slots tall.
+    const kind = event.doodle ?? EVENT_DOODLES.find(([re]) => re.test(event.text))?.[1];
+    if (kind && (event.doodle || r.chance(0.8))) {
+      const dx = w.box[0] + w.box[2] + slotH * 0.5;
+      const size = Math.min(slotH * 3, ax + aw - 14 - dx);
+      if (size >= slotH * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH * 0.9 - size * 0.62, size, nextSeed(), hand.accent));
     }
   }
 
@@ -461,7 +341,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const pools = new Map<string[], { items: string[]; at: number }>();
   const deal = (source: string[]) => {
     let p = pools.get(source);
-    if (!p) pools.set(source, (p = { items: r.shuffle(source), at: 0 }));
+    // A person's own list in their order; the shared ones shuffled.
+    const theirs = person?.lists && Object.values(person.lists).includes(source);
+    if (!p) pools.set(source, (p = { items: theirs ? [...source] : r.shuffle(source), at: 0 }));
     return p.at < p.items.length ? p.items[p.at++] : null;
   };
   for (const page of [0, 1] as const) {
@@ -471,6 +353,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   }
 
   function writeBox(page: 0 | 1, region: Extract<Region, { kind: "box" }>) {
+    /** What the person gave for this box: by its heading, else its module. */
+    const own = <T,>(map?: Record<string, T>): T | undefined => map?.[region.heading.toLowerCase()] ?? map?.[region.slug];
     const [cx, cy, cw, ch] = region.content;
     if (ch < 110) return;
     const narrowColumns = region.columns.filter((x, i, all) => i > 0 && x - all[i - 1] < 130).length;
@@ -546,6 +430,15 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     const pitch = rows.length > 1 ? Math.max(40, rows[1][0] - rows[0][0]) : 75;
     const size = Math.min(pitch * 0.62, 46);
 
+    // A meter the person has a count for: that many cells, shaded.
+    const fill = own(person?.fills);
+    if (fill !== undefined && region.cells.length > 0) {
+      for (const [bx, by, bw, bh] of region.cells.slice(0, fill)) {
+        items.push({ kind: "strokes", page, paths: [wobble([bx + bw * 0.2, by + bh * 0.8, bx + bw * 0.8, by + bh * 0.2], 0.6, nextSeed())], pen: hand.pen });
+      }
+      return;
+    }
+
     // Cells to fill in order: a savings or payoff meter shaded up to where
     // the money is; a no-spend calendar's days, crossed off.
     if (region.cells.length >= 10 && /savings|debt|payoff|step|no-spend/.test(region.slug)) {
@@ -572,7 +465,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         [vx, hy, cx + cw - vx, cy + ch - hy],
       ];
       quads.forEach(([qx, qy, qw, qh], q) => {
-        const tasks = EISENHOWER[q].slice(0, r.int(1, 2));
+        const tasks = (person?.eisenhower ?? EISENHOWER)[q].slice(0, r.int(1, 2));
         tasks.forEach((task, i) => {
           const x = qx + 44;
           const y = qy + (q < 2 ? 130 : 90) + i * 70;
@@ -588,7 +481,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     if (narrowColumns >= 4) {
       const cols = region.columns;
       const usable = rows.filter((row) => row[0] > cy + 30).slice(0, 8);
-      const names = TRACKER_NAMES.find(([re]) => re.test(region.heading))?.[1] ?? null;
+      const names = own(person?.trackers) ?? TRACKER_NAMES.find(([re]) => re.test(region.heading))?.[1] ?? null;
+      // Franklin marked his faults, not his successes: a dot, now and then.
+      const dots = person?.trackerMark === "dot";
       for (const row of usable) {
         if (!r.chance(0.7)) continue;
         const rowTop = row[0] - pitch;
@@ -605,13 +500,14 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         for (let c = 0; c < cols.length - 1; c++) {
           const x0 = cols[c];
           const x1 = cols[c + 1];
-          if (x1 - x0 > 130 || !r.chance(0.55) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
+          if (x1 - x0 > 130 || !r.chance(dots ? 0.16 : 0.55) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
           const s = Math.min(x1 - x0, pitch) * 0.62;
           const mark = r.next();
           const mx = (x0 + x1) / 2 - s / 2;
           const my = row[0] - pitch / 2 - s / 2;
-          const paths =
-            mark < 0.6
+          const paths = dots
+            ? [wobble(circleBullet(mx + s / 2, my + s / 2, s * 0.1), 0.4, nextSeed()), wobble(circleBullet(mx + s / 2, my + s / 2, s * 0.05), 0.3, nextSeed())]
+            : mark < 0.6
               ? checkMark(mx, my, s, nextSeed())
               : mark < 0.85
                 ? [wobble(circleBullet(mx + s / 2, my + s / 2, s * 0.22), 0.8, nextSeed())]
@@ -622,15 +518,17 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       return;
     }
 
-    // A table: a row at a time, a cell at a time.
-    const table = TABLE_ROWS[region.slug];
+    // A table: a row at a time, a cell at a time - the person's rows, all of
+    // them in their order; otherwise a few of the module's own.
+    const ownRows = own(person?.tables);
+    const table = ownRows ?? TABLE_ROWS[region.slug];
     if (table) {
       const [, , tw] = region.content;
       const edges = [cx, ...region.columns.filter((x) => x > cx + 20 && x < cx + tw - 20), cx + tw];
       const ys = [...new Set(rows.map(([y]) => Math.round(y)))].sort((a, b) => a - b);
       const body = ys.filter((y) => y > cy + 20 && clearOf(region.printed, cx, cx + tw, y - pitch + 4, y - 4));
       // A few of the rows, kept in the week's order.
-      const keep = new Set(r.shuffle(table.map((_, i) => i)).slice(0, r.int(2, Math.min(5, table.length))));
+      const keep = new Set(ownRows ? table.map((_, i) => i) : r.shuffle(table.map((_, i) => i)).slice(0, r.int(2, Math.min(5, table.length))));
       const data = table.filter((_, i) => keep.has(i));
       data.forEach((row, i) => {
         const y = body[i];
@@ -647,10 +545,16 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // Columns this knows nothing about: leave the table alone rather than
     // write a list across it.
     if (region.columns.length > 0 && region.checkX === null) return;
+    // Marked, not written in: a chart's dots, a scale's circles, an icon
+    // strip's icons, a quotation. Without a list of their own they stay as
+    // printed rather than take a to-do ("back up phone" in a mood chart,
+    // 2026-10-06).
+    if (!own(person?.lists) && NOT_WRITTEN.has(region.slug)) return;
 
     // Lists and to-dos: items on the lines, TOP DOWN, the way a list is
     // written - each column of a to-do (one per day) from its first row.
-    const source = BY_SLUG[region.slug] ?? LISTS.find(([re]) => re.test(region.heading))?.[1] ?? (region.checkX !== null ? TODOS : GENERIC_LIST);
+    const ownItems = own(person?.lists);
+    const source = ownItems ?? BY_SLUG[region.slug] ?? LISTS.find(([re]) => re.test(region.heading))?.[1] ?? (region.checkX !== null ? TODOS : GENERIC_LIST);
     const segments = rows.filter((row) => row[0] > cy + 40);
     const byColumn = new Map<number, typeof segments>();
     for (const seg of segments) {
@@ -663,14 +567,26 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const sorted = column.sort((a, b) => a[0] - b[0]);
       // The first column always has something: a one-column checklist (a
       // watchlist, stretches) left bare reads as a blank module.
-      const count = c === 0 ? r.int(2, region.checkX !== null ? 4 : 5) : region.checkX !== null ? r.int(0, 4) : r.int(0, 2);
-      const skip = region.checkX === null && r.chance(0.25) ? 1 : 0;
+      // The person's own list is written out, shared across a to-do's days;
+      // anything else, a few items.
+      const count = ownItems
+        ? Math.ceil(ownItems.length / columnsInOrder.length)
+        : c === 0
+          ? r.int(2, region.checkX !== null ? 4 : 5)
+          : region.checkX !== null
+            ? r.int(0, 4)
+            : r.int(0, 2);
+      const skip = !ownItems && region.checkX === null && r.chance(0.25) ? 1 : 0;
       picked.push(...sorted.slice(skip, skip + count));
     }
     for (const [ly, lx0, lx1] of picked) {
       const hasCheck = region.checkX !== null && region.columns.some((x) => x > lx0 && x < lx0 + 90);
       const checkRight = hasCheck ? region.columns.find((x) => x > lx0 && x < lx0 + 90)! : lx0;
-      const x = checkRight + 16;
+      // A numbered list prints its number at the start of the line: write
+      // after it, not give the line up (every numbered list - Priorities,
+      // Big Three - came out empty until 2026-10-06).
+      const number = region.printed.find(([px, py, pw, ph]) => px < checkRight + 90 && px + pw > checkRight && py < ly && py + ph > ly - pitch);
+      const x = (number ? number[0] + number[2] : checkRight) + 16;
       const segEnd = Math.min(lx1, region.columns.find((c) => c > x + 60) ?? lx1);
       if (!clearOf(region.printed, x, segEnd, ly - pitch, ly)) continue;
       const item = deal(source);
@@ -684,8 +600,16 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     }
   }
 
-  // --- last: the highlighter, a circle, an underline, a doodle by the date
-  if (writtenEvents.length > 0) {
+  // --- last: the highlighter, a circle, an underline, a doodle by the date.
+  // The person's own marks where they gave some; otherwise one of each, on
+  // things picked at random.
+  for (const { written, mark } of marked) {
+    const [x, y, w, hgt] = written.box;
+    if (mark === "highlight") items.push({ kind: "strokes", page: written.page, paths: [wobble([x - 10, y + hgt * 0.55, x + w + 12, y + hgt * 0.52], 2, nextSeed(), 30)], pen: hand.highlight, pause: 0.4 });
+    else if (mark === "circle") items.push({ kind: "strokes", page: written.page, paths: circleAround(x, y, w, hgt, nextSeed()), pen: hand.accent });
+    else items.push({ kind: "strokes", page: written.page, paths: underline(x, x + w, y + hgt + 6, nextSeed(), false), pen: hand.accent });
+  }
+  if (marked.length === 0 && writtenEvents.length > 0) {
     const h = r.pick(writtenEvents);
     const [x, y, w, hgt] = h.box;
     items.push({ kind: "strokes", page: h.page, paths: [wobble([x - 10, y + hgt * 0.55, x + w + 12, y + hgt * 0.52], 2, nextSeed(), 30)], pen: hand.highlight, pause: 0.4 });

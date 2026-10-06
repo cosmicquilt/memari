@@ -13,7 +13,7 @@
 // onto the last frame's pages.
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { LandingSpread } from "./spreads";
+import type { LandingSpread, SpreadPerson } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
 import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
@@ -53,6 +53,8 @@ export function VideoHero() {
    *  video/canvasPicture.ts). Until then - and the sheets' until the film
    *  rests - they are plain pictures, there from the first frame. */
   const [sidesReady, setSidesReady] = useState(false);
+  /** Whose week is on the pages - for "Use this week". */
+  const [showing, setShowing] = useState<(SpreadPerson & { key: string }) | null>(null);
   const [sheetsReady, setSheetsReady] = useState(false);
 
   // The side blur only while the page is at its own scale: pinched in, the
@@ -217,10 +219,15 @@ export function VideoHero() {
       const pictures: HTMLCanvasElement[] = [];
       const dirty = [false, false];
       const textureHeight = window.devicePixelRatio >= 2 && window.innerWidth > 900 ? 2048 : 1448;
-      const pages = new PageLoop(spreads, textureHeight, (page, picture) => {
-        pictures[page] = picture;
-        dirty[page] = true;
-      });
+      const pages = new PageLoop(
+        spreads,
+        textureHeight,
+        (page, picture) => {
+          pictures[page] = picture;
+          dirty[page] = true;
+        },
+        (spread) => setShowing({ key: spread.key, ...spread.person })
+      );
       await pages.ready();
       if (disposed) {
         warp.dispose();
@@ -383,6 +390,25 @@ export function VideoHero() {
       <div className={styles.videoScrim} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark className={styles.titleOverFilm} />
+      {/* "Use this week" (2026-10-06): the week on the pages, as a journal
+          of your own - the same layout, opened in the editor. A plain form
+          post, so it works before any script and is never prefetched. See
+          app/app/from/[key]/route.ts. */}
+      {showing && drawn && (
+        <form key={showing.key} className={styles.useWeek} method="post" action={`/app/from/${showing.key}`}>
+          <input type="hidden" name="tz" value={Intl.DateTimeFormat().resolvedOptions().timeZone} />
+          <p className={styles.useWeekWho}>
+            {showing.name}, {showing.age}
+            <span>
+              {" "}
+              · {showing.archetype} · {showing.week}
+            </span>
+          </p>
+          <button type="submit" className={styles.useWeekButton}>
+            Use {showing.name}&rsquo;s week <span aria-hidden="true">&rarr;</span>
+          </button>
+        </form>
+      )}
       <p className={styles.srOnly}>
         A journal on a desk opens to a blank week; a planner layout appears on its pages and is written in by hand, then another
         layout takes its place.

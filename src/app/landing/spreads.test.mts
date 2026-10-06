@@ -4,6 +4,8 @@
 //
 // Run as part of: npm test
 import { SPREAD_DEFS, landingSpreads, spreadProblems } from "./spreads";
+import { PEOPLE, PEOPLE_BY_KEY, SIDEBAR_FROM_ROW } from "./archetypes";
+import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail?: string) {
@@ -13,13 +15,33 @@ function check(name: string, condition: boolean, detail?: string) {
   }
 }
 
+// The sidebar starts under the week title, wherever pageLayouts puts it.
+check("the sidebar starts under the week title", SIDEBAR_FROM_ROW === WEEK_TITLE_ROW_SPAN, `${SIDEBAR_FROM_ROW} vs ${WEEK_TITLE_ROW_SPAN}`);
+// Every person's sidebar and zones are full: "Use this week" relies on it,
+// so the weekly layout's own seeded boxes find no free cells to come back
+// into (planner/archetypeWeek.ts).
+for (const person of PEOPLE) {
+  const sidebarRows = person.layout.sidebar.reduce((n, [, rows]) => n + rows, 0);
+  check(`${person.key}: the sidebar fills its 33 rows`, sidebarRows === 33, `${sidebarRows}`);
+  for (const [zone, slots, columns] of [["below-left", person.layout.belowLeft, 18], ["below-right", person.layout.belowRight, 24]] as const) {
+    const cells = slots.reduce((n, s) => n + s.columnSpan * s.rowSpan, 0);
+    check(`${person.key}: the ${zone} zone is full`, cells === columns * 15, `${cells} of ${columns * 15} cells`);
+  }
+}
 for (const def of SPREAD_DEFS) {
   const problems = spreadProblems(def);
   check(`${def.key} is a valid spread`, problems.length === 0, problems.join("; "));
 }
 
-const spreads = landingSpreads(new Date(Date.UTC(2026, 8, 22)));
+// Everyone, held weeks included (production: false) - they are checked as
+// strictly as the ones on the live site.
+const spreads = landingSpreads(new Date(Date.UTC(2026, 8, 22)), false);
 check("one spread per definition", spreads.length === SPREAD_DEFS.length);
+// Held for a read-through: not on the live site.
+const live = landingSpreads(new Date(Date.UTC(2026, 8, 22)), true);
+check("held weeks stay off the live site", live.every((s) => !PEOPLE_BY_KEY[s.key].held) && live.length < spreads.length);
+// The student first ("start with student").
+check("the student's week comes first", spreads[0].key === "student" && live[0].key === "student", spreads[0].key);
 for (const spread of spreads) {
   for (const [index, page] of spread.pages.entries()) {
     const hours = page.regions.find((r) => r.kind === "hours");
@@ -40,9 +62,10 @@ for (const spread of spreads) {
     check(`${spread.key} page ${index}: something drawn`, page.marks.length > 100, `${page.marks.length} marks`);
   }
 }
-// Consecutive weeks: the first spread is the week containing the date given.
+// Consecutive weeks: the first spread is the week containing the date given
+// (a Tuesday; the student's weeks start on Monday).
 const firstTitle = spreads[0].pages[0].marks.find((m) => m.k === "t" && /-/.test(m.t));
-check("the first spread is this week", firstTitle?.k === "t" && firstTitle.t === "SEP 20 - SEP 26", firstTitle?.k === "t" ? firstTitle.t : "no title");
+check("the first spread is this week", firstTitle?.k === "t" && firstTitle.t === "SEP 21 - SEP 27", firstTitle?.k === "t" ? firstTitle.t : "no title");
 
 if (failures > 0) {
   console.error(`${failures} landing spread check(s) failed.`);

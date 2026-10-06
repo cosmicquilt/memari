@@ -23,11 +23,12 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import { gridCellToPixels, type PageGrid } from "@/lib/grid";
-import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleSchemaDefaults } from "@/lib/moduleRegistry";
+import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
-import { resolveFontFamily, type FontChoice } from "@/lib/theme";
+import { resolveFontFamily } from "@/lib/theme";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { dateRangeLabel } from "@/lib/pageLevels";
+import { PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type WeekLayout } from "./archetypes";
 
 const TRIM = PLANNER_TRIMS.bound7x10;
 export const LANDING_PAGE_GRID: PageGrid = {
@@ -43,140 +44,17 @@ export const LANDING_PAGE_GRID: PageGrid = {
  *  would move nothing a visitor notices, so they share one. */
 const HOURS = { startTime: "05:30", endTime: "23:30", intervalMinutes: 30, hourLineStyle: "full", dayBorder: false };
 const HOURS_ROW_SPAN = 20;
-/** The zone under the hours starts a row below them. */
-const BELOW_ROW = HOURS_ROW_SPAN + 1;
 
-/** One module in a zone: slug, then its span, then settings on top of its
- *  defaults. */
-type Slot = { slug: string; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; props?: Record<string, unknown> };
-
-type SpreadDef = {
-  key: string;
-  font: FontChoice;
-  weekStartsMonday: boolean;
-  /** Top to bottom, 6 columns wide, filling rows 3 to 35. */
-  sidebar: Array<[slug: string, rowSpan: number, props?: Record<string, unknown>]>;
-  /** Under the left page's hours: columns 6-23, rows 21-35. */
-  belowLeft: Slot[];
-  /** Under the right page's hours: columns 0-23, rows 21-35. */
-  belowRight: Slot[];
-};
-
-const box = (heading: string, ruled = false) => ({ heading, ruled, templateHeading: heading });
-const below = (slug: string, columnStart: number, rowStart: number, columnSpan: number, rowSpan: number, props?: Record<string, unknown>): Slot => ({
-  slug,
-  columnStart,
-  rowStart,
-  columnSpan,
-  rowSpan,
-  props,
-});
+type SpreadDef = WeekLayout & { key: string };
 
 /**
- * The spreads, curated rather than random: a random draw from 120 modules
- * mostly produces pages nobody would keep. Each is one kind of week someone
- * really plans - the template, a wellness week, a focus week, training,
- * money, a creative week - so turning the page shows how different one
- * journal can be from the next. Order is shuffled on the page.
+ * The spreads: one per person in archetypes.ts, in its order - the student
+ * first, then the jobs most people do, then the rest (2026-10-06). Each is
+ * one real week someone plans, so turning the page shows how different one
+ * journal can be from the next. They replaced six themed weeks (classic,
+ * wellness, focus, training, money, creative) written from shared pools.
  */
-export const SPREAD_DEFS: SpreadDef[] = [
-  {
-    key: "classic",
-    font: "serif",
-    weekStartsMonday: false,
-    sidebar: [
-      ["labeled-box", 7, box("Things I'm Grateful For")],
-      ["labeled-box", 11, box("Reminders")],
-      ["labeled-box", 15, box("Notes")],
-    ],
-    belowLeft: [below("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
-    belowRight: [below("todo-checklist", 0, BELOW_ROW, 24, 15, { dayCount: 4 })],
-  },
-  {
-    key: "wellness",
-    font: "sans",
-    weekStartsMonday: true,
-    sidebar: [
-      ["weekly-priorities", 11],
-      ["mood-tracker", 10],
-      ["gratitude-three", 12],
-    ],
-    belowLeft: [below("habit-tracker", 6, BELOW_ROW, 18, 15)],
-    belowRight: [
-      below("meal-planner", 0, BELOW_ROW, 24, 6),
-      // Plants to water, named, a column a day. (The water strip stood
-      // here: its smallest size is two strips, two weeks, so a one-week
-      // spread printed "WATER" twice. Water is one of the habits instead.)
-      below("plant-care", 0, BELOW_ROW + 6, 16, 9),
-      below("labeled-box", 16, BELOW_ROW + 6, 8, 9, box("Notes", true)),
-    ],
-  },
-  {
-    key: "focus",
-    font: "serif",
-    weekStartsMonday: true,
-    sidebar: [
-      ["daily-big-three", 5],
-      ["brain-dump", 12],
-      ["someday-maybe", 16],
-    ],
-    belowLeft: [below("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
-    belowRight: [
-      below("eisenhower-matrix", 0, BELOW_ROW, 12, 15),
-      below("labeled-box", 12, BELOW_ROW, 12, 15, box("Wins This Week")),
-    ],
-  },
-  {
-    key: "training",
-    font: "sans",
-    weekStartsMonday: true,
-    sidebar: [
-      ["stretch-routine", 13],
-      // One to five: ten circles do not fit a sidebar and overlap.
-      ["energy-pain-scale", 8, { scaleMax: 5 }],
-      ["labeled-box", 12, box("Meals")],
-    ],
-    belowLeft: [below("workout-log", 6, BELOW_ROW, 18, 15)],
-    belowRight: [
-      below("weekly-workout-plan", 0, BELOW_ROW, 24, 7),
-      below("run-log", 0, BELOW_ROW + 7, 12, 8),
-      // Recovery beside the runs. (A step counter stood here: a month of
-      // squares, 31, in a week, in a box it left three-quarters empty.)
-      below("sleep-log", 12, BELOW_ROW + 7, 12, 8),
-    ],
-  },
-  {
-    key: "money",
-    font: "serif",
-    weekStartsMonday: false,
-    sidebar: [
-      ["no-spend-challenge", 8],
-      ["grocery-list", 13],
-      ["labeled-box", 12, box("Bills Due")],
-    ],
-    belowLeft: [below("spending-log", 6, BELOW_ROW, 18, 15)],
-    belowRight: [
-      below("budget", 0, BELOW_ROW, 12, 15),
-      // Five rows each: a bar with words under it, its floor since the end
-      // labels' line counts (2026-10-01).
-      below("savings-goal", 12, BELOW_ROW, 12, 5),
-      below("debt-payoff", 12, BELOW_ROW + 5, 12, 5),
-      below("labeled-box", 12, BELOW_ROW + 10, 12, 5, box("Notes")),
-    ],
-  },
-  {
-    key: "creative",
-    font: "sans",
-    weekStartsMonday: false,
-    sidebar: [
-      ["daily-affirmation", 5],
-      ["watchlist", 13],
-      ["writing-prompt", 15],
-    ],
-    belowLeft: [below("sketch-box", 6, BELOW_ROW, 18, 15)],
-    belowRight: [below("todo-checklist", 0, BELOW_ROW, 24, 15, { dayCount: 4 })],
-  },
-];
+export const SPREAD_DEFS: SpreadDef[] = PEOPLE.map((person) => ({ key: person.key, ...person.layout }));
 
 // ---------------------------------------------------------------- regions
 
@@ -215,7 +93,9 @@ export type Region =
   | { kind: "title"; box: Box };
 
 export type LandingPage = { marks: PreviewMark[]; regions: Region[] };
-export type LandingSpread = { key: string; fontFamily: string; pages: [LandingPage, LandingPage] };
+/** Whose week a spread is - for "Use this week" and the gallery's captions. */
+export type SpreadPerson = { name: string; age: number; archetype: string; week: string };
+export type LandingSpread = { key: string; fontFamily: string; person: SpreadPerson; pages: [LandingPage, LandingPage] };
 
 const isHRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.h <= 3 && m.w >= 60;
 const isVRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.w <= 3 && m.h >= 150;
@@ -268,11 +148,33 @@ function boxRegion(slug: string, heading: string, rect: Box, marks: PreviewMark[
     .filter((m): m is Extract<PreviewMark, { k: "t" }> => m.k === "t")
     .filter((t) => t.y + t.z > top + 2 && t.y < y + h && t.x < x + w && t.x + t.w > x)
     .map((t) => [Math.round(t.x), Math.round(t.y), Math.round(t.w), Math.round(t.z * 1.25)] as Box);
-  const cells: Box[] = marks
+  const inside = (m: { x: number; y: number; w: number; h: number }) => m.y >= top && m.y + m.h <= y + h && m.x >= x && m.x + m.w <= x + w;
+  const squares: Box[] = marks
     .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && m.w >= 14 && m.w <= 64 && Math.abs(m.w - m.h) < 6)
-    .filter((m) => m.y >= top && m.y + m.h <= y + h && m.x >= x && m.x + m.w <= x + w)
-    .map((m) => [m.x, m.y, m.w, m.h] as Box)
-    .sort((a, b) => (Math.abs(a[1] - b[1]) > 4 ? a[1] - b[1] : a[0] - b[0]));
+    .filter(inside)
+    .map((m) => [m.x, m.y, m.w, m.h] as Box);
+  // A progress meter's row of marks is one outlined strip divided by
+  // hairlines (since its rework), not a square per mark: each gap between
+  // dividers is a cell. (2026-10-06: the 90-in-90 meter came out with no
+  // cells, so nothing was filled in.)
+  const stripCells: Box[] = squares.length
+    ? []
+    : marks
+        // Its first strip sits on the heading's rule (a hair above where the
+        // content is taken to start), and a short meter's strips stretch to
+        // fill the box - up to twice a row's height.
+        .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && m.h >= 14 && m.h <= 160 && m.w > m.h * 3)
+        .filter((m) => inside({ ...m, y: m.y + 2, h: m.h - 2 }))
+        .flatMap((strip) => {
+          const dividers = marks
+            .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !m.s && m.w <= 3 && Math.abs(m.y - strip.y) < 2 && Math.abs(m.h - strip.h) < 3 && m.x > strip.x + 2 && m.x < strip.x + strip.w - 2)
+            .map((m) => m.x)
+            .sort((p, q) => p - q);
+          if (dividers.length < 3) return [];
+          const edges = [strip.x, ...dividers, strip.x + strip.w];
+          return edges.slice(1).map((right, i) => [edges[i], strip.y, right - edges[i], strip.h] as Box);
+        });
+  const cells: Box[] = [...squares, ...stripCells].sort((a, b) => (Math.abs(a[1] - b[1]) > 4 ? a[1] - b[1] : a[0] - b[0]));
   return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells };
 }
 
@@ -332,14 +234,15 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
   // bare primitive - an untitled box, a matrix labelled Q1 to Q4, a progress
   // meter with nothing in it - which is what the spreads did until
   // 2026-09-23 ("some don't have title ... drawing over a blank").
-  const filled = (slug: string, props?: Record<string, unknown>) => ({ ...moduleSchemaDefaults(slug), ...(props ?? {}) });
-  let row = WEEK_TITLE_ROW_SPAN;
-  for (const [slug, rowSpan, props] of def.sidebar) {
-    placed.push({ slug, page: 0, columnStart: 0, rowStart: row, columnSpan: 6, rowSpan, locked: false, props: filled(slug, props) });
-    row += rowSpan;
+  // Every module that prints weekdays starts them on the spread's week
+  // start, as in a journal (the registry's weekStart) - a habit tracker on a
+  // Monday week printed S M T W T F S until 2026-10-06.
+  const weekStartDay = def.weekStartsMonday ? 1 : 0;
+  for (const p of layoutPlacements(def)) {
+    const props = { ...moduleSchemaDefaults(p.slug), ...(p.props ?? {}) };
+    const rotate = moduleDefinition(p.slug)?.weekStart;
+    placed.push({ ...p, locked: false, props: rotate ? rotate(props, weekStartDay) : props });
   }
-  for (const s of def.belowLeft) placed.push({ ...s, page: 0, locked: false, props: filled(s.slug, s.props) });
-  for (const s of def.belowRight) placed.push({ ...s, page: 1, locked: false, props: filled(s.slug, s.props) });
   return placed;
 }
 
@@ -405,10 +308,14 @@ function buildSpread(def: SpreadDef, week: ReturnType<typeof weekOf>): LandingSp
     else if (p.slug === "week-title") page.regions.push({ kind: "title", box });
     else page.regions.push(boxRegion(p.slug, String(p.props.heading ?? MODULE_REGISTRY[p.slug]?.label ?? p.slug), box, marks));
   }
-  return { key: def.key, fontFamily, pages };
+  const { name, age, archetype, week: story } = PEOPLE_BY_KEY[def.key];
+  return { key: def.key, fontFamily, person: { name, age, archetype, week: story }, pages };
 }
 
-/** The spreads for the week containing `today`, then the weeks after it. */
-export function landingSpreads(today = new Date()): LandingSpread[] {
-  return SPREAD_DEFS.map((def, index) => buildSpread(def, weekOf(today, def.weekStartsMonday, index)));
+/** The spreads for the week containing `today`, then the weeks after it -
+ *  everyone's in development, and on the live site everyone's not held for
+ *  a read-through (see archetypes.ts). */
+export function landingSpreads(today = new Date(), production = process.env.NODE_ENV === "production"): LandingSpread[] {
+  const shown = new Set(heroPeople(production).map((p) => p.key));
+  return SPREAD_DEFS.filter((def) => shown.has(def.key)).map((def, index) => buildSpread(def, weekOf(today, def.weekStartsMonday, index)));
 }

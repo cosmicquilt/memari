@@ -598,6 +598,80 @@
   background: linear-gradient(to bottom, rgba(16, 10, 6, 0.55) 0%, rgba(16, 10, 6, 0.28) 26%, rgba(16, 10, 6, 0) 46%);
 }
 
+/* "Use this week" (VideoHero): whose week is on the pages, and a button
+   that makes it yours. Bottom right, clear of the title, the book and the
+   post-it; the nav's pill, in the cream it wears over the film. Fades in
+   with each new week. */
+.useWeek {
+  position: absolute;
+  z-index: 3;
+  right: clamp(16px, 3vw, 44px);
+  bottom: clamp(22px, 4.5vh, 44px);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  animation: fadeIn 0.6s ease-out both;
+}
+
+.useWeekWho {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: rgba(255, 248, 236, 0.95);
+  text-shadow: 0 1px 6px rgba(16, 10, 6, 0.7);
+  white-space: nowrap;
+}
+
+.useWeekWho span {
+  opacity: 0.82;
+}
+
+.useWeekButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: var(--cream);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(16, 10, 6, 0.3);
+  transition: transform 160ms ease-out, background 160ms ease-out;
+}
+
+.useWeekButton:hover {
+  background: #fff8ec;
+}
+
+.useWeekButton:active {
+  transform: scale(0.97);
+}
+
+.useWeekButton:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+}
+
+/* Upright: centred over the post-it, which has the bottom middle. */
+@media (max-aspect-ratio: 1/1) {
+  .useWeek {
+    right: 50%;
+    transform: translateX(50%);
+    bottom: 118px;
+    align-items: center;
+  }
+  .useWeekWho {
+    font-size: 12px;
+  }
+}
+
 /* A blur that grows toward the screen's left and right edges (Andrew,
    2026-10-02: "i like idea of blur vignette but not nearly that much"), over
    the film and the desk beyond it alike. --side-blur is the blur at the very
@@ -844,6 +918,34 @@
 .spreadCard figcaption span {
   font-size: 15px;
   color: var(--muted);
+}
+
+/* "Use this week", under each layout: a quiet text button in the editor's
+   blue, the way a caption's link reads. */
+.spreadUse {
+  margin: 4px 0 0;
+}
+
+.spreadUse button {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #4a5cff;
+  cursor: pointer;
+}
+
+.spreadUse button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spreadUse button:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .facts {
