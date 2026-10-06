@@ -26,6 +26,7 @@ import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModul
 import { moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
+import { textInkBand } from "./modules/textFit";
 
 const PAGE: PageGrid = {
   widthPx: 2175,
@@ -227,6 +228,11 @@ for (const slug of RULED) {
 // the air above a strip label is a real decision about where every label
 // in the module sits relative to the dots, and it should cost one
 // deliberate edit here.
+//
+// MEASURED TO THE CAPITALS since 2026-10-06, not the label's line box: the
+// icons were given the empty top of that box ("the icons could take up more
+// space above them"), so the label is set with its capitals 3px under the
+// line - the decision this number states - and its box starts above them.
 const STRIP_LABEL_OFFSET_PX = 3;
 const STRIPPED = slugsDrawnBy("icon-strip");
 const PITCH_PX = cellHeightPx(PAGE);
@@ -252,7 +258,7 @@ for (const slug of STRIPPED) {
       );
       const labels = elements
         .filter((e) => e.type === "text" && String(e.id).endsWith("-heading"))
-        .map((e) => e.y ?? 0)
+        .map((e) => textInkBand(e.y ?? 0, Number(e.fontSize), String(e.fontFamily), String(e.text)).top)
         .sort((a, b) => a - b);
       if (labels.length === 0) continue;
       checked++;

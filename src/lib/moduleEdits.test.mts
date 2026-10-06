@@ -12,8 +12,8 @@ import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hour
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
 import { moduleDefinition, withCurrentSettings } from "./moduleRegistry";
-import { textWidthPx } from "./modules/textFit";
-import { GLYPH_SHAPES, glyphElement } from "./modules/glyphs";
+import { textInkBand, textWidthPx } from "./modules/textFit";
+import { GLYPH_SHAPES, glyphAspect, glyphElement, isIconShape, type GlyphShape } from "./modules/glyphs";
 import { progressMeterColumns, progressMeterLayout } from "./modules/progressMeter";
 import { habitTrackerWideColumns, isHabitTrackerCompact } from "./modules/habitTracker";
 import { promptLinesFor } from "./modules/promptedLines";
@@ -582,6 +582,37 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     ids(faced, /-i\d+$/).every((e, i) => e.x === ids(plain, /-i\d+$/)[i].x && e.y === ids(plain, /-i\d+$/)[i].y),
     "in the same places"
   );
+
+  // ROOM (2026-10-06, "the icons could take up more space above them"): every
+  // icon FILLS its room - its drawing reaches the band's height or its share
+  // of the width, whichever runs out first - stays inside both, and clears
+  // the label's capitals. Tall, wide and square icons, few and many a group.
+  for (const shape of ["spoon", "toothbrush", "trash", "droplet", "bus", "dumbbell", "sun"] as GlyphShape[]) {
+    for (const count of [2, 7, 12]) {
+      const drawn = draw("icon-strip", { heading: "Label", icon: shape, count, groups: 4 }, 24, 1);
+      const label = ids(drawn, /-s0-heading$/)[0];
+      const capsBottom = textInkBand(Number(label.y), Number(label.fontSize), String(label.fontFamily), "A").bottom;
+      const cellBottom = Number(label.y) + 75; // a strip is one cell; the label starts near its top
+      const marks = ids(drawn, /-s0-g\d+-i\d+$/);
+      const centres = marks.filter((m) => /-g0-/.test(String(m.id))).map((m) => Number(m.x) + Number(m.width) / 2);
+      const pitch = centres.length > 1 ? centres[1] - centres[0] : Infinity;
+      const a = glyphAspect(shape);
+      const m = marks[0];
+      const size = Number(m.width);
+      const drawnW = a < 1 ? size * a : size;
+      const drawnH = a < 1 ? size : size / a;
+      const where = `${shape} x${count}`;
+      check(Number(m.y) >= capsBottom + 2, `${where}: the icon clears the label's capitals`);
+      check(drawnW <= pitch * 0.84 + 0.01, `${where}: drawn ${drawnW.toFixed(1)}px wide in a ${pitch.toFixed(1)}px step`);
+      check(Number(m.y) + size <= cellBottom, `${where}: inside its strip`);
+      const band = cellBottom - 3 - (capsBottom + 4);
+      const fills = Math.abs(drawnW - pitch * 0.84) < 0.5 || Math.abs(Math.max(drawnH, size) - band) < 3 || Math.abs(size - Math.min(band, pitch * 0.84)) < 0.5;
+      check(fills, `${where}: fills its room (drawn ${drawnW.toFixed(1)}x${drawnH.toFixed(1)}, step ${pitch.toFixed(1)}, band ${band.toFixed(1)})`);
+    }
+  }
+  // The spoons' complaint, directly: a dozen a group, now nearly the band tall.
+  const spoons = ids(draw("icon-strip", { heading: "Spoons", icon: "spoon", count: 12, groups: 4 }, 24, 1), /-i\d+$/);
+  check(Number(spoons[0].height) >= 48, `a dozen spoons a group stand ${Number(spoons[0].height).toFixed(1)}px tall in a 75px strip`);
 }
 
 // --- ratings -----------------------------------------------------------------
@@ -594,6 +625,18 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const facedSuns = ids(draw("rating-strip", { ...base, shape: "sun", faces: true }, 6, 4), /-i\d-v\d$/);
   const plainSuns = ids(draw("rating-strip", { ...base, shape: "sun" }, 6, 4), /-i\d-v\d$/);
   check(facedSuns.length === 10 && facedSuns.every((m, i) => m.pathD !== plainSuns[i].pathD), "Faces draws the marks' face drawing");
+  // An ICON gets two thirds of the row, a circle half ("a bit more room in
+  // each direction", 2026-10-06) - and never more than its column.
+  const sunSize = Number(ids(draw("rating-strip", { ...base, shape: "sun" }, 12, 4), /-i\d-v\d$/)[0].width);
+  const circleSize = Number(ids(draw("rating-strip", { ...base, shape: "circle" }, 6, 4), /-i\d-v\d$/)[0].width);
+  check(Math.abs(circleSize - 37.5) < 0.01, `a circle stays half a row (got ${circleSize})`);
+  check(Math.abs(sunSize - 50) < 0.01, `a sun is two thirds of the row in a wide strip (got ${sunSize.toFixed(1)})`);
+  const narrow = ids(draw("rating-strip", { ...base, shape: "sun", scaleMin: 1, scaleMax: 10 }, 6, 4), /-i0-v\d+$/);
+  const step = Number(narrow[1].x) - Number(narrow[0].x);
+  check(Number(narrow[0].width) <= step * 0.84 + 0.01, `ten suns in a sidebar keep inside their columns (${Number(narrow[0].width).toFixed(1)} in ${step.toFixed(1)})`);
+  check(isIconShape("sun") && !isIconShape("circle"), "suns are icons, circles geometry");
+  const tenCircles = ids(draw("rating-strip", { ...base, shape: "circle", scaleMin: 1, scaleMax: 10 }, 6, 4), /-i0-v\d+$/);
+  check(Number(tenCircles[0].width) <= (Number(tenCircles[1].x) - Number(tenCircles[0].x)) * 0.84 + 0.01, "ten circles in a sidebar no longer overlap");
   check(ids(draw("rating-strip", { ...base, shape: "nonsense" }, 6, 6), /-i\d-v\d$/).every((m) => Number(m.cornerRadius ?? 0) > 0), "an unknown mark is a circle");
   const numbers = texts(draw("rating-strip", base, 6, 6), /-scale\d+$/);
   check(numbers.join(",") === "1,2,3,4,5", "numbers above by default");

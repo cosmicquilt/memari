@@ -31,8 +31,8 @@
 // draws the box.
 
 import { ptToPx } from "@/lib/print-spec";
-import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
-import { estimateTextWidthPx, fitLabel } from "@/lib/modules/textFit";
+import { GLYPH_SHAPES, glyphElement, glyphSizeToFit, type GlyphShape } from "@/lib/modules/glyphs";
+import { estimateTextWidthPx, fitLabel, textInkBand } from "@/lib/modules/textFit";
 import { weekdayInitials, weekdayShortNames } from "@/lib/weekDays";
 import {
   NEAR_BLACK,
@@ -127,8 +127,10 @@ export type RenderedElement = {
 /** A sidebar column, in lattice cells - the unit a group is one of. */
 const COLUMN_CELLS = 6;
 const HEADING_FONT_PT = 5;
-/** Air above the heading, between heading and glyphs, and below. */
+/** Air above the heading's capitals and below the glyphs. */
 const AIR_PX = 3;
+/** Between the heading's capitals and the top of the glyphs. */
+const LABEL_GAP_PX = 4;
 /** A glyph never fills its whole share of the width, or the row reads as a
  *  solid bar. */
 const GLYPH_WIDTH_SHARE = 0.84;
@@ -187,16 +189,27 @@ export function renderIconStrip(
   const stripCount = Math.max(1, Math.round(allocationHeight / pitch));
 
   const headingHeight = ptToPx(HEADING_FONT_PT) * 1.2;
-  const glyphBandTop = AIR_PX + (heading ? headingHeight + AIR_PX : 0);
+  // THE GLYPHS START UNDER THE LABEL'S CAPITALS, not under its line box.
+  // A 5pt line box is 25px of the 75px cell and the capitals are about 14 of
+  // it: the rest was empty air above the icons - "the icons could take up
+  // more space above them" (2026-10-06). So the label is set with its
+  // capitals at the top of the cell, and the glyph band begins a few pixels
+  // under them: 52px of a 75px cell where it was 41.
+  const capBand = textInkBand(0, ptToPx(HEADING_FONT_PT), fontFamily, "A");
+  const labelY = AIR_PX - capBand.top;
+  const glyphBandTop = heading || (config.stripLabels ?? []).some((label) => typeof label === "string" && label.trim())
+    ? AIR_PX + (capBand.bottom - capBand.top) + LABEL_GAP_PX
+    : AIR_PX;
   const glyphBandHeight = pitch - glyphBandTop - AIR_PX;
 
   const groupWidth = geometry.width / groups;
   const groupPad = Math.min(GROUP_PAD_MAX_PX, groupWidth * GROUP_PAD_SHARE);
   const glyphPitch = (groupWidth - groupPad * 2) / count;
-  const glyphSize = Math.max(
-    1,
-    Math.min(glyphBandHeight, glyphPitch * GLYPH_WIDTH_SHARE)
-  );
+  // Each glyph fitted by its DRAWING, not its square - see glyphSizeToFit: a
+  // spoon is a third as wide as it is tall, and sized by its square it came
+  // out a third of the height it had.
+  const sizeOf = (glyph: GlyphShape) =>
+    glyphSizeToFit(glyph, config.faces === true, glyphPitch * GLYPH_WIDTH_SHARE, glyphBandHeight);
 
   const stripLabels = (config.stripLabels ?? []).map((text) => (typeof text === "string" ? text.trim() : ""));
   const labelSizePx = ptToPx(HEADING_FONT_PT);
@@ -255,7 +268,7 @@ export function renderIconStrip(
         id: id(`s${s}-heading`),
         type: "text",
         x: geometry.x + labelInsetPx,
-        y: stripTop + AIR_PX,
+        y: stripTop + labelY,
         width: labelWidth,
         height: headingHeight,
         text: label.text,
@@ -286,7 +299,7 @@ export function renderIconStrip(
           id: id(`g${g}-day`),
           type: "text",
           x: groupRight(g) - dayLabelWidth(name),
-          y: stripTop + AIR_PX,
+          y: stripTop + labelY,
           width: dayLabelWidth(name),
           height: headingHeight,
           text: name,
@@ -299,9 +312,13 @@ export function renderIconStrip(
       }
     }
 
-    const glyphTop = stripTop + glyphBandTop + (glyphBandHeight - glyphSize) / 2;
     for (let g = 0; g < groups; g++) {
       const groupLeft = geometry.x + g * groupWidth + groupPad;
+      const glyph = iconFor(s, g);
+      const glyphSize = sizeOf(glyph);
+      // Centred in the band, each at its own size: one row may hold a day's
+      // own icon beside the strip's.
+      const glyphTop = stripTop + glyphBandTop + (glyphBandHeight - glyphSize) / 2;
       for (let i = 0; i < count; i++) {
         const centre = groupLeft + glyphPitch * (i + 0.5);
         elements.push(
@@ -310,7 +327,7 @@ export function renderIconStrip(
             x: centre - glyphSize / 2,
             y: glyphTop,
             sizePx: glyphSize,
-            shape: iconFor(s, g),
+            shape: glyph,
             faces: config.faces === true,
           })
         );

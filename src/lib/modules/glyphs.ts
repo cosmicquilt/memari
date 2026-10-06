@@ -176,6 +176,29 @@ export function glyphPathD(shape: GlyphShape, x: number, y: number, sizePx: numb
   return parts.join(" ");
 }
 
+/** A drawing's width over its height - 1 for the geometry, which is square. */
+export function glyphAspect(shape: GlyphShape, faces = false): number {
+  return isIconShape(shape) ? drawingOf(shape, faces).aspect : 1;
+}
+
+/**
+ * The size (the side of the glyph's square box) at which its DRAWING fits
+ * `maxWidth` across and `maxHeight` down.
+ *
+ * Fitting the square instead left every tall icon thin: a spoon is a third
+ * as wide as it is tall, so a row of them sized by their squares came out a
+ * third of the height they had room for - "the spoons are very small they
+ * have more room above them to be bigger" (2026-10-06). A tall drawing fills
+ * its box's height and spans `aspect` of its width, so it may grow until
+ * either runs out. A wide one keeps its box inside the height, so its box -
+ * which consumers that draw the box rather than the path still use - never
+ * leaves the band it was given.
+ */
+export function glyphSizeToFit(shape: GlyphShape, faces: boolean, maxWidth: number, maxHeight: number): number {
+  const aspect = glyphAspect(shape, faces);
+  return Math.max(1, aspect < 1 ? Math.min(maxHeight, maxWidth / aspect) : Math.min(maxWidth, maxHeight));
+}
+
 /** The stroke the geometry is drawn with: the interior rule weight. */
 export const GLYPH_STROKE_PT = RULE_WIDTH_PT;
 

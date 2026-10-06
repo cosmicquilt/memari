@@ -16,7 +16,7 @@
 // and moduleRegistry.ts for the classifier that checks it.
 
 import { ptToPx } from "@/lib/print-spec";
-import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
+import { GLYPH_SHAPES, glyphElement, glyphSizeToFit, isIconShape, type GlyphShape } from "@/lib/modules/glyphs";
 import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
@@ -80,8 +80,15 @@ export type RenderedElement = {
 const SCALE_HEAD_HEIGHT_PT = 18;
 const SCALE_HEAD_FONT_PT = 6.5;
 const ITEM_FONT_PT = 8;
-/** Half a cell each way, centred in its row. */
+/** Half a cell each way, centred in its row - the circle or box you fill. */
 const GLYPH_PT = 9;
+/**
+ * An ICON is drawn larger: two thirds of the row, fitted to its column by its
+ * own width (glyphSizeToFit). Flow's drawings have lines and faces to colour
+ * round, and at half a cell a sun was a blot - "a bit more room in each
+ * direction" (2026-10-06).
+ */
+const ICON_PT = 12;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
 
 const HORIZONTAL_PADDING_PT = 5;
@@ -250,6 +257,13 @@ export function renderRatingStrip(
   );
   // Any glyph the icon strip has - see glyphs.ts; anything else is a circle.
   const shape: GlyphShape = GLYPH_SHAPES.includes(config.shape as GlyphShape) ? (config.shape as GlyphShape) : "circle";
+  // The circle or box at half a row; an icon larger. Either within its
+  // column: a 1-to-10 scale in a sidebar has 23px columns, and the half-row
+  // circles drawn 37.5px across overlapped their neighbours (found 2026-10-06
+  // by the icon-size check, there since the strip was written).
+  const markSize = isIconShape(shape)
+    ? glyphSizeToFit(shape, config.faces === true, step * 0.84, Math.min(ptToPx(ICON_PT), rowHeight - ptToPx(3)))
+    : Math.min(glyph, step * 0.84);
 
   // THE BOX IS FILLED WITH ROWS (2026-10-02, "theres white space at
   // bottom ... do a sweep"): the items, then blank rows to write more in,
@@ -298,9 +312,9 @@ export function renderRatingStrip(
       elements.push(
         glyphElement({
           id: id(`i${i}-v${value}`),
-          x: centreOf(value) - glyph / 2,
-          y: rowTop + (band - glyph) / 2,
-          sizePx: glyph,
+          x: centreOf(value) - markSize / 2,
+          y: rowTop + (band - markSize) / 2,
+          sizePx: markSize,
           shape,
           faces: config.faces === true,
         })
@@ -308,13 +322,13 @@ export function renderRatingStrip(
       if (scaleHead === "inside") {
         // The value in the mark, small and light, so a mark filled in still
         // shows which it was.
-        const insideSize = Math.min(ptToPx(4.5), glyph * 0.5);
+        const insideSize = Math.min(ptToPx(4.5), markSize * 0.5);
         elements.push({
           id: id(`i${i}-v${value}-number`),
           type: "text",
-          x: centreOf(value) - glyph / 2,
-          y: capCentredTextY(rowTop + (band - glyph) / 2, glyph, insideSize, fontFamily),
-          width: glyph,
+          x: centreOf(value) - markSize / 2,
+          y: capCentredTextY(rowTop + (band - markSize) / 2, markSize, insideSize, fontFamily),
+          width: markSize,
           height: insideSize * 1.2,
           text: String(value),
           fontSize: insideSize,
