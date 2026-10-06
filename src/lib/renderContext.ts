@@ -22,7 +22,7 @@
 // all call these two; none of them decides what a page is dated as.
 
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
-import { dayIconsOf, iconsOnDates, monthCellDates, type DayIcon } from "./dayIcons";
+import { dayIconsOf, iconsOnDates, isoDay, monthCellDates, type DayIcon } from "./dayIcons";
 import type { MonthCalendarCell } from "./monthCalendar";
 import { dayUnitColumns, type PageGrid } from "./grid";
 import { EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore";
@@ -75,6 +75,10 @@ export type PageRenderContext = {
    *  which has no days for them to fall on. Optional for a context built
    *  before they existed. */
   dayIcons?: DayIcon[] | null;
+  /** The book's first and last day, "YYYY-MM-DD", or null with no term -
+   *  what a day icon's editor offers to skip comes from inside it. Optional
+   *  for a context built before it existed. */
+  term?: { start: string; end: string } | null;
 };
 
 /** The parts of a book this needs - structural, so a Prisma row with its
@@ -214,6 +218,7 @@ export function renderContextForPage(
     events: placed.events,
     columnDates: placed.columnDates,
     dayIcons: dated ? dayIconsOf(book.theme) : null,
+    term: book.startDate && book.endDate ? { start: isoDay(book.startDate), end: isoDay(book.endDate) } : null,
   };
 }
 

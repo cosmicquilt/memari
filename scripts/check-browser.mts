@@ -3305,6 +3305,123 @@ const moduleBrowser: Probe = {
   },
 };
 
+// ---------------------------------------------------------------------
+// DAY ICONS (2026-10-06): an icon on the days something happens - "color
+// inable trash can that can be added on trash days on weekly and monthly and
+// daily spreads", set "in the module editor", and "customizable though like
+// it can be one off or repeated once every whatever or skip or first monday".
+//
+// Done as a person would in the hours' editor: add one, move it to Tuesdays,
+// name it, skip the Tuesday the preview shows and watch it go, put it back,
+// skip a later one, save. Then read the database and both pages that carry
+// dates: the week's tabs and the month's cells. Icons are the only paths the
+// hours and the calendar draw, so counting paths counts icons.
+// ---------------------------------------------------------------------
+const dayIcons: Probe = {
+  name: "day icons",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Day icons check");
+    const problems: string[] = [];
+    const seen: string[] = [];
+    const context = await page.context().browser()!.newContext({ viewport: { width: VIEWPORT.width, height: 1000 }, deviceScaleFactor: 1 });
+    try {
+      await context.addCookies([
+        { name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" },
+        { name: "memari-open", value: "WEEKLY", domain: "localhost", path: "/" },
+      ]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(2500);
+      const hours = (await storedModules(guest.journalId)).filter((m) => m.slug === "hourly-grid-core" && m.level === "WEEKLY");
+      if (hours.length < 2) throw new Error(`the weekly spread has ${hours.length} hours`);
+      const pathsIn = (scope: string) =>
+        tab.evaluate(
+          `[...document.querySelectorAll(${JSON.stringify(scope)})].map((el) => [...el.querySelectorAll("path")].filter((p) => !p.closest("button")).length)`
+        ) as Promise<number[]>;
+      // Where the preview's icons are, as shares of the left page's hours.
+      const iconPlaces = () =>
+        tab.evaluate(`(() => {
+          const piece = document.querySelector('[role="dialog"] [data-editor-piece]');
+          const box = piece.getBoundingClientRect();
+          return [...piece.querySelectorAll("path")].map((p) => {
+            const r = p.getBoundingClientRect();
+            return { across: (r.left + r.width / 2 - box.left) / box.width, down: (r.top - box.top) / box.height };
+          });
+        })()`) as Promise<Array<{ across: number; down: number }>>;
+
+      const target = tab.locator(`[data-module-instance-id="${hours[0].id}"]`);
+      const box = await target.boundingBox();
+      if (!box) throw new Error("the left page's hours are not on screen");
+      await tab.mouse.move(box.x + box.width * 0.3, box.y + 200);
+      await tab.mouse.move(box.x + box.width / 2, box.y + 240);
+      await tab.waitForTimeout(300);
+      await target.locator(':scope > button[title^="Edit "]').click();
+      const dialog = tab.getByRole("dialog", { name: "Edit Hours" });
+      await dialog.waitFor({ timeout: 5000 });
+      await tab.waitForTimeout(1300);
+      const section = dialog.getByRole("region", { name: "Day icons" });
+      if (!(await section.isVisible())) throw new Error("the hours' editor has no Day icons section");
+      if ((await pathsIn('[role="dialog"] [data-editor-piece]')).some((n) => n > 0)) problems.push("the preview draws icons before any are added");
+
+      // ADD ONE: a bin, weekly, on the day the page starts - Sunday 28 Dec.
+      await section.getByRole("button", { name: "+ Add a day icon" }).click();
+      const summary = () => section.locator("[data-day-icon-summary]").first().innerText();
+      if ((await summary()) !== "Every Sunday") problems.push(`a new icon reads "${await summary()}", not "Every Sunday"`);
+      let places = await iconPlaces();
+      if (places.length !== 1 || places[0].across > 1 / 3) problems.push(`a new one draws ${places.length} icon(s), at ${places.map((p) => p.across.toFixed(2)).join(", ")} across - not one in Sunday's tab`);
+
+      // TUESDAYS, named.
+      await section.getByRole("button", { name: "Tuesday", exact: true }).click();
+      await section.getByRole("button", { name: "Sunday", exact: true }).click();
+      await section.getByLabel("Name").fill("Bins");
+      if ((await summary()) !== "Every Tuesday") problems.push(`after picking Tuesday it reads "${await summary()}"`);
+      places = await iconPlaces();
+      if (places.length !== 1 || places[0].across < 2 / 3 || places[0].down > 0.05) problems.push(`on Tuesdays it draws ${places.length} icon(s) at ${places.map((p) => `${p.across.toFixed(2)} across, ${p.down.toFixed(3)} down`).join("; ")} - not one in Tuesday's tab`);
+      else seen.push("added, moved to Tuesdays: the preview's bin went to Tuesday's tab");
+
+      // SKIP the Tuesday the preview shows, and it goes; put it back.
+      await section.getByLabel("Skip another day").fill("2025-12-30");
+      if ((await iconPlaces()).length !== 0) problems.push("skipping Tuesday 30 December left its icon in the preview");
+      await section.getByRole("button", { name: "Put back Tue 30 Dec 2025" }).click();
+      if ((await iconPlaces()).length !== 1) problems.push("putting the day back did not bring its icon back");
+      else seen.push("skipping the shown Tuesday took it off the preview, putting it back returned it");
+      await section.getByLabel("Skip another day").fill("2026-01-13");
+      if (!/1 skipped$/.test(await summary())) problems.push(`with a day skipped it reads "${await summary()}"`);
+
+      await dialog.getByRole("button", { name: "Done" }).click();
+      await tab.waitForTimeout(3500);
+      const { prisma } = await import("../src/lib/prisma.js");
+      const theme = (await prisma.planner.findUnique({ where: { id: guest.journalId }, select: { theme: true } }))?.theme as { dayIcons?: Array<Record<string, unknown>> } | null;
+      const saved = theme?.dayIcons ?? [];
+      const expected = { icon: "trash", start: "2025-12-28", rrule: "FREQ=WEEKLY;BYDAY=TU", skips: ["2026-01-13"], name: "Bins" };
+      const got = saved[0] ? { icon: saved[0].icon, start: saved[0].start, rrule: saved[0].rrule, skips: saved[0].skips, name: saved[0].name } : null;
+      if (saved.length !== 1 || JSON.stringify(got) !== JSON.stringify(expected)) problems.push(`saved ${JSON.stringify(saved)}`);
+      else seen.push(`saved: ${JSON.stringify(expected)}`);
+      const onPage = await pathsIn(`[data-module-instance-id="${hours[0].id}"], [data-module-instance-id="${hours[1].id}"]`);
+      if (onPage.join() !== "1,0") problems.push(`the week's pages draw ${onPage.join(" and ")} icons, not one on the left and none on the right`);
+      else seen.push("the week draws it on Tuesday, left page");
+
+      // THE MONTH, from the same list: January's Sun-Tue page has the
+      // Tuesdays 30 Dec (its first row's spill), 6, 20 and 27 - 13 skipped.
+      await context.addCookies([{ name: "memari-open", value: "MONTHLY", domain: "localhost", path: "/" }]);
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(2500);
+      const months = (await storedModules(guest.journalId)).filter((m) => m.slug === "month-grid-core" && m.level === "MONTHLY");
+      const inMonth = await pathsIn(months.map((m) => `[data-module-instance-id="${m.id}"]`).join(", "));
+      if (inMonth.join() !== "4,0") problems.push(`the month's pages draw ${inMonth.join(" and ")} icons, not 4 and 0`);
+      else seen.push("January's calendar draws four: 30 Dec, 6, 20, 27 Jan");
+    } catch (error) {
+      problems.push(`stopped: ${(error as Error).message.split("\n")[0]}`);
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+    if (problems.length > 0) for (const problem of problems) fail("day icons", problem);
+    else note("day icons", seen.join("; "));
+  },
+};
+
 const ALL_PROBES: Probe[] = [
   pillTravel,
   firstVisit,
@@ -3321,6 +3438,7 @@ const ALL_PROBES: Probe[] = [
   widthResize,
   roundTwoPickers,
   textOnThePage,
+  dayIcons,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

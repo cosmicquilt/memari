@@ -42,7 +42,9 @@ import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
 import { getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import { HoursFields, type HoursDraft } from "./HoursFields";
 import { ColumnDividers } from "./ColumnDividers";
-import { saveModuleToSaved, updateHourlySettings, updateJournalModuleSettings, updateModuleConfig } from "./actions";
+import { saveModuleToSaved, setDayIcons, updateHourlySettings, updateJournalModuleSettings, updateModuleConfig } from "./actions";
+import { DayIconsFields } from "./DayIconsFields";
+import { cleanDayIcons, isoDay, type DayIcon } from "@/lib/dayIcons";
 import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRefreshPages } from "./pagesRefreshContext";
@@ -192,10 +194,27 @@ export function ModuleEditor({
   const [draft, setDraft] = useState<Record<string, unknown>>(openedDraft);
   const [weekStart, setWeekStart] = useState(weekStartDay);
   const [pending, error, run] = useAsyncAction();
+  // DAY ICONS - trash day, payday - are the journal's, edited from either
+  // spine that shows dates: the hours and the month calendar. See
+  // DayIconsFields. Their draft beside the settings', saved by the same Done.
+  const iconHost = hours || editing.slug === "month-grid-core";
+  const [openedIcons] = useState<DayIcon[]>(() => renderContext?.dayIcons ?? []);
+  const [dayIcons, setDayIconsDraft] = useState<DayIcon[]>(openedIcons);
+  const iconsDirty = iconHost && JSON.stringify(dayIcons) !== JSON.stringify(openedIcons);
   // Against what the editor OPENED with, not the stored props: the hours'
   // draft fills in every setting a grid stored before it existed, and
   // compared with the stored props that read as a change nobody made.
-  const dirty = JSON.stringify(draft) !== JSON.stringify(openedDraft) || weekStart !== weekStartDay;
+  const settingsDirty = JSON.stringify(draft) !== JSON.stringify(openedDraft) || weekStart !== weekStartDay;
+  const dirty = settingsDirty || iconsDirty;
+  // The page drawn with the draft's icons - cleaned, so a field half-typed
+  // never reaches the drawing. Only on a dated page, which is the only kind
+  // they are on (an undated one's context carries none).
+  const withIconsDraft = useCallback(
+    (context: PageRenderContext | null): PageRenderContext | null =>
+      iconHost && context?.dayIcons ? { ...context, dayIcons: cleanDayIcons(dayIcons) } : context,
+    [iconHost, dayIcons]
+  );
+  const previewContext = useMemo(() => withIconsDraft(renderContext), [withIconsDraft, renderContext]);
   // Saving it to Saved > Modules: closed, or open with the name to give it.
   const [saveName, setSaveName] = useState<string | null>(null);
 
@@ -293,9 +312,9 @@ export function ModuleEditor({
         },
         pageGrid,
         fontFamily,
-        renderContext
+        previewContext
       ),
-    [editing, rowSpan, pageGrid, fontFamily, renderContext]
+    [editing, rowSpan, pageGrid, fontFamily, previewContext]
   );
   const elements = useMemo(() => draw(draft), [draw, draft]);
 
@@ -472,14 +491,14 @@ export function ModuleEditor({
           },
           member.pageGrid,
           fontFamily,
-          member.renderContext
+          withIconsDraft(member.renderContext)
         ),
         box: gridCellToPixels(member.pageGrid, placement),
         offsetX: member.offsetX,
         offsetY: member.offsetY,
       };
     });
-  }, [hours, definition, editing, drawnElements, box, draft, fontFamily]);
+  }, [hours, definition, editing, drawnElements, box, draft, fontFamily, withIconsDraft]);
   const groupWidth = Math.max(...pieces.map((piece) => piece.offsetX + piece.box.width));
   const groupHeight = Math.max(...pieces.map((piece) => piece.offsetY + piece.box.height));
 
@@ -617,7 +636,7 @@ export function ModuleEditor({
           weekStartDay: weekStart,
         });
       try {
-        await send();
+        if (settingsDirty) await send();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const match = /^HOURS_DO_NOT_FIT:(\d+):(.*)$/.exec(message);
@@ -638,6 +657,7 @@ export function ModuleEditor({
         }
         await send(true);
       }
+      if (iconsDirty) await setDayIcons(journalId, dayIcons);
       // Rebuilt: the hours' height moves what is below them on every page,
       // and a new week start renames the days. This closes the editor too.
       await refreshPages({ rebuild: true });
@@ -653,7 +673,9 @@ export function ModuleEditor({
       // sets every copy of itself, and the pages are read again, as the
       // hours are. See updateJournalModuleSettings.
       if (definition?.journalWideSettings) {
-        await updateJournalModuleSettings(journalId, editing.slug, cleaned);
+        if (settingsDirty) await updateJournalModuleSettings(journalId, editing.slug, cleaned);
+        // Every dated page shows them, so the pages are read again.
+        if (iconsDirty) await setDayIcons(journalId, dayIcons);
         await refreshPages({ rebuild: true });
         return;
       }
@@ -919,6 +941,18 @@ export function ModuleEditor({
               textOnPage={onCanvasKeys.size > 0}
               onChange={(key, value) => setDraft((current) => ({ ...current, [key]: value }))}
             />
+          )}
+          {iconHost && (
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${cream(0.08)}` }}>
+              <DayIconsFields
+                icons={dayIcons}
+                onChange={setDayIconsDraft}
+                firstDay={isoDay(renderContext?.occurrence?.start ?? new Date())}
+                term={renderContext?.term ?? null}
+                weekStartDay={weekStart}
+                dated={!!renderContext?.dated && !!renderContext.dayIcons}
+              />
+            </div>
           )}
         </div>
 

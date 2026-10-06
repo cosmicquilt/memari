@@ -97,6 +97,8 @@ const GLYPH_BBOX: Record<string, [number, number, number, number]> = {
   jar: [108, 132, 202, 238.4],
   lotus: [100.4, 139.6, 205.6, 234.4],
   pill: [106.13, 133.87, 206.13, 233.87],
+  // The bin, for trash day's day icon (2026-10-06).
+  trash: [105.6, 134.4, 202.8, 237.6],
 };
 
 // Every glyph there is, not a list kept here: a glyph added tomorrow with no

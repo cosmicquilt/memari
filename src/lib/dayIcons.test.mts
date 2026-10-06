@@ -13,7 +13,19 @@
 //   3. THE BOOK prints them as the editor shows them (one context function),
 //      and an undated book prints none.
 //   4. THE TAB never lets an icon cover the day's name or its date.
-import { cleanDayIcons, iconsOnDates, monthCellDates, type DayIcon } from "./dayIcons.js";
+//   5. THE EDITOR'S TERMS: what the fields write is the rule they read back,
+//      and the one-line summary says what the rule does.
+import {
+  cleanDayIcons,
+  describeSchedule,
+  iconsOnDates,
+  monthCellDates,
+  repeatOf,
+  ruleOf,
+  upcomingDays,
+  type DayIcon,
+  type Repeat,
+} from "./dayIcons.js";
 import { generateBook, type BookSource } from "./generateBook.js";
 import { propsForRender, renderContextForPage } from "./renderContext.js";
 import { renderHourlyGridCore } from "./modules/hourlyGridCore.js";
@@ -274,6 +286,47 @@ const iconsIn = (elements: unknown[]) =>
   // The first is next to the date, so the one that matters most is the one
   // that is never cut.
   check(byId(/^h-d1-dayicon0$/)[0].x > byId(/^h-d1-dayicon1$/)[0].x, "the first is next to the date");
+}
+
+// --- 5. the editor's terms ----------------------------------------------
+{
+  const start = "2026-01-06"; // a Tuesday
+  const base = repeatOf({ start, rrule: "FREQ=WEEKLY;BYDAY=TU" });
+  const cases: Array<[Partial<Repeat>, string | null, string]> = [
+    [{ freq: "ONCE" }, null, "Once, Tue 6 Jan 2026"],
+    [{ freq: "DAILY" }, "FREQ=DAILY", "Every day"],
+    [{ freq: "DAILY", interval: 3 }, "FREQ=DAILY;INTERVAL=3", "Every 3 days"],
+    [{}, "FREQ=WEEKLY;BYDAY=TU", "Every Tuesday"],
+    [{ interval: 2 }, "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", "Every other Tuesday"],
+    [{ weekdays: [4, 1] }, "FREQ=WEEKLY;BYDAY=MO,TH", "Every Monday and Thursday"],
+    [{ weekdays: [1, 3, 5] }, "FREQ=WEEKLY;BYDAY=MO,WE,FR", "Every Mon, Wed and Fri"],
+    [{ interval: 3, weekdays: [2] }, "FREQ=WEEKLY;INTERVAL=3;BYDAY=TU", "Every 3 weeks on Tuesday"],
+    [{ freq: "MONTHLY", monthlyBy: "day", monthDay: 15 }, "FREQ=MONTHLY;BYMONTHDAY=15", "Monthly on the 15th"],
+    [{ freq: "MONTHLY", monthlyBy: "day", monthDay: -1 }, "FREQ=MONTHLY;BYMONTHDAY=-1", "Monthly on the last day"],
+    [{ freq: "MONTHLY", monthlyBy: "weekday", ordinal: 1, weekday: 1 }, "FREQ=MONTHLY;BYDAY=1MO", "Monthly on the first Monday"],
+    [{ freq: "MONTHLY", monthlyBy: "weekday", ordinal: -1, weekday: 5, interval: 2 }, "FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR", "Every other month on the last Friday"],
+    [{ freq: "YEARLY" }, "FREQ=YEARLY", "Every year on 6 January"],
+    [{ ends: "count", count: 10 }, "FREQ=WEEKLY;BYDAY=TU;COUNT=10", "Every Tuesday, 10 times"],
+    [{ ends: "until", until: "2026-06-30" }, "FREQ=WEEKLY;BYDAY=TU;UNTIL=20260630", "Every Tuesday, until Tue 30 Jun 2026"],
+  ];
+  for (const [change, rule, words] of cases) {
+    const written = ruleOf({ ...base, ...change }, start);
+    eq(written, rule, `the fields ${JSON.stringify(change)} write their rule`);
+    eq(describeSchedule({ start, rrule: written }), words, `and it reads "${words}"`);
+    // Read back, written again: the same rule - nothing drifts in a round trip.
+    eq(ruleOf(repeatOf({ start, rrule: written }), start), written, `${words}: read back, it writes the same rule`);
+  }
+  // And what the words say is what the engine draws.
+  const firstMondays = iconsOnDates(
+    [icon({ id: "a", start, rrule: ruleOf({ ...base, freq: "MONTHLY", monthlyBy: "weekday", ordinal: 1, weekday: 1 }, start) })],
+    ["2026-02-02", "2026-02-09", "2026-03-02"]
+  );
+  eq(firstMondays.map((l) => l.length).join(), "1,0,1", "'the first Monday' from the fields lands on first Mondays");
+  // The editor's list of next days: skipped ones shown, to be put back.
+  const next = upcomingDays(icon({ id: "a", start, rrule: "FREQ=WEEKLY;BYDAY=TU", skips: ["2026-01-13"] }), "2026-01-01", 3);
+  eq(next.map((n) => `${n.date}${n.skipped ? " skipped" : ""}`).join(", "), "2026-01-06, 2026-01-13 skipped, 2026-01-20", "the next three Tuesdays, the skipped one marked");
+  eq(upcomingDays(icon({ id: "a", start, rrule: null }), "2026-02-01", 3).length, 0, "a one-off that is past has no next days");
+  eq(upcomingDays(icon({ id: "a", start, rrule: "FREQ=YEARLY" }), "2026-01-07", 2).map((n) => n.date).join(), "2027-01-06,2028-01-06", "a yearly one looks years ahead");
 }
 
 if (failures > 0) {

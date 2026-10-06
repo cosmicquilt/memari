@@ -55,12 +55,13 @@ export type GlyphShape =
   | "spoon"
   | "jar"
   | "lotus"
-  | "pill";
+  | "pill"
+  | "trash";
 
 /** Every shape, for checking a stored value is one. */
 export const GLYPH_SHAPES: readonly GlyphShape[] = [
   "circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant",
-  "spoon", "jar", "lotus", "pill",
+  "spoon", "jar", "lotus", "pill", "trash",
 ];
 
 /**
@@ -285,6 +286,29 @@ const PATH_SHAPES: Record<string, (x: number, y: number, size: number) => string
       `C ${u(0.67, 0.25 - k)} ${u(0.5 + k, 0.08)} ${u(0.5, 0.08)} ` +
       `C ${u(0.5 - k, 0.08)} ${u(0.33, 0.25 - k)} ${u(0.33, 0.25)} Z ` +
       `M ${u(0.33, 0.5)} L ${u(0.67, 0.5)}`
+    );
+  },
+  trash: (x, y, s) => {
+    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
+    // A kitchen bin, for trash day (day icons, 2026-10-06): a handle on a
+    // lid a little wider than the body, the body narrowing to its foot, and
+    // two ribs down it - the most lines that still leave room to colour in.
+    // Upright and using the full height, as the icons printed small must.
+    // Hand-drawn to stand in until the Flow suite's.
+    return (
+      // Handle.
+      `M ${u(0.4, 0.155)} L ${u(0.4, 0.11)} C ${u(0.4, 0.085)} ${u(0.42, 0.07)} ${u(0.445, 0.07)} ` +
+      `L ${u(0.555, 0.07)} C ${u(0.58, 0.07)} ${u(0.6, 0.085)} ${u(0.6, 0.11)} L ${u(0.6, 0.155)} ` +
+      // Lid.
+      `M ${u(0.17, 0.155)} L ${u(0.83, 0.155)} C ${u(0.85, 0.155)} ${u(0.86, 0.165)} ${u(0.86, 0.185)} ` +
+      `L ${u(0.86, 0.22)} C ${u(0.86, 0.24)} ${u(0.85, 0.25)} ${u(0.83, 0.25)} ` +
+      `L ${u(0.17, 0.25)} C ${u(0.15, 0.25)} ${u(0.14, 0.24)} ${u(0.14, 0.22)} ` +
+      `L ${u(0.14, 0.185)} C ${u(0.14, 0.165)} ${u(0.15, 0.155)} ${u(0.17, 0.155)} Z ` +
+      // Body.
+      `M ${u(0.2, 0.25)} L ${u(0.255, 0.9)} C ${u(0.258, 0.925)} ${u(0.275, 0.94)} ${u(0.3, 0.94)} ` +
+      `L ${u(0.7, 0.94)} C ${u(0.725, 0.94)} ${u(0.742, 0.925)} ${u(0.745, 0.9)} L ${u(0.8, 0.25)} ` +
+      // Ribs.
+      `M ${u(0.4, 0.37)} L ${u(0.415, 0.82)} M ${u(0.6, 0.37)} L ${u(0.585, 0.82)}`
     );
   },
 };

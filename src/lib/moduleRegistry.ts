@@ -644,6 +644,7 @@ const GLYPH_PICKER_OPTIONS = [
   { value: "jar", label: "Jars" },
   { value: "lotus", label: "Lotuses" },
   { value: "pill", label: "Pills" },
+  { value: "trash", label: "Bins" },
 ];
 
 const ALWAYS = () => true;
