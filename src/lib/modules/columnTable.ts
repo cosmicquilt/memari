@@ -157,8 +157,9 @@ const HEAD_LINE_PITCH_EM = 1.15;
 /** And across: it ends this far PAST the first line's end, in ems. Asked
  *  in steps on 2026-10-05 - a 0.8em indent first, then "my should be more
  *  to right below affects" (ending under the end of Affects), then "a bit
- *  more": half an em past it, picked from three drawn. */
-const HEAD_OVERHANG_EM = 0.5;
+ *  more" twice: half an em past it, picked from three drawn, then three
+ *  quarters. */
+const HEAD_OVERHANG_EM = 0.75;
 
 /**
  * `name` as two lines that need less width than one, split at the space
