@@ -475,11 +475,11 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
         // saw. This one used to ask for half the module's width, which left
         // a to-do's per-column row segments unexamined; it also had no
         // outline test, so it measured the module's own border against the
-        // lattice the border is defined by.
-        // A frame drawn as two rules (the text block's "rules" frame) sits
-        // where a border's top and bottom would - on the ink box, like every
-        // border - so it is held to the border's rule, not a writing rule's.
-        .filter((e) => e !== box && !/-border-(top|bottom)$/.test(String(e.id)) && ruleAxisOf(e, PITCH) === "horizontal")
+        // lattice the border is defined by. A border drawn as edges (the text
+        // block's "rules" frame) is ruleMarks' too - see isBorderEdge: this
+        // filter held its own exemption for it, and check:page, without one,
+        // failed the first real page with a quote block on it.
+        .filter((e) => e !== box && ruleAxisOf(e, PITCH) === "horizontal")
         .filter((e) => !WEIGHTED_ROWS.get(slug)?.test(String(e.id)))
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;

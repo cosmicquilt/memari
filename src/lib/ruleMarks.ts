@@ -33,6 +33,14 @@
 // marks is already on the lattice - so this buys coverage rather than fixing
 // a live fault. Which is the point: the next mark that is NOT on the lattice
 // will now be seen by both.
+//
+// AND THEN A THIRD DESCRIPTION GREW BACK (found 2026-10-06). The text block's
+// "rules" frame - the quote block's default - draws its border as two filled
+// edges, `-border-top` and `-border-bottom`. The house-style test was taught
+// they are a border, inline, in its own filter; check:page never was, so the
+// first real page with a quote block on it failed: "quote-block at 0,24 6x5
+// has 2 rule(s) off the pitch". The edges' standing now lives here
+// (isBorderEdge), where both checks read it.
 
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 
@@ -64,6 +72,21 @@ export function isOutlineOnly(element: RenderedPolotnoElement): boolean {
 }
 
 /**
+ * A module's own border drawn as separate EDGES rather than one outline: the
+ * text block's "rules" frame draws only the top and bottom, as filled flat
+ * rects at the border's weight. They have the outline's standing - they ARE
+ * the box, on the ink box like every border, where its top and bottom would
+ * be - so they are never a line to write on and never measured against the
+ * lattice the box is defined by.
+ *
+ * Known by name, as the house's semantic ids allow: `…-border-top`,
+ * `…-border-bottom` (and `-left` / `-right`, should a frame draw those).
+ */
+export function isBorderEdge(element: RenderedPolotnoElement): boolean {
+  return /(^|-)border-(top|bottom|left|right)$/.test(String(element.id ?? ""));
+}
+
+/**
  * Which axis this element is a rule on, or null if it is not one.
  *
  * Returning the axis rather than a boolean is deliberate: a caller that asked
@@ -79,7 +102,7 @@ export function ruleAxisOf(
   pitchPx: number
 ): RuleAxis | null {
   if (element.type !== "figure" || element.subType !== "rect") return null;
-  if (isOutlineOnly(element)) return null;
+  if (isOutlineOnly(element) || isBorderEdge(element)) return null;
 
   const width = Number(element.width ?? 0);
   const height = Number(element.height ?? 0);

@@ -21,7 +21,7 @@
 // defect this codebase has been bitten by three times now, so each one is
 // asserted here directly rather than left to be believed.
 
-import { ruleAxisOf, isOutlineOnly, RULE_ASPECT_RATIO } from "./ruleMarks";
+import { ruleAxisOf, isBorderEdge, isOutlineOnly, RULE_ASPECT_RATIO } from "./ruleMarks";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 
 let failures = 0;
@@ -76,6 +76,19 @@ is(
 // A FILLED band is a rule even though it is thick - a header band divides
 // the module exactly as a hairline does. Only the OUTLINE is excluded.
 is("a filled band of the same proportions", mark({ width: 1788, height: 288 }), "horizontal");
+
+// --- not a rule: a border drawn as EDGES -------------------------------
+//
+// The text block's "rules" frame (the quote block's default): its border's
+// top and bottom as filled hairlines on the ink box. The house-style test
+// exempted them in its own filter and check:page did not, so a quote block on
+// a real page failed "2 rule(s) off the pitch" (2026-10-06).
+is("a 'rules' frame's top edge", mark({ id: "qb1-border-top", width: 425, height: 2.08 }), null);
+is("a 'rules' frame's bottom edge", mark({ id: "qb1-border-bottom", width: 425, height: 2.08 }), null);
+// By its NAME, not its shape: the same hairline named anything else is a rule.
+is("the same hairline as a writing line", mark({ id: "qb1-line-3", width: 425, height: 2.08 }), "horizontal");
+is("a header rule", mark({ id: "qb1-header-rule", width: 425, height: HAIR }), "horizontal");
+if (isBorderEdge(mark({ id: "qb1-borderline-top" }))) fail("isBorderEdge took an id that only begins like one");
 if (!isOutlineOnly(mark({ width: 10, height: 10, fill: "none", stroke: "#000", strokeWidth: 1 }))) {
   fail("isOutlineOnly said a stroked unfilled rect is not an outline");
 }
