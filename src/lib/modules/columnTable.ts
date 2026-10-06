@@ -151,9 +151,10 @@ const COLUMN_HEAD_HEIGHT_PT = 18;
 const COLUMN_HEAD_FONT_PT = 7;
 const CELL_PADDING_PT = 4;
 /** A two-line head's second line, how far below the first, baseline to
- *  baseline, in ems - two lines of 7pt sit in the 18pt head band with the
- *  descender of "my" clear of its rule. */
-const HEAD_LINE_PITCH_EM = 1.15;
+ *  baseline, in ems: one. 1.15 first; "line spacing less" (2026-10-05). A
+ *  first line of capitals and ascenders over a second of x-height letters
+ *  can sit this close without touching. */
+const HEAD_LINE_PITCH_EM = 1;
 /** And across: it ends this far PAST the first line's end, in ems. Asked
  *  in steps on 2026-10-05 - a 0.8em indent first, then "my should be more
  *  to right below affects" (ending under the end of Affects), then "a bit

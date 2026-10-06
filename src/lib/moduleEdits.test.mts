@@ -226,6 +226,10 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const past = (end(my) - end(affects)) / Number(affects?.fontSize ?? 1);
   check(Math.abs(past - 0.75) < 0.02, `and "my" ends three quarters of an em past where "Affects" ends (${past.toFixed(2)}em)`);
   check(end(my) <= (affects?.x ?? 0) + Number(affects?.width ?? 0) + 0.5, "and still inside its column");
+  // "Line spacing less": one em, baseline to baseline (the boxes are the
+  // same height at the same size, so their tops are as far apart).
+  const lineGap = ((my?.y ?? 0) - (affects?.y ?? 0)) / Number(affects?.fontSize ?? 1);
+  check(Math.abs(lineGap - 1) < 0.02, `and sits one em below it (${lineGap.toFixed(2)}em)`);
   check(draw("step-four-inventory", { ...(moduleDefinition("step-four-inventory")?.previewProps ?? {}) }, 24, 8).every((e) => !/-head-l1$/.test(String(e.id))), "and on one line where it fits");
   // Item has the largest share (5 of 12); Category, a longer word, has 3.
   // Shared out by the words, Category took two cells and Item one.
