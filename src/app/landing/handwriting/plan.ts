@@ -399,7 +399,12 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // Room for a second line: the next thing that day starts three slots or
     // more below (two for something inside a time block, whose line runs
     // down beside it), and the day does not end first.
-    const nextAt = Math.min(...events.filter((e) => e.day === event.day && e.at > event.at).map((e) => e.at), Infinity);
+    // Their calendar's blocks count as something below too.
+    const nextAt = Math.min(
+      ...events.filter((e) => e.day === event.day && e.at > event.at).map((e) => e.at),
+      ...(person?.calendar ?? []).filter((c) => c.day === event.day && c.start > event.at).map((c) => c.start),
+      Infinity
+    );
     const nextSlot = nextAt === Infinity ? day.slots.length : day.hours.findIndex((h) => h >= nextAt - 0.01);
     const room = (nextSlot < 0 ? day.slots.length : nextSlot) - slot >= (event.until !== undefined ? 2 : 3) && slot + 1 < day.slots.length - 1;
     const lines = entry(page, hand.words, event.text, x, top + slotH * 0.86, slotH * 0.78, ax + aw - x - 12, hand.pen, room ? { gap: slotH, indent: 0 } : null);

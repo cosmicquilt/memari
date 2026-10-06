@@ -28,6 +28,22 @@ for (const person of PEOPLE) {
     check(`${person.key}: the ${zone} zone is full`, cells === columns * 15, `${cells} of ${columns * 15} cells`);
   }
 }
+// Handwriting stays clear of their calendar's event blocks, except a note
+// written ON one, below its title (2026-10-06: scheduled things are the
+// app's events, written around).
+for (const person of PEOPLE) {
+  const blocks = person.calendar.flatMap((c) => (c.end > 24 ? [{ ...c, end: 24 }, { ...c, day: c.day + 1, start: 0, end: c.end - 24 }] : [c]));
+  for (const e of person.events) {
+    const from = e.at;
+    const to = e.until ?? e.at + 0.5;
+    const under = blocks.filter((c) => c.day === e.day && from < c.end && to > c.start);
+    if (e.on) {
+      check(`${person.key}: "${e.text}" is written on an event, below its title`, under.length === 1 && from >= under[0].start + 0.5 && to <= under[0].end, `${under.length} under it`);
+    } else {
+      check(`${person.key}: "${e.text}" stays off their events`, under.length === 0, under.map((c) => c.title).join(", "));
+    }
+  }
+}
 for (const def of SPREAD_DEFS) {
   const problems = spreadProblems(def);
   check(`${def.key} is a valid spread`, problems.length === 0, problems.join("; "));

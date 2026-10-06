@@ -107,7 +107,39 @@ const highlighter = (color: string): Pen => ({ color, width: 46, kind: "highligh
  * plan that slipped. `doodle` is a subject from the doodle library, drawn
  * beside it; without one, the planner's own matching applies.
  */
-export type HeroEvent = { day: number; at: number; text: string; until?: number; doodle?: string; mark?: "circle" | "underline" | "highlight" };
+export type HeroEvent = {
+  day: number;
+  at: number;
+  text: string;
+  until?: number;
+  doodle?: string;
+  mark?: "circle" | "underline" | "highlight";
+  /** Written ON one of their calendar events, below its title - a note on
+   *  it ("goggles!" on the lab). Anything else stays clear of their events
+   *  (spreads.test.mts checks). */
+  on?: boolean;
+};
+
+/**
+ * Something on their calendar, drawn by the app as an event block - the
+ * translucent rounded rectangle the editor's imported and typed-in events
+ * are - not written by hand (Andrew, 2026-10-06: "repeating shifts are
+ * supposed to be the in app events ... repeating events or scheduled
+ * events"). Shifts, classes, standups, work hours, appointments, the exam,
+ * the race, the party. Days as for HeroEvent; hours 24-hour, and an `end`
+ * past 24 runs on into the next morning (a night shift).
+ */
+export type CalendarBlock = { day: number; start: number; end: number; title: string; calendar: keyof typeof CALENDAR_COLOURS };
+
+/** Their calendars' colours, as Google's and Apple's would show them. */
+export const CALENDAR_COLOURS = {
+  work: "#3d6fe0",
+  school: "#8a5cd6",
+  personal: "#2e9d6a",
+  family: "#e8873a",
+  health: "#1f9aa5",
+  community: "#d64b72",
+} as const;
 
 export type Person = {
   /** The spread's key, and the "Use this week" address. Stable. */
@@ -127,7 +159,10 @@ export type Person = {
   /** How they doodle, and what: big subjects for a sketch box, small for
    *  beside the date. Subjects are the doodle library's. */
   doodles: { style: "minimal" | "pencil" | "crayon" | "retro" | "riso" | "sketchnote"; big: string[]; small: string[] };
+  /** What they wrote in the hours. */
   events: HeroEvent[];
+  /** What their calendar put there. */
+  calendar: CalendarBlock[];
   /** Lettered across the top of some days of the RIGHT page: from and to
    *  are that page's day columns (0 to 3). */
   banner?: { text: string; from: number; to: number };
@@ -190,17 +225,21 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#ffe45c"),
     },
     doodles: { style: "sketchnote", big: ["studying", "books", "climbing", "singing", "coffee"], small: ["star", "sparkle", "heart", "lightning"] },
+    calendar: [
+      { day: 0, start: 9, end: 10, title: "ORGO 201", calendar: "school" },
+      { day: 1, start: 13, end: 16, title: "Bio lab", calendar: "school" },
+      { day: 2, start: 9, end: 10, title: "ORGO 201", calendar: "school" },
+      { day: 2, start: 15, end: 16, title: "TA office hours", calendar: "school" },
+      { day: 3, start: 9, end: 11, title: "ORGO midterm", calendar: "school" },
+      { day: 3, start: 17, end: 19, title: "Work-study", calendar: "work" },
+      { day: 4, start: 14, end: 16, title: "BIO practical", calendar: "school" },
+    ],
     events: [
-      { day: 0, at: 9, text: "orgo lecture" },
       { day: 0, at: 19, text: "library w/ Priya", doodle: "studying" },
-      { day: 1, at: 13, until: 16, text: "LAB - goggles!" },
+      { day: 1, at: 14, text: "goggles!", on: true },
       { day: 1, at: 18.5, text: "climb (1h ONLY)", doodle: "climbing" },
-      { day: 2, at: 9, text: "orgo lecture" },
-      { day: 2, at: 15, text: "TA office hrs" },
       { day: 2, at: 20, text: "flashcards ch 12" },
-      { day: 3, at: 9, text: "ORGO MIDTERM", mark: "circle" },
-      { day: 3, at: 17, text: "work-study" },
-      { day: 4, at: 14, text: "BIO practical" },
+      { day: 3, at: 10, text: "rm 204!!", on: true, mark: "circle" },
       { day: 4, at: 21, text: "KARAOKE!!", doodle: "singing", mark: "highlight" },
       { day: 5, at: 11, text: "brunch w/ Lola", doodle: "cafe" },
       { day: 6, at: 14, text: "laundry + call mom" },
@@ -256,16 +295,20 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#ffe45c"),
     },
     doodles: { style: "minimal", big: ["coffee", "laptop", "skateboarding", "tennis"], small: ["star", "sun", "sparkle", "lightning"] },
+    calendar: [
+      ...[0, 1, 2, 3, 4].map((day) => ({ day, start: 9, end: 9.5, title: "Standup", calendar: "work" as const })),
+      { day: 1, start: 11, end: 12, title: "Vendor call", calendar: "work" },
+      { day: 2, start: 8, end: 9, title: "Dentist", calendar: "health" },
+      { day: 3, start: 14, end: 16, title: "Q3 review", calendar: "work" },
+      { day: 4, start: 17.5, end: 19, title: "Team drinks", calendar: "work" },
+    ],
     events: [
-      { day: 0, at: 9, text: "standup" },
       { day: 0, at: 19, text: "fix headphones" },
       { day: 1, at: 7, text: "~gym 7am" },
       { day: 1, at: 18.5, text: "pickleball w/ Theo", doodle: "tennis" },
-      { day: 2, at: 8, text: "dentist (!!)" },
       { day: 2, at: 20, text: "trivia @ Hal's" },
       { day: 3, at: 10, text: "prep deck" },
-      { day: 3, at: 14, until: 16, text: "Q3 REVIEW", mark: "highlight" },
-      { day: 4, at: 17.5, text: "drinks w/ team?" },
+      { day: 3, at: 15, text: "don't ramble", on: true, mark: "underline" },
       { day: 5, at: 8, text: "skate park (knees?!)", doodle: "skateboarding" },
       { day: 5, at: 13, text: "laundry (finally)" },
       { day: 6, at: 11, text: "call dad" },
@@ -324,22 +367,25 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#b8f08a"),
     },
     doodles: { style: "crayon", big: ["coffee", "moon", "cat", "houseplant"], small: ["moon", "star", "heart", "sparkle"] },
+    calendar: [
+      { day: 0, start: 10, end: 12, title: "Pottery class", calendar: "personal" },
+      { day: 1, start: 19, end: 31, title: "ICU nights", calendar: "work" },
+      { day: 2, start: 19, end: 31, title: "ICU nights", calendar: "work" },
+      { day: 3, start: 19, end: 31, title: "ICU nights", calendar: "work" },
+    ],
     events: [
-      { day: 0, at: 10, text: "pottery class" },
       { day: 0, at: 14, text: "meal prep x3", doodle: "cooking" },
       { day: 1, at: 13, text: "nap!!" },
-      { day: 1, at: 19, until: 23, text: "SHIFT 7p-7a", mark: "underline" },
-      { day: 2, at: 7, text: "off @ 7a" },
+      { day: 1, at: 20, text: "night 1", on: true },
       { day: 2, at: 8.5, until: 14, text: "sleep" },
-      { day: 2, at: 19, until: 23, text: "SHIFT" },
       { day: 3, at: 8.5, until: 14, text: "sleep (blackout)" },
-      { day: 3, at: 19, until: 23, text: "SHIFT (last!)" },
+      { day: 3, at: 20, text: "last one!!", on: true, mark: "underline" },
       { day: 4, at: 15, text: "coffee w/ Asha", doodle: "cafe" },
       { day: 5, at: 10, text: "climbing gym", doodle: "climbing" },
       { day: 5, at: 19, text: "dinner @ mom's" },
       { day: 6, at: 11, text: "farmers mkt", doodle: "picnic" },
     ],
-    banner: { text: "days off", from: 1, to: 3 },
+    banner: { text: "days off", from: 2, to: 3 },
     lists: {
       "shift bag": ["badge + lanyard", "snacks x3", "compression socks", "charger!!", "lip balm", "spare scrubs"],
       // "survive night 3 of 3": from the Gemini archetypes report (2026-10-06).
@@ -388,18 +434,22 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#fff06a"),
     },
     doodles: { style: "pencil", big: ["books", "bulb", "guitar", "music"], small: ["star", "tick", "sparkle", "heart"] },
+    calendar: [
+      { day: 0, start: 15.5, end: 17, title: "Robotics club", calendar: "work" },
+      { day: 1, start: 12, end: 12.5, title: "Lunch duty", calendar: "work" },
+      { day: 1, start: 19.5, end: 21.5, title: "Band practice", calendar: "personal" },
+      { day: 2, start: 15.5, end: 16.5, title: "Staff meeting", calendar: "work" },
+      { day: 3, start: 15.5, end: 17, title: "Robotics club", calendar: "work" },
+      { day: 5, start: 20, end: 23, title: "Gig - the Anchor", calendar: "personal" },
+    ],
     events: [
       { day: 0, at: 7, text: "copies before 1st!" },
-      { day: 0, at: 15.5, until: 17, text: "robotics club" },
-      { day: 1, at: 12, text: "lunch duty (ugh)" },
-      { day: 1, at: 19.5, text: "band practice", doodle: "guitar" },
-      { day: 2, at: 15.5, text: "staff mtg" },
+      { day: 1, at: 12.5, text: "(ugh)" },
       { day: 2, at: 20, text: "grade 7B labs" },
-      { day: 3, at: 15.5, until: 17, text: "robotics" },
       { day: 3, at: 20, text: "GRADE. ALL. NIGHT." },
       { day: 4, at: 15, text: "REPORT CARDS DUE", mark: "circle" },
       { day: 4, at: 18, text: "pizza w/ the kids", doodle: "pizza" },
-      { day: 5, at: 20, text: "GIG @ the Anchor", doodle: "concert" },
+      { day: 5, at: 21, text: "spare strings!", on: true, doodle: "guitar" },
       { day: 6, at: 13, text: "plan next wk" },
     ],
     banner: { text: "report cards", from: 1, to: 1 },
@@ -459,19 +509,23 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#9fdcff"),
     },
     doodles: { style: "riso", big: ["painting", "cafe", "houseplant", "camera"], small: ["sparkle", "heart", "star", "moon"] },
+    calendar: [
+      { day: 2, start: 19, end: 21, title: "Wheel class (teaching)", calendar: "work" },
+      { day: 6, start: 8, end: 16, title: "Elm St market", calendar: "work" },
+    ],
     events: [
       { day: 0, at: 13, text: "glaze test tiles" },
       { day: 1, at: 9, until: 12, text: "throw 20 mugs" },
       { day: 1, at: 16, text: "post office", doodle: "envelope" },
       { day: 2, at: 10, text: "trim + handles" },
-      { day: 2, at: 19, text: "teach wheel class" },
+      { day: 2, at: 20, text: "bring towels", on: true },
       { day: 3, at: 9, text: "BISQUE FIRE" },
       { day: 3, at: 14, text: "photos for shop", doodle: "camera" },
       { day: 4, at: 9, text: "unload kiln (x fingers)" },
       { day: 4, at: 13, text: "glaze fire" },
       { day: 5, at: 10, text: "price tags" },
       { day: 5, at: 18, text: "load the car" },
-      { day: 6, at: 8, until: 16, text: "MARKET 8-4", mark: "highlight" },
+      { day: 6, at: 9, text: "float $150", on: true, mark: "highlight" },
     ],
     banner: { text: "market!", from: 3, to: 3 },
     lists: {
@@ -534,18 +588,23 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#ffb3cf"),
     },
     doodles: { style: "retro", big: ["cake", "balloons", "sun", "dog"], small: ["heart", "star", "sparkle", "sun"] },
+    calendar: [
+      { day: 1, start: 9, end: 14, title: "Work", calendar: "work" },
+      { day: 2, start: 16.5, end: 17.5, title: "Swim lessons", calendar: "family" },
+      { day: 3, start: 9, end: 14, title: "Work", calendar: "work" },
+      { day: 4, start: 11, end: 12, title: "Pediatrician - Ada", calendar: "family" },
+      { day: 5, start: 9, end: 14, title: "Work", calendar: "work" },
+      { day: 6, start: 14, end: 16, title: "Noa's party", calendar: "family" },
+    ],
     events: [
       { day: 0, at: 9.5, text: "pancakes!", doodle: "cooking" },
       { day: 1, at: 7.5, text: "PICTURE DAY - clean shirt", mark: "underline" },
-      { day: 1, at: 9, until: 14, text: "work" },
-      { day: 2, at: 16.5, text: "swim lessons", doodle: "swimming" },
       { day: 2, at: 21.5, text: "bed by 10 (lol)" },
-      { day: 3, at: 9, until: 14, text: "work" },
       { day: 3, at: 15, text: "pick up kids" },
       { day: 4, at: 6, text: "yoga 6am", doodle: "yoga" },
-      { day: 4, at: 11, text: "pediatrician (Ada)" },
+      { day: 4, at: 11.5, text: "ask re: rash", on: true },
       { day: 5, at: 18, text: "pizza + movie night", doodle: "movie" },
-      { day: 6, at: 14, text: "Noa's party!", doodle: "partyhat" },
+      { day: 6, at: 15, text: "gift + card!", on: true, doodle: "partyhat" },
     ],
     banner: { text: "party!", from: 3, to: 3 },
     lists: {
@@ -593,18 +652,22 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#b8f08a"),
     },
     doodles: { style: "crayon", big: ["running", "weights", "yoga", "mountains"], small: ["lightning", "star", "sun", "heart"] },
+    calendar: [
+      ...[0, 1, 2, 3].map((day) => ({ day, start: 9, end: 17, title: "Clinic", calendar: "work" as const })),
+      { day: 1, start: 18, end: 19, title: "Run club", calendar: "personal" },
+      { day: 5, start: 10, end: 11, title: "Bib pickup", calendar: "personal" },
+      { day: 6, start: 7, end: 9.5, title: "Half marathon", calendar: "personal" },
+      { day: 6, start: 17, end: 18, title: "Yin yoga", calendar: "personal" },
+    ],
     events: [
       { day: 0, at: 7, text: "5k easy", doodle: "running" },
-      { day: 1, at: 9, until: 17, text: "clinic" },
-      { day: 1, at: 18, text: "run club: 6x400 ugh" },
+      { day: 1, at: 18.5, text: "6x400 ugh", on: true },
       { day: 2, at: 7, text: "lift - light!", doodle: "weights" },
       { day: 2, at: 19, text: "~boulder w/ Kat" },
       { day: 3, at: 7.5, text: "4k shakeout" },
       { day: 4, at: 18, text: "carb load!!", doodle: "pizza" },
       { day: 4, at: 21, text: "bed by 9:30", doodle: "moon" },
-      { day: 5, at: 10, text: "bib pickup" },
-      { day: 6, at: 7, until: 9.5, text: "RACE 13.1", mark: "highlight" },
-      { day: 6, at: 17, text: "yin yoga", doodle: "yoga" },
+      { day: 6, at: 8, text: "DON'T start fast", on: true, mark: "highlight" },
     ],
     banner: { text: "taper", from: 0, to: 2 },
     lists: {
@@ -661,15 +724,19 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#9fdcff"),
     },
     doodles: { style: "riso", big: ["skateboarding", "painting", "cat", "headphones", "pizza"], small: ["star", "lightning", "sparkle", "heart"] },
+    calendar: [
+      { day: 0, start: 10, end: 10.5, title: "Mira call", calendar: "work" },
+      { day: 1, start: 11, end: 12, title: "Dentist", calendar: "health" },
+      { day: 1, start: 14, end: 16, title: "Body double w/ Sol", calendar: "personal" },
+      { day: 3, start: 17, end: 17.5, title: "Mira - revisions due", calendar: "work" },
+    ],
     events: [
-      { day: 0, at: 10, text: "Mira call (!!)" },
       { day: 0, at: 14, text: "~invoice Bram" },
-      { day: 1, at: 11, text: "dentist - it's been 2 yrs" },
-      { day: 1, at: 14, text: "body double w/ Sol", doodle: "laptop" },
+      { day: 1, at: 11.5, text: "it's been 2 yrs", on: true },
       { day: 2, at: 10, text: "sketches due" },
       { day: 2, at: 16, text: "invoice Bram (AGAIN)", doodle: "envelope" },
-      { day: 3, at: 9.5, text: "Mira revisions", mark: "circle" },
-      { day: 3, at: 15, text: "groceries before 0 food" },
+      { day: 3, at: 9.5, text: "revisions!!", mark: "circle" },
+      { day: 3, at: 14, text: "groceries before 0 food" },
       { day: 4, at: 12, text: "lunch AT lunch" },
       { day: 4, at: 20, text: "~clean desk" },
       { day: 5, at: 11, text: "skate @ the rink", doodle: "skateboarding" },
@@ -732,16 +799,23 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#ffe45c"),
     },
     doodles: { style: "pencil", big: ["tree", "mountains", "books", "coffee", "owl"], small: ["star", "moon", "leaf", "sun"] },
+    calendar: [
+      { day: 1, start: 7, end: 17, title: "Shop", calendar: "work" },
+      { day: 2, start: 7, end: 17, title: "Shop", calendar: "work" },
+      { day: 3, start: 7.5, end: 16, title: "Henley install", calendar: "work" },
+      { day: 4, start: 7.5, end: 15, title: "Henley install", calendar: "work" },
+      { day: 4, start: 19, end: 21, title: "Chess club", calendar: "personal" },
+      { day: 5, start: 7, end: 16, title: "Shop", calendar: "work" },
+    ],
     events: [
       { day: 0, at: 5.5, text: "read" },
       { day: 0, at: 9, text: "drive w/ June - lot" },
       { day: 1, at: 5.5, text: "read" },
-      { day: 1, at: 7, until: 17, text: "shop - Henley doors" },
+      { day: 1, at: 8, text: "Henley doors", on: true },
       { day: 2, at: 5.5, text: "read" },
       { day: 2, at: 18, text: "sharpen chisels" },
-      { day: 3, at: 7.5, until: 16, text: "Henley install" },
-      { day: 4, at: 7.5, until: 15, text: "install day 2" },
-      { day: 4, at: 19, text: "chess club" },
+      { day: 3, at: 9, text: "measure twice", on: true },
+      { day: 4, at: 20, text: "Sicilian?", on: true },
       { day: 5, at: 17, text: "dinner w/ Ruth" },
       { day: 6, at: 9, text: "drive w/ June - roads!" },
       { day: 6, at: 14, text: "fix the gate" },
@@ -793,19 +867,23 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#ffd6e0"),
     },
     doodles: { style: "retro", big: ["bird", "knitting", "tea", "houseplant", "reading"], small: ["heart", "leaf", "moon", "sparkle"] },
+    calendar: [
+      { day: 0, start: 10, end: 12, title: "Work (remote)", calendar: "work" },
+      { day: 1, start: 11, end: 11.5, title: "GP", calendar: "health" },
+      { day: 2, start: 10, end: 12, title: "Work (remote)", calendar: "work" },
+      { day: 3, start: 9, end: 10, title: "Physio", calendar: "health" },
+      { day: 4, start: 10, end: 12, title: "Work (remote)", calendar: "work" },
+      { day: 6, start: 15, end: 17, title: "Amira visiting", calendar: "family" },
+    ],
     events: [
-      { day: 0, at: 10, until: 12, text: "work (2h max)" },
+      { day: 0, at: 11, text: "2h MAX", on: true },
       { day: 0, at: 15, text: "rest - lie down" },
-      { day: 1, at: 11, text: "GP appt" },
       { day: 1, at: 16, text: "crochet + audiobook", doodle: "knitting" },
-      { day: 2, at: 10, until: 12, text: "work (2h)" },
       { day: 2, at: 14, text: "~groceries" },
       { day: 2, at: 14.5, text: "-> delivery" },
-      { day: 3, at: 9, text: "physio (gentle)" },
+      { day: 3, at: 9.5, text: "gentle!!", on: true },
       { day: 3, at: 20, text: "bath + bed" },
-      { day: 4, at: 10, text: "work (2h)" },
       { day: 5, at: 8, text: "window birds + tea", doodle: "bird" },
-      { day: 6, at: 15, text: "Amira visiting", doodle: "heart" },
     ],
     banner: { text: "rest day", from: 3, to: 3 },
     lists: {
@@ -847,14 +925,20 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#fff59d"),
     },
     doodles: { style: "minimal", big: ["baking", "singing", "sunflower", "books"], small: ["heart", "star", "sun", "sparkle"] },
+    calendar: [
+      { day: 0, start: 10, end: 11.5, title: "Church", calendar: "community" },
+      { day: 0, start: 12.5, end: 14, title: "Potluck", calendar: "community" },
+      { day: 1, start: 9, end: 17, title: "Office", calendar: "work" },
+      { day: 2, start: 18, end: 19, title: "Zoe - soccer", calendar: "family" },
+      { day: 3, start: 19, end: 20.5, title: "Bible study", calendar: "community" },
+      { day: 4, start: 19.5, end: 21, title: "Choir", calendar: "community" },
+    ],
     events: [
-      { day: 0, at: 10, until: 11.5, text: "church" },
-      { day: 0, at: 13, text: "potluck - bring bread", doodle: "baking" },
-      { day: 1, at: 9, until: 17, text: "month-end close" },
+      { day: 0, at: 13, text: "bring bread", on: true, doodle: "baking" },
+      { day: 1, at: 12, text: "month-end close", on: true },
       { day: 1, at: 19, text: "starter fed?" },
-      { day: 2, at: 18, text: "soccer pickup - Zoe" },
-      { day: 3, at: 19, until: 20.5, text: "study group (mine!)" },
-      { day: 4, at: 19.5, text: "choir", doodle: "singing" },
+      { day: 2, at: 18.5, text: "snacks!", on: true },
+      { day: 3, at: 19.5, text: "ch. 4 - mine!", on: true },
       { day: 5, at: 18, text: "bake for Sunday", doodle: "baking" },
       { day: 6, at: 10, text: "farmers mkt" },
       { day: 6, at: 15, text: "visit Mrs. Pell" },
@@ -903,17 +987,22 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#c5f5c5"),
     },
     doodles: { style: "sketchnote", big: ["laptop", "books", "coffee", "moon"], small: ["star", "moon", "sparkle", "heart"] },
+    calendar: [
+      { day: 0, start: 10, end: 11, title: "Lab meeting", calendar: "school" },
+      { day: 0, start: 14, end: 15, title: "TA section", calendar: "school" },
+      { day: 2, start: 14, end: 15, title: "TA section", calendar: "school" },
+      { day: 2, start: 19.5, end: 21, title: "Halaqa", calendar: "community" },
+      { day: 3, start: 10, end: 10.5, title: "Advisor 1:1", calendar: "school" },
+      { day: 4, start: 13, end: 14, title: "Jumu'ah", calendar: "community" },
+      { day: 5, start: 15, end: 19, title: "Amira's nikah", calendar: "family" },
+    ],
     events: [
-      { day: 0, at: 10, text: "lab mtg" },
-      { day: 0, at: 14, text: "TA section" },
       { day: 1, at: 9, until: 12, text: "sim runs", doodle: "laptop" },
       { day: 1, at: 19, text: "football w/ the guys", doodle: "football" },
-      { day: 2, at: 19.5, text: "halaqa" },
-      { day: 3, at: 10, text: "advisor 1:1 (!!)", mark: "circle" },
+      { day: 3, at: 9, text: "print slides!!" },
       { day: 3, at: 15, text: "write ch. 3" },
-      { day: 4, at: 13, text: "Jumu'ah" },
       { day: 4, at: 18, text: "pick up suit" },
-      { day: 5, at: 15, text: "Amira's nikah!!", doodle: "heart", mark: "highlight" },
+      { day: 5, at: 16, text: "photos 4pm", on: true, mark: "highlight" },
       { day: 6, at: 11, text: "help Mama clean up" },
     ],
     banner: { text: "nikah", from: 2, to: 2 },
@@ -961,11 +1050,14 @@ export const PEOPLE: Person[] = [
     doodles: { style: "pencil", big: ["books", "tulip", "tea", "bird"], small: ["star", "heart", "leaf", "sun"] },
     // Nothing on Saturday: no writing on Shabbat - only its name, lettered
     // across it in the days before.
+    calendar: [
+      { day: 0, start: 10, end: 11, title: "Torah study", calendar: "community" },
+      { day: 1, start: 10, end: 13, title: "Library shift", calendar: "work" },
+      { day: 2, start: 19, end: 21, title: "Book club", calendar: "personal" },
+    ],
     events: [
-      { day: 0, at: 10, text: "Torah study" },
       { day: 0, at: 14, text: "grandkids - zoo!" },
-      { day: 1, at: 10, text: "library shift" },
-      { day: 2, at: 19, text: "book club" },
+      { day: 2, at: 20, text: "Middlemarch ch 20-30", on: true },
       { day: 3, at: 11, text: "test the challah", doodle: "baking" },
       { day: 4, at: 10, text: "market - fish + flowers" },
       { day: 4, at: 15, text: "call Debbie" },
@@ -1017,19 +1109,22 @@ export const PEOPLE: Person[] = [
       highlight: highlighter("#fcca46"),
     },
     doodles: { style: "crayon", big: ["running", "cafe", "singing", "sun"], small: ["sun", "star", "heart", "laurel"] },
+    calendar: [
+      { day: 0, start: 12, end: 13, title: "Noon meeting", calendar: "community" },
+      { day: 0, start: 15, end: 23, title: "Kitchen", calendar: "work" },
+      { day: 1, start: 19, end: 20, title: "Home group", calendar: "community" },
+      { day: 2, start: 12, end: 13, title: "Noon meeting", calendar: "community" },
+      { day: 3, start: 10, end: 11, title: "Therapy", calendar: "health" },
+      { day: 3, start: 15, end: 23, title: "Kitchen", calendar: "work" },
+      { day: 4, start: 12, end: 13, title: "Noon meeting", calendar: "community" },
+      { day: 5, start: 8, end: 9, title: "Saturday morning meeting", calendar: "community" },
+    ],
     events: [
       { day: 0, at: 6.5, text: "run 5k (slow. fine.)", doodle: "running" },
-      { day: 0, at: 12, text: "noon mtg" },
-      { day: 0, at: 15, until: 23, text: "work 3-11" },
-      { day: 1, at: 19, text: "home group" },
-      { day: 1, at: 21, text: "coffee after w/ Dana", doodle: "cafe" },
-      { day: 2, at: 12, text: "noon mtg" },
+      { day: 1, at: 20.5, text: "coffee after w/ Dana", doodle: "cafe" },
       { day: 2, at: 16, text: "buy a real kettle" },
-      { day: 3, at: 10, text: "therapy" },
-      { day: 3, at: 15, until: 23, text: "work 3-11" },
-      { day: 4, at: 12, text: "noon mtg - speaker" },
+      { day: 4, at: 12.5, text: "speaker - Mo!", on: true },
       { day: 4, at: 20, text: "sober karaoke!!", doodle: "singing" },
-      { day: 5, at: 8, text: "Sat am mtg" },
       { day: 6, at: 9, text: "call Dana" },
     ],
     banner: { text: "90 days", from: 3, to: 3 },

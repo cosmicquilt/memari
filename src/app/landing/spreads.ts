@@ -28,7 +28,8 @@ import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily } from "@/lib/theme";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { dateRangeLabel } from "@/lib/pageLevels";
-import { PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type WeekLayout } from "./archetypes";
+import { CALENDAR_COLOURS, PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type CalendarBlock, type WeekLayout } from "./archetypes";
+import type { HourlyGridEvent } from "@/lib/modules/hourlyGridCore";
 
 const TRIM = PLANNER_TRIMS.bound7x10;
 export const LANDING_PAGE_GRID: PageGrid = {
@@ -202,9 +203,41 @@ function weekOf(today: Date, weekStartsMonday: boolean, weeksAhead: number) {
 
 // ---------------------------------------------------------------- build
 
+/** "HH:MM" for an hour of the day, 24-hour (13.5 is "13:30"). */
+const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+
+/**
+ * A person's calendar as the hours' event blocks, page by page - drawn by
+ * hourly-grid-core the way the editor draws imported and typed-in events.
+ * A block running past midnight (a night shift) is two: the evening, and
+ * the next morning from the hours' start. Clipped to the hours shown.
+ */
+export function calendarEvents(calendar: CalendarBlock[]): [HourlyGridEvent[], HourlyGridEvent[]] {
+  const [first, last] = [5.5, 23.5];
+  const pages: [HourlyGridEvent[], HourlyGridEvent[]] = [[], []];
+  const put = (day: number, start: number, end: number, block: CalendarBlock) => {
+    if (day > 6 || end <= first || start >= last) return;
+    const page = day < 3 ? 0 : 1;
+    pages[page].push({
+      day: page === 0 ? day : day - 3,
+      startTime: hhmm(Math.max(first, start)),
+      endTime: hhmm(Math.min(last, end)),
+      label: block.title,
+      source: "manual",
+      colour: CALENDAR_COLOURS[block.calendar],
+    });
+  };
+  for (const block of calendar) {
+    put(block.day, block.start, Math.min(block.end, 24), block);
+    if (block.end > 24) put(block.day + 1, 0, block.end - 24, block);
+  }
+  return pages;
+}
+
 type Placed = { slug: string; page: 0 | 1; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; locked: boolean; props: Record<string, unknown> };
 
 function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[] {
+  const events = calendarEvents(PEOPLE_BY_KEY[def.key]?.calendar ?? []);
   const placed: Placed[] = [
     { slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, locked: true, props: week.title },
     {
@@ -215,7 +248,7 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
       columnSpan: 18,
       rowSpan: HOURS_ROW_SPAN,
       locked: true,
-      props: { dayCount: 3, dayLabels: week.dayLabels.slice(0, 3), ...HOURS, events: [] },
+      props: { dayCount: 3, dayLabels: week.dayLabels.slice(0, 3), ...HOURS, events: events[0] },
     },
     {
       slug: "hourly-grid-core",
@@ -225,7 +258,7 @@ function placementsOf(def: SpreadDef, week: ReturnType<typeof weekOf>): Placed[]
       columnSpan: 24,
       rowSpan: HOURS_ROW_SPAN,
       locked: true,
-      props: { dayCount: 4, dayLabels: week.dayLabels.slice(3), ...HOURS, events: [] },
+      props: { dayCount: 4, dayLabels: week.dayLabels.slice(3), ...HOURS, events: events[1] },
     },
   ];
   // A module arrives the way the editor's palette drops it: filled with its
