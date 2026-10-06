@@ -236,15 +236,22 @@ function boxRegion(slug: string, primitive: string, heading: string, rect: Box, 
 }
 
 /**
- * A month's calendar on one page: each date's box (the small outlined box in
- * a day's top corner) in reading order, matched to the calendar the grid was
+ * A month's calendar on one page: each date's box (the small square in a
+ * day's top corner) in reading order, matched to the calendar the grid was
  * drawn from, and the square under it to write in.
+ *
+ * Found by the box's RIGHT SIDE, a short vertical rule the height of the
+ * date strip: the grid draws only that side now - its top, left and bottom
+ * are the week's, column's and strip's rules, and drawing them again as an
+ * outlined box doubled them on screen (monthGridCore, 2026-10-06). The box
+ * is square, so it is the side's height back to the left from it.
  */
 function monthRegion(marks: PreviewMark[], cells: MonthCalendarCell[][], rect: Box): Region {
   const [x, y, w, h] = rect;
   const dayCount = cells[0]?.length ?? 1;
   const boxes = marks
-    .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && !m.f && m.h >= 24 && m.h <= 56 && m.w >= 24 && m.w <= 200)
+    .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.f && !m.s && m.w <= 4 && m.h >= 24 && m.h <= 56)
+    .map((m) => ({ x: m.x + m.w / 2 - m.h, y: m.y, w: m.h, h: m.h }))
     .filter((m) => m.x >= x - 2 && m.x + m.w <= x + w + 2 && m.y >= y - 2 && m.y + m.h <= y + h + 2)
     .sort((a, b) => (Math.abs(a.y - b.y) > 4 ? a.y - b.y : a.x - b.x));
   const flat = cells.flat();

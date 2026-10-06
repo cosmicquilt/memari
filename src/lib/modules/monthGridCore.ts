@@ -232,20 +232,28 @@ export function renderMonthGridCore(
       const cell = week[d];
       const cellX = geometry.x + d * dayColumnWidth;
 
-      // Date-number box: a small bordered box in the top-left corner of
-      // the cell's date-strip, matching the reference's own structure.
+      // Date-number box: a small box in the top-left corner of the cell's
+      // date-strip, matching the reference's own structure.
+      //
+      // ITS RIGHT SIDE ONLY. Its top, left and bottom are the week's rule,
+      // the column's rule and the strip's rule, already drawn - and drawing
+      // them again as an outlined box doubled every one on screen: the rules
+      // are filled hairlines snapped to the device grid, an outline's stroke
+      // lands half a pixel inside them, and each shared side showed as a
+      // two-pixel band (reported 2026-10-06, "not create a double thick line
+      // around it"). On paper they coincided, which is why the PDF never
+      // showed it. Now each line is drawn once, as the rules are drawn.
       if (cell) {
         elements.push({
-          id: id(`w${w}-d${d}-date-box`),
+          id: id(`w${w}-d${d}-date-edge`),
           type: "figure",
           subType: "rect",
-          x: cellX,
+          x: cellX + dateBoxWidth - lineWidth / 2,
           y: rowY,
-          width: dateBoxWidth,
+          width: lineWidth,
           height: dateStripHeight,
-          fill: "transparent",
-          stroke: LINE_COLOR,
-          strokeWidth: lineWidth,
+          fill: LINE_COLOR,
+          stroke: "none",
         });
 
         // Centered, not left-aligned — left alignment measured close
@@ -254,7 +262,7 @@ export function renderMonthGridCore(
         // visibly off to one side of the box instead of centered in it.
         const dateFontSize = ptToPx(5);
         const dateTextHeight = dateFontSize * 1.2;
-        // Undated: the box above stays, the number does not. A month grid
+        // Undated: the box (its edge above) stays, the number does not. A month grid
         // you write the dates into is exactly what an undated monthly is.
         if (typeof cell.date === "number") elements.push({
           id: id(`w${w}-d${d}-date`),
