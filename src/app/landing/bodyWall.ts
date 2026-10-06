@@ -62,9 +62,42 @@ export type BodyWallSettings = {
   tornEdge: "drawn" | "flow-fine" | "flow-bold" | "none";
   tornScale: number;
   tornShadow: number;
+  /** The hero darkened toward its edges, a vignette (.vignette; 2026-10-06:
+   *  "a darkness vignette in the hero, controllable independently ... top
+   *  and bottom seperately, the sides together"): how dark at the very edge,
+   *  0 to 1, and how far in it reaches - % of the hero's height for the top
+   *  and the bottom, of its width for the sides. The corners darker still,
+   *  in an oval (`vignetteCorners`; "especially top corners ... oval round
+   *  rectangle shape"); the bottom light, a shadow along the torn edge's. */
+  vignetteTop: number;
+  vignetteTopReach: number;
+  vignetteBottom: number;
+  vignetteBottomReach: number;
+  vignetteSides: number;
+  vignetteSidesReach: number;
+  vignetteCorners: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;
+
+/** The settings the page's stylesheet reads, as its CSS variables: set on
+ *  the page by Landing.tsx, and again, live, by the dev panel - one list, so
+ *  the two never set different ones. */
+export function pageVars(s: BodyWallSettings): Record<string, number> {
+  return {
+    "--peek": s.peekDesktop,
+    "--peek-phone": s.peekMobile,
+    "--side-blur": s.sideBlur,
+    "--side-blur-w": s.sideBlurWidth,
+    "--vig-top": s.vignetteTop,
+    "--vig-top-reach": s.vignetteTopReach,
+    "--vig-bottom": s.vignetteBottom,
+    "--vig-bottom-reach": s.vignetteBottomReach,
+    "--vig-sides": s.vignetteSides,
+    "--vig-sides-reach": s.vignetteSidesReach,
+    "--vig-corners": s.vignetteCorners,
+  };
+}
 
 /** Below this width the page is laid out for a phone (the stylesheet's own
  *  breakpoint): drawings smaller, and the phone's cream band. */

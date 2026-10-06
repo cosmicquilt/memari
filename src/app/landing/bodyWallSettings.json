@@ -1,5 +1,5 @@
 {
-  "peekDesktop": 16,
+  "peekDesktop": 13,
   "peekMobile": 12,
   "bandDesktop": 0,
   "bandMobile": 0,
@@ -14,6 +14,13 @@
   "openSeconds": 3,
   "tornScale": 0.45,
   "tornShadow": 1,
+  "vignetteTop": 0.4,
+  "vignetteTopReach": 22,
+  "vignetteBottom": 0.2,
+  "vignetteBottomReach": 7,
+  "vignetteSides": 0.3,
+  "vignetteSidesReach": 14,
+  "vignetteCorners": 0.4,
   "newEachLoad": true,
-  "tornEdge": "drawn"
+  "tornEdge": "flow-fine"
 }

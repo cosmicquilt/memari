@@ -381,6 +381,8 @@ export function VideoHero() {
         )),
       )}
       <div className={styles.videoScrim} aria-hidden="true" />
+      {/* Darker toward the hero's edges - see .vignette. */}
+      <div className={styles.vignette} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />
       <Wordmark className={styles.titleOverFilm} />
       <p className={styles.srOnly}>

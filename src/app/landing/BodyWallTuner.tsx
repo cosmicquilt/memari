@@ -7,7 +7,7 @@
 // pushed like any other change.
 
 import { useEffect, useState } from "react";
-import { BODY_WALL_DEFAULTS, bodyWallSettings, onBodyWallSettings, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
+import { BODY_WALL_DEFAULTS, bodyWallSettings, onBodyWallSettings, pageVars, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
 
 const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; max: number; step: number; unit: string }> = [
   { key: "peekDesktop", label: "Cream on load, desktop", min: 0, max: 40, step: 1, unit: "% of screen" },
@@ -22,6 +22,13 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "sideBlur", label: "Hero side blur, at the edge", min: 0, max: 16, step: 0.5, unit: "px" },
   { key: "sideBlurWidth", label: "Hero side blur, reaches in", min: 0, max: 40, step: 1, unit: "% of screen" },
   { key: "openSeconds", label: "Book opening takes", min: 1, max: 6, step: 0.1, unit: "s" },
+  { key: "vignetteTop", label: "Hero vignette, top", min: 0, max: 1, step: 0.01, unit: "" },
+  { key: "vignetteTopReach", label: "Top reaches down", min: 0, max: 60, step: 1, unit: "% of hero" },
+  { key: "vignetteBottom", label: "Hero vignette, bottom", min: 0, max: 1, step: 0.01, unit: "" },
+  { key: "vignetteBottomReach", label: "Bottom reaches up", min: 0, max: 60, step: 1, unit: "% of hero" },
+  { key: "vignetteSides", label: "Hero vignette, sides", min: 0, max: 1, step: 0.01, unit: "" },
+  { key: "vignetteSidesReach", label: "Sides reach in", min: 0, max: 50, step: 1, unit: "% of width" },
+  { key: "vignetteCorners", label: "Hero vignette, corners", min: 0, max: 1, step: 0.01, unit: "" },
   { key: "tornScale", label: "Torn edge photo size", min: 0.2, max: 1, step: 0.01, unit: "x" },
   { key: "tornShadow", label: "Torn edge shadow", min: 0, max: 2, step: 0.05, unit: "x" },
 ];
@@ -42,13 +49,10 @@ const REPLAY_KEY = "memari-tuner-replay";
 /** The settings, live: the page's wall, hero and film follow at once. */
 function apply(next: BodyWallSettings) {
   setBodyWallSettings(next);
-  // The hero's height and side blur: the page sets these from the saved
-  // settings (Landing.tsx), so they are set on the same element here.
+  // The hero's height, side blur and vignette: the page sets these from the
+  // saved settings (Landing.tsx), so they are set on the same element here.
   const page = document.querySelector("main")?.parentElement;
-  page?.style.setProperty("--peek", String(next.peekDesktop));
-  page?.style.setProperty("--peek-phone", String(next.peekMobile));
-  page?.style.setProperty("--side-blur", String(next.sideBlur));
-  page?.style.setProperty("--side-blur-w", String(next.sideBlurWidth));
+  for (const [name, value] of Object.entries(pageVars(next))) page?.style.setProperty(name, String(value));
 }
 
 export function BodyWallTuner() {

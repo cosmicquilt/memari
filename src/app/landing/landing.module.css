@@ -598,6 +598,45 @@
   background: linear-gradient(to bottom, rgba(16, 10, 6, 0.55) 0%, rgba(16, 10, 6, 0.28) 26%, rgba(16, 10, 6, 0) 46%);
 }
 
+/* The hero darkened toward its edges, a vignette (Andrew, 2026-10-06: "a
+   darkness vignette in the hero, controllable independently ... top and
+   bottom seperately, the sides together"; then "in the corner be a bit
+   darker ... especially top corners more oval round rectangle shape
+   actually like a vignette. the bottom will be much lighter an just as a
+   drop shadow to enhance the one that already exists down there"). Over
+   the film and the desk, under the grain and the title.
+
+   Each edge is a soft inner shadow: as dark as --vig-<edge> at the very
+   edge, half that at half its reach, gone at its reach (--vig-<edge>-reach,
+   % of the hero's height, or of its width for the sides). The blur is half
+   the reach and the spread takes back the same, so a side's shadow never
+   bleeds along the top or the bottom. Where two edges' shadows meet they
+   compound, rounded by the blur: the corners darkest, a rounded rectangle -
+   the top ones most, the top and sides being the strong ones. Over that an
+   oval, centred a little low (--vig-corners), darkening the corners again.
+   The bottom is meant light and short: a shadow along the torn paper's
+   (TornEdge.tsx), not a band. All from bodyWallSettings.json. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --vig-rgb: 16 10 6;
+  --vig-t: calc(var(--vig-top-reach, 0) * var(--hero-h) / 100);
+  --vig-b: calc(var(--vig-bottom-reach, 0) * var(--hero-h) / 100);
+  --vig-s: calc(var(--vig-sides-reach, 0) * 1vw);
+  box-shadow:
+    inset 0 var(--vig-t) calc(var(--vig-t) / 2) calc(var(--vig-t) / -2) rgb(var(--vig-rgb) / var(--vig-top, 0)),
+    inset 0 calc(var(--vig-b) * -1) calc(var(--vig-b) / 2) calc(var(--vig-b) / -2) rgb(var(--vig-rgb) / var(--vig-bottom, 0)),
+    inset var(--vig-s) 0 calc(var(--vig-s) / 2) calc(var(--vig-s) / -2) rgb(var(--vig-rgb) / var(--vig-sides, 0)),
+    inset calc(var(--vig-s) * -1) 0 calc(var(--vig-s) / 2) calc(var(--vig-s) / -2) rgb(var(--vig-rgb) / var(--vig-sides, 0));
+  background: radial-gradient(
+    ellipse 74% 80% at 50% 60%,
+    rgb(var(--vig-rgb) / 0) 60%,
+    rgb(var(--vig-rgb) / calc(var(--vig-corners, 0) * 0.45)) 84%,
+    rgb(var(--vig-rgb) / var(--vig-corners, 0)) 100%
+  );
+}
+
 /* A blur that grows toward the screen's left and right edges (Andrew,
    2026-10-02: "i like idea of blur vignette but not nearly that much"), over
    the film and the desk beyond it alike. --side-blur is the blur at the very
