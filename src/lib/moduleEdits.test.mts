@@ -571,6 +571,17 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(shapes(both, /-s1-g1-i\d+$/).every((shape) => shape === "leaf"), "a blank day keeps the row's");
   check(shapes(both, /-s0-g2-i\d+$/).every((shape) => shape === "droplet"), "a name that is not a shape is ignored");
   check(ids(both, /-i\d+$/).length === ids(plain, /-i\d+$/).length, "the icons change shape, never number or place");
+
+  // FACES (2026-10-06, "have a switch for the faces"): the same icons in the
+  // same places, each the drawing with a face - and off by default.
+  const faced = draw("icon-strip", { ...base, faces: true }, 18, 3);
+  const facedPaths = ids(faced, /-i\d+$/).map((e) => e.pathD);
+  const plainPaths = ids(plain, /-i\d+$/).map((e) => e.pathD);
+  check(facedPaths.length === plainPaths.length && facedPaths.every((d, i) => typeof d === "string" && d !== plainPaths[i]), "Faces draws every icon's face drawing");
+  check(
+    ids(faced, /-i\d+$/).every((e, i) => e.x === ids(plain, /-i\d+$/)[i].x && e.y === ids(plain, /-i\d+$/)[i].y),
+    "in the same places"
+  );
 }
 
 // --- ratings -----------------------------------------------------------------
@@ -580,6 +591,9 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   // adds blank rows to write in (2026-10-02).
   const hearts = ids(draw("rating-strip", { ...base, shape: "heart" }, 6, 4), /-i\d-v\d$/);
   check(hearts.length === 10 && hearts.every((h) => typeof h.pathD === "string"), "hearts are drawn as the glyph");
+  const facedSuns = ids(draw("rating-strip", { ...base, shape: "sun", faces: true }, 6, 4), /-i\d-v\d$/);
+  const plainSuns = ids(draw("rating-strip", { ...base, shape: "sun" }, 6, 4), /-i\d-v\d$/);
+  check(facedSuns.length === 10 && facedSuns.every((m, i) => m.pathD !== plainSuns[i].pathD), "Faces draws the marks' face drawing");
   check(ids(draw("rating-strip", { ...base, shape: "nonsense" }, 6, 6), /-i\d-v\d$/).every((m) => Number(m.cornerRadius ?? 0) > 0), "an unknown mark is a circle");
   const numbers = texts(draw("rating-strip", base, 6, 6), /-scale\d+$/);
   check(numbers.join(",") === "1,2,3,4,5", "numbers above by default");

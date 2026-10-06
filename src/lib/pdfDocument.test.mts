@@ -78,35 +78,117 @@ const near = (a: number, b: number, tolerance: number) => Math.abs(a - b) <= tol
 // walking agrees with what the proofs and the editor actually draw, rather
 // than only with itself.
 //
-// Note `plant` reaching 97.93..142.05, OUTSIDE its nominal 100..140 box.
-// That is the glyph's own doing, not the parser's - it is a traced shape
-// whose outer leaves flare past the square it is inscribed in. It is
-// harmless where glyphs are laid out (iconStrip leaves 16% between them,
-// see GLYPH_WIDTH_SHARE) and it is recorded here so it cannot change
-// unnoticed.
+// FLOW'S ICONS (2026-10-06), both drawings of each - "shape" plain and
+// "shape+face" - re-measured the same way when they replaced the hand-built
+// glyphs (scripts/_glyph-bbox.mts read them off; a stale table fails here).
+// Each spans its box on its longer side, so one of each pair of edges is
+// 100/140 or 200/240 to within the drawing's rounding.
 const GLYPH_BBOX: Record<string, [number, number, number, number]> = {
-  droplet: [103.2, 136.8, 200.0, 240.0],
-  heart: [101.8, 138.2, 201.4, 239.6],
-  star: [100.98, 139.02, 200.0, 236.18],
-  moon: [100.8, 128.03, 200.8, 239.2],
-  flame: [106.4, 133.6, 200.0, 240.0],
-  leaf: [103.6, 137.2, 202.8, 237.2],
-  plant: [97.93, 142.05, 203.25, 236.75],
-  // The archetypes' four (2026-10-06), read off a real <path> the same way.
-  spoon: [108.77, 132.99, 203.72, 235.35],
-  jar: [108, 132, 202, 238.4],
-  lotus: [100.4, 139.6, 205.6, 234.4],
-  pill: [106.13, 133.87, 206.13, 233.87],
-  // The bin, for trash day's day icon (2026-10-06).
-  trash: [105.6, 134.4, 202.8, 237.6],
+  "droplet": [106.56, 133.46, 199.99, 240],
+  "plant": [99.97, 139.98, 204.88, 235.18],
+  "flame": [105.54, 134.48, 200, 240.04],
+  "leaf": [102.88, 137.1, 200, 240.01],
+  "heart": [99.99, 140, 202.37, 237.64],
+  "star": [100, 139.99, 200.84, 239.19],
+  "moon": [101.43, 138.6, 200, 240],
+  "sun": [99.98, 140.05, 200.07, 239.92],
+  "cloud": [99.97, 139.99, 206.88, 233.06],
+  "spoon": [112.37, 127.73, 199.94, 240.04],
+  "jar": [103.41, 136.59, 200.01, 240.02],
+  "lotus": [100, 139.99, 202.48, 237.48],
+  "pill": [102.49, 137.52, 199.98, 239.97],
+  "medicine": [108.22, 131.73, 199.96, 240.06],
+  "toothbrush": [113.84, 126.17, 200, 240.01],
+  "bed": [99.96, 140.01, 202.99, 237],
+  "mug": [100, 140, 202.98, 236.88],
+  "glass": [104.49, 135.5, 199.97, 239.98],
+  "trash": [106.57, 133.44, 200.02, 240.02],
+  "recycling": [104.04, 135.99, 200.01, 240.06],
+  "laundry": [99.99, 140.02, 201.53, 238.51],
+  "broom": [110.1, 129.92, 199.99, 240.07],
+  "watering-can": [99.99, 139.98, 203.18, 236.79],
+  "washer": [103.03, 136.97, 199.96, 240.06],
+  "bag": [102.09, 137.99, 200, 240.01],
+  "cart": [99.99, 140.01, 202.02, 237.97],
+  "envelope": [100, 140, 206.65, 233.31],
+  "coins": [99.95, 140, 201.17, 238.89],
+  "calendar": [100.07, 140, 200.01, 240],
+  "house": [100.04, 139.99, 201.8, 238.2],
+  "dumbbell": [100.01, 140.03, 209.57, 230.4],
+  "shoe": [100.03, 140.05, 207.54, 232.46],
+  "bicycle": [100.01, 139.99, 206.11, 233.83],
+  "apple": [101, 139.01, 200, 240.03],
+  "tooth": [101.25, 138.73, 200, 239.97],
+  "paw": [100, 140, 202.06, 237.9],
+  "cat": [100, 140, 204.47, 235.53],
+  "car": [99.99, 140, 206.34, 233.6],
+  "bus": [100, 140.04, 206.16, 233.83],
+  "baby-bottle": [109.99, 130, 199.98, 240.03],
+  "book": [99.98, 140, 202.79, 237.2],
+  "scissors": [100.06, 139.97, 201.23, 238.83],
+  "cake": [99.99, 140.01, 200.26, 239.8],
+  "gift": [102.41, 137.62, 199.99, 239.99],
+  "music": [101.86, 138.19, 200.04, 239.99],
+  "plane": [100, 140.05, 206.76, 233.22],
+  "palette": [100.02, 140, 200.86, 239.08],
+  "key": [101.31, 138.67, 200.02, 239.99],
+  "droplet+face": [105.9, 134.11, 200.03, 240],
+  "plant+face": [100.02, 140.03, 201.36, 238.7],
+  "flame+face": [104.9, 135.13, 200.01, 240.02],
+  "leaf+face": [103.96, 136.02, 199.94, 240.01],
+  "heart+face": [100.07, 140.05, 202.14, 237.88],
+  "star+face": [100, 139.98, 200.92, 239.08],
+  "moon+face": [101.4, 138.64, 199.97, 240.01],
+  "sun+face": [99.95, 140.04, 200.01, 239.99],
+  "cloud+face": [99.99, 139.99, 206.98, 232.96],
+  "spoon+face": [112.66, 127.31, 200, 240.01],
+  "jar+face": [103.58, 136.4, 199.98, 240],
+  "lotus+face": [99.99, 140, 203.57, 236.4],
+  "pill+face": [100.89, 139.13, 199.98, 240.03],
+  "medicine+face": [107.88, 132.19, 199.97, 239.99],
+  "toothbrush+face": [114.83, 125.21, 200, 240],
+  "bed+face": [99.94, 140, 203.06, 236.98],
+  "mug+face": [100.02, 140, 201.41, 238.53],
+  "glass+face": [104.28, 135.72, 199.98, 240.07],
+  "trash+face": [105.21, 134.8, 199.96, 240.07],
+  "recycling+face": [103.72, 136.25, 199.95, 240],
+  "laundry+face": [99.99, 139.97, 201.64, 238.35],
+  "broom+face": [107.23, 132.8, 200, 240.01],
+  "watering-can+face": [99.99, 140.01, 205.45, 234.6],
+  "washer+face": [103.22, 136.81, 199.98, 240.02],
+  "bag+face": [102.47, 137.5, 200, 240.05],
+  "cart+face": [99.98, 139.97, 203, 237.05],
+  "envelope+face": [100, 140, 205.48, 234.49],
+  "coins+face": [100.22, 139.8, 199.93, 240.04],
+  "calendar+face": [100.04, 139.96, 200.52, 239.48],
+  "house+face": [99.99, 140.01, 200.86, 239.15],
+  "dumbbell+face": [100.02, 140.03, 209.09, 230.95],
+  "shoe+face": [100.04, 139.99, 206.92, 233.12],
+  "bicycle+face": [99.99, 139.97, 205.2, 234.76],
+  "apple+face": [101.58, 138.42, 199.98, 240.01],
+  "tooth+face": [101.17, 138.85, 199.96, 239.99],
+  "paw+face": [100, 140.01, 201.57, 238.46],
+  "cat+face": [100, 140, 204.9, 235.13],
+  "car+face": [99.98, 140, 206.02, 233.93],
+  "bus+face": [99.99, 140.04, 204.8, 235.26],
+  "baby-bottle+face": [109.65, 130.28, 200, 240.05],
+  "book+face": [100, 140.01, 200.02, 240],
+  "scissors+face": [101.46, 138.54, 200, 240],
+  "cake+face": [100.47, 139.52, 200, 239.97],
+  "gift+face": [101.65, 138.37, 199.98, 240.02],
+  "music+face": [101.93, 138.03, 200.03, 239.95],
+  "plane+face": [99.98, 140, 205.05, 235],
+  "palette+face": [100.03, 140.01, 201.69, 238.33],
+  "key+face": [101.26, 138.77, 200, 240.02],
 };
 
 // Every glyph there is, not a list kept here: a glyph added tomorrow with no
 // measured box above fails rather than going unchecked.
 const SHAPES: readonly GlyphShape[] = GLYPH_SHAPES;
-for (const shape of SHAPES) {
-  const element = glyphElement({ id: "g", x: 100, y: 200, sizePx: 40, shape }) as
+for (const [shape, faces] of SHAPES.flatMap((s) => [[s, false], [s, true]] as const)) {
+  const element = glyphElement({ id: "g", x: 100, y: 200, sizePx: 40, shape, faces }) as
     RenderedPolotnoElement & { pathD?: string };
+  const key = faces ? `${shape}+face` : shape;
   if (typeof element.pathD !== "string" || element.pathD.length === 0) continue; // a plain rect
   const { ops, unsupported } = parsePathD(element.pathD);
   if (unsupported.length > 0) {
@@ -139,9 +221,9 @@ for (const shape of SHAPES) {
       from = { x: op.x, y: op.y };
     }
   }
-  const want = GLYPH_BBOX[shape];
+  const want = GLYPH_BBOX[key];
   if (!want) {
-    fail(`${shape}: no measured bbox recorded - add one read off a real <path>`);
+    fail(`${key}: no measured bbox recorded - add one read off a real <path>`);
     continue;
   }
   const got: [number, number, number, number] = [minX, maxX, minY, maxY];
@@ -149,7 +231,7 @@ for (const shape of SHAPES) {
   for (let i = 0; i < 4; i++) {
     if (!near(got[i], want[i], 0.05)) {
       fail(
-        `${shape}: ${labels[i]} edge came out ${got[i].toFixed(2)}, ` +
+        `${key}: ${labels[i]} edge came out ${got[i].toFixed(2)}, ` +
           `but a browser draws that path at ${want[i].toFixed(2)}`
       );
     }

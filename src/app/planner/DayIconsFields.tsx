@@ -14,7 +14,7 @@
 // PURE, like HoursFields: it shows the list and reports changes. The editor
 // owns the draft, redraws the preview from it, and saves it with Done.
 
-import { CONTROL_RADIUS, PREVIEW_RADIUS } from "./editorStyle";
+import { CONTROL_RADIUS, ICON_PICKER_COLUMNS, PREVIEW_RADIUS } from "./editorStyle";
 import { useState, type CSSProperties } from "react";
 import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
 import { toSvg } from "@/lib/proofSvg";
@@ -34,7 +34,7 @@ import {
   type Repeat,
   type RepeatFreq,
 } from "@/lib/dayIcons";
-import { GlyphSwatch, selectStyle } from "./ModuleFieldsForm";
+import { CapsuleSwitch, GlyphSwatch, selectStyle } from "./ModuleFieldsForm";
 import { CREAM, cream, onCream } from "@/lib/cream";
 
 const ACCENT = "#4a5cff";
@@ -99,8 +99,8 @@ function newIcon(firstDay: string): DayIcon {
 }
 
 /** The icon itself, on paper, drawn by the code that prints it. */
-function GlyphChip({ shape, size = 24 }: { shape: GlyphShape; size?: number }) {
-  const markup = toSvg(glyphElement({ id: `chip-${shape}`, x: 18, y: 18, sizePx: 64, shape, opacity: 1 }) as never);
+function GlyphChip({ shape, faces, size = 24 }: { shape: GlyphShape; faces?: boolean; size?: number }) {
+  const markup = toSvg(glyphElement({ id: `chip-${shape}`, x: 18, y: 18, sizePx: 64, shape, opacity: 1, faces }) as never);
   return (
     <svg
       viewBox="0 0 100 100"
@@ -199,7 +199,7 @@ export function DayIconsFields({
                 cursor: "pointer",
               }}
             >
-              <GlyphChip shape={icon.icon} />
+              <GlyphChip shape={icon.icon} faces={icon.faces} />
               <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {title}
@@ -305,13 +305,14 @@ function IconFields({
         <div
           role="radiogroup"
           aria-label="Icon"
-          style={{ display: "grid", gridTemplateColumns: `repeat(${Math.ceil(GLYPH_SHAPES.length / 2)}, 24px)`, gap: 3 }}
+          style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(GLYPH_SHAPES.length, ICON_PICKER_COLUMNS)}, 24px)`, gap: 3 }}
         >
           {GLYPH_SHAPES.map((shape) => (
             <GlyphSwatch
               key={shape}
               size={24}
               shape={shape}
+              faces={icon.faces}
               label={GLYPH_NAMES[shape]}
               selected={icon.icon === shape}
               onPick={() => update({ icon: shape })}
@@ -319,6 +320,10 @@ function IconFields({
           ))}
         </div>
       </div>
+
+      {/* The drawing with a little face, or without - as the strips' own
+          Faces switch ("have a switch for the faces", 2026-10-06). */}
+      <CapsuleSwitch on={icon.faces === true} label="Faces" onToggle={(on) => update({ faces: on || undefined })} />
 
       <label style={rowStyle}>
         <span style={labelStyle}>{repeats ? "Starts" : "On"}</span>

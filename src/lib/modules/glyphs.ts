@@ -1,12 +1,5 @@
-// The repeatable marks a module can print: a ring, a box, a soft box.
-//
-// This exists because the renderer's whole vocabulary is the axis-aligned
-// rectangle and the upright text node - see the element-vocabulary note.
-// There is no circle, no path and no polygon, so a "circle" here is a
-// rectangle whose corner radius is half its side. ratingStrip worked that
-// out first and carried the comment; iconStrip needed the same trick, and
-// one idiom spelled two ways in two files is how a house style stops being
-// one.
+// The repeatable marks a module can print: a ring, a box, a soft box - and
+// the icons, Flow's drawings of the things a planner tracks.
 //
 // What this does NOT contain is spacing. A rating strip lays its glyphs
 // out against a numbered scale with its own padding shares; an icon strip
@@ -16,316 +9,174 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { NEAR_BLACK, RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
-import { plantPathD } from "@/lib/modules/plantGlyph";
+import { FLOW_ICONS, FLOW_ICON_NAMES, type FlowDrawing, type FlowIconName } from "@/lib/modules/flowIcons";
 
 /**
  * The marks that can be drawn.
  *
- * The first version of this file said a droplet was impossible, because
- * the renderer's vocabulary was the axis-aligned rect and the upright text
- * node. That was true of the ELEMENTS and not of the renderer: the native
- * one is already an SVG, so a <path> costs one branch in it. "I do want to
- * make the icons relevant shapes" is a fair thing to want from a water
- * tracker, and drawing rings for droplets was settling.
+ * Three are GEOMETRY - a ring, a box, a soft box - drawn as a rect with a
+ * corner radius at the house hairline: the to-do's ticks and the plainest
+ * trackers. The rest are FLOW'S ICONS (2026-10-06): forty-eight drawings in
+ * the doodle walls' style, made to be printed small and coloured in, each
+ * with a plain drawing and one with a little face - see flowIcons.ts. They
+ * replaced the hand-built droplet, heart, star, moon, flame, leaf, plant,
+ * spoon, jar, lotus, pill and bin under the SAME names, so every module that
+ * stored "droplet" draws Flow's droplet with nothing migrated.
  *
- * The shapes below are built at their FINAL SIZE rather than defined in a
- * unit box and scaled by a transform. A transform would scale the stroke
- * with the shape, so a 0.3pt hairline in a non-square box comes out
- * elliptical and heavier on one axis - and these are printed at 300dpi
- * where that shows.
+ * An icon is built at its FINAL SIZE rather than scaled by a transform, as
+ * the hand-built ones were: every consumer (the editor's SVG, the previews'
+ * Canvas, the PDF) draws `pathD` as given, and none of them would have to
+ * learn transforms.
  *
- * A path glyph still carries x/y/width/height and a cornerRadius, and
- * still says subType "rect". That is deliberate: `pathD` is ADDITIVE, so
- * every consumer that has never heard of it - the legacy Polotno route,
- * the animation system's rect partition, the geometry tests - keeps
- * working and draws the box. Introducing a subType "path" instead would
- * have made the glyph vanish from all of them at once.
+ * A path glyph still carries x/y/width/height and says subType "rect".
+ * That is deliberate: `pathD` is ADDITIVE, so every consumer that has never
+ * heard of it - the legacy Polotno route, the animation system's rect
+ * partition, the geometry tests - keeps working and draws the box.
  */
-export type GlyphShape =
-  | "circle"
-  | "square"
-  | "rounded"
-  | "droplet"
-  | "heart"
-  | "star"
-  | "moon"
-  | "flame"
-  | "leaf"
-  | "plant"
-  | "spoon"
-  | "jar"
-  | "lotus"
-  | "pill"
-  | "trash";
+export type GlyphShape = "circle" | "square" | "rounded" | FlowIconName;
 
-/** Every shape, for checking a stored value is one. */
-export const GLYPH_SHAPES: readonly GlyphShape[] = [
-  "circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant",
-  "spoon", "jar", "lotus", "pill", "trash",
-];
+/** Every shape, for checking a stored value is one - and the pickers' order:
+ *  the geometry, then the icons as the brief listed them, sheet by sheet. */
+export const GLYPH_SHAPES: readonly GlyphShape[] = ["circle", "square", "rounded", ...FLOW_ICON_NAMES];
 
 /**
- * Unit coordinates turned about the glyph's centre, then put at size - for
- * a shape drawn upright and printed tilted (the spoon, the pill). Turning
- * the points rather than the drawing keeps the hairline a hairline: see the
- * note on final-size building above.
+ * Each shape's name, one and many: the many for a module's picker ("Droplets"
+ * - a strip of them), the one for a day icon ("Bin"). Kept here, once, so a
+ * new icon is named in one place.
  */
-function tilted(x: number, y: number, s: number, degrees: number) {
-  const rad = (degrees * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return (a: number, b: number) => {
-    const dx = a - 0.5;
-    const dy = b - 0.5;
-    return `${(x + (0.5 + dx * cos - dy * sin) * s).toFixed(2)} ${(y + (0.5 + dx * sin + dy * cos) * s).toFixed(2)}`;
-  };
-}
-
-/** Shapes drawn as a path; everything else is the rect itself. */
-const PATH_SHAPES: Record<string, (x: number, y: number, size: number) => string> = {
-  // Each builder maps unit coordinates (0..1 across the glyph's own box)
-  // to absolute ones, so the curve is described once and emitted at size.
-  droplet: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    return (
-      `M ${u(0.5, 0)} C ${u(0.5, 0.18)} ${u(0.92, 0.42)} ${u(0.92, 0.64)} ` +
-      `C ${u(0.92, 0.85)} ${u(0.73, 1)} ${u(0.5, 1)} ` +
-      `C ${u(0.27, 1)} ${u(0.08, 0.85)} ${u(0.08, 0.64)} ` +
-      `C ${u(0.08, 0.42)} ${u(0.5, 0.18)} ${u(0.5, 0)} Z`
-    );
-  },
-  heart: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    // The lower edges leave the point almost vertically and only then
-    // flare out, so the silhouette is faintly CONCAVE for the first
-    // quarter of its run rather than bulging straight off the tip. That is
-    // the difference between a heart and a spade-ish balloon: asked for as
-    // "the lower portion subtly transfer into concave into point instead
-    // of convex".
-    //
-    // The control that does it is the first one on each lower edge, sat
-    // nearly above the point (0.47 and 0.53 against the point's 0.5) where
-    // it used to sit on the point itself - a degenerate control, which
-    // makes the tangent aim straight at the far control and bulge outward
-    // immediately.
-    return (
-      `M ${u(0.5, 0.99)} ` +
-      `C ${u(0.47, 0.8)} ${u(0.1, 0.6)} ${u(0.045, 0.35)} ` +
-      `C ${u(0.045, 0.14)} ${u(0.19, 0.035)} ${u(0.32, 0.035)} ` +
-      `C ${u(0.42, 0.035)} ${u(0.49, 0.1)} ${u(0.5, 0.19)} ` +
-      `C ${u(0.51, 0.1)} ${u(0.58, 0.035)} ${u(0.68, 0.035)} ` +
-      `C ${u(0.81, 0.035)} ${u(0.955, 0.14)} ${u(0.955, 0.35)} ` +
-      `C ${u(0.9, 0.6)} ${u(0.53, 0.8)} ${u(0.5, 0.99)} Z`
-    );
-  },
-  star: (x, y, s) => {
-    const cx = x + s / 2;
-    const cy = y + s / 2;
-    const outer = s * 0.5;
-    const inner = s * 0.208;
-    const points: string[] = [];
-    for (let i = 0; i < 10; i++) {
-      const r = i % 2 === 0 ? outer : inner;
-      const angle = -Math.PI / 2 + (i * Math.PI) / 5;
-      points.push(`${(cx + r * Math.cos(angle)).toFixed(2)} ${(cy + r * Math.sin(angle)).toFixed(2)}`);
-    }
-    return `M ${points[0]} L ${points.slice(1).join(" L ")} Z`;
-  },
-  moon: (x, y, s) => {
-    // A crescent, built from where two circles actually cross: a disc of
-    // radius OUTER with a BITE of radius BITE_R taken out of it, its
-    // centre BITE_OFFSET to the right. Two arcs rather than a subtracted
-    // shape, because the renderer has no masks.
-    //
-    // The first version guessed the two endpoints and gave the inner arc a
-    // radius SMALLER than half its own chord, which is geometrically
-    // impossible - SVG quietly scales such a radius up until it fits, so
-    // the shape was whatever that rounding produced: a thin, accidental
-    // sliver. Solving for the crossing points makes the thickness a number
-    // that can be chosen. It is (BITE_OFFSET - BITE_R) - (-OUTER) of the
-    // glyph's width, which at these values is 0.30 - a crescent with some
-    // body, asked for as "bigger and thicker still crescent but more
-    // full".
-    const OUTER = 0.48;
-    const BITE_OFFSET = 0.26;
-    const BITE_R = 0.44;
-    // Distance from the outer centre to the chord where the circles meet.
-    const along = (BITE_OFFSET * BITE_OFFSET - BITE_R * BITE_R + OUTER * OUTER) / (2 * BITE_OFFSET);
-    const half = Math.sqrt(Math.max(0, OUTER * OUTER - along * along));
-    const crossX = 0.5 + along;
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    const r = (v: number) => (v * s).toFixed(2);
-    return (
-      // The long way round the outer disc, then back across the bite.
-      `M ${u(crossX, 0.5 - half)} ` +
-      `A ${r(OUTER)} ${r(OUTER)} 0 1 0 ${u(crossX, 0.5 + half)} ` +
-      `A ${r(BITE_R)} ${r(BITE_R)} 0 0 1 ${u(crossX, 0.5 - half)} Z`
-    );
-  },
-  flame: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    return (
-      `M ${u(0.5, 0)} C ${u(0.7, 0.22)} ${u(0.84, 0.38)} ${u(0.84, 0.61)} ` +
-      `C ${u(0.84, 0.83)} ${u(0.69, 1)} ${u(0.5, 1)} ` +
-      `C ${u(0.31, 1)} ${u(0.16, 0.83)} ${u(0.16, 0.61)} ` +
-      `C ${u(0.16, 0.46)} ${u(0.26, 0.35)} ${u(0.34, 0.24)} ` +
-      `C ${u(0.36, 0.38)} ${u(0.43, 0.44)} ${u(0.49, 0.46)} ` +
-      `C ${u(0.52, 0.31)} ${u(0.5, 0.15)} ${u(0.5, 0)} Z`
-    );
-  },
-  leaf: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    //
-    // TILTED and asymmetric - a tip at one end, a rounded base at the
-    // other. Symmetric and upright, pointed at both ends, it came out as a
-    // lens with a line down it, which reads as an eye rather than a leaf
-    // and is also very close to the droplet turned over. The diagonal is
-    // what makes it unmistakable at 25px, and it is how a leaf is drawn
-    // anyway.
-    //
-    // Two cubics a side rather than one, so the silhouette is widest about
-    // 40% up from the base and tapers the rest of the way to the tip -
-    // which is the difference between a leaf and an almond.
-    //
-    // The venation is three more SUBPATHS in the same `d`: a midrib that
-    // stops well short of both ends and carries a slight S, and two
-    // offshoots leaving it at different heights, one to each edge, bowed
-    // towards the tip the way a real vein runs. They sit well apart along
-    // the rib - close together and near-mirrored they crossed it and read
-    // as an X rather than as venation. All open subpaths, so the
-    // transparent fill leaves them as strokes. They cost no extra element:
-    // a vein as its own element would double the mark count of every leaf
-    // strip and hand the resize machinery a mark no other shape has.
-    //
-    // The rib stops short of the tips deliberately - run it to the point
-    // and three strokes converge into what reads as a blot at 0.3pt.
-    return (
-      `M ${u(0.93, 0.07)} C ${u(0.7, 0.1)} ${u(0.38, 0.25)} ${u(0.27, 0.45)} ` +
-      `C ${u(0.17, 0.63)} ${u(0.1, 0.78)} ${u(0.09, 0.93)} ` +
-      `C ${u(0.23, 0.87)} ${u(0.47, 0.8)} ${u(0.6, 0.7)} ` +
-      `C ${u(0.77, 0.56)} ${u(0.91, 0.33)} ${u(0.93, 0.07)} Z ` +
-      `M ${u(0.24, 0.78)} C ${u(0.35, 0.6)} ${u(0.58, 0.52)} ${u(0.74, 0.28)} ` +
-      `M ${u(0.31, 0.69)} C ${u(0.28, 0.64)} ${u(0.24, 0.6)} ${u(0.2, 0.57)} ` +
-      `M ${u(0.59, 0.45)} C ${u(0.64, 0.47)} ${u(0.68, 0.5)} ${u(0.72, 0.53)}`
-    );
-  },
-  // THE ARCHETYPES' FOUR (2026-10-06): a spoon for spoon theory, a jar for
-  // a sourdough starter, a lotus for a yoga practice, a pill for meds.
-  spoon: (x, y, s) => {
-    // Upright in its own frame - an oval bowl over a slender handle that
-    // widens a little to a rounded end - then tilted like the leaf, which
-    // is what makes it read as a spoon rather than a key or a lollipop at
-    // strip size. One closed outline.
-    const u = tilted(x, y, s, 35);
-    return (
-      `M ${u(0.53, 0.5)} C ${u(0.61, 0.46)} ${u(0.66, 0.37)} ${u(0.66, 0.26)} ` +
-      `C ${u(0.66, 0.13)} ${u(0.59, 0.03)} ${u(0.5, 0.03)} ` +
-      `C ${u(0.41, 0.03)} ${u(0.34, 0.13)} ${u(0.34, 0.26)} ` +
-      `C ${u(0.34, 0.37)} ${u(0.39, 0.46)} ${u(0.47, 0.5)} ` +
-      `C ${u(0.475, 0.62)} ${u(0.46, 0.8)} ${u(0.455, 0.9)} ` +
-      `C ${u(0.455, 0.98)} ${u(0.545, 0.98)} ${u(0.545, 0.9)} ` +
-      `C ${u(0.54, 0.8)} ${u(0.525, 0.62)} ${u(0.53, 0.5)} Z`
-    );
-  },
-  jar: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    // A WIDE-MOUTHED jar, the kind a starter lives in: a lid nearly as
-    // wide as the body, a short neck, gentle shoulders, round bottom
-    // corners. The first draft's narrow neck read as a medicine bottle -
-    // which the pill already is. The open line across the middle is the
-    // rubber band a baker slides down to the starter's level to watch it
-    // rise, which is what makes it a sourdough jar rather than any jar.
-    return (
-      `M ${u(0.27, 0.05)} L ${u(0.73, 0.05)} C ${u(0.75, 0.05)} ${u(0.76, 0.06)} ${u(0.76, 0.08)} ` +
-      `L ${u(0.76, 0.15)} C ${u(0.76, 0.17)} ${u(0.75, 0.18)} ${u(0.73, 0.18)} ` +
-      `L ${u(0.27, 0.18)} C ${u(0.25, 0.18)} ${u(0.24, 0.17)} ${u(0.24, 0.15)} ` +
-      `L ${u(0.24, 0.08)} C ${u(0.24, 0.06)} ${u(0.25, 0.05)} ${u(0.27, 0.05)} Z ` +
-      `M ${u(0.27, 0.18)} L ${u(0.27, 0.22)} C ${u(0.27, 0.26)} ${u(0.2, 0.27)} ${u(0.2, 0.33)} ` +
-      `L ${u(0.2, 0.88)} C ${u(0.2, 0.93)} ${u(0.24, 0.96)} ${u(0.29, 0.96)} ` +
-      `L ${u(0.71, 0.96)} C ${u(0.76, 0.96)} ${u(0.8, 0.93)} ${u(0.8, 0.88)} ` +
-      `L ${u(0.8, 0.33)} C ${u(0.8, 0.27)} ${u(0.73, 0.26)} ${u(0.73, 0.22)} L ${u(0.73, 0.18)} ` +
-      `M ${u(0.2, 0.6)} L ${u(0.8, 0.6)}`
-    );
-  },
-  lotus: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    // Five petals, front to back: a tall centre one, a side petal each
-    // way, a low outer one each way. Layered the way the plant is - each
-    // petal behind is CUT where the one in front covers it, so only its
-    // visible edges are drawn and it reads as layered with no fill. Every
-    // cut starts ON the edge of the petal in front, at a point that edge's
-    // own curve passes through.
-    return (
-      // Centre petal, whole.
-      `M ${u(0.5, 0.14)} C ${u(0.63, 0.3)} ${u(0.65, 0.58)} ${u(0.5, 0.84)} ` +
-      `C ${u(0.35, 0.58)} ${u(0.37, 0.3)} ${u(0.5, 0.14)} Z ` +
-      // Side petals: from behind the centre petal out to a tip, and back
-      // down to the base.
-      `M ${u(0.6, 0.5)} C ${u(0.66, 0.41)} ${u(0.75, 0.33)} ${u(0.86, 0.3)} ` +
-      `C ${u(0.86, 0.52)} ${u(0.74, 0.75)} ${u(0.52, 0.84)} ` +
-      `M ${u(0.4, 0.5)} C ${u(0.34, 0.41)} ${u(0.25, 0.33)} ${u(0.14, 0.3)} ` +
-      `C ${u(0.14, 0.52)} ${u(0.26, 0.75)} ${u(0.48, 0.84)} ` +
-      // Outer petals: low and wide, from behind the side petals.
-      `M ${u(0.82, 0.58)} C ${u(0.89, 0.57)} ${u(0.95, 0.58)} ${u(0.99, 0.6)} ` +
-      `C ${u(0.92, 0.77)} ${u(0.73, 0.86)} ${u(0.53, 0.86)} ` +
-      `M ${u(0.18, 0.58)} C ${u(0.11, 0.57)} ${u(0.05, 0.58)} ${u(0.01, 0.6)} ` +
-      `C ${u(0.08, 0.77)} ${u(0.27, 0.86)} ${u(0.47, 0.86)}`
-    );
-  },
-  pill: (x, y, s) => {
-    // A capsule, tilted, with the seam where its two halves meet. Upright
-    // its ends are half circles of radius 0.17, written as cubics (the
-    // usual 0.552 of the radius) so every exporter draws them the same.
-    const u = tilted(x, y, s, -45);
-    const k = 0.17 * 0.552;
-    return (
-      `M ${u(0.33, 0.25)} L ${u(0.33, 0.75)} ` +
-      `C ${u(0.33, 0.75 + k)} ${u(0.5 - k, 0.92)} ${u(0.5, 0.92)} ` +
-      `C ${u(0.5 + k, 0.92)} ${u(0.67, 0.75 + k)} ${u(0.67, 0.75)} ` +
-      `L ${u(0.67, 0.25)} ` +
-      `C ${u(0.67, 0.25 - k)} ${u(0.5 + k, 0.08)} ${u(0.5, 0.08)} ` +
-      `C ${u(0.5 - k, 0.08)} ${u(0.33, 0.25 - k)} ${u(0.33, 0.25)} Z ` +
-      `M ${u(0.33, 0.5)} L ${u(0.67, 0.5)}`
-    );
-  },
-  trash: (x, y, s) => {
-    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
-    // A kitchen bin, for trash day (day icons, 2026-10-06): a handle on a
-    // lid a little wider than the body, the body narrowing to its foot, and
-    // two ribs down it - the most lines that still leave room to colour in.
-    // Upright and using the full height, as the icons printed small must.
-    // Hand-drawn to stand in until the Flow suite's.
-    return (
-      // Handle.
-      `M ${u(0.4, 0.155)} L ${u(0.4, 0.11)} C ${u(0.4, 0.085)} ${u(0.42, 0.07)} ${u(0.445, 0.07)} ` +
-      `L ${u(0.555, 0.07)} C ${u(0.58, 0.07)} ${u(0.6, 0.085)} ${u(0.6, 0.11)} L ${u(0.6, 0.155)} ` +
-      // Lid.
-      `M ${u(0.17, 0.155)} L ${u(0.83, 0.155)} C ${u(0.85, 0.155)} ${u(0.86, 0.165)} ${u(0.86, 0.185)} ` +
-      `L ${u(0.86, 0.22)} C ${u(0.86, 0.24)} ${u(0.85, 0.25)} ${u(0.83, 0.25)} ` +
-      `L ${u(0.17, 0.25)} C ${u(0.15, 0.25)} ${u(0.14, 0.24)} ${u(0.14, 0.22)} ` +
-      `L ${u(0.14, 0.185)} C ${u(0.14, 0.165)} ${u(0.15, 0.155)} ${u(0.17, 0.155)} Z ` +
-      // Body.
-      `M ${u(0.2, 0.25)} L ${u(0.255, 0.9)} C ${u(0.258, 0.925)} ${u(0.275, 0.94)} ${u(0.3, 0.94)} ` +
-      `L ${u(0.7, 0.94)} C ${u(0.725, 0.94)} ${u(0.742, 0.925)} ${u(0.745, 0.9)} L ${u(0.8, 0.25)} ` +
-      // Ribs.
-      `M ${u(0.4, 0.37)} L ${u(0.415, 0.82)} M ${u(0.6, 0.37)} L ${u(0.585, 0.82)}`
-    );
-  },
+export const GLYPH_LABELS: Record<GlyphShape, { one: string; many: string }> = {
+  circle: { one: "Circle", many: "Circles" },
+  square: { one: "Square", many: "Squares" },
+  rounded: { one: "Rounded square", many: "Rounded squares" },
+  droplet: { one: "Droplet", many: "Droplets" },
+  plant: { one: "Potted plant", many: "Potted plants" },
+  flame: { one: "Flame", many: "Flames" },
+  leaf: { one: "Leaf", many: "Leaves" },
+  heart: { one: "Heart", many: "Hearts" },
+  star: { one: "Star", many: "Stars" },
+  moon: { one: "Moon", many: "Moons" },
+  sun: { one: "Sun", many: "Suns" },
+  cloud: { one: "Cloud", many: "Clouds" },
+  spoon: { one: "Spoon", many: "Spoons" },
+  jar: { one: "Jar", many: "Jars" },
+  lotus: { one: "Lotus", many: "Lotuses" },
+  pill: { one: "Pill", many: "Pills" },
+  medicine: { one: "Medicine bottle", many: "Medicine bottles" },
+  toothbrush: { one: "Toothbrush", many: "Toothbrushes" },
+  bed: { one: "Bed", many: "Beds" },
+  mug: { one: "Mug", many: "Mugs" },
+  glass: { one: "Glass of water", many: "Glasses of water" },
+  trash: { one: "Bin", many: "Bins" },
+  recycling: { one: "Recycling bin", many: "Recycling bins" },
+  laundry: { one: "Laundry basket", many: "Laundry baskets" },
+  broom: { one: "Broom", many: "Brooms" },
+  "watering-can": { one: "Watering can", many: "Watering cans" },
+  washer: { one: "Washing machine", many: "Washing machines" },
+  bag: { one: "Shopping bag", many: "Shopping bags" },
+  cart: { one: "Shopping cart", many: "Shopping carts" },
+  envelope: { one: "Envelope", many: "Envelopes" },
+  coins: { one: "Coins", many: "Coin stacks" },
+  calendar: { one: "Calendar page", many: "Calendar pages" },
+  house: { one: "House", many: "Houses" },
+  dumbbell: { one: "Dumbbell", many: "Dumbbells" },
+  shoe: { one: "Running shoe", many: "Running shoes" },
+  bicycle: { one: "Bicycle", many: "Bicycles" },
+  apple: { one: "Apple", many: "Apples" },
+  tooth: { one: "Tooth", many: "Teeth" },
+  paw: { one: "Paw print", many: "Paw prints" },
+  cat: { one: "Cat", many: "Cats" },
+  car: { one: "Car", many: "Cars" },
+  bus: { one: "School bus", many: "School buses" },
+  "baby-bottle": { one: "Baby bottle", many: "Baby bottles" },
+  book: { one: "Book", many: "Books" },
+  scissors: { one: "Scissors", many: "Pairs of scissors" },
+  cake: { one: "Birthday cake", many: "Birthday cakes" },
+  gift: { one: "Gift", many: "Gifts" },
+  music: { one: "Music note", many: "Music notes" },
+  plane: { one: "Airplane", many: "Airplanes" },
+  palette: { one: "Paint palette", many: "Paint palettes" },
+  key: { one: "Key", many: "Keys" },
 };
 
-// The potted plant lives in its own file: unlike everything above it is
-// six overlapping pieces whose visible outline depends on which is in
-// front, which needs curve intersection and splitting to work out. See
-// plantGlyph.ts.
-PATH_SHAPES.plant = plantPathD;
-
-/** Is this shape drawn as a path? */
-export function glyphPathD(shape: GlyphShape, x: number, y: number, sizePx: number): string | undefined {
-  const build = PATH_SHAPES[shape];
-  return build ? build(x, y, sizePx) : undefined;
+/** Is this one of Flow's icons, rather than geometry? */
+export function isIconShape(shape: GlyphShape): shape is FlowIconName {
+  return Object.prototype.hasOwnProperty.call(FLOW_ICONS, shape);
 }
 
-/** The stroke every glyph is drawn with: the interior rule weight. */
+/**
+ * The thinnest an icon's line prints. Flow drew its lines about a fortieth
+ * of the icon's width - asked for a fifteenth - which at 3mm is 0.2pt, under
+ * the planner's own 0.3pt hairline. Below this an icon is stroked in its own
+ * ink, which thickens every line by exactly the difference and leaves the
+ * insides open. 0.45pt: between the hairline and 0.6pt, where the detailed
+ * icons clog at 3mm (the proof's comparison page, 2026-10-06). The Lulu
+ * test print settles it.
+ */
+export const ICON_LINE_FLOOR_PT = 0.45;
+
+/** A compact path (see flowIcons.ts) read once into absolute unit-grid
+ *  numbers: op (0 move, 1 curve, 2 close) followed by its points. */
+const parsed = new WeakMap<FlowDrawing, number[]>();
+function commands(drawing: FlowDrawing): number[] {
+  const cached = parsed.get(drawing);
+  if (cached) return cached;
+  const out: number[] = [];
+  const tokens = drawing.d.match(/[Mcz]|-?\d+/g) ?? [];
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < tokens.length; ) {
+    const t = tokens[i];
+    if (t === "M") {
+      cx = Number(tokens[i + 1]);
+      cy = Number(tokens[i + 2]);
+      out.push(0, cx, cy);
+      i += 3;
+    } else if (t === "c") {
+      const v = [1, 2, 3, 4, 5, 6].map((j) => Number(tokens[i + j]));
+      out.push(1, cx + v[0], cy + v[1], cx + v[2], cy + v[3], cx + v[4], cy + v[5]);
+      cx += v[4];
+      cy += v[5];
+      i += 7;
+    } else {
+      out.push(2);
+      i += 1;
+    }
+  }
+  parsed.set(drawing, out);
+  return out;
+}
+
+/** Which of an icon's two drawings to draw. */
+function drawingOf(shape: FlowIconName, faces: boolean | undefined): FlowDrawing {
+  return FLOW_ICONS[shape][faces ? "face" : "plain"];
+}
+
+/**
+ * An icon's path at its final size: its unit box mapped onto x, y, sizePx.
+ * Undefined for geometry, which is the rect itself.
+ */
+export function glyphPathD(shape: GlyphShape, x: number, y: number, sizePx: number, faces = false): string | undefined {
+  if (!isIconShape(shape)) return undefined;
+  const c = commands(drawingOf(shape, faces));
+  const k = sizePx / 1000;
+  const p = (u: number, v: number) => `${(x + u * k).toFixed(2)} ${(y + v * k).toFixed(2)}`;
+  const parts: string[] = [];
+  for (let i = 0; i < c.length; ) {
+    if (c[i] === 0) {
+      parts.push(`M ${p(c[i + 1], c[i + 2])}`);
+      i += 3;
+    } else if (c[i] === 1) {
+      parts.push(`C ${p(c[i + 1], c[i + 2])} ${p(c[i + 3], c[i + 4])} ${p(c[i + 5], c[i + 6])}`);
+      i += 7;
+    } else {
+      parts.push("Z");
+      i += 1;
+    }
+  }
+  return parts.join(" ");
+}
+
+/** The stroke the geometry is drawn with: the interior rule weight. */
 export const GLYPH_STROKE_PT = RULE_WIDTH_PT;
 
 export type GlyphElement = {
@@ -355,23 +206,40 @@ export function glyphElement(options: {
   sizePx: number;
   shape: GlyphShape;
   opacity?: number;
+  /** An icon's drawing with a face rather than the plain one - the Faces
+   *  switch. Geometry has no face and ignores it. */
+  faces?: boolean;
 }): GlyphElement {
-  const pathD = glyphPathD(options.shape, options.x, options.y, options.sizePx);
+  const { id, x, y, sizePx, shape } = options;
+  const box = { id, type: "figure", subType: "rect", x, y, width: sizePx, height: sizePx };
+  if (!isIconShape(shape)) {
+    return {
+      ...box,
+      fill: "transparent",
+      stroke: NEAR_BLACK,
+      strokeWidth: ptToPx(GLYPH_STROKE_PT),
+      cornerRadius: glyphCornerRadiusPx(shape, sizePx),
+      opacity: options.opacity ?? 0.8,
+    };
+  }
+  // THE INK, FILLED: the outline of every line Flow drew, insides open. A
+  // line drawn thinner than the floor is stroked in the same ink by the
+  // difference - a stroke straddles the outline, so each line thickens by
+  // exactly its width.
+  const drawing = drawingOf(shape, options.faces);
+  const extra = Math.max(0, ptToPx(ICON_LINE_FLOOR_PT) - drawing.weight * sizePx);
   return {
-    id: options.id,
-    type: "figure",
-    subType: "rect",
-    x: options.x,
-    y: options.y,
-    width: options.sizePx,
-    height: options.sizePx,
-    fill: "transparent",
-    stroke: NEAR_BLACK,
-    strokeWidth: ptToPx(GLYPH_STROKE_PT),
-    cornerRadius: glyphCornerRadiusPx(options.shape, options.sizePx),
-    opacity: options.opacity ?? 0.8,
+    ...box,
+    fill: NEAR_BLACK,
+    stroke: extra > 0 ? NEAR_BLACK : "none",
+    ...(extra > 0 ? { strokeWidth: extra } : {}),
+    cornerRadius: 0,
+    // Whole ink, not the geometry's 0.8: the fill and the thickening stroke
+    // overlap along every line, and two translucent layers there would print
+    // a darker rim in the PDF, which composites them separately.
+    opacity: options.opacity ?? 1,
     // Additive: a consumer that knows about pathD draws the shape, one
     // that does not draws the box it is inscribed in. See GlyphShape.
-    ...(pathD ? { pathD } : {}),
+    pathD: glyphPathD(shape, x, y, sizePx, options.faces),
   };
 }

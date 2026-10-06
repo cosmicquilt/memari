@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { GlyphSwatch } from "./ModuleFieldsForm";
-import { CONTROL_RADIUS, PANEL_RADIUS, concentric } from "./editorStyle";
+import { CONTROL_RADIUS, ICON_PICKER_COLUMNS, PANEL_RADIUS, concentric } from "./editorStyle";
 import type { GlyphShape } from "@/lib/modules/glyphs";
 import type { RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { CREAM, cream, onCream } from "@/lib/cream";
@@ -163,9 +163,13 @@ export function IconPicksOnPage({
   const SWATCH = 20;
   const GAP = 3;
   const CHOOSER_PADDING = PANEL_RADIUS - CONTROL_RADIUS;
-  const CHOOSER_WIDTH = field.options.length * (SWATCH + GAP) - GAP + CHOOSER_PADDING * 2 + 2;
+  // Rows of ICON_PICKER_COLUMNS, as the panel's picker: one row held ten,
+  // then fifteen; Flow's icons made fifty-one (2026-10-06).
+  const COLUMNS = Math.min(field.options.length, ICON_PICKER_COLUMNS);
+  const ROWS = Math.ceil(field.options.length / COLUMNS);
+  const CHOOSER_WIDTH = COLUMNS * (SWATCH + GAP) - GAP + CHOOSER_PADDING * 2 + 2;
   // Reach buttons, the icons, the reset line, the gaps between them.
-  const CHOOSER_HEIGHT = CHOOSER_PADDING * 2 + 2 + 26 + 8 + SWATCH + 8 + 18;
+  const CHOOSER_HEIGHT = CHOOSER_PADDING * 2 + 2 + 26 + 8 + ROWS * (SWATCH + GAP) - GAP + 8 + 18;
   const place = openGroup ? at(openGroup) : null;
   const chooserLeft = place ? Math.max(4, Math.min(place.left + place.width / 2 - CHOOSER_WIDTH / 2, frame.width - CHOOSER_WIDTH - 4)) : 0;
   const below = place ? place.top + place.height + 8 : 0;
@@ -261,12 +265,13 @@ export function IconPicksOnPage({
               ))}
             </div>
           )}
-          <div role="radiogroup" aria-label="Icon" style={{ display: "flex", gap: GAP }}>
+          <div role="radiogroup" aria-label="Icon" style={{ display: "grid", gridTemplateColumns: `repeat(${COLUMNS}, ${SWATCH}px)`, gap: GAP }}>
             {field.options.map((option) => (
               <GlyphSwatch
                 key={option.value}
                 size={SWATCH}
                 shape={option.value as GlyphShape}
+                faces={values.faces === true}
                 label={option.label}
                 selected={current(open.reach, open.s, open.g) === option.value}
                 onPick={() => pick(option.value)}

@@ -22,6 +22,14 @@ export const PANEL_RADIUS = 14;
 /** A field, a button, a stepper, a segmented control. */
 export const CONTROL_RADIUS = 3;
 
+/**
+ * HOW MANY ICONS A PICKER'S ROW HOLDS: nine 24px drawings with their gaps are
+ * 240px, inside the fields panel's 268. Fifty-one since Flow's icons
+ * (2026-10-06) - the one row of ten, then two even rows, could not hold them,
+ * so every picker is a grid of rows of nine.
+ */
+export const ICON_PICKER_COLUMNS = 9;
+
 /** A shape inset `padding` inside one rounded `outer`: concentric with it. */
 export function concentric(outer: number, padding: number): number {
   return Math.max(0, outer - padding);

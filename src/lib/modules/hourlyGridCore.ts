@@ -13,7 +13,8 @@
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
 import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
-import { glyphElement, type GlyphShape } from "@/lib/modules/glyphs";
+import { glyphElement } from "@/lib/modules/glyphs";
+import type { DayIconMark } from "@/lib/dayIcons";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
@@ -91,7 +92,7 @@ export type HourlyGridCoreConfig = {
   /** The journal's day icons on each day column, in dayLabels' order - set
    *  at render time from the dates (renderContext's withDayIcons), never
    *  stored. Drawn in the day tab, beside the date. */
-  dayIcons?: GlyphShape[][];
+  dayIcons?: DayIconMark[][];
 };
 
 export type RenderedElement = {
@@ -974,9 +975,9 @@ export function renderHourlyGridCore(
         const nameRight = dayX + nameLeftInset + textWidthPx(label.name, nameFontSize, FONT_FAMILY);
         const iconY = geometry.y + (headerHeight - size) / 2;
         let right = dateLeft - clear;
-        icons.forEach((shape, k) => {
+        icons.forEach(({ icon: shape, faces }, k) => {
           if (right - size < nameRight + clear) return;
-          elements.push(glyphElement({ id: id(`d${d}-dayicon${k}`), x: right - size, y: iconY, sizePx: size, shape }));
+          elements.push(glyphElement({ id: id(`d${d}-dayicon${k}`), x: right - size, y: iconY, sizePx: size, shape, faces }));
           right -= size + gap;
         });
       }

@@ -30,6 +30,8 @@ import {
 } from "@/lib/modules/moduleFrame";
 
 export type RatingStripConfig = {
+  /** The marks drawn with a little face - see glyphElement. */
+  faces?: boolean;
   heading: string;
   /** One row each, in order. */
   items: string[];
@@ -300,6 +302,7 @@ export function renderRatingStrip(
           y: rowTop + (band - glyph) / 2,
           sizePx: glyph,
           shape,
+          faces: config.faces === true,
         })
       );
       if (scaleHead === "inside") {

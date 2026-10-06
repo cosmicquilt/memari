@@ -42,6 +42,8 @@ import {
 } from "@/lib/modules/moduleFrame";
 
 export type IconStripConfig = {
+  /** The icons drawn with a little face - see glyphElement. */
+  faces?: boolean;
   /** Printed above the glyphs. Empty for none. */
   heading?: string;
   /** The repeated mark. Only what the renderer can draw - see glyphs.ts. */
@@ -309,6 +311,7 @@ export function renderIconStrip(
             y: glyphTop,
             sizePx: glyphSize,
             shape: iconFor(s, g),
+            faces: config.faces === true,
           })
         );
       }

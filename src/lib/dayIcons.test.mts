@@ -99,7 +99,7 @@ const daysOf = (from: string, count: number) =>
     [icon({ id: "trash", icon: "square", start: "2026-01-06" }), icon({ id: "recycle", icon: "star", start: "2026-01-06" })],
     ["2026-01-06", null]
   );
-  eq(both[0].join(), "square,star", "two on one day, in the list's order");
+  eq(both[0].map((m) => m.icon).join(), "square,star", "two on one day, in the list's order");
   eq(both[1].length, 0, "a column with no date gets none");
 }
 
@@ -119,6 +119,9 @@ const daysOf = (from: string, count: number) =>
   eq(kept[1].rrule, null, "a rule with no FREQ is a one-off, not a guess");
   eq(cleanDayIcons(Array.from({ length: 30 }, (_, i) => ({ id: `i${i}`, icon: "circle", start: "2026-01-01" }))).length, 12, "capped at twelve");
   eq(cleanDayIcons(null).length, 0, "no list is an empty one");
+  // The Faces switch is kept when on and dropped when anything else.
+  const faced = cleanDayIcons([{ id: "f", icon: "trash", start: "2026-01-06", faces: true }, { id: "g", icon: "trash", start: "2026-01-06", faces: "yes" }]);
+  eq(faced.map((i) => String(i.faces)).join(), "true,undefined", "faces is a real switch");
 }
 
 // --- 2. a month cell's day is the number it prints -------------------------
@@ -236,8 +239,8 @@ const iconsIn = (elements: unknown[]) =>
   const book = source();
   const weekly = book.pages[2];
   const context = renderContextForPage({ ...book, pages: book.pages }, weekly.id);
-  const drawn = propsForRender("hourly-grid-core", weekly.moduleInstances[0].propValues, context) as { dayIcons?: string[][] };
-  eq(JSON.stringify(drawn.dayIcons), JSON.stringify([[], ["star"], ["square"]]), "the editor's week draws what the book prints");
+  const drawn = propsForRender("hourly-grid-core", weekly.moduleInstances[0].propValues, context) as { dayIcons?: unknown[][] };
+  eq(JSON.stringify(drawn.dayIcons), JSON.stringify([[], [{ icon: "star" }], [{ icon: "square" }]]), "the editor's week draws what the book prints");
   const stored = weekly.moduleInstances[0].propValues as { dayIcons?: unknown };
   eq(stored.dayIcons, undefined, "and nothing is written into the stored template");
 }
@@ -258,7 +261,7 @@ const iconsIn = (elements: unknown[]) =>
       hourLineStyle: "full",
       dayBorder: false,
       events: [],
-      dayIcons: [Array(12).fill("heart"), ["heart", "star"]],
+      dayIcons: [Array(12).fill({ icon: "heart" }), [{ icon: "heart" }, { icon: "star" }]],
     },
     "h",
     "Newsreader"
@@ -280,6 +283,15 @@ const iconsIn = (elements: unknown[]) =>
       check(icons[i].x + icons[i].width <= icons[i - 1].x, `day ${d}'s icons do not overlap`);
     }
   }
+  // A day icon's Faces switch reaches the tab: the face drawing, not the plain.
+  const tab = (faces: boolean) =>
+    renderHourlyGridCore(
+      geometry,
+      { dayCount: 1, dayLabels: [{ name: "MON", date: 5 }], startTime: "09:00", endTime: "10:00", intervalMinutes: 30, hourLineStyle: "full", dayBorder: false, events: [], dayIcons: [[{ icon: "trash", faces }]] },
+      "h",
+      "Newsreader"
+    ).find((e) => e.id === "h-d0-dayicon0")?.pathD;
+  check(!!tab(true) && tab(true) !== tab(false), "a faced day icon draws the face drawing");
   const crowded = byId(/^h-d0-dayicon\d+$/).length;
   check(crowded < 12, `twelve on one narrow day are cut to what fits (drew ${crowded})`);
   eq(byId(/^h-d1-dayicon\d+$/).length, 2, "two on a short name both fit");

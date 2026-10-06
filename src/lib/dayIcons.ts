@@ -19,7 +19,7 @@
 // (weekly and daily pages) and the month grid (monthly pages) read the same
 // list - trash day is trash day on every page - and either editor changes it.
 
-import { GLYPH_SHAPES, type GlyphShape } from "./modules/glyphs";
+import { GLYPH_LABELS, GLYPH_SHAPES, type GlyphShape } from "./modules/glyphs";
 import { eventsForDays, type StoredEvent } from "./calendarEvents";
 
 export type DayIcon = {
@@ -34,7 +34,12 @@ export type DayIcon = {
   skips: string[];
   /** Words for the editor's list ("Trash"). Never printed. */
   name?: string;
+  /** The icon's drawing with a little face - its Faces switch. */
+  faces?: boolean;
 };
+
+/** One icon on one day, as a page draws it. */
+export type DayIconMark = { icon: GlyphShape; faces?: boolean };
 
 /** Enough for a household's bins, bills and appointments, few enough that a
  *  day header never has to hold a crowd. */
@@ -60,7 +65,7 @@ export function cleanDayIcons(value: unknown): DayIcon[] {
     const skips = Array.isArray(r.skips) ? [...new Set(r.skips.filter(isIsoDay))].sort().slice(0, 200) : [];
     const id = typeof r.id === "string" && r.id.length > 0 && r.id.length <= 40 ? r.id : `di${out.length}-${r.start}`;
     const name = typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 40) : undefined;
-    out.push({ id, icon: r.icon as GlyphShape, start: r.start, rrule, skips, ...(name ? { name } : {}) });
+    out.push({ id, icon: r.icon as GlyphShape, start: r.start, rrule, skips, ...(name ? { name } : {}), ...(r.faces === true ? { faces: true } : {}) });
     if (out.length >= MAX_DAY_ICONS) break;
   }
   return out;
@@ -93,22 +98,24 @@ function asEvent(icon: DayIcon): StoredEvent {
  * For each date ("YYYY-MM-DD", or null for a column with none), the icons
  * that fall on it, in the list's order.
  */
-export function iconsOnDates(icons: DayIcon[], dates: Array<string | null>): GlyphShape[][] {
-  const out: GlyphShape[][] = dates.map(() => []);
+export function iconsOnDates(icons: DayIcon[], dates: Array<string | null>): DayIconMark[][] {
+  const out: DayIconMark[][] = dates.map(() => []);
   if (icons.length === 0) return out;
-  const byId = new Map(icons.map((icon, order) => [icon.id, { icon: icon.icon, order }]));
+  const byId = new Map(
+    icons.map((icon, order) => [icon.id, { mark: { icon: icon.icon, ...(icon.faces ? { faces: true } : {}) }, order }])
+  );
   const placed = eventsForDays(
     icons.map(asEvent),
     dates.map((date) => ({ date: date && isIsoDay(date) ? midnight(date) : null })),
     "UTC"
   );
-  const perDay: Array<Array<{ icon: GlyphShape; order: number }>> = dates.map(() => []);
+  const perDay: Array<Array<{ mark: DayIconMark; order: number }>> = dates.map(() => []);
   for (const mark of placed) {
     const found = byId.get(mark.id ?? "");
     if (found) perDay[mark.day].push(found);
   }
   perDay.forEach((list, day) => {
-    out[day] = list.sort((a, b) => a.order - b.order).map((entry) => entry.icon);
+    out[day] = list.sort((a, b) => a.order - b.order).map((entry) => entry.mark);
   });
   return out;
 }
@@ -328,21 +335,7 @@ export function upcomingDays(icon: DayIcon, from: string, count: number): Array<
   return out;
 }
 
-/** Each icon's own name, for the picker. */
-export const GLYPH_NAMES: Record<GlyphShape, string> = {
-  circle: "Circle",
-  square: "Square",
-  rounded: "Rounded square",
-  droplet: "Droplet",
-  heart: "Heart",
-  star: "Star",
-  moon: "Moon",
-  flame: "Flame",
-  leaf: "Leaf",
-  plant: "Potted plant",
-  spoon: "Spoon",
-  jar: "Jar",
-  lotus: "Lotus",
-  pill: "Pill",
-  trash: "Bin",
-};
+/** Each icon's own name, for the picker - the one list, in glyphs.ts. */
+export const GLYPH_NAMES: Record<GlyphShape, string> = Object.fromEntries(
+  GLYPH_SHAPES.map((shape) => [shape, GLYPH_LABELS[shape].one])
+) as Record<GlyphShape, string>;

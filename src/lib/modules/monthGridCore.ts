@@ -35,7 +35,8 @@ import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/mo
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 import { capCentredTextY } from "@/lib/modules/textFit";
 import { latticeFill } from "./latticeFill";
-import { glyphElement, type GlyphShape } from "./glyphs";
+import { glyphElement } from "./glyphs";
+import type { DayIconMark } from "@/lib/dayIcons";
 
 export type MonthGridCoreConfig = {
   dayCount: number; // 3 or 4, matching which half of the spread (same convention as hourly-grid-core)
@@ -47,7 +48,7 @@ export type MonthGridCoreConfig = {
   //
   // `icons`: the journal's day icons on that day - set at render time from
   // the dates (renderContext's withDayIcons), never stored.
-  cells: Array<Array<MonthCalendarCell & { icons?: GlyphShape[] }>>;
+  cells: Array<Array<MonthCalendarCell & { icons?: DayIconMark[] }>>;
   /** The journal's week start, 0 = Sunday - set at render time, never
    *  stored. Read by the registry's `dated` hook, which computes `cells`
    *  from it; the drawing itself only ever sees the cells. */
@@ -282,10 +283,10 @@ export function renderMonthGridCore(
         const size = ptToPx(DAY_ICON_PT);
         const gap = ptToPx(DAY_ICON_GAP_PT);
         let left = cellX + dateBoxWidth + gap;
-        (cell.icons ?? []).forEach((shape, k) => {
+        (cell.icons ?? []).forEach(({ icon: shape, faces }, k) => {
           if (left + size > cellX + dayColumnWidth - gap) return;
           elements.push(
-            glyphElement({ id: id(`w${w}-d${d}-dayicon${k}`), x: left, y: rowY + (dateStripHeight - size) / 2, sizePx: size, shape })
+            glyphElement({ id: id(`w${w}-d${d}-dayicon${k}`), x: left, y: rowY + (dateStripHeight - size) / 2, sizePx: size, shape, faces })
           );
           left += size + gap;
         });

@@ -13,7 +13,6 @@
 // only, which is what the PDF writer reads (parsePathD); a circle is four
 // cubics.
 import { ptToPx } from "@/lib/print-spec";
-import { glyphPathD } from "@/lib/modules/glyphs";
 import { BORDER_WIDTH_PT, NEAR_BLACK, type FrameElement } from "@/lib/modules/moduleFrame";
 
 /** The scale, best first - what a mood chart's levels default to, and what a
@@ -94,8 +93,23 @@ export function faceElements(
     // Solid, like the eyes, under the left one's outer corner - an outline
     // this small read as a stray "6". A little drop, not a blot: 0.13 of the
     // face was "can make teardrop smaller" (2026-10-02).
-    const tear = glyphPathD("droplet", x + 0.255 * s, y + 0.595 * s, 0.09 * s);
-    if (tear) marks.push(mark("tear", tear, true));
+    marks.push(mark("tear", tearPathD(x + 0.255 * s, y + 0.595 * s, 0.09 * s), true));
   }
   return marks;
+}
+
+/**
+ * The tear: a plain drop, filled. It used to borrow the droplet glyph's path;
+ * that glyph is Flow's drawing now, an OUTLINE with an open inside, which
+ * filled would print as a ring rather than a drop. The geometric drop it was,
+ * kept here for the one mark that needs it solid.
+ */
+function tearPathD(x: number, y: number, s: number): string {
+  const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
+  return (
+    `M ${u(0.5, 0)} C ${u(0.5, 0.18)} ${u(0.92, 0.42)} ${u(0.92, 0.64)} ` +
+    `C ${u(0.92, 0.85)} ${u(0.73, 1)} ${u(0.5, 1)} ` +
+    `C ${u(0.27, 1)} ${u(0.08, 0.85)} ${u(0.08, 0.64)} ` +
+    `C ${u(0.08, 0.42)} ${u(0.5, 0.18)} ${u(0.5, 0)} Z`
+  );
 }

@@ -48,6 +48,7 @@ import {
   DRAWER_RESTING_HEIGHT,
 } from "../src/app/planner/TimelineDrawer.js";
 import { GLYPH_SHAPES } from "../src/lib/modules/glyphs.js";
+import { ICON_PICKER_COLUMNS } from "../src/app/planner/editorStyle.js";
 
 const baseArg = process.argv.indexOf("--base");
 const explicitBase = baseArg === -1 ? undefined : process.argv[baseArg + 1];
@@ -1972,14 +1973,21 @@ const roundTwoPickers: Probe = {
         })) as { scrolls: boolean; iconRows: number; icons: number; hidden: number; lists: number; text: string };
         if (panel.lists > 0) problems.push("the per-row and per-day lists are still in the panel");
         else if (panel.scrolls) problems.push("the icon strip's panel still scrolls");
-        // Every glyph, every one VISIBLE, on as few rows as the panel holds:
-        // one row of ten ("as simple and compact as possible", 2026-10-01);
-        // two even rows since the archetypes' spoon, jar, lotus and pill made
-        // fourteen (2026-10-06). Counted from the glyph list, so the next
-        // glyph moves this with it.
-        else if (panel.icons !== GLYPH_SHAPES.length || panel.hidden > 0 || panel.iconRows !== (GLYPH_SHAPES.length > 10 ? 2 : 1)) problems.push(`the Icon picker is ${panel.icons} drawings on ${panel.iconRows} rows with ${panel.hidden} hidden, not all ${GLYPH_SHAPES.length} on ${GLYPH_SHAPES.length > 10 ? "two rows" : "one row"}`);
-        else if (!/Icons per group/i.test(panel.text) || !/Groups/i.test(panel.text) || !/Day names/i.test(panel.text)) problems.push("the panel lacks Icons per group, Groups or Day names");
+        // Every glyph, every one VISIBLE, in rows of ICON_PICKER_COLUMNS:
+        // one row of ten ("as simple and compact as possible", 2026-10-01),
+        // two of fourteen-plus (2026-10-06), then Flow's fifty-one in rows of
+        // nine. Counted from the glyph list, so the next icon moves this.
+        else if (panel.icons !== GLYPH_SHAPES.length || panel.hidden > 0 || panel.iconRows !== Math.ceil(GLYPH_SHAPES.length / ICON_PICKER_COLUMNS)) problems.push(`the Icon picker is ${panel.icons} drawings on ${panel.iconRows} rows with ${panel.hidden} hidden, not all ${GLYPH_SHAPES.length} on ${Math.ceil(GLYPH_SHAPES.length / ICON_PICKER_COLUMNS)} rows`);
+        else if (!/Icons per group/i.test(panel.text) || !/Groups/i.test(panel.text) || !/Day names/i.test(panel.text) || !/Faces/i.test(panel.text)) problems.push("the panel lacks Icons per group, Groups, Day names or Faces");
         else notesSeen.push(`icon strip panel: all ${GLYPH_SHAPES.length} glyphs visible on ${panel.iconRows} row(s), two steppers, a switch, no scrolling`);
+        // THE PICKER SHOWS WHAT THE SWITCH DRAWS: Faces on, the swatches are
+        // the drawings with faces (they stayed plain until 2026-10-06).
+        const swatch = () => editor.getByRole("radiogroup", { name: "Icon" }).getByRole("radio", { name: "Droplets", exact: true }).innerHTML();
+        const plainSwatch = await swatch();
+        await editor.getByLabel("Faces").check({ force: true });
+        if ((await swatch()) === plainSwatch) problems.push("with Faces on, the picker's drawings stayed plain");
+        else notesSeen.push("Faces on redraws the picker's swatches");
+        await editor.getByLabel("Faces").uncheck({ force: true });
 
         const chooser = tab.getByRole("dialog", { name: /^Icon for / });
         const reachOf = () => chooser.getByRole("radio", { checked: true }).first().textContent();
@@ -2002,8 +2010,8 @@ const roundTwoPickers: Probe = {
               .reduce((a, b) => Math.max(a, b), -Infinity);
           })) as number;
           if (spill > 0.5) problems.push(`the chooser's icons run ${spill.toFixed(1)}px into its padding`);
-          await chooser.getByRole("radio", { name: "Day" }).click();
-          await chooser.getByRole("radio", { name: "Stars" }).click();
+          await chooser.getByRole("radio", { name: "Day", exact: true }).click();
+          await chooser.getByRole("radio", { name: "Stars", exact: true }).click();
           // Escape closes the chooser, not the editor.
           await tab.keyboard.press("Escape");
           await tab.waitForTimeout(150);
@@ -2013,8 +2021,8 @@ const roundTwoPickers: Probe = {
         // The second row's Monday: a row's own icon.
         await tab.locator('[data-icon-group="1:1"]').click();
         if (await chooser.isVisible()) {
-          await chooser.getByRole("radio", { name: "Row" }).click();
-          await chooser.getByRole("radio", { name: "Leaves" }).click();
+          await chooser.getByRole("radio", { name: "Row", exact: true }).click();
+          await chooser.getByRole("radio", { name: "Leaves", exact: true }).click();
           await tab.keyboard.press("Escape");
         } else problems.push("the second row's icons opened no chooser");
         await done();
@@ -2029,7 +2037,7 @@ const roundTwoPickers: Probe = {
         if (await open(strip.id)) {
           await tab.locator('[data-icon-group="0:0"]').click();
           const dayReach = await reachOf();
-          const dayStars = await chooser.getByRole("radio", { name: "Stars" }).getAttribute("aria-checked");
+          const dayStars = await chooser.getByRole("radio", { name: "Stars", exact: true }).getAttribute("aria-checked");
           await tab.keyboard.press("Escape");
           await tab.locator('[data-icon-group="1:2"]').click();
           const rowReach = await reachOf();
@@ -3380,6 +3388,14 @@ const dayIcons: Probe = {
       if (places.length !== 1 || places[0].across < 2 / 3 || places[0].down > 0.05) problems.push(`on Tuesdays it draws ${places.length} icon(s) at ${places.map((p) => `${p.across.toFixed(2)} across, ${p.down.toFixed(3)} down`).join("; ")} - not one in Tuesday's tab`);
       else seen.push("added, moved to Tuesdays: the preview's bin went to Tuesday's tab");
 
+      // FACES: the switch redraws it as the drawing with a face.
+      const previewPath = () => tab.evaluate(`document.querySelector('[role="dialog"] [data-editor-piece] path')?.getAttribute("d") ?? ""`) as Promise<string>;
+      const plainD = await previewPath();
+      await section.getByLabel("Faces").check({ force: true });
+      const facedD = await previewPath();
+      if (!facedD || facedD === plainD) problems.push("the Faces switch left the preview's bin as it was");
+      else seen.push("Faces redrew it with a face");
+
       // SKIP the Tuesday the preview shows, and it goes; put it back.
       await section.getByLabel("Skip another day").fill("2025-12-30");
       if ((await iconPlaces()).length !== 0) problems.push("skipping Tuesday 30 December left its icon in the preview");
@@ -3394,8 +3410,8 @@ const dayIcons: Probe = {
       const { prisma } = await import("../src/lib/prisma.js");
       const theme = (await prisma.planner.findUnique({ where: { id: guest.journalId }, select: { theme: true } }))?.theme as { dayIcons?: Array<Record<string, unknown>> } | null;
       const saved = theme?.dayIcons ?? [];
-      const expected = { icon: "trash", start: "2025-12-28", rrule: "FREQ=WEEKLY;BYDAY=TU", skips: ["2026-01-13"], name: "Bins" };
-      const got = saved[0] ? { icon: saved[0].icon, start: saved[0].start, rrule: saved[0].rrule, skips: saved[0].skips, name: saved[0].name } : null;
+      const expected = { icon: "trash", start: "2025-12-28", rrule: "FREQ=WEEKLY;BYDAY=TU", skips: ["2026-01-13"], name: "Bins", faces: true };
+      const got = saved[0] ? { icon: saved[0].icon, start: saved[0].start, rrule: saved[0].rrule, skips: saved[0].skips, name: saved[0].name, faces: saved[0].faces } : null;
       if (saved.length !== 1 || JSON.stringify(got) !== JSON.stringify(expected)) problems.push(`saved ${JSON.stringify(saved)}`);
       else seen.push(`saved: ${JSON.stringify(expected)}`);
       const onPage = await pathsIn(`[data-module-instance-id="${hours[0].id}"], [data-module-instance-id="${hours[1].id}"]`);

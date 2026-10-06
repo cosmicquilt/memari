@@ -40,7 +40,7 @@ import {
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
 import { WEEK_TITLE_HEIGHT_PX, renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
-import { GLYPH_SHAPES } from "@/lib/modules/glyphs";
+import { GLYPH_LABELS, GLYPH_SHAPES } from "@/lib/modules/glyphs";
 import {
   renderTodoChecklist,
   getTodoChecklistRowMetricsPx,
@@ -628,24 +628,9 @@ export type ModuleDefinition = {
   contentIsLive?: (propValues: Record<string, unknown>) => boolean;
 };
 
-/** Every glyph, by name, for the pickers that draw them. */
-const GLYPH_PICKER_OPTIONS = [
-  { value: "circle", label: "Circles" },
-  { value: "square", label: "Squares" },
-  { value: "rounded", label: "Rounded squares" },
-  { value: "droplet", label: "Droplets" },
-  { value: "heart", label: "Hearts" },
-  { value: "star", label: "Stars" },
-  { value: "moon", label: "Moons" },
-  { value: "flame", label: "Flames" },
-  { value: "leaf", label: "Leaves" },
-  { value: "plant", label: "Potted plants" },
-  { value: "spoon", label: "Spoons" },
-  { value: "jar", label: "Jars" },
-  { value: "lotus", label: "Lotuses" },
-  { value: "pill", label: "Pills" },
-  { value: "trash", label: "Bins" },
-];
+/** Every glyph, by name, for the pickers that draw them - named in
+ *  glyphs.ts's one list, so a new icon is one edit. */
+const GLYPH_PICKER_OPTIONS = GLYPH_SHAPES.map((shape) => ({ value: shape, label: GLYPH_LABELS[shape].many }));
 
 const ALWAYS = () => true;
 const NEVER = () => false;
@@ -1722,6 +1707,9 @@ const PRIMITIVES = {
             "enum": [...GLYPH_SHAPES],
             "default": "circle"
           },
+          // The icons' drawings with a little face - asked 2026-10-06, "have
+          // a switch for the faces". Off: the plain drawing.
+          "faces": { "type": "boolean", "default": false },
           "count": { "type": "integer", "default": 8 },
           "groups": { "type": "integer", "default": 0 },
           "border": { "type": "boolean", "default": false },
@@ -1751,6 +1739,7 @@ const PRIMITIVES = {
       // preview (iconsOnPage) - the two lists of ten per row and per day that
       // stood here made it the one panel that scrolled.
       { kind: "icon", key: "icon", label: "Icon", options: GLYPH_PICKER_OPTIONS },
+      { kind: "boolean", key: "faces", label: "Faces" },
       { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24, stepper: true },
       { kind: "number", key: "groups", label: "Groups", min: 0, max: 12, stepper: true, zeroLabel: "Auto" },
       { kind: "boolean", key: "groupLabels", label: "Day names", on: "days", off: "none" },
@@ -1809,6 +1798,7 @@ const PRIMITIVES = {
             "enum": [...GLYPH_SHAPES],
             "default": "circle"
           },
+          "faces": { "type": "boolean", "default": false },
           "scaleHead": {
             "type": "string",
             "enum": ["numbers", "words", "inside"],
@@ -1842,6 +1832,7 @@ const PRIMITIVES = {
       { kind: "number", key: "scaleMax", label: "Scale to", min: 1, max: 20 },
       // Drawn, like the icon strip's own picker, and any of its glyphs.
       { kind: "icon", key: "shape", label: "Mark", options: GLYPH_PICKER_OPTIONS },
+      { kind: "boolean", key: "faces", label: "Faces" },
       {
         kind: "rule",
         key: "scaleHead",

@@ -13,7 +13,7 @@
 // lets the same form sit in a side panel and in a full-page editor without
 // either of them arguing about when a save happens.
 
-import { CONTROL_RADIUS, PREVIEW_RADIUS, concentric } from "./editorStyle";
+import { CONTROL_RADIUS, ICON_PICKER_COLUMNS, PREVIEW_RADIUS, concentric } from "./editorStyle";
 import type { CSSProperties } from "react";
 import type { ModuleField, RuleValue } from "@/lib/moduleRegistry";
 import type { PageLevel } from "@/lib/pageLevels";
@@ -155,14 +155,65 @@ const rowStyle: CSSProperties = { display: "flex", flexDirection: "column", gap:
  * rather than a recoloured version of it - and it needs no recolouring, which
  * would have meant rewriting the markup the renderer emitted.
  */
+/**
+ * A switch, not a tick box. It reads as a state rather than a choice you are
+ * making on a form, which is what it is. The fields' booleans and a day
+ * icon's Faces both use it, so there is one switch in the panel.
+ */
+export function CapsuleSwitch({ on, label, onToggle }: { on: boolean; label: string; onToggle: (on: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", ...labelStyle }}>
+      <span
+        style={{
+          width: 34,
+          height: 20,
+          flexShrink: 0,
+          // A capsule, as Apple's switches are; the knob 2px inside it is
+          // concentric, which on a 16px knob is a circle.
+          borderRadius: 10,
+          background: on ? ACCENT : cream(0.15),
+          position: "relative",
+          transition: "background 150ms ease-out",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: on ? 16 : 2,
+            width: 16,
+            height: 16,
+            borderRadius: concentric(10, 2),
+            background: CREAM,
+            transition: "left 150ms ease-out",
+          }}
+        />
+      </span>
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={(event) => onToggle(event.target.checked)}
+        // Off screen rather than display:none - a hidden input is out of the
+        // accessibility tree and unreachable by keyboard, which is the whole
+        // reason a real checkbox is here at all.
+        style={{ position: "absolute", opacity: 0, width: 1, height: 1 }}
+      />
+      {label}
+    </label>
+  );
+}
+
 export function GlyphSwatch({
   shape,
   label,
   selected,
   onPick,
   size = 34,
+  faces,
 }: {
   shape: GlyphShape;
+  /** Draw the icon's face drawing - the module's Faces switch. */
+  faces?: boolean;
   label: string;
   selected: boolean;
   onPick: () => void;
@@ -172,7 +223,7 @@ export function GlyphSwatch({
   // Drawn in a 100-unit box and shown at 34px. The viewBox does the scaling,
   // so the hairline stays proportionally what it is on the page.
   const markup = toSvg(
-    glyphElement({ id: `swatch-${shape}`, x: 18, y: 18, sizePx: 64, shape, opacity: 1 }) as never
+    glyphElement({ id: `swatch-${shape}`, x: 18, y: 18, sizePx: 64, shape, opacity: 1, faces }) as never
   );
   return (
     <button
@@ -486,55 +537,12 @@ export function ModuleFieldsForm({
           const onValue = field.on ?? true;
           const on = (values[field.key] ?? defaults?.[field.key]) === onValue;
           return (
-            <label
+            <CapsuleSwitch
               key={field.key}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: "pointer",
-                ...labelStyle,
-              }}
-            >
-              {/* A switch, not a tick box. It reads as a state rather than a
-                  choice you are making on a form, which is what it is. */}
-              <span
-                style={{
-                  width: 34,
-                  height: 20,
-                  flexShrink: 0,
-                  // A capsule, as Apple's switches are; the knob 2px inside
-                  // it is concentric, which on a 16px knob is a circle.
-                  borderRadius: 10,
-                  background: on ? ACCENT : cream(0.15),
-                  position: "relative",
-                  transition: "background 150ms ease-out",
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 2,
-                    left: on ? 16 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: concentric(10, 2),
-                    background: CREAM,
-                    transition: "left 150ms ease-out",
-                  }}
-                />
-              </span>
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={(event) => onChange(field.key, event.target.checked ? onValue : field.off ?? false)}
-                // Off screen rather than display:none - a hidden input is
-                // out of the accessibility tree and unreachable by keyboard,
-                // which is the whole reason a real checkbox is here at all.
-                style={{ position: "absolute", opacity: 0, width: 1, height: 1 }}
-              />
-              {field.label}
-            </label>
+              on={on}
+              label={field.label}
+              onToggle={(next) => onChange(field.key, next ? onValue : field.off ?? false)}
+            />
           );
         }
 
@@ -633,14 +641,13 @@ export function ModuleFieldsForm({
                 // Small, and as few rows as fit - the drawings read at this
                 // size, and two rows of LARGE ones were the bulk of the icon
                 // strip's panel (2026-10-01, "as simple and compact as
-                // possible"). Ten made one row, which is all the panel
-                // holds: fourteen (the archetypes' spoon, jar, lotus and
-                // pill, 2026-10-06) ran four past its edge, hidden. So past
-                // ten, two even rows at the same size - shrinking them to
-                // one row would put them under a 24px target.
+                // possible"). Fourteen on one row ran four past the panel's
+                // edge, hidden (2026-10-06); fifty-one, Flow's icons, are
+                // rows of nine - see ICON_PICKER_COLUMNS. Shrinking them to
+                // fewer rows would put them under a 24px target.
                 style={{
                   display: "grid",
-                  gridTemplateColumns: `repeat(${field.options.length > 10 ? Math.ceil(field.options.length / 2) : field.options.length}, 24px)`,
+                  gridTemplateColumns: `repeat(${Math.min(field.options.length, ICON_PICKER_COLUMNS)}, 24px)`,
                   gap: 3,
                 }}
               >
@@ -649,6 +656,8 @@ export function ModuleFieldsForm({
                     key={option.value}
                     size={24}
                     shape={option.value as GlyphShape}
+                    // As the module draws them: with faces when its switch is on.
+                    faces={values.faces === true}
                     label={option.label}
                     selected={values[field.key] === option.value}
                     onPick={() => onChange(field.key, option.value)}
