@@ -40,6 +40,7 @@ import {
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
 import { WEEK_TITLE_HEIGHT_PX, renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
+import { GLYPH_SHAPES } from "@/lib/modules/glyphs";
 import {
   renderTodoChecklist,
   getTodoChecklistRowMetricsPx,
@@ -639,6 +640,10 @@ const GLYPH_PICKER_OPTIONS = [
   { value: "flame", label: "Flames" },
   { value: "leaf", label: "Leaves" },
   { value: "plant", label: "Potted plants" },
+  { value: "spoon", label: "Spoons" },
+  { value: "jar", label: "Jars" },
+  { value: "lotus", label: "Lotuses" },
+  { value: "pill", label: "Pills" },
 ];
 
 const ALWAYS = () => true;
@@ -1711,10 +1716,9 @@ const PRIMITIVES = {
           "heading": { "type": "string", "default": "Water" },
           "icon": {
             "type": "string",
-            "enum": [
-              "circle", "square", "rounded",
-              "droplet", "heart", "star", "moon", "flame", "leaf", "plant"
-            ],
+            // Every glyph there is - one list, so a glyph added in glyphs.ts
+            // is a choice here without a second edit.
+            "enum": [...GLYPH_SHAPES],
             "default": "circle"
           },
           "count": { "type": "integer", "default": 8 },
@@ -1801,7 +1805,7 @@ const PRIMITIVES = {
           },
           "shape": {
             "type": "string",
-            "enum": ["circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant"],
+            "enum": [...GLYPH_SHAPES],
             "default": "circle"
           },
           "scaleHead": {
@@ -1836,18 +1840,7 @@ const PRIMITIVES = {
       { kind: "number", key: "scaleMin", label: "Scale from", min: 0, max: 10 },
       { kind: "number", key: "scaleMax", label: "Scale to", min: 1, max: 20 },
       // Drawn, like the icon strip's own picker, and any of its glyphs.
-      { kind: "icon", key: "shape", label: "Mark", options: [
-          { value: "circle", label: "Circles" },
-          { value: "square", label: "Squares" },
-          { value: "rounded", label: "Rounded squares" },
-          { value: "droplet", label: "Droplets" },
-          { value: "heart", label: "Hearts" },
-          { value: "star", label: "Stars" },
-          { value: "moon", label: "Moons" },
-          { value: "flame", label: "Flames" },
-          { value: "leaf", label: "Leaves" },
-          { value: "plant", label: "Potted plants" },
-        ] },
+      { kind: "icon", key: "shape", label: "Mark", options: GLYPH_PICKER_OPTIONS },
       {
         kind: "rule",
         key: "scaleHead",

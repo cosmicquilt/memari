@@ -843,6 +843,16 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Season",
     props: { heading: "Season", total: 30, milestoneEvery: 10, numbers: "milestones" },
   },
+  {
+    // A lotus a day, filled in on the days there was practice.
+    slug: "yoga-days",
+    primitive: "icon-strip",
+    name: "Yoga Days",
+    category: "Fitness",
+    cadence: "week",
+    paletteName: "Yoga Days",
+    props: { heading: "Yoga", icon: "lotus", count: 1, groupLabels: "days" },
+  },
 
   // ──────────────────────────────────────────────────────────────────── Money
   {
@@ -1737,6 +1747,27 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "Water", icon: "droplet", count: 8, groupLabels: "days" },
   },
   {
+    // The chronic-illness week's strip, waiting on its glyph until now:
+    // spoon theory (Christine Miserandino, 2003), a day's energy as a
+    // count of spoons to spend.
+    slug: "spoon-count",
+    primitive: "icon-strip",
+    name: "Spoons",
+    category: "Mood & health",
+    cadence: "week",
+    paletteName: "Spoons",
+    props: { heading: "Spoons", icon: "spoon", count: 12, groupLabels: "days" },
+  },
+  {
+    slug: "pill-tracker",
+    primitive: "icon-strip",
+    name: "Pill Tracker",
+    category: "Mood & health",
+    cadence: "week",
+    paletteName: "Pills",
+    props: { heading: "Meds", icon: "pill", count: 3, groupLabels: "days" },
+  },
+  {
     slug: "focus-blocks",
     primitive: "icon-strip",
     name: "Focus Blocks",
@@ -1759,6 +1790,16 @@ export const CATALOGUE: CatalogueEntry[] = [
     // small square, and at eight a day across a week they merge. See the
     // catalogue proof, where the 1-column column is the one that tells.
     props: { heading: "Water plants", icon: "plant", count: 4 },
+  },
+  {
+    // Feeding a sourdough starter, twice a day.
+    slug: "starter-feedings",
+    primitive: "icon-strip",
+    name: "Starter Feedings",
+    category: "Food",
+    cadence: "week",
+    paletteName: "Starter",
+    props: { heading: "Starter", icon: "jar", count: 2, groupLabels: "days" },
   },
   {
     slug: "month-tracker",

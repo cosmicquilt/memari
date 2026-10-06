@@ -84,6 +84,8 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "self-care-checklist": "Six small things that keep you well, ticked off each day: moving, getting outside, eating well, sleep, reaching out and rest.",
   "energy-pain-scale": "Rate energy, pain, mood and sleep from 1 to 10 each day, by filling in a circle.",
   "water-week": "Eight droplets for each day of the week. Fill one in for every glass of water.",
+  "spoon-count": "Twelve spoons a day to cross off as your energy goes, from Christine Miserandino's spoon theory: a way to count the limited energy a chronic illness leaves for each day.",
+  "pill-tracker": "A pill for each dose, three a day, to tick as you take them.",
 
   // ── Food ──────────────────────────────────────────────────────────────
   "meal-planner": "Breakfast, lunch, dinner and a snack for each day of the week. Plan it before you shop and the grocery list mostly writes itself.",
@@ -104,6 +106,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "stretch-routine": "A checklist of stretches from neck to calves, to work through in order.",
   "rest-day-marker": "Mark rest days, active rest and nights with eight hours of sleep, so recovery gets planned like training.",
   "season-days": "Days out in a surf or ski season, one cell for each, with a mark every ten.",
+  "yoga-days": "A lotus for each day, filled in on the days you practice yoga.",
 
   // ── Money ─────────────────────────────────────────────────────────────
   "spending-log": "Every purchase with its date, category and cost, totaled at the bottom.",
@@ -125,6 +128,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "gift-log": "Gift ideas for each person, with a budget and a box to tick once it is bought.",
   "pet-care": "Feeding, walks, medication and water for each day, so everyone in the house knows what is done.",
   "water-plants": "Four plant icons for each day, filled in as you water, so nothing is watered twice or forgotten.",
+  "starter-feedings": "Two jars a day to tick as you feed a sourdough starter, so a missed feeding shows up on the page before it shows in the jar.",
 
   // ── Philosophy & faith ────────────────────────────────────────────────
   "stoic-morning-page": "Three questions for the start of the day: what is in your control, what obstacle to expect, and which virtue you will need. Marcus Aurelius opens Book 2 of the Meditations by preparing himself for the difficult people he will meet that day.",

@@ -47,6 +47,7 @@ import {
   DRAWER_COMPACT_HEIGHT,
   DRAWER_RESTING_HEIGHT,
 } from "../src/app/planner/TimelineDrawer.js";
+import { GLYPH_SHAPES } from "../src/lib/modules/glyphs.js";
 
 const baseArg = process.argv.indexOf("--base");
 const explicitBase = baseArg === -1 ? undefined : process.argv[baseArg + 1];
@@ -1950,20 +1951,35 @@ const roundTwoPickers: Probe = {
         const editor = tab.getByRole("dialog", { name: /^Edit / });
         const panel = (await editor.evaluate((dialog) => {
           const scroller = [...dialog.querySelectorAll<HTMLElement>("*")].find((el) => /(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.querySelector("[role=radiogroup]"));
-          const icons = [...dialog.querySelectorAll('[role="radiogroup"][aria-label="Icon"] [role="radio"]')].map((el) => Math.round(el.getBoundingClientRect().top));
+          const radios = [...dialog.querySelectorAll('[role="radiogroup"][aria-label="Icon"] [role="radio"]')];
+          const icons = radios.map((el) => Math.round(el.getBoundingClientRect().top));
+          // SEEN, not just laid out: the thing at each icon's centre must be
+          // that icon. Fourteen on one row passed a row count while four of
+          // them sat past the panel's edge, hidden (2026-10-06).
+          const hidden = radios.filter((el) => {
+            const r = el.getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return !at || !el.contains(at);
+          }).length;
           return {
             scrolls: scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false,
             iconRows: new Set(icons).size,
             icons: icons.length,
+            hidden,
             lists: dialog.querySelectorAll('[role="radiogroup"][aria-label^="Icon for each"]').length,
             text: (dialog as HTMLElement).innerText,
           };
-        })) as { scrolls: boolean; iconRows: number; icons: number; lists: number; text: string };
+        })) as { scrolls: boolean; iconRows: number; icons: number; hidden: number; lists: number; text: string };
         if (panel.lists > 0) problems.push("the per-row and per-day lists are still in the panel");
         else if (panel.scrolls) problems.push("the icon strip's panel still scrolls");
-        else if (panel.icons !== 10 || panel.iconRows !== 1) problems.push(`the Icon picker is ${panel.icons} drawings on ${panel.iconRows} rows, not one row of ten`);
+        // Every glyph, every one VISIBLE, on as few rows as the panel holds:
+        // one row of ten ("as simple and compact as possible", 2026-10-01);
+        // two even rows since the archetypes' spoon, jar, lotus and pill made
+        // fourteen (2026-10-06). Counted from the glyph list, so the next
+        // glyph moves this with it.
+        else if (panel.icons !== GLYPH_SHAPES.length || panel.hidden > 0 || panel.iconRows !== (GLYPH_SHAPES.length > 10 ? 2 : 1)) problems.push(`the Icon picker is ${panel.icons} drawings on ${panel.iconRows} rows with ${panel.hidden} hidden, not all ${GLYPH_SHAPES.length} on ${GLYPH_SHAPES.length > 10 ? "two rows" : "one row"}`);
         else if (!/Icons per group/i.test(panel.text) || !/Groups/i.test(panel.text) || !/Day names/i.test(panel.text)) problems.push("the panel lacks Icons per group, Groups or Day names");
-        else notesSeen.push("icon strip panel: one row of ten, two steppers, a switch, no scrolling");
+        else notesSeen.push(`icon strip panel: all ${GLYPH_SHAPES.length} glyphs visible on ${panel.iconRows} row(s), two steppers, a switch, no scrolling`);
 
         const chooser = tab.getByRole("dialog", { name: /^Icon for / });
         const reachOf = () => chooser.getByRole("radio", { checked: true }).first().textContent();

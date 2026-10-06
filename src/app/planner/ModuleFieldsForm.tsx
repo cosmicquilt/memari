@@ -630,10 +630,19 @@ export function ModuleFieldsForm({
               <div
                 role="radiogroup"
                 aria-label={field.label}
-                // ONE ROW of ten, small - the drawings read at this size, and
-                // two rows of large ones were the bulk of the icon strip's
-                // panel (2026-10-01, "as simple and compact as possible").
-                style={{ display: "flex", flexWrap: "nowrap", gap: 3 }}
+                // Small, and as few rows as fit - the drawings read at this
+                // size, and two rows of LARGE ones were the bulk of the icon
+                // strip's panel (2026-10-01, "as simple and compact as
+                // possible"). Ten made one row, which is all the panel
+                // holds: fourteen (the archetypes' spoon, jar, lotus and
+                // pill, 2026-10-06) ran four past its edge, hidden. So past
+                // ten, two even rows at the same size - shrinking them to
+                // one row would put them under a 24px target.
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${field.options.length > 10 ? Math.ceil(field.options.length / 2) : field.options.length}, 24px)`,
+                  gap: 3,
+                }}
               >
                 {field.options.map((option) => (
                   <GlyphSwatch

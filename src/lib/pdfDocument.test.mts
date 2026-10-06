@@ -21,7 +21,7 @@ import {
   installFont,
   emptyReport,
 } from "./pdfDocument";
-import { glyphElement, type GlyphShape } from "./modules/glyphs";
+import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "./modules/glyphs";
 import { PROOF_PAGE } from "./proofSvg";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 import { readDrawingOps } from "./pdfContentStream";
@@ -92,11 +92,16 @@ const GLYPH_BBOX: Record<string, [number, number, number, number]> = {
   flame: [106.4, 133.6, 200.0, 240.0],
   leaf: [103.6, 137.2, 202.8, 237.2],
   plant: [97.93, 142.05, 203.25, 236.75],
+  // The archetypes' four (2026-10-06), read off a real <path> the same way.
+  spoon: [108.77, 132.99, 203.72, 235.35],
+  jar: [108, 132, 202, 238.4],
+  lotus: [100.4, 139.6, 205.6, 234.4],
+  pill: [106.13, 133.87, 206.13, 233.87],
 };
 
-const SHAPES: GlyphShape[] = [
-  "circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant",
-];
+// Every glyph there is, not a list kept here: a glyph added tomorrow with no
+// measured box above fails rather than going unchecked.
+const SHAPES: readonly GlyphShape[] = GLYPH_SHAPES;
 for (const shape of SHAPES) {
   const element = glyphElement({ id: "g", x: 100, y: 200, sizePx: 40, shape }) as
     RenderedPolotnoElement & { pathD?: string };

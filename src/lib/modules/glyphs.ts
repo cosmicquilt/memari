@@ -51,12 +51,34 @@ export type GlyphShape =
   | "moon"
   | "flame"
   | "leaf"
-  | "plant";
+  | "plant"
+  | "spoon"
+  | "jar"
+  | "lotus"
+  | "pill";
 
 /** Every shape, for checking a stored value is one. */
 export const GLYPH_SHAPES: readonly GlyphShape[] = [
   "circle", "square", "rounded", "droplet", "heart", "star", "moon", "flame", "leaf", "plant",
+  "spoon", "jar", "lotus", "pill",
 ];
+
+/**
+ * Unit coordinates turned about the glyph's centre, then put at size - for
+ * a shape drawn upright and printed tilted (the spoon, the pill). Turning
+ * the points rather than the drawing keeps the hairline a hairline: see the
+ * note on final-size building above.
+ */
+function tilted(x: number, y: number, s: number, degrees: number) {
+  const rad = (degrees * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return (a: number, b: number) => {
+    const dx = a - 0.5;
+    const dy = b - 0.5;
+    return `${(x + (0.5 + dx * cos - dy * sin) * s).toFixed(2)} ${(y + (0.5 + dx * sin + dy * cos) * s).toFixed(2)}`;
+  };
+}
 
 /** Shapes drawn as a path; everything else is the rect itself. */
 const PATH_SHAPES: Record<string, (x: number, y: number, size: number) => string> = {
@@ -184,6 +206,85 @@ const PATH_SHAPES: Record<string, (x: number, y: number, size: number) => string
       `M ${u(0.24, 0.78)} C ${u(0.35, 0.6)} ${u(0.58, 0.52)} ${u(0.74, 0.28)} ` +
       `M ${u(0.31, 0.69)} C ${u(0.28, 0.64)} ${u(0.24, 0.6)} ${u(0.2, 0.57)} ` +
       `M ${u(0.59, 0.45)} C ${u(0.64, 0.47)} ${u(0.68, 0.5)} ${u(0.72, 0.53)}`
+    );
+  },
+  // THE ARCHETYPES' FOUR (2026-10-06): a spoon for spoon theory, a jar for
+  // a sourdough starter, a lotus for a yoga practice, a pill for meds.
+  spoon: (x, y, s) => {
+    // Upright in its own frame - an oval bowl over a slender handle that
+    // widens a little to a rounded end - then tilted like the leaf, which
+    // is what makes it read as a spoon rather than a key or a lollipop at
+    // strip size. One closed outline.
+    const u = tilted(x, y, s, 35);
+    return (
+      `M ${u(0.53, 0.5)} C ${u(0.61, 0.46)} ${u(0.66, 0.37)} ${u(0.66, 0.26)} ` +
+      `C ${u(0.66, 0.13)} ${u(0.59, 0.03)} ${u(0.5, 0.03)} ` +
+      `C ${u(0.41, 0.03)} ${u(0.34, 0.13)} ${u(0.34, 0.26)} ` +
+      `C ${u(0.34, 0.37)} ${u(0.39, 0.46)} ${u(0.47, 0.5)} ` +
+      `C ${u(0.475, 0.62)} ${u(0.46, 0.8)} ${u(0.455, 0.9)} ` +
+      `C ${u(0.455, 0.98)} ${u(0.545, 0.98)} ${u(0.545, 0.9)} ` +
+      `C ${u(0.54, 0.8)} ${u(0.525, 0.62)} ${u(0.53, 0.5)} Z`
+    );
+  },
+  jar: (x, y, s) => {
+    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
+    // A WIDE-MOUTHED jar, the kind a starter lives in: a lid nearly as
+    // wide as the body, a short neck, gentle shoulders, round bottom
+    // corners. The first draft's narrow neck read as a medicine bottle -
+    // which the pill already is. The open line across the middle is the
+    // rubber band a baker slides down to the starter's level to watch it
+    // rise, which is what makes it a sourdough jar rather than any jar.
+    return (
+      `M ${u(0.27, 0.05)} L ${u(0.73, 0.05)} C ${u(0.75, 0.05)} ${u(0.76, 0.06)} ${u(0.76, 0.08)} ` +
+      `L ${u(0.76, 0.15)} C ${u(0.76, 0.17)} ${u(0.75, 0.18)} ${u(0.73, 0.18)} ` +
+      `L ${u(0.27, 0.18)} C ${u(0.25, 0.18)} ${u(0.24, 0.17)} ${u(0.24, 0.15)} ` +
+      `L ${u(0.24, 0.08)} C ${u(0.24, 0.06)} ${u(0.25, 0.05)} ${u(0.27, 0.05)} Z ` +
+      `M ${u(0.27, 0.18)} L ${u(0.27, 0.22)} C ${u(0.27, 0.26)} ${u(0.2, 0.27)} ${u(0.2, 0.33)} ` +
+      `L ${u(0.2, 0.88)} C ${u(0.2, 0.93)} ${u(0.24, 0.96)} ${u(0.29, 0.96)} ` +
+      `L ${u(0.71, 0.96)} C ${u(0.76, 0.96)} ${u(0.8, 0.93)} ${u(0.8, 0.88)} ` +
+      `L ${u(0.8, 0.33)} C ${u(0.8, 0.27)} ${u(0.73, 0.26)} ${u(0.73, 0.22)} L ${u(0.73, 0.18)} ` +
+      `M ${u(0.2, 0.6)} L ${u(0.8, 0.6)}`
+    );
+  },
+  lotus: (x, y, s) => {
+    const u = (a: number, b: number) => `${(x + a * s).toFixed(2)} ${(y + b * s).toFixed(2)}`;
+    // Five petals, front to back: a tall centre one, a side petal each
+    // way, a low outer one each way. Layered the way the plant is - each
+    // petal behind is CUT where the one in front covers it, so only its
+    // visible edges are drawn and it reads as layered with no fill. Every
+    // cut starts ON the edge of the petal in front, at a point that edge's
+    // own curve passes through.
+    return (
+      // Centre petal, whole.
+      `M ${u(0.5, 0.14)} C ${u(0.63, 0.3)} ${u(0.65, 0.58)} ${u(0.5, 0.84)} ` +
+      `C ${u(0.35, 0.58)} ${u(0.37, 0.3)} ${u(0.5, 0.14)} Z ` +
+      // Side petals: from behind the centre petal out to a tip, and back
+      // down to the base.
+      `M ${u(0.6, 0.5)} C ${u(0.66, 0.41)} ${u(0.75, 0.33)} ${u(0.86, 0.3)} ` +
+      `C ${u(0.86, 0.52)} ${u(0.74, 0.75)} ${u(0.52, 0.84)} ` +
+      `M ${u(0.4, 0.5)} C ${u(0.34, 0.41)} ${u(0.25, 0.33)} ${u(0.14, 0.3)} ` +
+      `C ${u(0.14, 0.52)} ${u(0.26, 0.75)} ${u(0.48, 0.84)} ` +
+      // Outer petals: low and wide, from behind the side petals.
+      `M ${u(0.82, 0.58)} C ${u(0.89, 0.57)} ${u(0.95, 0.58)} ${u(0.99, 0.6)} ` +
+      `C ${u(0.92, 0.77)} ${u(0.73, 0.86)} ${u(0.53, 0.86)} ` +
+      `M ${u(0.18, 0.58)} C ${u(0.11, 0.57)} ${u(0.05, 0.58)} ${u(0.01, 0.6)} ` +
+      `C ${u(0.08, 0.77)} ${u(0.27, 0.86)} ${u(0.47, 0.86)}`
+    );
+  },
+  pill: (x, y, s) => {
+    // A capsule, tilted, with the seam where its two halves meet. Upright
+    // its ends are half circles of radius 0.17, written as cubics (the
+    // usual 0.552 of the radius) so every exporter draws them the same.
+    const u = tilted(x, y, s, -45);
+    const k = 0.17 * 0.552;
+    return (
+      `M ${u(0.33, 0.25)} L ${u(0.33, 0.75)} ` +
+      `C ${u(0.33, 0.75 + k)} ${u(0.5 - k, 0.92)} ${u(0.5, 0.92)} ` +
+      `C ${u(0.5 + k, 0.92)} ${u(0.67, 0.75 + k)} ${u(0.67, 0.75)} ` +
+      `L ${u(0.67, 0.25)} ` +
+      `C ${u(0.67, 0.25 - k)} ${u(0.5 + k, 0.08)} ${u(0.5, 0.08)} ` +
+      `C ${u(0.5 - k, 0.08)} ${u(0.33, 0.25 - k)} ${u(0.33, 0.25)} Z ` +
+      `M ${u(0.33, 0.5)} L ${u(0.67, 0.5)}`
     );
   },
 };
