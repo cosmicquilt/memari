@@ -90,6 +90,12 @@ export type Region =
       /** Small square cells to fill in - a progress meter's, a calendar's
        *  day boxes - in reading order. */
       cells: Box[];
+      /** What draws it (moduleRegistry's primitive): an icon strip, a
+       *  rating strip, a day chart... - how the hand fills it in. */
+      primitive: string;
+      /** For those three, what gets filled, in reading order: an icon
+       *  strip's icons, a rating strip's bubbles, a day chart's dots. */
+      targets: Box[];
     }
   | { kind: "title"; box: Box };
 
@@ -133,7 +139,41 @@ function hoursRegion(marks: PreviewMark[]): Region {
   return { kind: "hours", days };
 }
 
-function boxRegion(slug: string, heading: string, rect: Box, marks: PreviewMark[]): Region {
+/** The box round an SVG path's points - every number pair in it. */
+function pathBox(d: string): Box {
+  const n = (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+  const xs = n.filter((_, i) => i % 2 === 0);
+  const ys = n.filter((_, i) => i % 2 === 1);
+  const [x0, y0] = [Math.min(...xs), Math.min(...ys)];
+  return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0];
+}
+
+/**
+ * What the hand fills in on the three kinds that are filled, not written in
+ * (2026-10-06: "I want to fill chart icon strips and bubbles"): an icon
+ * strip's icons (outlined glyphs, or outlined circles), a rating strip's
+ * bubbles (outlined circles), a day chart's dots (the small filled ones of
+ * its grid). In reading order.
+ */
+function targetsOf(primitive: string, marks: PreviewMark[], inside: (b: { x: number; y: number; w: number; h: number }) => boolean): Box[] {
+  const rects = marks.filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r");
+  const round = (m: { w: number; h: number; r?: number }) => (m.r ?? 0) >= Math.min(m.w, m.h) * 0.4 && Math.abs(m.w - m.h) < 4;
+  let boxes: Box[] = [];
+  if (primitive === "icon-strip") {
+    const glyphs = marks.filter((m): m is Extract<PreviewMark, { k: "p" }> => m.k === "p" && !!m.s && !m.f).map((m) => pathBox(m.d));
+    const outlined = rects.filter((m) => !!m.s && !m.f && m.w >= 12 && m.w <= 64 && Math.abs(m.w - m.h) < 4).map((m) => [m.x, m.y, m.w, m.h] as Box);
+    boxes = [...glyphs, ...outlined];
+  } else if (primitive === "rating-strip") {
+    boxes = rects.filter((m) => !!m.s && round(m) && m.w >= 18 && m.w <= 64).map((m) => [m.x, m.y, m.w, m.h] as Box);
+  } else if (primitive === "day-chart") {
+    boxes = rects.filter((m) => !!m.f && !m.s && round(m) && m.w <= 14).map((m) => [m.x, m.y, m.w, m.h] as Box);
+  }
+  return boxes
+    .filter(([bx, by, bw, bh]) => inside({ x: bx, y: by, w: bw, h: bh }))
+    .sort((a, b) => (Math.abs(a[1] - b[1]) > Math.min(a[3], b[3]) * 0.5 ? a[1] - b[1] : a[0] - b[0]));
+}
+
+function boxRegion(slug: string, primitive: string, heading: string, rect: Box, marks: PreviewMark[]): Region {
   const [x, y, w, h] = rect;
   const rules = marks.filter(isHRule).filter((m) => m.y > y + 4 && m.y < y + h - 4);
   // The heading's rule: the first full-width rule near the top.
@@ -176,7 +216,9 @@ function boxRegion(slug: string, heading: string, rect: Box, marks: PreviewMark[
           return edges.slice(1).map((right, i) => [edges[i], strip.y, right - edges[i], strip.h] as Box);
         });
   const cells: Box[] = [...squares, ...stripCells].sort((a, b) => (Math.abs(a[1] - b[1]) > 4 ? a[1] - b[1] : a[0] - b[0]));
-  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells };
+  // A few px of slack: an icon strip's glyphs sit half a pixel past its box.
+  const targets = targetsOf(primitive, marks, (m) => m.y >= top - 4 && m.y + m.h <= y + h + 4 && m.x >= x - 4 && m.x + m.w <= x + w + 4);
+  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells, primitive, targets };
 }
 
 // ---------------------------------------------------------------- dates
@@ -342,7 +384,7 @@ function buildSpread(def: SpreadDef, week: ReturnType<typeof weekOf>): LandingSp
     const box: Box = [rect.x, rect.y, rect.width, rect.height];
     if (p.slug === "hourly-grid-core") page.regions.push(hoursRegion(marks));
     else if (p.slug === "week-title") page.regions.push({ kind: "title", box });
-    else page.regions.push(boxRegion(p.slug, String(p.props.heading ?? MODULE_REGISTRY[p.slug]?.label ?? p.slug), box, marks));
+    else page.regions.push(boxRegion(p.slug, MODULE_REGISTRY[p.slug]?.primitive ?? p.slug, String(p.props.heading ?? MODULE_REGISTRY[p.slug]?.label ?? p.slug), box, marks));
   }
   const { name, age, archetype, week: story } = PEOPLE_BY_KEY[def.key];
   return { key: def.key, fontFamily, person: { name, age, archetype, week: story }, pages };

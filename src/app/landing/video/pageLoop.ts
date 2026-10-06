@@ -69,7 +69,15 @@ export class PageLoop {
 
   private async prepareWriting(spread: LandingSpread) {
     await Promise.all([...familiesFor(spread.key).map((family) => document.fonts.load(`40px ${family}`).catch(() => [])), loadArtIndex()]);
-    const { strokes, duration } = inkTimeline(planSpread(spread, 1 + this.cycle * 7919 + Math.floor(Math.random() * 1000)), WRITING_TARGET, this.cycle + 1);
+    // A spread whose writing fails is shown unwritten rather than stopping
+    // the loop on it: a throw here left the hero on one week forever.
+    let plan: ReturnType<typeof planSpread> = [];
+    try {
+      plan = planSpread(spread, 1 + this.cycle * 7919 + Math.floor(Math.random() * 1000));
+    } catch (error) {
+      console.error(`Writing ${spread.key}'s week failed:`, error);
+    }
+    const { strokes, duration } = inkTimeline(plan, WRITING_TARGET, this.cycle + 1);
     await prepareInk(strokes, this.showing[0].scale);
     return { timeline: strokes, duration };
   }

@@ -438,9 +438,111 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     }
   }
 
+  // --- filling in: icon strips, rating strips, day charts (2026-10-06: "I
+  // want to fill chart icon strips and bubbles etc"). The week as it looks
+  // on Friday evening: the days so far are filled, the rest are not.
+  // Function declarations, not consts: writeBox runs (from the loop above)
+  // before this point in the code, and a const is not there yet.
+
+  /** Boxes in rows (by their tops), each row left to right. */
+  function rowsOf(boxes: Box[]): Box[][] {
+    const rows: Box[][] = [];
+    for (const b of boxes) {
+      const row = rows.find((r) => Math.abs(r[0][1] - b[1]) < Math.min(r[0][3], b[3]) * 0.5);
+      if (row) row.push(b);
+      else rows.push([b]);
+    }
+    return rows.map((r) => r.sort((a, b) => a[0] - b[0]));
+  }
+  /** A row split where the gap between neighbours is wider than usual: an
+   *  icon strip's days. */
+  function groupsOf(row: Box[]): Box[][] {
+    if (row.length < 3) return [row];
+    const gaps = row.slice(1).map((b, i) => b[0] - (row[i][0] + row[i][2]));
+    const usual = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+    const groups: Box[][] = [[row[0]]];
+    // A day's break is about 16 px more than the gap inside a day (34 by 18
+    // between flames, 22 by 6 between circles) - measured, 2026-10-06.
+    gaps.forEach((g, i) => (g > usual + Math.max(8, usual * 0.4) ? groups.push([row[i + 1]]) : groups[groups.length - 1].push(row[i + 1])));
+    return groups;
+  }
+  /** Colouring in, the way a marker does it: strokes back and forth across
+   *  the shape's middle, held inside an ellipse a little smaller than it -
+   *  lower for a droplet or a flame, whose point is at the top. */
+  function colourIn([x, y, w, h]: Box, passes: number, tipped: boolean): Path {
+    const cx = x + w / 2;
+    const cy = y + h * (tipped ? 0.6 : 0.5);
+    const rx = w * 0.36;
+    const ry = h * (tipped ? 0.3 : 0.34);
+    const out: Path = [];
+    for (let i = 0; i <= passes; i++) {
+      const t = -1 + (2 * i) / passes;
+      const half = rx * Math.sqrt(Math.max(0.05, 1 - t * t));
+      out.push(i % 2 ? cx + half : cx - half, cy + t * ry);
+    }
+    return wobble(out, 0.6, nextSeed());
+  }
+  /** Days so far of a run of days on this page: the left page's are all
+   *  past by Friday evening; the right page's first is. */
+  function livedOf(page: 0 | 1, count: number) {
+    return page === 0 ? count : Math.min(count, 1);
+  }
+
+  function colourIcons(page: 0 | 1, region: Extract<Region, { kind: "box" }>, counts: number[] | undefined) {
+    const what = `${region.slug} ${region.heading}`;
+    const colour = /water|droplet/i.test(what) ? "#4a8fd8" : /focus|flame/i.test(what) ? "#ee8a2a" : /plant|leaf/i.test(what) ? "#4ba35a" : hand.accent.color;
+    const tipped = /water|droplet|focus|flame/i.test(what);
+    const groups = rowsOf(region.targets).flatMap(groupsOf);
+    groups.forEach((group, g) => {
+      const count = counts?.[g] ?? (g < livedOf(page, groups.length) ? r.int(Math.ceil(group.length * 0.35), group.length) : 0);
+      for (const icon of group.slice(0, count)) {
+        items.push({ kind: "strokes", page, paths: [colourIn(icon, 5, tipped)], pen: { color: colour, width: Math.max(4, icon[2] * 0.2), kind: "marker" } });
+      }
+    });
+  }
+
+  function fillBubbles(page: 0 | 1, region: Extract<Region, { kind: "box" }>, values: number[] | undefined) {
+    const rows = rowsOf(region.targets);
+    // A row a day (a week's mood): the days so far. A row a measure: all.
+    const lived = values?.length ?? (rows.length === 7 ? 4 : rows.length);
+    rows.slice(0, lived).forEach((row, i) => {
+      const value = values?.[i] ?? r.int(Math.max(1, Math.round(row.length * 0.4)), row.length);
+      const bubble = row[Math.max(0, Math.min(row.length - 1, value - 1))];
+      items.push({ kind: "strokes", page, paths: [colourIn(bubble, 7, false)], pen: { ...hand.pen, width: Math.max(3, bubble[2] * 0.12) } });
+    });
+  }
+
+  function plotChart(page: 0 | 1, region: Extract<Region, { kind: "box" }>, levels: number[] | undefined) {
+    // The grid's days and levels, from its dots' centres.
+    const centres = (values: number[]) => values.sort((a, b) => a - b).filter((v, i, all) => i === 0 || v - all[i - 1] > 4);
+    const xs = centres(region.targets.map(([x, , w]) => x + w / 2));
+    const ys = centres(region.targets.map(([, y, , h]) => y + h / 2));
+    if (xs.length < 2 || ys.length < 2) return;
+    const days = Math.min(xs.length, levels?.length ?? 4);
+    let level = r.int(1, ys.length - 2);
+    const points: Array<[number, number]> = [];
+    for (let d = 0; d < days; d++) {
+      level = levels?.[d] ?? Math.max(0, Math.min(ys.length - 1, level + r.int(-1, 1)));
+      points.push([xs[d], ys[Math.max(0, Math.min(ys.length - 1, level))]]);
+    }
+    // The line first, joining the days, then a mark on each.
+    if (points.length > 1) items.push({ kind: "strokes", page, paths: [wobble(points.flat(), 1, nextSeed(), 24)], pen: { ...hand.pen, width: hand.pen.width * 0.8 } });
+    for (const [px, py] of points) {
+      items.push({ kind: "strokes", page, paths: [wobble(circleBullet(px, py, 11), 0.5, nextSeed()), wobble(circleBullet(px, py, 6), 0.4, nextSeed()), wobble(circleBullet(px, py, 2.5), 0.3, nextSeed())], pen: hand.pen });
+    }
+  }
+
   function writeBox(page: 0 | 1, region: Extract<Region, { kind: "box" }>) {
     /** What the person gave for this box: by its heading, else its module. */
     const own = <T,>(map?: Record<string, T>): T | undefined => map?.[region.heading.toLowerCase()] ?? map?.[region.slug];
+    // Filled in, not written in: icons coloured, a bubble a row, a chart
+    // plotted - whatever the box's height (a one-row icon strip is too
+    // short to write in, not to colour).
+    if (region.targets.length > 0) {
+      if (region.primitive === "icon-strip") return colourIcons(page, region, own(person?.strips));
+      if (region.primitive === "rating-strip") return fillBubbles(page, region, own(person?.ratings));
+      if (region.primitive === "day-chart") return plotChart(page, region, own(person?.charts));
+    }
     const [cx, cy, cw, ch] = region.content;
     if (ch < 110) return;
     const narrowColumns = region.columns.filter((x, i, all) => i > 0 && x - all[i - 1] < 130).length;

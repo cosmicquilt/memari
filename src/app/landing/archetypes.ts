@@ -173,6 +173,12 @@ export type Person = {
   eisenhower?: string[][];
   /** How many of a meter's cells are filled in. */
   fills?: Record<string, number>;
+  /** An icon strip's icons coloured in, per group (a day's), in order. */
+  strips?: Record<string, number[]>;
+  /** The bubble filled in on each row of a rating strip, 1 up. */
+  ratings?: Record<string, number[]>;
+  /** A day chart's mark on each day so far, by level - 0 is the top. */
+  charts?: Record<string, number[]>;
 };
 
 // ------------------------------------------------------------------ people
@@ -255,6 +261,9 @@ export const PEOPLE: Person[] = [
       ],
     },
     trackers: { "this week": ["8h sleep", "climb", "call home", "a vegetable", "no phone in bed", "water"] },
+    strips: { "focus blocks": [6, 8, 3], water: [5, 3, 2] },
+    // 1am, 2am, 12am, 2am: midterms.
+    charts: { bedtime: [1, 0, 2, 0] },
   },
   {
     key: "nine-to-five",
@@ -386,6 +395,9 @@ export const PEOPLE: Person[] = [
       "after shift": ["survive night 3 of 3", "shower > food > bed", "blackout curtains", "text mom I'm alive", "1 episode max"],
       "todo-checklist": ["renew BLS cert", "pay rent", "return Asha's dish", "book dentist", "vet for Mochi", "new shoes"],
     },
+    strips: { water: [6] },
+    // Monday, the one night home: 11pm. Then bed at 8am - off the chart.
+    charts: { bedtime: [3] },
     tables: {
       "sleep-log": [
         ["mon", "11:30p", "7:00a", "7.5", "ok"],
@@ -685,6 +697,8 @@ export const PEOPLE: Person[] = [
         ["deadlift", "155", "160", "165", "--"],
       ],
     },
+    // High, high, flat after Tuesday's intervals, coming back; early nights.
+    charts: { energy: [0, 0, 3, 1], bedtime: [4, 4, 5, 4] },
   },
   {
     key: "adhd",
@@ -756,6 +770,7 @@ export const PEOPLE: Person[] = [
         ["landlord", "fix sink", "tue"],
       ],
     },
+    strips: { "focus blocks": [2, 7, 0] },
   },
   {
     key: "philosophy",
@@ -887,6 +902,10 @@ export const PEOPLE: Person[] = [
       appointments: ["GP tue 11", "physio thu 9", "bloods - book!!"],
       "rest menu": ["crochet the blanket", "audiobook - ch 7", "window birds", "warm bath", "call Amira"],
     },
+    // Energy, pain, mood, sleep, out of five.
+    ratings: { today: [2, 4, 2, 3] },
+    charts: { energy: [3, 2, 4, 2] },
+    strips: { spoons: [9, 7] },
   },
   {
     key: "faith-christian",
@@ -1140,6 +1159,8 @@ export const PEOPLE: Person[] = [
       ],
     },
     trackers: { "every day": ["meeting", "call Dana", "quiet time", "run", "read 10 pgs", "bed by 1"] },
+    // A dip on Tuesday, then steady.
+    charts: { mood: [1, 3, 1, 1] },
     fills: { "90 in 90": 87 },
   },
 ];
