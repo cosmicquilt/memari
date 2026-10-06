@@ -41,13 +41,19 @@ const AT: Record<"hover" | "press", Otter> = { hover: "otter-3", press: "otter-2
  *  start, now and then glancing up and away (otter-1) and back - each held
  *  for a random while between these, ms. First with the waving one
  *  (otter-4), then "replace the new one with the hover one ... make it swap
- *  back and forth a bit quicker". Not with reduced motion: it stays on the
- *  first. */
+ *  back and forth a bit quicker"; then (2026-10-06) "cycle the last
+ *  currently unused otter into the idle swap ... make it switch a bit more
+ *  often": the wave comes back, briefly, between glances - always from
+ *  looking at you, the way a wave would - and every pose is held a little
+ *  under two-thirds as long as before. Not with reduced motion: it stays on
+ *  the first. */
 const REST: Array<{ otter: Otter; ms: [number, number] }> = [
-  { otter: "otter-3", ms: [2500, 5500] },
-  { otter: "otter-1", ms: [2000, 4000] },
+  { otter: "otter-3", ms: [1600, 3400] },
+  { otter: "otter-1", ms: [1300, 2600] },
+  { otter: "otter-3", ms: [1600, 3400] },
+  { otter: "otter-4", ms: [1200, 2200] },
 ];
-/** The ones drawn: those in use (otter-4, waving, is imported but unused). */
+/** The ones drawn: all four, each in use. */
 const DRAWN = [...new Set<Otter>([...REST.map((r) => r.otter), AT.hover, AT.press])];
 /** How long the paw stays up after a press, ms. */
 const PRESS_MS = 420;
