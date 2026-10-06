@@ -45,10 +45,7 @@ export class PageLoop {
     private readonly spreads: LandingSpread[],
     textureHeight: number,
     /** Called when a page's picture has changed (0 left, 1 right). */
-    private readonly changed: (page: 0 | 1, picture: HTMLCanvasElement) => void,
-    /** Called when a new spread is on the pages - whose week it is, for
-     *  "Use this week". */
-    private readonly turned: (spread: LandingSpread) => void = () => {}
+    private readonly changed: (page: 0 | 1, picture: HTMLCanvasElement) => void
   ) {
     const surface = () => new PageSurface(textureHeight, { bare: true });
     this.showing = [surface(), surface()];
@@ -85,7 +82,6 @@ export class PageLoop {
   private show() {
     this.changed(0, this.showing[0].canvas);
     this.changed(1, this.showing[1].canvas);
-    this.turned(this.spreadAt(this.cycle));
   }
 
   /** Print the first spread, blank, ready to appear. */
