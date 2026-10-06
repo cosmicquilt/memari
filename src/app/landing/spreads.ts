@@ -28,8 +28,8 @@ import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily } from "@/lib/theme";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { dateRangeLabel } from "@/lib/pageLevels";
-import { CALENDAR_COLOURS, PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type CalendarBlock, type WeekLayout } from "./archetypes";
-import type { HourlyGridEvent } from "@/lib/modules/hourlyGridCore";
+import { PEOPLE, PEOPLE_BY_KEY, heroPeople, layoutPlacements, type CalendarBlock, type WeekLayout } from "./archetypes";
+import { EVENT_PRINT_GREY, type HourlyGridEvent } from "@/lib/modules/hourlyGridCore";
 
 const TRIM = PLANNER_TRIMS.bound7x10;
 export const LANDING_PAGE_GRID: PageGrid = {
@@ -208,7 +208,10 @@ const hhmm = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(
 
 /**
  * A person's calendar as the hours' event blocks, page by page - drawn by
- * hourly-grid-core the way the editor draws imported and typed-in events.
+ * hourly-grid-core the way the editor draws imported and typed-in events,
+ * and in the print grey: the hero's journal is a PRINTED book ("colour on
+ * screen, grey on paper", 2026-09-26; Andrew, 2026-10-06: "shouldn't they
+ * be grey"). At the module's own event opacity, as everywhere.
  * A block running past midnight (a night shift) is two: the evening, and
  * the next morning from the hours' start. Clipped to the hours shown.
  */
@@ -224,7 +227,7 @@ export function calendarEvents(calendar: CalendarBlock[]): [HourlyGridEvent[], H
       endTime: hhmm(Math.min(last, end)),
       label: block.title,
       source: "manual",
-      colour: CALENDAR_COLOURS[block.calendar],
+      colour: EVENT_PRINT_GREY,
     });
   };
   for (const block of calendar) {

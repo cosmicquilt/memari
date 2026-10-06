@@ -129,17 +129,11 @@ export type HeroEvent = {
  * the race, the party. Days as for HeroEvent; hours 24-hour, and an `end`
  * past 24 runs on into the next morning (a night shift).
  */
-export type CalendarBlock = { day: number; start: number; end: number; title: string; calendar: keyof typeof CALENDAR_COLOURS };
-
-/** Their calendars' colours, as Google's and Apple's would show them. */
-export const CALENDAR_COLOURS = {
-  work: "#3d6fe0",
-  school: "#8a5cd6",
-  personal: "#2e9d6a",
-  family: "#e8873a",
-  health: "#1f9aa5",
-  community: "#d64b72",
-} as const;
+export type CalendarBlock = { day: number; start: number; end: number; title: string; calendar: Calendar };
+/** Which of their calendars it is on. The book prints every one in the same
+ *  grey (EVENT_PRINT_GREY, "colour on screen, grey on paper"); the calendar
+ *  is what it would be coloured by on a screen. */
+export type Calendar = "work" | "school" | "personal" | "family" | "health" | "community";
 
 export type Person = {
   /** The spread's key, and the "Use this week" address. Stable. */
