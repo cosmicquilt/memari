@@ -45,6 +45,32 @@ import {
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
 
+// Measured from the reference PDF's embedded text metadata: "WEEK 1/52" is
+// 8pt, "DEC 31 - JAN 6" is 13pt. The day-of-week headers (hourly-grid-core)
+// sit at the very top of the page; "WEEK 1/52" starts 16.4pt lower than that
+// - measured as the gap between the header box's top (y=18.2pt) and this
+// text's top (y=34.6pt) in the reference. Both blocks start at the same grid
+// row, so that offset has to be applied here explicitly.
+const TOP_OFFSET_PX = ptToPx(16.4);
+const LABEL_LINE_PX = ptToPx(8) * 1.4;
+// Capped to its own natural line height rather than filling the rest of the
+// allocated cell - that was leaving no visible gap before the next box,
+// since the text box itself extended right to the boundary.
+const DATE_LINE_PX = ptToPx(13) * 1.3;
+
+/**
+ * How tall the block is: the offset, the label, the date - 185px, which is
+ * three rows. Its floor, so it is never drawn shorter.
+ *
+ * It had none of its own and took the uniform two, where the date ran 47px
+ * past the bottom of a 138px box (dated) or its hairline sat on the
+ * allocation's edge 6.6px below it (undated). Nothing places one at two
+ * rows - titles are not resizable, and every one stored is three - but the
+ * floor is what a sweep of every module at its smallest size reads, and
+ * that is how it was found (2026-10-05).
+ */
+export const WEEK_TITLE_HEIGHT_PX = TOP_OFFSET_PX + LABEL_LINE_PX + DATE_LINE_PX;
+
 export function renderWeekTitle(
   geometry: { x: number; y: number; width: number; height: number },
   config: WeekTitleConfig,
@@ -59,15 +85,8 @@ export function renderWeekTitle(
   const id = (name: string) => `${idPrefix}-${name}`;
   const FONT_FAMILY = fontFamily;
 
-  // Measured from the reference PDF's embedded text metadata: "WEEK
-  // 1/52" is 8pt, "DEC 31 - JAN 6" is 13pt.
-  const smallLineHeight = ptToPx(8) * 1.4;
-  // The day-of-week headers (hourly-grid-core) sit at the very top of
-  // the page; "WEEK 1/52" starts 16.4pt lower than that — measured as
-  // the gap between the header box's top (y=18.2pt) and this text's
-  // top (y=34.6pt) in the reference. Both blocks start at the same
-  // grid row, so that offset has to be applied here explicitly.
-  const topOffset = ptToPx(16.4);
+  const smallLineHeight = LABEL_LINE_PX;
+  const topOffset = TOP_OFFSET_PX;
 
   // A number of 0 is a real week number, so this asks whether there IS one
   // rather than whether it is truthy.
@@ -90,10 +109,7 @@ export function renderWeekTitle(
     align: "left",
   });
 
-  // Capped to its own natural line height rather than filling the rest
-  // of the allocated cell — that was leaving no visible gap before the
-  // next box, since the text box itself extended right to the boundary.
-  const dateRangeLineHeight = ptToPx(13) * 1.3;
+  const dateRangeLineHeight = DATE_LINE_PX;
   const dateRangeY = geometry.y + topOffset + smallLineHeight;
 
   if (dated) {

@@ -39,7 +39,7 @@ import {
 } from "@/lib/pageLevels";
 import { renderHourlyGridCore, type HourlyGridCoreConfig } from "@/lib/modules/hourlyGridCore";
 import { renderLabeledBox, type LabeledBoxConfig } from "@/lib/modules/labeledBox";
-import { renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
+import { WEEK_TITLE_HEIGHT_PX, renderWeekTitle, type WeekTitleConfig } from "@/lib/modules/weekTitle";
 import {
   renderTodoChecklist,
   getTodoChecklistRowMetricsPx,
@@ -915,6 +915,8 @@ const PRIMITIVES = {
     isTitle: true,
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderWeekTitle(geometry, propValues as WeekTitleConfig, idPrefix, fontFamily, lattice),
+    // Three rows: what the reference's offset, label and date add up to.
+    minContentHeightPx: () => WEEK_TITLE_HEIGHT_PX,
     // Both halves go: "WEEK 1/52" is as much a date as "DEC 31 - JAN 6",
     // and a template that is week 1 of 52 is not undated.
     undated: (props) => ({ ...props, weekNumber: null, weekTotal: null, dateRangeLabel: "" }),

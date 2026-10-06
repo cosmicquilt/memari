@@ -26,11 +26,12 @@ const { PrismaPg } = await import("@prisma/adapter-pg");
 const { PrismaClient } = await import("../src/generated/prisma/client.js");
 const { renderModuleInstance } = await import("../src/lib/renderModuleInstance.js");
 const { gridCellToPixels, cellHeightPx } = await import("../src/lib/grid.js");
-// Modules that lay their columns out in the allocation frame so the
-// boundaries land on the lattice - see the mark-escape check below. Shared
-// with moduleHouseStyle.test.mts: this was three slugs kept by hand here, and
-// missed the icon strip and every preset drawn by the to-do or the strip.
-const { ALLOCATION_FRAME } = await import("../src/lib/allocationFrame.js");
+// How far a mark lies outside its box, and how far it may - shared with
+// moduleHouseStyle.test.mts. This was measured here by each mark's own box
+// against a hand-picked 1px, with a hand-kept list of the modules allowed
+// the inset; each part drifted from the house-style test's, and each failed
+// a module for its design (the icon strip, then a bill tracker's letters).
+const { markEscapePx, escapeSlackPx } = await import("../src/lib/markEscape.js");
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -172,18 +173,11 @@ for (const page of levelPages) {
         Math.abs((e.width ?? 0) - ink.width) < 1 &&
         Math.abs((e.height ?? 0) - ink.height) < 1
     );
-    const left = ink.x;
-    const top = ink.y;
-    const right = left + ink.width;
-    const bottom = top + ink.height;
-
     let escaped = 0;
     let offPitch = 0;
     let worstEscape = 0;
     for (const e of elements) {
-      const x = e.x ?? 0;
       const y = e.y ?? 0;
-      const w = e.width ?? 0;
       const h = e.height ?? 0;
 
       // 3. No mark may leave the module that drew it - beyond the box
@@ -195,8 +189,11 @@ for (const page of levelPages) {
       //    allocation is the ink box grown by the inset on every side, so
       //    a boundary at the module's own edge sits exactly `inset`
       //    outside it. That is the technique working, not a mark escaping.
-      const slack = ALLOCATION_FRAME.has(slug) ? PAGE.boxInsetPx + 1 : 1;
-      const over = Math.max(left - x, x + w - right, top - y, y + h - bottom);
+      //
+      //    Text by its INK vertically, not its line box, and every module
+      //    allowed half a border's weight - see markEscape.ts.
+      const slack = escapeSlackPx(slug, PAGE.boxInsetPx);
+      const over = markEscapePx(e as Parameters<typeof markEscapePx>[0], ink);
       if (over > slack) {
         escaped++;
         worstEscape = Math.max(worstEscape, over);

@@ -35,17 +35,17 @@
 // Row pitch has its own file, modulePitch.test.mts, because it needs to
 // measure gaps rather than individual marks.
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { REGISTERED_SLUGS, getMinRowSpanForSlug, moduleDefinition, slugsDrawnBy } from "./moduleRegistry";
+import { REGISTERED_SLUGS, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDefaults, slugsDrawnBy } from "./moduleRegistry";
 import { HEADING_SIZES_PT } from "./modules/moduleFrame";
 import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
 import { ruleAxisOf } from "./ruleMarks";
-// Modules that lay their content out in the ALLOCATION frame rather than the
-// ink box, so their own edges sit one box inset outside it. Shared with
-// check-week-page.mts - a hand-kept list of slugs there is how a one-row
-// icon strip came to fail the page check for its design.
-import { ALLOCATION_FRAME } from "./allocationFrame";
+// How far a mark is outside its box and how far it may be - including the
+// box inset for modules laid out in the ALLOCATION frame (allocationFrame.ts).
+// Shared with check-week-page.mts: a hand-kept list of slugs there is how a
+// one-row icon strip came to fail the page check for its design.
+import { escapeSlackPx, markEscapePx } from "./markEscape";
 import { textInkBand } from "@/lib/modules/textFit";
 
 const PAGE: PageGrid = {
@@ -389,7 +389,7 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
       // the allocation IS the ink box grown by that inset, so a mark on
       // the module's own edge sits exactly `inset` outside it. That is the
       // technique working, not a mark escaping.
-      const slack = ALLOCATION_FRAME.has(slug) ? PAGE.boxInsetPx + 1 : 1;
+      const slack = escapeSlackPx(slug, PAGE.boxInsetPx);
       const left = box.x;
       const right = left + box.width;
       const top = box.y;
@@ -697,33 +697,45 @@ for (const [columnSpan, dayCount] of [
 // allocation-frame modules had drifted (see allocationFrame.ts). But nothing
 // here could have told the design from a fault either way.
 //
-// So for the modules entitled to the inset: every mark of any kind, at the
-// module's own minimum height and the row above it, at four widths, stays
-// inside the allocation. And the strip as that journal has it, by name,
-// held to whatever ALLOCATION_FRAME grants it - so the strip falling out of
-// that list fails here too, not only on whichever journal has one.
+// So: every mark of any kind, of EVERY module, at its own minimum height,
+// the row above it and the usual heights, at four widths - with its preview
+// props and with its schema defaults where those differ - measured the way
+// check-week-page.mts measures it (markEscape.ts, shared). Widened from the
+// allocation-frame modules the same day, when the sweep found the week title
+// drawing 47px past a two-row box: its floor was the uniform two and its
+// content needs three. And the strip as that journal has it, by name, held
+// to whatever ALLOCATION_FRAME grants it - so the strip falling out of that
+// list fails here too, not only on whichever journal has one.
 // ---------------------------------------------------------------------
 {
   const outside = (slug: string, where: string, elements: RenderedPolotnoElement[], box: { x: number; y: number; width: number; height: number }) => {
-    const slack = ALLOCATION_FRAME.has(slug) ? PAGE.boxInsetPx + 1 : 1;
+    const slack = escapeSlackPx(slug, PAGE.boxInsetPx);
     let worst = 0;
     let worstId = "";
     for (const e of elements) {
-      const x = e.x ?? 0;
-      const y = e.y ?? 0;
-      const over = Math.max(box.x - x, x + (e.width ?? 0) - (box.x + box.width), box.y - y, y + (e.height ?? 0) - (box.y + box.height));
+      const over = markEscapePx(e, box);
       if (over > worst) [worst, worstId] = [over, String(e.id)];
     }
-    if (worst > slack) fail(`${where}: ${worstId} is ${worst.toFixed(1)}px outside the box - more than the ${slack - 1}px it may use`);
+    if (worst > slack) fail(`${where}: ${worstId} is ${worst.toFixed(1)}px outside the box - more than the ${slack.toFixed(1)}px it may use`);
   };
-  for (const slug of ALLOCATION_FRAME) {
-    const props = (moduleDefinition(slug)?.previewProps ?? {}) as Record<string, unknown>;
-    for (const columnSpan of [6, 12, 18, 24]) {
-      const floor = getMinRowSpanForSlug(slug, PAGE, columnSpan, props);
-      for (const rowSpan of [floor, floor + 1]) {
-        const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: PLACEMENT_ROW_START, columnSpan, rowSpan });
-        outside(slug, `${slug} ${columnSpan}x${rowSpan}`, render(slug, columnSpan, rowSpan, props), box);
-        checked++;
+  for (const slug of REGISTERED_SLUGS) {
+    const preview = (moduleDefinition(slug)?.previewProps ?? {}) as Record<string, unknown>;
+    const defaults = { ...moduleSchemaDefaults(slug), ...preview };
+    const variants: Array<[string, Record<string, unknown>]> = [["", preview]];
+    // Not a spine's: its height IS its content's - the hours it shows, the
+    // weeks of its month - and the spine drag changes both together, so a
+    // full day of hours in a two-row box is a state nothing can store. Its
+    // preview props fit every size here; check-week-page.mts measures the
+    // real ones on every page.
+    if (JSON.stringify(defaults) !== JSON.stringify(preview) && !moduleDefinition(slug)?.isSpine) variants.push([" (schema defaults)", defaults]);
+    for (const [tag, props] of variants) {
+      for (const columnSpan of [6, 12, 18, 24]) {
+        const floor = getMinRowSpanForSlug(slug, PAGE, columnSpan, props);
+        for (const rowSpan of new Set([floor, floor + 1, 4, 8, 13, 20].filter((rows) => rows >= floor))) {
+          const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: PLACEMENT_ROW_START, columnSpan, rowSpan });
+          outside(slug, `${slug}${tag} ${columnSpan}x${rowSpan}`, render(slug, columnSpan, rowSpan, props), box);
+          checked++;
+        }
       }
     }
   }
