@@ -69,16 +69,17 @@ export function TornEdge() {
   );
 }
 
-/** A half's SVG: from the note's side outward, the line at y 0, clipped just
- *  under it (the body's own cream is below). */
-function HalfSvg({ side, height, children }: { side: Side; height: number; children: React.ReactNode }) {
+/** A half's SVG: from the note's side outward, the line at y 0, `height`
+ *  above it and `below` under it - just a pixel for the drawn rip, whose
+ *  paper below the line is the body's own cream. */
+function HalfSvg({ side, height, below = 1, children }: { side: Side; height: number; below?: number; children: React.ReactNode }) {
   return (
     <svg
       className={`${styles.tornEdge} ${side === "left" ? styles.tornEdgeLeft : styles.tornEdgeRight}`}
       style={{ top: -height }}
       width={TORN_LENGTH}
-      height={height + 1}
-      viewBox={`0 ${-height} ${TORN_LENGTH} ${height + 1}`}
+      height={height + below}
+      viewBox={`0 ${-height} ${TORN_LENGTH} ${height + below}`}
       aria-hidden="true"
       focusable="false"
     >
@@ -146,6 +147,10 @@ function FlowHalf({ side, photo, scale, shadow }: { side: Side; photo: FlowKey; 
   // apart), the paper's top there on the line.
   const start = p[side];
   const height = Math.ceil(p.reach * scale) + 30;
+  // The photo runs on below the line, into the body's cream (the bake leaves
+  // its flat cream there clear): cut at the line, its white core and cream
+  // stopped in a straight line wherever the tear came low.
+  const below = Math.ceil((p.height - start.y) * scale) + 1;
   const id = `torn-${photo}-${side}`;
   // The photo, then itself mirrored, then itself again: it runs on unbroken,
   // each copy meeting the last at the same column. Laid as images, not as a
@@ -154,10 +159,27 @@ function FlowHalf({ side, photo, scale, shadow }: { side: Side; photo: FlowKey; 
   const w = p.width * scale;
   const copies: Array<{ x: number; flipped: boolean }> = [];
   for (let i = 0; (i * p.width - start.x) * scale < TORN_LENGTH; i++) copies.push({ x: (i * p.width - start.x) * scale, flipped: i % 2 === 1 });
+  const images = copies.map(({ x, flipped }) => (
+    <image
+      key={x}
+      href={p.src}
+      x={flipped ? undefined : x}
+      y={-start.y * scale}
+      width={w}
+      height={p.height * scale}
+      preserveAspectRatio="none"
+      transform={flipped ? `translate(${x + w} 0) scale(-1 1)` : undefined}
+    />
+  ));
   return (
-    <HalfSvg side={side} height={height}>
+    <HalfSvg side={side} height={height} below={below}>
       <defs>
-        {/* Its shadows, cast from its own outline - fibres and all. */}
+        {/* Its shadows, cast from its own outline - fibres and all - and
+            only on the hero: the paper's lower edge, under the line, casts
+            none onto the body. */}
+        <clipPath id={`${id}-above`}>
+          <rect x={-20} y={-height - 20} width={TORN_LENGTH + 40} height={height + 20} />
+        </clipPath>
         <filter id={id} {...regionOf(height)}>
           {SHADOWS.map(([name, up, blur, opacity]) => [
             <feGaussianBlur key={`${name}-b`} in="SourceAlpha" stdDeviation={blur} result={`${name}-b`} />,
@@ -169,25 +191,14 @@ function FlowHalf({ side, photo, scale, shadow }: { side: Side; photo: FlowKey; 
             {SHADOWS.map(([name]) => (
               <feMergeNode key={name} in={`${name}-s`} />
             ))}
-            <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
       </defs>
       <g transform={outward(side)}>
-        <g filter={`url(#${id})`}>
-          {copies.map(({ x, flipped }) => (
-            <image
-              key={x}
-              href={p.src}
-              x={flipped ? undefined : x}
-              y={-start.y * scale}
-              width={w}
-              height={p.height * scale}
-              preserveAspectRatio="none"
-              transform={flipped ? `translate(${x + w} 0) scale(-1 1)` : undefined}
-            />
-          ))}
+        <g clipPath={`url(#${id}-above)`}>
+          <g filter={`url(#${id})`}>{images}</g>
         </g>
+        {images}
       </g>
     </HalfSvg>
   );
