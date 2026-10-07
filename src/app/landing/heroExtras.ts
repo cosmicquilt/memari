@@ -120,7 +120,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   },
   {
     key: "wellness",
-    fillFamily: "henna",
+    fillFamily: "kolam",
     layout: {
       kind: "week",
       font: "sans",
@@ -302,7 +302,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   },
   {
     key: "creative",
-    fillFamily: "doodles",
+    fillFamily: "mexican",
     layout: {
       kind: "week",
       font: "sans",
@@ -558,6 +558,10 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // A money month, in the money week's hand: paydays, $0 days, bills ticked.
   {
     key: "month-money",
+    // Cowboy-shirt patterns: a rope or a yoke along the savings bars, plaid
+    // or a bandana on the no-spend days.
+    fillFamily: "western",
+    marks: { bar: "pattern", days: "pattern" },
     layout: {
       kind: "month",
       font: "serif",
@@ -835,8 +839,9 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // A reader's pages: the year's books, what's on, what's next.
   {
     key: "pages-reading",
-    // A little tile drawn in for each book finished.
-    fillFamily: "tiles",
+    // Each book finished drawn in - a Talavera tile, a step fret, a
+    // satin-stitch flower - often across two books or four.
+    fillFamily: "mexican",
     marks: { meter: "pattern" },
     layout: {
       kind: "pages",
@@ -931,8 +936,8 @@ export const EXTRA_SPREADS: HeroSpread[] = [
 export const BASE_SPREAD: HeroSpread = {
   key: "base",
   undated: true,
-  // Doodles in the Lisbon fund's bar, as everywhere on these sheets.
-  fillFamily: "doodles",
+  // Desert patterns - dunes, a skyline, terraces - along the Lisbon fund's bar.
+  fillFamily: "southwest",
   marks: { bar: "pattern" },
   title: "week 1 :)",
   layout: {

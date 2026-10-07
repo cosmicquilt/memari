@@ -29,7 +29,7 @@ import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
 import type { Face, Hand, Pen } from "../archetypes";
 import { HERO_BY_KEY, type FillFamily, type HeroSpread, type Mark, type MarkKind } from "../heroSpreads";
-import { BAND_PATTERNS, DOODLE_PATTERNS, HENNA_PATTERNS, KOLAM_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
+import { BAND_PATTERNS, BANDED_PATTERNS, KOLAM_PATTERNS, MEXICAN_PATTERNS, RUN_PATTERNS, SOUTHWEST_PATTERNS, SQUARE_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, WESTERN_PATTERNS, WHOLE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
 import { rng } from "./rng";
 
 export type { Pen };
@@ -257,12 +257,13 @@ const MARKS: Record<MarkKind, Mark[]> = {
 /** The patterns of each family (patterns.ts). */
 const FAMILY_PATTERNS: Record<FillFamily, readonly PatternName[]> = {
   strokes: STROKE_PATTERNS,
-  henna: HENNA_PATTERNS,
   kolam: KOLAM_PATTERNS,
   tiles: TILE_PATTERNS,
-  doodles: DOODLE_PATTERNS,
+  mexican: MEXICAN_PATTERNS,
+  southwest: SOUTHWEST_PATTERNS,
+  western: WESTERN_PATTERNS,
 };
-const FAMILIES: FillFamily[] = ["strokes", "strokes", "strokes", "tiles", "tiles", "tiles", "doodles", "doodles", "henna", "henna", "kolam"];
+const FAMILIES: FillFamily[] = ["strokes", "strokes", "strokes", "tiles", "tiles", "tiles", "mexican", "mexican", "southwest", "western", "western", "kolam"];
 
 /** A small, steady hash: the same spread picks the same marks every time it
  *  is written, whatever the seed - a person's habit, not a coin toss. */
@@ -277,10 +278,13 @@ function hashOf(text: string) {
  * variation to everything and do what would be most realistic if it was a
  * person, and different styles for different people"): the patterns they
  * draw (a family, and the two to four of it they like), how neat their hand
- * is, whether they switch between their two pens as they go, and how often
- * a day is missed in something kept daily.
+ * is, whether they switch between their two pens as they go, how often a
+ * day is missed in something kept daily, how often they carry a design on
+ * across neighbouring cells (2026-10-07: "designs where multiple cells
+ * connect to make larger designs"), and how often one design over a whole
+ * module ("sometimes the entire module (with empty gaps for missing days)").
  */
-type FillStyle = { family: FillFamily; palette: PatternName[]; loose: number; alternate: boolean; gaps: number; hand: PatternHand };
+type FillStyle = { family: FillFamily; palette: PatternName[]; loose: number; alternate: boolean; gaps: number; connect: number; whole: number; hand: PatternHand };
 function fillStyleOf(key: string, person: HeroSpread | undefined): FillStyle {
   const r = rng(hashOf(`${key}/fill-style`));
   const family = person?.fillFamily ?? FAMILIES[hashOf(`${key}/family`) % FAMILIES.length];
@@ -288,7 +292,10 @@ function fillStyleOf(key: string, person: HeroSpread | undefined): FillStyle {
   // A patterner hatches too, now and then.
   const palette = family === "strokes" || r.chance(0.5) ? own : [...own, r.pick(STROKE_PATTERNS)];
   const loose = r.range(0.08, 0.75);
-  return { family, palette, loose, alternate: r.chance(0.4), gaps: r.range(0.04, 0.16), hand: { loose, over: r.range(0, 1) * 4 * loose, slant: -Math.PI / 4 + r.range(-0.35, 0.25) } };
+  // Plain strokes run on along a row more than they make a block.
+  const connect = palette.some((p) => RUN_PATTERNS.includes(p) || SQUARE_PATTERNS.includes(p)) ? r.range(family === "strokes" ? 0.15 : 0.3, family === "strokes" ? 0.4 : 0.75) : 0;
+  const whole = palette.some((p) => WHOLE_PATTERNS.includes(p)) ? r.range(0.15, 0.5) : 0;
+  return { family, palette, loose, alternate: r.chance(0.4), gaps: r.range(0.04, 0.16), connect, whole, hand: { loose, over: r.range(0, 1) * 4 * loose, slant: -Math.PI / 4 + r.range(-0.35, 0.25) } };
 }
 
 export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
@@ -717,11 +724,68 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   }
   /** The pattern for the next of a run: from their palette, not the same
    *  twice running - a tiler draws something new in each. */
-  function nextPattern(band = false): PatternName {
-    const from = band ? style.palette.filter((p) => BAND_PATTERNS.includes(p)) : style.palette;
-    const pool = (from.length ? from : BAND_PATTERNS).filter((p) => p !== patternMemo.last);
-    patternMemo.last = r.pick(pool.length ? pool : style.palette);
+  function nextPattern(kind: "single" | "run" | "square" | "band" | "whole" = "single"): PatternName {
+    const can = kind === "run" ? RUN_PATTERNS : kind === "square" ? SQUARE_PATTERNS : kind === "band" ? BAND_PATTERNS : kind === "whole" ? WHOLE_PATTERNS : null;
+    const from = can ? style.palette.filter((p) => can.includes(p)) : style.palette;
+    // None of their favourites will do: another of their family's, then a
+    // plain one.
+    const family = can ? FAMILY_PATTERNS[style.family].filter((p) => can.includes(p)) : [];
+    const fallback: PatternName[] = family.length ? family : kind === "square" ? ["rings"] : kind === "single" ? style.palette : ["waves", "scales", "triangles"];
+    const pool = (from.length ? from : fallback).filter((p) => p !== patternMemo.last);
+    patternMemo.last = r.pick(pool.length ? pool : from.length ? from : fallback);
     return patternMemo.last;
+  }
+  /** A box round boxes. */
+  function boundOf(boxes: Box[]): Box {
+    const x0 = Math.min(...boxes.map((g) => g[0]));
+    const y0 = Math.min(...boxes.map((g) => g[1]));
+    return [x0, y0, Math.max(...boxes.map((g) => g[0] + g[2])) - x0, Math.max(...boxes.map((g) => g[1] + g[3])) - y0];
+  }
+  /**
+   * The cells to be patterned, grouped the way a person draws across them:
+   * alone; a run of two to eight along a row, one design across them; or a
+   * block - two by two, up to three by three - one design about its middle.
+   * Only cells next to each other, all among those being filled, so a gap,
+   * or a cell not reached yet, breaks a run. `at` places a cell in its
+   * module's columns and rows.
+   */
+  function blocksOf(cells: Box[], at: (c: Box) => [number, number]): Array<{ cells: Box[]; world: Box; grid: [number, number] }> {
+    const byPlace = new Map(cells.map((c) => [at(c).join(","), c]));
+    const used = new Set<Box>();
+    const canRun = style.palette.some((p) => RUN_PATTERNS.includes(p));
+    const canSquare = style.palette.some((p) => SQUARE_PATTERNS.includes(p));
+    const out: Array<{ cells: Box[]; world: Box; grid: [number, number] }> = [];
+    for (const c of cells) {
+      if (used.has(c)) continue;
+      const [ci, ri] = at(c);
+      const free = (dc: number, dr: number) => {
+        const d = byPlace.get(`${ci + dc},${ri + dr}`);
+        return d && !used.has(d) ? d : null;
+      };
+      let group: Box[] = [c];
+      let grid: [number, number] = [1, 1];
+      if (r.chance(style.connect)) {
+        if (canSquare && (!canRun || r.chance(0.45))) {
+          for (const [cw, ch] of r.shuffle([[2, 2], [3, 2], [2, 3], [3, 3]] as Array<[number, number]>)) {
+            const g: Box[] = [];
+            for (let dr = 0; dr < ch; dr++) for (let dc = 0; dc < cw; dc++) g.push(free(dc, dr) as Box);
+            if (g.every(Boolean)) {
+              group = g;
+              grid = [cw, ch];
+              break;
+            }
+          }
+        }
+        if (group.length === 1 && canRun) {
+          const n = r.int(2, 8);
+          for (let k = 1; k < n && free(k, 0); k++) group.push(free(k, 0)!);
+          grid = [group.length, 1];
+        }
+      }
+      for (const g of group) used.add(g);
+      out.push({ cells: group, world: boundOf(group), grid });
+    }
+    return out;
   }
   /** A marker coloured back and forth across a box (not an icon's
    *  ellipse), its strokes leaning and close enough to run together - a
@@ -764,9 +828,59 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     const tilt = jig(h * 0.08);
     items.push({ kind: "strokes", page, paths: [wobble([a, cy - tilt, b, cy + tilt], 0.6, nextSeed(), 30)], pen: { color: hand.highlight.color, width, kind: "highlighter", nib } });
   }
-  /** A pattern drawn into a box, in a fine pen. */
-  function drawPattern(page: 0 | 1, box: Box, name: PatternName, pen: Pen, round = false) {
-    const paths = pattern(name, box, nextSeed(), style.hand, round);
+  /**
+   * Cells filled with patterns. Now and then one design laid over the
+   * whole module - every cell of it, `all`, so that the days missed or not
+   * reached yet are holes in it; otherwise block by block (blocksOf), each
+   * block one design in one sitting, one pen. Along a long run the hand
+   * loosens, the way a 90-day grid's last weeks are drawn faster than its
+   * first (the research Andrew brought, 2026-10-07).
+   */
+  function patternCells(page: 0 | 1, cells: Box[], all: Box[] = cells, round = false) {
+    if (!cells.length) return;
+    // Too small a cell to draw a pattern in (a narrow little calendar's
+    // days): crossed off instead.
+    if (Math.min(all[0][2], all[0][3]) < 45) {
+      cells.forEach((c, n) => markIn(page, c, "cross", { n }));
+      return;
+    }
+    const handAt = (cell: Box): PatternHand => {
+      const progress = cells.length > 20 ? cells.indexOf(cell) / cells.length : 0;
+      return { ...style.hand, loose: Math.min(1, style.hand.loose * (1 + 0.8 * progress) + 0.12 * progress), over: style.hand.over * (1 + progress) };
+    };
+    const inset = (c: Box): Box => (round ? c : [c[0] + c[2] * 0.08, c[1] + c[3] * 0.08, c[2] * 0.84, c[3] * 0.84]);
+    if (round) {
+      cells.forEach((c, i) => drawPattern(page, c, nextPattern(), penFor(i), { round, hand: handAt(c) }));
+      return;
+    }
+    // The module's columns and rows, from all its cells.
+    const lanes = (vs: number[]) => [...vs].sort((a, b) => a - b).filter((v, i, arr) => i === 0 || v - arr[i - 1] > 4);
+    const xs = lanes(all.map((c) => c[0]));
+    const ys = lanes(all.map((c) => c[1]));
+    const at = (c: Box): [number, number] => [xs.findIndex((v) => Math.abs(v - c[0]) <= 4), ys.findIndex((v) => Math.abs(v - c[1]) <= 4)];
+    if (all.length > 4 && r.chance(style.whole)) {
+      const name = nextPattern("whole");
+      const seed = nextSeed();
+      const pen = penFor(0);
+      const banded = BANDED_PATTERNS.includes(name);
+      for (const cell of cells) {
+        const row = at(cell)[1];
+        const world = banded ? boundOf(all.filter((a) => Math.abs(a[1] - cell[1]) <= 4)) : boundOf(all);
+        drawPattern(page, inset(cell), name, pen, { seed: banded ? seed + row : seed, hand: handAt(cell), world, grid: banded ? [xs.length, 1] : [xs.length, ys.length] });
+      }
+      return;
+    }
+    blocksOf(cells, at).forEach((block, i) => {
+      const kind = block.cells.length === 1 ? "single" : block.grid[1] > 1 ? "square" : "run";
+      const name = nextPattern(kind);
+      const seed = nextSeed();
+      for (const cell of block.cells) {
+        drawPattern(page, inset(cell), name, penFor(i), { seed, hand: handAt(block.cells[0]), ...(block.cells.length > 1 ? { world: block.world, grid: block.grid } : {}) });
+      }
+    });
+  }
+  function drawPattern(page: 0 | 1, box: Box, name: PatternName, pen: Pen, { round = false, seed = nextSeed(), hand: drawHand = style.hand, world, grid, unit }: { round?: boolean; seed?: number; hand?: PatternHand; world?: Box; grid?: [number, number]; unit?: number } = {}) {
+    const paths = pattern(name, box, seed, drawHand, { round, world, grid, unit });
     if (paths.length) items.push({ kind: "strokes", page, paths, pen: finePen(pen, Math.min(box[2], box[3])) });
   }
   /**
@@ -805,9 +919,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
         return put([ring(cx, cy, w * (round ? 0.62 : 0.4) * (1 + jig(0.06)), h * (round ? 0.62 : 0.4) * (1 + jig(0.06)))]);
       case "hatch":
       case "dashes":
-        return drawPattern(page, [x + w * 0.1, y + h * 0.1, w * 0.8, h * 0.8], mark, pen, round);
+        return drawPattern(page, [x + w * 0.1, y + h * 0.1, w * 0.8, h * 0.8], mark, pen, { round });
       case "pattern":
-        return drawPattern(page, round ? box : [x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84], nextPattern(), pen, round);
+        return drawPattern(page, round ? box : [x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84], nextPattern(), pen, { round });
     }
   }
   /** A meter's bars filled along, cell by cell up to the last: each row's
@@ -820,12 +934,14 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       else runs.push([x, y, w, h]);
     }
     // One pattern all the way along, as a bar is one thing.
-    const name = mark === "pattern" ? nextPattern(true) : null;
+    const name = mark === "pattern" ? nextPattern("band") : null;
     runs.forEach((run, i) => {
       const [x, y, w, h] = run;
       const inner: Box = [x + 2, y + h * 0.14, w - 4, h * 0.72];
-      if (name) drawPattern(page, inner, name, penFor(i));
-      else if (mark === "hatch" || mark === "dashes") drawPattern(page, inner, mark, penFor(i));
+      // At a cell's scale: a bar is far thinner than a cell, and its
+      // pattern drawn to its own height came out tiny and noisy.
+      if (name) drawPattern(page, inner, name, penFor(i), { unit: h * 1.45 });
+      else if (mark === "hatch" || mark === "dashes") drawPattern(page, inner, mark, penFor(i), { unit: h * 1.45 });
       else items.push({ kind: "strokes", page, paths: [scribble(run, 7)], pen: { color: barColour(), width: 7, kind: "marker" } });
     });
   }
@@ -903,7 +1019,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   function markDays(page: 0 | 1, region: Extract<Region, { kind: "box" }>) {
     const today = person?.month?.today ?? r.int(8, 19);
     const mark = markFor("days", region.slug);
-    region.targets.slice(0, today - 1).forEach((day, n) => r.chance(0.82 - style.gaps) && markIn(page, day, mark, { n }));
+    const kept = region.targets.slice(0, today - 1).filter(() => r.chance(0.82 - style.gaps));
+    if (mark === "pattern") patternCells(page, kept, region.targets);
+    else kept.forEach((day, n) => markIn(page, day, mark, { n }));
   }
 
   /** A weekday tracker: a row of day letters under each habit, the days so
@@ -1026,12 +1144,14 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // is counted up to where it has got to. On a daily one, today's
       // pattern may be half drawn.
       const daily = /no-spend|ninety|streak|daily/.test(`${region.slug} ${region.heading.toLowerCase()}`);
+      const kept: Box[] = [];
       cells.forEach((cell, n) => {
         if (daily && r.chance(style.gaps + (/no-spend/.test(region.slug) ? 0.12 : 0))) return;
         const [cx0, cy0, cw0, ch0] = cell;
-        const part: Box = daily && n === cells.length - 1 && mark === "pattern" && r.chance(0.5) ? [cx0, cy0, cw0 * r.range(0.4, 0.7), ch0] : cell;
-        markIn(page, part, mark, { round, n });
+        kept.push(daily && n === cells.length - 1 && mark === "pattern" && r.chance(0.5) ? [cx0, cy0, cw0 * r.range(0.4, 0.7), ch0] : cell);
       });
+      if (mark === "pattern") patternCells(page, kept, region.cells, round);
+      else kept.forEach((cell, n) => markIn(page, cell, mark, { round, n }));
       return;
     }
 
@@ -1118,12 +1238,17 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
           if (!name) continue;
           words(page, hand.words, name, cx + 14, row[0] - pitch * 0.2, size * 0.9, labelRight - cx - 24, hand.pen);
         }
+        const done: Box[] = [];
+        const rowCells: Box[] = edges.slice(0, -1).map((x0, c) => [x0, rowTop, edges[c + 1] - x0, pitch]);
         for (let c = 0; c < edges.length - 1; c++) {
           const x0 = edges[c];
           const x1 = edges[c + 1];
           if (x1 - x0 > 220 || c >= lived || !r.chance(dots ? 0.16 : 0.62) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
-          markIn(page, [x0, rowTop, x1 - x0, pitch], mark, { n: c });
+          done.push([x0, rowTop, x1 - x0, pitch]);
         }
+        // Patterned days next to each other may run one design across them.
+        if (mark === "pattern") patternCells(page, done, rowCells.slice(0, lived));
+        else done.forEach((cell, n) => markIn(page, cell, mark, { n }));
       }
       return;
     }

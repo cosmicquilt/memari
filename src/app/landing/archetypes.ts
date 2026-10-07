@@ -106,9 +106,9 @@ export type Mark = "check" | "slash" | "cross" | "dot" | "fill" | "swipe" | "cir
  *  bubbles. */
 export type MarkKind = "grid" | "letters" | "meter" | "circles" | "bar" | "days" | "icons" | "bubbles";
 /** The kind of patterns someone draws when they fill things in with a pen
- *  (handwriting/patterns.ts): plain strokes, henna-inspired, kolam-inspired,
- *  tilings, or little doodles. */
-export type FillFamily = "strokes" | "henna" | "kolam" | "tiles" | "doodles";
+ *  (handwriting/patterns.ts): plain strokes, kolam-inspired, tilings,
+ *  Mexican-inspired, Southwest desert, or Western (cowboy shirts). */
+export type FillFamily = "strokes" | "kolam" | "tiles" | "mexican" | "southwest" | "western";
 
 /** A way of writing words: a handwriting font, or the stroke-drawn script. */
 export type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
@@ -290,6 +290,10 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "nine-to-five",
+    // Each day of leave a little desert landscape, run on across the days
+    // taken together.
+    fillFamily: "southwest",
+    marks: { meter: "pattern" },
     archetype: "9-to-5",
     name: "Marcus",
     age: 33,
@@ -977,8 +981,9 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "faith-muslim",
-    // Jaali lattices and vines in the Juz boxes, a part a day.
-    fillFamily: "henna",
+    // Scales, waves and triangles in the Juz boxes, often run on across
+    // two or three parts.
+    fillFamily: "tiles",
     marks: { meter: "pattern" },
     archetype: "Faith (Muslim)",
     name: "Yusuf",
