@@ -208,37 +208,60 @@ export function PostIt() {
 const BANDS = [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.12];
 
 /**
- * The top left corner curling toward us (2026-10-07: "make only the top
- * left corner of the postit curl a bit towards the camera"; then "i dont
- * want that crease type design ... i want it to curl towards the camera.
- * point of corner still visible"): a square `size` of the note on a side at
- * the top band's corner - reaching down into the bands below it, whose
- * faces are cut to match - cut along `steps` diagonal hinges evenly spaced to
- * the tip, each piece turned about every hinge from the outermost in to its
- * own. The turns grow toward the tip, adding up to `turn` degrees there - a
- * roll, too fine at every hinge to show as a fold, and short enough of a
- * right angle that the corner keeps its point. One light across all of it
- * (each piece shows its part of the same gradient), brighter toward the tip
- * as it lifts into the light, like the bands below. (Four hinges, up to 80
- * degrees and a shade in the bend read as creases and lost the point.)
+ * The top left corner curling toward us - gently: "significantly more
+ * subtle where it doesn't curl back on the corner, should still be pointing
+ * up and to the left" (2026-10-07, after "i dont want that crease type
+ * design" and two mockups that rolled it over). A square `size` of the note
+ * on a side at the top band's corner - reaching into the bands below, whose
+ * faces are cut to match - cut along `steps` diagonal hinges evenly spaced
+ * to the tip. The paper turns `turn` degrees by the tip, as (fraction of the
+ * way)^`onset`, so it lifts from nothing at the hinge and most at the tip -
+ * a curl, too fine at any hinge to show as a fold. Under 70 degrees the tip
+ * still points up and out: in this view a point raised toward us moves down
+ * and right on screen, and past that it would turn back on itself.
+ *
+ * Read by its shade, as seen face on a gentle lift hardly changes the
+ * outline: the lifted paper turns from the light (the film's, from the top
+ * left), darker toward the tip by up to `shade` - the fold's own warm tone -
+ * in one gradient across all of it (each piece shows its part), from none
+ * at the hinge, so there is no line anywhere. Under it, the same light the
+ * bands below have (lightAt), so the corner is the note's own colour: without
+ * it the corner came out a deeper yellow than the paper around it. No cast
+ * shadow: along the hinge it drew a dark line ("a jarring shadow toward the
+ * rest of the postit"). Drawn first as mockups from a 3D model.
  */
-const CURL = { size: 0.16, steps: 14, turn: 60, light: 0.3 };
+const CURL = { size: 0.2, steps: 16, turn: 55, onset: 1.6, shade: 0.3 };
 
-function Curl({ backgroundPosition, light }: { backgroundPosition: string; light: number }) {
+/** The white over the bands' paper at `y` note sides down from the top of
+ *  the lifted part: more the further the paper leans into the light - what
+ *  each band's ramp is a piece of. */
+const lightAt = (y: number) => 0.02 + 0.13 * (1 - y / (1 - STUCK - FLAT / 100));
+
+function Curl({ backgroundPosition }: { backgroundPosition: string }) {
   const s = CURL.size;
   const n = CURL.steps;
   const hinge = (i: number) => 1 - i / n;
-  // The turn at each hinge, growing toward the tip: (i + 1) shares of it.
-  const share = (n * (n + 1)) / 2;
-  const turn = (i: number) => (CURL.turn * (i + 1)) / share;
+  // The paper's turn at a fraction of the way to the tip, and so the turn
+  // at each hinge: what is added between it and the next.
+  const angle = (f: number) => CURL.turn * f ** CURL.onset;
+  const turn = (j: number) => angle((j + 1) / n) - angle(j / n);
   const about = (h: number, deg: number) => {
     const m = `calc(var(--note) * ${((s * h) / 2).toFixed(4)})`;
     const back = `calc(var(--note) * ${((-s * h) / 2).toFixed(4)})`;
     return `translate(${m}, ${m}) rotate3d(1, -1, 0, ${deg.toFixed(2)}deg) translate(${back}, ${back})`;
   };
-  // The gradient on the corner's square, the same for every piece: "to top
-  // left" runs across the hinges, 50% on the outermost, 100% at the tip.
-  const lit = `linear-gradient(to top left, rgba(255,255,255,${light.toFixed(3)}) 50%, rgba(255,255,255,${(light + CURL.light).toFixed(3)}) 100%)`;
+  // The shade on the corner's square, the same for every piece: "to top
+  // left" runs across the hinges, 50% on the outermost, 100% at the tip;
+  // darker the further from the hinge, smoothly from none there - over the
+  // whole lifted part, not only where it turns most: by the turn alone it
+  // gathered at the very tip and read as nothing.
+  const stops = Array.from({ length: 9 }, (_, k) => {
+    const f = k / 8;
+    const a = CURL.shade * f * (2 - f);
+    return `rgba(120, 88, 10, ${a.toFixed(3)}) ${(50 + 50 * f).toFixed(1)}%`;
+  });
+  const shade = `linear-gradient(to top left, rgba(120, 88, 10, 0) 0%, ${stops.join(", ")})`;
+  const lit = `linear-gradient(to top, rgba(255,255,255,${lightAt(s).toFixed(3)}), rgba(255,255,255,${lightAt(0).toFixed(3)}))`;
   return Array.from({ length: n }, (_, i) => {
     const out = hinge(i);
     const inner = i + 1 < n ? hinge(i + 1) : 0;
@@ -251,7 +274,7 @@ function Curl({ backgroundPosition, light }: { backgroundPosition: string; light
     const transform = Array.from({ length: i + 1 }, (_, j) => about(hinge(j), turn(j))).join(" ");
     return (
       <span key={i} className={styles.postitCurl} style={{ backgroundPosition, clipPath, transform }}>
-        <span className={styles.postitLight} style={{ background: lit }} />
+        <span className={styles.postitLight} style={{ background: `${shade}, ${lit}` }} />
       </span>
     );
   });
@@ -278,10 +301,8 @@ function Band({ k }: { k: number }) {
     <span className={`${styles.postitSeg} ${styles.postitBand}`} style={{ ["--band" as string]: BANDS[k], ["--curl" as string]: CURL.size }}>
       <span className={`${styles.postitFace} ${last ? styles.postitTurned : ""}`} style={{ backgroundPosition, clipPath: faceClip(CURL.size - top, last) }}>
         <span className={styles.postitLight} style={{ background: `linear-gradient(to top, rgba(255,255,255,${light(k)}), rgba(255,255,255,${light(k + 1)}))` }} />
-        {/* Where the curled corner reaches it, or nearly: its shadow. */}
-        {CURL.size - top > -0.04 && <span className={styles.postitCurlShadow} style={{ top: `calc(var(--note) * ${-top})` }} />}
       </span>
-      {last ? <Curl backgroundPosition={backgroundPosition} light={Number(light(k + 1))} /> : <Band k={k + 1} />}
+      {last ? <Curl backgroundPosition={backgroundPosition} /> : <Band k={k + 1} />}
     </span>
   );
 }

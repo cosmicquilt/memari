@@ -1337,29 +1337,6 @@
   transform-origin: 0 0;
 }
 
-/* The shadow the curled corner casts on the note under it: its own shape,
-   a little lower, softened - shown only where the face is, past the hinge
-   (the face is cut where the corner was). Placed from the note's top; the
-   blur on the outer span, the shape on the inner, as a clip-path applies
-   after a filter on one element and would cut the blur back off. */
-.postitCurlShadow {
-  position: absolute;
-  left: 0;
-  width: calc(var(--note) * var(--curl));
-  height: calc(var(--note) * var(--curl));
-  transform: translate(calc(var(--note) * 0.003), calc(var(--note) * 0.024));
-  filter: blur(calc(var(--note) * 0.022));
-  pointer-events: none;
-}
-
-.postitCurlShadow::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(96, 70, 8, 0.3);
-  clip-path: polygon(0 0, 100% 0, 0 100%);
-}
-
 /* The top right corner turned over: the note's back, barely duller, and the
    faintest shadow on the front ("the turned corner gradients less obvious"). */
 .postitTurned::after {
