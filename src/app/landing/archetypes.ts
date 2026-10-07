@@ -290,8 +290,8 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "nine-to-five",
-    // Each day of leave a little desert landscape, run on across the days
-    // taken together.
+    // Desert patterns - terraces, dunes, a stepped diamond - for each day of
+    // leave, run on across the days taken together.
     fillFamily: "southwest",
     marks: { meter: "pattern" },
     archetype: "9-to-5",

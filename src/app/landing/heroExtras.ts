@@ -558,8 +558,8 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // A money month, in the money week's hand: paydays, $0 days, bills ticked.
   {
     key: "month-money",
-    // Cowboy-shirt patterns: a rope or a yoke along the savings bars, plaid
-    // or a bandana on the no-spend days.
+    // Cowboy-shirt patterns: a rope along the savings bars, a bandana over
+    // the no-spend days.
     fillFamily: "western",
     marks: { bar: "pattern", days: "pattern" },
     layout: {
@@ -936,7 +936,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
 export const BASE_SPREAD: HeroSpread = {
   key: "base",
   undated: true,
-  // Desert patterns - dunes, a skyline, terraces - along the Lisbon fund's bar.
+  // Desert patterns - dunes, terraces - along the Lisbon fund's bar.
   fillFamily: "southwest",
   marks: { bar: "pattern" },
   title: "week 1 :)",

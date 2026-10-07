@@ -736,7 +736,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     // None of their favourites will do: another of their family's, then a
     // plain one.
     const family = can ? FAMILY_PATTERNS[style.family].filter((p) => can.includes(p)) : [];
-    const fallback: PatternName[] = family.length ? family : kind === "square" || kind === "big-square" ? ["rings"] : kind === "single" ? style.palette : ["waves", "scales", "triangles"];
+    const fallback: PatternName[] = family.length ? family : kind === "square" || kind === "big-square" ? ["rings"] : kind === "single" ? style.palette : ["waves", "scales", "hatch"];
     const pool = (from.length ? from : fallback).filter((p) => p !== patternMemo.last);
     patternMemo.last = r.pick(pool.length ? pool : from.length ? from : fallback);
     return patternMemo.last;

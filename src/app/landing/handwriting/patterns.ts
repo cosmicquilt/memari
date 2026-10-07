@@ -2,7 +2,9 @@
 // a pen rather than tick it (2026-10-07: "hand drawn filling of random styles
 // ... make it realistic not perfect like it was drawn in different styles").
 // Kept from the first set, as Andrew chose: hatch, crosshatch, dashes, the
-// kolam lattice, rings, triangles, waves and scales. Added: Mexican-inspired
+// kolam lattice, rings, waves and scales. (Triangles, mesas, plaid, the
+// saguaro, the yoke and the scrolls went 2026-10-07: "no mesas, plaid,
+// cactus, triangles, yoke, scroll".) Added: Mexican-inspired
 // and Southwest-inspired ones ("maybe mexican/native or western desert
 // inspired"), Western ones from cowboy shirts ("i mean southwest like cowboy
 // shirt patterns but you can try yours too") - and designs that run on
@@ -21,9 +23,9 @@
 // with a loop round each; the Mexican ones are a Talavera tile's flower and
 // corner rings, a Mitla-style step fret, a Tenango-style flower in satin
 // stitch, serape stripes; the Southwest ones generic weaving and landscape
-// geometry - a stepped diamond, stepped terraces, mesas, dunes, a saguaro;
-// the Western ones a cowboy shirt's - plaid, a rope twist, a pointed yoke
-// with pearl snaps, embroidered scrolls - and a bandana's border.
+// geometry - a stepped diamond, stepped terraces, dunes; the Western ones a
+// cowboy shirt's rope trim, and two bandanas, the second a paisley one
+// ("add another more intricate bandana").
 // Nothing ceremonial or belonging to one community, and none of the
 // Aboriginal Western Desert iconography, which carries Dreaming stories.
 
@@ -34,10 +36,10 @@ export type Box = [number, number, number, number];
 
 export const STROKE_PATTERNS = ["hatch", "crosshatch", "dashes"] as const;
 export const KOLAM_PATTERNS = ["kolam-lattice", "rings"] as const;
-export const TILE_PATTERNS = ["scales", "waves", "triangles"] as const;
+export const TILE_PATTERNS = ["scales", "waves"] as const;
 export const MEXICAN_PATTERNS = ["talavera", "greca", "otomi", "serape"] as const;
-export const SOUTHWEST_PATTERNS = ["stepped-diamond", "terraces", "mesa", "dunes", "cactus"] as const;
-export const WESTERN_PATTERNS = ["plaid", "rope", "yoke", "scroll", "bandana"] as const;
+export const SOUTHWEST_PATTERNS = ["stepped-diamond", "terraces", "dunes"] as const;
+export const WESTERN_PATTERNS = ["rope", "bandana", "bandana-paisley"] as const;
 export type PatternName =
   | (typeof STROKE_PATTERNS)[number]
   | (typeof KOLAM_PATTERNS)[number]
@@ -47,22 +49,22 @@ export type PatternName =
   | (typeof WESTERN_PATTERNS)[number];
 
 /** Drawn on along a run of cells in a row as one design. */
-export const RUN_PATTERNS: PatternName[] = ["hatch", "crosshatch", "dashes", "kolam-lattice", "scales", "waves", "triangles", "talavera", "greca", "serape", "terraces", "mesa", "dunes", "plaid", "rope", "yoke", "scroll"];
+export const RUN_PATTERNS: PatternName[] = ["hatch", "crosshatch", "dashes", "kolam-lattice", "scales", "waves", "talavera", "greca", "serape", "terraces", "dunes", "rope"];
 /** Drawn across a block of cells - two by two, up to three by three -
  *  about its middle. */
-export const SQUARE_PATTERNS: PatternName[] = ["rings", "stepped-diamond", "otomi", "talavera", "kolam-lattice", "bandana", "plaid"];
+export const SQUARE_PATTERNS: PatternName[] = ["rings", "stepped-diamond", "otomi", "talavera", "kolam-lattice", "bandana", "bandana-paisley"];
 /** One shape about a block's middle that reaches only its inner cells: over
  *  more than two by two, the corner cells - days done - were left blank. */
 export const CENTRED_PATTERNS: PatternName[] = ["stepped-diamond", "otomi"];
 /** Drawn along a bar. */
-export const BAND_PATTERNS: PatternName[] = ["hatch", "dashes", "waves", "scales", "triangles", "kolam-lattice", "greca", "serape", "terraces", "mesa", "dunes", "rope", "yoke", "scroll"];
+export const BAND_PATTERNS: PatternName[] = ["hatch", "dashes", "waves", "scales", "kolam-lattice", "greca", "serape", "terraces", "dunes", "rope"];
 /** Bands: one strip across the middle of what they are drawn over - over
  *  a whole module, drawn again along each of its rows. */
-export const BANDED_PATTERNS: PatternName[] = ["greca", "terraces", "rope", "yoke", "scroll", "mesa"];
+export const BANDED_PATTERNS: PatternName[] = ["greca", "terraces", "rope"];
 /** Drawn over a whole module at once, every cell of it: the tilings, and
  *  the bands row by row. (A design about a middle - rings, a diamond, a
  *  flower, a bandana - left most of a wide module's cells near empty.) */
-export const WHOLE_PATTERNS: PatternName[] = ["hatch", "crosshatch", "dashes", "kolam-lattice", "scales", "waves", "triangles", "talavera", "serape", "plaid", "dunes", ...BANDED_PATTERNS];
+export const WHOLE_PATTERNS: PatternName[] = ["hatch", "crosshatch", "dashes", "kolam-lattice", "scales", "waves", "talavera", "serape", "dunes", ...BANDED_PATTERNS];
 
 export type PatternHand = {
   /** 0 neat ... 1 loose. */
@@ -194,17 +196,6 @@ function petal(cx: number, cy: number, a: number, from: number, to: number, fat:
   return turn(move(drop, cx + to, cy), cx, cy, a);
 }
 
-/** An arc over the top from x = a to x = b, centred between them at height
- *  yy: a rounded cap, drawn in the direction a to b. */
-function cap(a: number, b: number, yy: number): Path {
-  const out: Path = [];
-  for (let k = 0; k <= 8; k++) {
-    const ang = a < b ? Math.PI + (k / 8) * Math.PI : TAU - (k / 8) * Math.PI;
-    out.push((a + b) / 2 + (Math.cos(ang) * Math.abs(b - a)) / 2, yy + (Math.sin(ang) * Math.abs(b - a)) / 2);
-  }
-  return out;
-}
-
 /** A stepped (terraced) diamond about (cx, cy), `R` to each point, `n`
  *  steps a side - the stairs outward of the plain diamond's edges. */
 function steppedDiamond(cx: number, cy: number, R: number, n: number): Path {
@@ -316,26 +307,6 @@ const GENS: Record<PatternName, Gen> = {
     }
     return out;
   },
-  triangles: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    const t = u * r.range(0.3, 0.4);
-    const tall = t * 0.85;
-    const out: Path[] = [];
-    for (let row = 0, by = y + tall; by < y + h + tall; by += tall, row++) {
-      const x0 = x - (row % 2) * (t / 2);
-      const p: Path = [];
-      for (let i = 0, px = x0; px <= x + w + t; i++, px += t / 2) p.push(px, i % 2 ? by - tall : by);
-      out.push(p, [x - 3, by, x + w + 3, by + r.range(-1, 1) * hand.loose]);
-      // Every other tooth shaded: lines across it, parallel to its base.
-      for (let apex = x0 + t / 2 + (row % 2 ? t : 0); apex < x + w + t; apex += t * 2) {
-        for (let f = 0.22; f < 0.9; f += r.range(0.18, 0.24)) {
-          const half = (t / 2) * (1 - f);
-          out.push([apex - half, by - tall * f, apex + half, by - tall * f]);
-        }
-      }
-    }
-    return out;
-  },
   talavera: (b, r, u, hand, grid) => {
     const [x, y, w, h] = b;
     // A tile to a cell: a four-petal flower in its middle, and rings at its
@@ -424,6 +395,78 @@ const GENS: Record<PatternName, Gen> = {
     }
     return out;
   },
+  "bandana-paisley": (b, r, u, hand) => {
+    const [x, y, w, h] = b;
+    // A paisley bandana: a double border with a row of dots between; a band
+    // of small teardrops pointing in; a paisley in each corner turned to the
+    // middle; a rosette of petals in the middle with a ring of dots; and
+    // small florets scattered over the field between.
+    const s = Math.min(w, h);
+    const j = () => r.range(-1, 1) * hand.loose;
+    const rect = (k: number): Path => [x + k, y + k, x + w - k, y + k + j(), x + w - k, y + h - k, x + k, y + h - k, x + k, y + k];
+    const [e1, e2, e3] = [s * 0.04, s * 0.09, s * 0.19];
+    const out: Path[] = [rect(e1), rect(e2), rect(e3)];
+    // Dots between the first two borders.
+    const mid = (e1 + e2) / 2;
+    const step = Math.max(6, s * 0.045);
+    for (let px = x + e2; px <= x + w - e2; px += step) out.push(dot(r, px, y + mid, 1.2), dot(r, px, y + h - mid, 1.2));
+    for (let py = y + e2 + step; py <= y + h - e2 - step; py += step) out.push(dot(r, x + mid, py, 1.2), dot(r, x + w - mid, py, 1.2));
+    // Teardrops along the band between the second and third, pointing in.
+    const t = (e3 - e2) * 0.8;
+    const band = (e2 + e3) / 2;
+    const along = (x0: number, y0: number, x1: number, y1: number, inward: number) => {
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const n = Math.max(1, Math.floor(len / (t * 0.75)));
+      for (let k = 0; k < n; k++) {
+        const f = (k + 0.5) / n;
+        const [cx, cy] = [x0 + (x1 - x0) * f, y0 + (y1 - y0) * f];
+        out.push(petal(cx - Math.cos(inward) * t * 0.45, cy - Math.sin(inward) * t * 0.45, inward, 0, t * 0.9, t * 0.28));
+      }
+    };
+    along(x + e3, y + band, x + w - e3, y + band, Math.PI / 2);
+    along(x + e3, y + h - band, x + w - e3, y + h - band, -Math.PI / 2);
+    along(x + band, y + e3, x + band, y + h - e3, 0);
+    along(x + w - band, y + e3, x + w - band, y + h - e3, Math.PI);
+    // A paisley in each corner of the field, its round end in the corner.
+    const [fx0, fy0, fx1, fy1] = [x + e3, y + e3, x + w - e3, y + h - e3];
+    const P = s * 0.2;
+    for (const [cx, cy] of [[fx0, fy0], [fx1, fy0], [fx1, fy1], [fx0, fy1]]) {
+      const a = Math.atan2(y + h / 2 - cy, x + w / 2 - cx);
+      const [px, py] = [cx + Math.cos(a) * P * 0.55, cy + Math.sin(a) * P * 0.55];
+      // Outline, an inner line, an eye at the round end, a curl of dots.
+      out.push(petal(px, py, a + Math.PI, -P * 0.75, P * 0.25, P * 0.3));
+      out.push(petal(px, py, a + Math.PI, -P * 0.55, P * 0.12, P * 0.18));
+      out.push(loop(r, px - Math.cos(a) * P * 0.05, py - Math.sin(a) * P * 0.05, P * 0.07, P * 0.07, hand.loose, 10));
+      for (let k = 1; k <= 3; k++) out.push(dot(r, px + Math.cos(a) * P * (0.2 + k * 0.14), py + Math.sin(a) * P * (0.2 + k * 0.14), 1.2));
+    }
+    // The rosette in the middle.
+    const [cx, cy] = [x + w / 2 + j() * 2, y + h / 2 + j() * 2];
+    const R = s * 0.17;
+    out.push(loop(r, cx, cy, R * 0.22, R * 0.22, hand.loose, 14), dot(r, cx, cy, 1.4));
+    const n = 8;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * TAU + r.range(-0.05, 0.05) * hand.loose;
+      out.push(petal(cx, cy, a, R * 0.28, R, R * 0.2));
+      out.push(dot(r, cx + Math.cos(a + Math.PI / n) * R * 1.12, cy + Math.sin(a + Math.PI / n) * R * 1.12, 1.3));
+    }
+    out.push(loop(r, cx, cy, R * 1.35, R * 1.35, hand.loose, 36));
+    // Florets over the field: a dot ringed by four small loops, kept clear
+    // of the rosette and the corner paisleys.
+    const fl = s * 0.035;
+    const gap = s * 0.17;
+    for (let py = fy0 + gap * 0.6; py < fy1 - gap * 0.3; py += gap) {
+      for (let px = fx0 + gap * (0.6 + ((Math.round((py - fy0) / gap) % 2) * 0.5)); px < fx1 - gap * 0.3; px += gap) {
+        if (Math.hypot(px - cx, py - cy) < R * 1.6) continue;
+        if ([[fx0, fy0], [fx1, fy0], [fx1, fy1], [fx0, fy1]].some(([qx, qy]) => Math.hypot(px - qx, py - qy) < P * 1.15)) continue;
+        out.push(dot(r, px, py, 1.2));
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * TAU + Math.PI / 4;
+          out.push(loop(r, px + Math.cos(a) * fl, py + Math.sin(a) * fl, fl * 0.55, fl * 0.55, hand.loose, 8));
+        }
+      }
+    }
+    return out;
+  },
   "stepped-diamond": (b, r, u, hand) => {
     const [x, y, w, h] = b;
     // A weaving's stepped diamond: terraced outside, a plain one inside, a
@@ -468,42 +511,6 @@ const GENS: Record<PatternName, Gen> = {
     }
     return [p, [x - 3, base + st * 0.5, x + w + 3, base + st * 0.5 + r.range(-1, 1) * hand.loose]];
   },
-  mesa: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    // A desert skyline - flat ground, a mesa, a narrow butte, a low hill -
-    // run on across the cells it is drawn over; the sun over it, once; a
-    // few strokes of ground.
-    const horizon = y + h * r.range(0.66, 0.74);
-    const sky: Path = [x - 4, horizon];
-    for (let px = x - 4; px < x + w + 4; ) {
-      const kind = r.pick(["flat", "mesa", "mesa", "butte", "hill"]);
-      if (kind === "flat") px += u * r.range(0.15, 0.4);
-      else if (kind === "hill") {
-        const L = u * r.range(0.4, 0.7);
-        const A = h * r.range(0.08, 0.14);
-        for (let k = 1; k <= 8; k++) sky.push(px + (L * k) / 8, horizon - Math.sin((k / 8) * Math.PI) * A);
-        px += L;
-      } else {
-        const tall = h * (kind === "butte" ? r.range(0.36, 0.46) : r.range(0.22, 0.34));
-        const topW = u * (kind === "butte" ? r.range(0.1, 0.18) : r.range(0.3, 0.6));
-        const slope = u * r.range(0.04, 0.08);
-        sky.push(px + slope, horizon - tall, px + slope + topW, horizon - tall + r.range(-1, 1) * hand.loose);
-        px += slope * 2 + topW;
-      }
-      sky.push(px, horizon + r.range(-1, 1) * hand.loose);
-    }
-    const out: Path[] = [sky];
-    if (r.chance(0.75)) {
-      const [sx, sy, sr] = [x + w * r.range(0.15, 0.85), y + h * r.range(0.16, 0.3), u * r.range(0.08, 0.12)];
-      out.push(loop(r, sx, sy, sr, sr, hand.loose, 16));
-      if (r.chance(0.5)) for (let a = r.range(0, 0.5); a < TAU; a += TAU / 8) out.push([sx + Math.cos(a) * sr * 1.5, sy + Math.sin(a) * sr * 1.5, sx + Math.cos(a) * sr * 2.1, sy + Math.sin(a) * sr * 2.1]);
-    }
-    for (let k = Math.round(w / (u * 0.35)); k > 0; k--) {
-      const [gx, gy] = [x + r.range(0, w), r.range(horizon + 5, y + h)];
-      out.push([gx, gy, gx + u * r.range(0.06, 0.14), gy + r.range(-1, 1)]);
-    }
-    return out;
-  },
   dunes: (b, r, u, hand) => {
     const [x, y, w, h] = b;
     // Dune ridges, one behind another: a long rise into the wind, a short
@@ -523,24 +530,6 @@ const GENS: Record<PatternName, Gen> = {
         px += L;
       }
       out.push(p);
-    }
-    return out;
-  },
-  plaid: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    // A shirt's plaid: bands of three close lines both ways, denser where
-    // they cross, a single fine line between the bands.
-    const P = u * r.range(0.42, 0.55);
-    const g = Math.max(2.6, P * 0.09);
-    const out: Path[] = [];
-    const j = () => r.range(-1, 1) * hand.loose;
-    for (let px = x + r.range(0, P); px < x + w + P; px += P) {
-      for (let k = 0; k < 3; k++) out.push([px + k * g, y - 3, px + k * g + j(), y + h + 3]);
-      out.push([px + P * 0.62, y - 3, px + P * 0.62 + j(), y + h + 3]);
-    }
-    for (let py = y + r.range(0, P); py < y + h + P; py += P) {
-      for (let k = 0; k < 3; k++) out.push([x - 3, py + k * g, x + w + 3, py + k * g + j()]);
-      out.push([x - 3, py + P * 0.62, x + w + 3, py + P * 0.62 + j()]);
     }
     return out;
   },
@@ -569,63 +558,6 @@ const GENS: Record<PatternName, Gen> = {
     }
     return out;
   },
-  yoke: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    // A western yoke's piping: two lines close together, arching up between
-    // points that face down; under each point an arrowhead tack, under each
-    // arch a pearl snap.
-    const span = u * r.range(0.75, 1);
-    const top = y + h * 0.18;
-    const dip = Math.min(h * 0.3, u * 0.28);
-    const gap = Math.max(3, u * 0.07);
-    const start = x - r.range(0, span);
-    const out: Path[] = [];
-    for (const off of [0, gap]) {
-      const p: Path = [];
-      for (let px = start; px < x + w + span; px += span) {
-        for (let i = 0; i <= 10; i++) {
-          const t = i / 10;
-          p.push(px + t * span, top + off + dip * (1 - Math.sin(Math.PI * t)));
-        }
-      }
-      out.push(p);
-    }
-    for (let px = start; px < x + w + span; px += span) {
-      const [tx, ty] = [px, top + dip + gap + u * 0.05];
-      out.push([tx, ty, tx - u * 0.05, ty + u * 0.1, tx + u * 0.05, ty + u * 0.1, tx, ty]);
-      const [sx, sy] = [px + span / 2, top + gap + dip * 0.5 + u * 0.14];
-      out.push(loop(r, sx, sy, u * 0.05, u * 0.05, hand.loose, 10), loop(r, sx, sy, u * 0.02, u * 0.02, hand.loose, 8));
-    }
-    return out;
-  },
-  scroll: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    // Western embroidery scrolls: a stem waving along, and at each crest a
-    // curl rolled off it, up and down by turns, a leaf on some.
-    const mid = y + h / 2;
-    const amp = Math.min(h * 0.18, u * 0.14) * (1 + r.range(-0.2, 0.2) * hand.loose);
-    const L = u * r.range(0.55, 0.75);
-    const shift = r.range(0, L);
-    const stem: Path = [];
-    for (let px = x - 4; px <= x + w + 4; px += 3) stem.push(px, mid + Math.sin(((px - x + shift) / L) * Math.PI) * amp);
-    const out: Path[] = [stem];
-    for (let k = 0, cx = x - shift + L / 2; cx < x + w + L; k++, cx += L) {
-      // Crests alternate: below the line, then above.
-      const side = k % 2 === 0 ? 1 : -1;
-      const cy = mid + side * amp;
-      const R = Math.min(h * 0.24, u * 0.2) * r.range(0.8, 1.1);
-      const curl: Path = [];
-      for (let i = 0; i <= 22; i++) {
-        const t = i / 22;
-        const a = Math.PI + t * Math.PI * 2.3;
-        const rr = R * (1 - 0.75 * t);
-        curl.push(cx + R + Math.cos(a) * rr, cy + side * R * 0.2 + side * Math.sin(a) * rr);
-      }
-      out.push(curl);
-      if (r.chance(0.6)) out.push(petal(cx - L * 0.22, cy, side > 0 ? 2.3 : -2.3, 0, u * 0.18, u * 0.06));
-    }
-    return out;
-  },
   bandana: (b, r, u, hand) => {
     const [x, y, w, h] = b;
     // A bandana: a line round, a row of dots inside it, a small teardrop in
@@ -645,32 +577,6 @@ const GENS: Record<PatternName, Gen> = {
     const [cx, cy, rr] = [x + w / 2, y + h / 2, s * 0.13];
     for (let k = 0; k < 8; k++) out.push(dot(r, cx + Math.cos((k / 8) * TAU) * rr, cy + Math.sin((k / 8) * TAU) * rr, 1.4));
     out.push(loop(r, cx, cy, rr * 0.4, rr * 0.4, hand.loose, 12));
-    return out;
-  },
-  cactus: (b, r, u, hand) => {
-    const [x, y, w, h] = b;
-    // A saguaro on the ground line: a trunk round at the top, an arm or two
-    // up from it, a rib down its middle, a pebble or two.
-    const ground = y + h * 0.88;
-    const H = h * r.range(0.62, 0.74);
-    const W = Math.min(w, h) * 0.15;
-    const cx = x + w * r.range(0.38, 0.62);
-    const out: Path[] = [
-      [cx - W / 2, ground, ...cap(cx - W / 2, cx + W / 2, ground - H + W / 2), cx + W / 2, ground],
-      [cx + r.range(-1, 1) * hand.loose, ground - 2, cx, ground - H + W * 0.7],
-    ];
-    // An arm: out from the trunk, up, round, and back down to it.
-    const arm = (side: number, at: number) => {
-      const ay = ground - H * at;
-      const reach = W * r.range(1.3, 1.8);
-      const up = ay - H * r.range(0.22, 0.32) + W / 2;
-      const [xo, xi] = [cx + side * (W / 2 + reach), cx + side * (W / 2 + reach - W * 0.85)];
-      out.push([cx + (side * W) / 2, ay, xo, ay, xo, up, ...cap(xo, xi, up), xi, ay - W * 0.85, cx + (side * W) / 2, ay - W * 0.85]);
-    };
-    arm(-1, r.range(0.3, 0.5));
-    if (r.chance(0.7)) arm(1, r.range(0.4, 0.6));
-    out.push([x - 3, ground, x + w + 3, ground + r.range(-1, 1) * hand.loose]);
-    for (let k = r.int(1, 3); k > 0; k--) out.push(dot(r, x + r.range(0.1, 0.9) * w, ground + r.range(3, 7), 1.6));
     return out;
   },
 };
