@@ -493,7 +493,7 @@
   visibility: hidden;
   stroke-dasharray: 1 2;
   stroke-dashoffset: 1.02;
-  --you-pace: calc(var(--you-seconds, 1.41) / var(--you-base, 1.41));
+  --you-pace: calc(var(--you-seconds, 1.7) / var(--you-base, 1.7));
   animation: youWrite calc(var(--for) * var(--you-pace)) cubic-bezier(0.4, 0.1, 0.6, 0.95) calc(3.15s + var(--at) * var(--you-pace)) forwards;
 }
 
@@ -510,7 +510,7 @@
 
 .youDone {
   opacity: 0;
-  animation: youDone 0.01s linear calc(3.15s + var(--at) * var(--you-seconds, 1.41) / var(--you-base, 1.41)) forwards;
+  animation: youDone 0.01s linear calc(3.15s + var(--at) * var(--you-seconds, 1.7) / var(--you-base, 1.7)) forwards;
 }
 
 @keyframes youDone {
