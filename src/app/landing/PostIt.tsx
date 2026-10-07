@@ -202,22 +202,62 @@ export function PostIt() {
 
 /** The bands of the curl above the otter, each hinged on the last
  *  (.postitBand), as shares of the note - thin, so the twist bends the sides
- *  smoothly; the top one taller, holding the turned-over corner. Their
- *  paper's fibre runs on from the band below, the light ramping across. */
+ *  smoothly; the top one taller, holding the turned-over corner and the
+ *  curled one. Their paper's fibre runs on from the band below, the light
+ *  ramping across. */
 const BANDS = [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.12];
+
+/**
+ * The top left corner curling toward us (2026-10-07: "make only the top
+ * left corner of the postit curl a bit towards the camera"): a square
+ * `size` of the note on a side at the top band's corner, cut along diagonal
+ * hinges at `hinges` of it - each piece turned about every hinge from the
+ * outermost in to its own, by `turn` degrees at each, so it rolls rather
+ * than folds (80 degrees at the tip). Shaded in the bend - the paper there
+ * turned from the light - and lighter toward the tip, which faces it.
+ */
+const CURL = { size: 0.12, hinges: [1, 0.72, 0.46, 0.22], turn: [14, 18, 22, 26] };
+
+function Curl({ backgroundPosition, light }: { backgroundPosition: string; light: number }) {
+  const s = CURL.size;
+  const about = (h: number, deg: number) => {
+    const m = `calc(var(--note) * ${((s * h) / 2).toFixed(4)})`;
+    const back = `calc(var(--note) * ${((-s * h) / 2).toFixed(4)})`;
+    return `translate(${m}, ${m}) rotate3d(1, -1, 0, ${deg}deg) translate(${back}, ${back})`;
+  };
+  return CURL.hinges.map((h, i) => {
+    const inner = CURL.hinges[i + 1] ?? 0;
+    // Out to its hinge and 2px past it, under the piece outside it: at the
+    // hinge itself the film showed through the two anti-aliased edges.
+    const out = `calc(${(h * 100).toFixed(1)}% + 2px)`;
+    const clipPath = `polygon(${(inner * 100).toFixed(1)}% 0, ${out} 0, 0 ${out}, 0 ${(inner * 100).toFixed(1)}%)`;
+    const transform = CURL.hinges.slice(0, i + 1).map((hj, j) => about(hj, -CURL.turn[j])).join(" ");
+    const tint = i === 0 ? "rgba(120, 88, 10, 0.07)" : `rgba(255, 255, 255, ${(light + 0.05 * i).toFixed(3)})`;
+    return <span key={i} className={styles.postitCurl} style={{ backgroundPosition, clipPath, transform, boxShadow: `inset 0 0 0 999px ${tint}` }} />;
+  });
+}
+
 function Band({ k }: { k: number }) {
   // Its top, from the top of the lifted part.
   const top = BANDS.slice(k + 1).reduce((a, b) => a + b, 0);
   const done = (i: number) => BANDS.slice(0, i).reduce((a, b) => a + b, 0) / (1 - STUCK - FLAT / 100);
   const light = (i: number) => (0.02 + 0.13 * done(i)).toFixed(3);
-  const last = k === BANDS.length - 1;
+  const backgroundPosition = `0 calc(var(--note) * ${-top})`;
+  const lit = <span className={styles.postitLight} style={{ background: `linear-gradient(to top, rgba(255,255,255,${light(k)}), rgba(255,255,255,${light(k + 1)}))` }} />;
+  if (k === BANDS.length - 1) {
+    return (
+      <span className={`${styles.postitSeg} ${styles.postitBand} ${styles.postitTop}`} style={{ ["--band" as string]: BANDS[k], ["--curl" as string]: CURL.size }}>
+        <span className={styles.postitFace} style={{ backgroundPosition }}>
+          {lit}
+        </span>
+        <Curl backgroundPosition={backgroundPosition} light={Number(light(k + 1))} />
+      </span>
+    );
+  }
   return (
-    <span
-      className={`${styles.postitSeg} ${styles.postitBand} ${last ? styles.postitCorner : ""}`}
-      style={{ backgroundPosition: `0 calc(var(--note) * ${-top})`, ["--band" as string]: BANDS[k] }}
-    >
-      <span className={styles.postitLight} style={{ background: `linear-gradient(to top, rgba(255,255,255,${light(k)}), rgba(255,255,255,${light(k + 1)}))` }} />
-      {!last && <Band k={k + 1} />}
+    <span className={`${styles.postitSeg} ${styles.postitBand}`} style={{ backgroundPosition, ["--band" as string]: BANDS[k] }}>
+      {lit}
+      <Band k={k + 1} />
     </span>
   );
 }

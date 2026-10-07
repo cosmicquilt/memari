@@ -1218,7 +1218,9 @@
 
 /* Canary yellow paper, its fibre from the journal's own paper tile. */
 .postitStuck,
-.postitSeg {
+.postitSeg,
+.postitFace,
+.postitCurl {
   position: absolute;
   left: 0;
   right: 0;
@@ -1309,13 +1311,43 @@
   background: linear-gradient(to top, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 45%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.02));
 }
 
-/* The top right corner turned over: the note's back, barely duller, and the
-   faintest shadow on the front ("the turned corner gradients less obvious"). */
-.postitCorner {
-  clip-path: polygon(0 0, calc(100% - var(--note) * 0.075) 0, 100% calc(var(--note) * 0.075), 100% 100%, 0 100%);
+/* The top band: its paper on .postitFace, cut at both top corners - the
+   right one turned over (::after), the left one curling toward us
+   (.postitCurl, 2026-10-07: "make only the top left corner of the postit
+   curl a bit towards the camera"). Not on the band itself: a clip-path
+   flattens what is in it, and the curl turns in 3D. */
+.postitTop {
+  background: none;
 }
 
-.postitCorner::after {
+.postitFace {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(
+    calc(var(--note) * var(--curl)) 0,
+    calc(100% - var(--note) * 0.075) 0,
+    100% calc(var(--note) * 0.075),
+    100% 100%,
+    0 100%,
+    0 calc(var(--note) * var(--curl))
+  );
+}
+
+/* A piece of the curl: the band's corner, a square --curl of the note on a
+   side, cut to its strip between two diagonal hinges and turned about each
+   hinge out to it (PostIt.tsx, CURL). */
+.postitCurl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--note) * var(--curl));
+  height: calc(var(--note) * var(--curl));
+  transform-origin: 0 0;
+}
+
+/* The top right corner turned over: the note's back, barely duller, and the
+   faintest shadow on the front ("the turned corner gradients less obvious"). */
+.postitFace::after {
   content: "";
   position: absolute;
   top: 0;
