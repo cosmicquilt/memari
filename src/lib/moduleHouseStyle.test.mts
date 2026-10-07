@@ -173,6 +173,15 @@ const SMALL_LABEL_HEADINGS = new Set(slugsDrawnBy("icon-strip"));
 const SMALLEST_LEGIBLE_PT = 5;
 
 /**
+ * A strip label set BEHIND its icons, large and faint (2026-10-06, the icon
+ * strip's default since): a background word the icons are drawn over, not a
+ * heading in a band, so the heading ladder is not its rule. Known by its
+ * faint ink. Held instead to the size Andrew set on the slider proof -
+ * written here, so moving it costs a deliberate edit - and to uppercase.
+ */
+const BEHIND_LABEL_MAX_PT = 20;
+
+/**
  * The habit tracker's COMPACT layout sizes a row as a name row plus
  * `width / 7`, so its seven day cells come out square. Seven does not
  * divide the 24-column lattice, so those rules cannot land on it and the
@@ -444,7 +453,11 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
           // the expected value or it only checks that the code equals
           // itself. 8pt is labeled-box's top rung and the house maximum.
           const fontSize = element.fontSize ?? 0;
-          if (fontSize > HOUSE_HEADING_MAX_PT_PX + 0.5) {
+          if (SMALL_LABEL_HEADINGS.has(slug) && Number(element.opacity ?? 1) < 1) {
+            if (fontSize > ptToPx(BEHIND_LABEL_MAX_PT) + 0.5) {
+              fail(`${where}: a label behind its icons is ${((fontSize * 72) / 300).toFixed(1)}pt, over ${BEHIND_LABEL_MAX_PT}pt`);
+            }
+          } else if (fontSize > HOUSE_HEADING_MAX_PT_PX + 0.5) {
             fail(
               `${where}: heading is ${((fontSize * 72) / 300).toFixed(1)}pt, ` +
                 `over the house maximum of 8pt`
@@ -453,7 +466,8 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
           const ladder = SMALL_LABEL_HEADINGS.has(slug)
             ? [...HEADING_SIZES_PT, SMALLEST_LEGIBLE_PT]
             : HEADING_SIZES_PT;
-          if (!ladder.map(ptToPx).some((size) => Math.abs(size - fontSize) < 0.5)) {
+          const behindIcons = SMALL_LABEL_HEADINGS.has(slug) && Number(element.opacity ?? 1) < 1;
+          if (!behindIcons && !ladder.map(ptToPx).some((size) => Math.abs(size - fontSize) < 0.5)) {
             fail(
               `${where}: heading is ${((fontSize * 72) / 300).toFixed(1)}pt, ` +
                 `not a rung of the ladder (${ladder.join("/")}pt)`

@@ -32,7 +32,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { GLYPH_SHAPES, glyphElement, glyphSizeToFit, type GlyphShape } from "@/lib/modules/glyphs";
-import { estimateTextWidthPx, fitLabel, textInkBand } from "@/lib/modules/textFit";
+import { capCentredTextY, estimateTextWidthPx, fitLabel, textInkBand } from "@/lib/modules/textFit";
 import { weekdayInitials, weekdayShortNames } from "@/lib/weekDays";
 import {
   NEAR_BLACK,
@@ -42,6 +42,9 @@ import {
 } from "@/lib/modules/moduleFrame";
 
 export type IconStripConfig = {
+  /** Where the label goes: large and faint BEHIND the icons, which take the
+   *  whole row (the default since 2026-10-06), or small ABOVE them. */
+  labelStyle?: "behind" | "above";
   /** The icons drawn with a little face - see glyphElement. */
   faces?: boolean;
   /** Printed above the glyphs. Empty for none. */
@@ -131,6 +134,16 @@ const HEADING_FONT_PT = 5;
 const AIR_PX = 3;
 /** Between the heading's capitals and the top of the glyphs. */
 const LABEL_GAP_PX = 4;
+/**
+ * THE LABEL BEHIND THE ICONS (2026-10-06): "the text being larger low
+ * opacity, and in the bg to make icons bigger". Set by Andrew on a slider
+ * proof - 20pt at 45% ink - centred down the row, the icons the whole row
+ * over it; their open insides show it through. The day names the same ink
+ * at 70% of its size. The small label ABOVE the icons stays as a setting.
+ */
+const BEHIND_LABEL_PT = 20;
+const BEHIND_DAY_SHARE = 0.7;
+const BEHIND_INK = 0.45;
 /** A glyph never fills its whole share of the width, or the row reads as a
  *  solid bar. */
 const GLYPH_WIDTH_SHARE = 0.84;
@@ -197,7 +210,8 @@ export function renderIconStrip(
   // under them: 52px of a 75px cell where it was 41.
   const capBand = textInkBand(0, ptToPx(HEADING_FONT_PT), fontFamily, "A");
   const labelY = AIR_PX - capBand.top;
-  const glyphBandTop = heading || (config.stripLabels ?? []).some((label) => typeof label === "string" && label.trim())
+  const behind = config.labelStyle !== "above";
+  const glyphBandTop = !behind && (heading || (config.stripLabels ?? []).some((label) => typeof label === "string" && label.trim()))
     ? AIR_PX + (capBand.bottom - capBand.top) + LABEL_GAP_PX
     : AIR_PX;
   const glyphBandHeight = pitch - glyphBandTop - AIR_PX;
@@ -212,7 +226,8 @@ export function renderIconStrip(
     glyphSizeToFit(glyph, config.faces === true, glyphPitch * GLYPH_WIDTH_SHARE, glyphBandHeight);
 
   const stripLabels = (config.stripLabels ?? []).map((text) => (typeof text === "string" ? text.trim() : ""));
-  const labelSizePx = ptToPx(HEADING_FONT_PT);
+  const labelSizePx = ptToPx(behind ? BEHIND_LABEL_PT : HEADING_FONT_PT);
+  const daySizePx = behind ? labelSizePx * BEHIND_DAY_SHARE : labelSizePx;
   const labelInsetPx = ptToPx(4);
 
   // Day names over the first strip's groups, in the journal's week order,
@@ -227,7 +242,7 @@ export function renderIconStrip(
   const firstLabel = (stripLabels[0] || heading).toUpperCase();
   const groupRight = (g: number) => geometry.x + (g + 1) * groupWidth - groupPad;
   const roomBeside = (names: string[]) =>
-    groupRight(0) - estimateTextWidthPx(names[0], labelSizePx) - labelInsetPx - (geometry.x + labelInsetPx);
+    groupRight(0) - estimateTextWidthPx(names[0], daySizePx) - labelInsetPx - (geometry.x + labelInsetPx);
   // Each group's name: from groupDays where the page says which day is
   // under it (null - no day - names nothing), else in week order.
   const dayOf = (g: number): number | null =>
@@ -240,14 +255,17 @@ export function renderIconStrip(
         : Array.from({ length: groups }, (_, g) => names[g % 7]);
     const forms = [named(weekdayShortNames(config.weekStartDay)), named(weekdayInitials(config.weekStartDay))];
     const fits = (names: string[]) =>
-      names.every((name) => estimateTextWidthPx(name, labelSizePx) <= groupWidth - groupPad * 2) &&
+      names.every((name) => estimateTextWidthPx(name, daySizePx) <= groupWidth - groupPad * 2) &&
       // Whole AT the strip's own size - asked directly, not through fitLabel,
       // which now shrinks a label rather than cutting it (2026-10-05), so
       // "came back uncut" no longer means "fits".
       (!firstLabel || estimateTextWidthPx(firstLabel, labelSizePx) <= roomBeside(names) + 0.01);
     return forms.find(fits) ?? forms[forms.length - 1];
   })();
-  const dayLabelWidth = (name: string) => estimateTextWidthPx(name, labelSizePx) + ptToPx(2);
+  const dayLabelWidth = (name: string) => estimateTextWidthPx(name, daySizePx) + ptToPx(2);
+  // A label's y: its capitals at the top of the cell above the icons, or
+  // centred down the cell behind them.
+  const textY = (stripTop: number, sizePx: number) => (behind ? capCentredTextY(stripTop, pitch, sizePx, fontFamily) : stripTop + labelY);
 
   const glyphAt = (list: unknown, index: number): GlyphShape | null => {
     const value = Array.isArray(list) ? list[index] : undefined;
@@ -268,13 +286,16 @@ export function renderIconStrip(
         id: id(`s${s}-heading`),
         type: "text",
         x: geometry.x + labelInsetPx,
-        y: stripTop + labelY,
+        y: textY(stripTop, label.fontSizePx),
         width: labelWidth,
-        height: headingHeight,
+        height: behind ? label.fontSizePx * 1.2 : headingHeight,
         text: label.text,
         fontSize: label.fontSizePx,
         fontFamily,
         fill: NEAR_BLACK,
+        // Behind the icons it is typed on its row - its 20pt line box is
+        // taller than the row; see canvasText's boxOf.
+        ...(behind ? { opacity: BEHIND_INK, editBox: { x: geometry.x + labelInsetPx, y: Math.max(stripTop, geometry.y), width: labelWidth, height: Math.min(stripTop + pitch, geometry.y + geometry.height) - Math.max(stripTop, geometry.y) } } : {}),
         // LEFT, not centred, which is the one place this departs from the
         // house heading style and does it deliberately. A module heading is
         // centred because it sits in its own band over the whole module;
@@ -299,15 +320,15 @@ export function renderIconStrip(
           id: id(`g${g}-day`),
           type: "text",
           x: groupRight(g) - dayLabelWidth(name),
-          y: stripTop + labelY,
+          y: textY(stripTop, daySizePx),
           width: dayLabelWidth(name),
-          height: headingHeight,
+          height: behind ? daySizePx * 1.2 : headingHeight,
           text: name,
-          fontSize: labelSizePx,
+          fontSize: daySizePx,
           fontFamily,
           fill: NEAR_BLACK,
           align: "right",
-          opacity: 0.55,
+          opacity: behind ? BEHIND_INK : 0.55,
         });
       }
     }

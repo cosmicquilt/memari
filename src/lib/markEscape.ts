@@ -33,8 +33,8 @@ type Box = { x: number; y: number; width: number; height: number };
  * whatever its own width, and textFit keeps the string inside that layout.
  */
 export function markEscapePx(element: RenderedPolotnoElement, box: Box): number {
-  const x = element.x ?? 0;
-  const width = element.width ?? 0;
+  let x = element.x ?? 0;
+  let width = element.width ?? 0;
   let top = element.y ?? 0;
   let bottom = top + (element.height ?? 0);
   if (element.type === "text") {
@@ -42,7 +42,53 @@ export function markEscapePx(element: RenderedPolotnoElement, box: Box): number 
     top = ink.top;
     bottom = ink.bottom;
   }
+  // AN ICON BY ITS INK, as text is (2026-10-06): its box is a square, and a
+  // tall drawing - a spoon is a third as wide as it is tall - sits in the
+  // middle of one as wide as the row is high. Given the whole row behind a
+  // faint label, the first spoon's SQUARE reached 9px past its strip while
+  // the spoon was well inside it.
+  const ink = typeof element.pathD === "string" ? pathExtent(element.pathD) : null;
+  if (ink) {
+    const half = element.stroke && element.stroke !== "none" ? Number(element.strokeWidth ?? 0) / 2 : 0;
+    x = ink.left - half;
+    width = ink.right - ink.left + half * 2;
+    top = ink.top - half;
+    bottom = ink.bottom + half;
+  }
   return Math.max(box.x - x, x + width - (box.x + box.width), box.y - top, bottom - (box.y + box.height));
+}
+
+/**
+ * Where a path's curves actually go - each cubic sampled along its length,
+ * since its control points can lie well outside it. Absolute M, L, C and Z
+ * only, which is what every drawn glyph and face is; anything else returns
+ * null and the box stands, as before.
+ */
+function pathExtent(d: string): { left: number; right: number; top: number; bottom: number } | null {
+  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+  const see = (px: number, py: number) => {
+    left = Math.min(left, px); right = Math.max(right, px);
+    top = Math.min(top, py); bottom = Math.max(bottom, py);
+  };
+  let cx = 0, cy = 0;
+  for (let i = 0; i < tokens.length; ) {
+    const op = tokens[i];
+    const n = (k: number) => Number(tokens[i + k]);
+    if (op === "M" || op === "L") {
+      cx = n(1); cy = n(2); see(cx, cy); i += 3;
+    } else if (op === "C") {
+      const [x1, y1, x2, y2, x3, y3] = [n(1), n(2), n(3), n(4), n(5), n(6)];
+      for (let s = 1; s <= 16; s++) {
+        const t = s / 16, u = 1 - t;
+        see(u * u * u * cx + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, u * u * u * cy + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3);
+      }
+      cx = x3; cy = y3; i += 7;
+    } else if (op === "Z" || op === "z") {
+      i += 1;
+    } else return null;
+  }
+  return Number.isFinite(left) ? { left, right, top, bottom } : null;
 }
 
 /**

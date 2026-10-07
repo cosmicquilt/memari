@@ -525,7 +525,10 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 
 // --- icon strip --------------------------------------------------------------
 {
-  const base = { heading: "Water", icon: "droplet", count: 8 };
+  // Most of what follows is the small label ABOVE the icons and how its day
+  // names give way; the label BEHIND them (the default since 2026-10-06) is
+  // checked on its own at the end.
+  const base = { heading: "Water", icon: "droplet", count: 8, labelStyle: "above" };
   check(ids(draw("icon-strip", base, 12, 2), /-border$/).length === 0, "open by default");
   check(ids(draw("icon-strip", { ...base, border: true }, 12, 2), /-border$/).length === 1, "boxed when asked");
   const labels = texts(draw("icon-strip", { ...base, stripLabels: ["Water", "Tea"] }, 12, 3), /-s\d-heading$/);
@@ -589,7 +592,7 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   // the label's capitals. Tall, wide and square icons, few and many a group.
   for (const shape of ["spoon", "toothbrush", "trash", "droplet", "bus", "dumbbell", "sun"] as GlyphShape[]) {
     for (const count of [2, 7, 12]) {
-      const drawn = draw("icon-strip", { heading: "Label", icon: shape, count, groups: 4 }, 24, 1);
+      const drawn = draw("icon-strip", { heading: "Label", icon: shape, count, groups: 4, labelStyle: "above" }, 24, 1);
       const label = ids(drawn, /-s0-heading$/)[0];
       const capsBottom = textInkBand(Number(label.y), Number(label.fontSize), String(label.fontFamily), "A").bottom;
       const cellBottom = Number(label.y) + 75; // a strip is one cell; the label starts near its top
@@ -611,8 +614,26 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     }
   }
   // The spoons' complaint, directly: a dozen a group, now nearly the band tall.
-  const spoons = ids(draw("icon-strip", { heading: "Spoons", icon: "spoon", count: 12, groups: 4 }, 24, 1), /-i\d+$/);
+  const spoons = ids(draw("icon-strip", { heading: "Spoons", icon: "spoon", count: 12, groups: 4, labelStyle: "above" }, 24, 1), /-i\d+$/);
   check(Number(spoons[0].height) >= 48, `a dozen spoons a group stand ${Number(spoons[0].height).toFixed(1)}px tall in a 75px strip`);
+
+  // THE LABEL BEHIND THE ICONS - the default: 20pt at 45% ink, its capitals
+  // centred down the row, the icons the whole row over it (3px of air top
+  // and bottom), the day names at 70% of its size and the same ink.
+  const behind = draw("icon-strip", { heading: "Water", icon: "glass", count: 4, groupLabels: "days" }, 24, 1);
+  const word = ids(behind, /-s0-heading$/)[0];
+  check(Math.abs(Number(word.fontSize) - (20 * 300) / 72) < 0.01 && Math.abs(Number(word.opacity) - 0.45) < 1e-9, `by default the label is 20pt at 45% (got ${(Number(word.fontSize) * 72 / 300).toFixed(1)}pt at ${word.opacity})`);
+  const wordInk = textInkBand(Number(word.y), Number(word.fontSize), String(word.fontFamily), "WATER");
+  const glass = ids(behind, /-s0-g0-i0$/)[0];
+  check(Math.abs((wordInk.top + wordInk.bottom) / 2 - (Number(glass.y) + Number(glass.height) / 2)) < 1, "its capitals centred down the row, with the icons");
+  check(Number(glass.height) >= 68, `the icons the whole row (${Number(glass.height).toFixed(1)}px of 75)`);
+  const index = (e: RenderedPolotnoElement) => behind.indexOf(e);
+  check(index(word) < index(glass), "the label drawn first, under the icons");
+  const day = ids(behind, /-g0-day$/)[0];
+  check(!!day && Math.abs(Number(day.fontSize) - (14 * 300) / 72) < 0.01 && Number(day.opacity) === 0.45, `the day names 14pt at the same ink (got ${day ? (Number(day.fontSize) * 72 / 300).toFixed(1) + "pt" : "none"})`);
+  const above = draw("icon-strip", { heading: "Water", icon: "glass", count: 4, labelStyle: "above" }, 24, 1);
+  check(Number(ids(above, /-s0-g0-i0$/)[0].height) < Number(glass.height), "above, the icons give the label its room");
+  check(Number(ids(above, /-s0-heading$/)[0].opacity ?? 1) === 1, "above, the label at full ink");
 }
 
 // --- ratings -----------------------------------------------------------------

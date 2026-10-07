@@ -1780,6 +1780,9 @@ const PRIMITIVES = {
           // The icons' drawings with a little face - asked 2026-10-06, "have
           // a switch for the faces". Off: the plain drawing.
           "faces": { "type": "boolean", "default": false },
+          // The label large and faint behind the icons, or small above them
+          // - 2026-10-06; see iconStrip.ts's BEHIND_LABEL_PT.
+          "labelStyle": { "type": "string", "enum": ["behind", "above"], "default": "behind" },
           "count": { "type": "integer", "default": 8 },
           "groups": { "type": "integer", "default": 0 },
           "border": { "type": "boolean", "default": false },
@@ -1810,6 +1813,16 @@ const PRIMITIVES = {
       // stood here made it the one panel that scrolled.
       { kind: "icon", key: "icon", label: "Icon", options: GLYPH_PICKER_OPTIONS },
       { kind: "boolean", key: "faces", label: "Faces" },
+      {
+        kind: "rule",
+        key: "labelStyle",
+        label: "Label",
+        options: [
+          { value: "behind", label: "Behind, large" },
+          { value: "above", label: "Above, small" },
+        ],
+        window: { x: "left", y: "top", columns: 5, rows: 1.2 },
+      },
       { kind: "number", key: "count", label: "Icons per group", min: 1, max: 24, stepper: true },
       { kind: "number", key: "groups", label: "Groups", min: 0, max: 12, stepper: true, zeroLabel: "Auto" },
       { kind: "boolean", key: "groupLabels", label: "Day names", on: "days", off: "none" },

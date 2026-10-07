@@ -234,13 +234,18 @@ for (const slug of RULED) {
 // space above them"), so the label is set with its capitals 3px under the
 // line - the decision this number states - and its box starts above them.
 const STRIP_LABEL_OFFSET_PX = 3;
+// A label BEHIND the icons (the default since 2026-10-06) has its capitals
+// centred down the cell: half a cell, 37.5px, to their middle.
+const STRIP_LABEL_BEHIND_CENTRE_PX = 37.5;
 const STRIPPED = slugsDrawnBy("icon-strip");
 const PITCH_PX = cellHeightPx(PAGE);
 
 for (const slug of STRIPPED) {
+  for (const labelStyle of ["above", "behind"] as const) {
   for (const columnSpan of [6, 12, 24]) {
     for (const rowSpan of [2, 3, 5]) {
-      const propValues = moduleDefinition(slug)?.previewProps ?? {};
+      const propValues = { ...(moduleDefinition(slug)?.previewProps ?? {}), labelStyle };
+      const expected = labelStyle === "above" ? STRIP_LABEL_OFFSET_PX : STRIP_LABEL_BEHIND_CENTRE_PX;
       const elements = flatten(
         renderModuleInstance(
           {
@@ -258,7 +263,10 @@ for (const slug of STRIPPED) {
       );
       const labels = elements
         .filter((e) => e.type === "text" && String(e.id).endsWith("-heading"))
-        .map((e) => textInkBand(e.y ?? 0, Number(e.fontSize), String(e.fontFamily), String(e.text)).top)
+        .map((e) => {
+          const ink = textInkBand(e.y ?? 0, Number(e.fontSize), String(e.fontFamily), String(e.text));
+          return labelStyle === "above" ? ink.top : (ink.top + ink.bottom) / 2;
+        })
         .sort((a, b) => a - b);
       if (labels.length === 0) continue;
       checked++;
@@ -276,14 +284,15 @@ for (const slug of STRIPPED) {
         const off = (((y - PAGE.marginPx) % PITCH_PX) + PITCH_PX) % PITCH_PX;
         return Math.round(off * 10) / 10;
       });
-      if (offsets.some((off) => Math.abs(off - STRIP_LABEL_OFFSET_PX) > 0.5)) {
+      if (offsets.some((off) => Math.abs(off - expected) > 0.5)) {
         console.error(
-          `  ${slug} ${columnSpan}x${rowSpan}: strip label sits ${offsets.join(", ")}px below the ` +
-            `lattice, expected ${STRIP_LABEL_OFFSET_PX}px in every strip`
+          `  ${slug} ${columnSpan}x${rowSpan} (${labelStyle}): strip label sits ${offsets.join(", ")}px below the ` +
+            `lattice, expected ${expected}px in every strip`
         );
         failures++;
       }
     }
+  }
   }
 }
 

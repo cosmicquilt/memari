@@ -90,11 +90,22 @@ function find(elements: RenderedPolotnoElement[], instanceId: string, canvas: Ca
   return [];
 }
 
+/** Where a text is typed: its own box, or the `editBox` a renderer gives it
+ *  where the line box is not the place - an icon strip's label set large
+ *  behind its icons has a line box taller than its row (20pt is 100px of a
+ *  75px cell), so it names its row instead (2026-10-06). */
+function boxOf(e: RenderedPolotnoElement): Rect {
+  const given = e.editBox as Rect | undefined;
+  if (given && typeof given.y === "number") return given;
+  return { x: e.x ?? 0, y: e.y ?? 0, width: e.width ?? 0, height: e.height ?? Number(e.fontSize ?? 0) * 1.2 };
+}
+
 function union(elements: RenderedPolotnoElement[]): Rect {
-  const left = Math.min(...elements.map((e) => e.x ?? 0));
-  const top = Math.min(...elements.map((e) => e.y ?? 0));
-  const right = Math.max(...elements.map((e) => (e.x ?? 0) + (e.width ?? 0)));
-  const bottom = Math.max(...elements.map((e) => (e.y ?? 0) + (e.height ?? Number(e.fontSize ?? 0) * 1.2)));
+  const boxes = elements.map(boxOf);
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const right = Math.max(...boxes.map((b) => b.x + b.width));
+  const bottom = Math.max(...boxes.map((b) => b.y + b.height));
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
