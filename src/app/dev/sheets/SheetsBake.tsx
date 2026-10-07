@@ -2,14 +2,15 @@
 
 // The base week on the hero's loose sheets: each page printed and written
 // in as the journal's are (PageSurface, bare; the handwriting, finished),
-// centred on its sheet like a printout, and baked into the film by
+// printed to fit its sheet (looseSheets.ts, BASE_SHEET), and baked into the film by
 // bakeSheet - then shown on the film's resting frame, clipped to the book as
 // the hero clips it. The baked pictures are left on `window.__heroSheets`
 // for scripts/build-hero-sheets.mts to save.
 
 import { useEffect, useState } from "react";
 import type { LandingSpread } from "@/app/landing/spreads";
-import { PageSurface } from "@/app/landing/desk/pageSurface";
+import { PAGE_H, PageSurface } from "@/app/landing/desk/pageSurface";
+import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { familiesFor, planSpread } from "@/app/landing/handwriting/plan";
 import { inkTimeline, paintInk, prepareInk } from "@/app/landing/handwriting/ink";
 import { loadArtIndex } from "@/app/landing/handwriting/art";
@@ -31,7 +32,14 @@ const load = (src: string) =>
 async function bake(spread: LandingSpread, seed: number): Promise<Baked> {
   const tileW = SHEET_TILE.w * SHEET_TILE.scale;
   const tileH = SHEET_TILE.h * SHEET_TILE.scale;
-  const height = Math.round(tileH * BASE_SHEET.fill);
+  // What is printed: the layout's grid, inside the page's own margins, and
+  // a little round it for ink that runs over its edge (print px).
+  const { widthPx, heightPx, marginPx } = PLANNER_TRIMS.bound7x10;
+  const inset = marginPx - 24;
+  const crop = [inset, inset, widthPx - 2 * inset, heightPx - 2 * inset];
+  // As tall as the sheet less the printer's margin: tile px per print px.
+  const fit = (tileH - 2 * BASE_SHEET.margin * SHEET_TILE.scale) / crop[3];
+  const height = Math.round(PAGE_H * fit);
   const pages = [new PageSurface(height, { bare: true }), new PageSurface(height, { bare: true })] as const;
   for (const [i, page] of spread.pages.entries()) await pages[i].print(page, spread.fontFamily, i === 0 ? "left" : "right");
 
@@ -52,7 +60,9 @@ async function bake(spread: LandingSpread, seed: number): Promise<Baked> {
     const g = tile.getContext("2d")!;
     g.fillStyle = "#ffffff";
     g.fillRect(0, 0, tileW, tileH);
-    g.drawImage(page, Math.round((tileW - page.width) / 2), Math.round((tileH - page.height) / 2));
+    const s = pages[i].scale;
+    const [w, h] = [crop[2] * fit, crop[3] * fit];
+    g.drawImage(page, crop[0] * s, crop[1] * s, crop[2] * s, crop[3] * s, (tileW - w) / 2, (tileH - h) / 2, w, h);
     tiles[id] = tile.toDataURL("image/png");
     sheets[id] = await bakeSheet(sheetBakeInput(id, tiles[id], (p) => p));
   }

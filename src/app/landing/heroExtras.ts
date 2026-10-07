@@ -931,10 +931,12 @@ export const BASE_SPREAD: HeroSpread = {
       ["labeled-box", 12, box("Money", "lined")],
     ],
     belowLeft: [at("habit-tracker", 6, BELOW_ROW, 18, 15, { heading: "Basics" })],
+    // The plans on the right: in the film the book's corner lies across
+    // the right sheet's bottom left, and took the start of every line.
     belowRight: [
-      at("savings-goal", 0, BELOW_ROW, 12, 5, { heading: "Lisbon Fund" }),
-      at("labeled-box", 0, BELOW_ROW + 5, 12, 10, box("When It's Sorted", "lined")),
-      at("someday-maybe", 12, BELOW_ROW, 12, 15, { heading: "Someday Soon" }),
+      at("someday-maybe", 0, BELOW_ROW, 12, 15, { heading: "Someday Soon" }),
+      at("savings-goal", 12, BELOW_ROW, 12, 5, { heading: "Lisbon Fund" }),
+      at("labeled-box", 12, BELOW_ROW + 5, 12, 10, box("When It's Sorted", "lined")),
     ],
   },
   hand: { words: { font: "caveat", caps: false, weight: 500, scale: 1.42 }, banner: { font: "marker", caps: true, scale: 1 }, pen: ink("#24439c", 3.8), accent: ink("#d4553f", 3.6), highlight: highlighter("#ffe45c") },

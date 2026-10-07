@@ -19,17 +19,22 @@ import { SHEETS, sheetMaskPath, type SheetId } from "./video/sheets";
 
 /** A sheet's own units: about the paper's proportions (a sheet measures
  *  1.15 tall to 1 across, taking out the camera's slant), and the margin of
- *  paper left round what is on it. */
+ *  paper left round the tile. None: the tile is the whole sheet, and what is
+ *  printed on it keeps its own margin (BASE_SHEET). */
 export const SHEET_TILE = { w: 1000, h: 1150, scale: 2 };
-export const SHEET_MARGIN = 45;
+export const SHEET_MARGIN = 0;
 
 /**
- * The base week's page on its sheet: as tall as `fill` of the tile, centred
- * - a 7 x 10 page printed on a bigger sheet, with the margins a printer
- * leaves (about 5% top and bottom, 14% each side). `seed` is the
- * handwriting's: the one written in, chosen by eye.
+ * The base week's page on its sheet: printed to fit, as a page is printed
+ * at home - its layout without the page's own blank margins, as tall as
+ * the sheet less `margin` (tile units: about the quarter inch a printer
+ * leaves) top and bottom, and centred across. (The whole 7 x 10 page
+ * centred, margins and all, came out "too small on the pieces of paper",
+ * 2026-10-07: the sheets in the film are nearly square, a page is tall, so
+ * its height is all there is to fill.) `seed` is the handwriting's: the
+ * one written in, chosen by eye.
  */
-export const BASE_SHEET = { fill: 0.97, seed: 4 };
+export const BASE_SHEET = { margin: 28, seed: 4 };
 
 export type SheetBakeInput = {
   /** What is on the sheet: SHEET_TILE at its scale, ink on white. */
