@@ -40,7 +40,7 @@ import { HEADING_SIZES_PT } from "./modules/moduleFrame";
 import { ptToPx } from "./print-spec";
 import { cellHeightPx, gridCellToPixels, type PageGrid } from "./grid";
 import { isHabitTrackerCompact } from "./modules/habitTracker";
-import { ruleAxisOf } from "./ruleMarks";
+import { isOffLatticeByDesign, ruleAxisOf } from "./ruleMarks";
 // How far a mark is outside its box and how far it may be - including the
 // box inset for modules laid out in the ALLOCATION frame (allocationFrame.ts).
 // Shared with check-week-page.mts: a hand-kept list of slugs there is how a
@@ -142,10 +142,9 @@ const WEIGHTED_COLUMNS = new Set([
  * everything else is - by element id, so only those rules: a module listed
  * whole would let every other rule it draws off the lattice too.
  */
-const WEIGHTED_ROWS = new Map<string, RegExp>([
-  ...slugsDrawnBy("day-chart").map((slug): [string, RegExp] => [slug, /-(l\d+(h\d+)?-rule|d\d+-rule\d+(h\d+)?)$/]),
-  ...slugsDrawnBy("mini-month").map((slug): [string, RegExp] => [slug, /-grid-h\d+-\d+$/]),
-]);
+// The list itself lives in ruleMarks.ts (OFF_LATTICE_ROWS), shared with
+// check:page - see there.
+
 
 /** Modules whose heading is drawn by something other than the frame, and
  *  is a page title rather than a module heading - a different thing, set
@@ -480,7 +479,7 @@ function checkSizes(slug: string, preview: Record<string, unknown>, tag: string)
         // filter held its own exemption for it, and check:page, without one,
         // failed the first real page with a quote block on it.
         .filter((e) => e !== box && ruleAxisOf(e, PITCH) === "horizontal")
-        .filter((e) => !WEIGHTED_ROWS.get(slug)?.test(String(e.id)))
+        .filter((e) => !isOffLatticeByDesign(slug, String(e.id)))
         .map((e) => {
           const centre = (e.y ?? 0) + (e.height ?? 0) / 2;
           const k = Math.round((centre - PAGE.marginPx) / PITCH);

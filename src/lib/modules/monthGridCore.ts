@@ -33,7 +33,7 @@
 import { ptToPx } from "@/lib/print-spec";
 import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
-import { capCentredTextY } from "@/lib/modules/textFit";
+import { capCentredTextY, textInkBand, textWidthPx } from "@/lib/modules/textFit";
 import { latticeFill } from "./latticeFill";
 import { glyphElement } from "./glyphs";
 import type { DayIconMark } from "@/lib/dayIcons";
@@ -56,7 +56,85 @@ export type MonthGridCoreConfig = {
   /** What each day holds under its date: nothing, lines or the lattice's
    *  dots. Journal-wide, like the hours' settings - module-edits list. */
   inside?: "none" | "lined" | "dotted";
+  /** How each day's date is set - see MonthDateStyle. Absent: the strip. */
+  dateStyle?: MonthDateStyle;
+  /** The strip's height in quarter cells, 2 (half a cell, the reference's)
+   *  to 6 - dragged by its line on the editor's preview. Strip only. */
+  stripQuarters?: number;
+  /** Where a large faint date sits in its day. */
+  numberCorner?: "top-left" | "bottom-right";
+  /** Where a day's icons go - dragged on the editor's preview. */
+  iconPlace?: MonthIconPlace;
 };
+
+/**
+ * HOW A DAY'S DATE IS SET (2026-10-06, the day icons wanted room). The
+ * reference's STRIP - a band across the top of the day with the number boxed
+ * at its left - which can now be taller, so its icons grow with it. Or a
+ * LARGE FAINT number in a corner of the day with no strip at all, the whole
+ * day to write in and the icons wherever they are put.
+ */
+export type MonthDateStyle = "strip" | "faint";
+
+/** Where a day's icons sit: in the strip beside the date, or in a corner of
+ *  the day's writing space. */
+export type MonthIconPlace = "strip" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export const MONTH_ICON_PLACES: readonly MonthIconPlace[] = ["strip", "top-left", "top-right", "bottom-left", "bottom-right"];
+
+/** A quarter of a lattice cell: the step the strip's height is dragged in. */
+export const STRIP_QUARTER_PT = 4.5;
+export const STRIP_QUARTERS_MIN = 2;
+export const STRIP_QUARTERS_MAX = 6;
+/** The faint date: large enough to read across a room, light enough to
+ *  write over. 18% ink; a day from the next or last month at 60% of that. */
+const FAINT_DATE_PT = 20;
+const FAINT_DATE_OPACITY = 0.18;
+const FAINT_DATE_INSET_PT = 2.5;
+/** Icons in the writing space: 12pt, 4.2mm - room to colour in. */
+const CELL_ICON_PT = 12;
+const CELL_ICON_INSET_PT = 3;
+
+/**
+ * WHERE EVERYTHING IN A MONTH GRID SITS - the one description the renderer
+ * and the editor's drag handles both read, so a handle is always on the line
+ * it moves.
+ *
+ * A week row's height does not depend on the strip: the strip only divides
+ * the row between the date and the writing under it.
+ */
+export function monthGridLayout(
+  geometry: { x: number; y: number; width: number; height: number },
+  config: Pick<MonthGridCoreConfig, "dayCount" | "weekCount" | "dateStyle" | "stripQuarters" | "numberCorner" | "iconPlace">,
+  lattice?: FrameLattice
+) {
+  const style: MonthDateStyle = config.dateStyle === "faint" ? "faint" : "strip";
+  const quarters =
+    style === "strip"
+      ? Math.min(STRIP_QUARTERS_MAX, Math.max(STRIP_QUARTERS_MIN, Math.round(Number(config.stripQuarters) || STRIP_QUARTERS_MIN)))
+      : 0;
+  const stripHeight = quarters * ptToPx(STRIP_QUARTER_PT);
+  const contentTop = contentTopPx(geometry, lattice);
+  const contentBottom = geometry.y + geometry.height + (lattice?.insetPx ?? 0);
+  const weekCount = Math.max(1, config.weekCount);
+  const rowHeight = Math.max(stripHeight, (contentBottom - contentTop) / weekCount);
+  const placeWanted = MONTH_ICON_PLACES.includes(config.iconPlace as MonthIconPlace) ? (config.iconPlace as MonthIconPlace) : "strip";
+  return {
+    style,
+    quarters,
+    stripHeight,
+    /** The date box is square: as wide as the strip is tall. */
+    boxWidth: stripHeight,
+    contentTop,
+    rowHeight,
+    dayColumnWidth: geometry.width / Math.max(1, config.dayCount),
+    rowTop: (w: number) => contentTop + w * rowHeight,
+    /** The row's last band ends at the box, as every module's last band does. */
+    rowBottom: (w: number) => Math.min(contentTop + (w + 1) * rowHeight, geometry.y + geometry.height),
+    /** With no strip there is nothing to sit in: the icons go by the date. */
+    iconPlace: style === "faint" && placeWanted === "strip" ? ("top-left" as MonthIconPlace) : placeWanted,
+    numberCorner: config.numberCorner === "bottom-right" ? ("bottom-right" as const) : ("top-left" as const),
+  };
+}
 
 export type RenderedElement = {
   id: string;
@@ -78,18 +156,14 @@ const LINE_COLOR = "#231F20"; // same near-black as hourlyGridCore/todoChecklist
 // 13.37pt, so the band is 1.75pt deeper.
 const HEADER_HEIGHT_PT = 15.12;
 const HEADER_BORDER_WIDTH_PT = 0.5;
-// Fixed per row regardless of week count — see file-level comment. Half a
-// cell: 9pt, 37.5 print px. Measured at 10.8pt; on the lattice it becomes
-// the half-cell it was always approximating, so the writing area below it
-// is a whole number of cells less that half.
-const DATE_STRIP_HEIGHT_PT = 9;
-// The small bordered box the date number sits in, at the left edge of
-// each cell's date-strip. Half a cell wide against a half-cell-high strip,
-// so the number sits in a square of half a cell each way.
-const DATE_BOX_WIDTH_PT = 9;
+// The DATE STRIP is fixed per row regardless of week count — see file-level
+// comment. Half a cell by default: 9pt, 37.5 print px, two STRIP_QUARTER_PTs.
+// Measured at 10.8pt; on the lattice it becomes the half-cell it was always
+// approximating. It can be dragged taller now - see monthGridLayout - and
+// the small box the number sits in, at its left, stays square with it.
 // DAY ICONS (dayIcons.ts) in the date strip, beside the date box, as big as
-// the 9pt strip holds with a point of air above and below: 7pt, 2.5mm. The
-// strip rather than the day's writing space, which is the cell's point.
+// the strip holds with a point of air above and below: 7pt, 2.5mm, in the
+// half-cell strip - and never smaller.
 const DAY_ICON_PT = 7;
 const DAY_ICON_GAP_PT = 1.5;
 // The house interior rule weight - see moduleFrame's RULE_WIDTH_PT.
@@ -110,11 +184,12 @@ export function renderMonthGridCore(
   const FONT_FAMILY = fontFamily;
 
   const headerHeight = ptToPx(HEADER_HEIGHT_PT);
-  const dateStripHeight = ptToPx(DATE_STRIP_HEIGHT_PT);
-  const dateBoxWidth = ptToPx(DATE_BOX_WIDTH_PT);
+  const layout = monthGridLayout(geometry, config, lattice);
+  const dateStripHeight = layout.stripHeight;
+  const dateBoxWidth = layout.boxWidth;
   const lineWidth = ptToPx(ROW_LINE_WIDTH_PT);
 
-  const dayColumnWidth = geometry.width / config.dayCount;
+  const dayColumnWidth = layout.dayColumnWidth;
 
   // Each week row takes an equal share of what is left under the header.
   //
@@ -144,14 +219,8 @@ export function renderMonthGridCore(
   // Nothing is drawn at the very bottom of the last week (the separator
   // loop stops at weekCount - 1, the border closes it instead), so running
   // to the allocation edge costs no mark outside the box.
-  const contentTop = contentTopPx(geometry, lattice);
-  const contentBottom = geometry.y + geometry.height + (lattice?.insetPx ?? 0);
-  const contentHeight = contentBottom - contentTop;
-  const bodyHeight = Math.max(
-    0,
-    (contentHeight - config.weekCount * dateStripHeight) / config.weekCount
-  );
-  const rowHeight = dateStripHeight + bodyHeight;
+  const contentTop = layout.contentTop;
+  const rowHeight = layout.rowHeight;
 
   // Outer border around the whole block.
   elements.push({
@@ -244,7 +313,11 @@ export function renderMonthGridCore(
       // two-pixel band (reported 2026-10-06, "not create a double thick line
       // around it"). On paper they coincided, which is why the PDF never
       // showed it. Now each line is drawn once, as the rules are drawn.
-      if (cell) {
+      const rowBottom = layout.rowBottom(w);
+      const cellRight = cellX + dayColumnWidth;
+      // Where the date's ink is, for icons that share its corner.
+      let dateSpan: { left: number; right: number } | null = null;
+      if (cell && layout.style === "strip") {
         elements.push({
           id: id(`w${w}-d${d}-date-edge`),
           type: "figure",
@@ -261,7 +334,8 @@ export function renderMonthGridCore(
         // enough against the reference's own 2-digit sample ("31") but
         // left single-digit dates (1-9, much narrower glyphs) sitting
         // visibly off to one side of the box instead of centered in it.
-        const dateFontSize = ptToPx(5);
+        // 5pt in the reference's half-cell strip, growing with a taller one.
+        const dateFontSize = ptToPx(Math.max(5, (dateStripHeight / ptToPx(1)) * 0.5));
         const dateTextHeight = dateFontSize * 1.2;
         // Undated: the box (its edge above) stays, the number does not. A month grid
         // you write the dates into is exactly what an undated monthly is.
@@ -278,17 +352,62 @@ export function renderMonthGridCore(
           fill: "#555555",
           align: "center",
         });
+      } else if (cell && typeof cell.date === "number") {
+        // LARGE AND FAINT, in its corner, with no box and no strip: the whole
+        // day is writing space and the number is there to be read through.
+        const size = ptToPx(FAINT_DATE_PT);
+        const ink = textInkBand(0, size, FONT_FAMILY, "8");
+        const inset = ptToPx(FAINT_DATE_INSET_PT);
+        const text = String(cell.date);
+        const width = textWidthPx(text, size, FONT_FAMILY);
+        const left = layout.numberCorner === "top-left" ? cellX + inset : cellRight - inset - width;
+        const capTop = layout.numberCorner === "top-left" ? rowY + inset : rowBottom - inset - (ink.bottom - ink.top);
+        elements.push({
+          id: id(`w${w}-d${d}-date`),
+          type: "text",
+          x: left,
+          y: capTop - ink.top,
+          width: width + 1,
+          height: size * 1.2,
+          text,
+          fontSize: size,
+          fontFamily: FONT_FAMILY,
+          fill: LINE_COLOR,
+          opacity: cell.inCurrentMonth === false ? FAINT_DATE_OPACITY * 0.6 : FAINT_DATE_OPACITY,
+          align: "left",
+        });
+        dateSpan = { left, right: left + width };
+      }
 
-        // Laid rightward from the date box, as many as the cell holds.
-        const size = ptToPx(DAY_ICON_PT);
+      // THE DAY'S ICONS, where they were put. In the strip they grow with it;
+      // in a corner of the writing space they are 12pt, stepping round a
+      // faint date in the same corner. As many as the day holds.
+      const icons = cell?.icons ?? [];
+      if (icons.length > 0) {
         const gap = ptToPx(DAY_ICON_GAP_PT);
-        let left = cellX + dateBoxWidth + gap;
-        (cell.icons ?? []).forEach(({ icon: shape, faces }, k) => {
-          if (left + size > cellX + dayColumnWidth - gap) return;
-          elements.push(
-            glyphElement({ id: id(`w${w}-d${d}-dayicon${k}`), x: left, y: rowY + (dateStripHeight - size) / 2, sizePx: size, shape, faces })
-          );
-          left += size + gap;
+        const writeTop = rowY + dateStripHeight;
+        const place = layout.iconPlace;
+        const inStrip = place === "strip";
+        const stripMargin = Math.max(ptToPx(1), dateStripHeight * 0.1);
+        const inset = ptToPx(CELL_ICON_INSET_PT);
+        const size = inStrip
+          ? Math.max(ptToPx(DAY_ICON_PT), dateStripHeight - stripMargin * 2)
+          : Math.max(1, Math.min(ptToPx(CELL_ICON_PT), rowBottom - writeTop - inset * 2));
+        const top = place === "bottom-left" || place === "bottom-right" ? rowBottom - inset - size : inStrip ? rowY + (dateStripHeight - size) / 2 : writeTop + inset;
+        const rightward = place === "strip" || place === "top-left" || place === "bottom-left";
+        const sharesCorner =
+          dateSpan &&
+          ((place === "top-left" && layout.numberCorner === "top-left") || (place === "bottom-right" && layout.numberCorner === "bottom-right"));
+        let at = inStrip
+          ? cellX + dateBoxWidth + gap
+          : rightward
+            ? (sharesCorner ? dateSpan!.right + ptToPx(4) : cellX + inset)
+            : (sharesCorner ? dateSpan!.left - ptToPx(4) : cellRight - inset);
+        icons.forEach(({ icon: shape, faces }, k) => {
+          const x = rightward ? at : at - size;
+          if (x < cellX + gap || x + size > cellRight - gap) return;
+          elements.push(glyphElement({ id: id(`w${w}-d${d}-dayicon${k}`), x, y: top, sizePx: size, shape, faces }));
+          at = rightward ? at + size + gap : at - size - gap;
         });
       }
 
@@ -345,7 +464,7 @@ export function renderMonthGridCore(
       }
     }
 
-    elements.push({
+    if (layout.style === "strip") elements.push({
       id: id(`w${w}-strip-rule`),
       type: "figure",
       subType: "rect",

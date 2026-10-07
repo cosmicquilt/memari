@@ -696,4 +696,70 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const strips = ids(lined, /-w\d-strip-rule$/).map((e) => (e.y ?? 0) + (e.height ?? 0) / 2);
   check(lines.every((l) => strips.every((y) => Math.abs((l.y ?? 0) + (l.height ?? 0) / 2 - y) > 1)), "never on a date strip");
   check(ids(draw("month-grid-core", { ...month, inside: "dotted" }, 18, 16), /-dot\d+-\d+$/).length > 0, "or dots");
+
+  // THE DATE AND ITS ICONS (2026-10-06): a strip dragged a quarter cell at a
+  // time, or a large faint number; the icons in the strip or any corner of
+  // the writing space. Two icons on every day, so every place is measured.
+  const withIcons = {
+    ...month,
+    cells: month.cells.map((week, w) => week.map((cell) => ({ ...cell, inCurrentMonth: w > 0, icons: [{ icon: "trash" }, { icon: "star" }] }))),
+  };
+  const quarter = (75 / 4);
+  const at = (props: Record<string, unknown>) => draw("month-grid-core", { ...withIcons, ...props }, 18, 16);
+  const centreY = (e: RenderedPolotnoElement) => Number(e.y) + Number(e.height) / 2;
+  const contentTop = (els: RenderedPolotnoElement[]) => centreY(ids(els, /-header-rule$/)[0]);
+  const rowH = (els: RenderedPolotnoElement[]) => centreY(ids(els, /-w0-rule$/)[0]) - contentTop(els);
+  const colW = (els: RenderedPolotnoElement[]) => Number(ids(els, /-border$/)[0].width) / 3;
+  const left = (els: RenderedPolotnoElement[]) => Number(ids(els, /-border$/)[0].x);
+
+  // The strip, half a cell to a cell and a half; never outside that.
+  for (const [q, want] of [[2, 2], [3, 3], [4, 4], [6, 6], [1, 2], [9, 6]] as const) {
+    const els = at({ stripQuarters: q });
+    const strip = centreY(ids(els, /-w0-strip-rule$/)[0]) - contentTop(els);
+    check(Math.abs(strip - want * quarter) < 0.01, `a strip of ${q} quarters draws ${want} (its line ${strip.toFixed(1)}px down)`);
+    const icon = ids(els, /-w0-d0-dayicon0$/)[0];
+    check(Number(icon.y) >= contentTop(els) && Number(icon.y) + Number(icon.height) <= contentTop(els) + want * quarter, `${q} quarters: the icons inside the strip`);
+    const edge = ids(els, /-w0-d0-date-edge$/)[0];
+    check(Math.abs(Number(edge.height) - want * quarter) < 0.01, `${q} quarters: the date box as tall as the strip`);
+  }
+  check(Number(ids(at({ stripQuarters: 4 }), /-w0-d0-dayicon0$/)[0].width) > Number(ids(at({}), /-w0-d0-dayicon0$/)[0].width) * 1.8, "a one-cell strip's icons are about twice the half-cell's");
+
+  // Large and faint: no box, no strip, the number big and light.
+  const faint = at({ dateStyle: "faint" });
+  check(ids(faint, /-(date-edge|strip-rule)$/).length === 0, "large and faint: no date box and no strip");
+  const number = ids(faint, /-w1-d0-date$/)[0];
+  check(Math.abs(Number(number.fontSize) - 20 * 300 / 72) < 0.01 && Math.abs(Number(number.opacity) - 0.18) < 1e-9, `the faint number is 20pt at 18% (got ${Number(number.opacity)})`);
+  check(Number(ids(faint, /-w0-d0-date$/)[0].opacity) < 0.18, "a day of the month either side fainter still");
+
+  // Every place, both date styles: inside its own day, clear of the strip and
+  // of a faint number in the same corner, and the two icons apart.
+  for (const dateStyle of ["strip", "faint"]) {
+    for (const numberCorner of ["top-left", "bottom-right"]) {
+      for (const iconPlace of ["strip", "top-left", "top-right", "bottom-left", "bottom-right"]) {
+        const els = at({ dateStyle, numberCorner, iconPlace, stripQuarters: 3 });
+        const where = `${dateStyle}, date ${numberCorner}, icons ${iconPlace}`;
+        const icons = ids(els, /-w1-d1-dayicon\d$/);
+        check(icons.length === 2, `${where}: both icons drawn (${icons.length})`);
+        const cellLeft = left(els) + colW(els);
+        const rowTop = contentTop(els) + rowH(els);
+        for (const g of icons) {
+          check(Number(g.x) >= cellLeft && Number(g.x) + Number(g.width) <= cellLeft + colW(els), `${where}: inside its day across`);
+          check(Number(g.y) >= rowTop && Number(g.y) + Number(g.height) <= rowTop + rowH(els) + 0.01, `${where}: inside its week down`);
+          if (dateStyle === "strip" && iconPlace !== "strip") check(Number(g.y) >= rowTop + 3 * quarter, `${where}: below the strip`);
+          const num = ids(els, /-w1-d1-date$/)[0];
+          if (dateStyle === "faint") {
+            const ink = textInkBand(Number(num.y), Number(num.fontSize), String(num.fontFamily), String(num.text));
+            const nx0 = Number(num.x), nx1 = nx0 + textWidthPx(String(num.text), Number(num.fontSize), String(num.fontFamily));
+            const overlapX = Number(g.x) < nx1 && Number(g.x) + Number(g.width) > nx0;
+            const overlapY = Number(g.y) < ink.bottom && Number(g.y) + Number(g.height) > ink.top;
+            check(!(overlapX && overlapY), `${where}: the icons clear the faint number`);
+          }
+        }
+        if (icons.length === 2) check(Math.abs(Number(icons[0].x) - Number(icons[1].x)) >= Number(icons[0].width), `${where}: the two icons side by side, not stacked`);
+      }
+    }
+  }
+  // Undated, faint: nothing in the corner.
+  const undated = at({ dateStyle: "faint", cells: withIcons.cells.map((week) => week.map((cell) => ({ ...cell, date: undefined }))) });
+  check(ids(undated, /-w\d-d\d-date$/).length === 0, "an undated faint calendar prints no numbers");
 }

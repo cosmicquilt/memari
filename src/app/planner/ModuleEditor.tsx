@@ -42,6 +42,7 @@ import { ModuleFieldsForm, type RuleSample } from "./ModuleFieldsForm";
 import { getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import { HoursFields, type HoursDraft } from "./HoursFields";
 import { ColumnDividers } from "./ColumnDividers";
+import { MonthCalendarHandles } from "./MonthCalendarHandles";
 import { saveModuleToSaved, setDayIcons, updateHourlySettings, updateJournalModuleSettings, updateModuleConfig } from "./actions";
 import { DayIconsFields } from "./DayIconsFields";
 import { cleanDayIcons, isoDay, type DayIcon } from "@/lib/dayIcons";
@@ -848,6 +849,21 @@ export function ModuleEditor({
             scale={scale}
             pad={FRAME_PAD}
             onChange={(cellWidths) => setDraft((current) => ({ ...current, cellWidths }))}
+          />
+        )}
+
+        {/* The month calendar's strip line and day icons, dragged where
+            they print - on the left page; both pages follow the draft. */}
+        {editing.slug === "month-grid-core" && pieces[0] && (
+          <MonthCalendarHandles
+            elements={flatten(pieces[0].elements)}
+            instanceId={pieces[0].key}
+            box={pieces[0].box}
+            scale={scale}
+            left={FRAME_PAD + pieces[0].offsetX * scale}
+            top={FRAME_PAD + pieces[0].offsetY * scale}
+            values={{ ...defaults, ...draft }}
+            onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
       </div>

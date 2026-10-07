@@ -15,7 +15,7 @@
 // and the monthly page carried a to-do lying across two boxes that this
 // check reports in one line - it had simply never been pointed there.
 import { readFileSync } from "node:fs";
-import { ruleAxisOf } from "@/lib/ruleMarks";
+import { isOffLatticeByDesign, ruleAxisOf } from "@/lib/ruleMarks";
 
 for (const line of readFileSync(".env", "utf8").split("\n")) {
   const match = /^\s*([A-Z_]+)\s*=\s*"?([^"\n]*)"?\s*$/.exec(line);
@@ -222,6 +222,8 @@ for (const page of levelPages) {
       // the same list moduleHouseStyle.test.mts carries, and for the same
       // reason: the debt is visible rather than silently skipped.
       if (LATTICE_DEBT.has(slug)) continue;
+      // Between the dots on purpose - see ruleMarks' OFF_LATTICE_ROWS.
+      if (isOffLatticeByDesign(slug, String(e.id))) continue;
       const centre = y + h / 2;
       const k = Math.round((centre - PAGE.marginPx) / (PITCH / 2));
       const off = centre - (PAGE.marginPx + (k * PITCH) / 2);

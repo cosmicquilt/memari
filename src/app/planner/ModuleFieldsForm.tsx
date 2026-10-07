@@ -407,6 +407,8 @@ export function ModuleFieldsForm({
       {fields.map((field, index) => {
         // Chosen on the preview - see IconPicksOnPage.
         if (field.kind === "iconsOnPage") return null;
+        // Not as the module is set - see ModuleField's `when`.
+        if (field.when && !field.when({ ...defaults, ...values })) return null;
 
         if (field.kind === "countEach") {
           // One stepper per item of the list it follows - lines under each
@@ -617,7 +619,7 @@ export function ModuleFieldsForm({
               <span style={labelStyle}>{field.label}</span>
               <select
                 value={current}
-                onChange={(event) => onChange(field.key, event.target.value)}
+                onChange={(event) => onChange(field.key, field.numeric ? Number(event.target.value) : event.target.value)}
                 className="memari-field"
                 style={selectStyle(inputStyle)}
               >

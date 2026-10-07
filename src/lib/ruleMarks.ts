@@ -43,6 +43,7 @@
 // (isBorderEdge), where both checks read it.
 
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
+import { slugsDrawnBy } from "./moduleRegistry";
 
 /**
  * How much longer than thick a mark must be to be a rule.
@@ -84,6 +85,32 @@ export function isOutlineOnly(element: RenderedPolotnoElement): boolean {
  */
 export function isBorderEdge(element: RenderedPolotnoElement): boolean {
   return /(^|-)border-(top|bottom|left|right)$/.test(String(element.id ?? ""));
+}
+
+/**
+ * RULES SET BETWEEN THE DOTS ON PURPOSE, by module and element id - only
+ * those rules, so the rest of a listed module is still held to the lattice.
+ * Both checks read this one list; the house-style test kept it to itself
+ * until 2026-10-06, when the month strip joined it and check:page would
+ * otherwise have failed every real page that used it.
+ *
+ * - a day chart's lines through its rows: a chart taller than its floor
+ *   spreads its levels apart, the lines following its own rows ("not the
+ *   underlying page cells"); dayChart.test holds them to its dots.
+ * - a mini month's box grid, whose weeks share the box's height.
+ * - the month calendar's DATE STRIP, dragged a quarter cell at a time
+ *   ("the number row is 3/4 and 1 full cell high", 2026-10-06): three
+ *   quarters puts its line between the dots, and that is the setting.
+ */
+export const OFF_LATTICE_ROWS: ReadonlyMap<string, RegExp> = new Map<string, RegExp>([
+  ...slugsDrawnBy("day-chart").map((slug): [string, RegExp] => [slug, /-(l\d+(h\d+)?-rule|d\d+-rule\d+(h\d+)?)$/]),
+  ...slugsDrawnBy("mini-month").map((slug): [string, RegExp] => [slug, /-grid-h\d+-\d+$/]),
+  ...slugsDrawnBy("month-grid-core").map((slug): [string, RegExp] => [slug, /-w\d+-strip-rule$/]),
+]);
+
+/** Is this rule one a module sets between the dots on purpose? */
+export function isOffLatticeByDesign(slug: string, id: string): boolean {
+  return OFF_LATTICE_ROWS.get(slug)?.test(id) ?? false;
 }
 
 /**

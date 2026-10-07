@@ -3438,6 +3438,107 @@ const dayIcons: Probe = {
   },
 };
 
+// ---------------------------------------------------------------------
+// THE MONTH CALENDAR'S DATES (2026-10-06): the strip's line dragged a
+// quarter cell at a time, the day icons dragged to a corner, and dates set
+// large and faint - "all should be editable in the module editor ... the
+// icons are draggable as well as the line below the number". Done as a
+// person would, then read back from both month pages.
+// ---------------------------------------------------------------------
+const monthDates: Probe = {
+  name: "month dates",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Month dates check");
+    const problems: string[] = [];
+    const seen: string[] = [];
+    const context = await page.context().browser()!.newContext({ viewport: { width: VIEWPORT.width, height: 1000 }, deviceScaleFactor: 1 });
+    try {
+      const { prisma } = await import("../src/lib/prisma.js");
+      const planner = await prisma.planner.findUnique({ where: { id: guest.journalId }, select: { theme: true } });
+      await prisma.planner.update({
+        where: { id: guest.journalId },
+        data: { theme: { ...((planner?.theme as object) ?? {}), dayIcons: [{ id: "bins", icon: "trash", start: "2025-12-28", rrule: "FREQ=DAILY", skips: [] }] } },
+      });
+      await context.addCookies([
+        { name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" },
+        { name: "memari-open", value: "MONTHLY", domain: "localhost", path: "/" },
+      ]);
+      const tab = await context.newPage();
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(2500);
+      const grids = (await storedModules(guest.journalId)).filter((m) => m.slug === "month-grid-core" && m.level === "MONTHLY");
+      if (grids.length < 2) throw new Error(`the month spread has ${grids.length} calendars`);
+      const target = tab.locator(`[data-module-instance-id="${grids[0].id}"]`);
+      const box = (await target.boundingBox())!;
+      await tab.mouse.move(box.x + box.width * 0.3, box.y + 150);
+      await tab.mouse.move(box.x + box.width / 2, box.y + 200);
+      await tab.waitForTimeout(300);
+      await target.locator(':scope > button[title^="Edit "]').click();
+      const dialog = tab.getByRole("dialog", { name: "Edit Month calendar" });
+      await dialog.waitFor({ timeout: 5000 });
+      await tab.waitForTimeout(1300);
+      const fieldText = () => dialog.evaluate((el) => (el as HTMLElement).innerText) as Promise<string>;
+      let text = await fieldText();
+      if (!/DATES/i.test(text) || !/STRIP HEIGHT/i.test(text) || /DATE IN/i.test(text)) problems.push("in a strip, the panel should offer Dates and Strip height and not Date in");
+
+      // THE STRIP'S LINE, by keyboard - the same handle a drag moves.
+      const strip = tab.locator("[data-strip-handle]");
+      if ((await strip.count()) === 0) problems.push("no handle on the strip's line");
+      else {
+        await strip.focus();
+        await tab.keyboard.press("ArrowDown");
+        await tab.waitForTimeout(200);
+        const height = await dialog.getByRole("combobox", { name: "Strip height" }).inputValue();
+        if (height !== "3") problems.push(`ArrowDown on the strip's line set the strip to ${height} quarters, not 3`);
+        else seen.push("the strip's line moved down a quarter cell");
+      }
+
+      // THE ICONS, dragged into the bottom-right of their day's writing space.
+      const icons = tab.locator("[data-day-icons-handle]");
+      const piece = (await tab.locator('[role="dialog"] [data-editor-piece]').first().boundingBox())!;
+      const ib = await icons.boundingBox();
+      if (!ib) problems.push("no handle on the day icons");
+      else {
+        const cellW = piece.width / 3;
+        const rowH = (piece.height * (1 - 63 / 1650)) / 5;
+        const from = { x: ib.x + ib.width / 2, y: ib.y + ib.height / 2 };
+        const to = { x: ib.x + cellW * 0.7, y: ib.y + rowH * 0.7 };
+        await tab.mouse.move(from.x, from.y);
+        await tab.mouse.down();
+        for (let i = 1; i <= 12; i++) await tab.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12);
+        await tab.mouse.up();
+        await tab.waitForTimeout(300);
+        const place = await dialog.getByRole("combobox", { name: "Day icons", exact: true }).inputValue();
+        if (place !== "bottom-right") problems.push(`dragging the icons to a day's bottom right put them at ${place}`);
+        else seen.push("the icons dragged to the bottom-right corner");
+      }
+
+      // LARGE AND FAINT: the strip and its handle go, the corner menu comes.
+      await dialog.getByRole("radio", { name: "Large, faint" }).click();
+      await tab.waitForTimeout(300);
+      text = await fieldText();
+      if ((await strip.count()) > 0) problems.push("large and faint still shows the strip's handle");
+      if (!/DATE IN/i.test(text) || /STRIP HEIGHT/i.test(text)) problems.push("large and faint should offer Date in, not Strip height");
+      else seen.push("large and faint: the strip's handle and height gone, Date in offered");
+
+      await dialog.getByRole("button", { name: "Done" }).click();
+      await tab.waitForTimeout(3500);
+      const after = (await storedModules(guest.journalId)).filter((m) => m.slug === "month-grid-core" && m.level === "MONTHLY");
+      const stored = after.map((m) => `${m.propValues.dateStyle}/${m.propValues.stripQuarters}/${m.propValues.iconPlace}`);
+      if (stored.length < 2 || stored.some((s) => s !== "faint/3/bottom-right")) problems.push(`stored ${stored.join(", ")}, not faint/3/bottom-right on both pages`);
+      else seen.push("saved to both month pages: faint, 3 quarters, bottom right");
+    } catch (error) {
+      problems.push(`stopped: ${(error as Error).message.split("\n")[0]}`);
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+    if (problems.length > 0) for (const problem of problems) fail("month dates", problem);
+    else note("month dates", seen.join("; "));
+  },
+};
+
 const ALL_PROBES: Probe[] = [
   pillTravel,
   firstVisit,
@@ -3455,6 +3556,7 @@ const ALL_PROBES: Probe[] = [
   roundTwoPickers,
   textOnThePage,
   dayIcons,
+  monthDates,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

@@ -53,7 +53,7 @@ import {
   isHabitTrackerCompact,
   type HabitTrackerConfig,
 } from "@/lib/modules/habitTracker";
-import { renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
+import { MONTH_ICON_PLACES, renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
 import {
   DAY_CHART_ALONG_BY_LEVEL,
   DAY_CHART_SCALES,
@@ -173,7 +173,7 @@ export type CanvasList = CanvasText & {
   from?: number;
 };
 
-export type ModuleField =
+type ModuleFieldKind =
   | { kind: "text"; key: string; label: string; canvas?: CanvasText }
   // A switch. `on`/`off` are what it stores, where the setting is not a
   // plain true/false - the icon strip's "days"/"none" day names.
@@ -211,6 +211,9 @@ export type ModuleField =
       label: string;
       options: Array<{ value: string; label: string; levels?: readonly PageLevel[] }>;
       shows?: (values: Record<string, unknown>) => string;
+      /** Store the chosen value as a number - the schema's integer, which a
+       *  string never satisfies (the server drops it for the default). */
+      numeric?: boolean;
     }
   // A closed set of SHAPES. The same values a select would carry, but the
   // control draws each one instead of naming it: "Droplets" is a word for a
@@ -262,6 +265,14 @@ export type ModuleField =
   // No input: something the panel should say about a module whose props
   // are not editable here, in place of an empty panel.
   | { kind: "note"; text: string };
+
+/**
+ * A field, and WHEN it applies: one that means nothing as the module is set
+ * is left out of the panel rather than shown doing nothing - the month
+ * calendar's "Date in" corner while its dates are in a strip. Read against
+ * the values with the schema's defaults under them.
+ */
+export type ModuleField = ModuleFieldKind & { when?: (values: Record<string, unknown>) => boolean };
 
 /** The levels of page that offer `along` - see DAY_CHART_ALONG_BY_LEVEL. */
 function levelsOffering(along: string): PageLevel[] {
@@ -1187,7 +1198,13 @@ const PRIMITIVES = {
             "type": "string",
             "enum": ["none", "lined", "dotted"],
             "default": "none"
-          }
+          },
+          // How a day's date is set, and where its icons go - 2026-10-06,
+          // the day icons wanting room. See monthGridCore's MonthDateStyle.
+          "dateStyle": { "type": "string", "enum": ["strip", "faint"], "default": "strip" },
+          "stripQuarters": { "type": "integer", "default": 2 },
+          "numberCorner": { "type": "string", "enum": ["top-left", "bottom-right"], "default": "top-left" },
+          "iconPlace": { "type": "string", "enum": [...MONTH_ICON_PLACES], "default": "strip" }
         }
       },
       "defaultWidth": 1560,
@@ -1212,7 +1229,60 @@ const PRIMITIVES = {
         ],
         window: { x: "left", y: "top", columns: 4.4, rows: 4.2 },
       },
-      { kind: "note", text: "Applies to the calendar on every month page of this journal." },
+      // THE DATE, and its icons (2026-10-06): in a strip, which can be dragged
+      // taller by its line on the preview, or large and faint in a corner.
+      // The icons are dragged where they go; the menus say the same for
+      // anyone not dragging.
+      {
+        kind: "rule",
+        key: "dateStyle",
+        label: "Dates",
+        options: [
+          { value: "strip", label: "In a strip" },
+          { value: "faint", label: "Large, faint" },
+        ],
+        window: { x: "left", y: "top", columns: 4.4, rows: 3.2 },
+      },
+      {
+        kind: "select",
+        key: "stripQuarters",
+        label: "Strip height",
+        options: [
+          { value: "2", label: "Half a cell" },
+          { value: "3", label: "Three quarters" },
+          { value: "4", label: "One cell" },
+          { value: "5", label: "One and a quarter" },
+          { value: "6", label: "One and a half" },
+        ],
+        numeric: true,
+        shows: (values) => String(values.stripQuarters ?? 2),
+        when: (values) => values.dateStyle !== "faint",
+      },
+      {
+        kind: "select",
+        key: "numberCorner",
+        label: "Date in",
+        options: [
+          { value: "top-left", label: "Top left" },
+          { value: "bottom-right", label: "Bottom right" },
+        ],
+        when: (values) => values.dateStyle === "faint",
+      },
+      {
+        kind: "select",
+        key: "iconPlace",
+        label: "Day icons",
+        options: [
+          { value: "strip", label: "In the strip" },
+          { value: "top-left", label: "Top left" },
+          { value: "top-right", label: "Top right" },
+          { value: "bottom-left", label: "Bottom left" },
+          { value: "bottom-right", label: "Bottom right" },
+        ],
+        // With no strip, "in the strip" is beside the date - see monthGridLayout.
+        shows: (values) => (values.dateStyle === "faint" && (values.iconPlace ?? "strip") === "strip" ? "top-left" : String(values.iconPlace ?? "strip")),
+      },
+      { kind: "note", text: "Applies to the calendar on every month page of this journal. Drag the day icons on the preview to move them, and the line under the dates to make the strip taller." },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderMonthGridCore(geometry, propValues as MonthGridCoreConfig, idPrefix, fontFamily, lattice),
