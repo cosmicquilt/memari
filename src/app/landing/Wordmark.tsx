@@ -66,6 +66,12 @@ const YOU_STROKES: Array<{ d: string; at: number; for: number }> = [
   { d: "M184 96 C186 92 195 91 198 94 C200 98 190 100 185 97", at: 1.6, for: 0.1 },
 ];
 const YOU_PEN = 14;
+/** The font's y has a dent in its left side, where two of its outline's
+ *  segments meet at a corner a third of the way down, with a hollow under it
+ *  (2026-10-06: "there is a divet in the letter y"). This fills it in its
+ *  blue: along the y's own edge to just above the corner, round it, down past
+ *  the hollow, and back inside the stroke - the same units as the text. */
+const YOU_Y_PATCH = "M26.75 76.5 L23.6 83.6 Q22.2 86.6 22.15 89.5 C22.05 92 22.2 93.9 22.45 95 L27 94.5 L28.5 77 Z";
 /** Once written, all of it shown whatever the pen's band covered - so a
  *  fallback face, its letters elsewhere, is never left part hidden. */
 const YOU_DONE = 1.74;
@@ -144,9 +150,12 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
             </filter>
           </defs>
           <g filter="url(#you-shadow)">
-            <text x="20" y="100" fontSize="100" fill="currentColor" mask="url(#you-pen)">
-              you.
-            </text>
+            <g mask="url(#you-pen)">
+              <text x="20" y="100" fontSize="100" fill="currentColor">
+                you.
+              </text>
+              <path d={YOU_Y_PATCH} fill="currentColor" />
+            </g>
           </g>
         </svg>
       </p>
