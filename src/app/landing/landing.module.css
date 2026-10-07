@@ -1200,11 +1200,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Leans out a little further when reached for - a little (34 was "too
-   much" toward the viewer, 2026-10-01). */
+/* Settles back toward the page when reached for (2026-10-07: "should
+   move away from camera not towards it"). It leaned out further, to 27,
+   until then - 34 was "too much" toward the viewer (2026-10-01). */
 .postit:hover,
 .postit:focus-visible {
-  --lift-n: 27;
+  --lift-n: 16;
 }
 
 .postit:focus-visible {

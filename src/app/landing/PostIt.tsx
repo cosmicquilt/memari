@@ -71,7 +71,7 @@ const PRESS_MS = 420;
  *  Fetched at the first zoom; shown, once all have loaded, in one canvas -
  *  which a zoom only scales, where pictures are drawn in tiles that can be
  *  missing as they come into view (video/canvasPicture.ts). */
-const LIFT_REACHED = 27;
+const LIFT_REACHED = 16;
 
 /** Shares of the note's side: the sticky strip, and how far below the hero's
  *  edge the fold is. Mirrored in the stylesheet (.postit). */
