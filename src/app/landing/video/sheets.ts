@@ -41,13 +41,16 @@ export type Sheet = {
 
 export const SHEETS: Record<SheetId, Sheet> = {
   left: {
+    // Its bottom edge fitted to where the paper meets the wood in the last
+    // 4K frame (y = -0.2279 x + 2291): the measured one sat up to 26px high
+    // and left a strip of bare paper along it (2026-10-06, circled).
     corners: [
       [274, 1196],
       [1126, 1024],
-      [1326, 1986],
-      [404, 2162],
+      [1327, 1989],
+      [413, 2197],
     ],
-    box: [270, 1020, 1060, 1140],
+    box: [270, 1020, 1061, 1140],
   },
   right: {
     corners: [
