@@ -13,6 +13,7 @@
 
 import { BELOW_ROW, PEOPLE_BY_KEY, type Hand, type Pen, type Slot } from "./archetypes";
 import type { HeroSpread } from "./heroSpreads";
+import choices from "./doodleChoices.json";
 
 const at = (slug: string, columnStart: number, rowStart: number, columnSpan: number, rowSpan: number, props?: Record<string, unknown>): Slot => ({
   slug,
@@ -927,20 +928,29 @@ export const BASE_SPREAD: HeroSpread = {
     weekStartsMonday: true,
     sidebar: [
       ["weekly-priorities", 8, { heading: "This Week" }],
-      ["labeled-box", 13, box("Reset List", "lined")],
-      ["labeled-box", 12, box("Money", "lined")],
+      ["labeled-box", 9, box("Reset List", "lined")],
+      ["labeled-box", 8, box("Money", "lined")],
+      ["sketch-box", 8, { heading: "Doodles" }],
     ],
     belowLeft: [at("habit-tracker", 6, BELOW_ROW, 18, 15, { heading: "Basics" })],
     // The plans on the right: in the film the book's corner lies across
-    // the right sheet's bottom left, and took the start of every line.
+    // the right sheet's bottom left, and took the start of every line. The
+    // drawings top left, above the corner; the Lisbon fund (a meter, not
+    // writing) under it.
     belowRight: [
-      at("someday-maybe", 0, BELOW_ROW, 12, 15, { heading: "Someday Soon" }),
-      at("savings-goal", 12, BELOW_ROW, 12, 5, { heading: "Lisbon Fund" }),
-      at("labeled-box", 12, BELOW_ROW + 5, 12, 10, box("When It's Sorted", "lined")),
+      at("sketch-box", 0, BELOW_ROW, 12, 10),
+      at("savings-goal", 0, BELOW_ROW + 10, 12, 5, { heading: "Lisbon Fund" }),
+      at("labeled-box", 12, BELOW_ROW, 12, 8, box("When It's Sorted", "lined")),
+      at("someday-maybe", 12, BELOW_ROW + 8, 12, 7, { heading: "Someday Soon" }),
     ],
   },
   hand: { words: { font: "caveat", caps: false, weight: 500, scale: 1.42 }, banner: { font: "marker", caps: true, scale: 1 }, pen: ink("#24439c", 3.8), accent: ink("#d4553f", 3.6), highlight: highlighter("#ffe45c") },
-  doodles: { style: "sketchnote", big: ["climbing", "camera", "sailboat", "houseplant"], small: ["star", "sun", "heart", "sparkle"] },
+  // Drawn from the body wall's pencil drawings (2026-10-07: "i want more of
+  // the ones on the doodle wall body background", none of the sketchnote or
+  // minimal ones), animals first in its drawing boxes ("more emphasis on
+  // drawings of animals"; the round little people can come too).
+  doodles: { style: "pencil", big: ["dog", "cat", "fox", "owl", "hedgehog", "whale", "bunny", "turtle", "penguin", "bird", "bear", "duck"], small: ["star", "sun", "heart", "sparkle"] },
+  drawings: choices.body,
   calendar: [
     ...[0, 1, 3, 4].map((day) => ({ day, start: 9, end: 17, title: "Work", calendar: "work" as const })),
     { day: 2, start: 8, end: 9, title: "Dentist", calendar: "health" },
@@ -960,14 +970,18 @@ export const BASE_SPREAD: HeroSpread = {
     { day: 2, at: 8.5, text: "finally", on: true, mark: "circle" },
     { day: 2, at: 18, text: "budget hour", until: 19 },
     // The right page: what they are for.
+    { day: 3, at: 7.5, text: "coffee w/ Jess", doodle: "coffee" },
     { day: 3, at: 19, text: "first time!!", on: true, doodle: "climbing" },
-    { day: 4, at: 19, text: "cook for Mo + Sam" },
+    { day: 4, at: 12, text: "lunch outside :)", on: true },
+    { day: 4, at: 19, text: "cook for Mo + Sam", doodle: "cooking" },
+    { day: 4, at: 21, text: "film + pizza", doodle: "pizza" },
     { day: 5, at: 10, text: "farmers mkt" },
     { day: 5, at: 14.5, text: "old clothes", on: true },
     { day: 5, at: 17, text: "look at Lisbon flights", mark: "highlight" },
     { day: 5, at: 20.5, text: "karaoke?? (yes)", doodle: "singing" },
     { day: 6, at: 11, text: "long walk, no phone", doodle: "sun" },
     { day: 6, at: 17, text: "plan next week", mark: "underline" },
+    { day: 6, at: 19.5, text: "call Gran", doodle: "heart" },
   ],
   // Over Thursday and Friday, and short: the film's pencil cup stands on
   // the right sheet's top corner, over Friday's far end and the weekend's

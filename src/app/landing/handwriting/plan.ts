@@ -64,9 +64,13 @@ const FALLBACK: Record<string, DoodleName> = {
 };
 
 /** A doodle in an s x s box at (x, y): the person's drawing of it, fitted
- *  to the box and sat on its base line - or the code-drawn one. */
-function doodleAt(page: 0 | 1, style: string, subject: string, x: number, y: number, size: number, seed: number, pen: Pen): InkItem[] {
-  const art: ArtRef | null = artIndex() ? findArt(style, subject, (seed % 997) / 997) : null;
+ *  to the box and sat on its base line - or the code-drawn one. `from`: the
+ *  only drawings the spread may use (its `drawings`); a subject with none
+ *  there is left undrawn. */
+function doodleAt(page: 0 | 1, style: string, subject: string, x: number, y: number, size: number, seed: number, pen: Pen, from: ArtRef[] | null): InkItem[] {
+  const own = from?.filter((a) => subjectOf(a) === subject);
+  if (own && !own.length) return [];
+  const art: ArtRef | null = own ? own[seed % own.length] : artIndex() ? findArt(style, subject, (seed % 997) / 997) : null;
   if (art) {
     const k = size / Math.max(art.w, art.h);
     const w = art.w * k;
@@ -236,6 +240,9 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const person: HeroSpread | undefined = HERO_BY_KEY[spread.key];
   const hand = person?.hand ?? DEFAULT_HAND;
   const theme = person?.doodles ?? DEFAULT_DOODLES;
+  /** The drawings this spread may use, when it says (the loose sheets: the
+   *  body wall's) - null for any of its style's. */
+  const drawings = person?.drawings && artIndex() ? person.drawings.map(artById).filter((a): a is ArtRef => a !== null) : null;
   const items: InkItem[] = [];
   const writtenEvents: Written[] = [];
   const writtenAll: Written[] = [];
@@ -437,7 +444,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     if (kind && (event.doodle || r.chance(0.8))) {
       const dx = w.box[0] + w.box[2] + unit * 0.5;
       const size = Math.min(unit * 3, ax + aw - 14 - dx);
-      if (size >= unit * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH - unit * 0.1 - size * 0.62, size, nextSeed(), hand.accent));
+      if (size >= unit * 1.5) items.push(...doodleAt(page, theme.style, kind, dx, top + slotH - unit * 0.1 - size * 0.62, size, nextSeed(), hand.accent, drawings));
     }
   }
 
@@ -482,7 +489,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const art = EVENT_DOODLES.find(([re]) => re.test(text))?.[1];
       const dx = w.box[0] + w.box[2] + 16;
       const size = Math.min(84, ax + aw - 14 - dx);
-      if (art && size >= 56 && lines.length === 1 && r.chance(0.7)) items.push(...doodleAt(page, theme.style, art, dx, y + 10 - size, size, nextSeed(), hand.accent));
+      if (art && size >= 56 && lines.length === 1 && r.chance(0.7)) items.push(...doodleAt(page, theme.style, art, dx, y + 10 - size, size, nextSeed(), hand.accent, drawings));
     }
   }
 
@@ -516,7 +523,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
           if (lines && note.mark) marked.push({ lines, mark: note.mark });
           if (lines) writtenEvents.push(around(lines));
         }
-        if (note.doodle && doodleSize >= 40) items.push(...doodleAt(page, theme.style, note.doodle, x + w - doodleSize - 12, y + h - doodleSize - 8, doodleSize, nextSeed(), hand.accent));
+        if (note.doodle && doodleSize >= 40) items.push(...doodleAt(page, theme.style, note.doodle, x + w - doodleSize - 12, y + h - doodleSize - 8, doodleSize, nextSeed(), hand.accent, drawings));
       }
     }
   }
@@ -704,7 +711,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       // their style and in pencil.
       const n = r.chance(0.15) ? 1 : r.chance(0.5) ? 2 : 3;
       const keys = r.shuffle(theme.big);
-      const allowed = artIndex() ? choices.sketchBox.map(artById).filter((a): a is ArtRef => a !== null) : [];
+      // (Or the spread's own drawings, when it has them.)
+      const allowed = drawings ?? (artIndex() ? choices.sketchBox.map(artById).filter((a): a is ArtRef => a !== null) : []);
       const own = allowed.filter((a) => theme.big.includes(subjectOf(a)));
       const used = new Set<ArtRef>();
       const choose = (first: boolean): ArtRef | null => {
@@ -745,7 +753,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
           placed.push([x, y, bw, bh]);
           const pen = i === 0 ? hand.pen : hand.accent;
           if (art) items.push({ kind: "art", page, art, box: [x + (bw - w) / 2, y + (bh - h) / 2, w, h], angle, pen });
-          else items.push(...doodleAt(page, theme.style, subject, x, y, Math.min(bw, bh), seed, pen));
+          else items.push(...doodleAt(page, theme.style, subject, x, y, Math.min(bw, bh), seed, pen, drawings));
           break;
         }
       }
@@ -1050,7 +1058,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   // Only by a week's title: a month's name runs the width of its shorter box.
   if (title && title.box[3] > 160 && r.chance(0.7)) {
     const [x, y, w] = title.box;
-    items.push(...doodleAt(0, theme.style, r.pick(theme.small), x + w - 120, y + 4, 100, nextSeed(), hand.accent));
+    items.push(...doodleAt(0, theme.style, r.pick(theme.small), x + w - 120, y + 4, 100, nextSeed(), hand.accent, drawings));
   }
   return items;
 }

@@ -121,6 +121,13 @@ export type Writing = Pick<
   month?: MonthWriting;
   /** Written in the week title's box, where the dates would be. */
   title?: string;
+  /**
+   * The only drawings it may use, by full id ("pencil/fox-1"): its sketch
+   * boxes draw from these, and a doodle whose subject has none here is left
+   * out. Without it, a spread draws in its style, and its sketch boxes from
+   * the control panel's choices.
+   */
+  drawings?: string[];
 };
 
 export type HeroSpread = Writing & {
