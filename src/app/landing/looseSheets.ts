@@ -34,7 +34,7 @@ export const SHEET_MARGIN = 0;
  * its height is all there is to fill.) `seed` is the handwriting's: the
  * one written in, chosen by eye.
  */
-export const BASE_SHEET = { margin: 28, seed: 6 };
+export const BASE_SHEET = { margin: 28, seed: 5 };
 
 export type SheetBakeInput = {
   /** What is on the sheet: SHEET_TILE at its scale, ink on white. */
