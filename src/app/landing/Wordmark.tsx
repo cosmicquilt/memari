@@ -104,11 +104,11 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
       </h1>
       <p ref={tagline} className={styles.tagline}>
         a journal as unique as <span className={styles.srOnly}>you.</span>
-        {/* The viewBox runs 5 units either side of the text's ink and 45
-            above and below its baseline - see .you. */}
+        {/* The viewBox runs 40 units clear of the text's ink all round: room
+            for its shadow - see .you. */}
         <svg
           className={`${styles.you} ${script.className}`}
-          viewBox="15 55 188 90"
+          viewBox="-25 15 268 170"
           aria-hidden="true"
           focusable="false"
           style={{ "--you-base": YOU_WRITTEN_IN } as CSSProperties}
@@ -131,10 +131,21 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
               ))}
               <rect className={styles.youDone} x="15" y="55" width="188" height="90" fill="#fff" style={{ "--at": `${YOU_DONE}s` } as CSSProperties} />
             </mask>
+            {/* The line's shadow - 1px down, 12px of blur at the full 36px
+                size, the tagline's colour - drawn after the pen's mask, over
+                the whole box. The text-shadow the text would inherit is drawn
+                cut to the mask's region, a box round it (2026-10-06: "the drop
+                shadow of the you. ... looks like its getting clipped by its
+                container"), so .you turns that off. */}
+            <filter id="you-shadow" filterUnits="userSpaceOnUse" x="-25" y="15" width="268" height="170">
+              <feDropShadow dx="0" dy="2.8" stdDeviation="16.7" floodColor="rgb(20, 12, 6)" floodOpacity="0.45" />
+            </filter>
           </defs>
-          <text x="20" y="100" fontSize="100" fill="currentColor" mask="url(#you-pen)">
-            you.
-          </text>
+          <g filter="url(#you-shadow)">
+            <text x="20" y="100" fontSize="100" fill="currentColor" mask="url(#you-pen)">
+              you.
+            </text>
+          </g>
         </svg>
       </p>
     </div>

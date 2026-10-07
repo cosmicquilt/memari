@@ -452,24 +452,29 @@
 
 /* "you." handwritten, in the editor's blue (ACCENT in planner/*). Set a
    little larger than the line so its lowercase stands as tall as the rest.
-   An SVG (Wordmark.tsx) whose 100 units are this 1em: 188 by 90, from 5
-   units left of the text's origin, and 45 above and below its baseline.
-   Its negative margins take its height back, so it sits on the baseline and
-   adds nothing to the line's height (the text it replaced had line-height
-   0). The air after "as" is the text's own 0.12em, less the 5 units the box
-   starts left of the text. */
+   An SVG (Wordmark.tsx) whose 100 units are this 1em: 268 by 170, from 45
+   units left of the text's origin (x 20) to 40 past its end (203), and 85
+   above and below its baseline (y 100) - 40 units clear of the ink all
+   round, room for its shadow (Wordmark.tsx, #you-shadow; 2026-10-06: "the
+   drop shadow of the you. ... looks like its getting clipped"). The
+   margins take that room back: it sits on the baseline, adds nothing to the
+   line's height (the text it replaced had line-height 0), and takes the
+   text's own place - the 0.12em of air after "as", and its advance. */
 .you {
   /* Inline, in the line: the stylesheet's reset makes every svg a block. */
   display: inline-block;
   font-size: 1.5em;
-  width: 1.88em;
-  height: 0.9em;
-  margin: -0.45em 0 -0.45em 0.07em;
+  width: 2.68em;
+  height: 1.7em;
+  margin: -0.85em -0.397em -0.85em -0.33em;
   vertical-align: baseline;
   overflow: visible;
   color: #4a5cff;
-  /* The line's text-shadow, which SVG text does not take. */
-  filter: drop-shadow(0 1px 12px rgba(20, 12, 6, 0.45));
+  /* Not the line's text-shadow: its SVG text inherits it, and it is drawn
+     cut to the pen's mask - the box round "you." that was seen (2026-10-06:
+     "the drop shadow ... looks like its getting clipped by its container").
+     Its own shadow, the same one, is drawn in the svg (#you-shadow). */
+  text-shadow: none;
 }
 
 /* Written in last, once the rest of the line has settled (Andrew,
