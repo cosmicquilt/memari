@@ -106,23 +106,12 @@ export type MonthWriting = {
   notes: Array<{ date: number; text?: string; doodle?: string; mark?: "circle" | "underline" | "highlight" }>;
 };
 
-/**
- * How someone marks a thing done (2026-10-07: "you can have different types
- * like the diagonal line, ... a check, highlighter over full that's a
- * slanted rounded parallelogram brush overfilling each marking; others you
- * think would be realistic as well"): a tick; a line through it; a cross; a
- * dot; coloured in; a highlighter swiped over it; a ring round it; hatched.
- */
-export type Mark = "check" | "slash" | "cross" | "dot" | "fill" | "swipe" | "circle" | "hatch";
-/** What gets marked: a habit grid's cells, a weekday tracker's letters, a
- *  meter's boxes, a meter's bars (filled along, between ticks), a small
- *  calendar's days, an icon strip's icons, a rating strip's bubbles. */
-export type MarkKind = "grid" | "letters" | "meter" | "bar" | "days" | "icons" | "bubbles";
+export type { FillFamily, Mark, MarkKind } from "./archetypes";
 
 /** Everything written on a spread - the same fields as a person's week. */
 export type Writing = Pick<
   Person,
-  "hand" | "doodles" | "events" | "calendar" | "banner" | "lists" | "tables" | "trackers" | "trackerMark" | "eisenhower" | "fills" | "strips" | "ratings" | "charts"
+  "hand" | "doodles" | "events" | "calendar" | "banner" | "lists" | "tables" | "trackers" | "trackerMark" | "eisenhower" | "fills" | "strips" | "ratings" | "charts" | "marks" | "fillFamily"
 > & {
   /**
    * A day with increments off, written as a list: one array per day
@@ -134,9 +123,6 @@ export type Writing = Pick<
   month?: MonthWriting;
   /** Written in the week title's box, where the dates would be. */
   title?: string;
-  /** How they mark each kind of thing; any not given is chosen for the
-   *  spread, the same every time it is written (handwriting/plan.ts). */
-  marks?: Partial<Record<MarkKind, Mark>>;
   /**
    * The only drawings it may use, by full id ("pencil/fox-1"): its sketch
    * boxes draw from these, and a doodle whose subject has none here is left
@@ -158,8 +144,8 @@ export type HeroSpread = Writing & {
 // ------------------------------------------------------------------ order
 
 const personWeek = (p: Person): HeroSpread => {
-  const { key, held, layout, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts } = p;
-  return { key, held, layout: { kind: "week", ...layout }, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts };
+  const { key, held, layout, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts, marks, fillFamily } = p;
+  return { key, held, layout: { kind: "week", ...layout }, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts, marks, fillFamily };
 };
 
 const BY_KEY: Record<string, HeroSpread> = Object.fromEntries([...PEOPLE.map(personWeek), ...EXTRA_SPREADS, BASE_SPREAD].map((s) => [s.key, s]));

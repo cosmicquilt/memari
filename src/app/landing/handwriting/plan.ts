@@ -28,7 +28,9 @@ import { artById, artIndex, findArt, subjectOf, type ArtRef } from "./art";
 import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
 import type { Face, Hand, Pen } from "../archetypes";
-import { HERO_BY_KEY, type HeroSpread, type Mark, type MarkKind } from "../heroSpreads";
+import { HERO_BY_KEY, type FillFamily, type HeroSpread, type Mark, type MarkKind } from "../heroSpreads";
+import { BAND_PATTERNS, DOODLE_PATTERNS, HENNA_PATTERNS, KOLAM_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
+import { rng } from "./rng";
 
 export type { Pen };
 
@@ -238,17 +240,29 @@ function circleBullet(cx: number, cy: number, radius: number): Path {
 /**
  * The marks a person might use for each kind of thing (heroSpreads.ts, Mark):
  * what is natural there - a ring round a printed letter, not a scribble over
- * it; a bar coloured along, not ticked. Listed more than once, more likely.
+ * it; a bar filled along, not ticked; a highlighter's stroke only over a
+ * simple circle. Listed more than once, more likely.
  */
 const MARKS: Record<MarkKind, Mark[]> = {
-  grid: ["check", "check", "slash", "cross", "dot", "fill", "swipe"],
-  letters: ["circle", "circle", "slash", "swipe", "check"],
-  meter: ["slash", "cross", "fill", "swipe", "hatch"],
-  bar: ["swipe", "hatch", "fill"],
-  days: ["cross", "slash", "check", "swipe", "circle"],
-  icons: ["fill", "fill", "swipe", "check", "slash"],
-  bubbles: ["fill", "circle", "cross", "dot"],
+  grid: ["check", "check", "check", "slash", "cross", "dot", "fill", "pattern"],
+  letters: ["circle", "circle", "slash", "check", "cross"],
+  meter: ["slash", "cross", "hatch", "dashes", "dashes", "fill", "pattern", "pattern", "pattern"],
+  circles: ["swipe", "swipe", "slash", "fill", "pattern", "cross", "dot"],
+  bar: ["hatch", "dashes", "pattern", "pattern", "fill"],
+  days: ["cross", "cross", "slash", "check", "circle", "pattern"],
+  icons: ["fill", "fill", "fill", "check", "slash", "dot"],
+  bubbles: ["fill", "fill", "swipe", "circle", "cross", "dot"],
 };
+
+/** The patterns of each family (patterns.ts). */
+const FAMILY_PATTERNS: Record<FillFamily, readonly PatternName[]> = {
+  strokes: STROKE_PATTERNS,
+  henna: HENNA_PATTERNS,
+  kolam: KOLAM_PATTERNS,
+  tiles: TILE_PATTERNS,
+  doodles: DOODLE_PATTERNS,
+};
+const FAMILIES: FillFamily[] = ["strokes", "strokes", "strokes", "tiles", "tiles", "tiles", "doodles", "doodles", "henna", "henna", "kolam"];
 
 /** A small, steady hash: the same spread picks the same marks every time it
  *  is written, whatever the seed - a person's habit, not a coin toss. */
@@ -258,16 +272,23 @@ function hashOf(text: string) {
   return h >>> 0;
 }
 
-/** Lines at 45 degrees ("/") across a box, `gap` apart: hatching. */
-function hatchIn([x, y, w, h]: Box, gap: number): Path[] {
-  const out: Path[] = [];
-  const step = gap * Math.SQRT2;
-  for (let c = x + y + step * 0.5; c < x + w + y + h; c += step) {
-    const xa = Math.max(x, c - (y + h));
-    const xb = Math.min(x + w, c - y);
-    if (xb - xa > 2) out.push([xa, c - xa, xb, c - xb]);
-  }
-  return out;
+/**
+ * How a person fills things in, theirs every time (2026-10-07: "add more
+ * variation to everything and do what would be most realistic if it was a
+ * person, and different styles for different people"): the patterns they
+ * draw (a family, and the two to four of it they like), how neat their hand
+ * is, whether they switch between their two pens as they go, and how often
+ * a day is missed in something kept daily.
+ */
+type FillStyle = { family: FillFamily; palette: PatternName[]; loose: number; alternate: boolean; gaps: number; hand: PatternHand };
+function fillStyleOf(key: string, person: HeroSpread | undefined): FillStyle {
+  const r = rng(hashOf(`${key}/fill-style`));
+  const family = person?.fillFamily ?? FAMILIES[hashOf(`${key}/family`) % FAMILIES.length];
+  const own = r.shuffle(FAMILY_PATTERNS[family]).slice(0, r.int(2, 4));
+  // A patterner hatches too, now and then.
+  const palette = family === "strokes" || r.chance(0.5) ? own : [...own, r.pick(STROKE_PATTERNS)];
+  const loose = r.range(0.08, 0.75);
+  return { family, palette, loose, alternate: r.chance(0.4), gaps: r.range(0.04, 0.16), hand: { loose, over: r.range(0, 1) * 4 * loose, slant: -Math.PI / 4 + r.range(-0.35, 0.25) } };
 }
 
 export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
@@ -275,6 +296,10 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   const person: HeroSpread | undefined = HERO_BY_KEY[spread.key];
   const hand = person?.hand ?? DEFAULT_HAND;
   const theme = person?.doodles ?? DEFAULT_DOODLES;
+  /** How they fill things in (fillStyleOf). */
+  const style = fillStyleOf(spread.key, person);
+  /** The last pattern drawn, so the next is different. */
+  const patternMemo: { last: PatternName | null } = { last: null };
   /** The drawings this spread may use, when it says (the loose sheets: the
    *  body wall's) - null for any of its style's. */
   const drawings = person?.drawings && artIndex() ? person.drawings.map(artById).filter((a): a is ArtRef => a !== null) : null;
@@ -664,13 +689,39 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     return wobble(out, 0.6, nextSeed());
   }
   /** How this person marks a kind of thing: their own, else the spread's
-   *  pick (Franklin's dots stay dots). */
-  function markFor(kind: MarkKind): Mark {
+   *  pick (Franklin's dots stay dots). A grid, letters, icons and bubbles
+   *  are marked the same way wherever they are; each meter, bar and small
+   *  calendar its own way, as each tracker is a project of its own. */
+  function markFor(kind: MarkKind, slug = ""): Mark {
     const own = person?.marks?.[kind];
     if (own) return own;
     if (kind === "grid" && person?.trackerMark === "dot") return "dot";
     const list = MARKS[kind];
-    return list[hashOf(`${spread.key}/${kind}`) % list.length];
+    const each = kind === "meter" || kind === "circles" || kind === "bar" || kind === "days";
+    return list[hashOf(`${spread.key}/${kind}${each ? `/${slug}` : ""}`) % list.length];
+  }
+  // (All functions, not consts: writeBox runs before this point.)
+  /** A little more or less of something, by how loose the hand is. */
+  function jig(k: number) {
+    return r.range(-k, k) * (0.4 + style.loose);
+  }
+  /** The pen for the nth mark of a run: one pen, or - for someone who
+   *  switches as they go - each of their two in turn. */
+  function penFor(n: number): Pen {
+    return style.alternate && n % 2 ? hand.accent : hand.pen;
+  }
+  /** A fine pen for drawing patterns: thinner than the hand's writing pen,
+   *  so a pattern reads in a small box. */
+  function finePen(pen: Pen, unit: number): Pen {
+    return { ...pen, width: Math.max(1.8, Math.min(pen.width * 0.7, unit * 0.04)) };
+  }
+  /** The pattern for the next of a run: from their palette, not the same
+   *  twice running - a tiler draws something new in each. */
+  function nextPattern(band = false): PatternName {
+    const from = band ? style.palette.filter((p) => BAND_PATTERNS.includes(p)) : style.palette;
+    const pool = (from.length ? from : BAND_PATTERNS).filter((p) => p !== patternMemo.last);
+    patternMemo.last = r.pick(pool.length ? pool : style.palette);
+    return patternMemo.last;
   }
   /** A marker coloured back and forth across a box (not an icon's
    *  ellipse), its strokes leaning and close enough to run together - a
@@ -678,74 +729,89 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
    *  read as a row of letters M. */
   function scribble([x, y, w, h]: Box, width: number): Path {
     const out: Path = [];
-    const [x0, x1, y0, y1] = [x + w * 0.14, x + w * 0.86, y + h * 0.18, y + h * 0.82];
-    const lean = (y1 - y0) * 0.3;
+    // In from the edges a share of a small box, a few px of a long bar's.
+    const ix = Math.min(w * 0.14, 10);
+    const [x0, x1, y0, y1] = [x + ix + jig(ix * 0.3), x + w - ix + jig(ix * 0.3), y + h * (0.18 + jig(0.04)), y + h * (0.82 + jig(0.04))];
+    const lean = (y1 - y0) * (0.3 + jig(0.1));
     const step = Math.max(2.5, width * 0.5);
     for (let i = 0, px = x0; px <= x1 - lean + 0.01; i++, px += step) out.push(i % 2 ? px + lean : px, i % 2 ? y0 : y1);
-    return wobble(out, 0.5, nextSeed(), 8);
+    return wobble(out, 0.5 + style.loose, nextSeed(), 8);
   }
   /** A ring round a thing, overshooting where it closes, as a pen does. */
   function ring(cx: number, cy: number, rx: number, ry: number): Path {
     const a0 = r.range(0, Math.PI * 2);
     const out: Path = [];
+    const over = 2.05 + r.range(0.05, 0.2) + 0.15 * style.loose;
     for (let i = 0; i <= 30; i++) {
-      const a = a0 + (i / 30) * Math.PI * 2.18;
-      const k = 1 + 0.06 * (i / 30);
+      const a = a0 + (i / 30) * Math.PI * over;
+      const k = 1 + 0.06 * (i / 30) + jig(0.02);
       out.push(cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k);
     }
-    return wobble(out, 0.7, nextSeed());
+    return wobble(out, 0.7 + style.loose, nextSeed());
   }
   /**
-   * A highlighter swiped from x0 to x1 over a row `h` tall at y: a chisel
-   * tip, so a band with slanted ends, a shade taller than the row and run a
-   * little past its ends - overfilled, the way a highlighter is used.
+   * A highlighter's one stroke over a simple circle: a chisel tip, so a
+   * band with slanted ends - a parallelogram, its corners a little round -
+   * a shade taller and wider than the circle, overfilling it, and never
+   * quite centred or level.
    */
-  function swipe(page: 0 | 1, x0: number, x1: number, y: number, h: number) {
-    const tall = Math.min(h * 1.1, 66);
-    const nib = -1.15;
+  function swipe(page: 0 | 1, [x, y, w, h]: Box) {
+    const tall = h * r.range(1.05, 1.25);
+    const nib = -1.15 + jig(0.12);
     const width = tall / Math.abs(Math.sin(nib));
-    let [a, b] = [x0 + tall * 0.1, x1 - tall * 0.1];
-    if (b - a < 6) [a, b] = [(x0 + x1) / 2 - 3, (x0 + x1) / 2 + 3];
-    const cy = y + h / 2;
-    items.push({ kind: "strokes", page, paths: [wobble([a, cy + r.range(-2, 2), b, cy + r.range(-3, 1)], 1, nextSeed(), 30)], pen: { color: hand.highlight.color, width, kind: "highlighter", nib } });
+    const cy = y + h / 2 + jig(h * 0.06);
+    const [a, b] = [x + w * (0.12 + jig(0.08)), x + w * (0.88 + jig(0.08))];
+    const tilt = jig(h * 0.08);
+    items.push({ kind: "strokes", page, paths: [wobble([a, cy - tilt, b, cy + tilt], 0.6, nextSeed(), 30)], pen: { color: hand.highlight.color, width, kind: "highlighter", nib } });
+  }
+  /** A pattern drawn into a box, in a fine pen. */
+  function drawPattern(page: 0 | 1, box: Box, name: PatternName, pen: Pen, round = false) {
+    const paths = pattern(name, box, nextSeed(), style.hand, round);
+    if (paths.length) items.push({ kind: "strokes", page, paths, pen: finePen(pen, Math.min(box[2], box[3])) });
   }
   /**
    * A thing marked done: `box` is its cell (or icon, or bubble); `round`, it
-   * is round (a bubble, an icon) and is coloured in as one; `colour`, the
-   * marker for colouring in (an icon strip's water blue, say).
+   * is round (a bubble, an icon, a week's circle); `colour`, the marker for
+   * colouring in (an icon strip's water blue, say); `n`, its place in the
+   * run, for the pen.
    */
-  function markIn(page: 0 | 1, box: Box, mark: Mark, { round = false, tipped = false, colour }: { round?: boolean; tipped?: boolean; colour?: string } = {}) {
+  function markIn(page: 0 | 1, box: Box, mark: Mark, { round = false, tipped = false, colour, n = 0 }: { round?: boolean; tipped?: boolean; colour?: string; n?: number } = {}) {
     const [x, y, w, h] = box;
-    const [cx, cy, s] = [x + w / 2, y + h / 2, Math.min(w, h)];
-    const pen = hand.pen;
+    const [cx, cy, s] = [x + w / 2 + jig(w * 0.04), y + h / 2 + jig(h * 0.04), Math.min(w, h)];
+    const pen = penFor(n);
     const put = (paths: Path[], p: Pen = pen) => items.push({ kind: "strokes", page, paths, pen: p });
     switch (mark) {
       case "check": {
-        const k = Math.min(s * 0.66, 64);
+        const k = Math.min(s * (0.66 + jig(0.08)), 64);
         return put(checkMark(cx - k / 2, cy - k / 2, k, nextSeed()));
       }
       case "slash":
-        return put([wobble([x + w * 0.2, y + h * 0.8, x + w * 0.8, y + h * 0.2], 0.6, nextSeed())]);
-      case "cross":
-        return put([wobble([x + w * 0.22, y + h * 0.22, x + w * 0.78, y + h * 0.78], 0.6, nextSeed()), wobble([x + w * 0.78, y + h * 0.22, x + w * 0.22, y + h * 0.78], 0.6, nextSeed())]);
+        return put([wobble([x + w * (0.2 + jig(0.06)), y + h * (0.8 + jig(0.06)), x + w * (0.8 + jig(0.06)), y + h * (0.2 + jig(0.06))], 0.6 + style.loose, nextSeed())]);
+      case "cross": {
+        const [a, b] = [0.22 + jig(0.05), 0.78 + jig(0.05)];
+        return put([wobble([x + w * a, y + h * a, x + w * b, y + h * b], 0.6 + style.loose, nextSeed()), wobble([x + w * b, y + h * (a + jig(0.04)), x + w * a, y + h * (b + jig(0.04))], 0.6 + style.loose, nextSeed())]);
+      }
       case "dot": {
-        const rr = Math.max(4, s * 0.12);
+        const rr = Math.max(4, s * (0.12 + jig(0.02)));
         return put([wobble(circleBullet(cx, cy, rr), 0.4, nextSeed()), wobble(circleBullet(cx, cy, rr * 0.55), 0.3, nextSeed()), wobble(circleBullet(cx, cy, rr * 0.2), 0.2, nextSeed())]);
       }
       case "fill": {
-        const marker: Pen = { color: colour ?? hand.accent.color, width: Math.max(4, s * 0.2), kind: "marker" };
+        const marker: Pen = { color: colour ?? (style.alternate && n % 2 ? hand.pen.color : hand.accent.color), width: Math.max(4, s * 0.2), kind: "marker" };
         return put([round ? colourIn(box, Math.max(4, Math.round(h / 9)), tipped) : scribble(box, marker.width)], marker);
       }
       case "swipe":
-        return swipe(page, x, x + w, y, h);
+        return swipe(page, box);
       case "circle":
-        return put([ring(cx, cy, w * (round ? 0.62 : 0.4), h * (round ? 0.62 : 0.4))]);
+        return put([ring(cx, cy, w * (round ? 0.62 : 0.4) * (1 + jig(0.06)), h * (round ? 0.62 : 0.4) * (1 + jig(0.06)))]);
       case "hatch":
-        return put(hatchIn([x + w * 0.12, y + h * 0.12, w * 0.76, h * 0.76], Math.max(8, s * 0.2)).map((p) => wobble(p, 0.4, nextSeed())));
+      case "dashes":
+        return drawPattern(page, [x + w * 0.1, y + h * 0.1, w * 0.8, h * 0.8], mark, pen, round);
+      case "pattern":
+        return drawPattern(page, round ? box : [x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84], nextPattern(), pen, round);
     }
   }
-  /** A meter's bars coloured along, cell by cell up to the last: each row's
-   *  run of cells as one - swiped, hatched or scribbled. */
+  /** A meter's bars filled along, cell by cell up to the last: each row's
+   *  run of cells as one - hatched, dashed, patterned or coloured. */
   function fillBars(page: 0 | 1, cells: Box[], mark: Mark) {
     const runs: Box[] = [];
     for (const [x, y, w, h] of cells) {
@@ -753,12 +819,24 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       if (last && Math.abs(last[1] - y) < 3 && Math.abs(last[0] + last[2] - x) < 4) last[2] = x + w - last[0];
       else runs.push([x, y, w, h]);
     }
-    for (const run of runs) {
+    // One pattern all the way along, as a bar is one thing.
+    const name = mark === "pattern" ? nextPattern(true) : null;
+    runs.forEach((run, i) => {
       const [x, y, w, h] = run;
-      if (mark === "swipe") swipe(page, x, x + w, y, h);
-      else if (mark === "hatch") items.push({ kind: "strokes", page, paths: hatchIn([x + 2, y + h * 0.12, w - 4, h * 0.76], 14).map((p) => wobble(p, 0.4, nextSeed())), pen: hand.pen });
-      else items.push({ kind: "strokes", page, paths: [scribble(run, 7)], pen: { color: hand.accent.color, width: 7, kind: "marker" } });
-    }
+      const inner: Box = [x + 2, y + h * 0.14, w - 4, h * 0.72];
+      if (name) drawPattern(page, inner, name, penFor(i));
+      else if (mark === "hatch" || mark === "dashes") drawPattern(page, inner, mark, penFor(i));
+      else items.push({ kind: "strokes", page, paths: [scribble(run, 7)], pen: { color: barColour(), width: 7, kind: "marker" } });
+    });
+  }
+  /** A bar coloured in with a marker: their accent pen's colour, or - if
+   *  that is black or near it, which coloured a bar in like a redaction -
+   *  a coloured marker of theirs. */
+  function barColour() {
+    const c = hand.accent.color.replace("#", "");
+    const [rr, gg, bb] = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+    const light = 0.2126 * rr + 0.7152 * gg + 0.0722 * bb;
+    return light > 0.18 ? hand.accent.color : ["#4ba35a", "#e9a23b", "#5b8def", "#e0607e"][hashOf(`${spread.key}/bar-colour`) % 4];
   }
   /** How many of a week's seven days are past: it is Friday evening. (A
    *  function: writeBox runs before this point, as the note above says.) */
@@ -780,10 +858,10 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     const mark = markFor("icons");
     groups.forEach((group, g) => {
       const count = counts?.[g] ?? (g < livedOf(page, groups.length) ? r.int(Math.ceil(group.length * 0.35), group.length) : 0);
-      for (const icon of group.slice(0, count)) {
+      group.slice(0, count).forEach((icon, n) => {
         if (mark === "fill") items.push({ kind: "strokes", page, paths: [colourIn(icon, 5, tipped)], pen: { color: colour, width: Math.max(4, icon[2] * 0.2), kind: "marker" } });
-        else markIn(page, icon, mark, { round: true, tipped, colour });
-      }
+        else markIn(page, icon, mark, { round: true, tipped, colour, n });
+      });
     });
   }
 
@@ -824,8 +902,8 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
    *  spent one left blank. "Today" is the month's own, where it has one. */
   function markDays(page: 0 | 1, region: Extract<Region, { kind: "box" }>) {
     const today = person?.month?.today ?? r.int(8, 19);
-    const mark = markFor("days");
-    region.targets.slice(0, today - 1).forEach((day) => r.chance(0.8) && markIn(page, day, mark));
+    const mark = markFor("days", region.slug);
+    region.targets.slice(0, today - 1).forEach((day, n) => r.chance(0.82 - style.gaps) && markIn(page, day, mark, { n }));
   }
 
   /** A weekday tracker: a row of day letters under each habit, the days so
@@ -833,7 +911,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   function markLetters(page: 0 | 1, region: Extract<Region, { kind: "box" }>) {
     const mark = markFor("letters");
     for (const row of rowsOf(region.targets)) {
-      row.slice(0, daysLived()).forEach((cell) => r.chance(0.65) && markIn(page, cell, mark));
+      row.slice(0, daysLived()).forEach((cell, n) => r.chance(0.65) && markIn(page, cell, mark, { n }));
     }
   }
 
@@ -935,12 +1013,25 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const upTo = fill ?? (/no-spend/.test(region.slug) ? r.int(4, 12) : r.int(Math.round(region.cells.length * 0.12), Math.round(region.cells.length * 0.45)));
       const cells = region.cells.slice(0, upTo);
       if (region.ticked) {
-        fillBars(page, cells, markFor("bar"));
+        fillBars(page, cells, markFor("bar", region.slug));
         return;
       }
-      const mark = markFor(/no-spend/.test(region.slug) ? "days" : "meter");
-      // A no-spend day spent is left blank.
-      for (const cell of cells) if (!/no-spend/.test(region.slug) || r.chance(0.8)) markIn(page, cell, mark, { round: Math.abs(cell[2] - cell[3]) < 4 && cell[2] < 60 });
+      const round = cells.length > 0 && Math.abs(cells[0][2] - cells[0][3]) < 4 && cells[0][2] < 60;
+      const mark = markFor(/no-spend/.test(region.slug) ? "days" : round ? "circles" : "meter", region.slug);
+      // Gaps only where a cell is a day that could be missed - a no-spend
+      // day spent, a meeting skipped (2026-10-07: "there can still be gaps
+      // on days", "make sure gaps make sense"). A running total has none:
+      // savings and payoff (filled along, above), books finished, weeks
+      // lived, PTO used, a countdown's days, a reading plan's parts - each
+      // is counted up to where it has got to. On a daily one, today's
+      // pattern may be half drawn.
+      const daily = /no-spend|ninety|streak|daily/.test(`${region.slug} ${region.heading.toLowerCase()}`);
+      cells.forEach((cell, n) => {
+        if (daily && r.chance(style.gaps + (/no-spend/.test(region.slug) ? 0.12 : 0))) return;
+        const [cx0, cy0, cw0, ch0] = cell;
+        const part: Box = daily && n === cells.length - 1 && mark === "pattern" && r.chance(0.5) ? [cx0, cy0, cw0 * r.range(0.4, 0.7), ch0] : cell;
+        markIn(page, part, mark, { round, n });
+      });
       return;
     }
 
@@ -1031,7 +1122,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
           const x0 = edges[c];
           const x1 = edges[c + 1];
           if (x1 - x0 > 220 || c >= lived || !r.chance(dots ? 0.16 : 0.62) || !clearOf(region.printed, x0, x1, rowTop, row[0])) continue;
-          markIn(page, [x0, rowTop, x1 - x0, pitch], mark);
+          markIn(page, [x0, rowTop, x1 - x0, pitch], mark, { n: c });
         }
       }
       return;

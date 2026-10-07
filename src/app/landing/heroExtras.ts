@@ -120,6 +120,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   },
   {
     key: "wellness",
+    fillFamily: "henna",
     layout: {
       kind: "week",
       font: "sans",
@@ -301,6 +302,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   },
   {
     key: "creative",
+    fillFamily: "doodles",
     layout: {
       kind: "week",
       font: "sans",
@@ -627,6 +629,8 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // Maya's month (their week is "student"): deadlines, a V4, the quiz.
   {
     key: "month-student",
+    // Exam days counted down in quick dashed strokes.
+    marks: { meter: "dashes" },
     layout: {
       kind: "month",
       font: "sans",
@@ -734,6 +738,9 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // shop, the evening review after it, the hours by the hour between.
   {
     key: "day-stoic",
+    // A highlighter's one stroke over each week lived.
+    marks: { circles: "swipe" },
+    fillFamily: "strokes",
     layout: {
       kind: "day",
       font: "serif",
@@ -828,6 +835,9 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // A reader's pages: the year's books, what's on, what's next.
   {
     key: "pages-reading",
+    // A little tile drawn in for each book finished.
+    fillFamily: "tiles",
+    marks: { meter: "pattern" },
     layout: {
       kind: "pages",
       font: "serif",
@@ -921,6 +931,9 @@ export const EXTRA_SPREADS: HeroSpread[] = [
 export const BASE_SPREAD: HeroSpread = {
   key: "base",
   undated: true,
+  // Doodles in the Lisbon fund's bar, as everywhere on these sheets.
+  fillFamily: "doodles",
+  marks: { bar: "pattern" },
   title: "week 1 :)",
   layout: {
     kind: "week",

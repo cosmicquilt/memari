@@ -92,6 +92,24 @@ export type Pen = {
    *  tip's length. */
   nib?: number;
 };
+/**
+ * How someone marks a thing done (2026-10-07): a tick; a line through it; a
+ * cross; a dot; coloured in; a highlighter's one chisel stroke over it (for a
+ * simple circle - "the one parallelogram stroke highlighting it"); a ring
+ * round it; hatched; dashed pen strokes; or a little pattern drawn in it
+ * (handwriting/patterns.ts).
+ */
+export type Mark = "check" | "slash" | "cross" | "dot" | "fill" | "swipe" | "circle" | "hatch" | "dashes" | "pattern";
+/** What gets marked: a habit grid's cells, a weekday tracker's letters, a
+ *  meter's boxes, a meter's circles, a meter's bars (filled along, between
+ *  ticks), a small calendar's days, an icon strip's icons, a rating strip's
+ *  bubbles. */
+export type MarkKind = "grid" | "letters" | "meter" | "circles" | "bar" | "days" | "icons" | "bubbles";
+/** The kind of patterns someone draws when they fill things in with a pen
+ *  (handwriting/patterns.ts): plain strokes, henna-inspired, kolam-inspired,
+ *  tilings, or little doodles. */
+export type FillFamily = "strokes" | "henna" | "kolam" | "tiles" | "doodles";
+
 /** A way of writing words: a handwriting font, or the stroke-drawn script. */
 export type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
 export type Hand = { words: Face; banner: Face; pen: Pen; accent: Pen; highlight: Pen };
@@ -170,6 +188,11 @@ export type Person = {
   /** How tracker cells are marked: ticks, or dots (Franklin marked his
    *  faults, not his successes). */
   trackerMark?: "tick" | "dot";
+  /** How they mark each kind of thing, and the patterns they fill things
+   *  in with; any not given is chosen for the spread, the same every time
+   *  it is written (handwriting/plan.ts). */
+  marks?: Partial<Record<MarkKind, Mark>>;
+  fillFamily?: FillFamily;
   /** Quadrants in reading order: schedule, do, delete, delegate. */
   eisenhower?: string[][];
   /** How many of a meter's cells are filled in. */
@@ -954,6 +977,9 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "faith-muslim",
+    // Jaali lattices and vines in the Juz boxes, a part a day.
+    fillFamily: "henna",
+    marks: { meter: "pattern" },
     archetype: "Faith (Muslim)",
     name: "Yusuf",
     age: 24,
@@ -1073,6 +1099,10 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "recovery",
+    // A small kolam-like loop round the dots for each meeting, the way a
+    // kolam is drawn each morning; the odd day missed.
+    fillFamily: "kolam",
+    marks: { meter: "pattern" },
     archetype: "Recovery",
     name: "Jen",
     age: 34,
