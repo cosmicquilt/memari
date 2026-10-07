@@ -3539,6 +3539,87 @@ const monthDates: Probe = {
   },
 };
 
+// ---------------------------------------------------------------------
+// THE "+" BOXES (2026-10-06): a one-row gap between two modules is spacing,
+// not a place to add - "the plus box shouldnt show for one block gaps". The
+// Beginning page gets four strips with one-row gaps, a three-row gap and the
+// page's foot; only the bigger rooms may show a dashed box.
+// ---------------------------------------------------------------------
+const addBoxes: Probe = {
+  name: "add boxes",
+  ratios: [1],
+  run: async (page, { base }) => {
+    const guest = await makeGuestJournal("Add boxes check");
+    const problems: string[] = [];
+    const seen: string[] = [];
+    const context = await page.context().browser()!.newContext({ viewport: { width: VIEWPORT.width, height: 1000 }, deviceScaleFactor: 1 });
+    try {
+      const { prisma } = await import("../src/lib/prisma.js");
+      await context.addCookies([
+        { name: guest.cookieName, value: guest.cookieValue, domain: "localhost", path: "/" },
+        { name: "memari-open", value: "FRONT_MATTER", domain: "localhost", path: "/" },
+      ]);
+      const tab = await context.newPage();
+      // The first visit makes the front-matter pages; then they are laid out.
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(2500);
+      const front = await prisma.moduleInstance.findMany({
+        where: { page: { plannerId: guest.journalId, level: "FRONT_MATTER" } },
+        select: { id: true, pageId: true },
+        orderBy: { id: "asc" },
+      });
+      const byPage = new Map<string, string[]>();
+      for (const m of front) byPage.set(m.pageId, [...(byPage.get(m.pageId) ?? []), m.id]);
+      const ids = [...byPage.values()].find((list) => list.length >= 4);
+      if (!ids) throw new Error("no front-matter page with four modules to lay out");
+      await prisma.moduleInstance.deleteMany({ where: { id: { in: ids.slice(4) } } });
+      // Spoons row 0 | gap | Home rows 2-3 | gap | Water row 5 | 3 rows | Moon row 9
+      const layout: Array<[string, string, number, number]> = [
+        ["Spoons", "spoon", 0, 1],
+        ["Home", "trash", 2, 2],
+        ["Water", "glass", 5, 1],
+        ["Moon", "moon", 9, 1],
+      ];
+      for (const [i, [heading, icon, rowStart, rowSpan]] of layout.entries()) {
+        await retypeModule(ids[i], "icon-strip", { heading, icon, count: 8 });
+        await prisma.moduleInstance.update({ where: { id: ids[i] }, data: { columnStart: 0, columnSpan: 24, rowStart, rowSpan } });
+      }
+      await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
+      await tab.waitForTimeout(2500);
+      await tab.mouse.move(5, 500);
+      await tab.waitForTimeout(400);
+      const strips: Array<{ top: number; bottom: number }> = [];
+      for (const id of ids.slice(0, 4)) {
+        const b = await tab.locator(`[data-module-instance-id="${id}"]`).boundingBox({ timeout: 5000 });
+        if (!b) throw new Error("a strip is not on the page");
+        strips.push({ top: b.y, bottom: b.y + b.height });
+      }
+      const pitch = (strips[1].top - strips[0].top) / 2;
+      const shown = ((await tab.evaluate(
+        `[...document.querySelectorAll('[data-add-zone]')].map((el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, opacity: +getComputedStyle(el).opacity }; })`
+      )) as Array<{ top: number; bottom: number; height: number; opacity: number }>).filter((b) => b.height > 2 && b.opacity > 0.5);
+      const within = (gap: { top: number; bottom: number }) => shown.filter((b) => b.top < gap.bottom - 2 && gap.top < b.bottom - 2);
+      for (const [k, name] of [[0, "Spoons and Home"], [1, "Home and Water"]] as const) {
+        const gap = { top: strips[k].bottom, bottom: strips[k + 1].top };
+        const boxes = within(gap);
+        if (boxes.length > 0) problems.push(`a "+" box shows in the one-row gap between ${name} (${boxes.map((b) => Math.round(b.height)).join(", ")}px tall)`);
+      }
+      const roomy = within({ top: strips[2].bottom, bottom: strips[3].top });
+      if (roomy.length === 0) problems.push(`no "+" box in the three-row gap between Water and Moon`);
+      const small = shown.filter((b) => b.height < 1.5 * pitch);
+      if (small.length > 0) problems.push(`${small.length} "+" box(es) under two rows tall (${small.map((b) => Math.round(b.height)).join(", ")}px, a row is ${Math.round(pitch)}px)`);
+      seen.push(`${shown.length} box(es) shown, none in the one-row gaps, ${roomy.length} in the three-row gap`);
+    } catch (error) {
+      problems.push(`stopped: ${(error as Error).message.split("\n")[0]}`);
+    } finally {
+      await context.close();
+      await guest.remove();
+    }
+    if (problems.length > 0) for (const problem of problems) fail("add boxes", problem);
+    else note("add boxes", seen.join("; "));
+  },
+};
+
 const ALL_PROBES: Probe[] = [
   pillTravel,
   firstVisit,
@@ -3557,6 +3638,7 @@ const ALL_PROBES: Probe[] = [
   textOnThePage,
   dayIcons,
   monthDates,
+  addBoxes,
   consoleClean,
 ];
 const PROBES = ONLY ? ALL_PROBES.filter((p) => p.name.startsWith(ONLY)) : ALL_PROBES;

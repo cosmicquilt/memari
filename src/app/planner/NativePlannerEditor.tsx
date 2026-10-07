@@ -2442,7 +2442,7 @@ function NativePage({
               columnStart={sb.columnStart}
               columnSpan={sb.columnSpan}
               rowStart={sb.stackBottomRowEnd}
-              rowSpan={Math.max(0, sb.maxBottomBound - sb.stackBottomRowEnd)}
+              rowSpan={addZoneRows(sb.maxBottomBound - sb.stackBottomRowEnd)}
               // columnStart === 0 alone isn't enough to identify the
               // sidebar — the right page's hourly-grid-core (and so its
               // own below-the-grid stack) also starts at column 0,
@@ -3152,6 +3152,19 @@ function StackResizeHandle({
 // left to clip awkwardly through them — the corner-clipping problem
 // the previous version specifically fixed doesn't just stay fixed, it
 // stops being a real question at all.
+/**
+ * The least free room that gets a "+" box: two rows. A one-row gap - the
+ * breathing space left between two modules - is spacing, not a place to add
+ * something, and a dashed box in every one of them made a page of separate
+ * strips read as a page of placeholders: "the plus box shouldnt show for one
+ * block gaps" (2026-10-06). Hovering a section still offers its own "+".
+ */
+const MIN_ADD_ZONE_ROWS = 2;
+/** The rows a "+" box shows for this much free room: none below the least,
+ * so the box stays mounted at nothing and fades in when the room grows. */
+function addZoneRows(freeRows: number): number {
+  return freeRows >= MIN_ADD_ZONE_ROWS ? freeRows : 0;
+}
 const ADD_MODULE_DASH_PX = 80;
 const ADD_MODULE_GAP_PX = 45;
 const ADD_MODULE_BORDER_PX = 8;
