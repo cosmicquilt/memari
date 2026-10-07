@@ -22,5 +22,6 @@
   "vignetteSidesReach": 9,
   "vignetteCorners": 1,
   "newEachLoad": true,
-  "tornEdge": "flow-fine"
+  "tornEdge": "flow-fine",
+  "youSeconds": 1.4
 }

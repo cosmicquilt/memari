@@ -474,23 +474,38 @@
 
 /* Written in last, once the rest of the line has settled (Andrew,
    2026-09-24) - traced along the pen's path, a stroke at a time (2026-10-06:
-   "trace out the 'you.' ... instead of fading it in"). --at and --for are
-   each stroke's start and length (Wordmark.tsx, YOU_STROKES). */
+   "trace out the 'you.' ... instead of fading it in"), from 3.15 s. --at and
+   --for are each stroke's start and length into the writing at its own pace
+   (Wordmark.tsx, YOU_STROKES, which takes --you-base seconds in all);
+   --you-seconds, the dev panel's, stretches the whole of it alike. */
+/* Nothing of a stroke shows before its own writing starts (2026-10-06: "a
+   blue dot is visible before ... it starts writing"): the hidden dash once
+   ended exactly on the stroke's first point, and a round cap on that
+   zero-length end drew a dot of the letter there - in some browsers, not
+   others. So each is hidden until its animation runs, and its dash waits
+   clear of both its ends (a gap of 2, an offset a little past 1). */
 .youPen {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: youWrite var(--for) cubic-bezier(0.4, 0.1, 0.6, 0.95) var(--at) forwards;
+  visibility: hidden;
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1.02;
+  --you-pace: calc(var(--you-seconds, 1.41) / var(--you-base, 1.41));
+  animation: youWrite calc(var(--for) * var(--you-pace)) cubic-bezier(0.4, 0.1, 0.6, 0.95) calc(3.15s + var(--at) * var(--you-pace)) forwards;
 }
 
 @keyframes youWrite {
+  from {
+    visibility: visible;
+    stroke-dashoffset: 1.02;
+  }
   to {
+    visibility: visible;
     stroke-dashoffset: 0;
   }
 }
 
 .youDone {
   opacity: 0;
-  animation: youDone 0.01s linear var(--at) forwards;
+  animation: youDone 0.01s linear calc(3.15s + var(--at) * var(--you-seconds, 1.41) / var(--you-base, 1.41)) forwards;
 }
 
 @keyframes youDone {
@@ -1099,6 +1114,7 @@
   .youPen,
   .youDone {
     animation: none;
+    visibility: visible;
     stroke-dashoffset: 0;
     opacity: 1;
   }

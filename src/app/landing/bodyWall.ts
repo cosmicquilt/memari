@@ -76,6 +76,10 @@ export type BodyWallSettings = {
   vignetteSides: number;
   vignetteSidesReach: number;
   vignetteCorners: number;
+  /** How long the tagline's "you." takes to write, seconds (Wordmark.tsx;
+   *  2026-10-06: "i want a slider for you writing speed i want to slow it
+   *  down"): its strokes and the pen-lifts between them, all in proportion. */
+  youSeconds: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;
@@ -96,6 +100,7 @@ export function pageVars(s: BodyWallSettings): Record<string, number> {
     "--vig-sides": s.vignetteSides,
     "--vig-sides-reach": s.vignetteSidesReach,
     "--vig-corners": s.vignetteCorners,
+    "--you-seconds": s.youSeconds,
   };
 }
 

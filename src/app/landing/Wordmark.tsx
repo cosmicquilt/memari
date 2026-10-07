@@ -48,21 +48,25 @@ const OPEN_AFTER_MS = 2350 + 500;
  * Three strokes, not one path with pen-lifts in it: a dash can start again
  * at each lift, which would write all three at once. Each is timed by its
  * length (382, 156 and 32), at one pen speed, with a moment's lift between -
- * written from 3.15 s, when the line has settled, as the fade was.
+ * written from 3.15 s, when the line has settled, as the fade was. `at` and
+ * `for` are seconds into the writing when it takes YOU_WRITTEN_IN; the dev
+ * panel's "you." written in (bodyWall.ts, --you-seconds) stretches them all
+ * alike (.youPen).
  */
+const YOU_WRITTEN_IN = 1.41;
 const YOU_STROKES: Array<{ d: string; at: number; for: number }> = [
   {
     d: "M33 66 C31 74 26 82 24 89 C23 95 27 96 31 92 C38 87 47 78 53 69 C50 82 46 100 42 118 C40 127 36 135 28 137 C21 138 18 130 19 121 C21 112 31 102 44 95 C55 89 65 84 76 80 C79 70 84 65 90 65 C98 65 103 70 102 77 C101 88 93 98 84 99 C77 100 73 96 73 90 C73 84 77 78 86 74 C92 72 100 73 106 72 C110 71 115 69 119 67.5",
-    at: 3.15,
+    at: 0,
     for: 0.8,
   },
-  { d: "M136 61 C131 70 126 80 124 90 C123 96 125 100 129 99 C137 96 148 84 157 64 C155 72 153 84 153 92 C153 97 157 98 162 96 C170 93 178 88 183 82", at: 4.05, for: 0.33 },
-  { d: "M184 96 C186 92 195 91 198 94 C200 98 190 100 185 97", at: 4.46, for: 0.1 },
+  { d: "M136 61 C131 70 126 80 124 90 C123 96 125 100 129 99 C137 96 148 84 157 64 C155 72 153 84 153 92 C153 97 157 98 162 96 C170 93 178 88 183 82", at: 0.9, for: 0.33 },
+  { d: "M184 96 C186 92 195 91 198 94 C200 98 190 100 185 97", at: 1.31, for: 0.1 },
 ];
 const YOU_PEN = 14;
 /** Once written, all of it shown whatever the pen's band covered - so a
  *  fallback face, its letters elsewhere, is never left part hidden. */
-const YOU_DONE = 4.6;
+const YOU_DONE = 1.45;
 
 export function Wordmark({ onArrived, className }: { onArrived?: () => void; className?: string }) {
   const tagline = useRef<HTMLParagraphElement>(null);
@@ -102,7 +106,13 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
         a journal as unique as <span className={styles.srOnly}>you.</span>
         {/* The viewBox runs 5 units either side of the text's ink and 45
             above and below its baseline - see .you. */}
-        <svg className={`${styles.you} ${script.className}`} viewBox="15 55 188 90" aria-hidden="true" focusable="false">
+        <svg
+          className={`${styles.you} ${script.className}`}
+          viewBox="15 55 188 90"
+          aria-hidden="true"
+          focusable="false"
+          style={{ "--you-base": YOU_WRITTEN_IN } as CSSProperties}
+        >
           <defs>
             <mask id="you-pen" maskUnits="userSpaceOnUse" x="15" y="55" width="188" height="90">
               {YOU_STROKES.map((s) => (
