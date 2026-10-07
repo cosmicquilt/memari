@@ -94,11 +94,16 @@ export type Region =
       /** Small square cells to fill in - a progress meter's, a calendar's
        *  day boxes - in reading order. */
       cells: Box[];
+      /** The cells are a bar's stretches between the short ticks at its
+       *  foot (a savings or payoff meter), not boxes of their own: filled
+       *  along the bar, the way a meter is coloured in. */
+      ticked: boolean;
       /** What draws it (moduleRegistry's primitive): an icon strip, a
        *  rating strip, a day chart... - how the hand fills it in. */
       primitive: string;
-      /** For those three, what gets filled, in reading order: an icon
-       *  strip's icons, a rating strip's bubbles, a day chart's dots. */
+      /** What gets filled, in reading order: an icon strip's icons, a
+       *  rating strip's bubbles, a day chart's dots, a mini month's days,
+       *  a weekday tracker's letter cells. */
       targets: Box[];
     }
   | { kind: "title"; box: Box };
@@ -163,20 +168,62 @@ function pathBox(d: string): Box {
 }
 
 /**
- * What the hand fills in on the three kinds that are filled, not written in
- * (2026-10-06: "I want to fill chart icon strips and bubbles"): an icon
- * strip's icons (outlined glyphs, or outlined circles), a rating strip's
- * bubbles (outlined circles), a day chart's dots (the small filled ones of
- * its grid). In reading order.
+ * What the hand fills in on the kinds that are filled, not written in
+ * (2026-10-06: "I want to fill chart icon strips and bubbles"; 2026-10-07:
+ * "there are some progress bars and icon strips ratings etc that arent
+ * filled in"): an icon strip's icons (glyphs, or outlined circles), a rating
+ * strip's bubbles (outlined circles), a day chart's dots (the small filled
+ * ones of its grid), a mini month's days (its in-month dates' cells), and a
+ * weekday tracker's letters (a row of M T W T F S S cells under each habit).
+ * In reading order.
  */
 function targetsOf(primitive: string, marks: PreviewMark[], inside: (b: { x: number; y: number; w: number; h: number }) => boolean): Box[] {
   const rects = marks.filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r");
+  const texts = marks.filter((m): m is Extract<PreviewMark, { k: "t" }> => m.k === "t");
   const round = (m: { w: number; h: number; r?: number }) => (m.r ?? 0) >= Math.min(m.w, m.h) * 0.4 && Math.abs(m.w - m.h) < 4;
+  /** The cell a printed date or letter sits in: its own box across, and
+   *  between the rules above and below it that run under it. */
+  const cellOf = (t: Extract<PreviewMark, { k: "t" }>): Box => {
+    const mid = t.x + t.w / 2;
+    const ys = rects.filter((m) => isHRule(m) && m.x <= mid && m.x + m.w >= mid).map((m) => m.y + m.h / 2);
+    const above = Math.max(...ys.filter((ry) => ry <= t.y + 2), t.y - t.z * 0.4);
+    const below = Math.min(...ys.filter((ry) => ry >= t.y + t.z * 0.8), t.y + t.z * 1.4);
+    return [t.x, above, t.w, below - above];
+  };
   let boxes: Box[] = [];
   if (primitive === "icon-strip") {
-    const glyphs = marks.filter((m): m is Extract<PreviewMark, { k: "p" }> => m.k === "p" && !!m.s && !m.f).map((m) => pathBox(m.d));
+    // Outlined glyphs, or (since the strip's rework) its outlines drawn as
+    // filled shapes - an icon's parts merged into one box.
+    const glyphs = marks
+      .filter((m): m is Extract<PreviewMark, { k: "p" }> => m.k === "p" && (!!m.s || !!m.f))
+      .map((m) => pathBox(m.d))
+      .filter(([, , w, h]) => w >= 10 && h >= 10 && w <= 90 && h <= 90);
     const outlined = rects.filter((m) => !!m.s && !m.f && m.w >= 12 && m.w <= 64 && Math.abs(m.w - m.h) < 4).map((m) => [m.x, m.y, m.w, m.h] as Box);
-    boxes = [...glyphs, ...outlined];
+    for (const b of [...glyphs, ...outlined]) {
+      const [cx, cy] = [b[0] + b[2] / 2, b[1] + b[3] / 2];
+      const at = boxes.findIndex(([x, y, w, h]) => cx >= x && cx <= x + w && cy >= y && cy <= y + h);
+      if (at < 0) boxes.push(b);
+      else {
+        const [x, y, w, h] = boxes[at];
+        const [x0, y0] = [Math.min(x, b[0]), Math.min(y, b[1])];
+        boxes[at] = [x0, y0, Math.max(x + w, b[0] + b[2]) - x0, Math.max(y + h, b[1] + b[3]) - y0];
+      }
+    }
+  } else if (primitive === "mini-month") {
+    // The month's own dates: the days either side are printed faint.
+    boxes = texts.filter((t) => /^\d{1,2}$/.test(t.t) && (t.o ?? 1) > 0.6).map(cellOf);
+  } else if (primitive === "habit-tracker") {
+    // A habit a row of weekday letters, each in its own cell - only where
+    // they repeat row after row: a grid's single header row of letters is
+    // its columns' names, not something to mark.
+    const letters = texts.filter((t) => /^[MTWFS]$/.test(t.t) && t.w >= 36 && t.w <= 100);
+    const rows = new Map<number, typeof letters>();
+    for (const t of letters) {
+      const key = [...rows.keys()].find((k) => Math.abs(k - t.y) < 4) ?? t.y;
+      rows.set(key, [...(rows.get(key) ?? []), t]);
+    }
+    const full = [...rows.values()].filter((row) => row.length >= 5);
+    if (full.length >= 2) boxes = full.flat().map(cellOf);
   } else if (primitive === "rating-strip") {
     boxes = rects.filter((m) => !!m.s && round(m) && m.w >= 18 && m.w <= 64).map((m) => [m.x, m.y, m.w, m.h] as Box);
   } else if (primitive === "day-chart") {
@@ -212,6 +259,7 @@ function boxRegion(slug: string, primitive: string, heading: string, rect: Box, 
   // hairlines (since its rework), not a square per mark: each gap between
   // dividers is a cell. (2026-10-06: the 90-in-90 meter came out with no
   // cells, so nothing was filled in.)
+  let tickedStrips = 0;
   const stripCells: Box[] = squares.length
     ? []
     : marks
@@ -221,18 +269,24 @@ function boxRegion(slug: string, primitive: string, heading: string, rect: Box, 
         .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !!m.s && m.h >= 14 && m.h <= 160 && m.w > m.h * 3)
         .filter((m) => inside({ ...m, y: m.y + 2, h: m.h - 2 }))
         .flatMap((strip) => {
-          const dividers = marks
-            .filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && !m.s && m.w <= 3 && Math.abs(m.y - strip.y) < 2 && Math.abs(m.h - strip.h) < 3 && m.x > strip.x + 2 && m.x < strip.x + strip.w - 2)
-            .map((m) => m.x)
-            .sort((p, q) => p - q);
+          // Its dividers: hairlines the strip's height - or the short
+          // ticks at its foot that a savings meter's bars have instead.
+          const inStrip = (m: Extract<PreviewMark, { k: "r" }>) => m.k === "r" && !m.s && m.w <= 3 && m.x > strip.x + 2 && m.x < strip.x + strip.w - 2;
+          const full = marks.filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && inStrip(m) && Math.abs(m.y - strip.y) < 2 && Math.abs(m.h - strip.h) < 3);
+          const ticks = marks.filter((m): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && inStrip(m) && m.h >= 6 && m.h < strip.h - 3 && Math.abs(m.y + m.h - (strip.y + strip.h)) < 3);
+          // (A savings meter's row is two bars: a full-height divider
+          // between them, and each bar's ticks.)
+          if (ticks.length >= 3) tickedStrips++;
+          const dividers = [...full, ...ticks].map((m) => m.x).sort((p, q) => p - q);
           if (dividers.length < 3) return [];
           const edges = [strip.x, ...dividers, strip.x + strip.w];
           return edges.slice(1).map((right, i) => [edges[i], strip.y, right - edges[i], strip.h] as Box);
         });
   const cells: Box[] = [...squares, ...stripCells].sort((a, b) => (Math.abs(a[1] - b[1]) > 4 ? a[1] - b[1] : a[0] - b[0]));
-  // A few px of slack: an icon strip's glyphs sit half a pixel past its box.
-  const targets = targetsOf(primitive, marks, (m) => m.y >= top - 4 && m.y + m.h <= y + h + 4 && m.x >= x - 4 && m.x + m.w <= x + w + 4);
-  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells, primitive, targets };
+  // A few px of slack: an icon strip's glyphs sit up to 5px past its box.
+  const slack = primitive === "icon-strip" ? 10 : 4;
+  const targets = targetsOf(primitive, marks, (m) => m.y >= top - slack && m.y + m.h <= y + h + slack && m.x >= x - slack && m.x + m.w <= x + w + slack);
+  return { kind: "box", slug, heading, box: rect, content, lines, checkX: vertical ? vertical.x : null, columns, printed, cells, ticked: tickedStrips > 0, primitive, targets };
 }
 
 /**

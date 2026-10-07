@@ -454,6 +454,11 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
       if (s.kind !== "stroke" || s.page !== page || s.pen.kind !== "highlighter" || s.drawn <= 0) continue;
       const points = pointsTo(s, s.drawn);
       ctx.globalAlpha = 0.5;
+      if (s.pen.nib !== undefined) {
+        ctx.fillStyle = s.pen.color;
+        chiselSwipe(ctx, points, s.pen.nib, s.pen.width, scale);
+        continue;
+      }
       ctx.strokeStyle = s.pen.color;
       ctx.lineWidth = s.pen.width * scale;
       ctx.lineCap = "butt";
@@ -466,6 +471,34 @@ export function paintInk(timeline: Timed[], t: number, layers: [InkLayers, InkLa
     ctx.globalAlpha = 1;
   }
   return [areas[0].length ? areas[0] : null, areas[1].length ? areas[1] : null];
+}
+
+/**
+ * A chisel-tipped highlighter's swipe: the tip - a line `width` long at angle
+ * `nib` - swept along the points, so a band with slanted ends (a
+ * parallelogram, on a straight swipe), its corners a little rounded as a
+ * felt tip's are. Filled once, so it is one even wash.
+ */
+function chiselSwipe(ctx: CanvasRenderingContext2D, points: number[][], nib: number, width: number, scale: number) {
+  if (points.length < 2) return;
+  const hx = (Math.cos(nib) * width * scale) / 2;
+  const hy = (Math.sin(nib) * width * scale) / 2;
+  const at = points.map(([x, y]) => [x * scale, y * scale]);
+  const ring = [...at.map(([x, y]) => [x + hx, y + hy]), ...at.reverse().map(([x, y]) => [x - hx, y - hy])];
+  const n = ring.length;
+  const mid = (a: number[], b: number[]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const corner = Math.hypot(hx, hy) * 0.28;
+  ctx.beginPath();
+  const start = mid(ring[n - 1], ring[0]);
+  ctx.moveTo(start[0], start[1]);
+  for (let i = 0; i < n; i++) {
+    const [p, q, o] = [ring[i], ring[(i + 1) % n], ring[(i - 1 + n) % n]];
+    const m = mid(p, q);
+    const room = Math.min(Math.hypot(q[0] - p[0], q[1] - p[1]), Math.hypot(o[0] - p[0], o[1] - p[1])) / 2;
+    ctx.arcTo(p[0], p[1], m[0], m[1], Math.min(corner, room));
+  }
+  ctx.closePath();
+  ctx.fill();
 }
 
 /**

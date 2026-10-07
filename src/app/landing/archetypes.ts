@@ -86,6 +86,11 @@ export type Pen = {
   /** Line width in print px (300 per inch): 3 is a fine pen, 7 a marker. */
   width: number;
   kind: "ink" | "marker" | "highlighter" | "pencil";
+  /** A highlighter's chisel tip, held at this angle (radians, from the
+   *  page's x axis): what it lays down is the tip swept along the stroke -
+   *  a band with slanted ends - not a round-ended line. `width` is then the
+   *  tip's length. */
+  nib?: number;
 };
 /** A way of writing words: a handwriting font, or the stroke-drawn script. */
 export type Face = { font: HandFontKey | "allure"; caps: boolean; weight?: number; scale: number };
