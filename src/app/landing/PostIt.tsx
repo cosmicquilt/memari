@@ -22,7 +22,12 @@
 // it, imported by handoff/flow/otter/import_otters.py: the paper divided out
 // to graphite on transparent, cropped to its own pencil line's ends, and
 // where that line sits recorded (otters.json) - so the line it was drawn
-// with is the one put on the hero's edge.
+// with is the one put on the hero's edge. The waving one (otter-4) is no
+// longer Flow's own take, which was drawn unlike the other three: it is the
+// one looking at you (otter-3) with its right paw off and that take's waving
+// arm in its place (2026-10-06: "use last otter just waving arm from it and
+// make small changes that are more consistent"; handoff/flow/otter/
+// wave_composite.py) - so from looking at you to waving, only the paw moves.
 
 import { useEffect, useRef, useState } from "react";
 import otters from "../../../public/landing/otter/otters.json";
