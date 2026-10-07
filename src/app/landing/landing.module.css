@@ -451,18 +451,52 @@
 }
 
 /* "you." handwritten, in the editor's blue (ACCENT in planner/*). Set a
-   little larger than the line so its lowercase stands as tall as the rest;
-   line-height 0 keeps it from pushing the line (and the tagline) down. */
+   little larger than the line so its lowercase stands as tall as the rest.
+   An SVG (Wordmark.tsx) whose 100 units are this 1em: 188 by 90, from 5
+   units left of the text's origin, and 45 above and below its baseline.
+   Its negative margins take its height back, so it sits on the baseline and
+   adds nothing to the line's height (the text it replaced had line-height
+   0). The air after "as" is the text's own 0.12em, less the 5 units the box
+   starts left of the text. */
 .you {
+  /* Inline, in the line: the stylesheet's reset makes every svg a block. */
+  display: inline-block;
   font-size: 1.5em;
-  line-height: 0;
-  /* The hand starts right at its box: a little air after "as". */
-  margin-left: 0.12em;
-  letter-spacing: 0;
+  width: 1.88em;
+  height: 0.9em;
+  margin: -0.45em 0 -0.45em 0.07em;
+  vertical-align: baseline;
+  overflow: visible;
   color: #4a5cff;
-  /* Written in last: it fades in once the rest of the line has settled
-     (Andrew, 2026-09-24). */
-  animation: fadeIn 0.9s ease-out 3.15s both;
+  /* The line's text-shadow, which SVG text does not take. */
+  filter: drop-shadow(0 1px 12px rgba(20, 12, 6, 0.45));
+}
+
+/* Written in last, once the rest of the line has settled (Andrew,
+   2026-09-24) - traced along the pen's path, a stroke at a time (2026-10-06:
+   "trace out the 'you.' ... instead of fading it in"). --at and --for are
+   each stroke's start and length (Wordmark.tsx, YOU_STROKES). */
+.youPen {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: youWrite var(--for) cubic-bezier(0.4, 0.1, 0.6, 0.95) var(--at) forwards;
+}
+
+@keyframes youWrite {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.youDone {
+  opacity: 0;
+  animation: youDone 0.01s linear var(--at) forwards;
+}
+
+@keyframes youDone {
+  to {
+    opacity: 1;
+  }
 }
 
 /* --- the hero as a film (VideoHero) ----------------------------------------- */
@@ -1060,6 +1094,13 @@
   }
   .you {
     animation: fadeIn 0.6s ease-out 0.9s both;
+  }
+  /* Not written: there from the start, fading in with it. */
+  .youPen,
+  .youDone {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
   }
 }
 
