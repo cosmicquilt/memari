@@ -1780,9 +1780,9 @@ const PRIMITIVES = {
           // The icons' drawings with a little face - asked 2026-10-06, "have
           // a switch for the faces". Off: the plain drawing.
           "faces": { "type": "boolean", "default": false },
-          // The label large and faint behind the icons, or small above them
-          // - 2026-10-06; see iconStrip.ts's BEHIND_LABEL_PT.
-          "labelStyle": { "type": "string", "enum": ["behind", "above"], "default": "behind" },
+          // The label small above the icons (the default), or large and
+          // faint behind them - 2026-10-06; see iconStrip.ts's BEHIND_LABEL_PT.
+          "labelStyle": { "type": "string", "enum": ["above", "behind"], "default": "above" },
           "count": { "type": "integer", "default": 8 },
           "groups": { "type": "integer", "default": 0 },
           "border": { "type": "boolean", "default": false },
@@ -1818,8 +1818,8 @@ const PRIMITIVES = {
         key: "labelStyle",
         label: "Label",
         options: [
-          { value: "behind", label: "Behind, large" },
           { value: "above", label: "Above, small" },
+          { value: "behind", label: "Behind, large" },
         ],
         window: { x: "left", y: "top", columns: 5, rows: 1.2 },
       },

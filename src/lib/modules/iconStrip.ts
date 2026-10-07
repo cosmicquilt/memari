@@ -42,8 +42,9 @@ import {
 } from "@/lib/modules/moduleFrame";
 
 export type IconStripConfig = {
-  /** Where the label goes: large and faint BEHIND the icons, which take the
-   *  whole row (the default since 2026-10-06), or small ABOVE them. */
+  /** Where the label goes: small ABOVE the icons (the default), or large and
+   *  faint BEHIND them, the icons taking the whole row (a setting since
+   *  2026-10-06; "no i want other as default", 2026-10-07). */
   labelStyle?: "behind" | "above";
   /** The icons drawn with a little face - see glyphElement. */
   faces?: boolean;
@@ -210,7 +211,7 @@ export function renderIconStrip(
   // under them: 52px of a 75px cell where it was 41.
   const capBand = textInkBand(0, ptToPx(HEADING_FONT_PT), fontFamily, "A");
   const labelY = AIR_PX - capBand.top;
-  const behind = config.labelStyle !== "above";
+  const behind = config.labelStyle === "behind";
   const glyphBandTop = !behind && (heading || (config.stripLabels ?? []).some((label) => typeof label === "string" && label.trim()))
     ? AIR_PX + (capBand.bottom - capBand.top) + LABEL_GAP_PX
     : AIR_PX;

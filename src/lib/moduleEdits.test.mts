@@ -617,12 +617,12 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const spoons = ids(draw("icon-strip", { heading: "Spoons", icon: "spoon", count: 12, groups: 4, labelStyle: "above" }, 24, 1), /-i\d+$/);
   check(Number(spoons[0].height) >= 48, `a dozen spoons a group stand ${Number(spoons[0].height).toFixed(1)}px tall in a 75px strip`);
 
-  // THE LABEL BEHIND THE ICONS - the default: 20pt at 45% ink, its capitals
+  // THE LABEL BEHIND THE ICONS - the setting: 20pt at 45% ink, its capitals
   // centred down the row, the icons the whole row over it (3px of air top
   // and bottom), the day names at 70% of its size and the same ink.
-  const behind = draw("icon-strip", { heading: "Water", icon: "glass", count: 4, groupLabels: "days" }, 24, 1);
+  const behind = draw("icon-strip", { heading: "Water", icon: "glass", count: 4, groupLabels: "days", labelStyle: "behind" }, 24, 1);
   const word = ids(behind, /-s0-heading$/)[0];
-  check(Math.abs(Number(word.fontSize) - (20 * 300) / 72) < 0.01 && Math.abs(Number(word.opacity) - 0.45) < 1e-9, `by default the label is 20pt at 45% (got ${(Number(word.fontSize) * 72 / 300).toFixed(1)}pt at ${word.opacity})`);
+  check(Math.abs(Number(word.fontSize) - (20 * 300) / 72) < 0.01 && Math.abs(Number(word.opacity) - 0.45) < 1e-9, `behind, the label is 20pt at 45% (got ${(Number(word.fontSize) * 72 / 300).toFixed(1)}pt at ${word.opacity})`);
   const wordInk = textInkBand(Number(word.y), Number(word.fontSize), String(word.fontFamily), "WATER");
   const glass = ids(behind, /-s0-g0-i0$/)[0];
   check(Math.abs((wordInk.top + wordInk.bottom) / 2 - (Number(glass.y) + Number(glass.height) / 2)) < 1, "its capitals centred down the row, with the icons");
@@ -634,6 +634,12 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const above = draw("icon-strip", { heading: "Water", icon: "glass", count: 4, labelStyle: "above" }, 24, 1);
   check(Number(ids(above, /-s0-g0-i0$/)[0].height) < Number(glass.height), "above, the icons give the label its room");
   check(Number(ids(above, /-s0-heading$/)[0].opacity ?? 1) === 1, "above, the label at full ink");
+  // ABOVE IS THE DEFAULT - "no i want other as default" (2026-10-07): a strip
+  // that never chose draws exactly as one that chose above.
+  const unchosen = draw("icon-strip", { heading: "Water", icon: "glass", count: 4 }, 24, 1);
+  check(JSON.stringify(unchosen) === JSON.stringify(above), "a strip with no label style draws its label above");
+  const schemaDefault = (moduleDefinition("icon-strip")?.db.configSchema as { properties?: Record<string, { default?: unknown }> } | undefined)?.properties?.labelStyle?.default;
+  check(schemaDefault === "above", `the stored schema's default is above too (got ${String(schemaDefault)})`);
 }
 
 // --- ratings -----------------------------------------------------------------
