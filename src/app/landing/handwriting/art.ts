@@ -188,6 +188,7 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
   pressAlong(g, paths, cum, seed, 0.18 + 0.3 * big);
   const feel = STYLE_FEEL[ref.style] ?? STYLE_FEEL.minimal;
   roughen(g, sprite.width, sprite.height, { ...feel, edge: feel.edge * (1 + big), mottle: feel.mottle * (1 + 1.4 * big), bleed: feel.bleed * (1 + 0.6 * big) }, seed, grain);
+  toPenWeight(g, sprite.width, sprite.height);
   return {
     sprite,
     x: (bx + bw / 2) * scale - mx,
@@ -199,6 +200,46 @@ export async function prepareArt(ref: ArtRef, box: [number, number, number, numb
     length: Math.max(1, length),
     masked: 0,
   };
+}
+
+/**
+ * The drawing brought up to a pen's weight where it is darkest (2026-10-07:
+ * "the sketches and drawings are kind of light and not very visible").
+ * Its pressure and mottle only ever take ink away: measured, a small
+ * drawing kept 72% of its ink and a large one - textured more, so it would
+ * not look drawn on an iPad - 52 to 60%, its darkest lines at about 0.35
+ * against the handwriting's 0.6 once the paper's fibre had its share too.
+ * So every pixel is scaled alike until the darkest twentieth of its ink is
+ * at PEN_WEIGHT - the texture kept, the lighter parts lighter by as much -
+ * and never by more than MOST, so a drawing that is mostly pale shading
+ * does not turn into a block.
+ */
+const PEN_WEIGHT = 0.86;
+const MOST = 2.4;
+function toPenWeight(g: CanvasRenderingContext2D, width: number, height: number) {
+  const img = g.getImageData(0, 0, width, height);
+  const d = img.data;
+  const counts = new Uint32Array(256);
+  let inked = 0;
+  for (let i = 3; i < d.length; i += 4)
+    if (d[i] > 6) {
+      counts[d[i]]++;
+      inked++;
+    }
+  if (!inked) return;
+  let seen = 0;
+  let p95 = 255;
+  for (let a = 255; a > 0; a--) {
+    seen += counts[a];
+    if (seen >= inked * 0.05) {
+      p95 = a;
+      break;
+    }
+  }
+  const f = Math.min(MOST, Math.max(1, (PEN_WEIGHT * 255) / p95));
+  if (f === 1) return;
+  for (let i = 3; i < d.length; i += 4) if (d[i]) d[i] = Math.min(255, Math.round(d[i] * f));
+  g.putImageData(img, 0, 0);
 }
 
 /**
