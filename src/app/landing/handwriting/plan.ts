@@ -29,7 +29,7 @@ import choices from "../doodleChoices.json";
 import { checkMark, circleAround, measure, textStrokes, timeBlock, underline, wobble, type Path } from "./strokes";
 import type { Face, Hand, Pen } from "../archetypes";
 import { HERO_BY_KEY, type FillFamily, type HeroSpread, type Mark, type MarkKind } from "../heroSpreads";
-import { BAND_PATTERNS, BANDED_PATTERNS, KOLAM_PATTERNS, MEXICAN_PATTERNS, RUN_PATTERNS, SOUTHWEST_PATTERNS, SQUARE_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, WESTERN_PATTERNS, WHOLE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
+import { BAND_PATTERNS, BANDED_PATTERNS, CENTRED_PATTERNS, KOLAM_PATTERNS, MEXICAN_PATTERNS, RUN_PATTERNS, SOUTHWEST_PATTERNS, SQUARE_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, WESTERN_PATTERNS, WHOLE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
 import { rng } from "./rng";
 
 export type { Pen };
@@ -724,13 +724,19 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
   }
   /** The pattern for the next of a run: from their palette, not the same
    *  twice running - a tiler draws something new in each. */
-  function nextPattern(kind: "single" | "run" | "square" | "band" | "whole" = "single"): PatternName {
-    const can = kind === "run" ? RUN_PATTERNS : kind === "square" ? SQUARE_PATTERNS : kind === "band" ? BAND_PATTERNS : kind === "whole" ? WHOLE_PATTERNS : null;
+  function nextPattern(kind: "single" | "run" | "square" | "big-square" | "band" | "whole" = "single"): PatternName {
+    const can =
+      kind === "run" ? RUN_PATTERNS
+      : kind === "square" ? SQUARE_PATTERNS
+      : kind === "big-square" ? SQUARE_PATTERNS.filter((p) => !CENTRED_PATTERNS.includes(p))
+      : kind === "band" ? BAND_PATTERNS
+      : kind === "whole" ? WHOLE_PATTERNS
+      : null;
     const from = can ? style.palette.filter((p) => can.includes(p)) : style.palette;
     // None of their favourites will do: another of their family's, then a
     // plain one.
     const family = can ? FAMILY_PATTERNS[style.family].filter((p) => can.includes(p)) : [];
-    const fallback: PatternName[] = family.length ? family : kind === "square" ? ["rings"] : kind === "single" ? style.palette : ["waves", "scales", "triangles"];
+    const fallback: PatternName[] = family.length ? family : kind === "square" || kind === "big-square" ? ["rings"] : kind === "single" ? style.palette : ["waves", "scales", "triangles"];
     const pool = (from.length ? from : fallback).filter((p) => p !== patternMemo.last);
     patternMemo.last = r.pick(pool.length ? pool : from.length ? from : fallback);
     return patternMemo.last;
@@ -871,7 +877,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       return;
     }
     blocksOf(cells, at).forEach((block, i) => {
-      const kind = block.cells.length === 1 ? "single" : block.grid[1] > 1 ? "square" : "run";
+      const kind = block.cells.length === 1 ? "single" : block.grid[1] > 1 ? (block.cells.length > 4 ? "big-square" : "square") : "run";
       const name = nextPattern(kind);
       const seed = nextSeed();
       for (const cell of block.cells) {

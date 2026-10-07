@@ -51,6 +51,9 @@ export const RUN_PATTERNS: PatternName[] = ["hatch", "crosshatch", "dashes", "ko
 /** Drawn across a block of cells - two by two, up to three by three -
  *  about its middle. */
 export const SQUARE_PATTERNS: PatternName[] = ["rings", "stepped-diamond", "otomi", "talavera", "kolam-lattice", "bandana", "plaid"];
+/** One shape about a block's middle that reaches only its inner cells: over
+ *  more than two by two, the corner cells - days done - were left blank. */
+export const CENTRED_PATTERNS: PatternName[] = ["stepped-diamond", "otomi"];
 /** Drawn along a bar. */
 export const BAND_PATTERNS: PatternName[] = ["hatch", "dashes", "waves", "scales", "triangles", "kolam-lattice", "greca", "serape", "terraces", "mesa", "dunes", "rope", "yoke", "scroll"];
 /** Bands: one strip across the middle of what they are drawn over - over
@@ -506,7 +509,9 @@ const GENS: Record<PatternName, Gen> = {
     // Dune ridges, one behind another: a long rise into the wind, a short
     // steep fall.
     const out: Path[] = [];
-    for (let yy = y + h * r.range(0.25, 0.4); yy < y + h + u * 0.1; yy += u * r.range(0.2, 0.28)) {
+    // From near the top, in the unit's terms: over a whole module a share
+    // of its height left the first row empty.
+    for (let yy = y + u * r.range(0.12, 0.28); yy < y + h + u * 0.1; yy += u * r.range(0.2, 0.28)) {
       const p: Path = [];
       let px = x - r.range(0, u * 0.5);
       p.push(px, yy);
