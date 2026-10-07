@@ -35,6 +35,8 @@ const RANGES: Record<string, [number, number]> = {
   vignetteSidesReach: [0, 50],
   vignetteCorners: [0, 1],
   youSeconds: [0.6, 6],
+  curlShade: [0, 0.5],
+  curlReach: [0.1, 1],
 };
 /** The torn edges there are (TornEdge.tsx). */
 const TORN_EDGES = new Set(["drawn", "flow-fine", "flow-bold", "none"]);

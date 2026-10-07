@@ -80,6 +80,12 @@ export type BodyWallSettings = {
    *  2026-10-06: "i want a slider for you writing speed i want to slow it
    *  down"): its strokes and the pen-lifts between them, all in proportion. */
   youSeconds: number;
+  /** The post-it's curled top left corner (PostIt.tsx, CURL): how dark its
+   *  shade is at the tip, 0 to 1, and how far back toward the bend it
+   *  reaches, 0 to 1 of the way (2026-10-07: "make that gradient shadow a
+   *  bit more subtle, add to dev popup reach and opacity"). */
+  curlShade: number;
+  curlReach: number;
 };
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;
@@ -101,6 +107,8 @@ export function pageVars(s: BodyWallSettings): Record<string, number> {
     "--vig-sides-reach": s.vignetteSidesReach,
     "--vig-corners": s.vignetteCorners,
     "--you-seconds": s.youSeconds,
+    "--curl-shade": s.curlShade,
+    "--curl-reach": s.curlReach,
   };
 }
 

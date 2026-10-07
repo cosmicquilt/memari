@@ -1337,6 +1337,25 @@
   transform-origin: 0 0;
 }
 
+/* The curled corner's shade (PostIt.tsx, CURL), the same square on every
+   piece of it: "to top left" runs across the hinges, 50% on the outermost,
+   100% at the tip. None from the hinge until --curl-reach of the way back
+   from the tip, then darker, easing out, to --curl-shade at the tip - the
+   fold's warm tone. Both from the dev panel (bodyWall.ts). */
+.postitCurlShade {
+  --c: 120, 88, 10;
+  --from: calc(100% - 50% * var(--curl-reach, 0.8));
+  --a: var(--curl-shade, 0.2);
+  background: linear-gradient(
+    to top left,
+    rgba(var(--c), 0) var(--from),
+    rgba(var(--c), calc(var(--a) * 0.4375)) calc(var(--from) + (100% - var(--from)) * 0.25),
+    rgba(var(--c), calc(var(--a) * 0.75)) calc(var(--from) + (100% - var(--from)) * 0.5),
+    rgba(var(--c), calc(var(--a) * 0.9375)) calc(var(--from) + (100% - var(--from)) * 0.75),
+    rgba(var(--c), var(--a)) 100%
+  );
+}
+
 /* The top right corner turned over: the note's back, barely duller, and the
    faintest shadow on the front ("the turned corner gradients less obvious"). */
 .postitTurned::after {

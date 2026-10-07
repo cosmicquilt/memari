@@ -32,6 +32,8 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "vignetteCorners", label: "Hero vignette, corners", min: 0, max: 1, step: 0.01, unit: "" },
   { key: "tornScale", label: "Torn edge photo size", min: 0.2, max: 1, step: 0.01, unit: "x" },
   { key: "tornShadow", label: "Torn edge shadow", min: 0, max: 2, step: 0.05, unit: "x" },
+  { key: "curlShade", label: "Post-it curl shade", min: 0, max: 0.5, step: 0.01, unit: "" },
+  { key: "curlReach", label: "Post-it curl shade reaches", min: 0.1, max: 1, step: 0.05, unit: "of the curl" },
 ];
 
 /** The torn edges to choose from (TornEdge.tsx): the drawn deckle, Flow's

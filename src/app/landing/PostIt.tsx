@@ -222,15 +222,19 @@ const BANDS = [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.12];
  *
  * Read by its shade, as seen face on a gentle lift hardly changes the
  * outline: the lifted paper turns from the light (the film's, from the top
- * left), darker toward the tip by up to `shade` - the fold's own warm tone -
- * in one gradient across all of it (each piece shows its part), from none
- * at the hinge, so there is no line anywhere. Under it, the same light the
+ * left), darker toward the tip - the fold's own warm tone - in one gradient
+ * across all of it (each piece shows its part), from none, so there is no
+ * line anywhere. How dark at the tip, and how far back toward the hinge it
+ * reaches, are the dev panel's (--curl-shade, --curl-reach; bodyWall.ts -
+ * 2026-10-07: "make that gradient shadow a bit more subtle, add to dev
+ * popup reach and opacity"), so the gradient is the stylesheet's
+ * (.postitCurlShade). Under it, the same light the
  * bands below have (lightAt), so the corner is the note's own colour: without
  * it the corner came out a deeper yellow than the paper around it. No cast
  * shadow: along the hinge it drew a dark line ("a jarring shadow toward the
  * rest of the postit"). Drawn first as mockups from a 3D model.
  */
-const CURL = { size: 0.2, steps: 16, turn: 55, onset: 1.6, shade: 0.3 };
+const CURL = { size: 0.2, steps: 16, turn: 55, onset: 1.6 };
 
 /** The white over the bands' paper at `y` note sides down from the top of
  *  the lifted part: more the further the paper leans into the light - what
@@ -250,17 +254,6 @@ function Curl({ backgroundPosition }: { backgroundPosition: string }) {
     const back = `calc(var(--note) * ${((-s * h) / 2).toFixed(4)})`;
     return `translate(${m}, ${m}) rotate3d(1, -1, 0, ${deg.toFixed(2)}deg) translate(${back}, ${back})`;
   };
-  // The shade on the corner's square, the same for every piece: "to top
-  // left" runs across the hinges, 50% on the outermost, 100% at the tip;
-  // darker the further from the hinge, smoothly from none there - over the
-  // whole lifted part, not only where it turns most: by the turn alone it
-  // gathered at the very tip and read as nothing.
-  const stops = Array.from({ length: 9 }, (_, k) => {
-    const f = k / 8;
-    const a = CURL.shade * f * (2 - f);
-    return `rgba(120, 88, 10, ${a.toFixed(3)}) ${(50 + 50 * f).toFixed(1)}%`;
-  });
-  const shade = `linear-gradient(to top left, rgba(120, 88, 10, 0) 0%, ${stops.join(", ")})`;
   const lit = `linear-gradient(to top, rgba(255,255,255,${lightAt(s).toFixed(3)}), rgba(255,255,255,${lightAt(0).toFixed(3)}))`;
   return Array.from({ length: n }, (_, i) => {
     const out = hinge(i);
@@ -274,7 +267,8 @@ function Curl({ backgroundPosition }: { backgroundPosition: string }) {
     const transform = Array.from({ length: i + 1 }, (_, j) => about(hinge(j), turn(j))).join(" ");
     return (
       <span key={i} className={styles.postitCurl} style={{ backgroundPosition, clipPath, transform }}>
-        <span className={styles.postitLight} style={{ background: `${shade}, ${lit}` }} />
+        <span className={styles.postitLight} style={{ background: lit }} />
+        <span className={`${styles.postitLight} ${styles.postitCurlShade}`} />
       </span>
     );
   });

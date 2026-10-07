@@ -22,6 +22,8 @@
   "vignetteSidesReach": 9,
   "vignetteCorners": 1,
   "youSeconds": 2.8,
+  "curlShade": 0.18,
+  "curlReach": 0.75,
   "newEachLoad": true,
   "tornEdge": "flow-fine"
 }
