@@ -898,3 +898,86 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     strips: { starter: [2, 2, 1, 2, 2, 0, 0] },
   },
 ];
+
+/**
+ * THE BASE WEEK - the loose sheets on the hero's desk (Andrew, 2026-10-06:
+ * "one more very important archetype. 'base' archetype, the archetype will
+ * replace the doodle walls on the loose paper ... a weekly layout of someone
+ * trying to 'get their sh*t together' ... the left loose page more focused
+ * on things they want to put in place for structure now and the right page
+ * more focused on fun things or plans in the future that them getting their
+ * shi together will enable").
+ *
+ * The life cycle it stands for: someone starts on loose printouts - a free
+ * week, undated - getting their bearings and picturing what it will let them
+ * do; then orders the journal (the book on the desk) and settles into it,
+ * making it more their own. So: printed on plain sheets, no dates, the left
+ * page the basics they are putting in place, the right page the fun and the
+ * plans those basics are for. Not in the journal's turn of spreads; baked
+ * onto the sheets by scripts/build-hero-sheets.mts (the page /dev/sheets
+ * writes it in).
+ */
+export const BASE_SPREAD: HeroSpread = {
+  key: "base",
+  undated: true,
+  title: "week 1 :)",
+  layout: {
+    kind: "week",
+    font: "sans",
+    weekStartsMonday: true,
+    sidebar: [
+      ["weekly-priorities", 8, { heading: "This Week" }],
+      ["labeled-box", 13, box("Reset List", "lined")],
+      ["labeled-box", 12, box("Money", "lined")],
+    ],
+    belowLeft: [at("habit-tracker", 6, BELOW_ROW, 18, 15, { heading: "Basics" })],
+    belowRight: [
+      at("savings-goal", 0, BELOW_ROW, 12, 5, { heading: "Lisbon Fund" }),
+      at("labeled-box", 0, BELOW_ROW + 5, 12, 10, box("When It's Sorted", "lined")),
+      at("someday-maybe", 12, BELOW_ROW, 12, 15, { heading: "Someday Soon" }),
+    ],
+  },
+  hand: { words: { font: "caveat", caps: false, weight: 500, scale: 1.42 }, banner: { font: "marker", caps: true, scale: 1 }, pen: ink("#24439c", 3.8), accent: ink("#d4553f", 3.6), highlight: highlighter("#ffe45c") },
+  doodles: { style: "sketchnote", big: ["climbing", "camera", "sailboat", "houseplant"], small: ["star", "sun", "heart", "sparkle"] },
+  calendar: [
+    ...[0, 1, 3, 4].map((day) => ({ day, start: 9, end: 17, title: "Work", calendar: "work" as const })),
+    { day: 2, start: 8, end: 9, title: "Dentist", calendar: "health" },
+    { day: 2, start: 9.5, end: 17, title: "Work", calendar: "work" },
+    { day: 1, start: 18, end: 19, title: "Therapy", calendar: "health" },
+    { day: 3, start: 18.5, end: 20, title: "Climbing intro", calendar: "personal" },
+    { day: 5, start: 14, end: 16, title: "Pottery taster", calendar: "personal" },
+  ],
+  events: [
+    // The left page: the basics, going in.
+    { day: 0, at: 7, text: "alarm 7am - no snooze" },
+    { day: 0, at: 18, text: "meal prep x3", doodle: "cooking" },
+    { day: 0, at: 21.5, text: "phone in the kitchen" },
+    { day: 1, at: 7.5, text: "make the bed (!)" },
+    { day: 1, at: 19.5, text: "laundry + FOLD it" },
+    { day: 2, at: 6.5, text: "walk 20 min" },
+    { day: 2, at: 8.5, text: "finally", on: true, mark: "circle" },
+    { day: 2, at: 18, text: "budget hour", until: 19 },
+    // The right page: what they are for.
+    { day: 3, at: 19, text: "first time!!", on: true, doodle: "climbing" },
+    { day: 4, at: 19, text: "cook for Mo + Sam" },
+    { day: 5, at: 10, text: "farmers mkt" },
+    { day: 5, at: 14.5, text: "old clothes", on: true },
+    { day: 5, at: 17, text: "look at Lisbon flights", mark: "highlight" },
+    { day: 5, at: 20.5, text: "karaoke?? (yes)", doodle: "singing" },
+    { day: 6, at: 11, text: "long walk, no phone", doodle: "sun" },
+    { day: 6, at: 17, text: "plan next week", mark: "underline" },
+  ],
+  // Over Thursday and Friday, and short: the film's pencil cup stands on
+  // the right sheet's top corner, over Friday's far end and the weekend's
+  // tops ("the fun part" ran under it).
+  banner: { text: "fun stuff", from: 0, to: 1 },
+  lists: {
+    "this week": ["dentist (finally)", "make a budget", "inbox to zero", "bed before 12"],
+    // Short enough for a line each in the sidebar's narrow boxes.
+    "reset list": ["~cut subs", "autopay", "~clear desk", "passport!", "find a GP", "sort closet"],
+    money: ["rent: paid!", "phone 15th", "food $60/wk", "save $25"],
+    "when it's sorted": ["Lisbon in the spring", "climb 2x a week", "have people over", "a real bookshelf", "say yes to things"],
+    "someday soon": ["learn to surf", "a dog (!!)", "night sky trip", "run a 10k", "the pottery wheel", "see Gran more"],
+  },
+  trackers: { basics: ["water", "bed by 11", "make the bed", "10 min tidy", "walk", "cook dinner"] },
+};

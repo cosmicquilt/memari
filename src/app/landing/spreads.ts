@@ -31,7 +31,7 @@ import { MONTH_GRID_ROW_SPAN, MONTH_TITLE_ROW_SPAN, WEEK_TITLE_ROW_SPAN } from "
 import { dateRangeLabel } from "@/lib/pageLevels";
 import { computeMonthCalendar, type MonthCalendarCell } from "@/lib/monthCalendar";
 import { layoutPlacements, type CalendarBlock, type Slot } from "./archetypes";
-import { HERO_SPREADS, heroSpreads, type HeroSpread, type HoursSettings } from "./heroSpreads";
+import { BASE_SPREAD, HERO_SPREADS, heroSpreads, type HeroSpread, type HoursSettings } from "./heroSpreads";
 import { EVENT_PRINT_GREY, type HourlyGridEvent } from "@/lib/modules/hourlyGridCore";
 
 const TRIM = PLANNER_TRIMS.bound7x10;
@@ -375,9 +375,13 @@ function placementsOf(def: HeroSpread, when: When): Placed[] {
     const rowSpan = layout.hoursRows ?? HOURS_ROW_SPAN;
     // With increments off the hours draw no events: nothing to place them by.
     const events = hours.intervalMode === "off" ? [[], []] : calendarEvents(def.calendar, [3, 4], hours);
-    spine({ slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, props: when.title });
-    spine({ slug: "hourly-grid-core", page: 0, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan, props: { dayCount: 3, dayLabels: when.dayLabels.slice(0, 3), ...hours, events: events[0] } });
-    spine({ slug: "hourly-grid-core", page: 1, columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan, props: { dayCount: 4, dayLabels: when.dayLabels.slice(3), ...hours, events: events[1] } });
+    // Undated (the base week, a free printable): no numbers, no dates -
+    // the absence of the values, as everywhere in the app.
+    const title = def.undated ? { dateRangeLabel: "" } : when.title;
+    const dayLabels = def.undated ? when.dayLabels.map(({ name }) => ({ name })) : when.dayLabels;
+    spine({ slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, props: title });
+    spine({ slug: "hourly-grid-core", page: 0, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan, props: { dayCount: 3, dayLabels: dayLabels.slice(0, 3), ...hours, events: events[0] } });
+    spine({ slug: "hourly-grid-core", page: 1, columnStart: 0, rowStart: 0, columnSpan: 24, rowSpan, props: { dayCount: 4, dayLabels: dayLabels.slice(3), ...hours, events: events[1] } });
     modules.push(...layoutPlacements(layout));
   } else if (layout.kind === "month") {
     // The month this week is in (its middle day's), as pageLayouts.ts's
@@ -521,6 +525,12 @@ function buildSpread(def: HeroSpread, when: When): LandingSpread {
     else page.regions.push(boxRegion(p.slug, MODULE_REGISTRY[p.slug]?.primitive ?? p.slug, String(p.props.heading ?? MODULE_REGISTRY[p.slug]?.label ?? p.slug), box, marks));
   }
   return { key: def.key, fontFamily, pages };
+}
+
+/** The base week, for the loose sheets on the hero's desk (heroExtras.ts,
+ *  BASE_SPREAD) - undated, so any week will do. */
+export function baseSheetSpread(): LandingSpread {
+  return buildSpread(BASE_SPREAD, weekOf(new Date(Date.UTC(2026, 0, 5)), BASE_SPREAD.layout.weekStartsMonday, 0));
 }
 
 /** The spreads, the first in the week containing `today` and each after it

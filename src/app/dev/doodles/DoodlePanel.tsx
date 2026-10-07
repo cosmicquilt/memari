@@ -1,20 +1,17 @@
 "use client";
 
 // Every drawing in the doodle library, and a switch on each for three places:
-// the start dialog's wall, the hero's sketch boxes, and the hero's two loose
-// sheets (one list for both - 2026-09-28: "add them as one switch"). The wall
-// and the sheets can be previewed as they will be baked (the same packWall
-// and bakeSheet the build script runs), and Save writes the lists and bakes
-// what changed (save/route.ts).
+// the start dialog's wall, the hero's sketch boxes, and the body wall. The
+// wall can be previewed as it will be baked (the same packWall the build
+// script runs), and Save writes the lists and bakes what changed
+// (save/route.ts). (The hero's loose sheets had a list here too, until the
+// base week took their place - /dev/sheets.)
 
 import { useMemo, useState } from "react";
 import { packWall, wallClassOf, wallSeed, WALL_CLASSES, WALL_THEMES, WALL_TILE, WALL_VARIANTS, type WallTheme } from "@/app/landing/doodleWall";
-import { bakeSheet, shareSheets, sheetBakeInput, SHEET_CLASSES, SHEET_INK, SHEET_SEEDS, SHEET_TILE } from "@/app/landing/doodleSheets";
-import { BOOK_ON_SHEETS, SHEET_IDS, SHEETS, sheetShows, type SheetId } from "@/app/landing/video/sheets";
-import { HERO_VIDEO } from "@/app/landing/video/heroVideo";
 
 type Index = Record<string, Record<string, Array<[string, number, number]>>>;
-type Choices = { wall: string[]; sketchBox: string[]; sheets: string[]; body: string[] };
+type Choices = { wall: string[]; sketchBox: string[]; body: string[] };
 type Mode = keyof Choices;
 
 const ACCENT = "#4a5cff";
@@ -39,20 +36,13 @@ const MODES: Array<{ key: Mode; label: string; note: string }> = [
     label: "Body wall",
     note: "Behind the landing page below the hero, packed live round the content - tune its spacing with the sliders on the page itself (localhost). Changes show on the next load.",
   },
-  {
-    key: "sheets",
-    label: "Loose sheets",
-    note: "The two sheets on the desk in the hero film, in blue pen, shared between them so each is its own drawing. All off leaves plain paper (with its texture).",
-  },
 ];
 const MARKS: Array<[Mode, string, string]> = [
   ["wall", "W", "On the wall"],
   ["sketchBox", "S", "In sketch boxes"],
-  ["sheets", "L", "On the loose sheets"],
   ["body", "B", "On the body wall"],
 ];
-const classOf = (full: string) => wallClassOf(full.split("/")[1].replace(/-\d+$/, ""));
-const asSets = (c: Choices) => ({ wall: new Set(c.wall), sketchBox: new Set(c.sketchBox), sheets: new Set(c.sheets ?? []), body: new Set(c.body ?? c.wall) });
+const asSets = (c: Choices) => ({ wall: new Set(c.wall), sketchBox: new Set(c.sketchBox), body: new Set(c.body ?? c.wall) });
 
 const sorted = (s: Set<string>) => [...s].sort();
 const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
@@ -65,7 +55,6 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
   const [query, setQuery] = useState("");
   const [onlyOn, setOnlyOn] = useState(false);
   const [preview, setPreview] = useState<{ urls: Record<WallTheme, string>; of: string; counts: number[] } | null>(null);
-  const [sheetPreview, setSheetPreview] = useState<{ url: string; of: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -73,7 +62,6 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
   const current = chosen[mode];
   const dirty = MODES.some((m) => !sameSet(chosen[m.key], saved[m.key]));
   const wallKey = sorted(chosen.wall).join("|");
-  const sheetKey = sorted(chosen.sheets).join("|");
 
   // The drawings to show: by style, then subject, filtered.
   const sections = useMemo(() => {
@@ -137,61 +125,6 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
     }
   };
 
-  // Both sheets as the build script bakes them: shared out, packed whole
-  // inside the paper, laid into the film.
-  const drawSheets = async () => {
-    const shared = shareSheets(sorted(chosen.sheets), classOf);
-    const out = {} as Record<SheetId, string>;
-    for (const id of SHEET_IDS) {
-      const drawings = shared[id].map((full) => ({ src: `/landing/doodles/${full}.webp`, cls: classOf(full) }));
-      const packed = await packWall({ drawings, classes: SHEET_CLASSES, tile: SHEET_TILE, ink: SHEET_INK, paper: "#ffffff", seed: SHEET_SEEDS[id], wrap: false });
-      out[id] = await bakeSheet(sheetBakeInput(id, packed.url, (p) => p));
-    }
-    return out;
-  };
-
-  const onPreviewSheets = async () => {
-    setBusy("Drawing the sheets...");
-    try {
-      const baked = await drawSheets();
-      // On the film's resting frame (1920 across: half the 4K frame the
-      // sheets are measured in), multiplied and clipped to the book as the
-      // hero does.
-      const load = (src: string) =>
-        new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = reject;
-          img.src = src;
-        });
-      const frame = await load(HERO_VIDEO.last);
-      const c = document.createElement("canvas");
-      c.width = frame.width;
-      c.height = frame.height;
-      const g = c.getContext("2d")!;
-      g.drawImage(frame, 0, 0);
-      g.globalCompositeOperation = "multiply";
-      const k = frame.width / HERO_VIDEO.width;
-      const rest = BOOK_ON_SHEETS.right.length - 1;
-      for (const id of SHEET_IDS) {
-        const [x, y, w, h] = SHEETS[id].box;
-        const shows = sheetShows(id, rest);
-        g.save();
-        if (shows) {
-          g.beginPath();
-          shows.forEach(([X, Y], i) => (i ? g.lineTo(X * k, Y * k) : g.moveTo(X * k, Y * k)));
-          g.closePath();
-          g.clip();
-        }
-        g.drawImage(await load(baked[id]), x * k, y * k, w * k, h * k);
-        g.restore();
-      }
-      setSheetPreview({ url: c.toDataURL("image/jpeg", 0.9), of: sheetKey });
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const onSave = async () => {
     setBusy("Saving...");
     setMessage(null);
@@ -206,26 +139,17 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
           }
         setBusy("Saving...");
       }
-      // So are the sheets.
-      const sheets: Array<{ name: string; image: string }> = [];
-      if (!sameSet(chosen.sheets, saved.sheets)) {
-        setBusy("Drawing the sheets...");
-        const baked = await drawSheets();
-        for (const id of SHEET_IDS) sheets.push({ name: id, image: baked[id] });
-        setBusy("Saving...");
-      }
       const res = await fetch("/dev/doodles/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), body: sorted(chosen.body), walls, sheetImages: sheets }),
+        body: JSON.stringify({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), body: sorted(chosen.body), walls }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error ?? res.statusText);
-      setSaved(asSets({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), sheets: sorted(chosen.sheets), body: sorted(chosen.body) }));
+      setSaved(asSets({ wall: sorted(chosen.wall), sketchBox: sorted(chosen.sketchBox), body: sorted(chosen.body) }));
       setMessage(
-        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes, ${result.sheets} for the loose sheets, ${result.body} for the body wall` +
+        `Saved: ${result.wall} on the wall, ${result.sketchBox} for sketch boxes, ${result.body} for the body wall` +
           (result.walls ? `, ${result.walls} walls redrawn (${Math.round(result.wallBytes / 1024)} KB)` : "") +
-          (result.sheetImages ? `, both sheets redrawn` : "") +
           ". Reload the app or the landing page to see it; commit and push to put it live."
       );
     } catch (error) {
@@ -267,11 +191,6 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
             Preview wall
           </button>
         )}
-        {mode === "sheets" && (
-          <button className="dp-btn" onClick={onPreviewSheets} disabled={!!busy}>
-            Preview sheets
-          </button>
-        )}
         <button className="dp-btn dp-primary" onClick={onSave} disabled={!!busy || !dirty}>
           Save
         </button>
@@ -298,17 +217,6 @@ export function DoodlePanel({ index, initial }: { index: Index; initial: Choices
               <img key={ground} src={preview.urls[ground]} alt={`The ${ground} wall as it would be baked`} style={{ width: "100%", borderRadius: 6, border: `1px solid ${LINE}` }} />
             ))}
           </div>
-        </section>
-      )}
-
-      {mode === "sheets" && sheetPreview && (
-        <section style={{ padding: "14px 24px 0" }}>
-          <div className="dp-muted" style={{ marginBottom: 6 }}>
-            Preview{sheetPreview.of === sheetKey ? "" : " (out of date - preview again)"}: the film&rsquo;s resting frame, the sheets as Save
-            bakes them.
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={sheetPreview.url} alt="The loose sheets on the film's resting frame" style={{ width: "100%", maxWidth: 1400, borderRadius: 6, border: `1px solid ${LINE}` }} />
         </section>
       )}
 

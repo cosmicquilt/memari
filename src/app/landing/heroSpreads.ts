@@ -35,7 +35,7 @@
 
 import type { FontChoice } from "@/lib/theme";
 import { PEOPLE, type Person, type Slot, type WeekLayout } from "./archetypes";
-import { EXTRA_SPREADS } from "./heroExtras";
+import { BASE_SPREAD, EXTRA_SPREADS } from "./heroExtras";
 
 // ------------------------------------------------------------------ layout
 
@@ -119,10 +119,14 @@ export type Writing = Pick<
    */
   log?: string[][];
   month?: MonthWriting;
+  /** Written in the week title's box, where the dates would be. */
+  title?: string;
 };
 
 export type HeroSpread = Writing & {
   key: string;
+  /** Printed with no dates - a free printable, the base week (heroExtras.ts). */
+  undated?: boolean;
   layout: HeroLayout;
   /** Why it is not on the live site yet, if it is not (archetypes.ts). */
   held?: string;
@@ -135,7 +139,7 @@ const personWeek = (p: Person): HeroSpread => {
   return { key, held, layout: { kind: "week", ...layout }, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts };
 };
 
-const BY_KEY: Record<string, HeroSpread> = Object.fromEntries([...PEOPLE.map(personWeek), ...EXTRA_SPREADS].map((s) => [s.key, s]));
+const BY_KEY: Record<string, HeroSpread> = Object.fromEntries([...PEOPLE.map(personWeek), ...EXTRA_SPREADS, BASE_SPREAD].map((s) => [s.key, s]));
 
 /**
  * The order the journal turns through them: the student first, the jobs
@@ -183,7 +187,10 @@ export const HERO_SPREADS: HeroSpread[] = ORDER.map((key) => {
   return spread;
 });
 
-export const HERO_BY_KEY: Record<string, HeroSpread> = Object.fromEntries(HERO_SPREADS.map((s) => [s.key, s]));
+/** Every spread there is by its key - the journal's, and the base week on
+ *  the loose sheets, which the handwriting writes in too. */
+export const HERO_BY_KEY: Record<string, HeroSpread> = BY_KEY;
+export { BASE_SPREAD };
 
 /** What the hero shows: everything in development, and on the live site
  *  everything not held for a read-through. */

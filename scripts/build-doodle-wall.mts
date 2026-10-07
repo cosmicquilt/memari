@@ -1,8 +1,8 @@
 // The start dialog's backdrops with doodles: walls of little drawings in
 // blue pen, baked into public/landing/doodle-walls/ - WALL_VARIANTS walls for
 // each theme (light-0.webp ... dark-5.webp), one of which each load shows.
-// And the hero's two loose sheets, each a small wall of its own laid into the
-// film (public/landing/sheets/left.webp, right.webp - see doodleSheets.ts).
+// (The hero's two loose sheets were small walls too, until the base week
+// took their place - scripts/build-hero-sheets.mts.)
 //
 //   npm run build:doodle-wall
 //
@@ -23,12 +23,10 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright-core";
 import { packWall, wallClassOf, wallPath, wallSeed, WALL_CLASSES, WALL_THEMES, WALL_TILE, WALL_VARIANTS, type WallTheme } from "../src/app/landing/doodleWall";
-import { bakeSheet, shareSheets, sheetBakeInput, SHEET_CLASSES, SHEET_INK, SHEET_SEEDS, SHEET_TILE } from "../src/app/landing/doodleSheets";
-import { SHEET_IDS, sheetPath } from "../src/app/landing/video/sheets";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const PUBLIC = path.join(ROOT, "public");
-const choices = JSON.parse(readFileSync(path.join(ROOT, "src/app/landing/doodleChoices.json"), "utf8")) as { wall: string[]; sheets: string[] };
+const choices = JSON.parse(readFileSync(path.join(ROOT, "src/app/landing/doodleChoices.json"), "utf8")) as { wall: string[] };
 
 // A site file as a data URL: the baking page is blank, and a page given
 // file:// images could not read its own canvas back.
@@ -73,24 +71,5 @@ for (const theme of Object.keys(WALL_THEMES) as WallTheme[]) {
   }
   console.log(`${theme}: ${WALL_VARIANTS} walls, ${sizes.join(", ")} KB`);
 }
-// The loose sheets: the sheets' drawings shared between the two, each packed
-// whole inside its paper and laid into the film.
-mkdirSync(path.join(PUBLIC, "landing/sheets"), { recursive: true });
-const shared = shareSheets(choices.sheets ?? [], classOf);
-for (const id of SHEET_IDS) {
-  const packed = await page.evaluate(packWall, {
-    drawings: drawingsOf(shared[id]),
-    classes: SHEET_CLASSES,
-    tile: SHEET_TILE,
-    ink: SHEET_INK,
-    paper: "#ffffff",
-    seed: SHEET_SEEDS[id],
-    wrap: false,
-  });
-  const baked = await page.evaluate(bakeSheet, sheetBakeInput(id, packed.url, dataUrl));
-  const bytes = Buffer.from(baked.split(",")[1], "base64");
-  writeFileSync(path.join(PUBLIC, sheetPath(id)), bytes);
-  console.log(`sheet ${id}: ${shared[id].length} drawings, placed ${packed.counts.join(" + ")}, ${Math.round(bytes.length / 1024)} KB`);
-}
 await browser.close();
-console.log(`${drawings.length} drawings chosen for the wall, ${(choices.sheets ?? []).length} for the sheets`);
+console.log(`${drawings.length} drawings chosen for the wall`);

@@ -4,9 +4,9 @@
 // slots at their times, a dotted day's rows, a month's squares.
 //
 // Run as part of: npm test
-import { SPREAD_DEFS, landingSpreads, spreadProblems } from "./spreads";
+import { SPREAD_DEFS, baseSheetSpread, landingSpreads, spreadProblems } from "./spreads";
 import { PEOPLE, SIDEBAR_FROM_ROW } from "./archetypes";
-import { HERO_BY_KEY, HERO_SPREADS, type HeroSpread } from "./heroSpreads";
+import { BASE_SPREAD, HERO_BY_KEY, HERO_SPREADS, type HeroSpread } from "./heroSpreads";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 
 let failures = 0;
@@ -38,7 +38,10 @@ check("every person's week is in the hero", PEOPLE.every((p) => HERO_BY_KEY[p.ke
 const drawsEvents = (s: HeroSpread) => (s.layout.kind === "week" || s.layout.kind === "day") && s.layout.hours?.intervalMode !== "off";
 const dayCount = (s: HeroSpread) => (s.layout.kind === "week" ? 7 : s.layout.kind === "day" ? 2 : 0);
 
-for (const spread of HERO_SPREADS) {
+// The base week, on the hero's loose sheets (heroExtras.ts): checked as
+// strictly as the journal's spreads, and not among them.
+check("the base week is not in the journal's turn", !HERO_SPREADS.includes(BASE_SPREAD));
+for (const spread of [...HERO_SPREADS, BASE_SPREAD]) {
   // Nothing scheduled where nothing would draw it: a month's calendar and a
   // week with increments off draw no events, and scheduled things are never
   // written by hand instead (2026-10-06).
@@ -64,7 +67,7 @@ for (const spread of HERO_SPREADS) {
   }
 }
 
-for (const def of SPREAD_DEFS) {
+for (const def of [...SPREAD_DEFS, BASE_SPREAD]) {
   const problems = spreadProblems(def);
   check(`${def.key} is a valid spread`, problems.length === 0, problems.join("; "));
 }
@@ -127,6 +130,21 @@ for (const spread of spreads) {
     check(`${spread.key}: every date of the month, once`, sorted.length >= 28 && sorted.every((d, i) => d === i + 1), sorted.join(","));
   }
 }
+// The base week, undated: its title and its days carry no dates.
+const base = baseSheetSpread();
+const baseDates = base.pages.flatMap((page) =>
+  page.regions.flatMap((r) =>
+    r.kind === "hours"
+      ? r.days.flatMap((d) => {
+          const [hx, hy, hw, hh] = d.header;
+          return page.marks.filter((m) => m.k === "t" && /^\d{1,2}$/.test(m.t) && m.x >= hx && m.x < hx + hw && m.y >= hy - 4 && m.y < hy + hh).map((m) => (m.k === "t" ? m.t : ""));
+        })
+      : []
+  )
+);
+const baseRange = base.pages[0].marks.some((m) => m.k === "t" && / - /.test(m.t));
+check("the base week is undated", baseDates.length === 0 && !baseRange, `${baseDates.join(", ")}${baseRange ? " and a date range" : ""}`);
+
 // Consecutive weeks: the first spread is the week containing the date given
 // (a Tuesday; the student's weeks start on Monday).
 const firstTitle = spreads[0].pages[0].marks.find((m) => m.k === "t" && /-/.test(m.t));

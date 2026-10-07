@@ -1041,6 +1041,12 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     }
   }
   const title = spread.pages[0].regions.find((reg): reg is Extract<Region, { kind: "title" }> => reg.kind === "title");
+  // Written where the dates would be, on an undated week (the base week's
+  // "week 1 :)").
+  if (title && person?.title) {
+    const [x, y, w, h] = title.box;
+    words(0, hand.words, person.title, x + 22, y + h * 0.84, 40, w - 150, hand.pen);
+  }
   // Only by a week's title: a month's name runs the width of its shorter box.
   if (title && title.box[3] > 160 && r.chance(0.7)) {
     const [x, y, w] = title.box;

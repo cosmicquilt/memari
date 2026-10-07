@@ -1,67 +1,38 @@
-// The loose sheets on the hero's desk, drawn on (Andrew, 2026-09-28: "add
-// two unique doodle wall drawings and paper texture to the two loose papers
-// on the desk in the hero and add them as one switch on the control panel").
+// The loose sheets on the hero's desk, printed and written on: the base
+// week (heroExtras.ts, BASE_SPREAD - Andrew, 2026-10-06: "the archetype will
+// replace the doodle walls on the loose paper"), its left page on the left
+// sheet and its right page on the right. Until then each sheet was a small
+// doodle wall (2026-09-28).
 //
-// Each sheet is its own small doodle wall - the drawings switched on for the
-// sheets (doodleChoices.json's `sheets`, one list for both), shared out
-// between the two so neither repeats the other - packed by doodleWall.ts's
-// packWall without wrapping, in blue pen on white, then laid into the film:
-// warped onto the sheet's four corners in the 4K frame (video/sheets.ts),
-// given the paper's fibre, and cut to where the sheet's paper shows past the
-// book, the cup and the mug. The result is baked (public/landing/sheets/) and
-// multiplied onto the film by VideoHero, so white leaves the photograph
-// alone and the ink takes its light and leaf shadows.
+// Each page is printed and written in as the journal's are, then laid into
+// the film: centred on the sheet like a printout, warped onto the sheet's
+// four corners in the 4K frame (video/sheets.ts), given the paper's fibre,
+// and cut to where the sheet's paper shows past the book, the cup and the
+// mug. The result is baked (public/landing/sheets/) and multiplied onto the
+// film by VideoHero, so white leaves the photograph alone and the print and
+// ink take its light and leaf shadows.
 //
-// Baked by scripts/build-doodle-wall.mts and by the control panel
-// (/dev/doodles), both through the input builders below, so they bake the
-// same sheets.
+// Baked by the page /dev/sheets, which shows the result on the film's
+// resting frame, and saved from it by scripts/build-hero-sheets.mts.
 
 import { SHEETS, sheetMaskPath, type SheetId } from "./video/sheets";
 
 /** A sheet's own units: about the paper's proportions (a sheet measures
  *  1.15 tall to 1 across, taking out the camera's slant), and the margin of
- *  paper left round the drawings. */
+ *  paper left round what is on it. */
 export const SHEET_TILE = { w: 1000, h: 1150, scale: 2 };
 export const SHEET_MARGIN = 45;
 
-/** Bigger than the wall's for the size of the sheet, so a few drawings read
- *  as drawings at the size a sheet is on screen. */
-export const SHEET_CLASSES = [
-  { size: [170, 250], most: 30 },
-  { size: [80, 130], most: 40 },
-  { size: [30, 56], most: 200 },
-] as const;
-
-/** Ballpoint blue, darker than the wall's: this is ink on a page in the
- *  photograph, not a pattern behind a dialog. */
-export const SHEET_INK = { color: "#3448ce", alpha: 0.72 };
-export const SHEET_SEEDS: Record<SheetId, number> = { left: 424242, right: 737373 };
-
-/** Share the chosen drawings between the sheets - alternately within each
- *  size, after a seeded shuffle - so the two are different drawings, not two
- *  arrangements of the same ones. Too few to share, both get them all. */
-export function shareSheets(ids: string[], classOf: (id: string) => number): Record<SheetId, string[]> {
-  const sorted = [...ids].sort();
-  if (sorted.length < 8) return { left: sorted, right: sorted };
-  let seed = 90210;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  const out: Record<SheetId, string[]> = { left: [], right: [] };
-  for (const cls of [0, 1, 2]) {
-    const group = sorted.filter((id) => classOf(id) === cls);
-    for (let i = group.length - 1; i > 0; i--) {
-      const j = Math.floor(rand() * (i + 1));
-      [group[i], group[j]] = [group[j], group[i]];
-    }
-    group.forEach((id, i) => out[i % 2 === 0 ? "left" : "right"].push(id));
-  }
-  return out;
-}
+/**
+ * The base week's page on its sheet: as tall as `fill` of the tile, centred
+ * - a 7 x 10 page printed on a bigger sheet, with the margins a printer
+ * leaves (about 5% top and bottom, 14% each side). `seed` is the
+ * handwriting's: the one written in, chosen by eye.
+ */
+export const BASE_SHEET = { fill: 0.97, seed: 4 };
 
 export type SheetBakeInput = {
-  /** The sheet's packed drawings: SHEET_TILE at its scale, ink on white. */
+  /** What is on the sheet: SHEET_TILE at its scale, ink on white. */
   ink: string;
   tile: { w: number; h: number; scale: number };
   margin: number;
@@ -88,7 +59,7 @@ export type SheetBakeInput = {
  *  (0.7 / 0.75), then the crispest of three ("lets see crisper"). */
 export const SHEET_AGE = { scale: 0.85, quality: 0.85 };
 
-/** What bakeSheet needs for one sheet, given its packed ink and a way to
+/** What bakeSheet needs for one sheet, given what is on it and a way to
  *  turn a site path into a URL the baking page can load. */
 export function sheetBakeInput(id: SheetId, ink: string, url: (path: string) => string): SheetBakeInput {
   const { corners, box } = SHEETS[id];
@@ -106,8 +77,8 @@ export function sheetBakeInput(id: SheetId, ink: string, url: (path: string) => 
 }
 
 /**
- * Lay a sheet's drawings into the film: warp them onto its corners, give
- * them the paper's fibre, cut them to the visible paper. Returns a WebP data
+ * Lay what is on a sheet into the film: warp it onto its corners, give it
+ * the paper's fibre, cut it to the visible paper. Returns a WebP data
  * URL of the sheet's box, white wherever the film should be left alone.
  *
  * The warp is a true perspective one (the sheet is nearer the camera at the
@@ -168,7 +139,7 @@ export async function bakeSheet(input: SheetBakeInput): Promise<string> {
     return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];
   };
 
-  // The drawings, warped: each small triangle of the tile drawn with the
+  // What is on it, warped: each small triangle of the tile drawn with the
   // affine map its three corners make, clipped a hair wide so no seam shows.
   const warped = canvas(W, H);
   const g = warped.getContext("2d")!;

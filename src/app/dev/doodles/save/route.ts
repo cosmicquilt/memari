@@ -1,8 +1,7 @@
 // Saves the doodle control panel's choices (/dev/doodles): which drawings
 // the start dialog's wall and the hero's sketch boxes use, into
 // src/app/landing/doodleChoices.json - and, when they changed, the walls the
-// panel drew, into public/landing/doodle-walls/ (light-0.webp...), and the
-// loose sheets, into public/landing/sheets/ (left.webp, right.webp).
+// panel drew, into public/landing/doodle-walls/ (light-0.webp...).
 //
 // DEVELOPMENT ONLY, and only from this machine. It writes files in the
 // working tree - which is how a choice reaches production: saved here,
@@ -20,9 +19,6 @@ const CHOICES = path.join(ROOT, "src/app/landing/doodleChoices.json");
 const WALLS = path.join(ROOT, "public/landing/doodle-walls");
 /** A wall's name: its ground and which arrangement - see doodleWall.ts. */
 const WALL_NAME = /^(light|dark)-\d$/;
-const SHEETS = path.join(ROOT, "public/landing/sheets");
-/** A loose sheet's name - see video/sheets.ts. */
-const SHEET_NAME = /^(left|right)$/;
 const INDEX = path.join(ROOT, "public/landing/doodles/index.json");
 const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
@@ -34,7 +30,7 @@ export async function POST(request: Request) {
     return new Response("Only from this machine", { status: 403 });
   }
 
-  const body = (await request.json()) as { wall?: unknown; sketchBox?: unknown; sheets?: unknown; body?: unknown; walls?: unknown; sheetImages?: unknown };
+  const body = (await request.json()) as { wall?: unknown; sketchBox?: unknown; body?: unknown; walls?: unknown };
   // Every id must be a drawing the library has: "style/subject-n".
   const index = JSON.parse(await readFile(INDEX, "utf8")) as Record<string, Record<string, Array<[string, number, number]>>>;
   const known = new Set(Object.entries(index).flatMap(([style, subjects]) => Object.values(subjects).flat().map(([id]) => `${style}/${id}`)));
@@ -42,9 +38,8 @@ export async function POST(request: Request) {
     Array.isArray(value) && value.every((v) => typeof v === "string" && known.has(v)) ? [...new Set(value as string[])].sort() : null;
   const wall = list(body.wall);
   const sketchBox = list(body.sketchBox);
-  const sheets = list(body.sheets ?? []);
   const bodyWall = list(body.body ?? body.wall);
-  if (!wall || !sketchBox || !sheets || !bodyWall) return Response.json({ error: "Unknown drawing in the choices" }, { status: 400 });
+  if (!wall || !sketchBox || !bodyWall) return Response.json({ error: "Unknown drawing in the choices" }, { status: 400 });
 
   // Every picture checked before anything is written, so a bad one cannot
   // leave a half-replaced set.
@@ -64,20 +59,17 @@ export async function POST(request: Request) {
     return out;
   };
   let walls: Array<{ name: string; bytes: Buffer }>;
-  let sheetImages: Array<{ name: string; bytes: Buffer }>;
   try {
     walls = pictures(body.walls, WALL_NAME, "wall");
-    sheetImages = pictures(body.sheetImages, SHEET_NAME, "sheet");
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
 
-  await writeFile(CHOICES, `${JSON.stringify({ wall, sketchBox, sheets, body: bodyWall }, null, 2)}\n`);
+  await writeFile(CHOICES, `${JSON.stringify({ wall, sketchBox, body: bodyWall }, null, 2)}\n`);
   let wallBytes = 0;
   for (const { name, bytes } of walls) {
     await writeFile(path.join(WALLS, `${name}.webp`), bytes);
     wallBytes += bytes.length;
   }
-  for (const { name, bytes } of sheetImages) await writeFile(path.join(SHEETS, `${name}.webp`), bytes);
-  return Response.json({ ok: true, wall: wall.length, sketchBox: sketchBox.length, sheets: sheets.length, body: bodyWall.length, walls: walls.length, wallBytes, sheetImages: sheetImages.length });
+  return Response.json({ ok: true, wall: wall.length, sketchBox: sketchBox.length, body: bodyWall.length, walls: walls.length, wallBytes });
 }
