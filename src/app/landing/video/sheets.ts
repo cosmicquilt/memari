@@ -53,13 +53,17 @@ export const SHEETS: Record<SheetId, Sheet> = {
     box: [270, 1020, 1061, 1140],
   },
   right: {
+    // Its top and left edges fitted to the paper too, where they show
+    // (2026-10-07): the eyeballed top edge ran 2 degrees shallower than the
+    // paper's, and the printed lines under it with it. The paper's top edge
+    // bows; this follows its left stretch, over Thursday.
     corners: [
-      [3026, 680],
-      [3736.8, 968.8],
+      [3024.7, 673.6],
+      [3730.5, 982.4],
       [3372.2, 1748.7],
-      [2621.9, 1399.9],
+      [2631.3, 1404.3],
     ],
-    box: [2617, 676, 1124, 1077],
+    box: [2627, 669, 1108, 1084],
   },
 };
 
