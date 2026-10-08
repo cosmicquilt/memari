@@ -244,6 +244,13 @@ export function verifyLuluWebhook(rawBody: string, signature: string | null, sec
   return expected.length === given.length && timingSafeEqual(Buffer.from(expected), Buffer.from(given));
 }
 
+/** Lulu's statuses in which a job can still be stopped: before it is paid
+ *  for, and the hour of production_delay after (createPrintJob). Exactly the
+ *  ones Lulu's spec allows CANCELED from (openapi, print-job status
+ *  transitions, read 2026-10-08) - not PAYMENT_IN_PROGRESS, which only goes
+ *  on to UNPAID or PRODUCTION_DELAYED; a cancel there is refused. */
+export const LULU_STOPPABLE: ReadonlySet<string> = new Set(["CREATED", "UNPAID", "PRODUCTION_DELAYED"]);
+
 /** Cancel a print job - possible only before Lulu starts printing it (the
  *  hour of production_delay, or while it is unpaid). */
 export async function cancelPrintJob(id: number | string): Promise<void> {

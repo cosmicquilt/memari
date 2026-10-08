@@ -16,10 +16,13 @@ import { currentOwner } from "@/lib/owner";
 import { cancelByCustomer, OrderError, orderingConfigured, quoteOrder, startCheckout, type OrderInput, type Quote } from "@/lib/print/orders";
 import { appUrl } from "@/lib/print/fileUrls";
 import { nextRange, type ShippingLevel } from "@/lib/print/orderRange";
-import { bindingFromEnum, type Binding } from "@/lib/print/products";
+import { bindingFromEnum, shippedAbroad, type Binding } from "@/lib/print/products";
+import { orderableBindings } from "@/lib/print/printer";
 import type { ShippingAddress } from "@/lib/print/lulu";
 
-export type OrderingStatus = { ready: true } | { ready: false; reason: "guest" | "not-configured" | "signed-out"; message: string };
+/** Ready, with the bindings that can be ordered here (each one's printer has
+ *  its keys), in the screen's order - the first is chosen to start with. */
+export type OrderingStatus = { ready: true; bindings: Binding[] } | { ready: false; reason: "guest" | "not-configured" | "signed-out"; message: string };
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -39,7 +42,7 @@ export async function orderingStatus(): Promise<OrderingStatus> {
   if (!configured.ok) {
     return { ready: false, reason: "not-configured", message: `Ordering is not switched on yet (${configured.missing.join(" and ")} keys are not set).` };
   }
-  return { ready: true };
+  return { ready: true, bindings: orderableBindings() };
 }
 
 /** Errors a person can act on are said; anything else is logged and said
@@ -101,7 +104,12 @@ export async function setAutoRenew(orderId: string, on: boolean): Promise<{ ok: 
       // Switched back on: a reminder is due again before the next renewal.
       renewalReminderSentAt: null,
       renewsAt: on
-        ? renewalDate({ start: order.startDate, end: order.endDate, days: order.days }, order.shippingLevel as never, address.countryCode !== "US", new Date())
+        ? renewalDate(
+            { start: order.startDate, end: order.endDate, days: order.days },
+            order.shippingLevel as never,
+            shippedAbroad(bindingFromEnum(order.binding), address.countryCode ?? ""),
+            new Date()
+          )
         : null,
     },
   });

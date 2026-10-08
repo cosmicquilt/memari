@@ -14,9 +14,9 @@ import { currentOwner, signInPath } from "@/lib/owner";
 import { prisma } from "@/lib/prisma";
 import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
 import { formatCents } from "@/lib/print/pricing";
-import { customerCanCancel, SHIPPING_LABELS } from "@/lib/print/orders";
+import { customerCanCancel } from "@/lib/print/orders";
+import { shippingLabel } from "@/lib/print/printer";
 import { rangeLabel } from "@/lib/print/orderBook";
-import type { ShippingLevel } from "@/lib/print/orderRange";
 import { CREAM, cream } from "@/lib/cream";
 import { AutoRenewSwitch } from "./AutoRenewSwitch";
 import { CancelOrderButton } from "./CancelOrderButton";
@@ -104,7 +104,7 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
               </div>
               <div style={{ fontSize: 12, color: cream(0.6), lineHeight: 1.5 }}>
                 {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {order.days} days · {binding.label}
-                {!unordered && ` · ${order.pageCount} pages · ${SHIPPING_LABELS[order.shippingLevel as ShippingLevel] ?? order.shippingLevel}`}
+                {!unordered && ` · ${order.pageCount} pages · ${shippingLabel(order.printer, order.shippingLevel)}`}
               </div>
               <div style={{ fontSize: 13, color: order.status === "FAILED" ? "#ff8a80" : CREAM }}>
                 {order.status === "FAILED" && order.renewedFromId

@@ -7,7 +7,8 @@
 // renewals) every order whose day has come is renewed:
 //
 //   the next range - the same number of days, straight after - is built from
-//   the journal AS IT IS NOW, priced by Lulu to the same address and post,
+//   the journal AS IT IS NOW, priced by the order's own printer to the same
+//   address and post,
 //   charged to the card saved with the order (off-session), and sent to
 //   print. The renewal carries auto-renew on, so the chain continues; the
 //   order it renewed stops showing a switch.
@@ -25,7 +26,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { bindingFromEnum, orderableTrim, BINDING_SPECS } from "./products";
-import { availabilityAt, printerFor } from "./printer";
+import { fitsBinding, printerFor } from "./printer";
 import { nextRange, type ShippingLevel } from "./orderRange";
 import type { PrintCost, ShippingAddress } from "./lulu";
 import { priceFromCost } from "./pricing";
@@ -173,7 +174,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const interior = buildInterior(journal, range, (pages) => printer.gutterInches(binding, pages));
   if (!orderableTrim(interior.trim)) return fail("the journal was switched to US Letter, which is printed at home");
   if (interior.problems.length > 0) return fail(`the book could not be made ready to print (${interior.problems.join("; ")})`);
-  const fit = availabilityAt(printer, interior.bookPages).find((a) => a.binding === binding);
+  const fit = fitsBinding(binding, interior.bookPages);
   if (!fit?.ok) return fail(`the next book has ${interior.pageCount} pages, more than ${BINDING_SPECS[binding].label.toLowerCase()} can hold`);
 
   const sku = printer.sku(binding, interior.trim)!;
@@ -188,7 +189,14 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const price = priceFromCost(cost);
   const trim = trimInches(interior.trim);
   const dims = await deps.coverDimensions(order.printer, sku, interior.pageCount);
-  const cover = buildCoverPdf({ ...dims, trimWidthIn: trim.widthIn, trimHeightIn: trim.heightIn, title: journal.title, dates: journal.dated ? rangeLabel(range) : "" });
+  const cover = buildCoverPdf({
+    ...dims,
+    form: printer.coverForm,
+    trimWidthIn: trim.widthIn,
+    trimHeightIn: trim.heightIn,
+    title: journal.title,
+    dates: journal.dated ? rangeLabel(range) : "",
+  });
 
   const renewal = await prisma.printOrder.create({
     data: {
@@ -249,11 +257,18 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
 
 /** Print files kept a year after their book is delivered or cancelled -
  *  long enough to reprint a damaged one - then deleted, as the privacy
- *  page says. The order itself is kept. */
+ *  page says. The order itself is kept. A printer that never reports a
+ *  delivery (BookVault stops at shipped) counts a month for the post. */
 export async function pruneOldPrintFiles(now: Date): Promise<number> {
   const cutoff = new Date(now.getTime() - 365 * 86_400_000);
+  const shippedCutoff = new Date(now.getTime() - 395 * 86_400_000);
   const deleted = await prisma.printFile.deleteMany({
-    where: { order: { status: { in: ["DELIVERED", "CANCELED"] }, updatedAt: { lt: cutoff } } },
+    where: {
+      OR: [
+        { order: { status: { in: ["DELIVERED", "CANCELED"] }, updatedAt: { lt: cutoff } } },
+        { order: { status: "SHIPPED", updatedAt: { lt: shippedCutoff } } },
+      ],
+    },
   });
   // Abandoned checkouts - priced, never paid - keep nothing past a month.
   const abandoned = await prisma.printFile.deleteMany({

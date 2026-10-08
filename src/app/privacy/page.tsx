@@ -16,8 +16,9 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     handed back; it is not stored and not sent anywhere
 //   - ORDERS (src/lib/print, 2026-10-04): an order stores the delivery
 //     name, address, phone and email, what was ordered and its price, and
-//     the book's two PDFs (PrintFile). Lulu receives the address and the
-//     PDFs; Stripe takes the card itself (we never see it) and keeps it
+//     the book's two PDFs (PrintFile). The binding's printer - Lulu, or
+//     BookVault in the UK for metal wire-o (2026-10-08) - receives the
+//     address and the PDFs; Stripe takes the card itself (we never see it) and keeps it
 //     only when auto-renew is on. Print files are deleted a year after
 //     delivery or cancellation, an unpaid checkout's after a month - by
 //     the daily job (renewals.ts, pruneOldPrintFiles), which is what lets
@@ -205,6 +206,12 @@ export default function PrivacyPage() {
           each order they receive the delivery name, address, phone number and email, and the
           book&rsquo;s files, and pass the address to the carrier that delivers it.
         </LI>
+        <LI>
+          <A href="https://printondemand-worldwide.com/privacy-policy/">BookVault</A> (Printondemand-Worldwide,
+          in the UK) &mdash; printing and posting metal wire-o books. For each such order they receive
+          the delivery name, address, phone number and email, and the book&rsquo;s files, and pass the
+          address to the carrier that delivers it and, for a book going abroad, to customs.
+        </LI>
       </UL>
 
       <H2>How long anything is kept</H2>
@@ -245,7 +252,7 @@ export default function PrivacyPage() {
         Exporting a PDF builds the file on our server from the journal already stored there and
         hands it straight back to your browser. The file is not kept and not sent anywhere else.
         Ordering a printed book is different: its files are kept with the order and fetched by
-        Lulu to print it, as described above.
+        the printer to print it, as described above.
       </P>
 
       <H2>Your choices</H2>

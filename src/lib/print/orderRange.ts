@@ -48,6 +48,16 @@ export function nextRange(range: OrderRange): OrderRange {
 export type ShippingLevel = "MAIL" | "PRIORITY_MAIL" | "GROUND" | "EXPEDITED" | "EXPRESS";
 export const SHIPPING_LEVELS: readonly ShippingLevel[] = ["MAIL", "PRIORITY_MAIL", "GROUND", "EXPEDITED", "EXPRESS"];
 
+/** The levels' names, as Lulu offers them. A printer may name its own
+ *  (printer.ts, levelLabel). */
+export const SHIPPING_LABELS: Record<ShippingLevel, string> = {
+  MAIL: "Standard mail",
+  PRIORITY_MAIL: "Priority mail",
+  GROUND: "Ground",
+  EXPEDITED: "Expedited",
+  EXPRESS: "Express",
+};
+
 /**
  * Days from ordering to the book in hand, generously: Lulu's 3-5 business
  * days of printing (a week of calendar days), the carrier's time, and a few

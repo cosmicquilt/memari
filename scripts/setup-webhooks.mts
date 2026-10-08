@@ -5,6 +5,9 @@
 //
 //   Lulu   PRINT_JOB_STATUS_CHANGED -> <site>/api/lulu/webhook
 //          (signed with the Lulu API secret already set - nothing to copy)
+//   BookVault  each order topic -> <site>/api/bookvault/webhook?sig=...
+//          (BookVault does not sign them: the address carries our own key,
+//          made from PRINT_FILE_SECRET, so that secret must be the site's)
 //   Stripe checkout.session.completed and .async_payment_succeeded
 //          -> <site>/api/stripe/webhook; Stripe shows the endpoint's signing
 //          secret ONCE, when it is made: this prints it, to be set as
@@ -36,6 +39,8 @@ if (!/^https:\/\/[^/]+$/.test(site) || /localhost|127\.0\.0\.1/.test(site)) {
 }
 
 const { listWebhooks, createWebhook, luluConfigured, LULU_SANDBOX } = await import("../src/lib/print/lulu.js");
+const { bookVaultConfigured, listBookVaultWebhooks, createBookVaultWebhook, BOOKVAULT_TOPICS } = await import("../src/lib/print/bookvault.js");
+const { siteSignature } = await import("../src/lib/print/fileUrls.js");
 const { stripe, stripeConfigured } = await import("../src/lib/print/stripe.js");
 let failed = false;
 
@@ -56,6 +61,33 @@ let failed = false;
     } catch (error) {
       failed = true;
       console.error(`Lulu:   failed - ${error instanceof Error ? error.message : String(error)}`);
+      if (error && typeof error === "object" && "body" in error) console.error(`        ${String((error as { body: unknown }).body).slice(0, 400)}`);
+    }
+  }
+}
+
+// --- BookVault -------------------------------------------------------------------
+{
+  const url = `${site}/api/bookvault/webhook?sig=${siteSignature("bookvault-webhook")}`;
+  if (!bookVaultConfigured()) {
+    console.log("BookVault: skipped - BOOKVAULT_API_KEY is not set.");
+  } else if (!process.env.PRINT_FILE_SECRET) {
+    failed = true;
+    console.error("BookVault: PRINT_FILE_SECRET is not set here. Set the site's own value first: the webhook address is signed with it.");
+  } else {
+    try {
+      const existing = await listBookVaultWebhooks();
+      for (const topic of BOOKVAULT_TOPICS) {
+        const hook = existing.find((h) => h.url === url && h.topic === topic);
+        if (hook) console.log(`BookVault: ${topic} already sends to ${site}/api/bookvault/webhook (webhook ${hook.id}).`);
+        else {
+          const made = await createBookVaultWebhook(url, topic);
+          console.log(`BookVault: ${topic} now sends to ${site}/api/bookvault/webhook (webhook ${made.id}).`);
+        }
+      }
+    } catch (error) {
+      failed = true;
+      console.error(`BookVault: failed - ${error instanceof Error ? error.message : String(error)}`);
       if (error && typeof error === "object" && "body" in error) console.error(`        ${String((error as { body: unknown }).body).slice(0, 400)}`);
     }
   }

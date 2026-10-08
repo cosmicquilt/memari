@@ -446,6 +446,8 @@ model OwnerSettings {
 // See src/lib/print.
 
 enum PrintBinding {
+  /// Metal wire-o, printed by BookVault in the UK (2026-10-08).
+  WIRE_O
   COIL
   PAPERBACK
   HARDCOVER
@@ -486,7 +488,8 @@ model PrintOrder {
   endDate    DateTime
   days       Int
   binding    PrintBinding
-  /// Lulu's SKU - see src/lib/print/products.ts.
+  /// The printer's SKU - Lulu's pod_package_id or BookVault's transient
+  /// product SKU (src/lib/print/products.ts, bookvault.ts).
   podPackageId String
   /// Printed pages, padded to a multiple of four.
   pageCount  Int

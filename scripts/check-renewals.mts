@@ -347,11 +347,18 @@ try {
     const recentDelivered = await order(null, { title: "Recent delivered", status: "DELIVERED", autoRenew: false, renewsAt: null, files });
     const oldQuoted = await order(null, { title: "Abandoned", status: "QUOTED", autoRenew: false, renewsAt: null, files, createdAt: new Date(Date.now() - 40 * DAY) });
     const printing = await order(null, { title: "Printing", status: "IN_PRODUCTION", autoRenew: false, renewsAt: null, files });
+    // A printer that never says delivered (BookVault): a month for the post.
+    const oldShipped = await order(null, { title: "Old shipped", status: "SHIPPED", autoRenew: false, renewsAt: null, files });
+    const yearShipped = await order(null, { title: "Shipped a year ago", status: "SHIPPED", autoRenew: false, renewsAt: null, files });
     await prisma.printOrder.update({ where: { id: oldDelivered.id }, data: { updatedAt: new Date(Date.now() - 400 * DAY) } });
+    await prisma.printOrder.update({ where: { id: oldShipped.id }, data: { updatedAt: new Date(Date.now() - 400 * DAY) } });
+    await prisma.printOrder.update({ where: { id: yearShipped.id }, data: { updatedAt: new Date(Date.now() - 370 * DAY) } });
     await pruneOldPrintFiles(new Date());
     const left = async (id: string) => prisma.printFile.count({ where: { orderId: id } });
     check((await left(oldDelivered.id)) === 0, "files of a book delivered over a year ago are deleted");
     check((await left(oldQuoted.id)) === 0, "an abandoned checkout's files go after a month");
+    check((await left(oldShipped.id)) === 0, "a book shipped 13 months ago and never reported delivered: deleted");
+    check((await left(yearShipped.id)) === 2, "one shipped a year ago keeps them a month more, for the post");
     check((await left(recentDelivered.id)) === 2 && (await left(printing.id)) === 2, "everything else keeps its files");
     check((await prisma.printOrder.count({ where: { id: oldDelivered.id } })) === 1, "and the order itself is kept");
   }

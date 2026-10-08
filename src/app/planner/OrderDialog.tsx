@@ -2,8 +2,13 @@
 
 // ORDER A PRINTED BOOK (2026-10-04, "start on checkout"). How many days -
 // 30, 90, a year or any number - from which day, in which binding, to
-// where; then the prices Lulu quotes for that book to that address, every
-// way it can be posted; then Stripe's payment page.
+// where; then the prices the binding's printer quotes for that book to that
+// address, every way it can be posted; then Stripe's payment page.
+//
+// BINDINGS (2026-10-08): metal wire-o first and chosen to start with,
+// printed by BookVault; plastic coil, paperback and hardcover by Lulu. Once
+// priced, every binding shows its own lowest price ("list every binding
+// cost"), and choosing another binding prices it straight away.
 //
 // Prices are never typed here or trusted from here: "See prices" asks the
 // server, which builds the book for those days and asks the printer, and
@@ -19,12 +24,12 @@
 // reorderDefaults). With auto-renew off by default, this is how most people
 // get their next book.
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
 import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, type OrderingStatus } from "./printActions";
 import type { Quote } from "@/lib/print/orders";
-import { BINDINGS, BINDING_SPECS, type Binding } from "@/lib/print/products";
+import { BINDINGS, BINDING_SPECS, shippedAbroad, type Binding } from "@/lib/print/products";
 import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
 import { formatCents } from "@/lib/print/pricing";
 import { countryOptions } from "@/lib/print/countries";
@@ -88,6 +93,12 @@ function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** "Arrives 21 – 28 Oct", from a printer's ISO dates. */
+function arrivesLabel(arrives: { earliest: string; latest: string }): string {
+  const day = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  return arrives.earliest === arrives.latest ? `Arrives ${day(arrives.earliest)}` : `Arrives ${day(arrives.earliest)} – ${day(arrives.latest)}`;
+}
+
 const EMPTY_ADDRESS: ShippingAddress = { name: "", street1: "", street2: "", city: "", stateCode: "", countryCode: "US", postcode: "", phoneNumber: "" };
 
 export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { journalId: string; weekStartDay: number; reorderId?: string; onClose: () => void }) {
@@ -99,14 +110,18 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   const [preferredLevel, setPreferredLevel] = useState<ShippingLevel | null>(null);
   const [days, setDays] = useState(90);
   const [customDays, setCustomDays] = useState("");
-  const [startISO, setStartISO] = useState(() => isoDay(suggestedStart(new Date(), "GROUND", false, weekStartDay)));
-  const [binding, setBinding] = useState<Binding>("coil");
+  // From the first binding's printer, to a US address: a wire-o book comes
+  // from the UK, so further ahead.
+  const [startISO, setStartISO] = useState(() => isoDay(suggestedStart(new Date(), "GROUND", shippedAbroad(BINDINGS[0], "US"), weekStartDay)));
+  const [binding, setBinding] = useState<Binding>(BINDINGS[0]);
   const [address, setAddress] = useState<ShippingAddress>(EMPTY_ADDRESS);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [level, setLevel] = useState<ShippingLevel | null>(null);
   const [autoRenew, setAutoRenew] = useState(false);
   const [busy, setBusy] = useState<"quote" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Only the latest pricing lands: choosing bindings quickly asks twice.
+  const asked = useRef(0);
   const countries = useMemo(() => countryOptions(typeof navigator !== "undefined" ? navigator.language : "en"), []);
 
   useEffect(() => {
@@ -122,6 +137,9 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
         setAddress({ ...EMPTY_ADDRESS, ...earlier.address });
         setPreferredLevel(earlier.level);
         setFromEarlier(true);
+      } else if (value.ready && !value.bindings.includes(BINDINGS[0])) {
+        // Metal wire-o can't be ordered here yet: start on the first that can.
+        setBinding(value.bindings[0] ?? "coil");
       }
       // The form shows once it is filled, so nothing on it changes under
       // the person's eyes.
@@ -152,10 +170,12 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   const addressReady = !!(address.name.trim() && address.street1.trim() && address.city.trim() && address.postcode.trim() && address.phoneNumber.trim() && address.countryCode);
   const input = { journalId, startISO, days, binding, address };
 
-  const seePrices = async () => {
+  const seePrices = async (forBinding: Binding = binding) => {
+    const ask = ++asked.current;
     setBusy("quote");
     setError(null);
-    const result = await quotePrint(input);
+    const result = await quotePrint({ ...input, binding: forBinding });
+    if (ask !== asked.current) return;
     setBusy(null);
     if (!result.ok) {
       setError(result.error);
@@ -182,7 +202,19 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
     window.location.assign(result.value.url);
   };
 
-  const chosen = quote?.options.find((option) => option.level === level) ?? null;
+  /** Another binding, once prices are showing, is priced straight away; the
+   *  other bindings' prices stay on screen meanwhile, its post options and
+   *  Pay do not. */
+  const pickBinding = (option: Binding) => {
+    setBinding(option);
+    setLevel(null);
+    setError(null);
+    if (quote) void seePrices(option);
+  };
+  // The options on screen are for this binding, or none are.
+  const current = quote && quote.binding === binding ? quote : null;
+  const chosen = current?.options.find((option) => option.level === level) ?? null;
+  const orderable = status?.ready ? status.bindings : BINDINGS;
   // "The next book" while that book's choices load and once they are in; an
   // order that could not be found opens the ordinary, empty screen.
   const title = reorderId && (status === null || fromEarlier) ? "Order the next book" : "Order a printed book";
@@ -269,18 +301,23 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
               </Section>
 
               <Section title="Binding">
-                <div role="radiogroup" aria-label="Binding" style={{ display: "flex", gap: 6 }}>
+                <div role="radiogroup" aria-label="Binding" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                   {BINDINGS.map((option) => {
                     const fit = quote?.availability.find((a) => a.binding === option);
+                    const offered = orderable.includes(option);
+                    const from = quote?.fromPrices[option];
                     return (
                       <Choice
                         key={option}
                         selected={binding === option}
-                        disabled={fit ? !fit.ok : false}
-                        title={fit && !fit.ok ? fit.reason : undefined}
-                        onPick={() => changed(setBinding)(option)}
+                        disabled={!offered || (fit ? !fit.ok : false)}
+                        title={!offered ? `${BINDING_SPECS[option].label} can't be ordered yet.` : fit && !fit.ok ? fit.reason : undefined}
+                        onPick={() => pickBinding(option)}
                       >
-                        <div style={{ fontWeight: 600 }}>{BINDING_SPECS[option].label}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontWeight: 600 }}>{BINDING_SPECS[option].label}</span>
+                          {from !== undefined && <span style={{ fontVariantNumeric: "tabular-nums" }}>from {formatCents(from)}</span>}
+                        </div>
                         <div style={{ fontSize: 11, color: cream(0.5), marginTop: 2 }}>{BINDING_SPECS[option].note}</div>
                       </Choice>
                     );
@@ -333,15 +370,17 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                 </button>
               )}
 
-              {quote && (
+              {quote && !current && busy === "quote" && <p style={{ margin: 0, fontSize: 12, color: cream(0.6) }}>Pricing {BINDING_SPECS[binding].label.toLowerCase()}…</p>}
+
+              {current && (
                 <>
                   <p style={{ margin: 0, fontSize: 12, color: cream(0.6) }}>
-                    {quote.range.label} · {quote.range.days} days · {quote.pageCount} pages
+                    {current.range.label} · {current.range.days} days · {current.pageCount} pages
                   </p>
-                  {quote.options.length > 0 && (
+                  {current.options.length > 0 && (
                     <Section title="Shipping">
                       <div role="radiogroup" aria-label="Shipping" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {quote.options.map((option) => (
+                        {current.options.map((option) => (
                           <Choice key={option.level} selected={level === option.level} onPick={() => setLevel(option.level)}>
                             <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                               <span>{option.label}</span>
@@ -349,6 +388,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                             </div>
                             <div style={{ fontSize: 11, color: cream(0.5), marginTop: 2 }}>
                               Book {formatCents(option.price.bookCents)} + shipping {formatCents(option.price.shippingCents)}
+                              {option.arrives ? ` · ${arrivesLabel(option.arrives)}` : ""}
                             </div>
                           </Choice>
                         ))}
@@ -356,7 +396,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                     </Section>
                   )}
 
-                  {quote.options.length > 0 && (
+                  {current.options.length > 0 && (
                   <>
                   <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12, lineHeight: 1.45, cursor: "pointer" }}>
                     <button
@@ -369,7 +409,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                       <span style={{ width: 16, height: 16, borderRadius: 8, background: CREAM, display: "block" }} />
                     </button>
                     <span>
-                      <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {quote.range.days} days automatically before this book runs out, to the same address, at that book&apos;s own price (it is your journal as it is then). Your card is saved for it only if this is on. Turn it off any time under Orders.
+                      <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {current.range.days} days automatically before this book runs out, to the same address, at that book&apos;s own price (it is your journal as it is then). Your card is saved for it only if this is on. Turn it off any time under Orders.
                     </span>
                   </label>
 
@@ -384,7 +424,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                     </button>
                   )}
                   <span style={{ fontSize: 11, color: cream(0.45), lineHeight: 1.45 }}>
-                    You pay on Stripe&apos;s secure page. Lulu prints and posts it - printing takes 3-5 business days, then the post.
+                    You pay on Stripe&apos;s secure page. {current.note}
                   </span>
                   </>
                   )}
@@ -425,7 +465,7 @@ export function OrderPrintButton({ journalId, weekStartDay }: { journalId: strin
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Order this journal printed and bound - any number of days, plastic coil, paperback or hardcover, posted anywhere"
+        title="Order this journal printed and bound - any number of days, metal wire-o, plastic coil, paperback or hardcover, posted anywhere"
         style={{
           flexShrink: 0,
           padding: "4px 12px",

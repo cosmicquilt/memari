@@ -121,6 +121,8 @@ async function main() {
     // an order would print, for the journal's owner only.
     { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=paperback&part=interior`, expect: [200], as: "guest", what: "an order's pages, previewed" },
     { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=hardcover&part=cover`, expect: [200], as: "guest", what: "an order's cover, previewed" },
+    { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=wireo&part=interior`, expect: [200], as: "guest", what: "a wire-o book's pages, with room for the wire" },
+    { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=wireo&part=cover`, expect: [200], as: "guest", what: "a wire-o cover: front and back as pages" },
     { path: `/app/print-preview?journal=${stranger.journalId}&start=2027-01-04&days=90&binding=coil&part=interior`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal cannot be previewed" },
     { path: `/app/print-preview?journal=${journal.id}&days=90&binding=coil`, expect: [400], as: "guest", what: "a preview without its days is refused, plainly" },
     { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=coil`, expect: [401], as: "nobody", what: "nobody signed in previews nothing" },

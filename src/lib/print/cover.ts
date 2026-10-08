@@ -1,4 +1,9 @@
-// THE COVER: back, spine and front in one sheet, as Lulu prints it.
+// THE COVER: back, spine and front in one sheet, as Lulu prints it - or, for
+// a wire-o book at BookVault, the front and the back as pages of their own
+// ("panels": "this needs the covers as individual pages", its PDF guide).
+// Panels are drawn as the same sheet with the two pages side by side, back
+// then front, each with its own bleed and no spine, and each page shows its
+// half - so every style is the same drawing either way.
 //
 // Lulu gives the sheet's size for the binding and page count (lulu.ts,
 // coverDimensions) - the spine is the paper's thickness, and a hardcover
@@ -43,6 +48,9 @@ export type CoverInput = {
   /** "4 Jan - 3 Apr 2027", or "" for an undated book. */
   dates: string;
   style?: CoverStyle;
+  /** "wrap" (the default): one sheet, widthPt by heightPt. "panels": two
+   *  pages, front then back, each widthPt by heightPt. */
+  form?: "wrap" | "panels";
 };
 
 export type CoverLayout = {
@@ -72,13 +80,34 @@ export function coverLayout(input: Pick<CoverInput, "widthPt" | "heightPt" | "tr
  *  quarter of an inch, about 70 pages of 60# paper. */
 const SPINE_TEXT_MIN_PT = 0.25 * PT_PER_IN;
 
-export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: CoverLayout; fontEmbedded: boolean } {
-  const style = input.style ?? "plain";
-  const layout = coverLayout(input);
-  const doc = new jsPDF({ unit: "pt", format: [input.widthPt, input.heightPt], orientation: input.widthPt > input.heightPt ? "landscape" : "portrait", compress: true });
+export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: CoverLayout; fontEmbedded: boolean; pages: number } {
+  const panels = input.form === "panels";
+  // Panels: the sheet is the two pages side by side.
+  const sheet = panels ? { ...input, widthPt: input.widthPt * 2 } : input;
+  const layout = coverLayout(sheet);
+  const orientation = input.widthPt > input.heightPt ? "landscape" : "portrait";
+  const doc = new jsPDF({ unit: "pt", format: [input.widthPt, input.heightPt], orientation, compress: true });
   const font = installFont(doc, FONT_FAMILY, plannerFontBase64());
   doc.setFont(font.name, font.style);
 
+  if (!panels) drawCover(doc, sheet, layout, true);
+  else {
+    // The front first - the sheet moved left by a page - then the back.
+    [-input.widthPt, 0].forEach((shift, index) => {
+      if (index > 0) doc.addPage([input.widthPt, input.heightPt], orientation);
+      doc.saveGraphicsState();
+      doc.setCurrentTransformationMatrix(doc.Matrix(1, 0, 0, 1, shift, 0));
+      drawCover(doc, sheet, layout, false);
+      doc.restoreGraphicsState();
+    });
+  }
+  return { bytes: doc.output("arraybuffer"), layout, fontEmbedded: font.embedded, pages: panels ? 2 : 1 };
+}
+
+/** The whole sheet, drawn at its own size; `spineText` off where there is
+ *  no spine to read (panels, whose middle is two bleeds, not a spine). */
+function drawCover(doc: jsPDF, input: CoverInput, layout: CoverLayout, spineText: boolean): void {
+  const style = input.style ?? "plain";
   const W = input.widthPt;
   const H = input.heightPt;
   const trimTop = layout.outerPt;
@@ -169,7 +198,7 @@ export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: 
   }
 
   // SPINE: the name, reading top to bottom, where the spine is wide enough.
-  if (layout.spinePt >= SPINE_TEXT_MIN_PT) {
+  if (spineText && layout.spinePt >= SPINE_TEXT_MIN_PT) {
     const size = Math.min(11, layout.spinePt * 0.5);
     doc.setFontSize(size);
     // On the quarter style's band, the spine type is cream.
@@ -191,6 +220,4 @@ export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: 
     align: "center",
     baseline: "alphabetic",
   });
-
-  return { bytes: doc.output("arraybuffer"), layout, fontEmbedded: font.embedded };
 }

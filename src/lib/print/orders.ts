@@ -1,14 +1,16 @@
 // ORDERS: from a price on the screen to a book at the printer. Server-only.
 //
 //   quoteOrder       the book for the chosen days, which bindings can hold
-//                    it, and every shipping level Lulu offers the address,
+//                    it and the lowest price of each, and every shipping
+//                    level the chosen binding's printer offers the address,
 //                    priced (pricing.ts) - nothing stored
 //   startCheckout    priced again here (a price from the browser is never
 //                    trusted), the interior and cover built and stored with
 //                    a QUOTED order, and Stripe's payment page opened
 //   fulfilPaidOrder  once Stripe says it is paid: PAID, then a print job at
-//                    Lulu - which charges our card - and SUBMITTED
-//   applyLuluStatus  Lulu's word on where the book is
+//                    the binding's printer - which charges us - and SUBMITTED
+//   applyLuluStatus  Lulu's word on where the book is; BookVault's is read
+//                    back from its API (refreshBookVaultOrder)
 //   cancelByCustomer the customer stops their own book, while the printer
 //                    has not begun it - the printer asked first, the money
 //                    back only if it agrees
@@ -18,10 +20,12 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { BINDING_ENUM, BINDING_SPECS, orderableTrim, type Binding, type BindingAvailability } from "./products";
-import { DEFAULT_PRINTER, availabilityAt, printerFor } from "./printer";
-import { orderRange, renewalDate, SHIPPING_LEVELS, type OrderRange, type ShippingLevel } from "./orderRange";
-import type { PrintJob, ShippingAddress } from "./lulu";
+import { BINDING_ENUM, BINDING_SPECS, BINDINGS, bindingFromEnum, orderableTrim, shippedAbroad, type Binding, type BindingAvailability } from "./products";
+import { DEFAULT_PRINTER, availability, printerFor, printerForBinding, type ShippingQuote } from "./printer";
+import { orderRange, renewalDate, type OrderRange, type ShippingLevel } from "./orderRange";
+import { LULU_STOPPABLE, type PrintJob, type ShippingAddress } from "./lulu";
+import { BookVaultError, bookVaultReport, getBookVaultOrder, type JobReport } from "./bookvault";
+import type { PlannerTrimKey } from "@/lib/planner-trims";
 import { priceFromCost, type Price } from "./pricing";
 import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
@@ -32,14 +36,7 @@ import { sendEmail, type EmailSender } from "@/lib/email";
 
 export { OrderError };
 
-export const SHIPPING_LABELS: Record<ShippingLevel, string> = {
-  MAIL: "Standard mail",
-  PRIORITY_MAIL: "Priority mail",
-  GROUND: "Ground",
-  EXPEDITED: "Expedited",
-  EXPRESS: "Express",
-};
-
+export { SHIPPING_LABELS } from "./orderRange";
 
 export type OrderInput = {
   journalId: string;
@@ -51,12 +48,20 @@ export type OrderInput = {
 };
 
 export type Quote = {
+  /** The binding the shipping options are for. */
+  binding: Binding;
   range: { startISO: string; endISO: string; days: number; label: string };
   pageCount: number;
   availability: BindingAvailability[];
-  /** Every level Lulu will post this book by, priced. Empty when the chosen
-   *  binding cannot hold the book. */
-  options: Array<{ level: ShippingLevel; label: string; price: Price }>;
+  /** The lowest price, post included, of every binding that can be had, to
+   *  this address - each binding's cost on the screen ("list every binding
+   *  cost", 2026-10-08). A binding missing here could not be priced. */
+  fromPrices: Partial<Record<Binding, number>>;
+  /** Every level the binding's printer will post this book by, priced.
+   *  Empty when the chosen binding cannot hold the book. */
+  options: Array<{ level: ShippingLevel; label: string; price: Price; arrives?: { earliest: string; latest: string } }>;
+  /** Who prints it and how long it takes, in a sentence. */
+  note: string;
 };
 
 /** Is ordering switched on here? Both services' keys must be set. */
@@ -97,25 +102,72 @@ export function cleanAddress(raw: ShippingAddress): ShippingAddress {
   return address;
 }
 
+/** A printer's refusal to make a book is the customer's to hear, as for any
+ *  other reason it cannot be ordered; anything else is a fault. */
+function asOrderError(error: unknown): unknown {
+  return error instanceof BookVaultError && error.refusal ? new OrderError(error.message) : error;
+}
+
 async function priced(input: OrderInput, ownerId: string) {
   const configured = orderingConfigured();
   if (!configured.ok) throw new OrderError(`Ordering is not switched on yet: the ${configured.missing.join(" and ")} keys are not set.`);
+  if (!BINDINGS.includes(input.binding)) throw new OrderError("Choose a binding.");
   const journal = await loadJournal(ownerId, input.journalId);
   if (!journal) throw new OrderError("That journal could not be found.");
   const range = orderRange(parseStart(input.startISO), input.days);
-  const printer = DEFAULT_PRINTER;
+  // The binding's printer: its binding margin shapes the interior.
+  const printer = printerForBinding(input.binding);
   const interior = buildInterior(journal, range, (pages) => printer.gutterInches(input.binding, pages));
   if (!orderableTrim(interior.trim)) {
     throw new OrderError("This journal is laid out at US Letter, the print-at-home size. Switch it to 7 × 10 in Page Settings to order it printed.");
   }
   if (interior.problems.length > 0) throw new OrderError(`This book is not ready to print: ${interior.problems.join("; ")}.`);
-  const availability = availabilityAt(printer, interior.bookPages);
-  const sku = printer.sku(input.binding, interior.trim)!;
-  const fits = availability.find((a) => a.binding === input.binding)?.ok ?? false;
+  const bindings = availability(interior.bookPages);
+  const fits = bindings.find((a) => a.binding === input.binding)?.ok ?? false;
+  const sku = fits ? printer.sku(input.binding, interior.trim) : null;
   const address = cleanAddress(input.address);
-  const quotes = fits ? await printer.quoteShipping(sku, interior.pageCount, address, SHIPPING_LEVELS) : [];
-  if (fits && quotes.length === 0) throw new OrderError("Lulu cannot post to that address. Check the country and postcode.");
-  return { journal, range, interior, availability, sku, address, quotes, printer };
+  const problem = fits ? printer.addressProblem(address) : null;
+  if (problem) throw new OrderError(problem);
+  let quotes: ShippingQuote[] = [];
+  if (fits && sku) {
+    try {
+      quotes = await printer.quoteShipping(sku, interior.pageCount, address, printer.levels);
+    } catch (error) {
+      throw asOrderError(error);
+    }
+    if (quotes.length === 0) throw new OrderError(`${printer.label} cannot post to that address. Check the country and postcode.`);
+  }
+  return { journal, range, interior, availability: bindings, sku: sku ?? "", address, quotes, printer };
+}
+
+/** The lowest price of each other binding that can be had, to this address:
+ *  its printer asked at its cheapest levels only. One that cannot be priced
+ *  - a refusal, the printer not answering - is left out, not an error: the
+ *  chosen binding's quote is what is being asked for. */
+async function otherBindingPrices(
+  chosen: Binding,
+  bindings: BindingAvailability[],
+  interior: { trim: PlannerTrimKey; pageCount: number },
+  address: ShippingAddress
+): Promise<Partial<Record<Binding, number>>> {
+  const prices: Partial<Record<Binding, number>> = {};
+  await Promise.all(
+    bindings
+      .filter((fit) => fit.ok && fit.binding !== chosen)
+      .map(async ({ binding }) => {
+        const printer = printerForBinding(binding);
+        const sku = printer.sku(binding, interior.trim);
+        if (!sku || printer.addressProblem(address)) return;
+        try {
+          const quotes = await printer.quoteShipping(sku, interior.pageCount, address, printer.cheapestLevels);
+          const lowest = Math.min(...quotes.map((quote) => priceFromCost(quote.cost).totalCents));
+          if (Number.isFinite(lowest)) prices[binding] = lowest;
+        } catch (error) {
+          console.error(`[print] pricing ${binding} for the binding list failed:`, error);
+        }
+      })
+  );
+  return prices;
 }
 
 function describeRange(range: OrderRange) {
@@ -123,12 +175,23 @@ function describeRange(range: OrderRange) {
 }
 
 export async function quoteOrder(ownerId: string, input: OrderInput): Promise<Quote> {
-  const { range, interior, availability, quotes } = await priced(input, ownerId);
+  const { range, interior, availability, quotes, address, printer } = await priced(input, ownerId);
+  const options = quotes.map(({ level, cost, label, arrives }) => ({
+    level,
+    label: label ?? printer.levelLabel(level),
+    price: priceFromCost(cost),
+    ...(arrives ? { arrives } : {}),
+  }));
+  const fromPrices = await otherBindingPrices(input.binding, availability, interior, address);
+  if (options.length > 0) fromPrices[input.binding] = Math.min(...options.map((option) => option.price.totalCents));
   return {
+    binding: input.binding,
     range: describeRange(range),
     pageCount: interior.pageCount,
     availability,
-    options: quotes.map(({ level, cost }) => ({ level, label: SHIPPING_LABELS[level], price: priceFromCost(cost) })),
+    fromPrices,
+    options,
+    note: printer.note(address),
   };
 }
 
@@ -160,10 +223,18 @@ export async function startCheckout(
   const chosen = quotes.find((q) => q.level === input.level);
   if (!chosen) throw new OrderError("That shipping option is not available to this address. Choose another.");
   const price = priceFromCost(chosen.cost);
+  const shippingName = chosen.label ?? printer.levelLabel(input.level);
 
   const trim = trimInches(interior.trim);
   const dims = await printer.coverSize(sku, interior.pageCount);
-  const cover = buildCoverPdf({ ...dims, trimWidthIn: trim.widthIn, trimHeightIn: trim.heightIn, title: journal.title, dates: journal.dated ? rangeLabel(range) : "" });
+  const cover = buildCoverPdf({
+    ...dims,
+    form: printer.coverForm,
+    trimWidthIn: trim.widthIn,
+    trimHeightIn: trim.heightIn,
+    title: journal.title,
+    dates: journal.dated ? rangeLabel(range) : "",
+  });
 
   const contactEmail = input.email || address.email;
   const order = await prisma.printOrder.create({
@@ -214,7 +285,7 @@ export async function startCheckout(
       },
       {
         quantity: 1,
-        price_data: { currency: "usd", unit_amount: price.shippingCents, product_data: { name: `Shipping - ${SHIPPING_LABELS[input.level]}` } },
+        price_data: { currency: "usd", unit_amount: price.shippingCents, product_data: { name: `Shipping - ${shippingName}` } },
       },
     ],
     payment_intent_data: {
@@ -248,6 +319,7 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
       externalId: order.id,
       title: order.title,
       sku: order.podPackageId,
+      pages: order.pageCount,
       interiorUrl: printFileUrl(origin, order.id, "interior"),
       coverUrl: printFileUrl(origin, order.id, "cover"),
       address: order.shippingAddress as unknown as ShippingAddress,
@@ -264,10 +336,14 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
         // whichever printer the order went to (`printer`).
         luluPrintJobId: job.jobId,
         luluStatus: job.status,
-        renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, address.countryCode !== "US", new Date()) : null,
+        renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, shippedAbroad(bindingFromEnum(order.binding), address.countryCode), new Date()) : null,
       },
     });
     await notify(placedEmail(submitted));
+    // Placed, but something of ours stands in its way (BookVault waiting
+    // for payment): ours to see to, so the alert, and the order stays with
+    // the printer.
+    if (job.attention) await notify(adminAlertEmail(submitted, job.attention));
   } catch (error) {
     const reason = `Paid, but the printer refused the job: ${error instanceof Error ? error.message : String(error)}`;
     await prisma.printOrder.update({ where: { id: order.id }, data: { status: "FAILED", failureReason: reason } });
@@ -290,14 +366,56 @@ const LULU_TO_STATUS: Record<string, "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" |
   ERROR: "FAILED",
 };
 
-/** Lulu's report on a print job, onto its order - and the email when it
- *  ships (or the alert when the printer gives up on it), sent on the CHANGE
- *  only: Lulu may report the same status twice, and the conditional update
- *  below lets just one delivery through. */
+/** Lulu's report on a print job, onto its order. */
 export async function applyLuluStatus(job: PrintJob): Promise<void> {
-  const status = LULU_TO_STATUS[job.status?.name ?? ""];
-  const tracking = (job.line_items ?? []).flatMap((item) => item.tracking_urls ?? []);
-  const jobId = String(job.id);
+  await applyJobStatus(String(job.id), {
+    name: job.status?.name ?? null,
+    status: LULU_TO_STATUS[job.status?.name ?? ""],
+    tracking: (job.line_items ?? []).flatMap((item) => item.tracking_urls ?? []),
+    message: job.status?.message,
+  });
+}
+
+/** BookVault's word on an order, read back from its API rather than taken
+ *  from the webhook that prompted it (bookvault.ts: they are not signed).
+ *  Found by its job id, else by our own id, which BookVault holds as its
+ *  docRef. */
+export async function refreshBookVaultOrder(ref: { podRef?: string; docRef?: string }): Promise<boolean> {
+  const match = [...(ref.podRef ? [{ luluPrintJobId: ref.podRef }] : []), ...(ref.docRef ? [{ id: ref.docRef }] : [])];
+  if (match.length === 0) return false;
+  const order = await prisma.printOrder.findFirst({ where: { printer: "bookvault", OR: match } });
+  if (!order?.luluPrintJobId) return false;
+  await applyJobStatus(order.luluPrintJobId, bookVaultReport(await getBookVaultOrder(order.luluPrintJobId)));
+  return true;
+}
+
+/** BookVault sends no event when an order fails, and webhooks can be missed:
+ *  the daily cron reads back every BookVault order still on its way. */
+export async function refreshBookVaultOrders(limit = 20): Promise<number> {
+  const open = await prisma.printOrder.findMany({
+    where: { printer: "bookvault", status: { in: ["SUBMITTED", "IN_PRODUCTION"] }, luluPrintJobId: { not: null } },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+  });
+  let read = 0;
+  for (const order of open) {
+    try {
+      await applyJobStatus(order.luluPrintJobId!, bookVaultReport(await getBookVaultOrder(order.luluPrintJobId!)));
+      read += 1;
+    } catch (error) {
+      console.error(`[print] reading BookVault order ${order.luluPrintJobId} back failed:`, error);
+    }
+  }
+  return read;
+}
+
+/** A printer's report on a job, onto its order - and the email when it
+ *  ships (or the alert when the printer gives up on it), sent on the CHANGE
+ *  only: a printer may report the same status twice, and the conditional
+ *  update below lets just one delivery through. */
+export async function applyJobStatus(jobId: string, report: JobReport): Promise<void> {
+  const { status, tracking } = report;
+  const said = `${report.name ?? "a problem"}${report.message ? `: ${report.message}` : ""}`;
   if (status === "SHIPPED" || status === "FAILED") {
     const before = await prisma.printOrder.findFirst({ where: { luluPrintJobId: jobId } });
     const moved = await prisma.printOrder.updateMany({
@@ -306,17 +424,17 @@ export async function applyLuluStatus(job: PrintJob): Promise<void> {
     });
     if (before && moved.count > 0) {
       if (status === "SHIPPED") await notify(shippedEmail(before, tracking));
-      else await notify(adminAlertEmail(before, `The printer reported ${job.status?.name}${job.status?.message ? `: ${job.status.message}` : ""}.`));
+      else await notify(adminAlertEmail(before, `The printer reported ${said}.`));
     }
   }
   await prisma.printOrder.updateMany({
     where: { luluPrintJobId: jobId },
     data: {
-      luluStatus: job.status?.name ?? null,
+      luluStatus: report.name,
       ...(tracking.length > 0 ? { trackingUrls: tracking } : {}),
     },
   });
-  // A cancelled order stays cancelled: Lulu's news can arrive out of order,
+  // A cancelled order stays cancelled: a printer's news can arrive out of order,
   // and a late "waiting to print" must not bring back a book that was
   // stopped and refunded.
   if (!status) return;
@@ -324,25 +442,29 @@ export async function applyLuluStatus(job: PrintJob): Promise<void> {
     where: { luluPrintJobId: jobId, status: { not: "CANCELED" } },
     data: {
       status,
-      ...(status === "FAILED" ? { failureReason: `The printer reported ${job.status?.name}${job.status?.message ? `: ${job.status.message}` : ""}.` } : {}),
+      ...(status === "FAILED" ? { failureReason: `The printer reported ${said}.` } : {}),
     },
   });
 }
 
-/** Lulu's statuses in which a job can still be stopped: before it is paid
- *  for, and the hour of production_delay after (lulu.ts, createPrintJob).
- *  Exactly the ones Lulu's spec allows CANCELED from (openapi, print-job
- *  status transitions, read 2026-10-08) - not PAYMENT_IN_PROGRESS, which
- *  only goes on to UNPAID or PRODUCTION_DELAYED; a cancel there is refused. */
-export const STOPPABLE_AT_PRINTER = new Set(["CREATED", "UNPAID", "PRODUCTION_DELAYED"]);
+/** Lulu's statuses in which a job can still be stopped (lulu.ts). Each
+ *  printer has its own: Printer.stoppable. */
+export const STOPPABLE_AT_PRINTER = LULU_STOPPABLE;
 
 /** Can the customer cancel this order themselves? While it is with the
  *  printer and the printer has not begun it - as far as we have heard. The
  *  printer has the last word (cancelByCustomer). A PAID order not yet sent
  *  is seconds from being sent, and one that failed is ours to sort out; the
  *  admin page refunds those. */
-export function customerCanCancel(order: { status: string; luluPrintJobId: string | null; luluStatus: string | null; stripePaymentIntentId: string | null }): boolean {
-  return order.status === "SUBMITTED" && !!order.luluPrintJobId && !!order.stripePaymentIntentId && (order.luluStatus === null || STOPPABLE_AT_PRINTER.has(order.luluStatus));
+export function customerCanCancel(order: { status: string; luluPrintJobId: string | null; luluStatus: string | null; stripePaymentIntentId: string | null; printer?: string | null }): boolean {
+  if (order.status !== "SUBMITTED" || !order.luluPrintJobId || !order.stripePaymentIntentId) return false;
+  let stoppable: ReadonlySet<string>;
+  try {
+    stoppable = printerFor(order.printer).stoppable;
+  } catch {
+    return false;
+  }
+  return order.luluStatus === null || stoppable.has(order.luluStatus);
 }
 
 export type CancelDeps = {

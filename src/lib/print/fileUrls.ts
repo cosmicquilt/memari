@@ -28,6 +28,18 @@ export function verifyPrintFile(orderId: string, kind: PrintFileKind, signature:
   return expected.length === signature.length && timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
+/** A key for an address we give a printer that does not sign what it sends
+ *  there (BookVault's webhook): the same secret, over a label of its own. */
+export function siteSignature(label: string): string {
+  return createHmac("sha256", secret()).update(`site:${label}`).digest("hex");
+}
+
+export function verifySiteSignature(label: string, signature: string | null): boolean {
+  if (!signature) return false;
+  const expected = siteSignature(label);
+  return expected.length === signature.length && timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
 /** The site's own public address - where Lulu and Stripe reach it. Set as
  *  APP_URL in production; a page's own origin otherwise. */
 export function appUrl(requestOrigin?: string): string {

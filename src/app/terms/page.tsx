@@ -94,9 +94,10 @@ export default function TermsPage() {
       <H2>Printed books</H2>
 
       <P>
-        You can order a journal printed and bound, for any number of days and in plastic coil, paperback or
-        hardcover. You need an account to order. Our print partner, Lulu, prints and posts it; you
-        pay us, on Stripe&rsquo;s payment page.
+        You can order a journal printed and bound, for any number of days and in metal wire-o, plastic
+        coil, paperback or hardcover. You need an account to order. Our print partners print and post
+        it: BookVault, in the UK, makes metal wire-o books, and Lulu makes the rest. You pay us, on
+        Stripe&rsquo;s payment page.
       </P>
 
       <P>
@@ -111,7 +112,9 @@ export default function TermsPage() {
         US dollars. It depends on the length, the binding and where it is going. If we are required
         to charge sales tax or VAT, it is shown before you pay too. Orders sent outside the United
         States may be charged import duties or taxes by the country they arrive in; those are yours
-        to pay, and are not something we see or set.
+        to pay, and are not something we see or set. Metal wire-o books are printed in the UK: one
+        sent to the United States goes with its import duties already paid, and they are in the
+        price you see; one sent within the UK has none to pay.
       </P>
 
       <P>
