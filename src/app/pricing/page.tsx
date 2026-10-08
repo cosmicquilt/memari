@@ -55,8 +55,8 @@ export default function PricingPage() {
             <p className={site.price}>Per book</p>
             <p className={site.priceNote}>Priced for your book, shown in full before you pay</p>
             <ul>
-              <li>7 × 10 in, printed in black on uncoated white paper, with a matte cover</li>
-              <li>Metal wire-o, which lies flat, on thick 170 gsm paper or standard 80 gsm; or paperback, or hardcover</li>
+              <li>7 × 10 in, printed in black on uncoated paper, with a matte cover</li>
+              <li>Metal wire-o, which lies flat, on thick 170 gsm or standard 80 gsm white paper; or paperback or hardcover, on cream paper or white</li>
               <li>Any length: 30 days, 90, a year, up to two</li>
               <li>Made to order and shipped worldwide</li>
               <li>Reprinted or refunded if it arrives damaged or misprinted</li>

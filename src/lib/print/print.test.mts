@@ -12,7 +12,7 @@
 
 import { createHmac } from "node:crypto";
 import { customerCanCancel } from "./orders";
-import { BINDINGS, BINDING_ENUM, bindingFromEnum, dottedPodPackageId, gutterInches, podPackageId, printedPageCount, shippedAbroad } from "./products";
+import { BINDINGS, BINDING_ENUM, bindingDescription, bindingFromEnum, dottedPodPackageId, gutterInches, paperFor, paperOfSku, podPackageId, printedPageCount, shippedAbroad } from "./products";
 import { BOOKVAULT, LULU, availability, printerFor, printerForBinding, shippingLabel, DEFAULT_PRINTER } from "./printer";
 import {
   bookVaultAddress,
@@ -77,13 +77,15 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 // --- the SKU -------------------------------------------------------------------
 {
   // Dotted since 2026-10-08: Lulu drops the undotted 27 characters on 2027-02-01.
-  check(podPackageId("coil", "bound7x10") === "0700X1000.BW.STD.CO.060UW444.MXX", `coil 7x10 (got ${podPackageId("coil", "bound7x10")})`);
-  check(podPackageId("paperback", "bound7x10") === "0700X1000.BW.STD.PB.060UW444.MXX", "paperback 7x10");
-  check(podPackageId("hardcover", "bound7x10") === "0700X1000.BW.STD.CW.060UW444.MXX", "hardcover 7x10");
+  check(podPackageId("coil", "bound7x10", "white") === "0700X1000.BW.STD.CO.060UW444.MXX", `coil 7x10 white (got ${podPackageId("coil", "bound7x10", "white")})`);
+  check(podPackageId("paperback", "bound7x10", "white") === "0700X1000.BW.STD.PB.060UW444.MXX", "paperback 7x10 white");
+  check(podPackageId("hardcover", "bound7x10", "white") === "0700X1000.BW.STD.CW.060UW444.MXX", "hardcover 7x10 white");
+  // Cream unless asked (2026-10-08): 60# uncoated cream, 060UC444, the same price.
+  check(podPackageId("paperback", "bound7x10") === "0700X1000.BW.STD.PB.060UC444.MXX" && podPackageId("hardcover", "bound7x10", "cream") === "0700X1000.BW.STD.CW.060UC444.MXX", "paperback and hardcover default to cream");
   check(podPackageId("coil", "bound7x10")!.replaceAll(".", "").length === 27, "the same 27 characters, dotted");
   // An order saved with the old form is sent dotted; Lulu's own example converts as its docs show.
   check(dottedPodPackageId("0500X0800FCPRESS060UW444GXX") === "0500X0800.FC.PRE.SS.060UW444.GXX", "Lulu's example, dotted");
-  check(dottedPodPackageId("0700X1000BWSTDPB060UW444MXX") === podPackageId("paperback", "bound7x10"), "an old paperback SKU becomes today's");
+  check(dottedPodPackageId("0700X1000BWSTDPB060UW444MXX") === podPackageId("paperback", "bound7x10", "white"), "an old paperback SKU becomes today's");
   check(dottedPodPackageId("0700X1000.BW.STD.CO.060UW444.MXX") === "0700X1000.BW.STD.CO.060UW444.MXX", "a dotted SKU is left alone");
   check(dottedPodPackageId("NOT-A-SKU") === "NOT-A-SKU", "anything else is left for Lulu to refuse");
   check(podPackageId("coil", "letter") === null, "Letter is printed at home, not ordered");
@@ -240,6 +242,12 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   }
   check(threw, "a printer this code does not know is an error, never quietly Lulu");
   check(LULU.sku("hardcover", "bound7x10") === podPackageId("hardcover", "bound7x10") && LULU.sku("coil", "letter") === null, "Lulu's product codes");
+  // Paper colour: kept in the SKU, read back for a renewal, said in words.
+  check(LULU.sku("paperback", "bound7x10", "white")!.includes("060UW444") && LULU.sku("paperback", "bound7x10")!.includes("060UC444"), "Lulu: white when asked, cream otherwise");
+  check(BOOKVAULT.sku("wireo", "bound7x10", "cream") === "170UWMWB254H178W", "BookVault's wire-o stays white: 170 gsm comes in no other colour");
+  check(paperOfSku("0700X1000.BW.STD.PB.060UC444.MXX") === "cream" && paperOfSku("0700X1000.BW.STD.PB.060UW444.MXX") === "white" && paperOfSku("0700X1000BWSTDCO060UW444MXX") === "white" && paperOfSku("170UWMWB254H178W") === "white", "the colour read back from any SKU, old or new");
+  check(paperFor("paperback", undefined) === "cream" && paperFor("paperback", "white") === "white" && paperFor("wireo", "cream") === "white", "a colour the binding can have");
+  check(bindingDescription("paperback", "0700X1000.BW.STD.PB.060UC444.MXX") === "Paperback, cream paper" && bindingDescription("wireo", "170UWMWB254H178W") === "Metal wire-o, thick paper", "in words, for receipts and emails");
   check(LULU.gutterInches("paperback", 200) === gutterInches("paperback", 200) && LULU.gutterInches("coil", 200) === 0, "Lulu's binding margins");
   const coil = LULU.pageLimits("coil");
   check(coil.min === 2 && coil.max === 470, "Lulu's page limits");

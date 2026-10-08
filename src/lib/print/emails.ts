@@ -19,7 +19,7 @@
 import { prisma } from "@/lib/prisma";
 import { escapeHtml, sendEmail, type Email, type EmailSender } from "@/lib/email";
 import { appUrl } from "./fileUrls";
-import { BINDING_SPECS, bindingFromEnum } from "./products";
+import { bindingDescription, bindingFromEnum } from "./products";
 import { formatCents } from "./pricing";
 import { nextRange } from "./orderRange";
 import { rangeLabel } from "./orderBook";
@@ -31,6 +31,8 @@ type OrderLike = {
   endDate: Date;
   days: number;
   binding: string;
+  /** Its SKU, which carries the paper colour. */
+  podPackageId?: string;
   pageCount: number;
   totalCents: number;
   contactEmail: string | null;
@@ -41,7 +43,7 @@ type OrderLike = {
 };
 
 function describe(order: OrderLike): string {
-  return `${order.title} - ${rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })}, ${order.days} days, ${BINDING_SPECS[bindingFromEnum(order.binding)].label.toLowerCase()}, ${order.pageCount} pages`;
+  return `${order.title} - ${rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })}, ${order.days} days, ${bindingDescription(bindingFromEnum(order.binding), order.podPackageId ?? "").toLowerCase()}, ${order.pageCount} pages`;
 }
 
 function compose(to: string, subject: string, heading: string, paragraphs: string[], link: string): Email {

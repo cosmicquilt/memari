@@ -113,7 +113,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "How do I order a printed book?",
         a: <p>
-          In the editor, choose Order print. Pick the binding (metal wire-o to lie flat, on thick or standard paper, paperback or hardcover), how many days
+          In the editor, choose Order print. Pick the binding (metal wire-o to lie flat, on thick or standard paper, or paperback or hardcover, on cream or white paper), how many days
           the book covers, where it goes and how fast; you see the full price before you pay. Ordering needs an account, so your
           books have somewhere to live. Printed books are 7 × 10 in.
         </p>,

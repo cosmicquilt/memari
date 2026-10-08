@@ -20,7 +20,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { BINDING_ENUM, BINDING_SPECS, BINDINGS, bindingFromEnum, orderableTrim, shippedAbroad, type Binding, type BindingAvailability } from "./products";
+import { BINDING_ENUM, BINDINGS, bindingDescription, bindingFromEnum, orderableTrim, paperFor, shippedAbroad, type Binding, type BindingAvailability, type PaperColour } from "./products";
 import { DEFAULT_PRINTER, availability, printerFor, printerForBinding, type ShippingQuote } from "./printer";
 import { orderRange, renewalDate, type OrderRange, type ShippingLevel } from "./orderRange";
 import { LULU_STOPPABLE, type PrintJob, type ShippingAddress } from "./lulu";
@@ -44,12 +44,16 @@ export type OrderInput = {
   startISO: string;
   days: number;
   binding: Binding;
+  /** Cream or white, where the binding has both (paperback, hardcover);
+   *  cream unless asked. */
+  paper?: PaperColour;
   address: ShippingAddress;
 };
 
 export type Quote = {
-  /** The binding the shipping options are for. */
+  /** The binding the shipping options are for, and its paper. */
   binding: Binding;
+  paper: PaperColour;
   range: { startISO: string; endISO: string; days: number; label: string };
   pageCount: number;
   availability: BindingAvailability[];
@@ -124,7 +128,8 @@ async function priced(input: OrderInput, ownerId: string) {
   if (interior.problems.length > 0) throw new OrderError(`This book is not ready to print: ${interior.problems.join("; ")}.`);
   const bindings = availability(interior.bookPages);
   const fits = bindings.find((a) => a.binding === input.binding)?.ok ?? false;
-  const sku = fits ? printer.sku(input.binding, interior.trim) : null;
+  const paper = paperFor(input.binding, input.paper);
+  const sku = fits ? printer.sku(input.binding, interior.trim, paper) : null;
   const address = cleanAddress(input.address);
   const problem = fits ? printer.addressProblem(address) : null;
   if (problem) throw new OrderError(problem);
@@ -137,7 +142,7 @@ async function priced(input: OrderInput, ownerId: string) {
     }
     if (quotes.length === 0) throw new OrderError(`${printer.label} cannot post to that address. Check the country and postcode.`);
   }
-  return { journal, range, interior, availability: bindings, sku: sku ?? "", address, quotes, printer };
+  return { journal, range, interior, availability: bindings, sku: sku ?? "", address, quotes, printer, paper };
 }
 
 /** The lowest price of each other binding that can be had, to this address:
@@ -148,7 +153,8 @@ async function otherBindingPrices(
   chosen: Binding,
   bindings: BindingAvailability[],
   interior: { trim: PlannerTrimKey; pageCount: number },
-  address: ShippingAddress
+  address: ShippingAddress,
+  paper: PaperColour | undefined
 ): Promise<Partial<Record<Binding, number>>> {
   const prices: Partial<Record<Binding, number>> = {};
   await Promise.all(
@@ -156,7 +162,7 @@ async function otherBindingPrices(
       .filter((fit) => fit.ok && fit.binding !== chosen)
       .map(async ({ binding }) => {
         const printer = printerForBinding(binding);
-        const sku = printer.sku(binding, interior.trim);
+        const sku = printer.sku(binding, interior.trim, paperFor(binding, paper));
         if (!sku || printer.addressProblem(address)) return;
         try {
           const quotes = await printer.quoteShipping(sku, interior.pageCount, address, printer.cheapestLevels);
@@ -175,17 +181,18 @@ function describeRange(range: OrderRange) {
 }
 
 export async function quoteOrder(ownerId: string, input: OrderInput): Promise<Quote> {
-  const { range, interior, availability, quotes, address, printer } = await priced(input, ownerId);
+  const { range, interior, availability, quotes, address, printer, paper } = await priced(input, ownerId);
   const options = quotes.map(({ level, cost, label, arrives }) => ({
     level,
     label: label ?? printer.levelLabel(level),
     price: priceFromCost(cost),
     ...(arrives ? { arrives } : {}),
   }));
-  const fromPrices = await otherBindingPrices(input.binding, availability, interior, address);
+  const fromPrices = await otherBindingPrices(input.binding, availability, interior, address, input.paper);
   if (options.length > 0) fromPrices[input.binding] = Math.min(...options.map((option) => option.price.totalCents));
   return {
     binding: input.binding,
+    paper,
     range: describeRange(range),
     pageCount: interior.pageCount,
     availability,
@@ -268,7 +275,6 @@ export async function startCheckout(
   });
 
   const customer = await stripeCustomer(ownerId, contactEmail, address.name);
-  const spec = BINDING_SPECS[input.binding];
   const session = await stripe().checkout.sessions.create({
     mode: "payment",
     customer,
@@ -280,7 +286,7 @@ export async function startCheckout(
         price_data: {
           currency: "usd",
           unit_amount: price.bookCents,
-          product_data: { name: `${journal.title} - printed journal`, description: `${spec.label}, ${rangeLabel(range)}, ${interior.pageCount} pages` },
+          product_data: { name: `${journal.title} - printed journal`, description: `${bindingDescription(input.binding, sku)}, ${rangeLabel(range)}, ${interior.pageCount} pages` },
         },
       },
       {

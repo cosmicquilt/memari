@@ -16,7 +16,7 @@ import { currentOwner } from "@/lib/owner";
 import { cancelByCustomer, OrderError, orderingConfigured, quoteOrder, startCheckout, type OrderInput, type Quote } from "@/lib/print/orders";
 import { appUrl } from "@/lib/print/fileUrls";
 import { nextRange, type ShippingLevel } from "@/lib/print/orderRange";
-import { bindingFromEnum, shippedAbroad, type Binding } from "@/lib/print/products";
+import { bindingFromEnum, paperOfSku, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
 import { orderableBindings } from "@/lib/print/printer";
 import type { ShippingAddress } from "@/lib/print/lulu";
 
@@ -129,7 +129,7 @@ export async function cancelOrder(orderId: string): Promise<{ ok: true } | { ok:
   }
 }
 
-export type ReorderDefaults = { startISO: string; days: number; binding: Binding; address: ShippingAddress; level: ShippingLevel };
+export type ReorderDefaults = { startISO: string; days: number; binding: Binding; paper: PaperColour; address: ShippingAddress; level: ShippingLevel };
 
 /**
  * "Order the next one" (the Orders page): the order screen filled in from an
@@ -151,6 +151,7 @@ export async function reorderDefaults(orderId: string, journalId: string): Promi
     startISO: next.start.toISOString().slice(0, 10),
     days: next.days,
     binding: bindingFromEnum(order.binding),
+    paper: paperOfSku(order.podPackageId),
     address: order.shippingAddress as unknown as ShippingAddress,
     level: order.shippingLevel as ShippingLevel,
   };

@@ -10,7 +10,9 @@
 // by Lulu. Once priced, every binding shows its own lowest price ("list
 // every binding cost"), and choosing another binding prices it straight
 // away. A book too long for thick paper moves to standard paper by itself,
-// and says so ("switch to 80 gsm for longer book").
+// and says so ("switch to 80 gsm for longer book"). Paperback and hardcover
+// come on cream paper, or white ("default to be cream with option of
+// white"), the same price.
 //
 // Prices are never typed here or trusted from here: "See prices" asks the
 // server, which builds the book for those days and asks the printer, and
@@ -31,7 +33,7 @@ import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
 import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, type OrderingStatus } from "./printActions";
 import type { Quote } from "@/lib/print/orders";
-import { BINDINGS, BINDING_SPECS, shippedAbroad, type Binding } from "@/lib/print/products";
+import { BINDINGS, BINDING_SPECS, DEFAULT_PAPER, PAPER_LABELS, paperChoices, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
 import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
 import { formatCents } from "@/lib/print/pricing";
 import { countryOptions } from "@/lib/print/countries";
@@ -122,6 +124,8 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   // from the UK, so further ahead.
   const [startISO, setStartISO] = useState(() => isoDay(suggestedStart(new Date(), "GROUND", shippedAbroad(BINDINGS[0], "US"), weekStartDay)));
   const [binding, setBinding] = useState<Binding>(BINDINGS[0]);
+  // Cream unless white is chosen; only paperback and hardcover offer both.
+  const [paper, setPaper] = useState<PaperColour>(DEFAULT_PAPER);
   const [address, setAddress] = useState<ShippingAddress>(EMPTY_ADDRESS);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [level, setLevel] = useState<ShippingLevel | null>(null);
@@ -144,6 +148,8 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
         // An earlier book's binding, if it can still be had (plastic coil
         // cannot, since 2026-10-08).
         if (BINDINGS.includes(earlier.binding)) setBinding(earlier.binding);
+        // The colour it was printed on, where its binding has a choice.
+        if (paperChoices(earlier.binding).length > 1) setPaper(earlier.paper);
         setAddress({ ...EMPTY_ADDRESS, ...earlier.address });
         setPreferredLevel(earlier.level);
         setFromEarlier(true);
@@ -178,7 +184,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
     changed(setAddress)({ ...address, [key]: event.target.value });
 
   const addressReady = !!(address.name.trim() && address.street1.trim() && address.city.trim() && address.postcode.trim() && address.phoneNumber.trim() && address.countryCode);
-  const input = { journalId, startISO, days, binding, address };
+  const input = { journalId, startISO, days, binding, paper, address };
 
   const seePrices = async (forBinding: Binding = binding) => {
     const ask = ++asked.current;
@@ -351,6 +357,18 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                 </div>
                 {fits && !fits.ok && <span style={{ fontSize: 12, color: ERROR_INK }}>{fits.reason}</span>}
                 {moved && fits?.ok && <span style={{ fontSize: 12, color: cream(0.6) }}>{moved}</span>}
+                {/* Paper colour, where the binding has a choice: the same
+                    price either way, so the prices on screen stand. */}
+                {paperChoices(binding).length > 1 && (
+                  <div role="radiogroup" aria-label="Paper" style={{ display: "flex", gap: 6 }}>
+                    {paperChoices(binding).map((option) => (
+                      <Choice key={option} selected={paper === option} onPick={() => setPaper(option)}>
+                        <div style={{ fontWeight: 600 }}>{PAPER_LABELS[option]} paper</div>
+                        <div style={{ fontSize: 11, color: cream(0.5), marginTop: 2 }}>{option === "cream" ? "Warm, softer on the eye" : "Bright, the most contrast"}</div>
+                      </Choice>
+                    ))}
+                  </div>
+                )}
                 {/* What prints, for these days and this binding - the very
                     file the printer gets (app/print-preview). */}
                 <span style={{ fontSize: 12, color: cream(0.6) }}>

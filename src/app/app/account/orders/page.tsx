@@ -12,7 +12,7 @@
 import { redirect } from "next/navigation";
 import { currentOwner, signInPath } from "@/lib/owner";
 import { prisma } from "@/lib/prisma";
-import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
+import { bindingDescription, bindingFromEnum } from "@/lib/print/products";
 import { formatCents } from "@/lib/print/pricing";
 import { customerCanCancel } from "@/lib/print/orders";
 import { shippingLabel } from "@/lib/print/printer";
@@ -87,7 +87,7 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
           <p style={{ margin: 0, fontSize: 13, color: cream(0.6) }}>No printed books yet. Order one from a journal with Order print.</p>
         )}
         {orders.map((order) => {
-          const binding = BINDING_SPECS[bindingFromEnum(order.binding)];
+          const binding = bindingDescription(bindingFromEnum(order.binding), order.podPackageId);
           const tracking = Array.isArray(order.trackingUrls) ? (order.trackingUrls as string[]) : [];
           // A renewal that was never ordered has no book and no price.
           const unordered = order.status === "FAILED" && !!order.renewedFromId;
@@ -103,7 +103,7 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
                 {!unordered && <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{formatCents(order.totalCents)}</span>}
               </div>
               <div style={{ fontSize: 12, color: cream(0.6), lineHeight: 1.5 }}>
-                {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {order.days} days · {binding.label}
+                {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {order.days} days · {binding}
                 {!unordered && ` · ${order.pageCount} pages · ${shippingLabel(order.printer, order.shippingLevel)}`}
               </div>
               <div style={{ fontSize: 13, color: order.status === "FAILED" ? "#ff8a80" : CREAM }}>

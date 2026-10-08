@@ -25,7 +25,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { bindingFromEnum, orderableTrim, BINDING_SPECS } from "./products";
+import { bindingFromEnum, orderableTrim, paperOfSku, BINDING_SPECS } from "./products";
 import { fitsBinding, printerFor } from "./printer";
 import { nextRange, type ShippingLevel } from "./orderRange";
 import type { PrintCost, ShippingAddress } from "./lulu";
@@ -177,7 +177,8 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const fit = fitsBinding(binding, interior.bookPages);
   if (!fit?.ok) return fail(`the next book has ${interior.pageCount} pages, more than ${BINDING_SPECS[binding].label.toLowerCase()} can hold`);
 
-  const sku = printer.sku(binding, interior.trim)!;
+  // On the same paper as the book it renews.
+  const sku = printer.sku(binding, interior.trim, paperOfSku(order.podPackageId))!;
   const address = order.shippingAddress as unknown as ShippingAddress;
   const level = order.shippingLevel as ShippingLevel;
   let cost: PrintCost;

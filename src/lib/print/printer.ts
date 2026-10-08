@@ -19,7 +19,7 @@
 
 import type { PlannerTrimKey } from "@/lib/planner-trims";
 import { SHIPPING_LABELS, SHIPPING_LEVELS, type ShippingLevel } from "./orderRange";
-import { BINDING_SPECS, BINDINGS, LULU_BINDINGS, gutterInches, isLuluBinding, podPackageId, printedPageCount, type Binding, type BindingAvailability } from "./products";
+import { BINDING_SPECS, BINDINGS, LULU_BINDINGS, gutterInches, isLuluBinding, podPackageId, printedPageCount, type Binding, type BindingAvailability, type PaperColour } from "./products";
 import {
   cancelPrintJob,
   coverDimensions,
@@ -69,9 +69,10 @@ export type Printer = {
   /** The bindings it prints for us. */
   bindings: readonly Binding[];
   configured(): boolean;
-  /** The printer's product code for a binding at a page size, or null where
-   *  it does not offer it. */
-  sku(binding: Binding, trim: PlannerTrimKey): string | null;
+  /** The printer's product code for a binding at a page size on a paper
+   *  colour (the binding's default where not given, or where the printer has
+   *  only one), or null where it does not offer it. */
+  sku(binding: Binding, trim: PlannerTrimKey, paper?: PaperColour): string | null;
   /** The pages a binding can hold, counted as printed. */
   pageLimits(binding: Binding): { min: number; max: number };
   /** Inches added to the inside margin for the binding - see
@@ -168,7 +169,8 @@ export const BOOKVAULT: Printer = {
   label: "BookVault",
   bindings: ["wireo", "wireoStandard"],
   configured: bookVaultConfigured,
-  sku: bookVaultSku,
+  // White only: BookVault's 170 gsm comes in no other colour.
+  sku: (binding, trim) => bookVaultSku(binding, trim),
   // The least is BookVault's to say, at pricing (bookVaultSpec
   // refuses with its reason); the most is the wire's on this paper.
   pageLimits: (binding) => (bookVaultMaxPages(binding) > 0 ? { min: 4, max: bookVaultMaxPages(binding) } : { min: 1, max: 0 }),

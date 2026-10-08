@@ -81,6 +81,41 @@ export function isLuluBinding(binding: Binding): binding is LuluBinding {
   return binding in LULU_BINDINGS;
 }
 
+/** PAPER COLOUR (2026-10-08): "I would like default to be cream with option
+ *  of white" - for paperback and hardcover, where Lulu has both at the same
+ *  price (60# uncoated cream 060UC444, white 060UW444; checked in its
+ *  sandbox). Wire-o's papers at BookVault are white: its 170 gsm comes in
+ *  no other colour. An order keeps its colour in its SKU, so a renewal
+ *  reads it back from there (paperOfSku) - nothing else to store. */
+export type PaperColour = "cream" | "white";
+export const DEFAULT_PAPER: PaperColour = "cream";
+export const PAPER_LABELS: Record<PaperColour, string> = { cream: "Cream", white: "White" };
+
+/** The colours a binding can be had in, the first its default. */
+export function paperChoices(binding: Binding): PaperColour[] {
+  return isLuluBinding(binding) ? ["cream", "white"] : ["white"];
+}
+
+/** A colour the binding can have: the one asked for, else its default. */
+export function paperFor(binding: Binding, paper: PaperColour | undefined): PaperColour {
+  const choices = paperChoices(binding);
+  return paper && choices.includes(paper) ? paper : choices[0];
+}
+
+/** The colour an order's SKU was printed on - "UC" uncoated cream in Lulu's
+ *  and BookVault's codes alike, anything else white (every SKU before
+ *  2026-10-08 was white). */
+export function paperOfSku(sku: string): PaperColour {
+  return /\d{3}UC/.test(sku) ? "cream" : "white";
+}
+
+/** An order's binding and paper in words, for a receipt, an email or the
+ *  Orders page: "Paperback, cream paper", "Metal wire-o, thick paper". */
+export function bindingDescription(binding: Binding, sku: string): string {
+  const label = BINDING_SPECS[binding].label;
+  return paperChoices(binding).length > 1 ? `${label}, ${paperOfSku(sku)} paper` : label;
+}
+
 /** Lulu's trim field for each page size an order can be printed at. Letter
  *  is the printed-at-home size, without bleed, so it is not ordered. */
 const TRIM_CODES: Partial<Record<PlannerTrimKey, string>> = {
@@ -89,15 +124,16 @@ const TRIM_CODES: Partial<Record<PlannerTrimKey, string>> = {
 
 const INK = "BW";
 const QUALITY = "STD";
-const PAPER = "060UW444";
+const PAPER: Record<PaperColour, string> = { cream: "060UC444", white: "060UW444" };
 const FINISH = "M";
 
-/** Lulu's SKU for a binding at a page size, or null where Lulu does not
- *  make it: a size that cannot be ordered, or a binding it does not print. */
-export function podPackageId(binding: Binding, trim: PlannerTrimKey): string | null {
+/** Lulu's SKU for a binding at a page size on a paper colour (cream unless
+ *  asked), or null where Lulu does not make it: a size that cannot be
+ *  ordered, or a binding it does not print. */
+export function podPackageId(binding: Binding, trim: PlannerTrimKey, paper: PaperColour = DEFAULT_PAPER): string | null {
   const trimCode = TRIM_CODES[trim];
   if (!trimCode || !isLuluBinding(binding)) return null;
-  return `${trimCode}.${INK}.${QUALITY}.${LULU_BINDINGS[binding].code}.${PAPER}.${FINISH}XX`;
+  return `${trimCode}.${INK}.${QUALITY}.${LULU_BINDINGS[binding].code}.${PAPER[paper]}.${FINISH}XX`;
 }
 
 /** Field widths of the old undotted SKU: trim, ink, quality, binding,
