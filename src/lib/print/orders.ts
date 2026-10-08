@@ -330,8 +330,11 @@ export async function applyLuluStatus(job: PrintJob): Promise<void> {
 }
 
 /** Lulu's statuses in which a job can still be stopped: before it is paid
- *  for, and the hour of production_delay after (lulu.ts, createPrintJob). */
-const STOPPABLE_AT_PRINTER = new Set(["CREATED", "UNPAID", "PAYMENT_IN_PROGRESS", "PRODUCTION_DELAYED"]);
+ *  for, and the hour of production_delay after (lulu.ts, createPrintJob).
+ *  Exactly the ones Lulu's spec allows CANCELED from (openapi, print-job
+ *  status transitions, read 2026-10-08) - not PAYMENT_IN_PROGRESS, which
+ *  only goes on to UNPAID or PRODUCTION_DELAYED; a cancel there is refused. */
+export const STOPPABLE_AT_PRINTER = new Set(["CREATED", "UNPAID", "PRODUCTION_DELAYED"]);
 
 /** Can the customer cancel this order themselves? While it is with the
  *  printer and the printer has not begun it - as far as we have heard. The

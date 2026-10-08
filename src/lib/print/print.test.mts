@@ -9,6 +9,7 @@
 // Run with: npx tsx src/lib/print/print.test.mts
 
 import { createHmac } from "node:crypto";
+import { customerCanCancel } from "./orders";
 import { dottedPodPackageId, gutterInches, podPackageId, printedPageCount } from "./products";
 import { LULU, availabilityAt, printerFor, DEFAULT_PRINTER } from "./printer";
 const bindingAvailability = (pages: number) => availabilityAt(LULU, pages);
@@ -181,6 +182,14 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
     check(Math.abs(top - 187.5 - (187.5 + 2700 - bottom)) < 0.01, "and the page stays centred top to bottom");
     check(Math.abs(t.s - (6 - g) / 6) < 1e-9, `drawn ${(t.s * 100).toFixed(1)}% of its size, never stretched`);
   }
+}
+
+// --- cancelling at the printer ---------------------------------------------------------
+// Lulu's spec allows CANCELED only from CREATED, UNPAID and PRODUCTION_DELAYED.
+{
+  const can = (luluStatus: string | null) => customerCanCancel({ status: "SUBMITTED", luluPrintJobId: "1", stripePaymentIntentId: "pi", luluStatus });
+  check(can(null) && can("CREATED") && can("UNPAID") && can("PRODUCTION_DELAYED"), "cancellable while Lulu allows it");
+  check(!can("PAYMENT_IN_PROGRESS") && !can("PRODUCTION_READY") && !can("IN_PRODUCTION") && !can("SHIPPED"), "not once Lulu would refuse it");
 }
 
 // --- the printer ----------------------------------------------------------------------
