@@ -310,6 +310,9 @@ export type PdfFont = {
   /** True when a real file was embedded, so the metrics are the design's
    *  own rather than a substitute face's. */
   embedded: boolean;
+  /** The family's italic was embedded too, so text marked italic is set in
+   *  it. Installed only for a document that has some (see buildPlannerPdf). */
+  italic?: boolean;
 };
 
 /** What could not be drawn faithfully, for the caller to surface. */
@@ -361,7 +364,9 @@ export function drawElement(
           : align === "right"
           ? (element.x ?? 0) + (element.width ?? 0)
           : element.x ?? 0;
-      doc.setFont(font.name, font.style);
+      // Italic only where the family's italic was installed; anywhere else
+      // the text stays upright rather than falling back to another face.
+      doc.setFont(font.name, element.fontStyle === "italic" && font.italic ? "italic" : font.style);
       doc.setFontSize(pxToPt(size));
       doc.setTextColor(...hexToRgb(isPaint(element.fill) ? element.fill : "#000000"));
       // NO character spacing. Every renderer here deliberately leaves
@@ -486,13 +491,18 @@ export function createPdf(page: PageGrid): jsPDF {
 export function installFont(
   doc: jsPDF,
   family: string,
-  ttfBase64?: string
+  ttfBase64?: string,
+  italicTtfBase64?: string
 ): PdfFont {
   if (!ttfBase64) return { name: "times", style: "normal", embedded: false };
   const file = `${family}.ttf`;
   doc.addFileToVFS(file, ttfBase64);
   doc.addFont(file, family, "normal");
-  return { name: family, style: "normal", embedded: true };
+  if (!italicTtfBase64) return { name: family, style: "normal", embedded: true };
+  const italicFile = `${family}-Italic.ttf`;
+  doc.addFileToVFS(italicFile, italicTtfBase64);
+  doc.addFont(italicFile, family, "italic");
+  return { name: family, style: "normal", embedded: true, italic: true };
 }
 
 /** Every element of one page, drawn in order. */

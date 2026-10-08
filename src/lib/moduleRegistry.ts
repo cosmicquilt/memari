@@ -2196,7 +2196,9 @@ const PRIMITIVES = {
             "default": "left"
           },
           "size": { "type": "string", "enum": ["small", "regular", "large"], "default": "regular" },
-          "frame": { "type": "string", "enum": ["box", "open", "rules"], "default": "box" }
+          "frame": { "type": "string", "enum": ["box", "open", "rules"], "default": "box" },
+          // The passage in italic - 2026-10-07; see textBlock.ts.
+          "italic": { "type": "boolean", "default": false }
         }
       },
       "defaultWidth": 600,
@@ -2250,6 +2252,9 @@ const PRIMITIVES = {
         ],
         window: { x: "left", y: "top", columns: 3, rows: 1.6 },
       },
+      // "italic can be a switch" (2026-10-07) - the passage only; the
+      // attribution stays upright.
+      { kind: "boolean", key: "italic", label: "Italic" },
     ],
     render: (geometry, propValues, idPrefix, fontFamily, lattice) =>
       renderTextBlock(geometry, propValues as TextBlockConfig, idPrefix, fontFamily, lattice),
@@ -2446,6 +2451,7 @@ export const MODULE_REGISTRY: Record<string, ModuleDefinition> = {
           // Set off by a rule above and below rather than boxed like the
           // writing space around it - module-edits list, 2026-09-30.
           frame: { type: "string", enum: ["box", "open", "rules"], default: "rules" },
+          italic: { type: "boolean", default: false },
         },
       },
       defaultColumnSpan: 24,

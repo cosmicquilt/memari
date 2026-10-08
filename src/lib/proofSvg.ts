@@ -97,7 +97,7 @@ export function toSvg(element: RenderedPolotnoElement, options: SvgOptions = {})
         : element.x ?? 0;
     return (
       `<text x="${x}" y="${textBaselineY(element.y ?? 0, size, String(element.fontFamily ?? ""))}" font-size="${size}" ` +
-      `font-family="Newsreader, Georgia, serif" fill="${element.fill ?? "#000"}" ` +
+      `font-family="Newsreader, Georgia, serif" ${element.fontStyle === "italic" ? 'font-style="italic" ' : ""}fill="${element.fill ?? "#000"}" ` +
       `text-anchor="${anchor}" opacity="${element.opacity ?? 1}"` +
       (element.letterSpacing ? ` letter-spacing="${element.letterSpacing}"` : "") +
       `>${escapeXml(String(element.text ?? ""))}</text>`

@@ -157,6 +157,7 @@ function CanvasTextField({
     fontFamily: font.family,
     fontSize,
     fontWeight: "normal",
+    fontStyle: font.italic ? "italic" : "normal",
     lineHeight: `${lineHeight}px`,
     textAlign: font.align,
     textTransform: font.uppercase ? "uppercase" : "none",

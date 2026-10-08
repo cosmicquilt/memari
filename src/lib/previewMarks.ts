@@ -54,6 +54,8 @@ export type PreviewMark =
       z: number;
       t: string;
       ff: string;
+      /** Italic, when the text is. */
+      fs?: "i";
       a: MarkAlign;
       f?: string;
       o?: number;
@@ -108,6 +110,7 @@ export function toPreviewMark(element: RenderedPolotnoElement): PreviewMark | nu
       // sheet can do because it has one; a canvas has no cascade, so a
       // hard-coded family would draw a sans-serif planner in a serif.
       ff: typeof element.fontFamily === "string" ? element.fontFamily : "",
+      ...(element.fontStyle === "italic" ? { fs: "i" as const } : {}),
       a: element.align === "center" ? "c" : element.align === "right" ? "r" : "l",
       ...(fillOf(element) ? { f: fillOf(element) } : {}),
       ...(opacityOf(element) !== undefined ? { o: opacityOf(element) } : {}),

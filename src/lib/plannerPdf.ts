@@ -28,6 +28,7 @@ import {
 } from "./pdfDocument";
 import type { PageGrid } from "./grid";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
+import { flatten } from "./proofSvg";
 import { PLANNER_TRIMS, trimKeyForWidth } from "./planner-trims";
 
 /**
@@ -41,6 +42,9 @@ import { PLANNER_TRIMS, trimKeyForWidth } from "./planner-trims";
  */
 export const FONT_FAMILY = "Newsreader";
 export const FONT_PATH = "assets/fonts/Newsreader.ttf";
+/** Its italic, for a quote set in it (2026-10-07). A module-level constant
+ *  like FONT_PATH, so the build's file tracer finds it the same way. */
+export const ITALIC_FONT_PATH = "assets/fonts/Newsreader-Italic.ttf";
 
 // Read once. It is 441KB on disk and about 588KB as base64, and a request
 // that re-read and re-encoded it every time would spend more effort on the
@@ -64,6 +68,23 @@ export function plannerFontBase64(): string | undefined {
   const file = path.join(process.cwd(), FONT_PATH);
   fontCache = existsSync(file) ? readFileSync(file).toString("base64") : undefined;
   return fontCache;
+}
+
+let italicFontCache: string | null | undefined = null;
+
+/** The italic file as base64, or undefined - read once, as the upright is. */
+export function plannerItalicFontBase64(): string | undefined {
+  if (italicFontCache !== null) return italicFontCache;
+  const file = path.join(process.cwd(), ITALIC_FONT_PATH);
+  italicFontCache = existsSync(file) ? readFileSync(file).toString("base64") : undefined;
+  return italicFontCache;
+}
+
+/** Whether any mark on these pages is set in italic. A book with none never
+ *  reads the italic's file (half a megabyte) or embeds the face; one with
+ *  some embeds only the letters it uses, a few kilobytes. */
+function anyItalic(pages: PdfPageInput[]): boolean {
+  return pages.some((page) => flatten(page.elements).some((element) => element.fontStyle === "italic"));
 }
 
 /** The shape this needs from a page - deliberately the smallest one: a size
@@ -216,7 +237,7 @@ export function buildPlannerPdf(pageInputs: PdfPageInput[], options: PdfOptions 
   }
 
   const doc = createPdf(pageInputs[0].pageGrid);
-  const font = installFont(doc, FONT_FAMILY, plannerFontBase64());
+  const font = installFont(doc, FONT_FAMILY, plannerFontBase64(), anyItalic(pageInputs) ? plannerItalicFontBase64() : undefined);
   const report = emptyReport();
   const pages: PdfPageReport[] = [];
   const sizes: PdfPageSize[] = [];

@@ -46,6 +46,9 @@ export type RenderedPolotnoElement = {
   text?: string;
   fontSize?: number;
   fontFamily?: string;
+  /** "italic" sets the text in the family's italic - a quote, 2026-10-07.
+   *  Absent is upright. */
+  fontStyle?: string;
   fill?: string;
   stroke?: string;
   strokeWidth?: number;

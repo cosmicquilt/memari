@@ -705,6 +705,19 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(ids(draw("text-block", { ...quote, frame: "rules" }, 12, 5), /-border-(top|bottom)$/).length === 2, "or a rule above and below");
   const floor = (s: string) => getMinRowSpanForSlug("text-block", PAGE, 6, { ...quote, size: s });
   check(floor("large") > floor("small"), "large type needs more room");
+  // ITALIC ON A SWITCH - "italic can be a switch" (2026-10-07): the passage
+  // set in italic, its credit upright, and upright until asked.
+  for (const slug of ["text-block", "quote-block"]) {
+    const upright = draw(slug, quote, 12, 5);
+    const slanted = draw(slug, { ...quote, italic: true }, 12, 5);
+    const lines = ids(slanted, /-line\d+$/);
+    check(lines.length > 0 && lines.every((e) => e.fontStyle === "italic"), `${slug}: Italic sets every line of the passage in italic`);
+    check(ids(slanted, /-attribution$/).every((e) => e.fontStyle === undefined), `${slug}: the attribution stays upright`);
+    check(upright.every((e) => e.fontStyle === undefined), `${slug}: upright by default`);
+    const schema = moduleDefinition(slug)?.db.configSchema as { properties?: Record<string, { default?: unknown }> } | undefined;
+    check(schema?.properties?.italic?.default === false, `${slug}: the stored schema has italic, off`);
+    check(moduleDefinition(slug)?.fields?.some((f) => f.kind === "boolean" && f.key === "italic") === true, `${slug}: the editor has the Italic switch`);
+  }
 }
 
 // --- month calendar ----------------------------------------------------------

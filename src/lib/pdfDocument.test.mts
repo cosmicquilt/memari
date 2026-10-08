@@ -25,6 +25,7 @@ import { GLYPH_SHAPES, glyphElement, type GlyphShape } from "./modules/glyphs";
 import { PROOF_PAGE } from "./proofSvg";
 import type { RenderedPolotnoElement } from "./renderModuleInstance";
 import { readDrawingOps } from "./pdfContentStream";
+import { buildPlannerPdf, plannerFontBase64, plannerItalicFontBase64 } from "./plannerPdf";
 
 let failures = 0;
 const fail = (message: string) => {
@@ -405,6 +406,45 @@ for (const [shape, faces] of SHAPES.flatMap((s) => [[s, false], [s, true]] as co
   }
   if (roundedOps.rects !== 0) {
     fail(`a rounded rect should emit no plain re operator, got ${roundedOps.rects}`);
+  }
+}
+
+// --- italic text is set in the italic --------------------------------------
+//
+// A quote can be set in italic (2026-10-07). The italic is its own file,
+// installed beside the upright, and a mark asks for it by fontStyle. Read
+// back which face jsPDF selected for each mark - a slant the exporter did
+// not honour would print upright and nothing else would say so.
+{
+  const regular = plannerFontBase64();
+  const italic = plannerItalicFontBase64();
+  if (!regular || !italic) fail("the Newsreader files are not in assets/fonts");
+  else {
+    const doc = createPdf(PROOF_PAGE);
+    const font = installFont(doc, "Newsreader", regular, italic);
+    const styleOf = (element: RenderedPolotnoElement) => {
+      drawElement(doc, element, font, emptyReport());
+      return doc.getFont().fontStyle;
+    };
+    const mark: RenderedPolotnoElement = { id: "q", type: "text", x: 100, y: 100, width: 300, height: 24, text: "a single step", fontSize: 20, fill: "#231F20" };
+    if (styleOf({ ...mark, fontStyle: "italic" }) !== "italic") fail("a mark set in italic was not drawn in the italic face");
+    if (styleOf(mark) !== "normal") fail("an upright mark after an italic one was not drawn upright");
+    // No italic file: the mark stays upright rather than reaching for a face
+    // that is not in the document.
+    const plain = createPdf(PROOF_PAGE);
+    const plainFont = installFont(plain, "Newsreader", regular);
+    drawElement(plain, { ...mark, fontStyle: "italic" }, plainFont, emptyReport());
+    if (plainFont.italic || plain.getFont().fontStyle !== "normal") fail("without the italic file, an italic mark should stay upright");
+    // Only a book with italic in it embeds the second face. Counted in the
+    // file itself: each embedded TrueType face is one /FontFile2 stream.
+    const faces = (marks: RenderedPolotnoElement[]) => {
+      const built = buildPlannerPdf([{ pageGrid: PROOF_PAGE, elements: marks }]);
+      return { italic: built.font.italic === true, files: (Buffer.from(built.bytes).toString("latin1").match(/\/FontFile2/g) ?? []).length };
+    };
+    const withItalic = faces([mark, { ...mark, id: "r", y: 200, fontStyle: "italic" }]);
+    const without = faces([mark]);
+    if (!withItalic.italic || withItalic.files !== 2) fail(`a book with an italic mark should embed both faces (got ${withItalic.files})`);
+    if (without.italic || without.files !== 1) fail(`a book with no italic should embed only the upright (got ${without.files})`);
   }
 }
 

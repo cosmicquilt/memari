@@ -164,11 +164,11 @@ function extentOf(
 /** `${size}px ${family}` built once per pair rather than once per mark per
  *  frame - 1200 string allocations a frame, for five distinct answers. */
 const fontStrings = new Map<string, string>();
-function fontString(size: number, family: string): string {
-  const key = `${size}|${family}`;
+function fontString(size: number, family: string, italic = false): string {
+  const key = `${size}|${family}|${italic ? "i" : ""}`;
   let value = fontStrings.get(key);
   if (value === undefined) {
-    value = `${size}px ${family}`;
+    value = `${italic ? "italic " : ""}${size}px ${family}`;
     fontStrings.set(key, value);
   }
   return value;
@@ -415,7 +415,7 @@ export function drawPreview(
 
   for (const mark of text) {
     const family = resolveCanvasFamily(mark.ff);
-    const wanted = fontString(mark.z, family);
+    const wanted = fontString(mark.z, family, mark.fs === "i");
     const letters = mark.ls ? `${mark.ls}px` : "0px";
     const x = mark.a === "c" ? mark.x + mark.w / 2 : mark.a === "r" ? mark.x + mark.w : mark.x;
     // Where the editor's own div puts it - the shared rule, which the SVG

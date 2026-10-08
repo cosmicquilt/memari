@@ -38,6 +38,9 @@ const newsreader = Newsreader({
   variable: "--font-newsreader",
   subsets: ["latin"],
   weight: ["400"],
+  // Italic for a quote set in it (2026-10-07). Without the real face the
+  // browser slants the upright one, which is not what prints.
+  style: ["normal", "italic"],
 });
 
 // Sans-serif alternative for the Page Settings font switch — closest free
@@ -49,6 +52,7 @@ const hankenGrotesk = Hanken_Grotesk({
   variable: "--font-hanken-grotesk",
   subsets: ["latin"],
   weight: ["300"],
+  style: ["normal", "italic"],
 });
 
 // THE APP'S OWN FONT WAS THIS - the chrome, and only the chrome. Since

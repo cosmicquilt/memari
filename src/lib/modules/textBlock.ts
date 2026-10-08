@@ -53,6 +53,9 @@ export type TextBlockConfig = {
   /** A box (the default), open on the page, or a rule above and below -
    *  a quote reads as set type when it is not boxed like writing space. */
   frame?: "box" | "open" | "rules";
+  /** The passage in italic - asked 2026-10-07, "italic can be a switch".
+   *  The attribution stays upright, as a credit is set. */
+  italic?: boolean;
 };
 
 /** The passage's type size and line pitch for a size setting. */
@@ -233,6 +236,7 @@ export function renderTextBlock(
       text: lines[i],
       fontSize: bodyFontSize,
       fontFamily,
+      ...(config.italic === true ? { fontStyle: "italic" } : {}),
       fill: NEAR_BLACK,
       align,
     });

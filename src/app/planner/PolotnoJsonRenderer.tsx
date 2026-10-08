@@ -208,6 +208,7 @@ function ElementNode({
           height,
           fontSize: element.fontSize,
           fontFamily: element.fontFamily,
+          fontStyle: element.fontStyle === "italic" ? "italic" : undefined,
           color: element.fill ?? "#000000",
           textAlign: (element.align as React.CSSProperties["textAlign"]) ?? "left",
           // CENTRED EVEN WHEN IT OVERFLOWS, the way print centres it.

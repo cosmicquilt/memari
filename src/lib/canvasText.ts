@@ -62,6 +62,8 @@ export type CanvasSlot = {
     opacity: number;
     /** The module prints it in capitals whatever is typed. */
     uppercase: boolean;
+    /** Set in italic, so the caret sits in the letters that print. */
+    italic: boolean;
     /** Between one drawn line and the next, for a passage. */
     lineHeightPx: number | null;
   };
@@ -264,6 +266,7 @@ export function canvasSlots(options: {
         fill: String(first.fill ?? "#231F20"),
         opacity: typeof first.opacity === "number" ? first.opacity : 1,
         uppercase: /[A-Za-z]/.test(drawnText) && drawnText === drawnText.toUpperCase(),
+        italic: first.fontStyle === "italic",
         lineHeightPx: lineHeight,
       },
       truncated:
