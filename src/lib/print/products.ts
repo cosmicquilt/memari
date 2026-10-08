@@ -5,8 +5,13 @@
 // and any length of days. A fourth came 2026-10-08: "this season i want
 // wire-o and rename to plastic as budget". Metal wire-o is printed by
 // BookVault in the UK (bookvault.ts) and comes first, the order screen's
-// default; the coil is called what it is, plastic, and Lulu prints it and
-// the rest. Everything here is pure, so the order screen, the
+// default; Lulu prints the rest. The same day, plastic coil left the order
+// screen ("it looks so bad ... might tarnish the view of the quality of the
+// brand", and priced as tax at cost it is no cheaper than wire-o), and
+// wire-o came on two papers: thick 170 gsm, and standard 80 gsm for any
+// book ("not everyone wants thick card paper") and for every book past
+// the 350 pages thick paper allows. Coil stays a Binding only so an
+// earlier coil order can still renew. Everything here is pure, so the order screen, the
 // server that prices it and the job that sends it to the printer all read
 // one description of the book.
 //
@@ -28,13 +33,18 @@
 
 import type { PlannerTrimKey } from "@/lib/planner-trims";
 
-export type Binding = "wireo" | "coil" | "paperback" | "hardcover";
-/** In the order screen's order: metal wire-o first, and chosen to start with. */
-export const BINDINGS: readonly Binding[] = ["wireo", "coil", "paperback", "hardcover"];
+export type Binding = "wireo" | "wireoStandard" | "coil" | "paperback" | "hardcover";
+/** The bindings a new order can have, in the order screen's order: metal
+ *  wire-o on thick paper first, and chosen to start with. */
+export const BINDINGS: readonly Binding[] = ["wireo", "wireoStandard", "paperback", "hardcover"];
 
 type BindingSpec = {
+  /** Its whole name, wherever it stands alone - an email, a receipt, a
+   *  reason it cannot be had: "Metal wire-o, thick paper". */
   label: string;
-  /** What the binding is like to use, for the order screen. */
+  /** Its name on the order screen's button, above the note. */
+  short: string;
+  /** What tells it apart on the order screen. */
   note: string;
   /** Where its printer posts from: an address in another country is
    *  "abroad" for how long the post takes (orderRange.ts, leadDays). Lulu
@@ -44,10 +54,11 @@ type BindingSpec = {
 };
 
 export const BINDING_SPECS: Record<Binding, BindingSpec> = {
-  wireo: { label: "Metal wire-o", note: "Lies flat, folds back", shipsFrom: "GB" },
-  coil: { label: "Plastic coil", note: "Lies flat when open", shipsFrom: "US" },
-  paperback: { label: "Paperback", note: "Slim, like a book", shipsFrom: "US" },
-  hardcover: { label: "Hardcover", note: "Rigid boards", shipsFrom: "US" },
+  wireo: { label: "Metal wire-o, thick paper", short: "Metal wire-o", note: "Thick 170 gsm paper", shipsFrom: "GB" },
+  wireoStandard: { label: "Metal wire-o, standard paper", short: "Metal wire-o", note: "Standard 80 gsm paper", shipsFrom: "GB" },
+  coil: { label: "Plastic coil", short: "Plastic coil", note: "Lies flat when open", shipsFrom: "US" },
+  paperback: { label: "Paperback", short: "Paperback", note: "Slim, like a book", shipsFrom: "US" },
+  hardcover: { label: "Hardcover", short: "Hardcover", note: "Rigid boards", shipsFrom: "US" },
 };
 
 /** Is this address in another country from the one the binding's printer
@@ -59,7 +70,7 @@ export function shippedAbroad(binding: Binding, countryCode: string): boolean {
 /** The bindings Lulu prints, with its binding field and its page limits
  *  (help.lulu.com, 2026): coil 2-470, perfect bound 32-800, casewrap 24-800.
  *  Counted as printed pages, after padding - see printedPageCount. */
-export type LuluBinding = Exclude<Binding, "wireo">;
+export type LuluBinding = Exclude<Binding, "wireo" | "wireoStandard">;
 export const LULU_BINDINGS: Record<LuluBinding, { code: "CO" | "PB" | "CW"; minPages: number; maxPages: number }> = {
   coil: { code: "CO", minPages: 2, maxPages: 470 },
   paperback: { code: "PB", minPages: 32, maxPages: 800 },
@@ -133,9 +144,17 @@ export function orderableTrim(trim: PlannerTrimKey): boolean {
 }
 
 /** The binding as the database names it, and back. */
-export const BINDING_ENUM = { wireo: "WIRE_O", coil: "COIL", paperback: "PAPERBACK", hardcover: "HARDCOVER" } as const satisfies Record<Binding, string>;
+export const BINDING_ENUM = { wireo: "WIRE_O", wireoStandard: "WIRE_O_STANDARD", coil: "COIL", paperback: "PAPERBACK", hardcover: "HARDCOVER" } as const satisfies Record<Binding, string>;
 export function bindingFromEnum(value: string): Binding {
-  return value === "WIRE_O" ? "wireo" : value === "PAPERBACK" ? "paperback" : value === "HARDCOVER" ? "hardcover" : "coil";
+  return value === "WIRE_O"
+    ? "wireo"
+    : value === "WIRE_O_STANDARD"
+      ? "wireoStandard"
+      : value === "PAPERBACK"
+        ? "paperback"
+        : value === "HARDCOVER"
+          ? "hardcover"
+          : "coil";
 }
 
 /**
@@ -147,7 +166,7 @@ export function bindingFromEnum(value: string): Binding {
  * the spine - see plannerPdf.ts, gutterTransform.
  */
 export function gutterInches(binding: Binding, printedPages: number): number {
-  if (binding === "coil" || binding === "wireo" || printedPages <= 60) return 0;
+  if (!isLuluBinding(binding) || binding === "coil" || printedPages <= 60) return 0;
   if (printedPages <= 150) return 0.125;
   if (printedPages <= 400) return 0.5;
   if (printedPages <= 600) return 0.625;

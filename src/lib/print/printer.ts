@@ -37,7 +37,7 @@ import {
   BOOKVAULT_GUTTER_IN,
   BOOKVAULT_LEVEL_LABELS,
   BOOKVAULT_LEVELS,
-  BOOKVAULT_PAPER,
+  bookVaultMaxPages,
   BOOKVAULT_STOPPABLE,
   BookVaultError,
   bookVaultAddressProblem,
@@ -166,13 +166,13 @@ export const LULU: Printer = {
 export const BOOKVAULT: Printer = {
   id: "bookvault",
   label: "BookVault",
-  bindings: ["wireo"],
+  bindings: ["wireo", "wireoStandard"],
   configured: bookVaultConfigured,
   sku: bookVaultSku,
   // The least is BookVault's to say, at pricing (bookVaultSpec
   // refuses with its reason); the most is the wire's on this paper.
-  pageLimits: (binding) => (binding === "wireo" ? { min: 4, max: BOOKVAULT_PAPER.wireoMaxPages } : { min: 1, max: 0 }),
-  gutterInches: (binding) => (binding === "wireo" ? BOOKVAULT_GUTTER_IN : 0),
+  pageLimits: (binding) => (bookVaultMaxPages(binding) > 0 ? { min: 4, max: bookVaultMaxPages(binding) } : { min: 1, max: 0 }),
+  gutterInches: (binding) => (bookVaultMaxPages(binding) > 0 ? BOOKVAULT_GUTTER_IN : 0),
   coverForm: "panels",
   levels: BOOKVAULT_LEVELS,
   cheapestLevels: ["MAIL"],

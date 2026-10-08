@@ -446,8 +446,10 @@ model OwnerSettings {
 // See src/lib/print.
 
 enum PrintBinding {
-  /// Metal wire-o, printed by BookVault in the UK (2026-10-08).
+  /// Metal wire-o, printed by BookVault in the UK (2026-10-08): on thick
+  /// 170 gsm paper, and on standard 80 gsm.
   WIRE_O
+  WIRE_O_STANDARD
   COIL
   PAPERBACK
   HARDCOVER

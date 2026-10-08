@@ -1,4 +1,4 @@
-// GET /app/print-preview?journal=<id>&start=YYYY-MM-DD&days=N&binding=wireo|coil|paperback|hardcover&part=interior|cover
+// GET /app/print-preview?journal=<id>&start=YYYY-MM-DD&days=N&binding=wireo|wireoStandard|paperback|hardcover&part=interior|cover
 //
 // THE BOOK BEFORE IT IS BOUGHT: the exact interior an order for these days
 // and this binding would send to the printer - the pages for those dates,
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   }
   if (!size) {
     const bleed = 0.125 * 72;
-    const spine = binding === "coil" || binding === "wireo" ? 0 : (interior.pageCount / 444) * 72;
+    const spine = binding === "coil" || printer.coverForm === "panels" ? 0 : (interior.pageCount / 444) * 72;
     size = { widthPt: 2 * (trim.widthIn * 72 + bleed) + spine, heightPt: trim.heightIn * 72 + bleed * 2 };
   }
   const style = COVER_STYLES.includes(params.get("style") as CoverStyle) ? (params.get("style") as CoverStyle) : "plain";

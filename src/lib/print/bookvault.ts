@@ -76,11 +76,18 @@ async function call<T>(method: "GET" | "POST" | "DELETE", path: string, options:
 
 // --- The book -------------------------------------------------------------------
 
-/** The paper: 170 gsm premium bond, uncoated white (Andrew's pick,
- *  2026-10-08) - thick, and sold for journals because ink does not come
- *  through. UK only, which transient orders are anyway. Wire-o holds at most
- *  350 pages of it (help centre, "What is the maximum page count"). */
-export const BOOKVAULT_PAPER = { gsm: 170, code: "170UW", wireoMaxPages: 350 } as const;
+/** The papers, both uncoated white bond. 170 gsm premium bond (Andrew's
+ *  pick, 2026-10-08) is thick, close to card, and sold for journals because
+ *  ink does not come through; wire-o holds at most 350 pages of it. 80 gsm
+ *  white bond is a notebook's paper (Leuchtturm's weight) and holds 625
+ *  (help centre, "What is the maximum page count") - for anyone who would
+ *  rather not write on card, and for every book too long for it. */
+export const BOOKVAULT_PAPERS = {
+  wireo: { gsm: 170, code: "170UW", wireoMaxPages: 350 },
+  wireoStandard: { gsm: 80, code: "080UW", wireoMaxPages: 625 },
+} as const;
+type BookVaultBinding = keyof typeof BOOKVAULT_PAPERS;
+const isBookVaultBinding = (binding: Binding): binding is BookVaultBinding => binding in BOOKVAULT_PAPERS;
 
 /** A matte cover, as Lulu's. The wire is black, BookVault's standard. */
 const LAMINATION = { code: "M", name: "Matte" } as const;
@@ -93,12 +100,13 @@ const TRIM_MM: Partial<Record<PlannerTrimKey, { heightMm: number; widthMm: numbe
 
 /** BookVault's transient SKU - [paper][lamination][binding][height]H[width]W,
  *  each size in three digits (help centre, "Fulfilling personalized books"):
- *  170UWMWB254H178W for ours. Null where BookVault does not print it for us. */
+ *  170UWMWB254H178W and 080UWMWB254H178W for ours. Null where BookVault does
+ *  not print it for us. */
 export function bookVaultSku(binding: Binding, trim: PlannerTrimKey): string | null {
   const size = TRIM_MM[trim];
-  if (binding !== "wireo" || !size) return null;
+  if (!isBookVaultBinding(binding) || !size) return null;
   const mm = (value: number) => String(value).padStart(3, "0");
-  return `${BOOKVAULT_PAPER.code}${LAMINATION.code}WB${mm(size.heightMm)}H${mm(size.widthMm)}W`;
+  return `${BOOKVAULT_PAPERS[binding].code}${LAMINATION.code}WB${mm(size.heightMm)}H${mm(size.widthMm)}W`;
 }
 
 /** The size a SKU is for, read back from it. */
@@ -106,6 +114,18 @@ function skuSize(sku: string): { heightMm: number; widthMm: number } {
   const match = /(\d{3})H(\d{3})W$/.exec(sku);
   if (!match) throw new BookVaultError(`Not a BookVault SKU: ${sku}.`, 0, "");
   return { heightMm: Number(match[1]), widthMm: Number(match[2]) };
+}
+
+/** The paper weight a SKU is for: its first three digits. */
+function skuGsm(sku: string): number {
+  const match = /^(\d{3})/.exec(sku);
+  if (!match) throw new BookVaultError(`Not a BookVault SKU: ${sku}.`, 0, "");
+  return Number(match[1]);
+}
+
+/** The most pages wire-o holds on a binding's paper. */
+export function bookVaultMaxPages(binding: Binding): number {
+  return isBookVaultBinding(binding) ? BOOKVAULT_PAPERS[binding].wireoMaxPages : 0;
 }
 
 /** ROOM FOR THE WIRE, in inches, added to the inside margin. BookVault punches
@@ -167,29 +187,36 @@ export function customsFor(countryCode: string): { hsCode: string; incoTerms: "D
 
 type CodelistEntry = { id: number; value: string };
 
-let stockCache: { text: number; cover: number } | null = null;
+let listCache: { texts: CodelistEntry[]; covers: CodelistEntry[] } | null = null;
 
-/** BookVault's ids for our text paper and its standard cover board (250
- *  gsm), from its code lists - found by name, or set by hand where that
- *  fails (BOOKVAULT_TEXT_STOCK_ID, BOOKVAULT_COVER_STOCK_ID). The names are
- *  said in the error, so a renamed list shows what to set. With the real
- *  key, 2026-10-08: "170gsm Premium Bond" is 216, "Cover Board" is 5. */
-async function stockIds(): Promise<{ text: number; cover: number }> {
-  if (stockCache) return stockCache;
-  const setText = Number(process.env.BOOKVAULT_TEXT_STOCK_ID);
-  const setCover = Number(process.env.BOOKVAULT_COVER_STOCK_ID);
-  const [texts, covers] = await Promise.all([
-    setText > 0 ? null : call<CodelistEntry[]>("GET", "/v4/codelist", { query: { type: "TextStocks" } }),
-    setCover > 0 ? null : call<CodelistEntry[]>("GET", "/v4/codelist", { query: { type: "CoverStocks" } }),
-  ]);
-  const text = setText > 0 ? setText : texts?.find((entry) => /170/.test(entry.value) && /bond/i.test(entry.value))?.id;
-  const cover = setCover > 0 ? setCover : (covers?.find((entry) => /cover board/i.test(entry.value)) ?? covers?.find((entry) => /250/.test(entry.value)))?.id;
-  if (!text || !cover) {
-    const list = (entries: CodelistEntry[] | null) => (entries ?? []).map((entry) => `${entry.id} ${entry.value}`).join("; ");
-    throw new BookVaultError(`BookVault's paper names did not match: text stocks [${list(texts)}], cover stocks [${list(covers)}]. Set BOOKVAULT_TEXT_STOCK_ID and BOOKVAULT_COVER_STOCK_ID.`, 0, "");
+/** The bond paper of this weight in BookVault's text stocks, matched by name
+ *  ("170gsm Premium Bond", "White 80gsm Bond"). */
+export function textStockFor(gsm: number, texts: CodelistEntry[]): number | undefined {
+  return texts.find((entry) => new RegExp(`(^|\\D)${gsm}\\s*gsm`, "i").test(entry.value) && /bond/i.test(entry.value))?.id;
+}
+
+/** BookVault's ids for a text paper and its standard cover board (250 gsm),
+ *  from its code lists, matched by name - or the cover set by hand where
+ *  that fails (BOOKVAULT_COVER_STOCK_ID). The names are said in the error,
+ *  so a renamed list shows what changed. With the real key, 2026-10-08:
+ *  "170gsm Premium Bond" 216, "White 80gsm Bond" 1, "Cover Board" 5. */
+async function stockIds(gsm: number): Promise<{ text: number; cover: number }> {
+  if (!listCache) {
+    const [texts, covers] = await Promise.all([
+      call<CodelistEntry[]>("GET", "/v4/codelist", { query: { type: "TextStocks" } }),
+      call<CodelistEntry[]>("GET", "/v4/codelist", { query: { type: "CoverStocks" } }),
+    ]);
+    listCache = { texts, covers };
   }
-  stockCache = { text, cover };
-  return stockCache;
+  const { texts, covers } = listCache;
+  const setCover = Number(process.env.BOOKVAULT_COVER_STOCK_ID);
+  const text = textStockFor(gsm, texts);
+  const cover = setCover > 0 ? setCover : (covers.find((entry) => /cover board/i.test(entry.value)) ?? covers.find((entry) => /250/.test(entry.value)))?.id;
+  if (!text || !cover) {
+    const list = (entries: CodelistEntry[]) => entries.map((entry) => `${entry.id} ${entry.value}`).join("; ");
+    throw new BookVaultError(`BookVault's paper names did not match ${gsm} gsm bond and a cover board: text stocks [${list(texts)}], cover stocks [${list(covers)}].`, 0, "");
+  }
+  return { text, cover };
 }
 
 type Partner = { name?: string; currencyID?: string; prodLevels?: Array<{ level?: string; days?: number }> };
@@ -211,7 +238,7 @@ const PRODUCTION_DAYS = 5;
  *  (inkjet), not "premium" (toner), which the account allows but which more
  *  than doubles the price - £8.34 against £3.91 for 128 pages. */
 export async function bookVaultSpec(sku: string, pages: number): Promise<{ priceGbp: number; weightG: number; productionDays: number }> {
-  const stocks = await stockIds();
+  const stocks = await stockIds(skuGsm(sku));
   const { heightMm, widthMm } = skuSize(sku);
   const product = await call<Product>("POST", "/v4/title/calculate", {
     query: { calculationType: "Full" },

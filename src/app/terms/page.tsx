@@ -94,8 +94,8 @@ export default function TermsPage() {
       <H2>Printed books</H2>
 
       <P>
-        You can order a journal printed and bound, for any number of days and in metal wire-o, plastic
-        coil, paperback or hardcover. You need an account to order. Our print partners print and post
+        You can order a journal printed and bound, for any number of days and in metal wire-o,
+        paperback or hardcover. You need an account to order. Our print partners print and post
         it: BookVault, in the UK, makes metal wire-o books, and Lulu makes the rest. You pay us, on
         Stripe&rsquo;s payment page.
       </P>

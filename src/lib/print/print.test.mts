@@ -25,6 +25,7 @@ import {
   addWorkingDays,
   customsFor,
   pickService,
+  textStockFor,
   webhookReferences,
 } from "./bookvault";
 
@@ -93,13 +94,15 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   check(printedPageCount(124) === 124 && printedPageCount(126) === 128 && printedPageCount(1) === 4, "padded to a multiple of four");
   const ok = (pages: number) => Object.fromEntries(bindingAvailability(pages).map((a) => [a.binding, a.ok]));
   const thin = ok(28);
-  check(thin.coil && !thin.paperback && thin.hardcover, "28 pages: too thin for a paperback (32), fine coiled or hardcover (24)");
-  const year = ok(500);
-  check(!year.coil && year.paperback && year.hardcover, "500 pages: too thick to coil (470)");
+  check(thin.wireo && thin.wireoStandard && !thin.paperback && thin.hardcover, "28 pages: too thin for a paperback (32), fine in wire-o or hardcover (24)");
+  const year = ok(470);
+  check(!year.wireo && year.wireoStandard && year.paperback && year.hardcover, "a year with daily pages (470): too thick for thick paper (350), fine on standard (625)");
   const huge = ok(900);
-  check(!huge.coil && !huge.paperback && !huge.hardcover, "900 pages: nothing binds it (800)");
-  const reason = bindingAvailability(500).find((a) => a.binding === "coil");
-  check(!!reason && !reason.ok && /470/.test(reason.reason), "and says why");
+  check(!huge.wireo && !huge.wireoStandard && !huge.paperback && !huge.hardcover, "900 pages: nothing binds it (800)");
+  const reason = bindingAvailability(500).find((a) => a.binding === "wireo");
+  check(!!reason && !reason.ok && /350/.test(reason.reason) && /thick paper/.test(reason.reason), `and says why (${reason && !reason.ok ? reason.reason : ""})`);
+  check(!("coil" in ok(128)), "plastic coil is no longer offered");
+  check(LULU.pageLimits("coil").max === 470, "but an earlier coil order still renews within Lulu's limits");
 }
 
 // --- the days ------------------------------------------------------------------
@@ -261,12 +264,17 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 {
   // The SKU: [paper][lamination][binding][height]H[width]W, sizes in three digits.
   check(bookVaultSku("wireo", "bound7x10") === "170UWMWB254H178W", `170 gsm premium bond, matte, wire-o, 254 x 178 mm (got ${bookVaultSku("wireo", "bound7x10")})`);
+  check(bookVaultSku("wireoStandard", "bound7x10") === "080UWMWB254H178W", "standard 80 gsm white bond, the same otherwise");
   check(bookVaultSku("coil", "bound7x10") === null && bookVaultSku("wireo", "letter") === null, "nothing else, and not Letter");
+  // Papers matched by name in BookVault's own list (as the real one read 2026-10-08).
+  const texts = [{ id: 158, value: "70gsm Cream" }, { id: 1, value: "White 80gsm Bond" }, { id: 193, value: "80gsm Premium Cream" }, { id: 216, value: "170gsm Premium Bond" }];
+  check(textStockFor(170, texts) === 216 && textStockFor(80, texts) === 1, "170 gsm is 216, 80 gsm bond is 1 - not the 80 gsm cream, nor 170's '70'");
   check(podPackageId("wireo", "bound7x10") === null, "Lulu does not make it");
 
   // Each binding has one printer; wire-o comes first, the screen's default.
-  check(BINDINGS[0] === "wireo", "metal wire-o is listed first");
-  check(printerForBinding("wireo") === BOOKVAULT && (["coil", "paperback", "hardcover"] as const).every((b) => printerForBinding(b) === LULU), "wire-o at BookVault, the rest at Lulu");
+  check(BINDINGS[0] === "wireo" && BINDINGS[1] === "wireoStandard" && !BINDINGS.includes("coil"), "wire-o first, thick then standard; no plastic coil");
+  check(printerForBinding("wireo") === BOOKVAULT && printerForBinding("wireoStandard") === BOOKVAULT && (["coil", "paperback", "hardcover"] as const).every((b) => printerForBinding(b) === LULU), "wire-o at BookVault, the rest at Lulu");
+  check(bindingFromEnum(BINDING_ENUM.wireoStandard) === "wireoStandard" && BINDING_ENUM.wireoStandard === "WIRE_O_STANDARD", "standard paper stored as WIRE_O_STANDARD");
   check(printerFor("bookvault") === BOOKVAULT, "an order remembers BookVault");
   check(bindingFromEnum(BINDING_ENUM.wireo) === "wireo" && BINDING_ENUM.wireo === "WIRE_O", "stored as WIRE_O and read back");
 

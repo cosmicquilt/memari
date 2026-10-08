@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SitePage } from "@/app/landing/SitePage";
-import { BINDINGS, BINDING_SPECS } from "@/lib/print/products";
 import { GUEST_JOURNAL_LIMIT } from "@/lib/guest";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
@@ -22,8 +21,6 @@ export const metadata: Metadata = {
   title: "Pricing - memari. STUDIO",
   description: "The editor and your print-ready PDF are free. A printed, bound book is priced for that book and shown in full before you pay.",
 };
-
-const bindings = BINDINGS.map((binding) => BINDING_SPECS[binding]);
 
 export default function PricingPage() {
   return (
@@ -59,7 +56,7 @@ export default function PricingPage() {
             <p className={site.priceNote}>Priced for your book, shown in full before you pay</p>
             <ul>
               <li>7 × 10 in, printed in black on uncoated white paper, with a matte cover</li>
-              <li>{bindings.map((b, i) => (i === 0 ? b.label : b.label.toLowerCase())).join(", ").replace(/, ([^,]*)$/, " or $1")}. Wire-o and coil lie flat when open</li>
+              <li>Metal wire-o, which lies flat, on thick 170 gsm paper or standard 80 gsm; or paperback, or hardcover</li>
               <li>Any length: 30 days, 90, a year, up to two</li>
               <li>Made to order and shipped worldwide</li>
               <li>Reprinted or refunded if it arrives damaged or misprinted</li>

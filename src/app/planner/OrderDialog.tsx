@@ -6,9 +6,11 @@
 // address, every way it can be posted; then Stripe's payment page.
 //
 // BINDINGS (2026-10-08): metal wire-o first and chosen to start with,
-// printed by BookVault; plastic coil, paperback and hardcover by Lulu. Once
-// priced, every binding shows its own lowest price ("list every binding
-// cost"), and choosing another binding prices it straight away.
+// printed by BookVault on thick or standard paper; paperback and hardcover
+// by Lulu. Once priced, every binding shows its own lowest price ("list
+// every binding cost"), and choosing another binding prices it straight
+// away. A book too long for thick paper moves to standard paper by itself,
+// and says so ("switch to 80 gsm for longer book").
 //
 // Prices are never typed here or trusted from here: "See prices" asks the
 // server, which builds the book for those days and asks the printer, and
@@ -111,6 +113,9 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   const [fromEarlier, setFromEarlier] = useState(false);
   // That book's shipping, chosen again when it is still offered.
   const [preferredLevel, setPreferredLevel] = useState<ShippingLevel | null>(null);
+  // Said when a book too long for its binding's paper was moved to another
+  // paper of the same binding.
+  const [moved, setMoved] = useState<string | null>(null);
   const [days, setDays] = useState(90);
   const [customDays, setCustomDays] = useState("");
   // From the first binding's printer, to a US address: a wire-o book comes
@@ -136,7 +141,9 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
         setDays(earlier.days);
         setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === earlier.days) ? "" : String(earlier.days));
         setStartISO(earlier.startISO);
-        setBinding(earlier.binding);
+        // An earlier book's binding, if it can still be had (plastic coil
+        // cannot, since 2026-10-08).
+        if (BINDINGS.includes(earlier.binding)) setBinding(earlier.binding);
         setAddress({ ...EMPTY_ADDRESS, ...earlier.address });
         setPreferredLevel(earlier.level);
         setFromEarlier(true);
@@ -185,6 +192,21 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
       return;
     }
     setQuote(result.value);
+    // Too long for this paper: the same binding on a paper that holds it,
+    // priced straight away (thick wire-o holds 350 pages, standard 625).
+    const fit = result.value.availability.find((a) => a.binding === forBinding);
+    if (fit && !fit.ok) {
+      const offered = status?.ready ? status.bindings : BINDINGS;
+      const sibling = BINDINGS.find(
+        (b) => b !== forBinding && offered.includes(b) && BINDING_SPECS[b].short === BINDING_SPECS[forBinding].short && result.value.availability.find((a) => a.binding === b)?.ok
+      );
+      if (sibling) {
+        setMoved(`More pages than ${BINDING_SPECS[forBinding].note.toLowerCase()} holds, so this book is on ${BINDING_SPECS[sibling].note.toLowerCase()}.`);
+        setBinding(sibling);
+        void seePrices(sibling);
+        return;
+      }
+    }
     // The way the earlier book was posted, if it is offered; otherwise the
     // cheapest, to start with.
     const cheapest = [...result.value.options].sort((a, b) => a.price.totalCents - b.price.totalCents)[0];
@@ -209,6 +231,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
    *  other bindings' prices stay on screen meanwhile, its post options and
    *  Pay do not. */
   const pickBinding = (option: Binding) => {
+    setMoved(null);
     setBinding(option);
     setLevel(null);
     setError(null);
@@ -318,7 +341,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                         onPick={() => pickBinding(option)}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                          <span style={{ fontWeight: 600 }}>{BINDING_SPECS[option].label}</span>
+                          <span style={{ fontWeight: 600 }}>{BINDING_SPECS[option].short}</span>
                           {from !== undefined && <span style={{ fontVariantNumeric: "tabular-nums" }}>from {formatCents(from)}</span>}
                         </div>
                         <div style={{ fontSize: 11, color: cream(0.5), marginTop: 2 }}>{BINDING_SPECS[option].note}</div>
@@ -327,6 +350,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                   })}
                 </div>
                 {fits && !fits.ok && <span style={{ fontSize: 12, color: ERROR_INK }}>{fits.reason}</span>}
+                {moved && fits?.ok && <span style={{ fontSize: 12, color: cream(0.6) }}>{moved}</span>}
                 {/* What prints, for these days and this binding - the very
                     file the printer gets (app/print-preview). */}
                 <span style={{ fontSize: 12, color: cream(0.6) }}>
@@ -468,7 +492,7 @@ export function OrderPrintButton({ journalId, weekStartDay }: { journalId: strin
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Order this journal printed and bound - any number of days, metal wire-o, plastic coil, paperback or hardcover, posted anywhere"
+        title="Order this journal printed and bound - any number of days, metal wire-o, paperback or hardcover, posted anywhere"
         style={{
           flexShrink: 0,
           padding: "4px 12px",
