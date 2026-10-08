@@ -50,17 +50,72 @@ import { SavedThumb } from "./SavedThumb";
 import type { SavedModuleCard, SavedPageCard } from "./savedItems";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { usePrefersReducedMotion } from "./useMediaQuery";
-import { CREAM, cream, onCream } from "@/lib/cream";
+import { CREAM, CREAM_RGB, onCream } from "@/lib/cream";
 
 // The editor's chrome - see the design-language memory. Solid surfaces, one
 // accent spent on the primary action and on selection, labels small and
 // uppercase with tracking.
-const HEADER = "#1a1a1a";
-const PANEL = "#1c1c1e";
-const CONTROL = "#2a2a2a";
-const LINE = cream(0.1);
-const DIM = cream(0.6);
+//
+// THE TONE FOLLOWS THE BACKGROUND (2026-10-07: "the popup color should change
+// light and dark with background as well", and "slightly lighter than the bg
+// like it is with the dark background"). Each colour below is a property the
+// dialog's root sets from TONES, so one stylesheet serves both: on the dark
+// grounds the chrome it always had, on the light (cream paper, #f5ead5) a
+// warm panel a step lighter than the paper, with near-black ink.
+const HEADER = "var(--sd-header)";
+const PANEL = "var(--sd-panel)";
+const CONTROL = "var(--sd-control)";
+const LINE = ink(0.1);
+const DIM = ink(0.6);
 const ACCENT = "#4a5cff";
+/** Text and rules at full strength in the tone: white on dark, ink on light. */
+const INK = "var(--sd-ink)";
+/** Body text, a touch softer than INK. */
+const TEXT = "var(--sd-text)";
+/** A page in its thumbnail is paper, white in either tone. */
+const PAPER = CREAM;
+/** The tone's ink at an opacity - the dark chrome's translucent whites, either way round. */
+function ink(alpha: number): string {
+  return `rgba(var(--sd-ink-rgb), ${alpha})`;
+}
+type Tone = "dark" | "light";
+const TONES: Record<Tone, Record<string, string>> = {
+  dark: {
+    "--sd-header": "#1a1a1a",
+    "--sd-panel": "#1c1c1e",
+    "--sd-control": "#2a2a2a",
+    "--sd-menu": "#242426",
+    "--sd-thumb": "#242426",
+    "--sd-guest": "#202023",
+    "--sd-ink-rgb": CREAM_RGB.join(", "),
+    "--sd-ink": CREAM,
+    "--sd-text": onCream(0xf2),
+    "--sd-chip-on": "#2d3170",
+    "--sd-seg-on": "#3a3a3c",
+    "--sd-seg-shadow": "none",
+    "--sd-shadow": "rgba(0, 0, 0, 0.45)",
+    "--sd-error": "#ff8f5c",
+    "--sd-scheme": "dark",
+  },
+  light: {
+    "--sd-header": "#f8f2e6",
+    "--sd-panel": "#fbf6ed",
+    "--sd-control": "#f1e8d6",
+    "--sd-menu": "#fffcf6",
+    "--sd-thumb": "#ebe1cc",
+    "--sd-guest": "#f7efe1",
+    "--sd-ink-rgb": "35, 31, 32",
+    "--sd-ink": "#231f20",
+    "--sd-text": "#2b2624",
+    "--sd-chip-on": "#e3e6ff",
+    "--sd-seg-on": "#fffcf6",
+    "--sd-seg-shadow": "0 1px 2px rgba(70, 50, 20, 0.16)",
+    "--sd-shadow": "rgba(70, 50, 20, 0.18)",
+    "--sd-error": "#b42318",
+    "--sd-scheme": "light",
+  },
+};
+const toneOf = (theme: BackdropTheme): Tone => (theme.startsWith("dark") ? "dark" : "light");
 /** The segmented group's inner padding. Named because the sliding pill has
  *  to start inside it, and a literal 3 in two places is two descriptions of
  *  one measurement. */
@@ -135,7 +190,7 @@ function backdropStyle(theme: BackdropTheme, variant: number, scale = 1): CSSPro
   };
 }
 const DANGER = "#d92d20";
-const ERROR_TEXT = "#ff8f5c";
+const ERROR_TEXT = "var(--sd-error)";
 
 type Preset = { id: string; name: string; note: string; levels: PageLevel[]; cover: PageLevel };
 
@@ -229,6 +284,7 @@ export function StartDialog({
         position: "fixed",
         inset: 0,
         ...backdropStyle(theme, backdrop.variant),
+        ...(TONES[toneOf(theme)] as CSSProperties),
         display: "grid",
         placeItems: "center",
         padding: 16,
@@ -240,7 +296,7 @@ export function StartDialog({
         aria-modal="true"
         aria-label="Open or create a journal"
         className="sd-dialog"
-        style={{ background: PANEL, color: onCream(0xf2), border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden", cursor: leaving ? "progress" : undefined }}
+        style={{ background: PANEL, color: TEXT, border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden", cursor: leaving ? "progress" : undefined }}
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "end", background: HEADER, borderBottom: `1px solid ${LINE}`, padding: "0 16px" }}>
           <strong style={{ alignSelf: "center", padding: "12px 0" }}>
@@ -335,7 +391,7 @@ export function StartDialog({
                 usedIn: module.usedIn,
                 size: null,
                 thumb: (
-                  <span style={{ display: "block", position: "relative", height: "100%", maxWidth: "100%", aspectRatio: `${module.preview.widthPx} / ${module.preview.heightPx}`, background: CREAM }}>
+                  <span style={{ display: "block", position: "relative", height: "100%", maxWidth: "100%", aspectRatio: `${module.preview.widthPx} / ${module.preview.heightPx}`, background: PAPER }}>
                     <PagePreview page={{ previewMarks: module.preview.marks, pageWidthPx: module.preview.widthPx, pageHeightPx: module.preview.heightPx }} />
                   </span>
                 ),
@@ -429,7 +485,8 @@ function SectionSwitch({
             height: box.height,
             width: box.width,
             transform: `translate(${box.left}px, ${SEGMENT_PADDING}px)`,
-            background: "#3a3a3c",
+            background: "var(--sd-seg-on)",
+            boxShadow: "var(--sd-seg-shadow)",
             borderRadius: 6,
           }}
         />
@@ -724,7 +781,7 @@ function JournalDetails({
           onClick={() => void remove()}
           onBlur={() => setArmed(false)}
           disabled={busy || leaving}
-          style={armed ? { background: DANGER, borderColor: DANGER, color: CREAM } : undefined}
+          style={armed ? { background: DANGER, borderColor: DANGER, color: "#fff" } : undefined}
         >
           {armed ? "Delete journal?" : "Delete"}
         </button>
@@ -919,7 +976,7 @@ function SavedItemDetails({
               ? "Journals using it keep the pages as they are, no longer linked"
               : "Modules placed from it keep their settings, no longer linked"
           }
-          style={armed ? { background: DANGER, borderColor: DANGER, color: CREAM } : undefined}
+          style={armed ? { background: DANGER, borderColor: DANGER, color: "#fff" } : undefined}
         >
           {armed ? `Delete saved ${what}?` : "Delete"}
         </button>
@@ -1097,7 +1154,7 @@ function CreateJournal({
         {error && <p style={{ color: ERROR_TEXT, fontSize: 12, margin: 0 }}>{error}</p>}
         {guestLimit !== null && (
           <p style={{ color: DIM, fontSize: 12, margin: 0, lineHeight: 1.45 }}>
-            A guest can keep {guestLimit} journals. <Link href="/sign-in?redirect_url=%2Fapp" style={{ color: CREAM }}>Sign in</Link> to
+            A guest can keep {guestLimit} journals. <Link href="/sign-in?redirect_url=%2Fapp" style={{ color: INK }}>Sign in</Link> to
             make more &mdash; the ones you have come with you.
           </p>
         )}
@@ -1156,7 +1213,7 @@ function Spread({ pages }: { pages: ThumbnailPage[] }) {
                 position: "relative",
                 height: "100%",
                 aspectRatio: `${page.pageWidthPx} / ${page.pageHeightPx}`,
-                background: CREAM,
+                background: PAPER,
                 display: "block",
               } as CSSProperties}
             >
@@ -1171,49 +1228,49 @@ function Spread({ pages }: { pages: ThumbnailPage[] }) {
 
 const STYLES = `
 .sd-dialog { width: min(1080px, 100%); height: min(720px, 100%); display: flex; flex-direction: column; }
-.sd-guest { margin: 0; padding: 10px 22px; font-size: 13px; line-height: 1.45; color: ${DIM}; border-bottom: 1px solid ${LINE}; background: #202023; }
-.sd-guest a { color: ${CREAM}; }
+.sd-guest { margin: 0; padding: 10px 22px; font-size: 13px; line-height: 1.45; color: ${DIM}; border-bottom: 1px solid ${LINE}; background: var(--sd-guest); }
+.sd-guest a { color: ${INK}; }
 .sd-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
 .sd-main { padding: 20px 22px; overflow: auto; display: grid; gap: 14px; align-content: start; border-right: 1px solid ${LINE}; }
 .sd-details { padding: 20px; overflow: auto; display: grid; gap: 16px; align-content: start; grid-auto-rows: max-content; }
 .sd-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: ${DIM}; }
 .sd-tab { background: none; border: none; color: ${DIM}; font: inherit; font-size: 15px; padding: 14px 2px 12px; border-bottom: 2px solid transparent; cursor: pointer; min-height: 44px; }
-.sd-tab[aria-selected="true"] { color: ${CREAM}; }
+.sd-tab[aria-selected="true"] { color: ${INK}; }
 /* Until the sliding bar has measured the tabs - the page as the server sent
    it, before any script - the chosen tab carries its own underline, so the
    first paint is never missing one. */
-.sd-tabs:not([data-measured]) .sd-tab[aria-selected="true"] { border-bottom-color: ${CREAM}; }
+.sd-tabs:not([data-measured]) .sd-tab[aria-selected="true"] { border-bottom-color: ${INK}; }
 .sd-x { width: 32px; height: 32px; display: grid; place-items: center; background: none; border: none; color: ${DIM}; border-radius: 8px; cursor: pointer; }
-.sd-x:hover { color: ${CREAM}; background: ${CONTROL}; }
-.sd-x[aria-expanded="true"] { color: ${CREAM}; background: ${CONTROL}; }
-.sd-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; width: 240px; padding: 8px 6px 6px; background: #242426; border: 1px solid ${LINE}; border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); display: grid; gap: 2px; }
-.sd-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; border-radius: 6px; color: ${onCream(0xf2)}; font: inherit; font-size: 13.5px; text-align: left; padding: 6px 8px; cursor: pointer; min-height: 40px; }
+.sd-x:hover { color: ${INK}; background: ${CONTROL}; }
+.sd-x[aria-expanded="true"] { color: ${INK}; background: ${CONTROL}; }
+.sd-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; width: 240px; padding: 8px 6px 6px; background: var(--sd-menu); border: 1px solid ${LINE}; border-radius: 10px; box-shadow: 0 12px 32px var(--sd-shadow); display: grid; gap: 2px; }
+.sd-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; border-radius: 6px; color: ${TEXT}; font: inherit; font-size: 13.5px; text-align: left; padding: 6px 8px; cursor: pointer; min-height: 40px; }
 .sd-menu-item:hover, .sd-menu-item:focus-visible { background: ${CONTROL}; outline: none; }
-.sd-swatch { width: 44px; height: 30px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px ${cream(0.14)}; background-position: center; }
+.sd-swatch { width: 44px; height: 30px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px ${ink(0.14)}; background-position: center; }
 .sd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-.sd-card { background: ${CONTROL}; border: none; border-radius: 8px; padding: 10px 10px 12px; color: ${onCream(0xf2)}; text-align: left; font: inherit; cursor: pointer; display: grid; gap: 6px; opacity: 0.6; outline: 2px solid transparent; outline-offset: 2px; transition: opacity 120ms ease-out; }
+.sd-card { background: ${CONTROL}; border: none; border-radius: 8px; padding: 10px 10px 12px; color: ${TEXT}; text-align: left; font: inherit; cursor: pointer; display: grid; gap: 6px; opacity: 0.6; outline: 2px solid transparent; outline-offset: 2px; transition: opacity 120ms ease-out; }
 .sd-card:hover { opacity: 0.85; }
 .sd-card[aria-pressed="true"] { opacity: 1; outline-color: ${ACCENT}; }
-.sd-new { background: transparent; border: 1px dashed ${cream(0.25)}; opacity: 0.8; }
-.sd-thumb { display: flex; align-items: center; justify-content: center; height: 118px; background: #242426; border-radius: 4px; padding: 8px; overflow: hidden; }
+.sd-new { background: transparent; border: 1px dashed ${ink(0.25)}; opacity: 0.8; }
+.sd-thumb { display: flex; align-items: center; justify-content: center; height: 118px; background: var(--sd-thumb); border-radius: 4px; padding: 8px; overflow: hidden; }
 .sd-name { font-size: 13.5px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-meta { font-size: 12px; color: ${DIM}; line-height: 1.3; }
-.sd-title-input { background: transparent; border: 1px solid transparent; border-radius: 6px; color: ${CREAM}; font: inherit; font-size: 20px; font-weight: 700; padding: 4px 6px; margin-left: -7px; width: calc(100% + 7px); }
-.sd-title-input:hover { border-color: ${cream(0.15)}; }
+.sd-title-input { background: transparent; border: 1px solid transparent; border-radius: 6px; color: ${INK}; font: inherit; font-size: 20px; font-weight: 700; padding: 4px 6px; margin-left: -7px; width: calc(100% + 7px); }
+.sd-title-input:hover { border-color: ${ink(0.15)}; }
 .sd-title-input:focus { border-color: ${ACCENT}; outline: none; background: ${CONTROL}; }
 .sd-facts { display: grid; grid-template-columns: 64px 1fr; gap: 8px 12px; margin: 0; font-size: 13px; }
 .sd-facts dt { color: ${DIM}; font-size: 12px; }
 .sd-facts dd { margin: 0; }
 .sd-field { display: grid; gap: 6px; }
 .sd-field > span { font-size: 12px; color: ${DIM}; }
-.sd-input { background: ${CONTROL}; border: 1px solid ${cream(0.33)}; border-radius: 6px; color: ${onCream(0xf2)}; font: inherit; font-size: 13px; padding: 6px 8px; min-height: 32px; color-scheme: dark; width: 100%; box-sizing: border-box; }
+.sd-input { background: ${CONTROL}; border: 1px solid ${ink(0.33)}; border-radius: 6px; color: ${TEXT}; font: inherit; font-size: 13px; padding: 6px 8px; min-height: 32px; color-scheme: var(--sd-scheme); width: 100%; box-sizing: border-box; }
 .sd-disclosure { background: none; border: none; color: ${DIM}; font: inherit; font-size: 13px; text-align: left; padding: 4px 0; cursor: pointer; }
-.sd-disclosure:hover { color: ${CREAM}; }
-.sd-chip { background: ${CONTROL}; border: 1px solid ${cream(0.15)}; color: ${DIM}; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; min-height: 28px; }
-.sd-chip[aria-pressed="true"] { border-color: ${ACCENT}; color: ${CREAM}; background: #2d3170; }
+.sd-disclosure:hover { color: ${INK}; }
+.sd-chip { background: ${CONTROL}; border: 1px solid ${ink(0.15)}; color: ${DIM}; font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; min-height: 28px; }
+.sd-chip[aria-pressed="true"] { border-color: ${ACCENT}; color: ${INK}; background: var(--sd-chip-on); }
 .sd-seg { display: inline-flex; background: ${CONTROL}; border-radius: 8px; padding: ${SEGMENT_PADDING}px; gap: 3px; width: max-content; }
 .sd-seg button { background: none; border: none; color: ${DIM}; font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; min-height: 26px; }
-.sd-seg button[aria-pressed="true"] { background: #3a3a3c; color: ${CREAM}; }
+.sd-seg button[aria-pressed="true"] { background: var(--sd-seg-on); color: ${INK}; }
 /* Once the pill has been measured it paints the selection, as one element
    that can travel. Until then the button keeps its own background, so the
    chosen section is marked on the very first paint. */
@@ -1222,10 +1279,10 @@ const STYLES = `
 .sd-count b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .sd-count small { font-size: 12px; color: ${DIM}; }
 .sd-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-.sd-btn { border-radius: 999px; font: inherit; font-size: 14px; font-weight: 700; padding: 8px 20px; min-height: 36px; cursor: pointer; border: 1.5px solid ${cream(0.7)}; background: transparent; color: ${CREAM}; }
+.sd-btn { border-radius: 999px; font: inherit; font-size: 14px; font-weight: 700; padding: 8px 20px; min-height: 36px; cursor: pointer; border: 1.5px solid ${ink(0.7)}; background: transparent; color: ${INK}; }
 .sd-btn:disabled { opacity: 0.5; cursor: default; }
-.sd-primary { background: ${ACCENT}; border-color: ${ACCENT}; }
-.sd-link { background: none; border: none; padding: 0; color: ${CREAM}; font: inherit; text-decoration: underline; cursor: pointer; }
+.sd-primary { background: ${ACCENT}; border-color: ${ACCENT}; color: #fff; }
+.sd-link { background: none; border: none; padding: 0; color: ${INK}; font: inherit; text-decoration: underline; cursor: pointer; }
 .sd-tab:focus-visible, .sd-card:focus-visible, .sd-btn:focus-visible, .sd-chip:focus-visible, .sd-seg button:focus-visible, .sd-x:focus-visible, .sd-disclosure:focus-visible, .sd-link:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
 @media (max-width: 760px) {
   .sd-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: auto; }
@@ -1333,8 +1390,8 @@ function BackdropMenu({ theme, variant, onChange }: { theme: BackdropTheme; vari
         className="sd-x"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Background"
-        title="Background"
+        aria-label="Theme"
+        title="Theme"
         onClick={() => setOpen((o) => !o)}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1343,9 +1400,9 @@ function BackdropMenu({ theme, variant, onChange }: { theme: BackdropTheme; vari
         </svg>
       </button>
       {open && (
-        <div role="menu" aria-label="Background" className="sd-menu">
+        <div role="menu" aria-label="Theme" className="sd-menu">
           <div className="sd-label" style={{ padding: "2px 8px 6px" }}>
-            Background
+            Theme
           </div>
           {BACKDROP_THEMES.map((t) => (
             <button key={t} type="button" role="menuitemradio" aria-checked={t === theme} className="sd-menu-item" onClick={() => onChange(t)}>
@@ -1386,7 +1443,7 @@ function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactN
             height: 2,
             width: box.width,
             transform: `translateX(${box.left}px)`,
-            background: CREAM,
+            background: INK,
             borderRadius: 1,
             transition: box.slide && !reduceMotion ? HIGHLIGHT_SLIDE : "none",
           }}
