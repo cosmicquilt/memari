@@ -148,6 +148,13 @@ export type Placed = { src: string; x: number; y: number; w: number; h: number; 
  * drawing is placed whole: what it covers is its actual ink at its size and
  * turn, so they nestle. Yields to the page every few milliseconds - this
  * runs while the page is in use.
+ *
+ * `stay`: drawings already on the page. Each one whose ink is still clear of
+ * `keep` stays exactly where it is, and counts toward its kind's share; only
+ * the rest of the space is filled. So a page that grows - an answer opened
+ * on the Help page (2026-10-08: "when you open the q's the doodles on the
+ * page shift") - loses only the drawings its text now runs into, and the
+ * others do not move.
  */
 export async function packAround(opts: {
   width: number;
@@ -158,6 +165,7 @@ export async function packAround(opts: {
   seed: number;
   phone: boolean;
   cancelled: () => boolean;
+  stay?: Placed[];
 }): Promise<Placed[] | null> {
   const { width, height, keep, drawings, settings, phone } = opts;
   let seed = opts.seed >>> 0;
@@ -248,12 +256,34 @@ export async function packAround(opts: {
   const area = (width * height) / (1400 * 1000);
   const scale = settings.size * (phone ? 0.7 : 1);
   const placed: Placed[] = [];
+  // What stays: tested against what must be kept clear (and each other) by
+  // its own ink, as a new drawing would be.
+  const bySrc = new Map(drawings.map((d) => [d.src, d]));
+  const stayed = new Map<number, number>();
+  for (const p of opts.stay ?? []) {
+    const d = bySrc.get(p.src);
+    if (!d) continue;
+    const { testCells, markCells } = cellsOf(d.img, p.w, p.h, p.angle);
+    const [cx, cy] = [Math.round(p.x / CELL), Math.round(p.y / CELL)];
+    let hit = 0;
+    for (let i = 0; i < testCells.length && !hit; i += 2) {
+      const j = at(cx, cy, testCells[i], testCells[i + 1]);
+      hit = j < 0 ? 1 : occ[j];
+    }
+    if (hit) continue;
+    for (let i = 0; i < markCells.length; i += 2) {
+      const j = at(cx, cy, markCells[i], markCells[i + 1]);
+      if (j >= 0) occ[j] = 1;
+    }
+    placed.push(p);
+    stayed.set(d.cls, (stayed.get(d.cls) ?? 0) + 1);
+  }
   let slice = performance.now();
   for (const [ci, cls] of CLASSES.entries()) {
     const pool = drawings.filter((d) => d.cls === ci);
     const most = Math.round(cls.most * settings.density * area);
     let misses = 0;
-    let n = 0;
+    let n = stayed.get(ci) ?? 0;
     let bag: typeof pool = [];
     while (pool.length && misses < 8 && n < most) {
       if (performance.now() - slice > 8) {

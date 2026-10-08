@@ -41,6 +41,9 @@ function measure(holder: HTMLElement, layer: HTMLElement): Keep[] {
   return keep;
 }
 
+/** The blocks a drawing travels with: what text sits in, in page order. */
+const ANCHORS = "header, section, details, h1, h2, h3, p, li, figure, article";
+
 const loaded = new Map<string, Promise<HTMLImageElement | null>>();
 const load = (src: string) => {
   if (!loaded.has(src))
@@ -62,6 +65,11 @@ const load = (src: string) => {
 export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   const layer = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<Placed[]>([]);
+  // What is on the page now, for a pack that keeps what still fits.
+  const current = useRef<Placed[]>([]);
+  // Where the page's blocks were when it was packed: a drawing travels with
+  // the block above it when the page grows (see pack).
+  const anchors = useRef<Array<{ el: Element; top: number }>>([]);
   const [ink, setInk] = useState(bodyWallSettings().ink);
 
   useEffect(() => {
@@ -74,12 +82,41 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     // One arrangement per visit if asked for, else the saved one.
     const visitSeed = Math.floor(Math.random() * 1e9);
 
-    const pack = async () => {
+    // `stay`: the content changed but the width did not - keep every drawing
+    // that still fits where it is (packAround). A new width, or new
+    // settings, lays the wall out again from nothing.
+    const blocksOf = () => {
+      const origin = holder.getBoundingClientRect().top;
+      return [...holder.querySelectorAll(ANCHORS)].filter((el) => !el.contains(layer.current)).map((el) => ({ el, top: el.getBoundingClientRect().top - origin }));
+    };
+    const pack = async (stay = false) => {
       const mine = ++run;
       const settings = bodyWallSettings();
       setInk(settings.ink);
       const width = holder.clientWidth;
       const height = holder.clientHeight;
+      // Each drawing moves as far as the block above it did - an answer
+      // opened on the Help page pushes the questions under it down, and the
+      // drawings beside them go with them, as if printed on the page.
+      let keepPlaced: Placed[] | undefined;
+      if (stay && width === lastWidth) {
+        const origin = holder.getBoundingClientRect().top;
+        const moved = anchors.current.map(({ el, top }) => ({ top, by: el.isConnected ? el.getBoundingClientRect().top - origin - top : 0 }));
+        keepPlaced = current.current.map((p) => {
+          // The nearest block starting above it (cards side by side are not
+          // in page order, so by position, not by document order).
+          let best = -Infinity;
+          let by = 0;
+          for (const a of moved) {
+            if (a.top <= p.y && a.top >= best) {
+              best = a.top;
+              by = a.by;
+            }
+          }
+          return by ? { ...p, y: p.y + by } : p;
+        });
+      }
+      anchors.current = blocksOf();
       lastWidth = width;
       lastHeight = height;
       const phone = width < PHONE_WIDTH;
@@ -106,8 +143,12 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
         seed: settings.newEachLoad ? visitSeed : settings.seed,
         phone,
         cancelled: () => mine !== run,
+        stay: keepPlaced,
       });
-      if (out && mine === run) setPlaced(out);
+      if (out && mine === run) {
+        current.current = out;
+        setPlaced(out);
+      }
     };
 
     // After the page has loaded and settled: the hero first.
@@ -128,8 +169,9 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     const ro = new ResizeObserver(() => {
       if (!started) return;
       if (holder.clientWidth === lastWidth && Math.abs(holder.clientHeight - lastHeight) < 24) return;
+      const sameWidth = holder.clientWidth === lastWidth;
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void pack(), 250);
+      timer = window.setTimeout(() => void pack(sameWidth), 250);
     });
     ro.observe(holder);
     // Not for the sliders that are the hero's (its side blur).
