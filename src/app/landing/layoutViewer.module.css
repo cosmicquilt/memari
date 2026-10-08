@@ -32,9 +32,11 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(28, 25, 23, 0.62);
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(20, 12, 6, 0.25);
+  /* A dark glass on a light disc (2026-10-08: "make the magnifying glass
+     icon within the overlay dark instead of light"). */
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  box-shadow: 0 1px 5px rgba(20, 12, 6, 0.28);
   transition: background 160ms ease-out, transform 160ms ease-out;
   pointer-events: none;
 }
@@ -50,7 +52,7 @@
 .card:focus-visible .zoomHint,
 .similar button:hover .zoomHint,
 .similar button:focus-visible .zoomHint {
-  background: rgba(28, 25, 23, 0.86);
+  background: #fff;
   transform: scale(1.08);
 }
 
