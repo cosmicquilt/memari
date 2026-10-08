@@ -29,7 +29,7 @@ export default async function AccountLayout({ children }: { children: ReactNode 
         <header style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <Link href="/app" style={{ color: CREAM, textDecoration: "none", flex: 1, minWidth: 0 }}>
             <strong style={{ fontSize: 17 }}>
-              Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+              memari. <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
             </strong>
           </Link>
           <Link href="/app" style={{ fontSize: 13, color: cream(0.65) }}>

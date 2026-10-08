@@ -298,7 +298,7 @@ export function StartDialog({
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "end", background: HEADER, borderBottom: `1px solid ${LINE}`, padding: "0 16px" }}>
           <strong style={{ alignSelf: "center", padding: "12px 0" }}>
-            Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+            memari. <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
           </strong>
           <TabStrip tab={tab}>
             {(["saved", "create"] as const).map((t) => (

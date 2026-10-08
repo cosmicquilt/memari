@@ -10725,7 +10725,7 @@ export function NativePlannerEditor({
           style={{ color: "inherit", textDecoration: "none", flexShrink: 0 }}
         >
           <strong>
-            Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+            memari. <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
           </strong>
           <BetaBadge />
         </Link>
