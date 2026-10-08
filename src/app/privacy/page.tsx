@@ -27,6 +27,10 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     still loaded its SDK. That route and the dependency are gone, so the
 //     entry went with them - a processor you no longer use is a disclosure
 //     that misleads
+//   - DELETING AN ACCOUNT (2026-10-08, app/account/actions.ts,
+//     deleteAccount): everything the person made and their Clerk user go;
+//     PrintOrder rows stay, as "Orders are kept" below says, with
+//     auto-renew off so nothing more is charged
 //
 // If any of that changes, this page changes in the same commit.
 
@@ -37,7 +41,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="4 October 2026">
+    <LegalPage title="Privacy" updated="8 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
@@ -246,6 +250,11 @@ export default function PrivacyPage() {
           Page Settings &rarr; Calendars.
         </LI>
         <LI>Export your work as a PDF at any time.</LI>
+        <LI>
+          Delete your account and everything in it yourself, under Account &rarr; Data &amp;
+          account: journals, saved pages and modules, calendars, settings and your sign-in. Records
+          of printed books are kept as described above, with auto-renew turned off.
+        </LI>
         <LI>
           Ask us for a copy of what we hold about you, or ask us to delete it, by writing to{" "}
           <a href={`mailto:${LEGAL_CONTACT}`} style={{ color: "#8fa0ff" }}>{LEGAL_CONTACT}</a>. If

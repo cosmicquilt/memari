@@ -127,7 +127,8 @@
 }
 
 .links a:hover,
-.links a:focus-visible {
+.links a:focus-visible,
+.links a[aria-current="page"] {
   color: var(--ink);
 }
 
@@ -187,6 +188,56 @@
   border-radius: 6px;
 }
 
+/* The phone's Menu (SiteHeader): hidden wherever the links fit. */
+.menuButton {
+  display: none;
+  border: none;
+  background: none;
+  padding: 6px 2px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.navClear .menuButton {
+  color: var(--cream);
+  text-shadow: 0 1px 10px rgba(20, 12, 6, 0.4);
+}
+
+.menuPanel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: grid;
+  padding: 8px 16px 16px;
+  background: var(--cream);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 16px 32px rgba(40, 30, 20, 0.12);
+}
+
+.menuPanel a {
+  padding: 12px 4px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 17px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+.menuPanel a:last-child {
+  border-bottom: none;
+}
+
+.menuButton:focus-visible,
+.menuPanel a:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 @media (max-width: 760px) {
   .nav {
     grid-template-columns: 1fr auto;
@@ -195,6 +246,15 @@
     display: none;
   }
   .quiet {
+    display: none;
+  }
+  .menuButton {
+    display: inline-block;
+  }
+}
+
+@media (min-width: 761px) {
+  .menuPanel {
     display: none;
   }
 }
@@ -904,6 +964,18 @@
 
 .spreadCard {
   margin: 0;
+}
+
+/* The way on from a section to its own page. */
+.more {
+  margin: 40px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.more a,
+.facts p a {
+  color: var(--ink);
 }
 
 .spreadPages {

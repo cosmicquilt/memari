@@ -20,7 +20,7 @@ const LINKS: Array<[href: string, label: string]> = [
   ["/app", "Your journals"],
   ["/app/account/profile", "Account"],
   ["/app/account/preferences", "Preferences"],
-  ["/app/account/books", "Printed books"],
+  ["/app/account/orders", "Orders"],
 ];
 
 function GuestFigure({ size }: { size: number }) {
@@ -76,7 +76,11 @@ export function AccountButton({ guest, size = 32 }: { guest: boolean; size?: num
   const photo = signedIn && user.hasImage ? user.imageUrl : null;
   const label = signedIn ? `Account: ${name}` : guest ? "Account: guest" : "Account";
 
+  // `font` first: the shorthand resets the size, so the size comes after it.
   const item: React.CSSProperties = {
+    font: "inherit",
+    fontSize: 13.5,
+    lineHeight: 1.35,
     display: "block",
     width: "100%",
     boxSizing: "border-box",
@@ -84,11 +88,9 @@ export function AccountButton({ guest, size = 32 }: { guest: boolean; size?: num
     borderRadius: 7,
     color: cream(0.88),
     textDecoration: "none",
-    fontSize: 13.5,
     textAlign: "left",
     background: "none",
     border: "none",
-    font: "inherit",
     cursor: "pointer",
   };
 

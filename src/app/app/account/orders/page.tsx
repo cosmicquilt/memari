@@ -1,4 +1,4 @@
-// memari.studio/app/account/books - the person's printed books: what each
+// memari.studio/app/account/orders - the person's printed books: what each
 // covers, where it is, and whether it renews. It was /app/orders until the
 // account page (2026-10-08); that address still comes here, so Stripe's
 // payment page - which returns with ?placed=<order>, possibly before its
@@ -41,7 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default async function PrintedBooksPage({ searchParams }: { searchParams: Promise<{ placed?: string }> }) {
   const owner = await currentOwner();
-  if (!owner) redirect(signInPath("/app/account/books"));
+  if (!owner) redirect(signInPath("/app/account/orders"));
   const { placed } = await searchParams;
   const orders = owner.guest
     ? []
@@ -76,7 +76,7 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
   return (
     <>
       <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 18 }}>
-        <h1>Printed books</h1>
+        <h1>Orders</h1>
         {placed && (
           <p style={{ margin: 0, padding: "10px 12px", fontSize: 13, background: cream(0.06), borderRadius: 6, lineHeight: 1.5 }}>
             Thank you - your order is placed. Stripe emails a receipt; the book goes to the printer as soon as the payment is confirmed.

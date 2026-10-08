@@ -1,11 +1,11 @@
-// "Use this week" - a POST that nothing links to since the landing page's
-// buttons came off (2026-10-06: "i dont want the 'use this week' button");
-// kept for a start-dialog version of it.
+// "Use this week" - a POST from the Layouts pages (/layouts and
+// /layouts/<key>, 2026-10-08). The landing page's own buttons came off
+// 2026-10-06 ("i dont want the 'use this week' button").
 //
 // Makes a new journal whose weekly spread is that person's (see
 // planner/archetypeWeek.ts) and opens it in the editor. Someone who has
 // never used Memari becomes a guest here, the way "Continue as guest" makes
-// one (app/guest/route.ts): one press from the landing page to their own
+// one (app/guest/route.ts): one press from a Layouts page to their own
 // copy of the week. POST only, for the same reason as that route - a GET
 // could be followed by a link preview or a prefetch, and each would make a
 // journal.
@@ -25,6 +25,7 @@ import { sweepIdleGuests } from "@/lib/guestSweep";
 import { prisma } from "@/lib/prisma";
 import { isTimeZone } from "@/lib/timeZone";
 import { PEOPLE_BY_KEY } from "@/app/landing/archetypes";
+import { STARTER_WEEK_BY_KEY } from "@/app/landing/starterLayouts";
 import { WeekUnavailable, createJournalFromWeek } from "@/app/planner/archetypeWeek";
 import { seedOwnerDefaultZone } from "@/app/planner/ownerSettings";
 
@@ -85,7 +86,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   return response;
 }
 
-/** The address typed or followed: the landing page, where the button is. */
-export function GET(request: NextRequest) {
-  return NextResponse.redirect(new URL("/", request.url), 303);
+/** The address typed or followed: that week's page, where the button is
+ *  (STARTER_WEEKS; a week not in the gallery goes to the gallery). */
+export async function GET(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
+  const { key } = await params;
+  return NextResponse.redirect(new URL(STARTER_WEEK_BY_KEY[key] ? `/layouts/${key}` : "/layouts", request.url), 303);
 }

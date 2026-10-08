@@ -3,7 +3,7 @@
 // header, /app, and in journals and have relevant user settings and
 // features"). Four parts, each its own address so a link can go straight to
 // one: Profile (name, photo, email, sign-in - Clerk's own panel), Preferences
-// (defaults for new journals), Printed books (what was /app/orders), and Data
+// (defaults for new journals), Orders (printed books - what was /app/orders), and Data
 // & account (downloads, signing out, deleting everything).
 //
 // In the app's dark chrome, the same as the printed-books page it absorbed

@@ -9,7 +9,7 @@ import { CREAM, cream } from "@/lib/cream";
 const PARTS: Array<[href: string, label: string]> = [
   ["/app/account/profile", "Profile"],
   ["/app/account/preferences", "Preferences"],
-  ["/app/account/books", "Printed books"],
+  ["/app/account/orders", "Orders"],
   ["/app/account/data", "Data & account"],
 ];
 

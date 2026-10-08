@@ -1,0 +1,541 @@
+/* The site's pages beside the landing page (SitePage.tsx), and the footer
+   they share with it. On the landing page's paper (.page in
+   landing.module.css), with its type: --ink, --muted, --cream, --hand. */
+
+.main {
+  /* Under the fixed nav. */
+  padding-top: 56px;
+}
+
+/* A page's opening: eyebrow, headline and lede, as the landing's sections
+   have, with less air above - the nav is the only thing over it. */
+.head {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 72px 24px 8px;
+}
+
+.block {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 56px 24px 0;
+}
+
+.blockWide {
+  max-width: 1320px;
+}
+
+.blockTitle {
+  margin: 0 0 8px;
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.blockLede {
+  margin: 0;
+  max-width: 640px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.end {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 96px 24px 112px;
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.end h2 {
+  margin: 0;
+  font-size: clamp(28px, 3.6vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+
+.note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* --- buttons ----------------------------------------------------------- */
+
+.button,
+.buttonQuiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 160ms ease-out, background 160ms ease-out;
+}
+
+.button {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.button:hover {
+  background: #33302c;
+}
+
+.buttonQuiet {
+  background: rgba(28, 25, 23, 0.07);
+  color: var(--ink);
+}
+
+.buttonQuiet:hover {
+  background: rgba(28, 25, 23, 0.12);
+}
+
+.button:active,
+.buttonQuiet:active {
+  transform: scale(0.97);
+}
+
+.button:focus-visible,
+.buttonQuiet:focus-visible,
+.footer a:focus-visible,
+.card a:focus-visible,
+.faq summary:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* --- layouts ----------------------------------------------------------- */
+
+.label {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(74, 92, 255, 0.1);
+  color: #3242c8;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.layoutGrid {
+  margin-top: 36px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 48px 32px;
+}
+
+.card {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.cardLink {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.cardTitle {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.cardText {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cardActions form {
+  margin: 0;
+}
+
+/* A module's card: its drawing on a piece of page, and what it is. */
+.moduleGrid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 28px 24px;
+}
+
+.modulePaper {
+  padding: 14px;
+  border-radius: 4px;
+  /* White: a module's preview paints its own paper (CREAM, white). */
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(40, 30, 20, 0.08),
+    0 10px 26px rgba(40, 30, 20, 0.1);
+  min-height: 120px;
+  display: grid;
+  align-items: start;
+}
+
+.moduleName {
+  margin: 12px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.moduleText {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* One layout's page: the spread beside what is in it. */
+.detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.detailList {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.detailList li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detailList strong {
+  font-size: 15px;
+}
+
+.detailList span {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.crumb {
+  font-size: 14px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.crumb:hover {
+  color: var(--ink);
+}
+
+/* --- pricing ----------------------------------------------------------- */
+
+.plans {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.plan {
+  padding: 26px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.planFeatured {
+  background: #fbf6ea;
+  border-color: rgba(74, 92, 255, 0.35);
+  box-shadow: 0 18px 40px rgba(40, 30, 20, 0.1);
+}
+
+.plan h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.price {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.priceNote {
+  margin: -8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.plan ul {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: grid;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.plan li::marker {
+  color: var(--hand);
+}
+
+.steps {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+
+.steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.steps li::before {
+  content: counter(step);
+  grid-row: span 2;
+  font-family: var(--font-hand), cursive;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--hand);
+}
+
+.steps strong {
+  color: var(--ink);
+}
+
+/* --- help -------------------------------------------------------------- */
+
+.faqGroups {
+  display: grid;
+  gap: 48px;
+  max-width: 820px;
+}
+
+.faq {
+  border-top: 1px solid var(--line);
+}
+
+.faq details {
+  border-bottom: 1px solid var(--line);
+}
+
+.faq summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 32px 16px 0;
+  position: relative;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq summary::after {
+  content: "+";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.faq details[open] summary::after {
+  content: "–";
+}
+
+.faq details > div {
+  padding: 0 0 18px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--muted);
+  display: grid;
+  gap: 10px;
+}
+
+.faq details > div p {
+  margin: 0;
+}
+
+.faq a,
+.prose a {
+  color: var(--ink);
+}
+
+/* --- about ------------------------------------------------------------- */
+
+.prose {
+  max-width: 680px;
+  font-size: 19px;
+  line-height: 1.65;
+  display: grid;
+  gap: 22px;
+}
+
+.prose p {
+  margin: 0;
+}
+
+.prose h2 {
+  margin: 26px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+.pull {
+  margin: 8px 0;
+  padding-left: 20px;
+  border-left: 3px solid var(--hand);
+  font-size: 22px;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.pull cite {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* --- footer ------------------------------------------------------------ */
+
+.footer {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 44px 24px 40px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.footerTop {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 28px 24px;
+}
+
+.footerAbout p {
+  margin: 10px 0 0;
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+.footerBrand {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+.footerBrand span {
+  margin-left: 0.3em;
+  font-weight: 200;
+  font-size: 0.8em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.footerColumn h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.footerColumn ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.footer a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--ink);
+}
+
+.footerSmall {
+  margin: 36px 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .plans {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+  .detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .footerTop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .footerAbout {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .head {
+    padding-top: 48px;
+  }
+  .block {
+    padding-top: 44px;
+  }
+}

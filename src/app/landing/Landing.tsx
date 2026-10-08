@@ -6,8 +6,9 @@
 // and below it a journal that opens to a week and is written in, one layout
 // after another. Then the sections the nav links to.
 //
-// Every claim below is true of the product today. Bound, delivered copies
-// are described as coming, because they are.
+// Every claim below is true of the product today. Bound copies were
+// described as coming until ordering went live (2026-10-04); since
+// 2026-10-08 the Print section says what they are and where the price is.
 //
 // The page is annotated by hand in the tagline's blue (2026-09-23: "continue
 // that cursive theme throughout the landing page with other text and
@@ -20,6 +21,7 @@ import type { CSSProperties } from "react";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
 import { SiteHeader } from "./SiteHeader";
+import { SiteFooter } from "./SiteFooter";
 import { ResizeDemo } from "./ResizeDemo";
 import { resizeDemo } from "./resizeDemoData";
 import { sans } from "./sansFont";
@@ -34,14 +36,6 @@ import { Ink } from "./ink/Ink";
 import { circleDrawing } from "./ink/pen";
 import { script } from "./scriptFont";
 import styles from "./landing.module.css";
-
-function Brand() {
-  return (
-    <Link href="/" className={styles.brand} aria-label="Memari Studio, home">
-      memari.<span>studio</span>
-    </Link>
-  );
-}
 
 export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn: boolean; guest?: boolean; hero?: "desk" | "video" }) {
   return (
@@ -126,6 +120,9 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
               above is turning through.
             </p>
             <LayoutGallery />
+            <p className={styles.more}>
+              <Link href="/layouts">Start from one of these layouts →</Link>
+            </p>
           </section>
 
           <section id="print" className={styles.section}>
@@ -157,7 +154,10 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
                 <h3>
                   <Circled seed={71}>Free</Circled> to make
                 </h3>
-                <p>The editor and the print-ready PDF are free. Bound copies, delivered each season, are on their way.</p>
+                <p>
+                  The editor and the print-ready PDF are free. A bound copy is priced for your book, and you see it before you
+                  pay. <Link href="/pricing">Pricing</Link>
+                </p>
               </li>
             </ul>
           </section>
@@ -186,14 +186,7 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
       {/* The body wall's sliders: on this machine only, never on the site. */}
       {process.env.NODE_ENV === "development" && <BodyWallTuner />}
 
-      <footer className={styles.footer}>
-        <Brand />
-        <span>© {new Date().getFullYear()} Memari</span>
-        <nav aria-label="Legal">
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/terms">Terms</Link>
-        </nav>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

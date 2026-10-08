@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
 // forwards - with the order just placed, if there is one.
 export default async function OrdersRedirect({ searchParams }: { searchParams: Promise<{ placed?: string }> }) {
   const { placed } = await searchParams;
-  redirect(placed ? `/app/account/books?placed=${encodeURIComponent(placed)}` : "/app/account/books");
+  redirect(placed ? `/app/account/orders?placed=${encodeURIComponent(placed)}` : "/app/account/orders");
 }

@@ -5,9 +5,13 @@
 // chose the clear one ("I like clear ... best"). Over the hero it has no
 // bar at all and cream type; below the hero, where cream type would vanish
 // into the cream page, it takes the faint frosted bar with dark type.
+//
+// The site's other pages (2026-10-08: Layouts, Pricing, About, Help) have
+// no hero, so they ask for it `solid`: the bar from the first frame.
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { usePathname } from "next/navigation";
+import { useState, useSyncExternalStore } from "react";
 import styles from "./landing.module.css";
 import { AccountButton } from "@/app/app/account/AccountButton";
 
@@ -28,20 +32,46 @@ function onOverHero(cb: () => void) {
   return () => io.disconnect();
 }
 
-export function SiteHeader({ signedIn, guest = false }: { signedIn: boolean; guest?: boolean }) {
-  const clear = useSyncExternalStore(onOverHero, () => overHero, () => true);
+/** The site's pages, in the nav. "How it works" is the landing page's own
+ *  section; the rest are pages of their own. */
+const PAGES: Array<[href: string, label: string]> = [
+  ["/#how", "How it works"],
+  ["/layouts", "Layouts"],
+  ["/pricing", "Pricing"],
+  ["/help", "Help"],
+];
+
+const never = () => () => {};
+
+export function SiteHeader({ signedIn, guest = false, solid = false }: { signedIn: boolean; guest?: boolean; solid?: boolean }) {
+  const clear = useSyncExternalStore(solid ? never : onOverHero, () => !solid && overHero, () => !solid);
+  const path = usePathname();
+  // On a phone the links do not fit beside the buttons: a Menu button
+  // opens them under the bar. Open on the page it was opened on, so any
+  // navigation closes it.
+  const [menuOn, setMenuOn] = useState<string | null>(null);
+  const menu = menuOn === path;
+  const setMenu = (open: boolean | ((was: boolean) => boolean)) => setMenuOn((typeof open === "function" ? open(menu) : open) ? path : null);
   return (
     <header className={`${styles.nav} ${clear ? styles.navClear : ""}`}>
       {/* The mark: "m." (2026-09-25). */}
       <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home">
         m.
       </Link>
-      <nav className={styles.links} aria-label="Sections">
-        <a href="#how">How it works</a>
-        <a href="#layouts">Layouts</a>
-        <a href="#print">Print</a>
+      <nav className={styles.links} aria-label="Site">
+        {PAGES.map(([href, label]) => {
+          const here = path === href || path.startsWith(`${href}/`);
+          return (
+            <Link key={href} href={href} aria-current={here ? "page" : undefined}>
+              {label}
+            </Link>
+          );
+        })}
       </nav>
       <div className={styles.actions}>
+        <button type="button" className={styles.menuButton} aria-expanded={menu} aria-controls="site-menu" onClick={() => setMenu((m) => !m)}>
+          {menu ? "Close" : "Menu"}
+        </button>
         {signedIn ? (
           <>
             <Link href="/app" className={styles.primary}>
@@ -61,6 +91,23 @@ export function SiteHeader({ signedIn, guest = false }: { signedIn: boolean; gue
           </>
         )}
       </div>
+      {menu && (
+        <nav id="site-menu" className={styles.menuPanel} aria-label="Site">
+          {PAGES.map(([href, label]) => (
+            <Link key={href} href={href} onClick={() => setMenu(false)}>
+              {label}
+            </Link>
+          ))}
+          <Link href="/about" onClick={() => setMenu(false)}>
+            About
+          </Link>
+          {!signedIn && (
+            <Link href="/sign-in?redirect_url=%2Fapp" onClick={() => setMenu(false)}>
+              Sign in
+            </Link>
+          )}
+        </nav>
+      )}
     </header>
   );
 }
