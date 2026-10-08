@@ -33,12 +33,14 @@ import { effectiveZone } from "./timeZone";
 import {
   LEVELS_IN_BINDING_ORDER,
   LEVEL_LABELS,
+  bindingOrder,
+  facingPads,
   occurrences,
-  repeats,
-  type OccurrenceContext,
+  type BindingSlot,
   type PageLevel,
 } from "./pageLevels";
 import { dayUnitColumns, type PageGrid } from "./grid";
+import { latticeDot } from "./modules/latticeFill";
 
 /** The shape this needs from a planner row. Deliberately the smallest one,
  *  so a caller can hand it a query it already had. */
@@ -92,6 +94,9 @@ export type GeneratedPage = {
   /** True when this occurrence had a layout of its own rather than taking
    *  the default. */
   customised: boolean;
+  /** A dot grid page put in so the spread after it faces (facingPads):
+   *  no template of the person's, and not counted as any level's page. */
+  filler?: true;
   pageGrid: PageGrid;
   elements: RenderedPolotnoElement[];
 };
@@ -124,8 +129,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
   // interleaves them. Sorting each level separately and concatenating would
   // give twelve monthlies followed by fifty-two weeklies, which is a filing
   // system rather than a book.
-  type Slot = { at: OccurrenceContext; rank: number };
-  const slots: Slot[] = [];
+  const slots: BindingSlot[] = [];
 
   const summary: GeneratedBook["summary"] = [];
 
@@ -151,36 +155,18 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     summary.push({ level, occurrences: list.length, pages });
   });
 
-  // An occurrence that BEGINS BEFORE THE TERM sorts as if it began on the
-  // first day. The week containing 1 January begins on 28 December, and
-  // sorting it by that date opened the book with a week page and put
-  // January's own page after January's first week. Clamping puts the
-  // coarsest thing first - the month, then the week that runs into it, then
-  // its days - and changes nothing else, since every other occurrence starts
-  // inside the term already.
-  const termStart = planner.startDate ? planner.startDate.getTime() : -Infinity;
-  const sortDate = (at: OccurrenceContext) => Math.max(at.start.getTime(), termStart);
-
-  slots.sort((a, b) => {
-    // Front matter opens the book and back matter closes it, whatever dates
-    // they happen to carry - they are not dated at all, and sorting them by
-    // a sentinel would put them wherever that sentinel fell.
-    const bookend = (slot: Slot) =>
-      slot.at.level === "FRONT_MATTER" ? -1 : slot.at.level === "BACK_MATTER" ? 1 : 0;
-    const ends = bookend(a) - bookend(b);
-    if (ends !== 0) return ends;
-    if (!repeats(a.at.level) && !repeats(b.at.level)) return a.rank - b.rank;
-    const byDate = sortDate(a.at) - sortDate(b.at);
-    if (byDate !== 0) return byDate;
-    // Same day: the COARSER level first. A month's own page belongs before
-    // the first week inside it, and that week before its first day.
-    return a.rank - b.rank;
-  });
+  // The binding order (pageLevels.ts), and where a dot grid page goes so
+  // the spread after it faces - the same rule bookPageCount counts by.
+  const ordered = bindingOrder(slots, planner.startDate).map((slot) => ({
+    slot,
+    chosen: pagesFor(pagesByLevel.get(slot.at.level) ?? [], slot.at.key),
+  }));
+  const pads = facingPads(ordered.map(({ slot, chosen }) => ({ level: slot.at.level, pages: chosen.length })));
 
   const pages: GeneratedPage[] = [];
-  for (const slot of slots) {
+  for (const [index, { slot, chosen }] of ordered.entries()) {
     const template = pagesByLevel.get(slot.at.level) ?? [];
-    const chosen = pagesFor(template, slot.at.key);
+    if (pads[index]) pages.push(dotGridPage(chosen[0], slot.at.level));
     const customised = slot.at.key !== null && hasOwn(template, slot.at.key);
     // Each page's day columns turned to the week start, by the function the
     // editor uses - this used to print the stored order, so a Monday
@@ -253,6 +239,31 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
   }
 
   return { title: planner.title, pages, summary };
+}
+
+/**
+ * A page of the dot grid - the page's own lattice, every quarter inch, in
+ * the dot a dotted note box uses (latticeDot) - shaped like the spread page
+ * it sits before. What goes where a spread would otherwise split.
+ */
+function dotGridPage(like: BookSource["pages"][number], level: PageLevel): GeneratedPage {
+  const pageGrid: PageGrid = {
+    widthPx: like.widthPx,
+    heightPx: like.heightPx,
+    gridColumns: like.gridColumns,
+    gridRows: like.gridRows,
+    boxInsetPx: like.gridGapPx / 2,
+    marginPx: like.marginPx,
+  };
+  const cellWidth = (pageGrid.widthPx - pageGrid.marginPx * 2) / pageGrid.gridColumns;
+  const cellHeight = (pageGrid.heightPx - pageGrid.marginPx * 2) / pageGrid.gridRows;
+  const elements: RenderedPolotnoElement[] = [];
+  for (let row = 0; row <= pageGrid.gridRows; row++) {
+    for (let column = 0; column <= pageGrid.gridColumns; column++) {
+      elements.push(latticeDot(`filler-dot-${row}-${column}`, pageGrid.marginPx + column * cellWidth, pageGrid.marginPx + row * cellHeight) as RenderedPolotnoElement);
+    }
+  }
+  return { sourcePageId: "", level, occurrenceLabel: "Dot grid", occurrenceKey: null, customised: false, pageGrid, elements, filler: true };
 }
 
 /** This occurrence's own pages, or the default ones when it has none. The

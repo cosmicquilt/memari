@@ -209,8 +209,8 @@ const iconsIn = (elements: unknown[]) =>
     .map((e) => String(e.id).replace(/^.*?-((w\d+-)?d\d+-dayicon\d+)$/, "$1"));
 {
   const book = generateBook(source(), "Newsreader");
-  const weeks = book.pages.filter((p) => p.level === "WEEKLY");
-  const months = book.pages.filter((p) => p.level === "MONTHLY");
+  const weeks = book.pages.filter((p) => p.level === "WEEKLY" && !p.filler);
+  const months = book.pages.filter((p) => p.level === "MONTHLY" && !p.filler);
   // Week of 4 January: Sun 4, Mon 5 (the first Monday), Tue 6 (trash).
   eq(iconsIn(weeks[0].elements).join(" "), "d1-dayicon0 d2-dayicon0", "week one's left page: payday on Monday 5th, trash on Tuesday 6th");
   eq(iconsIn(weeks[1].elements).length, 0, "nothing on its right page");

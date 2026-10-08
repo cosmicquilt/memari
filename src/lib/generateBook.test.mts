@@ -260,7 +260,9 @@ eq(
     }),
     FONT
   );
-  const left = monday.pages[0];
+  // The first REAL page: a book that opens on a spread opens with a dot
+  // grid page before it (facingPads), so page 0 is not the week.
+  const left = monday.pages.find((p) => !p.filler)!;
   const names = flatten(left.elements as never)
     .filter((e) => /-d\d-name$/.test(String(e.id)))
     .map((e) => String(e.text));
@@ -293,23 +295,54 @@ eq(
     }),
     FONT
   );
+  // Indexed past the dot grid page this book opens with (facingPads).
+  const real = withEvents.pages.filter((p) => !p.filler);
   const boxesOn = (pageIndex: number) =>
-    flatten(withEvents.pages[pageIndex].elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id)));
+    flatten(real[pageIndex].elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id)));
   const box = boxesOn(0);
   eq(box.map((e) => /-d(\d)-ev/.exec(String(e.id))?.[1]).join(), "1", "the book prints the event under its day: Tuesday, the left page's second column");
   eq(box[0]?.fill, EVENT_PRINT_GREY, "in print grey, not its calendar's red");
-  check(textOf(withEvents.pages[0].elements).includes("Dentist"), "with its title");
+  check(textOf(withEvents.pages.find((p) => !p.filler)!.elements).includes("Dentist"), "with its title");
   eq(boxesOn(2).length, 0, "and not in the following week");
   const without = generateBook(
     book({ theme: { weekStartDay: 1 }, startDate: utc(2026, 1, 5), endDate: utc(2026, 1, 18), timeZone: "UTC", pages: [hoursPage(0, ["SUNDAY", "MONDAY", "TUESDAY"]), hoursPage(1, ["WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"])] }),
     FONT
   );
-  eq(flatten(without.pages[0].elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id))).length, 0, "a book given no events prints none");
+  eq(flatten(without.pages.find((p) => !p.filler)!.elements as never).filter((e) => /-ev[^-]*-box$/.test(String(e.id))).length, 0, "a book given no events prints none");
   // One function places them for the page and the book; only paper is grey.
   const firstWeek = occurrences("WEEKLY", utc(2026, 1, 5), utc(2026, 1, 18), 1)![0];
   const placeArgs = { level: "WEEKLY" as const, dated: true, occurrence: { ...firstWeek, level: "WEEKLY" as const, index: 0, total: 2 }, dayLabels: [{ name: "MONDAY", date: 5 }, { name: "TUESDAY", date: 6 }, { name: "WEDNESDAY", date: 7 }], hasHours: true, events: [dentist], zone: "UTC" };
   eq(placePageEvents(placeArgs).events?.[0]?.colour, "#ff0000", "on screen it keeps its calendar's colour");
   eq(placePageEvents({ ...placeArgs, print: true }).events?.[0]?.colour, EVENT_PRINT_GREY, "on paper it is grey");
+}
+
+// --- SPREADS FACE, WITH DOT GRID PAGES BETWEEN ------------------------------
+// A two-page week with no front matter, and a day page between weeks: both
+// would put a week on a right-hand page. Every spread's left page must be an
+// even page (1-based), and what fills the gap is a page of dots.
+{
+  const spread = (level: "WEEKLY" | "MONTHLY") => [page(level, 0, null, ["labeled-box"]), page(level, 1, null, ["labeled-box"])];
+  const facing = generateBook(
+    book({ startDate: utc(2026, 1, 5), endDate: utc(2026, 2, 28), pages: [...spread("MONTHLY"), ...spread("WEEKLY"), page("DAILY", 0, null, ["labeled-box"])] }),
+    FONT
+  );
+  // A spread's first page: a week's or month's page that is not the
+  // continuation of the page before it (same level, same occurrence).
+  let spreadsChecked = 0;
+  facing.pages.forEach((p, i) => {
+    if (p.filler || (p.level !== "WEEKLY" && p.level !== "MONTHLY")) return;
+    const before = facing.pages[i - 1];
+    if (before && !before.filler && before.level === p.level && before.occurrenceLabel === p.occurrenceLabel) return;
+    spreadsChecked++;
+    check((i + 1) % 2 === 0, `${p.level} ${p.occurrenceLabel} starts on page ${i + 1}, a right-hand page`);
+  });
+  check(spreadsChecked >= 10, `the check saw the book's spreads (${spreadsChecked})`);
+  const fillers = facing.pages.filter((p) => p.filler);
+  check(fillers.length > 0, "a book with day pages between its weeks has dot grid pages");
+  check(fillers.every((p) => p.elements.length > 500 && p.elements.every((e) => String(e.id).startsWith("filler-dot-"))), "and they are pages of dots");
+  const daily = facing.summary.find((row) => row.level === "DAILY")!;
+  eq(facing.pages.length - fillers.length, facing.summary.reduce((n, row) => n + row.pages, 0), "and they are not any level's pages");
+  check(daily.pages > 0, "the days are there");
 }
 
 if (failures > 0) {

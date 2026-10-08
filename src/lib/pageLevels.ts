@@ -361,11 +361,82 @@ export function printedCount(
   return occurrences(level, start, end, weekStartDay)?.length ?? null;
 }
 
+/** One occurrence of one level, waiting for its place in the book. `rank`
+ *  is the level's place in LEVELS_IN_BINDING_ORDER. */
+export type BindingSlot = { at: OccurrenceContext; rank: number };
+
+/**
+ * THE BOOK'S ORDER. Not all the monthlies and then all the weeklies - that is
+ * how the timeline groups them for DESIGNING, and it is not how a book is
+ * bound. A real one runs front matter, then each month followed by the weeks
+ * and days inside it, then back matter: every occurrence sorted by the date
+ * it begins, and where two begin on the same day, the coarser one first.
+ *
+ * Here rather than in generateBook (2026-10-08) because bookPageCount needs
+ * the same order to know where the facing pages fall - see facingPads.
+ */
+export function bindingOrder<T extends BindingSlot>(slots: T[], termStart: Date | null | undefined): T[] {
+  // An occurrence that BEGINS BEFORE THE TERM sorts as if it began on the
+  // first day. The week containing 1 January begins on 28 December, and
+  // sorting it by that date opened the book with a week page and put
+  // January's own page after January's first week. Clamping puts the
+  // coarsest thing first - the month, then the week that runs into it, then
+  // its days - and changes nothing else, since every other occurrence starts
+  // inside the term already.
+  const from = termStart ? termStart.getTime() : -Infinity;
+  const sortDate = (at: OccurrenceContext) => Math.max(at.start.getTime(), from);
+  return [...slots].sort((a, b) => {
+    // Front matter opens the book and back matter closes it, whatever dates
+    // they happen to carry - they are not dated at all, and sorting them by
+    // a sentinel would put them wherever that sentinel fell.
+    const bookend = (slot: BindingSlot) =>
+      slot.at.level === PageLevel.FRONT_MATTER ? -1 : slot.at.level === PageLevel.BACK_MATTER ? 1 : 0;
+    const ends = bookend(a) - bookend(b);
+    if (ends !== 0) return ends;
+    if (!repeats(a.at.level) && !repeats(b.at.level)) return a.rank - b.rank;
+    const byDate = sortDate(a.at) - sortDate(b.at);
+    if (byDate !== 0) return byDate;
+    // Same day: the COARSER level first. A month's own page belongs before
+    // the first week inside it, and that week before its first day.
+    return a.rank - b.rank;
+  });
+}
+
+/**
+ * KEEPING SPREADS FACING (Andrew, 2026-10-08: "keep two page spread facing
+ * add dot grid pages").
+ *
+ * A bound book's first page is a right-hand page, so a page is a LEFT-hand
+ * one when its number is even. A month's or a week's first two pages are a
+ * spread - two halves of one thing, meant to be seen open together - and
+ * printed from an odd page they land back to back on one leaf instead. Until
+ * this existed nothing stopped that: a book with no front page, or two, or
+ * with a page a day between its weeks, split its spreads, in the PDF and in
+ * the bound book alike.
+ *
+ * So before any spread that would start on a right-hand page goes one page
+ * of the dot grid - a page to write on, not a blank. True for each run that
+ * needs one. The one rule: generateBook inserts the pages, bookPageCount
+ * counts them, and neither decides for itself.
+ */
+export function facingPads(runs: ReadonlyArray<{ level: PageLevel; pages: number }>): boolean[] {
+  let printed = 0;
+  return runs.map((run) => {
+    const spread = LEVEL_PAGE_COUNT[run.level] === 2 && run.pages >= 2;
+    // The next page is number printed + 1: odd - a right-hand page - when
+    // the count so far is even.
+    const pad = spread && printed % 2 === 0;
+    printed += run.pages + (pad ? 1 : 0);
+    return pad;
+  });
+}
+
 /**
  * How many pages a whole book prints: each level's pages times how many
- * times that level prints over the term. `pagesPerLevel` is a journal's own
- * sets (a week of three pages prints three a week), or LEVEL_PAGE_COUNT for
- * a journal not made yet - the start dialog shows this as the levels are
+ * times that level prints over the term, and the dot grid pages that keep
+ * its spreads facing (facingPads). `pagesPerLevel` is a journal's own sets
+ * (a week of three pages prints three a week), or LEVEL_PAGE_COUNT for a
+ * journal not made yet - the start dialog shows this as the levels are
  * switched on and off, because cadence is the price. Null when the book has
  * no term: that is a real answer, and not zero.
  */
@@ -375,13 +446,15 @@ export function bookPageCount(
   end: Date | null | undefined,
   weekStartDay = 0
 ): number | null {
-  let total = 0;
-  for (const level of LEVELS_IN_BINDING_ORDER) {
+  const slots: Array<BindingSlot & { pages: number }> = [];
+  for (const [rank, level] of LEVELS_IN_BINDING_ORDER.entries()) {
     const pages = pagesPerLevel[level] ?? 0;
     if (pages === 0) continue;
-    const times = printedCount(level, start, end, weekStartDay);
-    if (times === null) return null;
-    total += pages * times;
+    const list = occurrences(level, start, end, weekStartDay);
+    if (list === null) return null;
+    list.forEach((occurrence, index) => slots.push({ at: { ...occurrence, level, index, total: list.length }, rank, pages }));
   }
-  return total;
+  const runs = bindingOrder(slots, start).map((slot) => ({ level: slot.at.level, pages: slot.pages }));
+  const pads = facingPads(runs).filter(Boolean).length;
+  return runs.reduce((total, run) => total + run.pages, 0) + pads;
 }

@@ -116,6 +116,8 @@ if (lastBack >= 0 && lastBack !== levels.length - 1 && levels.includes("BACK_MAT
 // checked.
 const seen = new Map<string, string[]>();
 for (const page of book.pages) {
+  // A dot grid page keeping the next spread facing is no occurrence's.
+  if (page.filler) continue;
   const key = `${page.level}`;
   seen.set(key, [...(seen.get(key) ?? []), page.occurrenceLabel]);
 }

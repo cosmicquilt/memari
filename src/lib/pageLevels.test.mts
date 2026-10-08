@@ -15,12 +15,14 @@ import {
   WEEKDAY_NAMES,
   byLevel,
   bookPageCount,
+  facingPads,
   dayNamed,
   inSpreads,
   LEVEL_PAGE_COUNT,
   occurrences,
   printedCount,
   repeats,
+  type PageLevel,
 } from "./pageLevels.js";
 
 let failures = 0;
@@ -260,18 +262,58 @@ eq(withSaved("WEEKLY", ["sL", "sR", "3"]), "sL-sR | 3", "a template spread repla
 // --- a whole book's page count --------------------------------------------
 //
 // The start dialog's live count. January to March 2026 with every level on is
-// the book the dev planner generates: 1 + 3 x 2 + 14 x 2 + 90 + 1 = 126.
+// the book the dev planner generates: 1 + 3 x 2 + 14 x 2 + 90 + 1 = 126
+// pages of its own, and since 2026-10-08 the dot grid pages that keep its
+// spreads facing: a week of seven day pages is odd, so every week after
+// the first would start on a right-hand page - 13 of the 17 spreads get one.
 {
   const all = Object.fromEntries(LEVELS_IN_BINDING_ORDER.map((level) => [level, LEVEL_PAGE_COUNT[level]]));
-  eq(bookPageCount(all, utc(2026, 1, 1), utc(2026, 3, 31)), 126, "Jan-Mar 2026, every level");
+  eq(bookPageCount(all, utc(2026, 1, 1), utc(2026, 3, 31)), 126 + 13, "Jan-Mar 2026, every level, with its facing pages");
   eq(
     bookPageCount({ FRONT_MATTER: 1, WEEKLY: 2, BACK_MATTER: 1 }, utc(2026, 1, 1), utc(2026, 3, 31)),
     30,
     "the same term without months and days: 1 + 14 x 2 + 1"
   );
-  eq(bookPageCount({ WEEKLY: 3 }, utc(2026, 1, 1), utc(2026, 3, 31)), 42, "a three-page week prints three pages a week");
+  eq(
+    bookPageCount({ WEEKLY: 3 }, utc(2026, 1, 1), utc(2026, 3, 31)),
+    14 * 4,
+    "a three-page week prints three pages a week, and a dot grid page so the next week's spread faces"
+  );
   eq(bookPageCount(all, null, null), null, "no term is not zero pages");
   eq(bookPageCount({}, utc(2026, 1, 1), utc(2026, 3, 31)), 0, "no levels, no pages");
+}
+
+// --- keeping spreads facing ------------------------------------------------
+//
+// Page n is left-hand when n is even (a bound book opens on a right-hand
+// page). A spread run must start on one; facingPads says where a dot grid
+// page goes so that it does.
+{
+  const runs = (spec: string) =>
+    spec.split(" ").map((token) => {
+      const levels: Record<string, PageLevel> = { F: "FRONT_MATTER", M: "MONTHLY", W: "WEEKLY", D: "DAILY", B: "BACK_MATTER" };
+      return { level: levels[token[0]], pages: Number(token.slice(1)) };
+    });
+  const show = (spec: string) => facingPads(runs(spec)).map((pad) => (pad ? "+" : ".")).join("");
+  eq(show("W2 W2 W2"), "+..", "a book opening on a week: one dot grid page first, then every week faces");
+  eq(show("F1 W2 W2"), "...", "one front page: the weeks already face");
+  eq(show("F2 W2 W2"), ".+.", "two front pages: one dot grid page before the first week");
+  eq(show("F1 W2 D1 D1 D1 D1 D1 D1 D1 W2"), ".........+", "seven days between weeks: the next week gets one");
+  eq(show("F1 M2 W2 D1 W2"), "....+", "one day page between weeks: 1 + 2 + 2 + 1 = 6, so the week would start on page 7");
+  eq(show("D1 D1"), "..", "days are single pages: no padding");
+  eq(show("W1 W1"), "..", "a week of one page is not a spread");
+  // Every spread starts on an even page, whatever the runs.
+  for (const spec of ["W2 D1 D1 D1 W2 D1 W2", "F3 M2 W2 D1 D1 W2 M2 B1", "W3 W3 W3", "M2 W2 W2 D1 W2"]) {
+    let printed = 0;
+    const list = runs(spec);
+    facingPads(list).forEach((pad, i) => {
+      printed += pad ? 1 : 0;
+      if ((list[i].level === "MONTHLY" || list[i].level === "WEEKLY") && list[i].pages >= 2) {
+        check((printed + 1) % 2 === 0, `${spec}: run ${i} starts on page ${printed + 1}, a right-hand page`);
+      }
+      printed += list[i].pages;
+    });
+  }
 }
 
 if (failures > 0) {
