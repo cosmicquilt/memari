@@ -16,8 +16,11 @@
 //   duties are only known once the order is placed, so the price carries an
 //   allowance for them (US_DUTY_SHARE). Elsewhere the terms already say
 //   import charges are the buyer's (DDU).
-//   PRICES: /v4/title/calculate prices a specification at each print site;
-//   /v4/dispatch lists the post for an address, with dates.
+//   PRICES: /v4/title/calculate prices a specification at each print site,
+//   and weighs it; GET /v4/dispatch lists the post for that weight to an
+//   address. (POST /v4/dispatch, with the order's lines, answers 500 for a
+//   transient line whatever is sent - tried 2026-10-08 with the real key -
+//   so the post is asked by weight.)
 //   STATUS: webhooks for created, acknowledged, sent to print, printed and
 //   shipped - not signed, and no event for a failure. So a webhook is only a
 //   nudge: the order is read back from the API (getOrder) and that is what
@@ -166,10 +169,11 @@ type CodelistEntry = { id: number; value: string };
 
 let stockCache: { text: number; cover: number } | null = null;
 
-/** BookVault's ids for our text paper and its standard 250 gsm cover board,
- *  from its code lists - found by name, or set by hand where that fails
- *  (BOOKVAULT_TEXT_STOCK_ID, BOOKVAULT_COVER_STOCK_ID). The names are said
- *  in the error, so the first run with a key shows what to set. */
+/** BookVault's ids for our text paper and its standard cover board (250
+ *  gsm), from its code lists - found by name, or set by hand where that
+ *  fails (BOOKVAULT_TEXT_STOCK_ID, BOOKVAULT_COVER_STOCK_ID). The names are
+ *  said in the error, so a renamed list shows what to set. With the real
+ *  key, 2026-10-08: "170gsm Premium Bond" is 216, "Cover Board" is 5. */
 async function stockIds(): Promise<{ text: number; cover: number }> {
   if (stockCache) return stockCache;
   const setText = Number(process.env.BOOKVAULT_TEXT_STOCK_ID);
@@ -179,7 +183,7 @@ async function stockIds(): Promise<{ text: number; cover: number }> {
     setCover > 0 ? null : call<CodelistEntry[]>("GET", "/v4/codelist", { query: { type: "CoverStocks" } }),
   ]);
   const text = setText > 0 ? setText : texts?.find((entry) => /170/.test(entry.value) && /bond/i.test(entry.value))?.id;
-  const cover = setCover > 0 ? setCover : covers?.find((entry) => /250/.test(entry.value))?.id;
+  const cover = setCover > 0 ? setCover : (covers?.find((entry) => /cover board/i.test(entry.value)) ?? covers?.find((entry) => /250/.test(entry.value)))?.id;
   if (!text || !cover) {
     const list = (entries: CodelistEntry[] | null) => (entries ?? []).map((entry) => `${entry.id} ${entry.value}`).join("; ");
     throw new BookVaultError(`BookVault's paper names did not match: text stocks [${list(texts)}], cover stocks [${list(covers)}]. Set BOOKVAULT_TEXT_STOCK_ID and BOOKVAULT_COVER_STOCK_ID.`, 0, "");
@@ -188,15 +192,25 @@ async function stockIds(): Promise<{ text: number; cover: number }> {
   return stockCache;
 }
 
-type Partner = { name?: string; currencyID?: string };
-type Product = { pricing?: Array<{ price?: number; canPrint?: boolean; messages?: string[]; partner?: Partner }>; messages?: Array<{ message?: string; errorText?: string; level?: string }> };
+type Partner = { name?: string; currencyID?: string; prodLevels?: Array<{ level?: string; days?: number }> };
+type Product = {
+  pricing?: Array<{ price?: number; canPrint?: boolean; messages?: string[]; partner?: Partner }>;
+  specifications?: { weight?: number };
+  messages?: Array<{ message?: string; errorText?: string; level?: string }>;
+};
 
 const isUk = (partner?: Partner) => !!partner && (partner.currencyID === "GBP" || /uk/i.test(partner.name ?? ""));
 
-/** Printing and binding one book of `pages` at the UK site, in pounds. A book
- *  BookVault cannot make - too few pages, too many - is a refusal, with its
- *  reasons. */
-export async function bookVaultPrintPrice(sku: string, pages: number): Promise<number> {
+/** Working days BookVault takes to print at standard speed, where its answer
+ *  does not say. */
+const PRODUCTION_DAYS = 5;
+
+/** One book of `pages` at the UK site: printing and binding in pounds, its
+ *  weight for the post, and the working days it takes to make. A book
+ *  BookVault cannot make is a refusal, with its reasons. Standard printing
+ *  (inkjet), not "premium" (toner), which the account allows but which more
+ *  than doubles the price - £8.34 against £3.91 for 128 pages. */
+export async function bookVaultSpec(sku: string, pages: number): Promise<{ priceGbp: number; weightG: number; productionDays: number }> {
   const stocks = await stockIds();
   const { heightMm, widthMm } = skuSize(sku);
   const product = await call<Product>("POST", "/v4/title/calculate", {
@@ -218,7 +232,12 @@ export async function bookVaultPrintPrice(sku: string, pages: number): Promise<n
     const why = [...(uk?.messages ?? []), ...(product.messages ?? []).map((m) => m.message || m.errorText || "")].filter(Boolean).join("; ");
     throw new BookVaultError(`BookVault cannot print this book${why ? `: ${why}` : "."}`, 0, JSON.stringify(product).slice(0, 2000), true);
   }
-  return uk.price;
+  const standard = uk.partner?.prodLevels?.find((level) => level.level === "Standard")?.days;
+  return {
+    priceGbp: uk.price,
+    weightG: product.specifications?.weight ?? 0,
+    productionDays: standard && standard > 0 ? standard : PRODUCTION_DAYS,
+  };
 }
 
 /** How each of our shipping levels is asked of BookVault. Two, not Lulu's
@@ -251,10 +270,17 @@ export function pickService(estimate: { services?: BookVaultService[]; requested
   return [...services].sort((a, b) => days(a) - days(b) || byCost(a, b))[0] ?? null;
 }
 
-/** BookVault posts once printing is done: a week from today, to ask for the
- *  dates from. */
-function shipmentDate(today = new Date()): string {
-  return new Date(today.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+/** A date `days` working days (Monday to Friday) after `from`, as an ISO
+ *  day: when a book made and posted on working days should arrive. */
+export function addWorkingDays(from: Date, days: number): string {
+  const date = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  let left = Math.max(0, Math.round(days));
+  while (left > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const weekday = date.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) left -= 1;
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 function transientLine(sku: string, pages: number, title: string, files?: { cover: string; interior: string }) {
@@ -271,38 +297,43 @@ function transientLine(sku: string, pages: number, title: string, files?: { cove
   };
 }
 
-async function dispatchEstimate(sku: string, pages: number, address: ShippingAddress, want: "CheapestTracked" | "Quickest"): Promise<BookVaultService | null> {
-  const estimate = await call<{ services?: BookVaultService[]; requestedServices?: number[] }>("POST", "/v4/dispatch", {
-    body: {
-      orderLines: [transientLine(sku, pages, "Journal")],
-      countryCode: address.countryCode,
-      serviceLevel: want,
-      partner: "Bookvault_UK",
-      currency: "GBP",
-      shipmentDate: shipmentDate(),
-      areaCode: address.postcode,
-    },
+/** The post BookVault offers a parcel of this weight from the UK to the
+ *  address, in pounds (picking and packing included). */
+async function dispatchServices(weightG: number, address: ShippingAddress): Promise<{ services?: BookVaultService[]; requestedServices?: number[] }> {
+  return call("GET", "/v4/dispatch", {
+    query: { countryCode: address.countryCode, areaCode: address.postcode, weight: String(Math.max(1, Math.round(weightG))), partner: "Bookvault_UK" },
   });
-  return pickService(estimate, want);
 }
 
 export type BookVaultQuote = { level: ShippingLevel; cost: PrintCost; label: string; arrives?: { earliest: string; latest: string } };
 
 /** Every level BookVault serves the address by, priced as our cost in
- *  dollars, with its delivery dates. One service offered for both levels is
- *  offered once, as the cheaper. */
-export async function bookVaultQuotes(sku: string, pages: number, address: ShippingAddress, levels: readonly ShippingLevel[] = BOOKVAULT_LEVELS): Promise<BookVaultQuote[]> {
+ *  dollars, with when it should arrive: today, plus the working days to make
+ *  it, plus the service's days in the post. (BookVault's own estimated dates
+ *  count from today, without the making.) One service offered for both
+ *  levels is offered once, as the cheaper. */
+export async function bookVaultQuotes(
+  sku: string,
+  pages: number,
+  address: ShippingAddress,
+  levels: readonly ShippingLevel[] = BOOKVAULT_LEVELS,
+  today = new Date()
+): Promise<BookVaultQuote[]> {
   const wanted = levels.filter((level) => SERVICE[level]);
-  const [printGbp, ...services] = await Promise.all([bookVaultPrintPrice(sku, pages), ...wanted.map((level) => dispatchEstimate(sku, pages, address, SERVICE[level]!))]);
+  if (wanted.length === 0) return [];
+  const spec = await bookVaultSpec(sku, pages);
+  const estimate = await dispatchServices(spec.weightG, address);
   const seen = new Set<number | undefined>();
   const quotes: BookVaultQuote[] = [];
-  wanted.forEach((level, index) => {
-    const service = services[index];
-    if (!service || seen.has(service.servID)) return;
+  for (const level of wanted) {
+    const service = pickService(estimate, SERVICE[level]!);
+    if (!service || seen.has(service.servID)) continue;
     seen.add(service.servID);
-    const arrives = service.minEstimatedDelivery && service.maxEstimatedDelivery ? { earliest: service.minEstimatedDelivery.slice(0, 10), latest: service.maxEstimatedDelivery.slice(0, 10) } : undefined;
-    quotes.push({ level, cost: bookVaultCost(printGbp, service.deliveryTotal ?? 0, address.countryCode), label: BOOKVAULT_LEVEL_LABELS[level] ?? level, arrives });
-  });
+    const fastest = service.minDeliveryDays || service.maxDeliveryDays;
+    const slowest = service.maxDeliveryDays || service.minDeliveryDays;
+    const arrives = fastest && slowest ? { earliest: addWorkingDays(today, spec.productionDays + fastest), latest: addWorkingDays(today, spec.productionDays + slowest) } : undefined;
+    quotes.push({ level, cost: bookVaultCost(spec.priceGbp, service.deliveryTotal ?? 0, address.countryCode), label: BOOKVAULT_LEVEL_LABELS[level] ?? level, arrives });
+  }
   return quotes;
 }
 

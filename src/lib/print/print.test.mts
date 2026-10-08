@@ -22,6 +22,7 @@ import {
   bookVaultOrderBody,
   bookVaultReport,
   bookVaultSku,
+  addWorkingDays,
   customsFor,
   pickService,
   webhookReferences,
@@ -284,6 +285,11 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   const toUs = customsFor("US")!;
   check(toUs.hsCode === "482010" && toUs.incoTerms === "DDP" && toUs.useOrderValue && !toUs.useIOSS, "the US: HS 4820.10, duties paid, the order's value");
   check(customsFor("DE")!.incoTerms === "DDU", "elsewhere: the buyer's");
+
+  // When a book made and posted on working days arrives: Thursday 8 Oct 2026.
+  const thursday = new Date("2026-10-08T15:00:00Z");
+  check(addWorkingDays(thursday, 0) === "2026-10-08" && addWorkingDays(thursday, 1) === "2026-10-09" && addWorkingDays(thursday, 2) === "2026-10-12", "a working day past Friday is Monday");
+  check(addWorkingDays(thursday, 6 + 8) === "2026-10-28", "six days to make and eight in the post land on 28 Oct");
 
   // The service: the one BookVault names, else the level's rule.
   const services = [

@@ -158,7 +158,7 @@ export const BOOKVAULT: Printer = {
   bindings: ["wireo"],
   configured: bookVaultConfigured,
   sku: bookVaultSku,
-  // The least is BookVault's to say, at pricing (bookVaultPrintPrice
+  // The least is BookVault's to say, at pricing (bookVaultSpec
   // refuses with its reason); the most is the wire's on this paper.
   pageLimits: (binding) => (binding === "wireo" ? { min: 4, max: BOOKVAULT_PAPER.wireoMaxPages } : { min: 1, max: 0 }),
   gutterInches: (binding) => (binding === "wireo" ? BOOKVAULT_GUTTER_IN : 0),
