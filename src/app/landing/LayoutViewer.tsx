@@ -111,21 +111,21 @@ export function LayoutCard({
       aria-label={`Open ${title} larger`}
     >
       <SpreadPreview spreadKey={spreadKey} set={set} eager={eager} />
-      <span className={css.zoomHint} aria-hidden="true">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        >
-          <circle cx="10.5" cy="10.5" r="6.5" />
-          <path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6" />
-        </svg>
-      </span>
+      <ZoomHint />
     </button>
+  );
+}
+
+/** The round magnifier over a layout that opens bigger - always shown, so
+ *  it reads as something to click (2026-10-08). */
+function ZoomHint({ small = false }: { small?: boolean }) {
+  return (
+    <span className={small ? `${css.zoomHint} ${css.zoomHintSmall}` : css.zoomHint} aria-hidden="true">
+      <svg width={small ? 14 : 16} height={small ? 14 : 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+        <circle cx="10.5" cy="10.5" r="6.5" />
+        <path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6" />
+      </svg>
+    </span>
   );
 }
 
@@ -294,11 +294,7 @@ function Popup({
                           aria-label={`Open ${s.changes.length ? `${s.title}, ${s.changes.join(", ")}` : `${s.title}, the original`}`}
                         >
                           <SpreadPages spread={s.spread} />
-                          <span className={css.similarCaption}>
-                            {s.changes.length
-                              ? s.changes.join(" · ")
-                              : `The original ${s.title}`}
-                          </span>
+                          <ZoomHint small />
                         </button>
                       </li>
                     ))}

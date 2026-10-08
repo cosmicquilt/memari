@@ -20,7 +20,9 @@
   border-radius: 4px;
 }
 
-/* A magnifier in the corner on hover: the card opens bigger. */
+/* A round magnifier in the corner, always there (2026-10-08: "always be
+   visible even when not hovering to show they can be expanded"), a little
+   stronger under the pointer. */
 .zoomHint {
   position: absolute;
   top: 10px;
@@ -30,17 +32,26 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(28, 25, 23, 0.72);
+  background: rgba(28, 25, 23, 0.62);
   color: #fff;
-  opacity: 0;
-  transform: scale(0.9);
-  transition: opacity 160ms ease-out, transform 160ms ease-out;
+  box-shadow: 0 1px 4px rgba(20, 12, 6, 0.25);
+  transition: background 160ms ease-out, transform 160ms ease-out;
+  pointer-events: none;
+}
+
+.zoomHintSmall {
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
 }
 
 .card:hover .zoomHint,
-.card:focus-visible .zoomHint {
-  opacity: 1;
-  transform: none;
+.card:focus-visible .zoomHint,
+.similar button:hover .zoomHint,
+.similar button:focus-visible .zoomHint {
+  background: rgba(28, 25, 23, 0.86);
+  transform: scale(1.08);
 }
 
 /* ---------------------------------------------------------------- popup */
@@ -68,7 +79,7 @@
   width: min(1360px, 100%);
   height: min(880px, 100%);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   background: var(--cream);
   border-radius: 16px;
   overflow: hidden;
@@ -290,18 +301,21 @@
   font-weight: 750;
 }
 
+/* One to a row, as wide as the panel: the pictures say what changed
+   (2026-10-08: "you dont need descriptions, instead i want the previews to
+   be a bit larger"). */
 .similar ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
 }
 
 .similar button {
-  display: grid;
-  gap: 6px;
+  position: relative;
+  display: block;
   width: 100%;
   padding: 0;
   border: none;
@@ -311,16 +325,6 @@
   text-align: left;
   cursor: pointer;
   border-radius: 4px;
-}
-
-.similar button:hover .similarCaption {
-  color: var(--ink);
-}
-
-.similarCaption {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--muted);
 }
 
 .loading,
