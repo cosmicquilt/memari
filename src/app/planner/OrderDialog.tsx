@@ -359,6 +359,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                 {moved && fits?.ok && <span style={{ fontSize: 12, color: cream(0.6) }}>{moved}</span>}
                 {/* Paper colour, where the binding has a choice: the same
                     price either way, so the prices on screen stand. */}
+                {paperChoices(binding).length > 1 && <span style={{ ...labelStyle, marginTop: 6 }}>Paper</span>}
                 {paperChoices(binding).length > 1 && (
                   <div role="radiogroup" aria-label="Paper" style={{ display: "flex", gap: 6 }}>
                     {paperChoices(binding).map((option) => (
