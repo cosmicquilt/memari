@@ -4,60 +4,73 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/app/landing/SitePage";
 import { SpreadPreview } from "@/app/landing/SpreadPreview";
 import { UseThisWeek } from "@/app/landing/UseThisWeek";
-import { STARTER_WEEKS, STARTER_WEEK_BY_KEY, modulesOfWeek } from "@/app/landing/starterLayouts";
+import { KIND_SECTIONS, STARTERS, STARTER_BY_KEY, makesWhat, modulesOf, actionLabel } from "@/app/landing/starterLayouts";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
 
-// memari.studio/layouts/<key> - one week: the spread, every module on it and
-// what it is for, and "Use this week". Its own address so it can be linked
-// to and found on its own.
+// memari.studio/layouts/<key>: one layout, the spread, every module on it
+// and what it is for, and "Use this". Its own address so it can be linked to
+// and found on its own.
 
 export function generateStaticParams() {
-  return STARTER_WEEKS.map((week) => ({ key: week.key }));
+  return STARTERS.map((starter) => ({ key: starter.key }));
 }
 
 export const dynamicParams = false;
 
+const KIND_NAME = { week: "weekly spread", month: "monthly spread", day: "daily page", pages: "pages" } as const;
+
 export async function generateMetadata({ params }: { params: Promise<{ key: string }> }): Promise<Metadata> {
-  const week = STARTER_WEEK_BY_KEY[(await params).key];
-  if (!week) return {};
+  const starter = STARTER_BY_KEY[(await params).key];
+  if (!starter) return {};
   return {
-    title: `${week.title} weekly planner layout - Memari Studio`,
-    description: `${week.line} A printable weekly layout you can change, dated for every week of your book.`,
+    title: `${starter.title} ${KIND_NAME[starter.kind]} - Memari Studio`,
+    description:
+      starter.kind === "pages"
+        ? `${starter.line} Printable planner pages you can change, at the front of your book.`
+        : `${starter.line} A printable planner layout you can change, laid out for every ${starter.kind} of your book.`,
   };
 }
 
 export default async function LayoutPage({ params }: { params: Promise<{ key: string }> }) {
-  const week = STARTER_WEEK_BY_KEY[(await params).key];
-  if (!week) notFound();
-  const modules = modulesOfWeek(week.key);
+  const starter = STARTER_BY_KEY[(await params).key];
+  if (!starter) notFound();
+  const modules = modulesOf(starter.key);
+  const section = KIND_SECTIONS.find(([kind]) => kind === starter.kind)!;
   return (
     <SitePage>
       <header className={site.head}>
-        <Link href="/layouts" className={site.crumb}>
-          ← All layouts
+        <Link href={`/layouts#${starter.kind}`} className={site.crumb}>
+          ← All {section[1].toLowerCase()}
         </Link>
         <h1 className={styles.headline} style={{ marginTop: 18 }}>
-          {week.title} week
+          {starter.title}
         </h1>
-        <p className={styles.lede}>{week.line}</p>
+        <p className={styles.lede}>{starter.line}</p>
       </header>
 
       <section className={site.block}>
         <div className={site.detail}>
-          <SpreadPreview spreadKey={week.key} eager />
           <div>
-            <UseThisWeek spreadKey={week.key} />
+            <SpreadPreview spreadKey={starter.key} eager />
+            {starter.kind === "day" && <p className={site.note} style={{ marginTop: 10 }}>Two days of the same daily page, side by side.</p>}
+          </div>
+          <div>
+            <UseThisWeek spreadKey={starter.key} label={actionLabel(starter.kind)} />
             <p className={site.note} style={{ marginTop: 12, lineHeight: 1.5 }}>
-              Opens a journal of your own with this as its weekly spread, dated from next month for three months. Change
-              anything; no account needed to try it.
+              {makesWhat(starter.kind)} Change anything. No account needed to try it.
             </p>
-            <h2 className={site.blockTitle} style={{ marginTop: 36, fontSize: 20 }}>
-              On this week
+            {starter.hours && (
+              <p className={site.note} style={{ marginTop: 18, lineHeight: 1.5 }}>
+                <strong style={{ color: "var(--ink)" }}>Hours:</strong> {starter.hours}
+              </p>
+            )}
+            <h2 className={site.blockTitle} style={{ marginTop: 32, fontSize: 20 }}>
+              On this {starter.kind === "pages" ? "spread" : starter.kind}
             </h2>
             <ul className={site.detailList}>
               {modules.map((m) => (
-                <li key={m.slug}>
+                <li key={`${m.slug}-${m.name}`}>
                   <strong>{m.name}</strong>
                   {m.description && <span>{m.description}</span>}
                 </li>
@@ -68,12 +81,13 @@ export default async function LayoutPage({ params }: { params: Promise<{ key: st
       </section>
 
       <section className={site.end}>
-        <h2>Every week of the book, laid out.</h2>
+        <h2>The whole book, laid out.</h2>
         <p className={site.note} style={{ maxWidth: 520, fontSize: 16, lineHeight: 1.55 }}>
-          Design the week once. Memari repeats it for every week you choose, each one dated, ready to print at home or as a
-          bound book.
+          {starter.kind === "pages"
+            ? "Put them at the front of a journal and design the rest around them. Memari lays out every page after, each one dated, ready to print at home or as a bound book."
+            : `Design it once. Memari repeats it for every ${starter.kind} you choose, each one dated, ready to print at home or as a bound book.`}
         </p>
-        <UseThisWeek spreadKey={week.key} />
+        <UseThisWeek spreadKey={starter.key} label={actionLabel(starter.kind)} />
       </section>
     </SitePage>
   );

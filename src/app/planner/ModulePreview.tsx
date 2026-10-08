@@ -85,8 +85,24 @@ export const ModulePreview = memo(function ModulePreview({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const scale = widthPx / preview.rect.width;
-  const fullHeight = preview.rect.height * scale;
+  // WHAT IS DRAWN, not only the box: an icon strip sets its label above its
+  // cell and its glyphs run a few pixels below (water-week draws from 6px
+  // above its box to 3px under it), which on a page falls in the gap between
+  // modules and in a preview was cut off. The view grows to take it in.
+  const view = useMemo(() => {
+    const r = preview.rect;
+    if (!elements || elements.length === 0) return r;
+    let top = r.y;
+    let bottom = r.y + r.height;
+    for (const e of elements as Array<{ y?: number; height?: number }>) {
+      if (typeof e.y !== "number") continue;
+      top = Math.min(top, e.y);
+      bottom = Math.max(bottom, e.y + (typeof e.height === "number" ? e.height : 0));
+    }
+    return { x: r.x, y: top, width: r.width, height: bottom - top };
+  }, [elements, preview.rect]);
+  const scale = widthPx / view.width;
+  const fullHeight = view.height * scale;
   const cut = maxHeightPx !== undefined && fullHeight > maxHeightPx;
 
   return (
@@ -105,7 +121,7 @@ export const ModulePreview = memo(function ModulePreview({
     >
       <div style={{ position: "absolute", inset: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
         {elements && (
-          <PolotnoJsonRenderer elements={elements} originX={preview.rect.x} originY={preview.rect.y} scale={scale} suppressOuterBorderSize={null} />
+          <PolotnoJsonRenderer elements={elements} originX={view.x} originY={view.y} scale={scale} suppressOuterBorderSize={null} />
         )}
       </div>
       {cut && (

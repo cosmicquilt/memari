@@ -44,7 +44,7 @@ export default function AboutPage() {
           <h2>Why paper</h2>
           <p>
             A page does one thing at a time. It does not ping, it does not refresh, and nothing on it was put there to keep you
-            looking. We like screens fine - Memari is built on one - but the place you plan your days should not be competing for
+            looking. We like screens fine, and Memari is built on one, but the place you plan your days should not be competing for
             them.
           </p>
           <p>
@@ -59,8 +59,8 @@ export default function AboutPage() {
             <cite>Often attributed to Albert Einstein, who said something longer.</cite>
           </blockquote>
           <p>
-            It is the line we design to. Each module does one job. You design a week once, and Memari makes the rest - every
-            week of the book, each one dated - because drawing the same boxes fifty-two times is not planning, it is copying.
+            It is the line we design to. Each module does one job. You design a week once, and Memari makes the rest: every
+            week of the book, each one dated. Drawing the same boxes fifty-two times is not planning, it is copying.
           </p>
 
           <h2>Stone by stone</h2>
@@ -77,7 +77,7 @@ export default function AboutPage() {
           <h2>What we will not do</h2>
           <p>
             No ads, no tracking, no selling what you write. You can try Memari without an account, and take your whole book as a
-            PDF, free, whenever you like - see <Link href="/privacy">Privacy</Link> for exactly what is kept.
+            PDF, free, whenever you like. <Link href="/privacy">Privacy</Link> says exactly what is kept.
           </p>
 
           <p className={site.note} style={{ fontSize: 15 }}>

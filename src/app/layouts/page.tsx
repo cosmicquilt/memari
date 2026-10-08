@@ -4,17 +4,18 @@ import { SitePage } from "@/app/landing/SitePage";
 import { SpreadPreview } from "@/app/landing/SpreadPreview";
 import { UseThisWeek } from "@/app/landing/UseThisWeek";
 import { ModuleCards } from "@/app/landing/ModuleCards";
-import { GALLERY_LABEL, STARTER_MODULES, STARTER_WEEKS } from "@/app/landing/starterLayouts";
+import { GALLERY_LABEL, KIND_SECTIONS, STARTERS, STARTER_MODULES, actionLabel } from "@/app/landing/starterLayouts";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
 
-// memari.studio/layouts - weeks and modules to start from (2026-10-08). See
-// starterLayouts.ts for what is shown and why it says nothing about who used
-// them.
+// memari.studio/layouts: weeks, months, days and pages to start from, and
+// modules (2026-10-08). See starterLayouts.ts for what is shown and why it
+// says nothing about who used them.
 
 export const metadata: Metadata = {
   title: "Layouts - Memari Studio",
-  description: "Weekly planner layouts to start from - student, shift work, teacher, parent, ADHD, training and more - each one yours to change, dated and ready to print.",
+  description:
+    "Planner layouts to start from: weekly spreads for students, shift work, teachers, parents, ADHD and more, monthly spreads, daily pages and pages of modules. Each one yours to change, dated and ready to print.",
 };
 
 export default function LayoutsPage() {
@@ -22,52 +23,62 @@ export default function LayoutsPage() {
     <SitePage>
       <header className={`${site.head} ${site.blockWide}`}>
         <p className={styles.eyebrow}>Layouts</p>
-        <h1 className={styles.headline}>Start from a week that works.</h1>
+        <h1 className={styles.headline}>Start from one that works.</h1>
         <p className={styles.lede}>
-          Pick a week, make it yours, and Memari lays it out for every week of your book. Change any of it - every
-          module moves, resizes and comes out.
+          Pick a week, a month, a day or a few pages, make it yours, and Memari lays it out for the whole book. Every module
+          moves, resizes and comes out.
         </p>
+        <nav aria-label="Kinds of layout" className={site.kinds} data-keepout>
+          <span className={site.label}>{GALLERY_LABEL}</span>
+          {KIND_SECTIONS.map(([kind, heading]) => (
+            <a key={kind} href={`#${kind}`}>
+              {heading} <span>{STARTERS.filter((s) => s.kind === kind).length}</span>
+            </a>
+          ))}
+          <a href="#modules">Modules</a>
+        </nav>
       </header>
 
-      <section className={`${site.block} ${site.blockWide}`} aria-labelledby="weeks">
-        <span className={site.label}>{GALLERY_LABEL}</span>
-        <h2 id="weeks" className={site.blockTitle}>
-          Weeks
-        </h2>
-        <p className={site.blockLede}>Each one is a real weekly spread. &ldquo;Use this week&rdquo; opens it as a journal of your own - no account needed.</p>
-        <div className={site.layoutGrid}>
-          {STARTER_WEEKS.map((week) => (
-            <article key={week.key} className={site.card}>
-              <Link href={`/layouts/${week.key}`} className={site.cardLink} aria-label={`${week.title} week: see what is on it`}>
-                <SpreadPreview spreadKey={week.key} />
-              </Link>
-              <div>
-                <h3 className={site.cardTitle}>
-                  <Link href={`/layouts/${week.key}`} className={site.cardLink}>
-                    {week.title}
-                  </Link>
-                </h3>
-                <p className={site.cardText}>{week.line}</p>
-              </div>
-              <div className={site.cardActions}>
-                <UseThisWeek spreadKey={week.key} />
-                <Link href={`/layouts/${week.key}`} className={site.buttonQuiet}>
-                  What&rsquo;s on it
+      {KIND_SECTIONS.map(([kind, heading, lede]) => (
+        <section key={kind} id={kind} className={`${site.block} ${site.blockWide}`} aria-labelledby={`${kind}-title`}>
+          <h2 id={`${kind}-title`} className={site.blockTitle}>
+            {heading}
+          </h2>
+          <p className={site.blockLede}>{lede}</p>
+          <div className={site.layoutGrid}>
+            {STARTERS.filter((s) => s.kind === kind).map((starter) => (
+              <article key={starter.key} className={site.card}>
+                <Link href={`/layouts/${starter.key}`} className={site.cardLink} aria-label={`${starter.title}: see what is on it`}>
+                  <SpreadPreview spreadKey={starter.key} />
                 </Link>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+                <div>
+                  <h3 className={site.cardTitle}>
+                    <Link href={`/layouts/${starter.key}`} className={site.cardLink}>
+                      {starter.title}
+                    </Link>
+                  </h3>
+                  {starter.hours && <p className={site.hours}>{starter.hours}</p>}
+                  <p className={site.cardText}>{starter.line}</p>
+                </div>
+                <div className={site.cardActions}>
+                  <UseThisWeek spreadKey={starter.key} label={actionLabel(starter.kind)} />
+                  <Link href={`/layouts/${starter.key}`} className={site.buttonQuiet}>
+                    What&rsquo;s on it
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
 
-      <section className={`${site.block} ${site.blockWide}`} aria-labelledby="modules">
-        <span className={site.label}>{GALLERY_LABEL}</span>
-        <h2 id="modules" className={site.blockTitle}>
+      <section id="modules" className={`${site.block} ${site.blockWide}`} aria-labelledby="modules-title">
+        <h2 id="modules-title" className={site.blockTitle}>
           Modules
         </h2>
         <p className={site.blockLede}>
-          The pieces a page is built from. These are a few of more than 150 in the editor, from hours and
-          habits to a year in pixels.
+          The pieces a page is built from. These are a few of more than 150 in the editor, from hours and habits to a year in
+          pixels.
         </p>
         <ModuleCards modules={STARTER_MODULES} />
       </section>

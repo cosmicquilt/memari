@@ -29,13 +29,13 @@ const PRINTED = ["PAID", "SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"];
 
 const STATUS_LABELS: Record<string, string> = {
   QUOTED: "Confirming payment…",
-  PAID: "Paid - sending to the printer",
+  PAID: "Paid, sending to the printer",
   SUBMITTED: "With the printer",
   IN_PRODUCTION: "Printing",
   SHIPPED: "Shipped",
   DELIVERED: "Delivered",
   CANCELED: "Cancelled",
-  FAILED: "Needs attention - we will be in touch",
+  FAILED: "Needs attention. We will be in touch",
 };
 
 
@@ -79,7 +79,7 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
         <h1>Orders</h1>
         {placed && (
           <p style={{ margin: 0, padding: "10px 12px", fontSize: 13, background: cream(0.06), borderRadius: 6, lineHeight: 1.5 }}>
-            Thank you - your order is placed. Stripe emails a receipt; the book goes to the printer as soon as the payment is confirmed.
+            Thank you, your order is placed. Stripe emails a receipt; the book goes to the printer as soon as the payment is confirmed.
           </p>
         )}
         {owner.guest && <p style={{ margin: 0, fontSize: 13 }}>Sign in to order printed books and see them here.</p>}

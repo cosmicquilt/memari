@@ -37,18 +37,18 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "What is a journal?",
         a: <p>
-          One book. You choose which pages repeat - a spread for every month, every week, a page for every day - design each
+          One book. You choose which pages repeat (a spread for every month, every week, a page for every day), design each
           one once, and set the dates the book covers. Memari lays out every page in between, each one dated.
         </p>,
       },
       {
         q: "Can I start from a ready-made layout?",
         a: <p>
-          Yes. <Link href="/layouts">Layouts</Link> has weeks to start from - student, shift work, parent, ADHD and more.
-          &ldquo;Use this week&rdquo; opens one as a journal of your own, and you can change all of it.
+          Yes. <Link href="/layouts">Layouts</Link> has weeks, months, days and pages to start from: student, shift work,
+          parent, ADHD, travel, money and more. &ldquo;Use this&rdquo; opens one as a journal of your own, and you can change all of it.
         </p>,
       },
-      { q: "Is it free?", a: <p>The editor and your whole book as a PDF are free. You pay only for a printed, bound book - see <Link href="/pricing">Pricing</Link>.</p> },
+      { q: "Is it free?", a: <p>The editor and your whole book as a PDF are free. You pay only for a printed, bound book. See <Link href="/pricing">Pricing</Link>.</p> },
     ],
   ],
   [
@@ -65,7 +65,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         q: "Dated or undated?",
         a: <p>
           Your choice when you make a journal. Dated, Memari writes every date for you; undated, the pages print with the dates
-          left for you to write - handy if you start mid-month or skip weeks.
+          left for you to write, which is handy if you start mid-month or skip weeks.
         </p>,
       },
       {
@@ -113,7 +113,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "How do I order a printed book?",
         a: <p>
-          In the editor, choose Order print. Pick the binding - coil-bound to lie flat, paperback or hardcover - how many days
+          In the editor, choose Order print. Pick the binding (coil-bound to lie flat, paperback or hardcover), how many days
           the book covers, where it goes and how fast; you see the full price before you pay. Ordering needs an account, so your
           books have somewhere to live. Printed books are 7 × 10 in.
         </p>,
@@ -128,7 +128,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "Can I cancel an order?",
         a: <p>
-          Until the printer starts it, about an hour after you pay - under Account → Orders - and the whole payment is
+          Yes, under Account → Orders, until the printer starts it, about an hour after you pay. The whole payment is
           refunded. After that it cannot be stopped, because it is made for you.
         </p>,
       },
@@ -142,7 +142,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "How does auto-renew work?",
         a: <p>
-          It is off unless you turn it on. When it is on, the next book - the same number of days, starting the day after - is
+          It is off unless you turn it on. When it is on, the next book, the same number of days starting the day after, is
           ordered early enough to arrive before this one runs out, made from your journal as it is then. We email you about a
           week before, and you can turn it off any time under Account → Orders.
         </p>,
@@ -155,7 +155,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
       {
         q: "Where are my settings and orders?",
         a: <p>
-          Under the round icon at the top right - on this site, on your journals and in the editor. Account has your profile,
+          Under the round icon at the top right: on this site, on your journals and in the editor. Account has your profile,
           preferences, orders, and your data.
         </p>,
       },

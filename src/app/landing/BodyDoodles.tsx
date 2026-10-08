@@ -56,7 +56,10 @@ const load = (src: string) => {
   return loaded.get(src)!;
 };
 
-export function BodyDoodles() {
+/** `band`: the height in px kept plain at the top. The landing page leaves
+ *  the settings' band under its hero; the site's other pages (SitePage) have
+ *  no hero, and start the drawings straight away. */
+export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   const layer = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<Placed[]>([]);
   const [ink, setInk] = useState(bodyWallSettings().ink);
@@ -82,7 +85,7 @@ export function BodyDoodles() {
       const phone = width < PHONE_WIDTH;
       const keep = measure(holder, el);
       // Plain cream under the hero before the doodles begin.
-      const band = ((phone ? settings.bandMobile : settings.bandDesktop) / 100) * window.innerHeight;
+      const band = bandOverride ?? ((phone ? settings.bandMobile : settings.bandDesktop) / 100) * window.innerHeight;
       keep.push([0, 0, width, band]);
       const drawings = (
         await Promise.all(
@@ -151,7 +154,7 @@ export function BodyDoodles() {
       window.clearTimeout(timer);
       window.removeEventListener("load", start);
     };
-  }, []);
+  }, [bandOverride]);
 
   return (
     <div ref={layer} className={styles.bodyDoodles} aria-hidden="true">

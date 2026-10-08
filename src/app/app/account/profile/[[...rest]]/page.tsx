@@ -19,7 +19,7 @@ export default async function ProfilePage() {
           <h2>You&rsquo;re a guest</h2>
           <p className="acct-dim">
             Your journals are kept in this browser, and deleted after {GUEST_IDLE_DAYS} days unopened. Sign in to keep them
-            for good and use them anywhere - everything you made comes with you.
+            for good and use them anywhere. Everything you made comes with you.
           </p>
           <div>
             <Link href="/sign-in?redirect_url=%2Fapp%2Faccount%2Fprofile" className="acct-btn acct-primary">

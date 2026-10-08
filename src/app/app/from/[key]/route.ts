@@ -1,9 +1,10 @@
-// "Use this week" - a POST from the Layouts pages (/layouts and
-// /layouts/<key>, 2026-10-08). The landing page's own buttons came off
-// 2026-10-06 ("i dont want the 'use this week' button").
+// "Use this" - a POST from the Layouts pages (/layouts and /layouts/<key>,
+// 2026-10-08): a week, a month, a day or pages of modules. The landing
+// page's own buttons came off 2026-10-06 ("i dont want the 'use this week'
+// button").
 //
-// Makes a new journal whose weekly spread is that person's (see
-// planner/archetypeWeek.ts) and opens it in the editor. Someone who has
+// Makes a new journal laid out as that spread (see planner/archetypeWeek.ts)
+// and opens it in the editor. Someone who has
 // never used Memari becomes a guest here, the way "Continue as guest" makes
 // one (app/guest/route.ts): one press from a Layouts page to their own
 // copy of the week. POST only, for the same reason as that route - a GET
@@ -24,9 +25,8 @@ import {
 import { sweepIdleGuests } from "@/lib/guestSweep";
 import { prisma } from "@/lib/prisma";
 import { isTimeZone } from "@/lib/timeZone";
-import { PEOPLE_BY_KEY } from "@/app/landing/archetypes";
-import { STARTER_WEEK_BY_KEY } from "@/app/landing/starterLayouts";
-import { WeekUnavailable, createJournalFromWeek } from "@/app/planner/archetypeWeek";
+import { STARTER_BY_KEY, starterSpread } from "@/app/landing/starterLayouts";
+import { WeekUnavailable, createJournalFromSpread } from "@/app/planner/archetypeWeek";
 import { seedOwnerDefaultZone } from "@/app/planner/ownerSettings";
 
 export const runtime = "nodejs";
@@ -34,11 +34,11 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  const person = PEOPLE_BY_KEY[key];
-  // A week held for a read-through is not offered on the live site, so it
-  // cannot be made from there either.
-  if (!person || (person.held && process.env.NODE_ENV === "production")) {
-    return new Response("There is no such week.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  // Only what the gallery offers: a spread held for a read-through is not
+  // in it, so it cannot be made from here either.
+  const spread = starterSpread(key);
+  if (!spread) {
+    return new Response("There is no such layout.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
   const form = await request.formData().catch(() => null);
   const zone = form?.get("tz");
@@ -62,14 +62,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   await seedOwnerDefaultZone(owner.id, isTimeZone(zone) ? zone : null);
   let where: string;
   try {
-    const book = await createJournalFromWeek(owner.id, person, isTimeZone(zone) ? zone : null);
+    const book = await createJournalFromSpread(owner.id, spread, `${STARTER_BY_KEY[key].title} journal`, isTimeZone(zone) ? zone : null);
     where = `/app/j/${book.slug}`;
   } catch (error) {
     // A module the database has no type for yet: the start dialog, where
     // a journal can still be made, rather than an error page. Logged, since
     // it means production needs seeding.
     if (!(error instanceof WeekUnavailable)) throw error;
-    console.error(`[use this week] ${error.message}`);
+    console.error(`[use this] ${error.message}`);
     where = "/app";
   }
 
@@ -90,5 +90,5 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
  *  (STARTER_WEEKS; a week not in the gallery goes to the gallery). */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  return NextResponse.redirect(new URL(STARTER_WEEK_BY_KEY[key] ? `/layouts/${key}` : "/layouts", request.url), 303);
+  return NextResponse.redirect(new URL(STARTER_BY_KEY[key] ? `/layouts/${key}` : "/layouts", request.url), 303);
 }

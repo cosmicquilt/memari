@@ -24,7 +24,7 @@ export default async function DataPage() {
       <div className="acct-card">
         <h2>Your journals</h2>
         <p className="acct-dim">
-          Each one as a print-ready PDF, the whole book - yours to keep, print at home or take anywhere. No printer?{" "}
+          Each one as a print-ready PDF, the whole book, yours to keep, print at home or take anywhere. No printer?{" "}
           <Link href="/print" style={{ color: cream(0.85) }}>
             Find a library
           </Link>
@@ -85,7 +85,7 @@ export default async function DataPage() {
       <div className="acct-card" style={{ borderColor: "rgba(255, 143, 122, 0.28)" }}>
         <h2>{owner.guest ? "Delete your guest work" : "Delete your account"}</h2>
         <p className="acct-dim">
-          Deletes every journal, saved page and module, and calendar{owner.guest ? "" : ", and your account"}. It cannot be undone - download anything you want to keep first.
+          Deletes every journal, saved page and module, and calendar{owner.guest ? "" : ", and your account"}. It cannot be undone, so download anything you want to keep first.
         </p>
         <DeleteAccount guest={owner.guest} />
       </div>

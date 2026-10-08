@@ -52,7 +52,9 @@ export function SpreadPreview({ spreadKey, eager = false }: { spreadKey: string;
   return (
     <div ref={holder} className={styles.spreadPages}>
       {[0, 1].map((i) => (
-        <div key={i} className={styles.spreadPage}>
+        // Lighter paper than the page it sits on (2026-10-08: "the spread
+        // previews should be lighter ... not the background").
+        <div key={i} className={styles.spreadPage} style={{ background: "#fffcf6" }}>
           {spread && <PagePreview page={{ previewMarks: spread.pages[i].marks, pageWidthPx: 2175, pageHeightPx: 3075 }} />}
         </div>
       ))}

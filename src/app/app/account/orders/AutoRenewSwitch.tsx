@@ -44,7 +44,7 @@ export function AutoRenewSwitch({ orderId, on, renewsAt, days }: { orderId: stri
           <span style={{ width: 16, height: 16, borderRadius: 8, background: CREAM, display: "block" }} />
         </button>
         <span>
-          Auto-renew {value ? `on - the next ${days} days are ordered${when ? ` on ${when}` : ""}` : "off"}
+          Auto-renew {value ? `on: the next ${days} days are ordered${when ? ` on ${when}` : ""}` : "off"}
         </span>
       </label>
       {error && <span style={{ fontSize: 12, color: "#ff8a80" }}>{error}</span>}

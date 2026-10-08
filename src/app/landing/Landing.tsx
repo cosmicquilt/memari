@@ -68,7 +68,7 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
                   Memari makes <Hand>the rest.</Hand>
                 </h2>
                 <p className={styles.lede}>
-                  A planner is a handful of pages you design - not hundreds you draw by hand. Choose what repeats, build
+                  A planner is a handful of pages you design, not hundreds you draw by hand. Choose what repeats, build
                   each page from pieces, and the whole book comes out ready to print.
                 </p>
                 <Doodle kind="plane" seed={13} style={{ position: "relative", display: "block", marginTop: 36, width: 104 }} delay={0.5} />
@@ -85,7 +85,7 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
                   <Ink drawing={circleDrawing(31)} className={styles.circle} stretch delay={0.20} />
                 </span>
                 <h3>Choose what repeats</h3>
-                <p>A spread for every month, every week, a page for every day - or only the ones you want. Add pages at the front and back for goals and lists.</p>
+                <p>A spread for every month, every week, a page for every day, or only the ones you want. Add pages at the front and back for goals and lists.</p>
               </li>
               <li>
                 <span className={styles.stepNumber}>
@@ -116,7 +116,7 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
               Weeks, months and days. No two <Hand>alike.</Hand>
             </h2>
             <p className={styles.lede}>
-              Every spread here is a real Memari layout, made from modules in the catalogue - the same ones the journal
+              Every spread here is a real Memari layout, made from modules in the catalogue, the same ones the journal
               above is turning through.
             </p>
             <LayoutGallery />
@@ -145,7 +145,7 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
               <li>
                 <h3>US Letter at home</h3>
                 <p>
-                  The same design fits a sheet from your own printer - or your library&rsquo;s. <Link href="/print">Find one</Link>
+                  The same design fits a sheet from your own printer, or your library&rsquo;s. <Link href="/print">Find one</Link>
                 </p>
               </li>
               <li>

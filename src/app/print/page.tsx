@@ -70,20 +70,21 @@ export default function PrintPage() {
           <li>
             <h3>Actual size, both sides, long edge</h3>
             <p>
-              In the print settings choose Actual size or Scale 100% - never Fit to page. To print on both sides, flip on the long
-              edge, so the backs come out the right way up. Black and white is all it needs.
+              In the print settings choose Actual size or Scale 100%, never Fit to page. To print on both sides, flip on the long
+              edge: the backs come out the right way up, and in a binder each week&rsquo;s two pages face each other. Black and white
+              is all it needs.
             </p>
           </li>
           <li>
             <h3>Send it, print it, bind it</h3>
             <p>
-              Most libraries let you print from your phone - an upload page, an email address or a print station - and their
+              Most libraries let you print from your phone, by an upload page, an email address or a print station, and their
               printing page says which. A three-hole punch and a binder, or binder clips, hold it together.
             </p>
           </li>
         </ol>
         <p className={print.credit}>
-          Libraries: Institute of Museum and Library Services, Public Libraries Survey, fiscal year 2024 - central libraries and
+          Libraries: Institute of Museum and Library Services, Public Libraries Survey, fiscal year 2024: central libraries and
           branches, not bookmobiles. ZIP codes: U.S. Census Bureau, 2020 Gazetteer. Something wrong or missing? Write to{" "}
           <a href="mailto:hello@memari.studio" style={{ color: "inherit" }}>
             hello@memari.studio

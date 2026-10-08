@@ -400,7 +400,7 @@ export function calendarEvents(
 
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
 
-type Placed = { slug: string; page: 0 | 1; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; locked: boolean; props: Record<string, unknown> };
+export type Placed = { slug: string; page: 0 | 1; columnStart: number; rowStart: number; columnSpan: number; rowSpan: number; locked: boolean; props: Record<string, unknown> };
 type When = ReturnType<typeof weekOf>;
 
 /** A stack down the six-column sidebar from `row`. */
@@ -495,6 +495,17 @@ function placementsOf(def: HeroSpread, when: When): Placed[] {
     placed.push({ ...p, locked: false, props: rotate ? rotate(props, weekStartDay) : props });
   }
   return placed;
+}
+
+/**
+ * A spread's placements, for making a journal of it ("Use this", the
+ * Layouts pages): the same description the hero draws from, so the journal
+ * is the spread that was shown. Dated to a fixed week - a journal keeps only
+ * the modules, and the spine's SETTINGS (its hours, its month's ruling),
+ * never its dates or events. See planner/archetypeWeek.ts.
+ */
+export function spreadPlacements(def: HeroSpread): Placed[] {
+  return placementsOf(def, weekOf(new Date(Date.UTC(2026, 0, 5)), def.layout.weekStartsMonday, 0));
 }
 
 /**
