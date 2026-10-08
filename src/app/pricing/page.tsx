@@ -19,7 +19,7 @@ import site from "@/app/landing/site.module.css";
 // this page changes with it.
 
 export const metadata: Metadata = {
-  title: "Pricing - Memari Studio",
+  title: "Pricing - memari. STUDIO",
   description: "The editor and your print-ready PDF are free. A printed, bound book is priced for that book and shown in full before you pay.",
 };
 

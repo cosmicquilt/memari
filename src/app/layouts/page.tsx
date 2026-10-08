@@ -19,7 +19,7 @@ import site from "@/app/landing/site.module.css";
 // says nothing about who used them.
 
 export const metadata: Metadata = {
-  title: "Layouts - Memari Studio",
+  title: "Layouts - memari. STUDIO",
   description:
     "Planner layouts to start from: weekly spreads for students, shift work, teachers, parents, ADHD and more, monthly spreads, daily pages and pages of modules. Each one yours to change, dated and ready to print.",
 };

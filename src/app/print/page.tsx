@@ -17,7 +17,7 @@ import print from "./print.module.css";
 // as it goes, with "call ahead".
 
 export const metadata: Metadata = {
-  title: "Print it yourself - Memari Studio",
+  title: "Print it yourself - memari. STUDIO",
   description: "No printer? Find the public libraries near you, and print your planner so the quarter-inch grid comes out the right size.",
 };
 

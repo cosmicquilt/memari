@@ -14,7 +14,7 @@ import site from "@/app/landing/site.module.css";
 // and every answer is in the page for search.
 
 export const metadata: Metadata = {
-  title: "Help & FAQ - Memari Studio",
+  title: "Help & FAQ - memari. STUDIO",
   description: "How Memari works: accounts and guests, designing pages, printing at home, ordering a bound book, renewals, and your data.",
 };
 

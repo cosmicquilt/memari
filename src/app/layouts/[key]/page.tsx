@@ -40,7 +40,7 @@ export async function generateMetadata({
   const starter = STARTER_BY_KEY[(await params).key];
   if (!starter) return {};
   return {
-    title: `${starter.title} ${KIND_NAME[starter.kind]} - Memari Studio`,
+    title: `${starter.title} ${KIND_NAME[starter.kind]} - memari. STUDIO`,
     description:
       starter.kind === "pages"
         ? `${starter.line} Printable planner pages you can change, at the front of your book.`

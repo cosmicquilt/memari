@@ -19,7 +19,7 @@ import site from "@/app/landing/site.module.css";
 // note is his to write.
 
 export const metadata: Metadata = {
-  title: "About - Memari Studio",
+  title: "About - memari. STUDIO",
   description: "Why Memari exists: design your planner once, let the repetition be done for you, and keep your days on paper.",
 };
 

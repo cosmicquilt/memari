@@ -17,7 +17,7 @@ import { currentOwner, signInPath } from "@/lib/owner";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { AccountNav } from "./AccountNav";
 
-export const metadata: Metadata = { title: "Account - Memari Studio", robots: { index: false } };
+export const metadata: Metadata = { title: "Account - memari. STUDIO", robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {

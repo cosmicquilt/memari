@@ -16,7 +16,7 @@ import { LegalPage, Summary, H2, P, UL, LI, LEGAL_CONTACT, LEGAL_ENTITY } from "
 //     guest mode will meet it.
 
 export const metadata: Metadata = {
-  title: "Terms — Memari Studio",
+  title: "Terms — memari. STUDIO",
   description: "The terms for using Memari Studio: your work stays yours, and what we each promise.",
 };
 

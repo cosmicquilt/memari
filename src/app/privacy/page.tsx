@@ -38,7 +38,7 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 // If any of that changes, this page changes in the same commit.
 
 export const metadata: Metadata = {
-  title: "Privacy — Memari Studio",
+  title: "Privacy — memari. STUDIO",
   description: "What Memari Studio collects, what it does not, and how long anything is kept.",
 };
 

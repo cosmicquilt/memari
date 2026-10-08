@@ -77,7 +77,7 @@ const almarai = Almarai({
 });
 
 export const metadata: Metadata = {
-  title: "Memari Studio",
+  title: "memari. STUDIO",
   description: "Build and print your own planner.",
 };
 
