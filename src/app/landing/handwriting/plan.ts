@@ -31,6 +31,7 @@ import type { Face, Hand, Pen } from "../archetypes";
 import { HERO_BY_KEY, type FillFamily, type HeroSpread, type Mark, type MarkKind } from "../heroSpreads";
 import { BAND_PATTERNS, BANDED_PATTERNS, CENTRED_PATTERNS, KOLAM_PATTERNS, MEXICAN_PATTERNS, RUN_PATTERNS, SOUTHWEST_PATTERNS, SQUARE_PATTERNS, STROKE_PATTERNS, TILE_PATTERNS, WESTERN_PATTERNS, WHOLE_PATTERNS, pattern, type PatternHand, type PatternName } from "./patterns";
 import { rng } from "./rng";
+import { hasTiles, placeTile, type Placement } from "./tiles";
 
 export type { Pen };
 
@@ -38,7 +39,9 @@ export type InkItem =
   | { kind: "strokes"; page: 0 | 1; paths: Path[]; pen: Pen; pause?: number }
   | { kind: "glyphs"; page: 0 | 1; run: GlyphRun; pause?: number }
   /** A drawn doodle (art.ts) in a box, print px. */
-  | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; angle?: number; pen: Pen; pause?: number };
+  | { kind: "art"; page: 0 | 1; art: ArtRef; box: [number, number, number, number]; angle?: number; pen: Pen; pause?: number }
+  /** A cell's part of one of Flow's pattern drawings (tiles.ts). */
+  | { kind: "tile"; page: 0 | 1; place: Placement; round?: boolean; pen: Pen; pause?: number };
 
 const ink = (color: string, width: number): Pen => ({ color, width, kind: "ink" });
 const marker = (color: string, width: number): Pen => ({ color, width, kind: "marker" });
@@ -856,7 +859,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     };
     const inset = (c: Box): Box => (round ? c : [c[0] + c[2] * 0.08, c[1] + c[3] * 0.08, c[2] * 0.84, c[3] * 0.84]);
     if (round) {
-      cells.forEach((c, i) => drawPattern(page, c, nextPattern(), penFor(i), { round, hand: handAt(c) }));
+      cells.forEach((c, i) => drawPattern(page, c, nextPattern(), penFor(i), { round, hand: handAt(c), use: "single" }));
       return;
     }
     // The module's columns and rows, from all its cells.
@@ -872,7 +875,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       for (const cell of cells) {
         const row = at(cell)[1];
         const world = banded ? boundOf(all.filter((a) => Math.abs(a[1] - cell[1]) <= 4)) : boundOf(all);
-        drawPattern(page, inset(cell), name, pen, { seed: banded ? seed + row : seed, hand: handAt(cell), world, grid: banded ? [xs.length, 1] : [xs.length, ys.length] });
+        drawPattern(page, inset(cell), name, pen, { seed: banded ? seed + row : seed, hand: handAt(cell), world, grid: banded ? [xs.length, 1] : [xs.length, ys.length], use: banded ? "band" : "whole" });
       }
       return;
     }
@@ -880,12 +883,23 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const kind = block.cells.length === 1 ? "single" : block.grid[1] > 1 ? (block.cells.length > 4 ? "big-square" : "square") : "run";
       const name = nextPattern(kind);
       const seed = nextSeed();
+      const use = kind === "single" ? "single" : kind === "run" ? (BANDED_PATTERNS.includes(name) ? "band" : "run") : "block";
       for (const cell of block.cells) {
-        drawPattern(page, inset(cell), name, penFor(i), { seed, hand: handAt(block.cells[0]), ...(block.cells.length > 1 ? { world: block.world, grid: block.grid } : {}) });
+        drawPattern(page, inset(cell), name, penFor(i), { seed, hand: handAt(block.cells[0]), use, ...(block.cells.length > 1 ? { world: block.world, grid: block.grid } : {}) });
       }
     });
   }
-  function drawPattern(page: 0 | 1, box: Box, name: PatternName, pen: Pen, { round = false, seed = nextSeed(), hand: drawHand = style.hand, world, grid, unit }: { round?: boolean; seed?: number; hand?: PatternHand; world?: Box; grid?: [number, number]; unit?: number } = {}) {
+  /**
+   * A pattern into a cell: Flow's drawing of it, its part for this cell
+   * (tiles.ts) - `use` is how the cells are being drawn - or, where there
+   * is no drawing (hatching, dashes) or no `use`, drawn by code.
+   */
+  function drawPattern(page: 0 | 1, box: Box, name: PatternName, pen: Pen, { round = false, seed = nextSeed(), hand: drawHand = style.hand, world, grid, unit, use }: { round?: boolean; seed?: number; hand?: PatternHand; world?: Box; grid?: [number, number]; unit?: number; use?: "single" | "run" | "block" | "whole" | "band" } = {}) {
+    const place = use ? placeTile(name, use, box, world ?? null, grid ?? null, seed) : null;
+    if (place) {
+      items.push({ kind: "tile", page, place, round, pen });
+      return;
+    }
     const paths = pattern(name, box, seed, drawHand, { round, world, grid, unit });
     if (paths.length) items.push({ kind: "strokes", page, paths, pen: finePen(pen, Math.min(box[2], box[3])) });
   }
@@ -927,12 +941,12 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       case "dashes":
         return drawPattern(page, [x + w * 0.1, y + h * 0.1, w * 0.8, h * 0.8], mark, pen, { round });
       case "pattern":
-        return drawPattern(page, round ? box : [x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84], nextPattern(), pen, { round });
+        return drawPattern(page, round ? box : [x + w * 0.08, y + h * 0.08, w * 0.84, h * 0.84], nextPattern(), pen, { round, use: "single" });
     }
   }
   /** A meter's bars filled along, cell by cell up to the last: each row's
    *  run of cells as one - hatched, dashed, patterned or coloured. */
-  function fillBars(page: 0 | 1, cells: Box[], mark: Mark) {
+  function fillBars(page: 0 | 1, cells: Box[], mark: Mark, region0: Extract<Region, { kind: "box" }>) {
     const runs: Box[] = [];
     for (const [x, y, w, h] of cells) {
       const last = runs[runs.length - 1];
@@ -941,6 +955,18 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     }
     // One pattern all the way along, as a bar is one thing.
     const name = mark === "pattern" ? nextPattern("band") : null;
+    if (name && hasTiles(name)) {
+      // Flow's drawing of it, a cell of the bar at a time, run on along
+      // each row (tiles.ts starts it again only at a cell's edge).
+      const seed = nextSeed();
+      runs.forEach((run, i) => {
+        const row = cells.filter((c) => Math.abs(c[1] - run[1]) < 3 && c[0] >= run[0] - 1 && c[0] < run[0] + run[2]);
+        const all = region0.cells.filter((c) => Math.abs(c[1] - run[1]) < 3);
+        const world = boundOf(all);
+        for (const cell of row) drawPattern(page, [cell[0], cell[1] + cell[3] * 0.14, cell[2], cell[3] * 0.72], name, penFor(i), { seed: seed + i, world, grid: [all.length, 1], use: "band" });
+      });
+      return;
+    }
     runs.forEach((run, i) => {
       const [x, y, w, h] = run;
       const inner: Box = [x + 2, y + h * 0.14, w - 4, h * 0.72];
@@ -1137,7 +1163,7 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
       const upTo = fill ?? (/no-spend/.test(region.slug) ? r.int(4, 12) : r.int(Math.round(region.cells.length * 0.12), Math.round(region.cells.length * 0.45)));
       const cells = region.cells.slice(0, upTo);
       if (region.ticked) {
-        fillBars(page, cells, markFor("bar", region.slug));
+        fillBars(page, cells, markFor("bar", region.slug), region);
         return;
       }
       const round = cells.length > 0 && Math.abs(cells[0][2] - cells[0][3]) < 4 && cells[0][2] < 60;

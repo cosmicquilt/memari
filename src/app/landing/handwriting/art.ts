@@ -329,3 +329,93 @@ export function revealTo(a: ArtSprite, reach: number) {
   s.drawImage(m.canvas, 0, 0);
   s.globalCompositeOperation = "source-over";
 }
+
+// ------------------------------------------------------------ pattern tiles
+
+const tileImages = new Map<string, Promise<HTMLImageElement | null>>();
+function loadTile(id: string): Promise<HTMLImageElement | null> {
+  let p = tileImages.get(id);
+  if (!p) {
+    p = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = `/landing/patterns/${id}.webp`;
+    });
+    tileImages.set(id, p);
+  }
+  return p;
+}
+
+/**
+ * A cell's part of one of Flow's pattern drawings (tiles.ts), ready to draw:
+ * that part of the drawing at the page canvas's scale - cut to an ellipse
+ * for a round cell - in the pen's colour, brought up to a pen's weight (a
+ * drawing scaled down to a cell thins its lines), at the cell's own flow of
+ * ink; and revealed row by row, back and forth, the way a hand fills a cell.
+ */
+export async function prepareTile(place: { id: string; src: [number, number, number, number]; dest: [number, number, number, number] }, color: string, round: boolean, scale: number, seed: number): Promise<ArtSprite | null> {
+  const img = await loadTile(place.id);
+  if (!img) return null;
+  const [dx, dy, dw, dh] = place.dest;
+  const [sx, sy, sw, sh] = place.src;
+  const pad = 2;
+  const [w, h] = [Math.max(1, dw * scale), Math.max(1, dh * scale)];
+  const sprite = canvas(w + pad * 2, h + pad * 2);
+  const g = sprite.getContext("2d", { willReadFrequently: true })!;
+  g.imageSmoothingQuality = "high";
+  if (round) {
+    g.beginPath();
+    g.ellipse(pad + w / 2, pad + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    g.clip();
+  }
+  // The window, clamped to the drawing: where it runs past an edge, that
+  // part of the cell stays empty.
+  const [x0, y0] = [Math.max(0, sx), Math.max(0, sy)];
+  const [x1, y1] = [Math.min(img.width, sx + sw), Math.min(img.height, sy + sh)];
+  if (x1 > x0 && y1 > y0) {
+    const [kx, ky] = [w / sw, h / sh];
+    // Drawn three times a shade apart: shrunk to a cell, a drawing's lines
+    // come out finer than the pen's, and this gives them its weight back.
+    const lift = Math.max(0.35, Math.min(0.8, 0.9 - kx * 1.5));
+    for (const [ox, oy] of [[0, 0], [lift, 0], [0, lift]]) {
+      g.drawImage(img, x0, y0, x1 - x0, y1 - y0, pad + ox + (x0 - sx) * kx, pad + oy + (y0 - sy) * ky, (x1 - x0) * kx, (y1 - y0) * ky);
+    }
+  }
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = color;
+  g.fillRect(0, 0, sprite.width, sprite.height);
+  g.globalCompositeOperation = "source-over";
+  toPenWeight(g, sprite.width, sprite.height);
+  // The cell's own flow of ink: a little more or less than its neighbours.
+  const flow = 0.8 + 0.2 * ((Math.sin(seed * 12.9898) * 43758.5453) % 1 + 1) % 1;
+  g.globalCompositeOperation = "destination-in";
+  g.fillStyle = `rgba(0, 0, 0, ${flow.toFixed(3)})`;
+  g.fillRect(0, 0, sprite.width, sprite.height);
+  g.globalCompositeOperation = "source-over";
+  // Revealed in rows, back and forth: wide enough to cover each row.
+  const rows = Math.max(1, Math.min(4, Math.round(h / 22)));
+  const rowH = (h + pad * 2) / rows;
+  const half = Math.max(1, (rowH * 1.25 - 3) / 3.4);
+  const paths: number[][] = [];
+  const cum: number[][] = [];
+  let length = 0;
+  for (let r = 0; r < rows; r++) {
+    const yy = (r + 0.5) * rowH;
+    const [a, b] = r % 2 ? [sprite.width, 0] : [0, sprite.width];
+    paths.push([a, yy, half, b, yy, half]);
+    cum.push([length, length + sprite.width]);
+    length += sprite.width;
+  }
+  return {
+    sprite,
+    x: dx * scale - pad,
+    y: dy * scale - pad,
+    mask: canvas(sprite.width, sprite.height).getContext("2d")!,
+    shown: canvas(sprite.width, sprite.height).getContext("2d")!,
+    paths,
+    cum,
+    length: Math.max(1, length),
+    masked: 0,
+  };
+}

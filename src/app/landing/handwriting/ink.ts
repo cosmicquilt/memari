@@ -25,7 +25,8 @@ import { getStroke } from "perfect-freehand";
 import { noise1, rng as makeRng } from "./rng";
 import { glyphBounds, paintGlyph, spriteOf, type Glyph, type GlyphRun } from "./glyphs";
 import { FEEL, grainAt } from "./paperInk";
-import { prepareArt, revealTo, type ArtRef, type ArtSprite } from "./art";
+import { prepareArt, prepareTile, revealTo, type ArtRef, type ArtSprite } from "./art";
+import type { Placement } from "./tiles";
 import type { InkItem, Pen } from "./plan";
 
 export type TimedStroke = {
@@ -152,7 +153,9 @@ export type TimedGlyph = {
 export type TimedArt = {
   kind: "art";
   page: 0 | 1;
-  ref: ArtRef;
+  /** A drawing from the doodle library - or, for a pattern cell, `tile`. */
+  ref: ArtRef | null;
+  tile?: { place: Placement; color: string; round: boolean };
   box: [number, number, number, number];
   /** Turned by this much, radians, about the box's middle. */
   angle: number;
@@ -234,6 +237,18 @@ export function inkTimeline(items: InkItem[], targetSeconds: number, seed = 1): 
       t += d;
       down += d;
       out.push({ kind: "art", page: item.page, ref: item.art, box: item.box, angle: item.angle ?? 0, seed: r.int(1, 1e9), t0, t1: t, drawn: 0, done: false, art: null });
+      last = [x + w, y + h];
+      continue;
+    }
+    if (item.kind === "tile") {
+      // A cell of a drawn pattern: as long as a pen takes to fill it.
+      const [x, y, w, h] = item.place.dest;
+      lift(x, y, itemPause);
+      const t0 = t;
+      const d = Math.max(0.12, ((w + h) * 2.2) / (SPEED[item.pen.kind] * r.range(0.85, 1.15)));
+      t += d;
+      down += d;
+      out.push({ kind: "art", page: item.page, ref: null, tile: { place: item.place, color: item.pen.color, round: item.round ?? false }, box: item.place.dest, angle: 0, seed: r.int(1, 1e9), t0, t1: t, drawn: 0, done: false, art: null });
       last = [x + w, y + h];
       continue;
     }
@@ -666,7 +681,7 @@ function chiselSwipe(ctx: CanvasRenderingContext2D, points: number[][], nib: num
 export async function prepareInk(timeline: Timed[], scale: number) {
   // The drawn doodles: fetched together, then each drawn into its sprite.
   const arts = timeline.filter((s): s is TimedArt => s.kind === "art");
-  const made = await Promise.all(arts.map((a) => prepareArt(a.ref, a.box, scale, a.seed, a.angle)));
+  const made = await Promise.all(arts.map((a) => (a.tile ? prepareTile(a.tile.place, a.tile.color, a.tile.round, scale, a.seed) : a.ref ? prepareArt(a.ref, a.box, scale, a.seed, a.angle) : null)));
   arts.forEach((a, i) => (a.art = made[i]));
   const glyphs = timeline.filter((s): s is TimedGlyph => s.kind === "glyph");
   let at = 0;

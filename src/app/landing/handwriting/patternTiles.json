@@ -1,0 +1,708 @@
+[
+ {
+  "id": "rings-block-1",
+  "pattern": "rings",
+  "kind": "block",
+  "w": 431,
+  "h": 431,
+  "src": "Concentric_rings_hand_drawn_design_20261007202541.jpg"
+ },
+ {
+  "id": "rings-block-2",
+  "pattern": "rings",
+  "kind": "block",
+  "w": 431,
+  "h": 431,
+  "src": "Concentric_rings_hand_drawn_design_20261007202541.jpg"
+ },
+ {
+  "id": "rings-block-3",
+  "pattern": "rings",
+  "kind": "block",
+  "w": 430,
+  "h": 430,
+  "src": "Concentric_rings_hand_drawn_design_20261007202541.jpg"
+ },
+ {
+  "id": "rings-block-4",
+  "pattern": "rings",
+  "kind": "block",
+  "w": 430,
+  "h": 430,
+  "src": "Concentric_rings_hand_drawn_design_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-field-1",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 490,
+  "h": 492,
+  "src": "Drawing_black_ink_grid_pattern_20261007202541.jpg",
+  "periodX": 70.0,
+  "periodY": 70.0
+ },
+ {
+  "id": "kolam-lattice-field-2",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 492,
+  "h": 489,
+  "src": "Drawing_black_ink_grid_pattern_20261007202541.jpg",
+  "periodX": 98.4,
+  "periodY": 98.4
+ },
+ {
+  "id": "kolam-lattice-field-3",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 492,
+  "h": 492,
+  "src": "Drawing_black_ink_grid_pattern_20261007202541.jpg",
+  "periodX": 75.7,
+  "periodY": 75.7
+ },
+ {
+  "id": "kolam-lattice-field-4",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 490,
+  "h": 493,
+  "src": "Drawing_black_ink_grid_pattern_20261007202541.jpg",
+  "periodX": 70.0,
+  "periodY": 70.0
+ },
+ {
+  "id": "scales-field-1",
+  "pattern": "scales",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_Japanese_wave_pattern\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-block-1",
+  "pattern": "talavera",
+  "kind": "block",
+  "w": 412,
+  "h": 408,
+  "src": "Hand-drawn_Talavera_tile_design_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-block-2",
+  "pattern": "talavera",
+  "kind": "block",
+  "w": 414,
+  "h": 407,
+  "src": "Hand-drawn_Talavera_tile_design_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-block-3",
+  "pattern": "talavera",
+  "kind": "block",
+  "w": 411,
+  "h": 408,
+  "src": "Hand-drawn_Talavera_tile_design_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-block-4",
+  "pattern": "talavera",
+  "kind": "block",
+  "w": 412,
+  "h": 409,
+  "src": "Hand-drawn_Talavera_tile_design_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-field-1",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541.jpg",
+  "periodX": 213.3,
+  "periodY": 213.3
+ },
+ {
+  "id": "talavera-field-2",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541_2.jpg",
+  "periodX": 195.2,
+  "periodY": 195.2
+ },
+ {
+  "id": "talavera-field-3",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541_2.jpg",
+  "periodX": 195.2,
+  "periodY": 195.2
+ },
+ {
+  "id": "talavera-field-4",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541_2.jpg",
+  "periodX": 195.2,
+  "periodY": 195.2
+ },
+ {
+  "id": "talavera-field-5",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541_2.jpg",
+  "periodX": 195.2,
+  "periodY": 195.2
+ },
+ {
+  "id": "talavera-field-6",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_Talavera_tile_pattern_20261007202541_3.jpg",
+  "periodX": 106.7,
+  "periodY": 106.7
+ },
+ {
+  "id": "otomi-block-1",
+  "pattern": "otomi",
+  "kind": "block",
+  "w": 354,
+  "h": 372,
+  "src": "Hand-drawn_Tenango_floral_design_20261007202541.jpg"
+ },
+ {
+  "id": "otomi-block-2",
+  "pattern": "otomi",
+  "kind": "block",
+  "w": 369,
+  "h": 351,
+  "src": "Hand-drawn_Tenango_floral_design_20261007202541.jpg"
+ },
+ {
+  "id": "otomi-block-3",
+  "pattern": "otomi",
+  "kind": "block",
+  "w": 344,
+  "h": 338,
+  "src": "Hand-drawn_Tenango_floral_design_20261007202541.jpg"
+ },
+ {
+  "id": "otomi-block-4",
+  "pattern": "otomi",
+  "kind": "block",
+  "w": 339,
+  "h": 343,
+  "src": "Hand-drawn_Tenango_floral_design_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-block-1",
+  "pattern": "bandana",
+  "kind": "block",
+  "w": 377,
+  "h": 376,
+  "src": "Hand-drawn_bandana_design_scan_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-block-2",
+  "pattern": "bandana",
+  "kind": "block",
+  "w": 379,
+  "h": 378,
+  "src": "Hand-drawn_bandana_design_scan_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-block-3",
+  "pattern": "bandana",
+  "kind": "block",
+  "w": 450,
+  "h": 448,
+  "src": "Hand-drawn_bandana_design_scan_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-block-4",
+  "pattern": "bandana",
+  "kind": "block",
+  "w": 348,
+  "h": 349,
+  "src": "Hand-drawn_bandana_design_scan_20261007202541.jpg"
+ },
+ {
+  "id": "scales-strip-1",
+  "pattern": "scales",
+  "kind": "strip",
+  "w": 1336,
+  "h": 72,
+  "src": "Hand-drawn_black_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "serape-strip-1",
+  "pattern": "serape",
+  "kind": "strip",
+  "w": 1336,
+  "h": 118,
+  "src": "Hand-drawn_black_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "waves-strip-1",
+  "pattern": "waves",
+  "kind": "strip",
+  "w": 1336,
+  "h": 91,
+  "src": "Hand-drawn_black_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-strip-1",
+  "pattern": "talavera",
+  "kind": "strip",
+  "w": 1336,
+  "h": 102,
+  "src": "Hand-drawn_black_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "crosshatch-field-1",
+  "pattern": "crosshatch",
+  "kind": "field",
+  "w": 444,
+  "h": 444,
+  "src": "Hand-drawn_black_ink_cross-hatch\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "crosshatch-field-2",
+  "pattern": "crosshatch",
+  "kind": "field",
+  "w": 337,
+  "h": 337,
+  "src": "Hand-drawn_black_ink_cross-hatch\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "crosshatch-field-3",
+  "pattern": "crosshatch",
+  "kind": "field",
+  "w": 375,
+  "h": 442,
+  "src": "Hand-drawn_black_ink_cross-hatch\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "crosshatch-field-4",
+  "pattern": "crosshatch",
+  "kind": "field",
+  "w": 337,
+  "h": 337,
+  "src": "Hand-drawn_black_ink_cross-hatch\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-field-5",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 490,
+  "h": 491,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541.jpg",
+  "periodX": 81.8,
+  "periodY": 81.8
+ },
+ {
+  "id": "kolam-lattice-field-6",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 493,
+  "h": 489,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541.jpg",
+  "periodX": 82.2,
+  "periodY": 82.2
+ },
+ {
+  "id": "kolam-lattice-field-7",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 492,
+  "h": 492,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541.jpg",
+  "periodX": 139.4,
+  "periodY": 139.4
+ },
+ {
+  "id": "kolam-lattice-field-8",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 490,
+  "h": 488,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541.jpg",
+  "periodX": 70.0,
+  "periodY": 70.0
+ },
+ {
+  "id": "kolam-lattice-field-9",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_2.jpg",
+  "periodX": 53.3,
+  "periodY": 53.3
+ },
+ {
+  "id": "kolam-lattice-field-10",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 423,
+  "h": 422,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_3.jpg",
+  "periodX": 106.0,
+  "periodY": 106.0
+ },
+ {
+  "id": "kolam-lattice-field-11",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 393,
+  "h": 421,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_3.jpg",
+  "periodX": 106.0,
+  "periodY": 106.0
+ },
+ {
+  "id": "kolam-lattice-field-12",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 388,
+  "h": 424,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_3.jpg",
+  "periodX": 84.6,
+  "periodY": 84.6
+ },
+ {
+  "id": "kolam-lattice-field-13",
+  "pattern": "kolam-lattice",
+  "kind": "field",
+  "w": 423,
+  "h": 429,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_3.jpg",
+  "periodX": 77.1,
+  "periodY": 77.1
+ },
+ {
+  "id": "scales-field-2",
+  "pattern": "scales",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_4.jpg"
+ },
+ {
+  "id": "waves-field-1",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_5.jpg"
+ },
+ {
+  "id": "waves-field-2",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_5.jpg"
+ },
+ {
+  "id": "waves-field-3",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_5.jpg"
+ },
+ {
+  "id": "waves-field-4",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_5.jpg"
+ },
+ {
+  "id": "waves-field-5",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_6.jpg"
+ },
+ {
+  "id": "waves-field-6",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_black_ink_pattern_20261007202541_7.jpg"
+ },
+ {
+  "id": "stepped-diamond-field-1",
+  "pattern": "stepped-diamond",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_geometric_pattern_on_\u2026_20261007202541.jpg",
+  "periodX": 193.9,
+  "periodY": 193.9
+ },
+ {
+  "id": "stepped-diamond-block-1",
+  "pattern": "stepped-diamond",
+  "kind": "block",
+  "w": 342,
+  "h": 340,
+  "src": "Hand-drawn_geometric_weaving_design_20261007202541.jpg"
+ },
+ {
+  "id": "stepped-diamond-block-2",
+  "pattern": "stepped-diamond",
+  "kind": "block",
+  "w": 408,
+  "h": 417,
+  "src": "Hand-drawn_geometric_weaving_design_20261007202541.jpg"
+ },
+ {
+  "id": "stepped-diamond-block-3",
+  "pattern": "stepped-diamond",
+  "kind": "block",
+  "w": 339,
+  "h": 358,
+  "src": "Hand-drawn_geometric_weaving_design_20261007202541.jpg"
+ },
+ {
+  "id": "stepped-diamond-block-4",
+  "pattern": "stepped-diamond",
+  "kind": "block",
+  "w": 399,
+  "h": 422,
+  "src": "Hand-drawn_geometric_weaving_design_20261007202541.jpg"
+ },
+ {
+  "id": "rope-strip-1",
+  "pattern": "rope",
+  "kind": "strip",
+  "w": 1336,
+  "h": 118,
+  "src": "Hand-drawn_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "greca-strip-1",
+  "pattern": "greca",
+  "kind": "strip",
+  "w": 1336,
+  "h": 132,
+  "src": "Hand-drawn_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "terraces-strip-1",
+  "pattern": "terraces",
+  "kind": "strip",
+  "w": 1336,
+  "h": 128,
+  "src": "Hand-drawn_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-strip-1",
+  "pattern": "kolam-lattice",
+  "kind": "strip",
+  "w": 1336,
+  "h": 148,
+  "src": "Hand-drawn_ink_border_bands_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-block-1",
+  "pattern": "kolam-lattice",
+  "kind": "block",
+  "w": 415,
+  "h": 422,
+  "src": "Hand-drawn_kolam_dot_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-block-2",
+  "pattern": "kolam-lattice",
+  "kind": "block",
+  "w": 414,
+  "h": 423,
+  "src": "Hand-drawn_kolam_dot_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-block-3",
+  "pattern": "kolam-lattice",
+  "kind": "block",
+  "w": 381,
+  "h": 376,
+  "src": "Hand-drawn_kolam_dot_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "kolam-lattice-block-4",
+  "pattern": "kolam-lattice",
+  "kind": "block",
+  "w": 393,
+  "h": 422,
+  "src": "Hand-drawn_kolam_dot_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-paisley-block-1",
+  "pattern": "bandana-paisley",
+  "kind": "block",
+  "w": 340,
+  "h": 341,
+  "src": "Hand-drawn_paisley_bandana_design_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-paisley-block-2",
+  "pattern": "bandana-paisley",
+  "kind": "block",
+  "w": 337,
+  "h": 340,
+  "src": "Hand-drawn_paisley_bandana_design_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-paisley-block-3",
+  "pattern": "bandana-paisley",
+  "kind": "block",
+  "w": 342,
+  "h": 340,
+  "src": "Hand-drawn_paisley_bandana_design_20261007202541.jpg"
+ },
+ {
+  "id": "bandana-paisley-block-4",
+  "pattern": "bandana-paisley",
+  "kind": "block",
+  "w": 338,
+  "h": 341,
+  "src": "Hand-drawn_paisley_bandana_design_20261007202541.jpg"
+ },
+ {
+  "id": "dunes-field-1",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "dunes-field-2",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 423,
+  "h": 424,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_2.jpg"
+ },
+ {
+  "id": "dunes-field-3",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 424,
+  "h": 422,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_2.jpg"
+ },
+ {
+  "id": "dunes-field-4",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 423,
+  "h": 423,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_2.jpg"
+ },
+ {
+  "id": "dunes-field-5",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 423,
+  "h": 424,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_2.jpg"
+ },
+ {
+  "id": "dunes-field-6",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_3.jpg"
+ },
+ {
+  "id": "dunes-field-7",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_4.jpg"
+ },
+ {
+  "id": "dunes-field-8",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_4.jpg"
+ },
+ {
+  "id": "dunes-field-9",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_4.jpg"
+ },
+ {
+  "id": "dunes-field-10",
+  "pattern": "dunes",
+  "kind": "field",
+  "w": 488,
+  "h": 488,
+  "src": "Hand-drawn_sand_dune_pattern_20261007202541_4.jpg"
+ },
+ {
+  "id": "scales-field-3",
+  "pattern": "scales",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_seigaiha_pattern_on_p\u2026_20261007202541.jpg"
+ },
+ {
+  "id": "scales-field-4",
+  "pattern": "scales",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_seigaiha_pattern_on_p\u2026_20261007202541_2.jpg"
+ },
+ {
+  "id": "serape-field-1",
+  "pattern": "serape",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_serape_pattern_on_paper_20261007202541.jpg"
+ },
+ {
+  "id": "waves-field-7",
+  "pattern": "waves",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand-drawn_wavy_lines_pattern_20261007202541.jpg"
+ },
+ {
+  "id": "talavera-field-7",
+  "pattern": "talavera",
+  "kind": "field",
+  "w": 640,
+  "h": 640,
+  "src": "Hand_drawing_black_ink_pattern_20261007202541.jpg",
+  "periodX": 182.9,
+  "periodY": 182.9
+ }
+]
