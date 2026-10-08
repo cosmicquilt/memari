@@ -25,7 +25,8 @@ import {
 import { sweepIdleGuests } from "@/lib/guestSweep";
 import { prisma } from "@/lib/prisma";
 import { isTimeZone } from "@/lib/timeZone";
-import { STARTER_BY_KEY, starterSpread } from "@/app/landing/starterLayouts";
+import { STARTER_BY_KEY } from "@/app/landing/starterLayouts";
+import { resolveLayout } from "@/app/landing/similarLayouts";
 import { WeekUnavailable, createJournalFromSpread } from "@/app/planner/archetypeWeek";
 import { seedOwnerDefaultZone } from "@/app/planner/ownerSettings";
 
@@ -34,10 +35,11 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  // Only what the gallery offers: a spread held for a read-through is not
-  // in it, so it cannot be made from here either.
-  const spread = starterSpread(key);
-  if (!spread) {
+  // Only what the gallery offers - a layout or one of its similar layouts
+  // ("student~2", similarLayouts.ts). A spread held for a read-through is
+  // not in it, so it cannot be made from here either.
+  const layout = resolveLayout(key);
+  if (!layout) {
     return new Response("There is no such layout.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
   const form = await request.formData().catch(() => null);
@@ -62,7 +64,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   await seedOwnerDefaultZone(owner.id, isTimeZone(zone) ? zone : null);
   let where: string;
   try {
-    const book = await createJournalFromSpread(owner.id, spread, `${STARTER_BY_KEY[key].title} journal`, isTimeZone(zone) ? zone : null);
+    const book = await createJournalFromSpread(owner.id, layout.def, `${layout.title} journal`, isTimeZone(zone) ? zone : null);
     where = `/app/j/${book.slug}`;
   } catch (error) {
     // A module the database has no type for yet: the start dialog, where
@@ -90,5 +92,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
  *  (STARTER_WEEKS; a week not in the gallery goes to the gallery). */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   const { key } = await params;
-  return NextResponse.redirect(new URL(STARTER_BY_KEY[key] ? `/layouts/${key}` : "/layouts", request.url), 303);
+  const base = key.split("~")[0];
+  return NextResponse.redirect(new URL(STARTER_BY_KEY[base] ? `/layouts/${base}` : "/layouts", request.url), 303);
 }

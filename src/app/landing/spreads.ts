@@ -592,6 +592,16 @@ function buildSpread(def: HeroSpread, when: When): LandingSpread {
   return { key: def.key, fontFamily, pages };
 }
 
+/**
+ * A layout as the Layouts gallery shows it: what printing it gives you, with
+ * nothing of the person's - no calendar blocks in the hours, and no regions
+ * for the hand to write in. Dated to this week.
+ */
+export function layoutPreview(def: HeroSpread, today = new Date()): LandingSpread {
+  const built = buildSpread({ ...def, calendar: [] }, weekOf(today, def.layout.weekStartsMonday, 0));
+  return { ...built, pages: [{ marks: built.pages[0].marks, regions: [] }, { marks: built.pages[1].marks, regions: [] }] };
+}
+
 /** The base week, for the loose sheets on the hero's desk (heroExtras.ts,
  *  BASE_SPREAD) - undated, so any week will do. */
 export function baseSheetSpread(): LandingSpread {

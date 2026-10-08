@@ -22,7 +22,7 @@
 // same day recommends one that says we made them ("Starter layouts"), which
 // is his to choose.
 
-import { HERO_BY_KEY, type HeroSpread } from "./heroSpreads";
+import { HERO_BY_KEY } from "./heroSpreads";
 import { spreadPlacements } from "./spreads";
 import { PALETTE_INFO_BY_SLUG } from "@/lib/paletteGroups";
 import { describeModule } from "@/lib/moduleDescriptions";
@@ -80,6 +80,11 @@ export const STARTERS: Starter[] = ALL.filter((s) => HERO_BY_KEY[s.key] && !HERO
 
 export const STARTER_BY_KEY: Record<string, Starter> = Object.fromEntries(STARTERS.map((s) => [s.key, s]));
 
+/** The few the landing page shows, one of each kind, ending in "View more"
+ *  (2026-10-08: "there should be less layouts and just say view more at
+ *  end"). */
+export const HOME_KEYS = ["student", "month-family", "day-adhd", "rapid-log", "pages-trip", "nine-to-five"].filter((key) => STARTER_BY_KEY[key]);
+
 export const KIND_SECTIONS: Array<[kind: StarterKind, heading: string, lede: string]> = [
   ["week", "Weeks", "A spread for every week: the hours across both pages, and everything around them. Some set the hours differently, by the hour, a shorter day, or no hours at all."],
   ["month", "Months", "The month's calendar across a spread, with room under it for the things you track by the month."],
@@ -104,11 +109,6 @@ export function makesWhat(kind: StarterKind): string {
     default:
       return "Opens a weekly journal of your own with this as its weekly spread, from next month for three months.";
   }
-}
-
-/** The spread itself, for the journal maker. */
-export function starterSpread(key: string): HeroSpread | null {
-  return STARTER_BY_KEY[key] ? HERO_BY_KEY[key] ?? null : null;
 }
 
 export type ModuleSummary = { slug: string; name: string; description: string };

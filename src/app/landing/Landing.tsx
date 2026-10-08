@@ -26,6 +26,7 @@ import { ResizeDemo } from "./ResizeDemo";
 import { resizeDemo } from "./resizeDemoData";
 import { sans } from "./sansFont";
 import { LayoutGallery } from "./LayoutGallery";
+import { HOME_KEYS, STARTER_BY_KEY } from "./starterLayouts";
 import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
 import { BodyWallTuner } from "./BodyWallTuner";
@@ -37,7 +38,15 @@ import { circleDrawing } from "./ink/pen";
 import { script } from "./scriptFont";
 import styles from "./landing.module.css";
 
-export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn: boolean; guest?: boolean; hero?: "desk" | "video" }) {
+export function Landing({
+  signedIn,
+  guest = false,
+  hero = "video",
+}: {
+  signedIn: boolean;
+  guest?: boolean;
+  hero?: "desk" | "video";
+}) {
   return (
     <div
       className={`${styles.page} ${script.variable} ${sans.variable}`}
@@ -59,7 +68,17 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
           <PostIt />
 
           <section id="how" className={styles.section}>
-            <Doodle kind="star" seed={14} style={{ top: 150, left: -118, width: 54, transform: "rotate(-10deg)" }} outer />
+            <Doodle
+              kind="star"
+              seed={14}
+              style={{
+                top: 150,
+                left: -118,
+                width: 54,
+                transform: "rotate(-10deg)",
+              }}
+              outer
+            />
             <div className={styles.howIntro}>
               <div>
                 <p className={styles.eyebrow}>How it works</p>
@@ -68,13 +87,29 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
                   Memari makes <Hand>the rest.</Hand>
                 </h2>
                 <p className={styles.lede}>
-                  A planner is a handful of pages you design, not hundreds you draw by hand. Choose what repeats, build
-                  each page from pieces, and the whole book comes out ready to print.
+                  A planner is a handful of pages you design, not hundreds you
+                  draw by hand. Choose what repeats, build each page from
+                  pieces, and the whole book comes out ready to print.
                 </p>
-                <Doodle kind="plane" seed={13} style={{ position: "relative", display: "block", marginTop: 36, width: 104 }} delay={0.5} />
+                <Doodle
+                  kind="plane"
+                  seed={13}
+                  style={{
+                    position: "relative",
+                    display: "block",
+                    marginTop: 36,
+                    width: 104,
+                  }}
+                  delay={0.5}
+                />
               </div>
               <div className={styles.howDemo}>
-                <Doodle kind="sparkle" seed={12} style={{ top: -18, right: -22, width: 40 }} delay={0.9} />
+                <Doodle
+                  kind="sparkle"
+                  seed={12}
+                  style={{ top: -18, right: -22, width: 40 }}
+                  delay={0.9}
+                />
                 <ResizeDemo data={resizeDemo()} />
               </div>
             </div>
@@ -82,57 +117,154 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
               <li>
                 <span className={styles.stepNumber}>
                   1
-                  <Ink drawing={circleDrawing(31)} className={styles.circle} stretch delay={0.20} />
+                  <Ink
+                    drawing={circleDrawing(31)}
+                    className={styles.circle}
+                    stretch
+                    delay={0.2}
+                  />
                 </span>
                 <h3>Choose what repeats</h3>
-                <p>A spread for every month, every week, a page for every day, or only the ones you want. Add pages at the front and back for goals and lists.</p>
+                <p>
+                  A spread for every month, every week, a page for every day, or
+                  only the ones you want. Add pages at the front and back for
+                  goals and lists.
+                </p>
               </li>
               <li>
                 <span className={styles.stepNumber}>
                   2
-                  <Ink drawing={circleDrawing(32)} className={styles.circle} stretch delay={0.45} />
+                  <Ink
+                    drawing={circleDrawing(32)}
+                    className={styles.circle}
+                    stretch
+                    delay={0.45}
+                  />
                 </span>
                 <h3>Build each page from modules</h3>
-                <p>Hours, to-dos, habit trackers, notes and more than a hundred others, dragged onto a quarter-inch dot grid. Everything snaps into place.</p>
+                <p>
+                  Hours, to-dos, habit trackers, notes and more than a hundred
+                  others, dragged onto a quarter-inch dot grid. Everything snaps
+                  into place.
+                </p>
               </li>
               <li>
                 <span className={styles.stepNumber}>
                   3
-                  <Ink drawing={circleDrawing(33)} className={styles.circle} stretch delay={0.70} />
+                  <Ink
+                    drawing={circleDrawing(33)}
+                    className={styles.circle}
+                    stretch
+                    delay={0.7}
+                  />
                 </span>
                 <h3>Get the whole book</h3>
-                <p>Set your dates and every page of the term is laid out for you: this week, next week, every week after, each one dated.</p>
+                <p>
+                  Set your dates and every page of the term is laid out for you:
+                  this week, next week, every week after, each one dated.
+                </p>
               </li>
             </ol>
           </section>
 
-          <section id="layouts" className={`${styles.section} ${styles.sectionWide}`}>
-            <Doodle kind="heart" seed={41} style={{ top: 96, right: "4%", width: 60, transform: "rotate(10deg)" }} />
-            <Doodle kind="music" seed={42} style={{ top: 190, right: "10%", width: 70 }} delay={0.7} />
-            <Doodle kind="sparkle" seed={43} style={{ top: 292, right: "21%", width: 32 }} delay={1} />
-            <Doodle kind="camera" seed={44} style={{ top: 120, left: -108, width: 66, transform: "rotate(-10deg)" }} outer />
+          <section
+            id="layouts"
+            className={`${styles.section} ${styles.sectionWide}`}
+          >
+            <Doodle
+              kind="heart"
+              seed={41}
+              style={{
+                top: 96,
+                right: "4%",
+                width: 60,
+                transform: "rotate(10deg)",
+              }}
+            />
+            <Doodle
+              kind="music"
+              seed={42}
+              style={{ top: 190, right: "10%", width: 70 }}
+              delay={0.7}
+            />
+            <Doodle
+              kind="sparkle"
+              seed={43}
+              style={{ top: 292, right: "21%", width: 32 }}
+              delay={1}
+            />
+            <Doodle
+              kind="camera"
+              seed={44}
+              style={{
+                top: 120,
+                left: -108,
+                width: 66,
+                transform: "rotate(-10deg)",
+              }}
+              outer
+            />
             <p className={styles.eyebrow}>Layouts</p>
             <h2 className={styles.headline}>
               Weeks, months and days. No two <Hand>alike.</Hand>
             </h2>
             <p className={styles.lede}>
-              Every spread here is a real Memari layout, made from modules in the catalogue, the same ones the journal
-              above is turning through.
+              Every spread here is a real Memari layout, made from modules in
+              the catalogue, the same ones the journal above is turning through.
             </p>
-            <LayoutGallery />
-            <p className={styles.more}>
-              <Link href="/layouts">Start from one of these layouts →</Link>
-            </p>
+            <LayoutGallery
+              layouts={HOME_KEYS.map((key) => ({
+                key,
+                title: STARTER_BY_KEY[key].title,
+              }))}
+            />
           </section>
 
           <section id="print" className={styles.section}>
-            <Doodle kind="cup" seed={51} style={{ top: 118, right: "8%", width: 96, transform: "rotate(-6deg)" }} />
-            <Doodle kind="star" seed={52} style={{ top: 290, right: "24%", width: 38, transform: "rotate(12deg)" }} delay={0.8} />
-            <Doodle kind="envelope" seed={53} style={{ bottom: 40, right: "2%", width: 76, transform: "rotate(-12deg)" }} />
-            <Doodle kind="sparkle" seed={54} style={{ top: 310, left: -96, width: 42 }} outer />
+            <Doodle
+              kind="cup"
+              seed={51}
+              style={{
+                top: 118,
+                right: "8%",
+                width: 96,
+                transform: "rotate(-6deg)",
+              }}
+            />
+            <Doodle
+              kind="star"
+              seed={52}
+              style={{
+                top: 290,
+                right: "24%",
+                width: 38,
+                transform: "rotate(12deg)",
+              }}
+              delay={0.8}
+            />
+            <Doodle
+              kind="envelope"
+              seed={53}
+              style={{
+                bottom: 40,
+                right: "2%",
+                width: 76,
+                transform: "rotate(-12deg)",
+              }}
+            />
+            <Doodle
+              kind="sparkle"
+              seed={54}
+              style={{ top: 310, left: -96, width: 42 }}
+              outer
+            />
             <p className={styles.eyebrow}>Print</p>
             <h2 className={styles.headline}>
-              Made to be <Underlined seed={61} twice>printed</Underlined>.
+              Made to be{" "}
+              <Underlined seed={61} twice>
+                printed
+              </Underlined>
+              .
             </h2>
             <p className={styles.lede}>
               We print the structure. <Hand>You draw around it.</Hand>
@@ -140,36 +272,76 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
             <ul className={styles.facts}>
               <li>
                 <h3>7 × 10 in, bound</h3>
-                <p>Sized for a real journal, with bleed, at 300 dots per inch.</p>
+                <p>
+                  Sized for a real journal, with bleed, at 300 dots per inch.
+                </p>
               </li>
               <li>
                 <h3>US Letter at home</h3>
                 <p>
-                  The same design fits a sheet from your own printer, or your library&rsquo;s. <Link href="/print">Find one</Link>
+                  The same design fits a sheet from your own printer, or your
+                  library&rsquo;s. <Link href="/print">Find one</Link>
                 </p>
               </li>
               <li>
                 <h3>Dated or undated</h3>
-                <p>Let Memari fill in every date, or leave them for you to write.</p>
+                <p>
+                  Let Memari fill in every date, or leave them for you to write.
+                </p>
               </li>
               <li>
                 <h3>
                   <Circled seed={71}>Free</Circled> to make
                 </h3>
                 <p>
-                  The editor and the print-ready PDF are free. A bound copy is priced for your book, and you see it before you
-                  pay. <Link href="/pricing">Pricing</Link>
+                  The editor and the print-ready PDF are free. A bound copy is
+                  priced for your book, and you see it before you pay.{" "}
+                  <Link href="/pricing">Pricing</Link>
                 </p>
               </li>
             </ul>
           </section>
 
           <section className={`${styles.closing} ${styles.section}`}>
-            <Doodle kind="sparkle" seed={81} style={{ top: 118, left: "14%", width: 46 }} />
-            <Doodle kind="sparkle" seed={82} style={{ top: 262, right: "11%", width: 34 }} delay={0.5} />
-            <Doodle kind="heart" seed={83} style={{ bottom: 120, right: "22%", width: 44, transform: "rotate(-12deg)" }} delay={0.9} />
-            <Doodle kind="star" seed={84} style={{ bottom: 92, left: "20%", width: 40, transform: "rotate(14deg)" }} delay={0.7} />
-            <Doodle kind="flower" seed={85} style={{ top: 70, right: "7%", width: 66 }} delay={0.3} />
+            <Doodle
+              kind="sparkle"
+              seed={81}
+              style={{ top: 118, left: "14%", width: 46 }}
+            />
+            <Doodle
+              kind="sparkle"
+              seed={82}
+              style={{ top: 262, right: "11%", width: 34 }}
+              delay={0.5}
+            />
+            <Doodle
+              kind="heart"
+              seed={83}
+              style={{
+                bottom: 120,
+                right: "22%",
+                width: 44,
+                transform: "rotate(-12deg)",
+              }}
+              delay={0.9}
+            />
+            <Doodle
+              kind="star"
+              seed={84}
+              style={{
+                bottom: 92,
+                left: "20%",
+                width: 40,
+                transform: "rotate(14deg)",
+              }}
+              delay={0.7}
+            />
+            <Doodle
+              kind="flower"
+              seed={85}
+              style={{ top: 70, right: "7%", width: 66 }}
+              delay={0.3}
+            />
             <h2 className={styles.headline}>
               A journal as unique as <Hand>you.</Hand>
             </h2>
@@ -178,7 +350,17 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
             </Link>
             {!signedIn && (
               <p className={styles.handNote}>
-                <Arrow seed={91} style={{ right: "100%", bottom: "40%", width: 64, marginRight: 6, transform: "scaleY(-1) rotate(8deg)" }} delay={0.6} />
+                <Arrow
+                  seed={91}
+                  style={{
+                    right: "100%",
+                    bottom: "40%",
+                    width: 64,
+                    marginRight: 6,
+                    transform: "scaleY(-1) rotate(8deg)",
+                  }}
+                  delay={0.6}
+                />
                 no account needed to try it
               </p>
             )}

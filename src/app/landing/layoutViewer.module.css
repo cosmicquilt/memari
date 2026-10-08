@@ -1,0 +1,375 @@
+/* The Layouts popup (LayoutViewer.tsx), and the cards that open it. On the
+   site's paper: --ink, --muted, --cream, --line, --hand come from .page. */
+
+.card {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* A magnifier in the corner on hover: the card opens bigger. */
+.zoomHint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(28, 25, 23, 0.72);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+.card:hover .zoomHint,
+.card:focus-visible .zoomHint {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------- popup */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(28, 25, 23, 0.55);
+  backdrop-filter: blur(3px);
+  animation: fadeIn 160ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog {
+  position: relative;
+  width: min(1360px, 100%);
+  height: min(880px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  background: var(--cream);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(20, 12, 6, 0.35);
+}
+
+.back,
+.close {
+  position: absolute;
+  top: 14px;
+  z-index: 2;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 4px rgba(20, 12, 6, 0.18);
+}
+
+.back {
+  left: 14px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.close {
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.back:hover,
+.close:hover {
+  background: #fff;
+}
+
+.back:focus-visible,
+.close:focus-visible,
+.zoomBar button:focus-visible,
+.similar button:focus-visible,
+.more:focus-visible,
+.retry:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 2px;
+}
+
+/* The spread: whole by default, bigger as it zooms, scrolling to look
+   around. */
+/* The spread's half of the popup: the scroller, and the zoom bar over it. */
+.stageWrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #ece2cd;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: #ece2cd;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.stage[data-zoomed] {
+  cursor: grab;
+}
+
+.stage[data-zoomed]:active {
+  cursor: grabbing;
+}
+
+.canvas {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100%;
+  min-height: 100%;
+  width: max-content;
+}
+
+.zoomBar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.82);
+  color: #fff;
+}
+
+.zoomBar button {
+  min-width: 36px;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.zoomBar button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.zoomBar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.zoomBar .fitButton {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+}
+
+/* What it is, Use this, and the similar layouts. */
+.side {
+  overflow-y: auto;
+  padding: 64px 24px 28px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kind {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a5a3a;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.hours {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3242c8;
+}
+
+.line,
+.makes {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.makes {
+  font-size: 13px;
+}
+
+.changes {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.changes li::marker {
+  color: var(--hand);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 6px;
+}
+
+.actions form {
+  margin: 0;
+}
+
+.more {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.similar {
+  margin-top: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.similar h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.similar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+}
+
+.similar button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.similar button:hover .similarCaption {
+  color: var(--ink);
+}
+
+.similarCaption {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.loading,
+.failed p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.failed {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.retry {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--ink);
+  color: var(--cream);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* A phone: the whole screen; the spread on top, the rest under it. */
+@media (max-width: 860px) {
+  .backdrop {
+    padding: 0;
+  }
+  .dialog {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 52dvh minmax(0, 1fr);
+  }
+  .side {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    padding: 20px 16px 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    animation: none;
+  }
+  .zoomHint {
+    transition: none;
+  }
+}
