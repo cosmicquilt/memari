@@ -19,6 +19,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ShippingLevel } from "./orderRange";
+import { dottedPodPackageId } from "./products";
 
 export const LULU_SANDBOX = "https://api.sandbox.lulu.com";
 
@@ -142,7 +143,7 @@ export async function printCost(podPackageId: string, pageCount: number, address
     total_cost_incl_tax?: string;
     currency?: string;
   }>("POST", "/print-job-cost-calculations/", {
-    line_items: [{ page_count: pageCount, pod_package_id: podPackageId, quantity: 1 }],
+    line_items: [{ page_count: pageCount, pod_package_id: dottedPodPackageId(podPackageId), quantity: 1 }],
     shipping_address: luluAddress(address),
     shipping_option: level,
   });
@@ -185,7 +186,7 @@ export async function quoteShipping(
  *  of Lulu rather than worked out here. */
 export async function coverDimensions(podPackageId: string, pageCount: number): Promise<{ widthPt: number; heightPt: number }> {
   const json = await call<{ width: string | number; height: string | number; unit?: string }>("POST", "/cover-dimensions/", {
-    pod_package_id: podPackageId,
+    pod_package_id: dottedPodPackageId(podPackageId),
     interior_page_count: pageCount,
     unit: "pt",
   });
@@ -219,7 +220,9 @@ export async function createPrintJob(input: {
         title: input.title.slice(0, 255),
         quantity: 1,
         printable_normalization: {
-          pod_package_id: input.podPackageId,
+          // An order saved before the dotted form still prints after
+          // Lulu drops the old one (products.ts).
+          pod_package_id: dottedPodPackageId(input.podPackageId),
           cover: { source_url: input.coverUrl },
           interior: { source_url: input.interiorUrl },
         },

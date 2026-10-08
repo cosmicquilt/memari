@@ -6,13 +6,17 @@
 // server that prices it and the job that sends it to the printer all read
 // one description of the book.
 //
-// LULU'S SKU, the "pod_package_id": 27 characters in fixed fields -
+// LULU'S SKU, the "pod_package_id": six fields joined by dots -
 //
-//   0700X1000  BW  STD  CO  060UW444  M  X  X
-//   trim       ink qual bind paper    finish linen foil
+//   0700X1000 . BW . STD . CO . 060UW444 . MXX
+//   trim        ink  qual  bind paper       finish, linen, foil
 //
-// From Lulu's own examples (0700X1000FCPRECO060UC444MXX is a 7x10 coil
-// book). Black ink at standard quality on 60# uncoated white paper, a matte
+// DOTTED since 2026-10-08. Lulu's API docs (api.lulu.com/docs) made the
+// dotted form live on 2026-03-31 and stop accepting the old undotted 27
+// characters (0700X1000BWSTDCO060UW444MXX) on 2027-02-01 - the same fields
+// with the dots taken out. Orders saved before then keep the old form, so
+// whatever goes to Lulu passes through dottedPodPackageId first (lulu.ts).
+// Andrew's Gemini report found this; my first search had not. Black ink at standard quality on 60# uncoated white paper, a matte
 // cover: the planner is drawn in near-black hairlines on white - the app's
 // cream is the screen's, never the print's (see memory: memari-cream).
 // VERIFY each code against the sandbox's cost calculation before the first
@@ -58,7 +62,29 @@ const FINISH = "M";
 export function podPackageId(binding: Binding, trim: PlannerTrimKey): string | null {
   const trimCode = TRIM_CODES[trim];
   if (!trimCode) return null;
-  return `${trimCode}${INK}${QUALITY}${BINDING_SPECS[binding].code}${PAPER}${FINISH}XX`;
+  return `${trimCode}.${INK}.${QUALITY}.${BINDING_SPECS[binding].code}.${PAPER}.${FINISH}XX`;
+}
+
+/** Field widths of the old undotted SKU: trim, ink, quality, binding,
+ *  paper, and finish-linen-foil. */
+const LEGACY_FIELDS = [9, 2, 3, 2, 8, 3];
+
+/**
+ * A SKU in the dotted form Lulu requires from 2027-02-01: one already
+ * dotted is returned as it is, an old undotted one has its dots put in
+ * (0500X0800FCPRESS060UW444GXX -> 0500X0800.FC.PRE.SS.060UW444.GXX, Lulu's
+ * own example), and anything else is left for Lulu to refuse rather than
+ * guessed at.
+ */
+export function dottedPodPackageId(sku: string): string {
+  if (sku.includes(".") || sku.length !== 27) return sku;
+  const parts: string[] = [];
+  let at = 0;
+  for (const width of LEGACY_FIELDS) {
+    parts.push(sku.slice(at, at + width));
+    at += width;
+  }
+  return parts.join(".");
 }
 
 /**

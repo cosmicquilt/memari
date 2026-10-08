@@ -9,7 +9,7 @@
 // Run with: npx tsx src/lib/print/print.test.mts
 
 import { createHmac } from "node:crypto";
-import { gutterInches, podPackageId, printedPageCount } from "./products";
+import { dottedPodPackageId, gutterInches, podPackageId, printedPageCount } from "./products";
 import { LULU, availabilityAt, printerFor, DEFAULT_PRINTER } from "./printer";
 const bindingAvailability = (pages: number) => availabilityAt(LULU, pages);
 import { gutterTransform } from "../plannerPdf";
@@ -40,10 +40,16 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 // --- the SKU -------------------------------------------------------------------
 {
-  check(podPackageId("coil", "bound7x10") === "0700X1000BWSTDCO060UW444MXX", `coil 7x10 (got ${podPackageId("coil", "bound7x10")})`);
-  check(podPackageId("paperback", "bound7x10") === "0700X1000BWSTDPB060UW444MXX", "paperback 7x10");
-  check(podPackageId("hardcover", "bound7x10") === "0700X1000BWSTDCW060UW444MXX", "hardcover 7x10");
-  check(podPackageId("coil", "bound7x10")!.length === 27, "Lulu's SKU is 27 characters");
+  // Dotted since 2026-10-08: Lulu drops the undotted 27 characters on 2027-02-01.
+  check(podPackageId("coil", "bound7x10") === "0700X1000.BW.STD.CO.060UW444.MXX", `coil 7x10 (got ${podPackageId("coil", "bound7x10")})`);
+  check(podPackageId("paperback", "bound7x10") === "0700X1000.BW.STD.PB.060UW444.MXX", "paperback 7x10");
+  check(podPackageId("hardcover", "bound7x10") === "0700X1000.BW.STD.CW.060UW444.MXX", "hardcover 7x10");
+  check(podPackageId("coil", "bound7x10")!.replaceAll(".", "").length === 27, "the same 27 characters, dotted");
+  // An order saved with the old form is sent dotted; Lulu's own example converts as its docs show.
+  check(dottedPodPackageId("0500X0800FCPRESS060UW444GXX") === "0500X0800.FC.PRE.SS.060UW444.GXX", "Lulu's example, dotted");
+  check(dottedPodPackageId("0700X1000BWSTDPB060UW444MXX") === podPackageId("paperback", "bound7x10"), "an old paperback SKU becomes today's");
+  check(dottedPodPackageId("0700X1000.BW.STD.CO.060UW444.MXX") === "0700X1000.BW.STD.CO.060UW444.MXX", "a dotted SKU is left alone");
+  check(dottedPodPackageId("NOT-A-SKU") === "NOT-A-SKU", "anything else is left for Lulu to refuse");
   check(podPackageId("coil", "letter") === null, "Letter is printed at home, not ordered");
 }
 
