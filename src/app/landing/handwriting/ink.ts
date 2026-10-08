@@ -45,7 +45,97 @@ export type TimedStroke = {
   /** Laid onto the ink layer: the pen has lifted. */
   done: boolean;
   pressure: (s: number) => number;
+  /** How the pen lays this stroke down - worked out once (penInk). */
+  ink?: StrokeInk;
 };
+
+/**
+ * How a real pen lays one stroke down (2026-10-07: "can you vary stroke
+ * thickness, opacity, etc, to mimic actual pen"). Not a stylus's swelling
+ * and tapering line - that read as drawn on an iPad (2026-09-24) - but what
+ * ink does on paper:
+ *   - each stroke its own width and flow, a little more or less pressed;
+ *   - darker, and a hair wider, where the pen slows: at turns and corners
+ *     (it slows on curves - the two-thirds power law the timing follows);
+ *   - a small blob where it lands, and for a felt tip where it stops;
+ *   - a ballpoint now and then skips on a long quick stroke - a faint
+ *     stretch in the line.
+ * A pencil varies most, a felt tip least; worked out from the stroke itself,
+ * so a stroke looks the same in every frame and every time it is written.
+ */
+type StrokeInk = {
+  width: number;
+  flow: number;
+  /** 0 to 1 at each point: how sharply the line turns there. */
+  bend: number[];
+  /** Stretches (as lengths along it) where it turns hard. */
+  turns: Array<[number, number]>;
+  /** A stretch the ballpoint skipped. */
+  skip: [number, number] | null;
+  /** How strong the blob is where the pen lands, and where it stops. */
+  blobStart: number;
+  blobEnd: number;
+  /** Stretches where the pen pressed harder and laid more ink. */
+  heavy: Array<[number, number]>;
+};
+
+function penInk(s: TimedStroke): StrokeInk {
+  if (s.ink) return s.ink;
+  const h = (k: number) => unitHash(s.pts[0] * 0.37 + s.pts[1] * 1.13 + s.length * 0.71 + k * 17.3);
+  const kind = s.pen.kind;
+  const n = s.cum.length;
+  // The turning at each point, per unit length, smoothed over its
+  // neighbours: a circle 20 px round reads about 0.6, a tick's corner 1.
+  const turn = new Array<number>(n).fill(0);
+  for (let i = 1; i < n - 1; i++) {
+    const a1 = Math.atan2(s.pts[i * 2 + 1] - s.pts[i * 2 - 1], s.pts[i * 2] - s.pts[i * 2 - 2]);
+    const a2 = Math.atan2(s.pts[i * 2 + 3] - s.pts[i * 2 + 1], s.pts[i * 2 + 2] - s.pts[i * 2]);
+    let d = Math.abs(a2 - a1);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    turn[i] = d / Math.max(1, (s.cum[i + 1] - s.cum[i - 1]) / 2);
+  }
+  const bend = turn.map((t, i) => Math.min(1, (((turn[i - 1] ?? t) + t * 2 + (turn[i + 1] ?? t)) / 4) * 12));
+  const turns: Array<[number, number]> = [];
+  for (let i = 0; i < n; i++) {
+    if (bend[i] < 0.5) continue;
+    const [a, b] = [s.cum[i] - 5, s.cum[i] + 5];
+    const last = turns[turns.length - 1];
+    if (last && a <= last[1]) last[1] = b;
+    else turns.push([Math.max(0, a), b]);
+  }
+  const straight = bend.reduce((sum, b) => sum + b, 0) / Math.max(1, n) < 0.15;
+  // Where the pressure drifts up, the line runs darker for a while: found
+  // along the stroke in steps, a stretch for each rise.
+  const heavy: Array<[number, number]> = [];
+  for (let at = 0, from = -1; at <= s.length + 4; at += 4) {
+    const high = at <= s.length && s.pressure(at / 60) > 0.25;
+    if (high && from < 0) from = at;
+    if (!high && from >= 0) {
+      if (at - from > 8) heavy.push([from, Math.min(at, s.length)]);
+      from = -1;
+    }
+  }
+  const skipAt = s.length * (0.3 + 0.4 * h(6));
+  const skipLen = Math.min(s.length * 0.16, 5 + 12 * h(7));
+  const ink: StrokeInk =
+    kind === "marker"
+      ? { width: 1 + (h(1) - 0.5) * 0.12, flow: 0.84 + 0.16 * h(2), bend, turns, skip: null, blobStart: 0.24, blobEnd: 0.22, heavy }
+      : kind === "pencil"
+        ? { width: 1 + (h(1) - 0.5) * 0.3, flow: 0.55 + 0.4 * h(2), bend, turns, skip: null, blobStart: 0, blobEnd: 0, heavy }
+        : {
+            width: 1 + (h(1) - 0.5) * 0.28,
+            flow: 0.6 + 0.4 * h(2),
+            bend,
+            turns,
+            skip: straight && s.length > 50 && h(3) < 0.18 ? [skipAt, skipAt + skipLen] : null,
+            blobStart: 0.22 + 0.2 * h(4),
+            // A ballpoint flicks off the paper as it lifts: no blob there.
+            blobEnd: 0,
+            heavy,
+          };
+  s.ink = ink;
+  return ink;
+}
 
 export type TimedGlyph = {
   kind: "glyph";
@@ -227,65 +317,132 @@ function strokeReach(s: TimedStroke, t: number): number {
 
 /** The stroke's points up to a length, each with the pen's pressure there. */
 function pointsTo(s: TimedStroke, length: number): number[][] {
+  return pointsBetween(s, 0, length);
+}
+
+/** The stroke's points from one length along it to another, each with the
+ *  pen's pressure there - a slow drift, and more where it slows to turn. */
+function pointsBetween(s: TimedStroke, from: number, to: number): number[][] {
+  const bend = penInk(s).bend;
+  const pressAt = (len: number, i: number) => Math.min(1, Math.max(0.05, 0.45 + 0.3 * s.pressure(len / 60) + 0.25 * bend[i]));
+  const at = (len: number): number[] => {
+    let i = 1;
+    while (i < s.cum.length - 1 && s.cum[i] < len) i++;
+    const a = s.cum[i - 1];
+    const f = Math.min(1, Math.max(0, (len - a) / Math.max(1e-6, s.cum[i] - a)));
+    const x = s.pts[(i - 1) * 2] + (s.pts[i * 2] - s.pts[(i - 1) * 2]) * f;
+    const y = s.pts[(i - 1) * 2 + 1] + (s.pts[i * 2 + 1] - s.pts[(i - 1) * 2 + 1]) * f;
+    return [x, y, pressAt(len, i)];
+  };
   const out: number[][] = [];
+  if (from > 0) out.push(at(from));
   for (let i = 0; i < s.cum.length; i++) {
-    if (s.cum[i] > length) {
-      const a = s.cum[i - 1];
-      const f = (length - a) / Math.max(1e-6, s.cum[i] - a);
-      const x = s.pts[(i - 1) * 2] + (s.pts[i * 2] - s.pts[(i - 1) * 2]) * f;
-      const y = s.pts[(i - 1) * 2 + 1] + (s.pts[i * 2 + 1] - s.pts[(i - 1) * 2 + 1]) * f;
-      out.push([x, y, 0.5 + 0.35 * s.pressure(length / 60)]);
+    if (s.cum[i] <= from && from > 0) continue;
+    if (s.cum[i] > to) {
+      out.push(at(to));
       break;
     }
-    out.push([s.pts[i * 2], s.pts[i * 2 + 1], 0.5 + 0.35 * s.pressure(s.cum[i] / 60)]);
+    out.push([s.pts[i * 2], s.pts[i * 2 + 1], pressAt(s.cum[i], i)]);
   }
   return out;
 }
 
-/** A pressure-shaped outline of the stroke so far, filled. */
+/** A pressure-shaped outline of the stroke so far, filled - laid down as a
+ *  real pen lays it (StrokeInk). */
 function fillStroke(ctx: CanvasRenderingContext2D, s: TimedStroke, length: number, scale: number, finished: boolean) {
-  const points = pointsTo(s, length).map(([x, y, p]) => [x * scale, y * scale, p]);
-  if (points.length < 2) return;
-  const size = s.pen.width * scale * 1.15;
+  const end = Math.min(length, s.length);
+  if (end <= 0) return;
+  const ink = penInk(s);
+  const size = s.pen.width * scale * 1.15 * ink.width;
   // A real pen keeps its width: a felt tip lays a blunt, even line, and a
   // ballpoint or fine liner barely thins with pressure and ends round, with
   // at most a short flick. (A line swelling with pressure and tapering to a
   // point at both ends is a stylus's - Andrew, 2026-09-24: "look like
-  // written on ipad".) Pressure shows as density instead - see `flow`.
-  const outline = getStroke(points, {
-    size,
-    thinning: s.pen.kind === "marker" ? 0.05 : s.pen.kind === "pencil" ? 0.25 : 0.14,
-    smoothing: 0.55,
-    streamline: 0.35,
-    simulatePressure: false,
-    start: { taper: 0, cap: true },
-    end: { taper: finished && s.pen.kind !== "marker" ? size * 0.6 : 0, cap: true },
-    last: finished,
-  });
-  if (outline.length < 3) return;
-  // Each line with its own ink flow, a little lighter or darker than the
-  // last - and, being short of opaque, darker where lines cross - bleeding
-  // a faint halo into the paper round it (see paperInk.ts).
+  // written on ipad".) Pressure shows as density instead.
+  const thinning = s.pen.kind === "marker" ? 0.05 : s.pen.kind === "pencil" ? 0.25 : 0.14;
   const feel = FEEL[s.pen.kind] ?? FEEL.ink;
-  const flow = 1 - feel.pressure * 0.8 * unitHash(s.t0 * 1000 + s.pts[0]);
+  const base = (s.pen.kind === "pencil" ? 0.8 : 0.9) * ink.flow;
   ctx.fillStyle = s.pen.color;
-  ctx.globalAlpha = (s.pen.kind === "pencil" ? 0.8 : 0.9) * flow;
-  if (feel.bleed > 0) {
-    ctx.shadowColor = withAlpha(s.pen.color, feel.bleed * 1.6);
-    ctx.shadowBlur = grainAt(scale) * 1.6;
+  /** The outline of a stretch of the stroke, filled at an alpha. */
+  const paint = (from: number, to: number, alpha: number, { width = size, taperIn = 0, taperOut = 0, last = true, bleed = false } = {}) => {
+    const points = pointsBetween(s, from, to).map(([x, y, p]) => [x * scale, y * scale, p]);
+    if (points.length < 2) return;
+    const outline = getStroke(points, {
+      size: width,
+      thinning,
+      smoothing: 0.55,
+      // No streamlining: the points are already a hand's (wobbled and
+      // resampled), and streamlining lags a stretch behind its own points -
+      // the pieces either side of a skip pulled back from it, and the
+      // darker passes wandered off the line.
+      streamline: 0,
+      simulatePressure: false,
+      start: { taper: taperIn, cap: true },
+      end: { taper: taperOut, cap: true },
+      last,
+    });
+    if (outline.length < 3) return;
+    ctx.globalAlpha = Math.min(1, alpha);
+    if (bleed && feel.bleed > 0) {
+      ctx.shadowColor = withAlpha(s.pen.color, feel.bleed * 1.6);
+      ctx.shadowBlur = grainAt(scale) * 1.6;
+    }
+    ctx.beginPath();
+    ctx.moveTo(outline[0][0], outline[0][1]);
+    for (let i = 1; i < outline.length; i++) {
+      const [x0, y0] = outline[i];
+      const [x1, y1] = outline[(i + 1) % outline.length];
+      ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+  };
+  const lift = finished && end >= s.length;
+  const flick = lift && s.pen.kind !== "marker" ? size * 0.6 : 0;
+  // The line itself - its own flow, short of opaque so it darkens where
+  // lines cross, bleeding a faint halo into the paper (see paperInk.ts) -
+  // with a faint stretch where a ballpoint skipped.
+  const skip = ink.skip && end > ink.skip[0] ? ink.skip : null;
+  if (!skip) paint(0, end, base, { taperOut: flick, last: lift, bleed: true });
+  else {
+    paint(0, skip[0], base, { bleed: true });
+    paint(skip[0], Math.min(end, skip[1]), base * 0.32, { width: size * 0.8 });
+    if (end > skip[1]) paint(skip[1], end, base, { taperOut: flick, last: lift, bleed: true });
   }
-  ctx.beginPath();
-  ctx.moveTo(outline[0][0], outline[0][1]);
-  for (let i = 1; i < outline.length; i++) {
-    const [x0, y0] = outline[i];
-    const [x1, y1] = outline[(i + 1) % outline.length];
-    ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+  // Darker where the pen slowed to turn: a little more ink, laid along
+  // the turn and fading in and out of it.
+  for (const [a, b] of ink.turns) {
+    if (a >= end) break;
+    const to = Math.min(b, end);
+    const span = (to - a) * scale;
+    paint(a, to, base * (s.pen.kind === "marker" ? 0.14 : 0.3), { width: size * 0.92, taperIn: span * 0.4, taperOut: span * 0.4 });
   }
-  ctx.closePath();
-  ctx.fill();
+  // Pressed harder for a while: a stretch of the line laid darker.
+  for (const [a, b] of ink.heavy) {
+    if (a >= end) break;
+    const to = Math.min(b, end);
+    const span = (to - a) * scale;
+    paint(a, to, base * (s.pen.kind === "marker" ? 0.12 : s.pen.kind === "pencil" ? 0.4 : 0.26), { width: size * 0.95, taperIn: span * 0.3, taperOut: span * 0.3 });
+  }
+  // Pressed a touch harder as it lands: the first stretch a shade darker.
+  if (s.pen.kind === "ink" && s.length > 14) {
+    const to = Math.min(end, 6 + s.length * 0.1);
+    paint(0, to, base * 0.2, { width: size * 0.92, taperOut: to * scale * 0.7 });
+  }
+  // The blob where the pen lands - and, for a felt tip or now and then a
+  // ballpoint, where it stops.
+  const blob = (x: number, y: number, alpha: number) => {
+    if (alpha <= 0) return;
+    ctx.globalAlpha = Math.min(1, alpha * ink.flow);
+    ctx.beginPath();
+    ctx.ellipse(x * scale, y * scale, size * 0.56, size * 0.48, unitHash(x + y) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  blob(s.pts[0], s.pts[1], ink.blobStart);
+  if (lift) blob(s.pts[s.pts.length - 2], s.pts[s.pts.length - 1], ink.blobEnd);
   ctx.globalAlpha = 1;
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
 }
 
 /** A stable 0..1 from a number: the same line always gets the same flow,
