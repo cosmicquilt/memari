@@ -431,6 +431,11 @@ model OwnerSettings {
   /// The person's customer at Stripe, made the first time they order, so
   /// every order and any renewal is one customer with one saved card.
   stripeCustomerId String?
+  /// Defaults for new journals, chosen on the account page (2026-10-08):
+  /// week start, page size, font. JSON so another default is not another
+  /// migration - read only through src/lib/preferences.ts, which drops
+  /// anything it does not recognise.
+  preferences Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

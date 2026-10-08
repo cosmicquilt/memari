@@ -33,6 +33,7 @@ import { useRouter } from "next/navigation";
 import type { PageLevel } from "@/lib/pageLevels";
 import { LEVELS_IN_BINDING_ORDER, LEVEL_LABELS, LEVEL_PAGE_COUNT, bookPageCount } from "@/lib/pageLevels";
 import type { PlannerTrimKey } from "@/lib/planner-trims";
+import type { Preferences } from "@/lib/preferences";
 import type { JournalCard, ThumbnailPage } from "./journals";
 import {
   createJournal,
@@ -45,7 +46,8 @@ import {
 } from "./actions";
 import { PagePreview } from "./PagePreview";
 import { wallPath, WALL_THEMES, WALL_TILE, type WallTheme } from "@/app/landing/doodleWall";
-import { BACKDROP_THEMES, writeBackdropCookie, type BackdropTheme } from "@/lib/backdropCookie";
+import { BACKDROP_LABELS, BACKDROP_THEMES, writeBackdropCookie, type BackdropTheme } from "@/lib/backdropCookie";
+import { AccountButton } from "@/app/app/account/AccountButton";
 import { SavedThumb } from "./SavedThumb";
 import type { SavedModuleCard, SavedPageCard } from "./savedItems";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
@@ -166,13 +168,6 @@ const BACKDROP_GRANITE_SIZE: Array<[number, number]> = [
   [53, 61],
   [71, 67],
 ];
-const BACKDROP_LABELS: Record<BackdropTheme, string> = {
-  dark: "Dark",
-  "dark-doodles": "Dark with doodles",
-  light: "Light",
-  "light-doodles": "Light with doodles",
-};
-
 /** The CSS background of a backdrop theme, with its wall if it has one -
  *  at `scale` for the menu's swatches. */
 function backdropStyle(theme: BackdropTheme, variant: number, scale = 1): CSSProperties {
@@ -227,6 +222,7 @@ export function StartDialog({
   lastJournalId,
   templates,
   defaultTerm,
+  preferences,
   guest,
   backdrop,
 }: {
@@ -236,6 +232,8 @@ export function StartDialog({
   lastJournalId: string | null;
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
+  /** The person's defaults for a new journal (account page, preferences.ts). */
+  preferences: Preferences;
   /** Set for someone using Memari without an account - see guest.ts. */
   guest: { journalLimit: number; idleDays: number } | null;
   /** The background this browser chose, and which of the walls this load
@@ -327,7 +325,7 @@ export function StartDialog({
               </button>
             ))}
           </TabStrip>
-          <div style={{ justifySelf: "end", alignSelf: "center", display: "flex", gap: 4 }}>
+          <div style={{ justifySelf: "end", alignSelf: "center", display: "flex", alignItems: "center", gap: 4 }}>
             <BackdropMenu
               theme={theme}
               variant={backdrop.variant}
@@ -336,6 +334,9 @@ export function StartDialog({
                 writeBackdropCookie(next);
               }}
             />
+            <span style={{ marginInline: 4, display: "inline-flex" }}>
+              <AccountButton guest={guest !== null} size={28} />
+            </span>
             {backTo && (
               <button type="button" className="sd-x" onClick={close} aria-label="Close and go back to your journal" title="Back to your journal">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -428,6 +429,7 @@ export function StartDialog({
             <CreateJournal
               templates={templates}
               defaultTerm={defaultTerm}
+              preferences={preferences}
               onCreated={open}
               leaving={leaving}
               guestLimit={guest && journals.length >= guest.journalLimit ? guest.journalLimit : null}
@@ -1006,12 +1008,14 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 function CreateJournal({
   templates,
   defaultTerm,
+  preferences,
   onCreated,
   leaving,
   guestLimit,
 }: {
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
+  preferences: Preferences;
   onCreated: (id: string) => void;
   leaving: boolean;
   /** Set when a guest already has as many journals as a guest may keep. */
@@ -1023,9 +1027,11 @@ function CreateJournal({
   const [start, setStart] = useState(defaultTerm.start);
   const [end, setEnd] = useState(defaultTerm.end);
   const [dated, setDated] = useState(true);
-  const [weekStartDay, setWeekStartDay] = useState<0 | 1>(0);
-  const [font, setFont] = useState<"serif" | "sans">("serif");
-  const [trim, setTrim] = useState<PlannerTrimKey>("bound7x10");
+  // From the person's preferences (account page); changed here for this
+  // journal only.
+  const [weekStartDay, setWeekStartDay] = useState<0 | 1>(preferences.weekStartDay);
+  const [font, setFont] = useState<"serif" | "sans">(preferences.font);
+  const [trim, setTrim] = useState<PlannerTrimKey>(preferences.trim);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

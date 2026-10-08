@@ -6,6 +6,13 @@
 
 export const BACKDROP_THEMES = ["dark", "dark-doodles", "light", "light-doodles"] as const;
 export type BackdropTheme = (typeof BACKDROP_THEMES)[number];
+/** Each theme's name, in the start dialog's menu and on the account page. */
+export const BACKDROP_LABELS: Record<BackdropTheme, string> = {
+  dark: "Dark",
+  "dark-doodles": "Dark with doodles",
+  light: "Light",
+  "light-doodles": "Light with doodles",
+};
 /** What a browser that has not chosen sees: the one that was current. */
 export const DEFAULT_BACKDROP: BackdropTheme = "light-doodles";
 export const BACKDROP_COOKIE = "memari-backdrop";

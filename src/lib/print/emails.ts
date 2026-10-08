@@ -55,7 +55,7 @@ function compose(to: string, subject: string, heading: string, paragraphs: strin
   return { to, subject, text, html };
 }
 
-const ordersLink = () => `${appUrl()}/app/orders`;
+const ordersLink = () => `${appUrl()}/app/account/books`;
 
 export function placedEmail(order: OrderLike): Email {
   const renewal = !!order.renewedFromId;

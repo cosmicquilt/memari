@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { journalsOf, templatePreviews } from "@/app/planner/journals";
 import { StartDialog } from "@/app/planner/StartDialog";
 import { savedModulesOf, savedPagesOf } from "@/app/planner/savedItems";
+import { ownerPreferences } from "@/app/planner/ownerSettings";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
 import { BACKDROP_COOKIE, parseBackdropCookie } from "@/lib/backdropCookie";
 import { WALL_VARIANTS } from "@/app/landing/doodleWall";
@@ -18,10 +19,11 @@ export default async function AppPage() {
   // Signed in on a browser that was used as a guest: bring that work along.
   if (!owner.guest) await claimGuestWork(owner.id);
 
-  const [journals, savedPages, savedModules] = await Promise.all([
+  const [journals, savedPages, savedModules, preferences] = await Promise.all([
     journalsOf(owner.id),
     savedPagesOf(owner.id),
     savedModulesOf(owner.id),
+    ownerPreferences(owner.id),
   ]);
   const jar = await cookies();
   const remembered = parseLastJournalCookie(jar.get(LAST_JOURNAL_COOKIE)?.value);
@@ -37,6 +39,7 @@ export default async function AppPage() {
       lastJournalId={lastJournalId}
       templates={templatePreviews()}
       defaultTerm={nextQuarter(new Date())}
+      preferences={preferences}
       guest={owner.guest ? { journalLimit: GUEST_JOURNAL_LIMIT, idleDays: GUEST_IDLE_DAYS } : null}
       backdrop={{ theme: parseBackdropCookie(jar.get(BACKDROP_COOKIE)?.value), variant: pickWall() }}
     />

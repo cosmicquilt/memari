@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import styles from "./landing.module.css";
+import { AccountButton } from "@/app/app/account/AccountButton";
 
 /** Whether the hero - the first section - is still under the nav. */
 let overHero = true;
@@ -27,7 +28,7 @@ function onOverHero(cb: () => void) {
   return () => io.disconnect();
 }
 
-export function SiteHeader({ signedIn }: { signedIn: boolean }) {
+export function SiteHeader({ signedIn, guest = false }: { signedIn: boolean; guest?: boolean }) {
   const clear = useSyncExternalStore(onOverHero, () => overHero, () => true);
   return (
     <header className={`${styles.nav} ${clear ? styles.navClear : ""}`}>
@@ -42,9 +43,12 @@ export function SiteHeader({ signedIn }: { signedIn: boolean }) {
       </nav>
       <div className={styles.actions}>
         {signedIn ? (
-          <Link href="/app" className={styles.primary}>
-            Open Memari
-          </Link>
+          <>
+            <Link href="/app" className={styles.primary}>
+              Open Memari
+            </Link>
+            <AccountButton guest={guest} />
+          </>
         ) : (
           <>
             <Link href="/sign-in?redirect_url=%2Fapp" className={styles.quiet}>

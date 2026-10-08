@@ -225,7 +225,7 @@ export async function startCheckout(
     ...(input.autoRenew
       ? { custom_text: { submit: { message: "Auto-renew is on: your card is saved to order the next book, at its own price, before this one runs out. Turn it off any time under Orders." } } }
       : {}),
-    success_url: `${origin}/app/orders?placed=${order.id}`,
+    success_url: `${origin}/app/account/books?placed=${order.id}`,
     cancel_url: `${origin}/app/j/${journal.slug ?? journal.id}`,
   });
   await prisma.printOrder.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: session.id } });

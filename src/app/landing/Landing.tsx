@@ -43,7 +43,7 @@ function Brand() {
   );
 }
 
-export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?: "desk" | "video" }) {
+export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn: boolean; guest?: boolean; hero?: "desk" | "video" }) {
   return (
     <div
       className={`${styles.page} ${script.variable} ${sans.variable}`}
@@ -51,7 +51,7 @@ export function Landing({ signedIn, hero = "video" }: { signedIn: boolean; hero?
       // side blur and its vignette (bodyWall.ts).
       style={pageVars(BODY_WALL_DEFAULTS) as CSSProperties}
     >
-      <SiteHeader signedIn={signedIn} />
+      <SiteHeader signedIn={signedIn} guest={guest} />
 
       <main>
         {hero === "video" ? <VideoHero /> : <Hero />}

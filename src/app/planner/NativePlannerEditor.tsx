@@ -102,6 +102,7 @@ import { type RenderedPolotnoElement } from "@/lib/renderModuleInstance";
 import { propsForRender, renderOnPage, type PageRenderContext } from "@/lib/renderContext";
 import { drawingInputsFor } from "@/lib/renderModuleInstance";
 import Link from "next/link";
+import { AccountButton } from "@/app/app/account/AccountButton";
 import { useJournalId } from "./journalContext";
 import { OrderPrintButton } from "./OrderDialog";
 import { ModulePreview } from "./ModulePreview";
@@ -10812,6 +10813,10 @@ export function NativePlannerEditor({
         <OrderPrintButton journalId={journalId} weekStartDay={pageSettings.weekStartDay} />
         <ExportPdfButton />
         {saveError && <span style={{ color: "#ff5555" }}>Save failed: {saveError}</span>}
+        {/* The person, at the top right: account, printed books, sign out. */}
+        <span style={{ flexShrink: 0, display: "inline-flex" }}>
+          <AccountButton guest={guest === true} size={28} />
+        </span>
       </header>
       <div
         ref={scrollContainerRef}

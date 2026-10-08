@@ -21,5 +21,5 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
   // (2026-09-25: "I like ... video hero best"); ?hero=desk still shows the
   // desk.
   const hero = (await searchParams).hero === "desk" ? "desk" : "video";
-  return <Landing signedIn={owner !== null} hero={hero} />;
+  return <Landing signedIn={owner !== null} guest={owner?.guest ?? false} hero={hero} />;
 }

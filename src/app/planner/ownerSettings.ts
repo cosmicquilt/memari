@@ -1,4 +1,5 @@
-// A person's own settings - today, the time zone their books follow.
+// A person's own settings: the time zone their books follow, and their
+// defaults for new journals.
 //
 // SERVER-ONLY. Every function takes the ownerId its caller established
 // through currentOwnerId (see owner.ts); none of them trusts an id from the
@@ -6,6 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { effectiveZone, isTimeZone } from "@/lib/timeZone";
+import { parsePreferences, type Preferences } from "@/lib/preferences";
 
 /** The person's default zone, or null if they have never had one seeded. */
 export async function ownerDefaultZone(ownerId: string): Promise<string | null> {
@@ -54,4 +56,23 @@ export async function zoneForBook(ownerId: string, journalId: string): Promise<s
   ]);
   if (!book) throw new Error("Journal not found");
   return effectiveZone(book.timeZone, ownerZone);
+}
+
+/** The person's defaults for new journals (preferences.ts) - the app's own
+ *  if they have chosen none. */
+export async function ownerPreferences(ownerId: string): Promise<Preferences> {
+  const row = await prisma.ownerSettings.findUnique({ where: { ownerId }, select: { preferences: true } });
+  return parsePreferences(row?.preferences);
+}
+
+/** Save the person's defaults for new journals. Journals they already have
+ *  keep their own settings. */
+export async function setOwnerPreferences(ownerId: string, value: unknown): Promise<Preferences> {
+  const preferences = parsePreferences(value);
+  await prisma.ownerSettings.upsert({
+    where: { ownerId },
+    create: { ownerId, preferences },
+    update: { preferences },
+  });
+  return preferences;
 }
