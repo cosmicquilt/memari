@@ -53,7 +53,7 @@ import {
   isHabitTrackerCompact,
   type HabitTrackerConfig,
 } from "@/lib/modules/habitTracker";
-import { MONTH_ICON_PLACES, renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
+import { DEFAULT_ICON_PLACE, MONTH_ICON_PLACES, renderMonthGridCore, type MonthGridCoreConfig } from "@/lib/modules/monthGridCore";
 import {
   DAY_CHART_ALONG_BY_LEVEL,
   DAY_CHART_SCALES,
@@ -1204,7 +1204,7 @@ const PRIMITIVES = {
           "dateStyle": { "type": "string", "enum": ["strip", "faint"], "default": "strip" },
           "stripQuarters": { "type": "integer", "default": 2 },
           "numberCorner": { "type": "string", "enum": ["top-left", "bottom-right"], "default": "top-left" },
-          "iconPlace": { "type": "string", "enum": [...MONTH_ICON_PLACES], "default": "strip" }
+          "iconPlace": { "type": "string", "enum": [...MONTH_ICON_PLACES], "default": DEFAULT_ICON_PLACE }
         }
       },
       "defaultWidth": 1560,
@@ -1280,7 +1280,7 @@ const PRIMITIVES = {
           { value: "bottom-right", label: "Bottom right" },
         ],
         // With no strip, "in the strip" is beside the date - see monthGridLayout.
-        shows: (values) => (values.dateStyle === "faint" && (values.iconPlace ?? "strip") === "strip" ? "top-left" : String(values.iconPlace ?? "strip")),
+        shows: (values) => (values.dateStyle === "faint" && (values.iconPlace ?? DEFAULT_ICON_PLACE) === "strip" ? "top-left" : String(values.iconPlace ?? DEFAULT_ICON_PLACE)),
       },
       { kind: "note", text: "Applies to the calendar on every month page of this journal. Drag the day icons on the preview to move them, and the line under the dates to make the strip taller." },
     ],

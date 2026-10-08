@@ -80,6 +80,8 @@ export type MonthDateStyle = "strip" | "faint";
  *  the day's writing space. */
 export type MonthIconPlace = "strip" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export const MONTH_ICON_PLACES: readonly MonthIconPlace[] = ["strip", "top-left", "top-right", "bottom-left", "bottom-right"];
+/** Where the icons go when nothing was chosen - see monthGridLayout. */
+export const DEFAULT_ICON_PLACE: MonthIconPlace = "top-left";
 
 /** A quarter of a lattice cell: the step the strip's height is dragged in. */
 export const STRIP_QUARTER_PT = 4.5;
@@ -117,7 +119,10 @@ export function monthGridLayout(
   const contentBottom = geometry.y + geometry.height + (lattice?.insetPx ?? 0);
   const weekCount = Math.max(1, config.weekCount);
   const rowHeight = Math.max(stripHeight, (contentBottom - contentTop) / weekCount);
-  const placeWanted = MONTH_ICON_PLACES.includes(config.iconPlace as MonthIconPlace) ? (config.iconPlace as MonthIconPlace) : "strip";
+  // Unset, the icons go under the strip at its left, 12pt, not in the strip
+  // at 7pt: "half cel strip but icons larger in bigger rectangle below"
+  // (2026-10-07). The strip itself stays half a cell.
+  const placeWanted = MONTH_ICON_PLACES.includes(config.iconPlace as MonthIconPlace) ? (config.iconPlace as MonthIconPlace) : DEFAULT_ICON_PLACE;
   return {
     style,
     quarters,

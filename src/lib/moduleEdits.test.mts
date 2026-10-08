@@ -754,7 +754,7 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 
   // The strip, half a cell to a cell and a half; never outside that.
   for (const [q, want] of [[2, 2], [3, 3], [4, 4], [6, 6], [1, 2], [9, 6]] as const) {
-    const els = at({ stripQuarters: q });
+    const els = at({ stripQuarters: q, iconPlace: "strip" });
     const strip = centreY(ids(els, /-w0-strip-rule$/)[0]) - contentTop(els);
     check(Math.abs(strip - want * quarter) < 0.01, `a strip of ${q} quarters draws ${want} (its line ${strip.toFixed(1)}px down)`);
     const icon = ids(els, /-w0-d0-dayicon0$/)[0];
@@ -762,7 +762,22 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     const edge = ids(els, /-w0-d0-date-edge$/)[0];
     check(Math.abs(Number(edge.height) - want * quarter) < 0.01, `${q} quarters: the date box as tall as the strip`);
   }
-  check(Number(ids(at({ stripQuarters: 4 }), /-w0-d0-dayicon0$/)[0].width) > Number(ids(at({}), /-w0-d0-dayicon0$/)[0].width) * 1.8, "a one-cell strip's icons are about twice the half-cell's");
+  check(Number(ids(at({ stripQuarters: 4, iconPlace: "strip" }), /-w0-d0-dayicon0$/)[0].width) > Number(ids(at({ iconPlace: "strip" }), /-w0-d0-dayicon0$/)[0].width) * 1.8, "a one-cell strip's icons are about twice the half-cell's");
+
+  // THE DEFAULT (2026-10-07, "half cel strip but icons larger in bigger
+  // rectangle below"): the half-cell strip, and the icons not in it but under
+  // it at its left, 12pt - drawn the same as choosing Top left.
+  {
+    const plain = at({});
+    const strip = centreY(ids(plain, /-w0-strip-rule$/)[0]) - contentTop(plain);
+    check(Math.abs(strip - 2 * quarter) < 0.01, "by default the strip is half a cell");
+    const icon = ids(plain, /-w0-d0-dayicon0$/)[0];
+    check(Number(icon.y) >= contentTop(plain) + 2 * quarter, "by default the icons sit under the strip");
+    check(Math.abs(Number(icon.height) - (12 * 300) / 72) < 0.5, `by default the icons are 12pt (got ${((Number(icon.height) * 72) / 300).toFixed(1)}pt)`);
+    check(JSON.stringify(plain) === JSON.stringify(at({ iconPlace: "top-left" })), "the default draws exactly as Top left");
+    const schemaDefault = (moduleDefinition("month-grid-core")?.db.configSchema as { properties?: Record<string, { default?: unknown }> } | undefined)?.properties?.iconPlace?.default;
+    check(schemaDefault === "top-left", `the stored schema's default is top-left too (got ${String(schemaDefault)})`);
+  }
 
   // Large and faint: no box, no strip, the number big and light.
   const faint = at({ dateStyle: "faint" });
