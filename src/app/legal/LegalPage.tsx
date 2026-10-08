@@ -44,7 +44,7 @@ export function LegalPage({
           href="/"
           style={{ color: cream(0.55), textDecoration: "none", fontSize: 14 }}
         >
-          Memari <span style={{ fontWeight: 200, letterSpacing: "0.1em" }}>STUDIO</span>
+          memari. <span style={{ fontWeight: 200, letterSpacing: "0.1em" }}>STUDIO</span>
         </Link>
         <h1 style={{ fontSize: 30, margin: "22px 0 6px", lineHeight: 1.2 }}>{title}</h1>
         <p style={{ margin: "0 0 34px", color: cream(0.5), fontSize: 14 }}>

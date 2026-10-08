@@ -39,7 +39,7 @@ export default async function SignInPage({
     >
       <div style={{ display: "grid", gap: 20, justifyItems: "center", width: "100%", maxWidth: 420 }}>
         <strong style={{ fontSize: 20 }}>
-          Memari <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+          memari. <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
         </strong>
         {/* The card and its fields in the app's cream, not Clerk's white
             (2026-10-01, src/lib/cream.ts). */}
