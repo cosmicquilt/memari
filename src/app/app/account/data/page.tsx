@@ -23,7 +23,13 @@ export default async function DataPage() {
 
       <div className="acct-card">
         <h2>Your journals</h2>
-        <p className="acct-dim">Each one as a print-ready PDF, the whole book - yours to keep, print at home or take anywhere.</p>
+        <p className="acct-dim">
+          Each one as a print-ready PDF, the whole book - yours to keep, print at home or take anywhere. No printer?{" "}
+          <Link href="/print" style={{ color: cream(0.85) }}>
+            Find a library
+          </Link>
+          .
+        </p>
         {journals.length === 0 ? (
           <p className="acct-dim">
             No journals yet. <Link href="/app" style={{ color: cream(0.85) }}>Make one</Link>.

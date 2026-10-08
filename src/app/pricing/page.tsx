@@ -45,7 +45,9 @@ export default function PricingPage() {
             <ul>
               <li>The editor, and every one of its modules</li>
               <li>Your whole book as a print-ready PDF</li>
-              <li>Print it at home on US Letter, or anywhere you like</li>
+              <li>
+                Print it at home on US Letter, or anywhere you like - <Link href="/print">no printer? find a library</Link>
+              </li>
               <li>Dated or undated, weeks from Sunday or Monday, in your time zone</li>
               <li>No account needed to try it - a guest keeps up to {GUEST_JOURNAL_LIMIT} journals</li>
             </ul>

@@ -144,7 +144,9 @@ export function Landing({ signedIn, guest = false, hero = "video" }: { signedIn:
               </li>
               <li>
                 <h3>US Letter at home</h3>
-                <p>The same design fits a sheet from your own printer.</p>
+                <p>
+                  The same design fits a sheet from your own printer - or your library&rsquo;s. <Link href="/print">Find one</Link>
+                </p>
               </li>
               <li>
                 <h3>Dated or undated</h3>

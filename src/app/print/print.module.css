@@ -1,0 +1,191 @@
+/* memari.studio/print: the library finder and the printing guide, on the
+   site's paper (landing.module.css .page, site.module.css). */
+
+.finder {
+  margin-top: 28px;
+  display: grid;
+  gap: 24px;
+  max-width: 760px;
+}
+
+.search {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 14px;
+  background: #fbf6ea;
+  border: 1px solid var(--line);
+  box-shadow: 0 14px 34px rgba(40, 30, 20, 0.08);
+}
+
+.searchLabel {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.searchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(28, 25, 23, 0.22);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 2px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(176, 52, 32, 0.08);
+  color: #8a2a18;
+  font-size: 15px;
+}
+
+.near {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a5a3a;
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.result {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+}
+
+.resultHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.resultHead h3 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.distance {
+  flex: none;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.address {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 4px;
+  font-size: 14.5px;
+}
+
+.links a {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.links a:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.caveat {
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* The guide: what to do before and at the printer. */
+.guide {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 22px;
+  max-width: 760px;
+}
+
+.guide li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  column-gap: 12px;
+}
+
+.guide li::before {
+  content: counter(step);
+  grid-row: span 2;
+  font-family: var(--font-hand), cursive;
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--hand);
+}
+
+.guide h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.guide p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.guide a {
+  color: var(--ink);
+}
+
+.credit {
+  margin-top: 36px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 760px;
+}

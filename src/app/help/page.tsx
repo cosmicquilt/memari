@@ -96,6 +96,21 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       {
+        q: "I don't have a printer.",
+        a: <p>
+          Most public libraries have printers anyone can use, usually for a small charge a page. <Link href="/print">Print it
+          yourself</Link> finds the libraries nearest your ZIP code (US only, for now) and says how to print it well.
+        </p>,
+      },
+      {
+        q: "How do I keep the grid the right size when I print?",
+        a: <p>
+          Choose Actual size or Scale 100% in the print settings, never Fit to page, which shrinks every page a little. Print{" "}
+          <a href="/print/test-page" target="_blank" rel="noopener">the print test</a> first: if a bank card covers its box
+          exactly, your printer is at actual size.
+        </p>,
+      },
+      {
         q: "How do I order a printed book?",
         a: <p>
           In the editor, choose Order print. Pick the binding - coil-bound to lie flat, paperback or hardcover - how many days

@@ -13,6 +13,7 @@ const COLUMNS: Array<[heading: string, links: Array<[href: string, label: string
       ["/#how", "How it works"],
       ["/layouts", "Layouts"],
       ["/pricing", "Pricing"],
+      ["/print", "Print it yourself"],
       ["/app", "Open Memari"],
     ],
   ],

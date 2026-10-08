@@ -27,6 +27,9 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     still loaded its SDK. That route and the dependency are gone, so the
 //     entry went with them - a processor you no longer use is a disclosure
 //     that misleads
+//   - THE LIBRARY FINDER (2026-10-08, app/print/actions.ts): the place
+//     typed is used for one answer and not stored, and nothing is sent to
+//     a third party - the libraries and ZIP codes are files in the app
 //   - DELETING AN ACCOUNT (2026-10-08, app/account/actions.ts,
 //     deleteAccount): everything the person made and their Clerk user go;
 //     PrintOrder rows stay, as "Orders are kept" below says, with
@@ -227,6 +230,11 @@ export default function PrivacyPage() {
           accounting rules require. <strong>A book&rsquo;s files are deleted a year after it is
           delivered or cancelled</strong> &mdash; long enough to reprint one that arrives damaged
           &mdash; and the files of a checkout that was never paid are deleted after a month.
+        </LI>
+        <LI>
+          <strong>A library search is not kept.</strong> The ZIP code or town you type on the Print
+          it yourself page finds the nearest libraries in a list we hold, and is then discarded. No
+          map or places service is asked.
         </LI>
         <LI>Server logs are kept for a short period by our host, on their schedule.</LI>
       </UL>
