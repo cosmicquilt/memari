@@ -28,6 +28,8 @@ import {
   luluConfigured,
   printCost,
   quoteShipping,
+  shippingOptions,
+  withArrivals,
   type PrintCost,
   type ShippingAddress,
 } from "./lulu";
@@ -129,7 +131,16 @@ export const LULU: Printer = {
   cheapestLevels: ["MAIL", "GROUND"],
   levelLabel: (level) => SHIPPING_LABELS[level],
   printCost,
-  quoteShipping: async (sku, pages, address, levels) => (await quoteShipping(sku, pages, address, levels)).map((quote) => ({ ...quote, label: SHIPPING_LABELS[quote.level] })),
+  // Lulu's shipping options first: which levels serve the address, and
+  // their dates. Only those are priced (a refused level is a wasted call),
+  // unless the options could not be had - then every level is tried, as
+  // before, without dates.
+  quoteShipping: async (sku, pages, address, levels) => {
+    const options = await shippingOptions(sku, pages, address).catch(() => null);
+    const offered = options ? levels.filter((level) => options.some((option) => option.level === level)) : [];
+    const quotes = await quoteShipping(sku, pages, address, offered.length > 0 ? offered : levels);
+    return withArrivals(quotes, options).map((quote) => ({ ...quote, label: SHIPPING_LABELS[quote.level] }));
+  },
   coverSize: coverDimensions,
   addressProblem: () => null,
   stoppable: LULU_STOPPABLE,

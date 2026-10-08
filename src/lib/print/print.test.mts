@@ -51,7 +51,7 @@ import { gutterTransform } from "../plannerPdf";
 import { leadDays, nextRange, orderRange, renewalDate, suggestedStart } from "./orderRange";
 import { priceFromCost, BOOK_MARGIN, MIN_BOOK_PRICE_CENTS } from "./pricing";
 import { printFileUrl, signPrintFile, verifyPrintFile } from "./fileUrls";
-import { toCents, verifyLuluWebhook } from "./lulu";
+import { toCents, verifyLuluWebhook, withArrivals } from "./lulu";
 import { buildCoverPdf, coverLayout } from "./cover";
 import { rangeLabel } from "./orderBook";
 
@@ -240,6 +240,21 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   check(LULU.gutterInches("paperback", 200) === gutterInches("paperback", 200) && LULU.gutterInches("coil", 200) === 0, "Lulu's binding margins");
   const coil = LULU.pageLimits("coil");
   check(coil.min === 2 && coil.max === 470, "Lulu's page limits");
+}
+
+// --- Lulu's delivery dates onto its quotes (2026-10-08) ---------------------------------
+{
+  const quotes = [{ level: "MAIL" }, { level: "EXPRESS" }, { level: "GROUND" }];
+  const options = [
+    { level: "MAIL", minDelivery: "2026-10-22T00:00:00Z", maxDelivery: "2026-10-26T00:00:00Z" },
+    { level: "EXPRESS", minDelivery: "2026-10-14", maxDelivery: "2026-10-16" },
+    { level: "GROUND_HD", minDelivery: "2026-10-20", maxDelivery: "2026-10-22" },
+  ];
+  const dated = withArrivals(quotes, options);
+  check(dated[0].arrives?.earliest === "2026-10-22" && dated[0].arrives?.latest === "2026-10-26", "mail: Lulu's dates, as days");
+  check(dated[1].arrives?.earliest === "2026-10-14", "express: its own");
+  check(dated[2].arrives === undefined, "a level Lulu gave no dates for has none - never another level's");
+  check(withArrivals(quotes, null).every((q) => !("arrives" in q)), "no options: no dates, quotes unchanged");
 }
 
 // --- metal wire-o at BookVault (2026-10-08) -------------------------------------------

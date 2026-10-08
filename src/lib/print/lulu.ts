@@ -181,6 +181,44 @@ export async function quoteShipping(
   return results.filter((result): result is { level: ShippingLevel; cost: PrintCost } => result !== null);
 }
 
+/** One of Lulu's ways of posting a book to an address, with its dates. */
+export type LuluShippingOption = { level: string; minDelivery?: string; maxDelivery?: string; traceable?: boolean };
+
+/**
+ * The levels Lulu will post this book by to the address, with when each
+ * should arrive - from the start of production to the door, Lulu's own
+ * estimate (POST /shipping-options/; checked in the sandbox 2026-10-08:
+ * US mail 10-12 business days, express 4-6). One call for every level. A
+ * US address is offered GROUND_HD/GROUND_BUS where others get GROUND.
+ */
+export async function shippingOptions(podPackageId: string, pageCount: number, address: ShippingAddress): Promise<LuluShippingOption[]> {
+  const json = await call<Array<{ level?: string; min_delivery_date?: string; max_delivery_date?: string; traceable?: boolean }>>("POST", "/shipping-options/", {
+    currency: "USD",
+    line_items: [{ page_count: pageCount, pod_package_id: dottedPodPackageId(podPackageId), quantity: 1 }],
+    shipping_address: {
+      name: address.name,
+      street1: address.street1,
+      ...(address.street2 ? { street2: address.street2 } : {}),
+      city: address.city,
+      ...(address.stateCode ? { state: address.stateCode } : {}),
+      country: address.countryCode,
+      postcode: address.postcode,
+      phone_number: address.phoneNumber,
+    },
+  });
+  return (Array.isArray(json) ? json : [])
+    .filter((option) => typeof option.level === "string")
+    .map((option) => ({ level: option.level!, minDelivery: option.min_delivery_date, maxDelivery: option.max_delivery_date, traceable: option.traceable }));
+}
+
+/** Lulu's dates, onto the quotes for the same levels, as ISO days. */
+export function withArrivals<T extends { level: string }>(quotes: T[], options: LuluShippingOption[] | null): Array<T & { arrives?: { earliest: string; latest: string } }> {
+  return quotes.map((quote) => {
+    const option = options?.find((o) => o.level === quote.level);
+    return option?.minDelivery && option.maxDelivery ? { ...quote, arrives: { earliest: option.minDelivery.slice(0, 10), latest: option.maxDelivery.slice(0, 10) } } : quote;
+  });
+}
+
 /** The cover's size - back, spine and front in one sheet, bleed included -
  *  for this book. The spine is the page count's thickness, so this is asked
  *  of Lulu rather than worked out here. */

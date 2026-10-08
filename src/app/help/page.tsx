@@ -122,9 +122,9 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         q: "How long does a book take to arrive?",
         a: <p>
           Printing takes three to five business days, then the post: from a few days by express to around three weeks by
-          standard mail abroad. Metal wire-o books are printed in the UK, so they travel further to most addresses; the order
-          screen shows when each way of posting one should arrive. It suggests a start date that leaves room, and you can
-          change it.
+          standard mail abroad. Metal wire-o books are printed in the UK, so they travel further to most addresses. The order
+          screen shows when each way of posting should arrive, and suggests a start date that leaves room, which you can
+          change.
         </p>,
       },
       {
