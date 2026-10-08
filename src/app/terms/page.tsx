@@ -94,7 +94,7 @@ export default function TermsPage() {
       <H2>Printed books</H2>
 
       <P>
-        You can order a journal printed and bound, for any number of days and in coil, paperback or
+        You can order a journal printed and bound, for any number of days and in plastic coil, paperback or
         hardcover. You need an account to order. Our print partner, Lulu, prints and posts it; you
         pay us, on Stripe&rsquo;s payment page.
       </P>

@@ -59,7 +59,7 @@ export default function PricingPage() {
             <p className={site.priceNote}>Priced for your book, shown in full before you pay</p>
             <ul>
               <li>7 × 10 in, printed in black on uncoated white paper, with a matte cover</li>
-              <li>{bindings.map((b, i) => (i === 0 ? b.label : b.label.toLowerCase())).join(", ").replace(/, ([^,]*)$/, " or $1")}. Coil lies flat when open</li>
+              <li>{bindings.map((b, i) => (i === 0 ? b.label : b.label.toLowerCase())).join(", ").replace(/, ([^,]*)$/, " or $1")}. The coil lies flat when open</li>
               <li>Any length: 30 days, 90, a year, up to two</li>
               <li>Made to order and shipped worldwide</li>
               <li>Reprinted or refunded if it arrives damaged or misprinted</li>

@@ -425,7 +425,7 @@ export function OrderPrintButton({ journalId, weekStartDay }: { journalId: strin
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Order this journal printed and bound - any number of days, coil, paperback or hardcover, posted anywhere"
+        title="Order this journal printed and bound - any number of days, plastic coil, paperback or hardcover, posted anywhere"
         style={{
           flexShrink: 0,
           padding: "4px 12px",

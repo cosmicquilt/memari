@@ -178,7 +178,7 @@ try {
     const { deps, calls } = fakes();
     await runRenewals(now, deps);
     const renewal = await prisma.printOrder.findFirst({ where: { renewedFromId: thick.id } });
-    check(renewal?.status === "FAILED" && /more than coil-bound can hold/.test(renewal.failureReason ?? "") && calls.charge.length === 0, `too thick for its binding: FAILED, nothing charged (${renewal?.failureReason})`);
+    check(renewal?.status === "FAILED" && /more than plastic coil can hold/.test(renewal.failureReason ?? "") && calls.charge.length === 0, `too thick for its binding: FAILED, nothing charged (${renewal?.failureReason})`);
   }
 
   // --- left alone --------------------------------------------------------------------
@@ -220,7 +220,7 @@ try {
     const { placedEmail, shippedEmail, adminAlertEmail } = await import("../src/lib/print/emails.js");
     const sample = { id: "o1", title: "Tom & Jerry's <Journal>", startDate: new Date("2027-01-04T00:00:00Z"), endDate: new Date("2027-04-03T00:00:00Z"), days: 90, binding: "COIL", pageCount: 128, totalCents: 3598, contactEmail: "c@example.com" };
     const placed = placedEmail(sample);
-    check(placed.to === "c@example.com" && /\$35\.98/.test(placed.text) && /4 Jan – 3 Apr 2027/.test(placed.text) && /coil-bound/.test(placed.text), "the order email says what, when, how bound and how much");
+    check(placed.to === "c@example.com" && /\$35\.98/.test(placed.text) && /4 Jan – 3 Apr 2027/.test(placed.text) && /plastic coil/.test(placed.text), "the order email says what, when, how bound and how much");
     check(placed.html.includes("Tom &amp; Jerry&#39;s".replace("&#39;", "'")) && placed.html.includes("&lt;Journal&gt;") && !placed.html.includes("<Journal>"), "a title is escaped in the HTML, never markup");
     check(/auto-renew/i.test(placedEmail({ ...sample, renewedFromId: "o0" }).subject), "a renewal's order email says it was auto-renew");
     const shipped = shippedEmail(sample, ["https://track.example/1"]);

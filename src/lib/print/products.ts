@@ -41,7 +41,7 @@ type BindingSpec = {
 };
 
 export const BINDING_SPECS: Record<Binding, BindingSpec> = {
-  coil: { label: "Coil-bound", note: "Lies flat when open", code: "CO", minPages: 2, maxPages: 470 },
+  coil: { label: "Plastic coil", note: "Lies flat when open", code: "CO", minPages: 2, maxPages: 470 },
   paperback: { label: "Paperback", note: "Slim, like a book", code: "PB", minPages: 32, maxPages: 800 },
   hardcover: { label: "Hardcover", note: "Rigid boards", code: "CW", minPages: 24, maxPages: 800 },
 };
