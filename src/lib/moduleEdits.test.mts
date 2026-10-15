@@ -7,7 +7,7 @@
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
 import { PROOF_PAGE as PAGE, flatten } from "./proofSvg";
-import { cellHeightPx } from "./grid";
+import { cellHeightPx, gridCellToPixels } from "./grid";
 import { hourlyPropsFromSettings, DEFAULT_HOURLY_SETTINGS } from "./modules/hourlyGridCore";
 import { getMinRowSpanForSlug } from "./moduleMinRowSpan";
 import { wholeCellColumns } from "./modules/columnTable";
@@ -718,6 +718,55 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     check(schema?.properties?.italic?.default === false, `${slug}: the stored schema has italic, off`);
     check(moduleDefinition(slug)?.fields?.some((f) => f.kind === "boolean" && f.key === "italic") === true, `${slug}: the editor has the Italic switch`);
   }
+}
+
+// --- lined interiors -----------------------------------------------------------
+// "ruled lines internal to the body of module ... inset horizontally equal to
+// the distance between modules", "only lined ruled interiors", "not
+// checklists" (2026-10-15). A Lined writing space stops the gap between two
+// neighbouring modules (two box insets) short of each side of what it rules.
+{
+  const gap = PAGE.boxInsetPx * 2;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan: 12, rowSpan: 6 });
+  const edges = (e: RenderedPolotnoElement) => ({ left: Number(e.x), right: Number(e.x) + Number(e.width) });
+  const inBox = (rules: RenderedPolotnoElement[]) =>
+    rules.length > 0 && rules.every((r) => near(edges(r).left - box.x, gap) && near(box.x + box.width - edges(r).right, gap));
+
+  const note = draw("labeled-box", { heading: "Notes", rule: "lined" }, 12, 6);
+  check(inBox(ids(note, /-rule\d+$/)), `note box: lined rules stop ${gap}px short of each side`);
+  const split = draw("labeled-box", { heading: "Notes", rule: "lined", dividers: true }, 12, 6);
+  const divider = ids(split, /-divider0$/)[0];
+  const dividerX = Number(divider.x) + Number(divider.width) / 2;
+  check(
+    ids(split, /-c0-rule\d+$/).every((r) => near(dividerX - edges(r).right, gap)) && ids(split, /-c1-rule\d+$/).every((r) => near(edges(r).left - dividerX, gap)),
+    "and the same gap either side of a divider"
+  );
+  const number = ids(draw("labeled-box", { heading: "Notes", rule: "lined", lineStart: "numbers" }, 12, 6), /-start\d+$/)[0];
+  check(!!number && near(Number(number.x) - box.x, gap), "a line's number starts where its line does");
+  check(ids(draw("labeled-box", { heading: "Notes", rule: "dotted" }, 12, 6), /-dot\d+-\d+$/).length > 0, "dotted is untouched (its own inset)");
+
+  const answers = ids(draw("prompted-lines", { heading: "", prompts: ["What went well?"], linesPerPrompt: 2, answers: "lined" }, 12, 6), /-p0-line\d$/);
+  check(inBox(answers), `prompted lines: lined answers stop ${gap}px short of each side`);
+
+  const days = 3;
+  const monthBox = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan: 18, rowSpan: 16 });
+  const lined = draw(
+    "month-grid-core",
+    { dayCount: days, weekCount: 5, inside: "lined", dayLabels: [{ name: "SUNDAY" }, { name: "MONDAY" }, { name: "TUESDAY" }], cells: Array.from({ length: 5 }, (_, w) => Array.from({ length: days }, (_, d) => ({ date: w * 7 + d + 1, inCurrentMonth: true }))) },
+    18,
+    16
+  );
+  const dayWidth = monthBox.width / days;
+  const dayRules = ids(lined, /-w1-d1-rule\d+$/);
+  check(
+    dayRules.length > 0 && dayRules.every((r) => near(edges(r).left - (monthBox.x + dayWidth), gap) && near(monthBox.x + 2 * dayWidth - edges(r).right, gap)),
+    `month calendar: a lined day's rules stop ${gap}px short of its sides`
+  );
+
+  // Checklists keep their own lines.
+  const todo = ids(draw("todo-checklist", { heading: "To-do" }, 12, 6), /-d0-row\d+$/);
+  check(todo.length > 0 && !todo.some((r) => near(edges(r).left - box.x, gap)), "a checklist's rows are not inset by the gap");
 }
 
 // --- month calendar ----------------------------------------------------------

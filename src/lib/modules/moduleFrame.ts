@@ -242,6 +242,21 @@ export function rowHeightPx(lattice?: FrameLattice): number {
   return lattice?.pitchPx ?? ptToPx(18);
 }
 
+/**
+ * The space between two neighbouring modules: each box is inset by
+ * `insetPx` inside its cells, so two boxes side by side stand twice that
+ * apart - 12 print px on the planner's pages.
+ *
+ * A LINED writing interior stops this far short of each side of the space it
+ * rules (asked 2026-10-15: "ruled lines internal to the body of module ... inset
+ * horizontally equal to the distance between modules", "only lined ruled
+ * interiors", "not checklists") - so a line inside a box keeps the same air
+ * from its border as the box keeps from its neighbour.
+ */
+export function moduleGapPx(lattice?: FrameLattice): number {
+  return lattice ? lattice.insetPx * 2 : 12;
+}
+
 /** The box's own border - identical in all of them. */
 export function borderElement(geometry: FrameGeometry, id: (n: string) => string): FrameElement {
   return {

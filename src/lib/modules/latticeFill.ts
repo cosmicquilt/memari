@@ -13,7 +13,7 @@
 // page. moduleHouseStyle.test.mts checks all three.
 
 import { ptToPx } from "@/lib/print-spec";
-import { NEAR_BLACK, RULE_WIDTH_PT, rowHeightPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
+import { NEAR_BLACK, RULE_WIDTH_PT, moduleGapPx, rowHeightPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
 
 export type FillStyle = "none" | "lined" | "dotted" | "graph";
 
@@ -75,8 +75,9 @@ export function latticeColumnsIn(
 /**
  * Fill a region with writing space.
  *
- * `region` is the space to fill; lined rules and dots stay `inset` inside its
- * sides so they never touch a border. Graph paper runs edge to edge, its
+ * `region` is the space to fill; lined rules stop the gap between two
+ * modules short of each of its sides (moduleGapPx), and dots stay `inset`
+ * inside them, so neither touches a border. Graph paper runs edge to edge, its
  * vertical lines on the lattice columns strictly inside the region, and is
  * drawn lighter so writing still reads over it. `skipX` names x positions a
  * dot must not land on - a table's column dividers.
@@ -102,6 +103,7 @@ export function latticeFill(options: {
   if (style === "none") return [];
   const tag = options.tag ?? "";
   const inset = options.inset ?? 8;
+  const lineInset = options.inset ?? moduleGapPx(lattice);
   const weight = ptToPx(RULE_WIDTH_PT);
   const rows = latticeRowsIn(geometry, lattice, region.top, region.bottom);
   const elements: FrameElement[] = [];
@@ -120,7 +122,7 @@ export function latticeFill(options: {
 
   if (style === "lined") {
     for (const row of rows) {
-      elements.push(rule(`${tag}rule${row.index}`, region.left + inset, row.y - weight / 2, region.right - region.left - inset * 2, weight, options.lineOpacity));
+      elements.push(rule(`${tag}rule${row.index}`, region.left + lineInset, row.y - weight / 2, region.right - region.left - lineInset * 2, weight, options.lineOpacity));
     }
     return elements;
   }

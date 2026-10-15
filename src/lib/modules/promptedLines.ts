@@ -28,6 +28,7 @@ import {
   borderElement,
   contentTopPx,
   headerElements,
+  moduleGapPx,
   rowHeightPx,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
@@ -241,13 +242,16 @@ export function renderPromptedLines(
         }
         continue;
       }
+      // A lined answer stops the gap between modules short of each side -
+      // see moduleGapPx - wider than the prompt's own padding.
+      const lineInset = moduleGapPx(lattice);
       elements.push({
         id: id(`p${p}-line${line}`),
         type: "figure",
         subType: "rect",
-        x: geometry.x + padding,
+        x: geometry.x + lineInset,
         y: lineBottom - ruleWidth / 2,
-        width: geometry.width - padding * 2,
+        width: geometry.width - lineInset * 2,
         height: ruleWidth,
         fill: NEAR_BLACK,
         stroke: "none",

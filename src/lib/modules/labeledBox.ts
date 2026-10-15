@@ -88,6 +88,7 @@ import {
   RULE_WIDTH_PT,
   contentTopAtLeastPx,
   fitHeading,
+  moduleGapPx,
   rowHeightPx,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
@@ -350,7 +351,8 @@ export function renderLabeledBox(
           marker,
           number: count,
           id: id(`${half.tag}start${row.index}`),
-          x: half.left + 12,
+          // Where the line starts - see moduleGapPx.
+          x: half.left + moduleGapPx(lattice),
           bandTop: row.y - pitch,
           bandHeight: pitch,
           fontFamily: FONT_FAMILY,
