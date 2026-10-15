@@ -5,6 +5,7 @@
 // case pins down.
 import { resolveWidthResize, widthResizeRange, type WidthResizeInput } from "./widthResize";
 import type { GridRect } from "./grid";
+import { MODULE_REGISTRY, moduleContentIsLive } from "./moduleRegistry";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -127,6 +128,20 @@ const input = (target: GridRect, others: GridRect[], minRowSpanAt?: (span: numbe
     }
   }
   check(cases > 3000, `the sweep ran (${cases} resizes)`);
+}
+
+// --- a module widened sideways is drawn live ---------------------------------
+// A module whose content is drawn once and clipped while its box moves has its
+// frame hidden behind the box's outline for the whole drag, and faded back in
+// when it ends: "top border of module faded in and out when horizontally
+// resizing" (the mini month, 2026-10-15). Every module that can be widened is
+// drawn live, so its frame travels with the box.
+{
+  const frozen = Object.entries(MODULE_REGISTRY)
+    .filter(([, definition]) => definition.resizableWidth)
+    .filter(([slug, definition]) => !moduleContentIsLive(slug, definition.previewProps ?? {}))
+    .map(([slug]) => slug);
+  check(frozen.length === 0, `width-resizable modules drawn frozen, which fade their frame: ${frozen.join(", ")}`);
 }
 
 if (failures > 0) {

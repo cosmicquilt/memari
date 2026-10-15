@@ -1647,10 +1647,14 @@ const PRIMITIVES = {
       getMiniMonthMinHeightPx(miniMonthMark(propValues) !== "none"),
     weekStart: (props, weekStartDay) => ({ ...props, weekStartDay }),
     current: (props) => (props.mark === undefined ? { ...props, mark: miniMonthMark(props) } : props),
-    // Seven columns of a fixed grid: the drawing is the same marks at
-    // every size, only further apart, so nothing has to be recounted.
-    // The clip window serves it more cheaply than a redraw.
-    contentIsLive: NEVER,
+    // DRAWN LIVE, though seven columns of a fixed grid are the same marks at
+    // every size. Clipped instead, its frame was hidden behind the box's
+    // outline for the whole drag and faded back in when it ended - "top
+    // border of module faded in and out when horizontally resizing"
+    // (2026-10-15). Live, the frame travels with the box (FrameLayer) as
+    // every other module's does, and the grid slides: it is one drawing at
+    // both sizes. At most 42 days, so the redraw costs nothing.
+    contentIsLive: ALWAYS,
   },
 
   // One long count wrapped across rows: days sober, pages read, dollars
