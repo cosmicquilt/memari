@@ -46,6 +46,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "brain-dump": "An open box to empty your head into before you plan. Get everything down first, then sort it into lists.",
   "weekly-priorities": "A short numbered list of what matters most this week, written before the week fills up.",
   "assignment-tracker": "Each assignment with its class and the day it is due, and a box to tick when it is handed in.",
+  "nurse-brain-sheet": "A nurse's report sheet for the shift, with a row for each patient: room, diagnosis and history, meds due, labs, and what is still to do.",
   "done-list": "A ruled list of what you finished, written down as you finish it. A record of what the day did hold, for the days a to-do list makes it look like nothing happened.",
   "one-on-one-agenda": "Notes to bring to a meeting with your manager: what went well, what is in your way, and what you need from them.",
   "lesson-planner": "Each period with its topic and the materials it needs, set out for a teaching week.",
@@ -79,6 +80,8 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "sleep-log": "Each night in one row: when you went to bed, when you woke, the hours, and how well you slept.",
   "medication-log": "Tick off each dose, morning, midday, evening and night, across the days of your page.",
   "symptom-tracker": "Note which symptoms showed up each day, such as pain, fatigue or headaches, to spot patterns or take to an appointment.",
+  "medication-doses": "Write each dose with its time and amount, then tick whether you took it or skipped it. Doses taken only as needed get a tick under PRN, so a skipped dose never looks like a taken one.",
+  "symptom-severity": "Rate each symptom every day from 0 for none to 3 for severe. It takes a few seconds on a bad day and builds a record of patterns to bring to an appointment.",
   "period-tracker": "A month calendar to ring the days of your period, so the length of your cycle is easy to see.",
   "measurements": "Weight, chest, waist and hips, a row per date, to watch change over months rather than days.",
   "self-care-checklist": "Six small things that keep you well, ticked off each day: moving, getting outside, eating well, sleep, reaching out and rest.",
@@ -117,6 +120,9 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "no-spend-challenge": "A month calendar to mark every day you spend nothing beyond the essentials.",
   "subscription-audit": "Every subscription with its cost and renewal date, and whether it is worth keeping.",
   "zero-based-budget": "Assign all of your income to something, line by line, until the Remaining row reaches zero.",
+  "income-log": "Log each payment as it comes in, with who paid it and how much you set aside for tax. Made for pay that changes from month to month, such as freelance, gig or tipped work.",
+  "sinking-funds": "Save a little each month toward costs you know are coming, such as car repairs, gifts or a yearly bill. Each fund has a goal, a monthly amount and what you have saved so far.",
+  "paycheck-budget": "Plan each paycheck on its own: the bills it has to cover, when each is due, and what is left once they are paid. Useful when you are paid weekly or every two weeks.",
 
   // ── Home & family ─────────────────────────────────────────────────────
   "cleaning-rota": "Rooms and jobs down the side and the days across, to share out the cleaning and see what is done.",
@@ -166,6 +172,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "weekly-reflection": "Three questions to close the week: what went well, what did not, and what comes next.",
   "lessons-learned": "A bulleted box for what the month taught you, so it is not learned twice.",
   "comfort-zone-challenge": "One thing a month that scares you a little, with a box to tick when it is done.",
+  "star-count": "A star for anything that went right, a row of them for each week of the month. They add up, and a missed day costs nothing, so there is no streak to break.",
   "focus-blocks": "Ten flames for the day. Fill one in for each block of focused work, such as the Pomodoro Technique's 25 minutes.",
   "pros-and-cons": "For and against, side by side. Benjamin Franklin described this way of deciding in a 1772 letter to Joseph Priestley.",
 

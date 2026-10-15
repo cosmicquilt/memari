@@ -7,16 +7,20 @@ import { ModuleCards } from "@/app/landing/ModuleCards";
 import {
   GALLERY_LABEL,
   KIND_SECTIONS,
-  STARTERS,
+  LISTED_STARTERS,
   STARTER_MODULES,
   actionLabel,
 } from "@/app/landing/starterLayouts";
+import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf } from "@/app/landing/plannerTemplates";
+import { PlannerActions } from "@/app/landing/PlannerActions";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
 
 // memari.studio/layouts: weeks, months, days and pages to start from, and
 // modules (2026-10-08). See starterLayouts.ts for what is shown and why it
-// says nothing about who used them.
+// says nothing about who used them. First, whole planners (2026-10-15,
+// plannerTemplates.ts): books made for one kind of person, every part laid
+// out. Their spreads are filed under them, not among the weeks and months.
 
 export const metadata: Metadata = {
   title: "Layouts - memari. STUDIO",
@@ -32,21 +36,72 @@ export default function LayoutsPage() {
           <p className={styles.eyebrow}>Layouts</p>
           <h1 className={styles.headline}>Start from one that works.</h1>
           <p className={styles.lede}>
-            Pick a week, a month, a day or a few pages, make it yours, and
-            Memari lays it out for the whole book. Every module moves, resizes
+            Pick a whole planner, or a week, a month, a day or a few pages,
+            make it yours, and Memari lays it out for the whole book. Every module moves, resizes
             and comes out.
           </p>
           <nav aria-label="Kinds of layout" className={site.kinds} data-keepout>
             <span className={site.label}>{GALLERY_LABEL}</span>
+            {PLANNERS.length > 0 && (
+              <a href="#planners">
+                Planners <span>{PLANNERS.length}</span>
+              </a>
+            )}
             {KIND_SECTIONS.map(([kind, heading]) => (
               <a key={kind} href={`#${kind}`}>
                 {heading}{" "}
-                <span>{STARTERS.filter((s) => s.kind === kind).length}</span>
+                <span>{LISTED_STARTERS.filter((s) => s.kind === kind).length}</span>
               </a>
             ))}
             <a href="#modules">Modules</a>
           </nav>
         </header>
+
+        {PLANNERS.length > 0 && (
+          <section
+            id="planners"
+            className={`${site.block} ${site.blockWide}`}
+            aria-labelledby="planners-title"
+          >
+            <h2 id="planners-title" className={site.blockTitle}>
+              Planners
+            </h2>
+            <p className={site.blockLede}>
+              A whole book made for one kind of life: the pages at the front,
+              and a spread for every month and week, all laid out. Change any
+              of it.
+            </p>
+            <div className={site.layoutGrid}>
+              {PLANNERS.map((planner) => (
+                <article key={planner.key} className={site.card}>
+                  <LayoutCard spreadKey={coverSpreadOf(planner)} title={planner.title} />
+                  <div>
+                    <h3 className={site.cardTitle}>
+                      <Link href={`/layouts/${planner.key}`} className={site.cardLink}>
+                        {planner.title}
+                      </Link>
+                    </h3>
+                    <p className={site.hours}>{planner.forWhom}</p>
+                    <p className={site.cardText}>{planner.line}</p>
+                    <ul className={site.parts} aria-label="In the book">
+                      {partsOf(planner).map(({ part }) => (
+                        <li key={part}>{PART_NAMES[part]}</li>
+                      ))}
+                    </ul>
+                    {/* A text link, not a third button: two buttons and a
+                        third wrapped onto a line of its own (2026-10-15). */}
+                    <Link href={`/layouts/${planner.key}`} className={site.textLink}>
+                      See every page
+                    </Link>
+                  </div>
+                  <div className={site.cardActions}>
+                    <PlannerActions plannerKey={planner.key} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         {KIND_SECTIONS.map(([kind, heading, lede]) => (
           <section
@@ -60,7 +115,7 @@ export default function LayoutsPage() {
             </h2>
             <p className={site.blockLede}>{lede}</p>
             <div className={site.layoutGrid}>
-              {STARTERS.filter((s) => s.kind === kind).map((starter) => (
+              {LISTED_STARTERS.filter((s) => s.kind === kind).map((starter) => (
                 <article key={starter.key} className={site.card}>
                   <LayoutCard spreadKey={starter.key} title={starter.title} />
                   <div>

@@ -1,5 +1,7 @@
 // "Use this" - a POST from the Layouts pages (/layouts and /layouts/<key>,
-// 2026-10-08): a week, a month, a day or pages of modules. The landing
+// 2026-10-08): a week, a month, a day or pages of modules - or, from
+// 2026-10-15, a whole prebuilt planner (landing/plannerTemplates.ts), every
+// part of its book laid out at once. The landing
 // page's own buttons came off 2026-10-06 ("i dont want the 'use this week'
 // button").
 //
@@ -27,7 +29,8 @@ import { prisma } from "@/lib/prisma";
 import { isTimeZone } from "@/lib/timeZone";
 import { STARTER_BY_KEY } from "@/app/landing/starterLayouts";
 import { resolveLayout } from "@/app/landing/similarLayouts";
-import { WeekUnavailable, createJournalFromSpread } from "@/app/planner/archetypeWeek";
+import { PLANNER_BY_KEY } from "@/app/landing/plannerTemplates";
+import { WeekUnavailable, createJournalFromPlanner, createJournalFromSpread } from "@/app/planner/archetypeWeek";
 import { seedOwnerDefaultZone } from "@/app/planner/ownerSettings";
 
 export const runtime = "nodejs";
@@ -38,12 +41,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Only what the gallery offers - a layout or one of its similar layouts
   // ("student~2", similarLayouts.ts). A spread held for a read-through is
   // not in it, so it cannot be made from here either.
-  const layout = resolveLayout(key);
-  if (!layout) {
+  const planner = PLANNER_BY_KEY[key] ?? null;
+  const layout = planner ? null : resolveLayout(key);
+  if (!planner && !layout) {
     return new Response("There is no such layout.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
   const form = await request.formData().catch(() => null);
   const zone = form?.get("tz");
+  // "Order as is" (2026-10-15): straight on to the order form, not the editor.
+  const thenOrder = form?.get("then") === "order";
 
   let owner = await currentOwner();
   let newGuest: string | null = null;
@@ -64,8 +70,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   await seedOwnerDefaultZone(owner.id, isTimeZone(zone) ? zone : null);
   let where: string;
   try {
-    const book = await createJournalFromSpread(owner.id, layout.def, `${layout.title} journal`, isTimeZone(zone) ? zone : null);
-    where = `/app/j/${book.slug}`;
+    const timeZone = isTimeZone(zone) ? zone : null;
+    const book = planner
+      ? await createJournalFromPlanner(owner.id, planner, planner.title, timeZone)
+      : await createJournalFromSpread(owner.id, layout!.def, `${layout!.title} journal`, timeZone);
+    where = thenOrder ? `/app/j/${book.slug}/order` : `/app/j/${book.slug}`;
   } catch (error) {
     // A module the database has no type for yet: the start dialog, where
     // a journal can still be made, rather than an error page. Logged, since

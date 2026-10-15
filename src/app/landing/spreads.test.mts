@@ -8,6 +8,9 @@ import { SPREAD_DEFS, baseSheetSpread, landingSpreads, spreadProblems } from "./
 import { PEOPLE, SIDEBAR_FROM_ROW } from "./archetypes";
 import { BASE_SPREAD, HERO_BY_KEY, HERO_SPREADS, type HeroSpread } from "./heroSpreads";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
+import { PLANNER_SPREADS } from "./plannerSpreads";
+import { ALL_PLANNERS, PLANNERS, partsOf } from "./plannerTemplates";
+import { STARTER_BY_KEY } from "./starterLayouts";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail?: string) {
@@ -70,6 +73,34 @@ for (const spread of [...HERO_SPREADS, BASE_SPREAD]) {
 for (const def of [...SPREAD_DEFS, BASE_SPREAD]) {
   const problems = spreadProblems(def);
   check(`${def.key} is a valid spread`, problems.length === 0, problems.join("; "));
+}
+
+// The prebuilt planners (plannerTemplates.ts): their spreads as strictly as
+// the hero's, though the hero does not turn through them; every part a
+// spread of its own kind; and one week start and one font a book, since
+// Use this planner makes one journal of them (archetypeWeek.ts).
+const PART_KIND = { front: "pages", month: "month", week: "week", day: "day" } as const;
+for (const def of PLANNER_SPREADS) {
+  const problems = spreadProblems(def);
+  check(`${def.key} is a valid spread`, problems.length === 0, problems.join("; "));
+  check(`${def.key}: not in the hero's turn`, !HERO_SPREADS.includes(def));
+  check(`${def.key}: its own key`, HERO_BY_KEY[def.key] === def);
+}
+check("every planner can be made", PLANNERS.length === ALL_PLANNERS.length && PLANNERS.length > 0, `${PLANNERS.length} of ${ALL_PLANNERS.length}`);
+for (const planner of ALL_PLANNERS) {
+  const parts = partsOf(planner);
+  check(`${planner.key}: has a week, a month or a day`, parts.some(({ part }) => part !== "front"));
+  for (const { part, key } of parts) {
+    const spread = HERO_BY_KEY[key];
+    check(`${planner.key}: its ${part} is a spread`, !!spread, key);
+    if (!spread) continue;
+    check(`${planner.key}: its ${part} is a ${PART_KIND[part]} spread`, spread.layout.kind === PART_KIND[part], spread.layout.kind);
+    // Listed under it in the gallery, so its picture and popup exist.
+    check(`${planner.key}: ${key} is a layout of its own, filed under it`, STARTER_BY_KEY[key]?.planner === planner.key);
+  }
+  const layouts = parts.map(({ key }) => HERO_BY_KEY[key]?.layout).filter(Boolean);
+  check(`${planner.key}: one week start`, new Set(layouts.map((l) => l.weekStartsMonday)).size === 1);
+  check(`${planner.key}: one font`, new Set(layouts.map((l) => l.font)).size === 1);
 }
 
 // Everything, held weeks included (production: false) - checked as strictly

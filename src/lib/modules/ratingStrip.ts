@@ -142,8 +142,12 @@ export function renderRatingStrip(
 
   // Total in its config - see columnTable.ts for why.
   const items = config.items ?? [];
-  const min = Math.round(config.scaleMin) || 1;
-  const max = Math.round(config.scaleMax) || 5;
+  // 0 is a real start - "none" on a symptom severity scale - so only a
+  // missing or broken number falls back. `Math.round(x) || 1` read 0 as
+  // missing and drew a 0-to-3 scale with three marks (found 2026-10-15).
+  const whole = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) ? Math.round(value) : fallback);
+  const min = whole(config.scaleMin, 1);
+  const max = whole(config.scaleMax, 5);
   // A scale that runs backwards or has one point is a configuration
   // mistake, not a thing to draw badly: clamp to at least two points so
   // the strip is still a strip.

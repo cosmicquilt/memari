@@ -234,6 +234,50 @@
   margin: 0;
 }
 
+/* A prebuilt planner's parts, under its description: "Front pages",
+   "Every month", "Every week" (plannerTemplates.ts). */
+.parts {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.parts li {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.06);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A link in running text on a card: "See every page". */
+.textLink {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-underline-offset: 3px;
+}
+
+/* A planner's own page: each part of the book, its spread and its modules. */
+.partBlock {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .partBlock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* A module's card: its drawing on a piece of page, and what it is. */
 .moduleGrid {
   margin-top: 32px;
@@ -330,7 +374,7 @@
 }
 
 .planFeatured {
-  background: #fbf6ea;
+  background: color-mix(in srgb, var(--cream) 45%, #fff);
   border-color: rgba(74, 92, 255, 0.35);
   box-shadow: 0 18px 40px rgba(40, 30, 20, 0.1);
 }

@@ -8,7 +8,7 @@
 
 import site from "./site.module.css";
 
-export function UseThisWeek({ spreadKey, label = "Use this week", quiet = false }: { spreadKey: string; label?: string; quiet?: boolean }) {
+export function UseThisWeek({ spreadKey, label = "Use this week", quiet = false, then }: { spreadKey: string; label?: string; quiet?: boolean; then?: "order" }) {
   return (
     <form
       method="post"
@@ -19,6 +19,8 @@ export function UseThisWeek({ spreadKey, label = "Use this week", quiet = false 
       }}
     >
       <input type="hidden" name="tz" defaultValue="" />
+      {/* "Order as is": the order form next, not the editor. */}
+      {then && <input type="hidden" name="then" value={then} />}
       <button type="submit" className={quiet ? site.buttonQuiet : site.button}>
         {label}
       </button>

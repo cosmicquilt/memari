@@ -15,6 +15,11 @@
 //          hero shows two facing days of ONE daily template)
 //   pages  a weekly book whose Beginning is the spread's two pages
 //
+// And a PREBUILT PLANNER (2026-10-15, landing/plannerTemplates.ts): a whole
+// book whose front pages, months, weeks and days are each laid out from a
+// spread of their own - createJournalFromPlanner, the same steps once per
+// part.
+//
 // The locked spine stays - the week title, the hours, the month's title and
 // calendar - but takes the spread's SETTINGS: the hours' range, increments
 // and row height, how tall they are (hoursRows), and how the month's days
@@ -30,7 +35,8 @@
 import { prisma } from "@/lib/prisma";
 import { PageLevel } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
-import type { HeroSpread } from "@/app/landing/heroSpreads";
+import { HERO_BY_KEY, type HeroSpread } from "@/app/landing/heroSpreads";
+import { partsOf, type PlannerPart, type PlannerTemplate } from "@/app/landing/plannerTemplates";
 import { spreadPlacements, type Placed } from "@/app/landing/spreads";
 import { createBookFor, type BookWithPages, type NewJournal } from "./bookSeeding";
 
@@ -86,30 +92,40 @@ function spineSettings(placed: Placed): Record<string, unknown> {
  */
 export class WeekUnavailable extends Error {}
 
-/** A new journal for `ownerId` laid out as `spread`. */
-export async function createJournalFromSpread(ownerId: string, spread: HeroSpread, title: string, browserTimeZone: string | null): Promise<BookWithPages> {
-  const { target } = shapeOf(spread);
-  // A day spread is one daily template shown twice: its left page is it.
+/** What a spread places: its modules, and the settings for the spines. A
+ *  day spread is one daily template shown twice: its left page is it. */
+function placementsOf(spread: HeroSpread): { modules: Placed[]; spines: Placed[] } {
   const placed = spreadPlacements(spread).filter((p) => spread.layout.kind !== "day" || p.page === 0);
-  const modules = placed.filter((p) => !p.locked);
-  const spines = placed.filter((p) => p.locked && p.slug.endsWith("-core"));
+  return { modules: placed.filter((p) => !p.locked), spines: placed.filter((p) => p.locked && p.slug.endsWith("-core")) };
+}
 
-  // Every module type first: a missing one used to throw after the journal
-  // was made, leaving a half-laid-out journal behind.
-  const slugs = [...new Set(modules.map((p) => p.slug))];
+type ModuleTypeRow = Awaited<ReturnType<typeof prisma.moduleType.findMany>>[number];
+
+/** Every module type the spreads place, before anything is created: a
+ *  missing one used to throw after the journal was made, leaving a half-
+ *  laid-out journal behind. */
+async function moduleTypesFor(spreads: HeroSpread[], what: string): Promise<Map<string, ModuleTypeRow>> {
+  const slugs = [...new Set(spreads.flatMap((spread) => placementsOf(spread).modules.map((p) => p.slug)))];
   const types = await prisma.moduleType.findMany({ where: { slug: { in: slugs } } });
   const bySlug = new Map(types.map((t) => [t.slug, t]));
   const missing = slugs.filter((slug) => !bySlug.has(slug));
   if (missing.length > 0) {
-    throw new WeekUnavailable(`${spread.key} places ${missing.join(", ")}, which this database has no module type for - run \`npx prisma db seed\``);
+    throw new WeekUnavailable(`${what} places ${missing.join(", ")}, which this database has no module type for - run \`npx prisma db seed\``);
   }
+  return bySlug;
+}
 
-  const book = await createBookFor(ownerId, journalFor(spread, title, browserTimeZone));
+/**
+ * Lay `book`'s `target` pages out as `spread`: the writes that do it, for
+ * one transaction. A page is added first where the level has too few - the
+ * Beginning starts with one, and module pages need two.
+ */
+async function layOutLevel(book: BookWithPages, spread: HeroSpread, target: PageLevel, bySlug: Map<string, ModuleTypeRow>): Promise<Prisma.PrismaPromise<unknown>[]> {
+  const { modules, spines } = placementsOf(spread);
   let pages = book.pages
     .filter((page) => page.level === target && (page.variantKey ?? null) === null)
     .sort((a, b) => a.position - b.position);
   const needed = spread.layout.kind === "day" ? 1 : 2;
-  // Beginning starts with one page; module pages need two.
   if (pages.length > 0 && pages.length < needed) {
     const first = pages[0];
     const added = await prisma.page.create({
@@ -148,10 +164,60 @@ export async function createJournalFromSpread(ownerId: string, spread: HeroSprea
     const propValues = { ...((own.propValues as Record<string, unknown>) ?? {}), ...spineSettings(spine) };
     return [prisma.moduleInstance.update({ where: { id: own.id }, data: { rowSpan: spine.rowSpan, propValues: propValues as Prisma.InputJsonValue } })];
   });
-  await prisma.$transaction([
+  return [
     prisma.moduleInstance.deleteMany({ where: { pageId: { in: pages.slice(0, needed).map((page) => page.id) }, locked: false } }),
     ...spineUpdates,
     prisma.moduleInstance.createMany({ data: rows }),
-  ]);
+  ];
+}
+
+/** A new journal for `ownerId` laid out as `spread`. */
+export async function createJournalFromSpread(ownerId: string, spread: HeroSpread, title: string, browserTimeZone: string | null): Promise<BookWithPages> {
+  const bySlug = await moduleTypesFor([spread], spread.key);
+  const book = await createBookFor(ownerId, journalFor(spread, title, browserTimeZone));
+  await prisma.$transaction(await layOutLevel(book, spread, shapeOf(spread).target, bySlug));
+  return book;
+}
+
+/** The level each part of a planner's book is. */
+const PART_LEVEL: Record<PlannerPart, PageLevel> = {
+  front: PageLevel.FRONT_MATTER,
+  month: PageLevel.MONTHLY,
+  week: PageLevel.WEEKLY,
+  day: PageLevel.DAILY,
+};
+
+/** The journal a planner starts: its parts' levels between the Beginning
+ *  and the End, at the hero's trim, this quarter. Its spreads agree on the
+ *  week's first day and the font (spreads.test.mts checks), so the first
+ *  part's are the book's. */
+export function journalForPlanner(planner: PlannerTemplate, title: string, browserTimeZone: string | null, today = new Date()): NewJournal {
+  const parts = partsOf(planner);
+  const first = HERO_BY_KEY[parts[0].key].layout;
+  const inner = parts.filter(({ part }) => part !== "front").map(({ part }) => PART_LEVEL[part]);
+  return {
+    title,
+    trim: "bound7x10",
+    ...nextQuarter(today),
+    levels: [PageLevel.FRONT_MATTER, ...inner, PageLevel.BACK_MATTER],
+    dated: true,
+    weekStartDay: first.weekStartsMonday ? 1 : 0,
+    font: first.font,
+    browserTimeZone,
+  };
+}
+
+/** A new journal for `ownerId`: the whole of `planner`'s book, every part
+ *  laid out from its spread, in one transaction. */
+export async function createJournalFromPlanner(ownerId: string, planner: PlannerTemplate, title: string, browserTimeZone: string | null): Promise<BookWithPages> {
+  const parts = partsOf(planner).map(({ part, key }) => ({ part, spread: HERO_BY_KEY[key] }));
+  const bySlug = await moduleTypesFor(
+    parts.map(({ spread }) => spread),
+    planner.key
+  );
+  const book = await createBookFor(ownerId, journalForPlanner(planner, title, browserTimeZone));
+  const writes: Prisma.PrismaPromise<unknown>[] = [];
+  for (const { part, spread } of parts) writes.push(...(await layOutLevel(book, spread, PART_LEVEL[part], bySlug)));
+  await prisma.$transaction(writes);
   return book;
 }

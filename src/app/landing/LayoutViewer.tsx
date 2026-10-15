@@ -278,6 +278,19 @@ function Popup({
                 )}
               </div>
               <p className={css.makes}>{detail.makes}</p>
+              {/* A planner's part: the whole book is one press too. */}
+              {detail.planner && (
+                <div style={{ marginTop: 18, display: "grid", gap: 10, justifyItems: "start" }}>
+                  <p className={css.makes}>
+                    Part of the{" "}
+                    <Link href={`/layouts/${detail.planner.key}`} className={css.more}>
+                      {detail.planner.title}
+                    </Link>{" "}
+                    planner, which lays out every part of the book.
+                  </p>
+                  <UseThisWeek spreadKey={detail.planner.key} label="Use the whole planner" quiet />
+                </div>
+              )}
 
               {detail.similar.length > 0 && (
                 <section

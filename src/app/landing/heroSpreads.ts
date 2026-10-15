@@ -36,6 +36,7 @@
 import type { FontChoice } from "@/lib/theme";
 import { PEOPLE, type Person, type Slot, type WeekLayout } from "./archetypes";
 import { BASE_SPREAD, EXTRA_SPREADS } from "./heroExtras";
+import { PLANNER_SPREADS } from "./plannerSpreads";
 
 // ------------------------------------------------------------------ layout
 
@@ -148,7 +149,10 @@ const personWeek = (p: Person): HeroSpread => {
   return { key, held, layout: { kind: "week", ...layout }, hand, doodles, events, calendar, banner, lists, tables, trackers, trackerMark, eisenhower, fills, strips, ratings, charts, marks, fillFamily };
 };
 
-const BY_KEY: Record<string, HeroSpread> = Object.fromEntries([...PEOPLE.map(personWeek), ...EXTRA_SPREADS, BASE_SPREAD].map((s) => [s.key, s]));
+// The prebuilt planners' spreads are here by key too (plannerSpreads.ts) -
+// layouts the gallery shows and Use this makes - but not in ORDER: the
+// landing page's journal does not turn through them.
+const BY_KEY: Record<string, HeroSpread> = Object.fromEntries([...PEOPLE.map(personWeek), ...EXTRA_SPREADS, ...PLANNER_SPREADS, BASE_SPREAD].map((s) => [s.key, s]));
 
 /**
  * The order the journal turns through them: the student first, the jobs

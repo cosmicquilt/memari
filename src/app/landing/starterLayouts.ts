@@ -40,6 +40,9 @@ export type Starter = {
   line: string;
   /** How its hours are set, where they differ from the template's. */
   hours?: string;
+  /** The prebuilt planner it was made for (plannerTemplates.ts): listed
+   *  there rather than among the weeks and months, still usable alone. */
+  planner?: string;
 };
 
 const W = (key: string, title: string, line: string, hours?: string): Starter => ({ key, kind: "week", title, line, hours });
@@ -74,11 +77,22 @@ const ALL: Starter[] = [
   { key: "pages-trip", kind: "pages", title: "Trip pages", line: "Two pages for a trip: an itinerary, a packing list, a budget, places to go, where you ate, a trip journal and a sketch box." },
   { key: "pages-reading", kind: "pages", title: "Reading pages", line: "Books read, reading progress, albums, a watchlist and a commonplace book." },
   { key: "pages-kitchen", kind: "pages", title: "Kitchen pages", line: "Meals for the week, groceries, recipes to try, a recipe card and sourdough starter feedings." },
+  // The prebuilt planners' parts (plannerSpreads.ts).
+  { key: "pages-irregular-income", kind: "pages", planner: "irregular-income", title: "Irregular income pages", line: "A baseline month, a rule for when there's extra, sinking funds, irregular bills ninety days ahead, subscriptions, tax set aside by the quarter, and bars for the buffer and debt." },
+  { key: "month-irregular-income", kind: "month", planner: "irregular-income", title: "Irregular income month", line: "Lined days for paydays and bills, every payment logged, two paychecks budgeted, what to set aside, the buffer, and a month review." },
+  { key: "pages-adhd", kind: "pages", planner: "adhd", title: "ADHD pages", line: "A dopamine menu, what to do when you're stuck, someday and maybe, things not to forget, a dotted brain dump and your projects." },
+  { key: "month-adhd", kind: "month", planner: "adhd", title: "ADHD month", line: "Dotted days, stars that add up for each week, a brain dump, your projects, what helped, wins and a done list." },
+  { key: "day-adhd-dots", kind: "day", planner: "adhd", title: "ADHD day", line: "A page a day: three things, what you actually got done and tomorrow down the side, the day as open dots, focus blocks and a short list.", hours: "Increments off, dotted" },
+  { key: "week-irregular-income", kind: "week", planner: "irregular-income", title: "Irregular income week", line: "What is safe to spend, bills due, groceries, every purchase, what came in, and bars for the buffer and debt." },
 ];
 
 export const STARTERS: Starter[] = ALL.filter((s) => HERO_BY_KEY[s.key] && !HERO_BY_KEY[s.key].held);
 
 export const STARTER_BY_KEY: Record<string, Starter> = Object.fromEntries(STARTERS.map((s) => [s.key, s]));
+
+/** The ones the gallery lists among the weeks, months, days and pages: not
+ *  a planner's parts, which are shown with their planner. */
+export const LISTED_STARTERS: Starter[] = STARTERS.filter((s) => !s.planner);
 
 /** The few the landing page shows, one of each kind, ending in "View more"
  *  (2026-10-08: "there should be less layouts and just say view more at
@@ -119,8 +133,9 @@ function summary(slug: string): ModuleSummary {
 }
 
 /** The modules on a layout, in the order they are placed: each kind once,
- *  except a note box, which is listed by its own heading - "Exams" and
- *  "After Midterms" are two different things on the page. */
+ *  except a note box or a plain table, which is listed by its own heading -
+ *  "Exams" and "After Midterms" are two different things on the page, and
+ *  so are a baseline month and a tax set-aside. */
 export function modulesOf(key: string): ModuleSummary[] {
   const spread = HERO_BY_KEY[key];
   if (!spread) return [];
@@ -128,13 +143,20 @@ export function modulesOf(key: string): ModuleSummary[] {
   const out: ModuleSummary[] = [];
   for (const slot of spreadPlacements(spread)) {
     if (slot.locked) continue;
-    const heading = slot.slug === "labeled-box" && typeof slot.props?.heading === "string" && slot.props.heading ? slot.props.heading : null;
+    const named = slot.slug === "labeled-box" || slot.slug === "column-table";
+    const heading = named && typeof slot.props?.heading === "string" && slot.props.heading ? slot.props.heading : null;
     const id = heading ? `${slot.slug}:${heading.toLowerCase()}` : slot.slug;
     if (seen.has(id)) continue;
     seen.add(id);
     const base = summary(slot.slug);
     if (!heading) {
       out.push(base);
+      continue;
+    }
+    if (slot.slug === "column-table") {
+      const columns = Array.isArray(slot.props.columns) ? (slot.props.columns as string[]) : [];
+      const list = columns.length > 1 ? `${columns.slice(0, -1).join(", ")} and ${columns[columns.length - 1]}` : columns.join("");
+      out.push({ ...base, name: `${heading} (table)`, description: `A table headed ${heading}, with columns for ${list.toLowerCase()}${slot.props.totalsRow ? ", added up at the bottom" : ""}.` });
       continue;
     }
     // A named box says what it is for, not the generic note box's line

@@ -187,6 +187,19 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "Assignments", ...table(["Class", "Task", "Due", "Done"], [1.1, 3, 1, 0.8]) },
   },
   {
+    // A nurse's report sheet ("brain sheet"), the planner research's night
+    // shift nurse (2026-10-15): a row per patient for the shift, in the
+    // shorthand nurses write it in - room, diagnosis and history, meds due,
+    // labs, what is left to do.
+    slug: "nurse-brain-sheet",
+    primitive: "column-table",
+    name: "Nurse Brain Sheet",
+    category: "Planning",
+    cadence: "day",
+    paletteName: "Brain Sheet",
+    props: { heading: "Brain Sheet", ...table(["Rm", "Patient", "Dx / Hx", "Meds due", "Labs", "To do"], [0.6, 1.5, 1.6, 1.4, 1.1, 1.6]) },
+  },
+  {
     // What got done, written as it gets done - the ADHD week's sidebar.
     slug: "done-list",
     primitive: "labeled-box",
@@ -588,6 +601,43 @@ export const CATALOGUE: CatalogueEntry[] = [
     rowSpan: 8,
   },
   {
+    // Taken, skipped, or taken only as needed - three different answers a
+    // tick box can't give. Asked for in the chronic-illness research
+    // (2026-10-15): an app had "no option to select skipped a medication
+    // versus just checking it taken". A row per dose, written as it is due.
+    slug: "medication-doses",
+    primitive: "column-table",
+    name: "Medication Doses",
+    category: "Mood & health",
+    cadence: "day",
+    paletteName: "Doses",
+    props: { heading: "Doses", ...table(["Time", "Medicine", "Dose", "Taken", "Skipped", "PRN"], [0.9, 2.2, 0.9, 1, 1.1, 0.8]) },
+  },
+  {
+    // How bad, not only whether: each symptom from 0 (none) to 3 (severe),
+    // the key written at the scale's two ends. The same five symptoms as
+    // the tracker above, so the two read together.
+    slug: "symptom-severity",
+    primitive: "rating-strip",
+    name: "Symptom Severity",
+    category: "Mood & health",
+    cadence: "day",
+    paletteName: "Severity",
+    props: {
+      heading: "Severity",
+      items: ["Pain", "Fatigue", "Nausea", "Headache", "Brain fog"],
+      scaleMin: 0,
+      scaleMax: 3,
+      shape: "circle",
+      scaleHead: "words",
+      lowLabel: "none",
+      highLabel: "severe",
+    },
+    // Its floor: the heading, the scale and the five symptoms, with no blank
+    // row under them - a sixth row to rate nothing in.
+    rowSpan: 7,
+  },
+  {
     // Eight rows, not the primitive's five. A mini-month with `markable`
     // on draws a box under every date, and that box is what turns a
     // calendar you read into one you fill in - so it needs the full six
@@ -962,10 +1012,47 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "month",
     paletteName: "Zero-Based",
     props: {
-      heading: "Every Pound",
+      // Was "Every Pound": a currency, on a page sold in dollars first and
+      // printed anywhere. The method's own name says it in none.
+      heading: "Zero-Based Budget",
       ...table(["Allocation", "Amount"], [4, 1.4], { totalsRow: true, totalsLabel: "Remaining" }),
     },
     columnSpan: 11,
+  },
+  {
+    // Pay that changes month to month (freelance, gig, tipped): each payment
+    // as it lands, and what was put aside from it for tax - the research's
+    // first niche (2026-10-15), "Irregular Income & Pay-Period Budget".
+    slug: "income-log",
+    primitive: "column-table",
+    name: "Income Log",
+    category: "Money",
+    cadence: "month",
+    paletteName: "Income",
+    props: { heading: "Income", ...table(["Date", "From", "Amount", "Set aside"], [1, 2.2, 1.2, 1.3], { totalsRow: true, totalsLabel: "Total" }) },
+  },
+  {
+    // Saving ahead for a cost you know is coming - car repairs, gifts, a
+    // yearly bill - so it is never a surprise.
+    slug: "sinking-funds",
+    primitive: "column-table",
+    name: "Sinking Funds",
+    category: "Money",
+    cadence: "journal",
+    paletteName: "Sinking Funds",
+    props: { heading: "Sinking Funds", ...table(["Fund", "Goal", "Monthly", "Saved"], [2.2, 1, 1.2, 1]) },
+  },
+  {
+    // Budgeting by paycheck rather than by month, the workaround people paid
+    // weekly or every two weeks describe: the bills this one covers, and
+    // what is left of it. Two to a month page.
+    slug: "paycheck-budget",
+    primitive: "column-table",
+    name: "Paycheck Budget",
+    category: "Money",
+    cadence: "month",
+    paletteName: "Paycheck",
+    props: { heading: "This Paycheck", ...table(["Bill", "Due", "Amount", "Paid"], [2.2, 1, 1.2, 0.8], { totalsRow: true, totalsLabel: "Left" }) },
   },
 
   // ─────────────────────────────────────────────────────────── Home & family
@@ -1766,6 +1853,23 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "week",
     paletteName: "Pills",
     props: { heading: "Meds", icon: "pill", count: 3, groupLabels: "days" },
+  },
+  {
+    // Stars that add up, not a streak to break. The planner research's ADHD
+    // finding (2026-10-15): broken streaks and "4 of 10 completed" bars
+    // "trigger so much guilt/shame". A strip a week, a star for anything
+    // that went right; a missed day costs nothing.
+    slug: "star-count",
+    primitive: "icon-strip",
+    name: "Star Count",
+    category: "Growth",
+    cadence: "month",
+    paletteName: "Stars",
+    // No heading: every strip is labelled with its week, and a strip with a
+    // label of its own never prints the heading (iconStrip.ts).
+    props: { heading: "", icon: "star", count: 10, groups: 1, stripLabels: ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"] },
+    rowSpan: 5,
+    columnSpan: 12,
   },
   {
     slug: "focus-blocks",

@@ -12,15 +12,25 @@ import {
   modulesOf,
   actionLabel,
 } from "@/app/landing/starterLayouts";
+import {
+  PART_NAMES,
+  PLANNERS,
+  PLANNER_BY_KEY,
+  partsOf,
+  plannerMakes,
+  type PlannerTemplate,
+} from "@/app/landing/plannerTemplates";
+import { PlannerActions, plannerActionsNote } from "@/app/landing/PlannerActions";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
 
 // memari.studio/layouts/<key>: one layout, the spread, every module on it
 // and what it is for, and "Use this". Its own address so it can be linked to
-// and found on its own.
+// and found on its own. Or a whole planner (plannerTemplates.ts): each part
+// of its book, the spread and its modules, and "Use this planner".
 
 export function generateStaticParams() {
-  return STARTERS.map((starter) => ({ key: starter.key }));
+  return [...PLANNERS.map((planner) => ({ key: planner.key })), ...STARTERS.map((starter) => ({ key: starter.key }))];
 }
 
 export const dynamicParams = false;
@@ -37,7 +47,15 @@ export async function generateMetadata({
 }: {
   params: Promise<{ key: string }>;
 }): Promise<Metadata> {
-  const starter = STARTER_BY_KEY[(await params).key];
+  const key = (await params).key;
+  const planner = PLANNER_BY_KEY[key];
+  if (planner) {
+    return {
+      title: `${planner.title} planner - memari. STUDIO`,
+      description: `${planner.forWhom} ${planner.line} A printable planner you can change, every page laid out.`,
+    };
+  }
+  const starter = STARTER_BY_KEY[key];
   if (!starter) return {};
   return {
     title: `${starter.title} ${KIND_NAME[starter.kind]} - memari. STUDIO`,
@@ -53,17 +71,28 @@ export default async function LayoutPage({
 }: {
   params: Promise<{ key: string }>;
 }) {
-  const starter = STARTER_BY_KEY[(await params).key];
+  const key = (await params).key;
+  const planner = PLANNER_BY_KEY[key];
+  if (planner) return <PlannerPage planner={planner} />;
+  const starter = STARTER_BY_KEY[key];
   if (!starter) notFound();
   const modules = modulesOf(starter.key);
   const section = KIND_SECTIONS.find(([kind]) => kind === starter.kind)!;
+  // A planner's part goes back to its planner, where it is listed.
+  const home = starter.planner ? PLANNER_BY_KEY[starter.planner] : null;
   return (
     <SitePage>
       <LayoutViewer>
         <header className={site.head}>
-          <Link href={`/layouts#${starter.kind}`} className={site.crumb}>
-            ← All {section[1].toLowerCase()}
-          </Link>
+          {home ? (
+            <Link href={`/layouts/${home.key}`} className={site.crumb}>
+              ← {home.title}
+            </Link>
+          ) : (
+            <Link href={`/layouts#${starter.kind}`} className={site.crumb}>
+              ← All {section[1].toLowerCase()}
+            </Link>
+          )}
           <h1 className={styles.headline} style={{ marginTop: 18 }}>
             {starter.title}
           </h1>
@@ -133,6 +162,72 @@ export default async function LayoutPage({
             spreadKey={starter.key}
             label={actionLabel(starter.kind)}
           />
+        </section>
+      </LayoutViewer>
+    </SitePage>
+  );
+}
+
+/** A whole planner: what it is for, every part of its book, and one button
+ *  that makes all of it. */
+function PlannerPage({ planner }: { planner: PlannerTemplate }) {
+  const parts = partsOf(planner).map(({ part, key }) => ({ part, key, starter: STARTER_BY_KEY[key], modules: modulesOf(key) }));
+  return (
+    <SitePage>
+      <LayoutViewer>
+        <header className={site.head}>
+          <Link href="/layouts#planners" className={site.crumb}>
+            ← All planners
+          </Link>
+          <h1 className={styles.headline} style={{ marginTop: 18 }}>
+            {planner.title}
+          </h1>
+          <p className={styles.lede}>{planner.line}</p>
+          <p className={site.hours} style={{ marginTop: 14, fontSize: 15 }}>
+            {planner.forWhom}
+          </p>
+          <div style={{ marginTop: 24 }}>
+            <div className={site.cardActions}>
+              <PlannerActions plannerKey={planner.key} />
+            </div>
+            <p className={site.note} style={{ marginTop: 12, lineHeight: 1.5, maxWidth: 560 }}>
+              {plannerActionsNote(plannerMakes(planner))}
+            </p>
+          </div>
+        </header>
+
+        {parts.map(({ part, key, starter, modules }, index) => (
+          <section key={part} className={site.block} aria-labelledby={`${part}-title`}>
+            <h2 id={`${part}-title`} className={site.blockTitle}>
+              {PART_NAMES[part]}
+            </h2>
+            {starter && <p className={site.blockLede}>{starter.line}</p>}
+            <div className={site.partBlock} style={{ marginTop: 24 }}>
+              <div>
+                <LayoutCard spreadKey={key} title={`${planner.title}: ${PART_NAMES[part].toLowerCase()}`} eager={index === 0} />
+              </div>
+              <div>
+                <ul className={site.detailList} style={{ marginTop: 0 }}>
+                  {modules.map((m) => (
+                    <li key={`${m.slug}-${m.name}`}>
+                      <strong>{m.name}</strong>
+                      {m.description && <span>{m.description}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+        ))}
+
+        <section className={site.end}>
+          <h2>The whole book, laid out.</h2>
+          <p className={site.note} style={{ maxWidth: 520, fontSize: 16, lineHeight: 1.55 }}>
+            Every page dated and ready to print at home or as a bound book. Move, resize or take out anything, and Memari lays out every page after.
+          </p>
+          <div className={site.cardActions} style={{ justifyContent: "center" }}>
+            <PlannerActions plannerKey={planner.key} />
+          </div>
         </section>
       </LayoutViewer>
     </SitePage>

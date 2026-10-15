@@ -19,5 +19,7 @@ export type LayoutDetail = {
   /** What "Use this" makes, said plainly. */
   makes: string;
   spread: LandingSpread;
+  /** The prebuilt planner it is a part of (plannerTemplates.ts), if any. */
+  planner?: { key: string; title: string };
   similar: Array<{ key: string; title: string; changes: string[]; spread: LandingSpread }>;
 };

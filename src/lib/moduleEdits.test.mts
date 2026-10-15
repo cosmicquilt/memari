@@ -672,6 +672,10 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   check(texts(draw("rating-strip", { ...base, scaleHead: "words" }, 6, 6), /-scale-(low|high)$/).join(",") === "low,high", "low and high when none are given");
   const inside = draw("rating-strip", { ...base, scaleHead: "inside" }, 6, 6);
   check(texts(inside, /-scale\d+$/).length === 0 && texts(inside, /-i0-v\d-number$/).join(",") === "1,2,3,4,5", "or the numbers inside the marks");
+  // A scale can start at 0 ("none", the symptom severity preset): 0 to 3 is
+  // four marks, not three.
+  const fromZero = draw("rating-strip", { ...base, scaleMin: 0, scaleMax: 3 }, 6, 6);
+  check(texts(fromZero, /-scale\d+$/).join(",") === "0,1,2,3" && ids(fromZero, /-i0-v\d+$/).length === 4, `a 0 to 3 scale has four marks (${texts(fromZero, /-scale\d+$/).join(",")})`);
 }
 
 // --- matrix --------------------------------------------------------------------
