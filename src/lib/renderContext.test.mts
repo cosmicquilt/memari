@@ -314,6 +314,31 @@ const stored = (id: string) => book.pages.find((p) => p.id === id)!.moduleInstan
   check(names.join(" ") === "FRI SAT", `a strip under Friday and Saturday prints FRI SAT (got ${names.join(" ") || "nothing"})`);
 }
 
+// --- the future log names the book's months --------------------------------
+// It printed January to June whatever the journal's dates (found 2026-10-15).
+// On the Beginning pages it is dated by the book's start; months someone has
+// retyped, and a book with no term, keep what they say.
+{
+  const all = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const sixFrom = (first: string) => Array.from({ length: 6 }, (_, k) => all[(all.indexOf(first) + k) % 12]);
+  const log = (prompts: string[]) => ({ moduleType: { slug: "future-log-months" }, propValues: { heading: "Future Log", prompts, linesPerPrompt: 3 } });
+  const front = (start: string | null, prompts: string[]): RenderContextBook => ({
+    dated: true,
+    startDate: start ? new Date(`${start}T00:00:00Z`) : null,
+    endDate: start ? new Date("2027-03-31T00:00:00Z") : null,
+    theme: {},
+    pages: [{ id: "front", level: "FRONT_MATTER", variantKey: null, position: 0, moduleInstances: [log(prompts)] }],
+  });
+  const printed = (b: RenderContextBook) =>
+    (propsForRender("future-log-months", b.pages[0].moduleInstances[0].propValues, renderContextForPage(b, "front")) as { prompts: string[] }).prompts.join(" ");
+  const jan = sixFrom("January");
+  check(printed(front("2026-10-15", jan)) === sixFrom("October").join(" "), `a book from 15 October lists October to March (got ${printed(front("2026-10-15", jan))})`);
+  check(printed(front("2026-10-15", jan.map((m) => m.toUpperCase()))) === sixFrom("October").join(" ").toUpperCase(), "in capitals when they were capitals");
+  check(printed(front("2026-10-15", sixFrom("March"))) === sixFrom("October").join(" "), "a log already moved to another month moves to the book's");
+  check(printed(front("2026-10-15", ["Holidays", ...jan.slice(1)])) === ["Holidays", ...jan.slice(1)].join(" "), "a retyped heading keeps every heading as typed");
+  check(printed(front(null, jan)) === jan.join(" "), "a book with no term keeps January to June");
+}
+
 if (failures > 0) {
   console.error(`\n${failures} render context check(s) failed.`);
   process.exit(1);

@@ -122,6 +122,29 @@ export function getPromptedLinesMinHeightPx(linesPerPrompt: number, insetPx = 0)
  * at bottom ... do a sweep"; prompted lines "share the extra lines among
  * the prompts"). A prompt's own count is the least it gets.
  */
+/**
+ * A FUTURE LOG'S MONTHS, named from where the book starts (2026-10-15: it
+ * printed January to June whatever the journal's dates).
+ *
+ * Only prompts that are still a run of consecutive month names - as the
+ * preset writes them, in any case and from any month - are renamed: the same
+ * number of months, from `start`'s month on, in the same case. Anything else
+ * was typed by someone and is left exactly as it is, as are prompts with no
+ * date to start from.
+ */
+export function monthPromptsFrom(prompts: unknown, start: Date, monthNames: readonly string[]): string[] | null {
+  if (!Array.isArray(prompts) || prompts.length === 0 || prompts.length > 12) return null;
+  const index = (p: unknown) => (typeof p === "string" ? monthNames.findIndex((m) => m.toLowerCase() === p.trim().toLowerCase()) : -1);
+  const first = index(prompts[0]);
+  if (first < 0 || prompts.some((p, i) => index(p) !== (first + i) % 12)) return null;
+  const upper = prompts.every((p) => p === p.toUpperCase());
+  const from = start.getUTCMonth();
+  return prompts.map((_, i) => {
+    const name = monthNames[(from + i) % 12];
+    return upper ? name.toUpperCase() : name;
+  });
+}
+
 export function promptLineCounts(config: { prompts?: unknown; linesPerPrompt?: unknown; promptLines?: unknown }, bodyCells: number): number[] {
   const prompts = Array.isArray(config.prompts) ? config.prompts : [];
   const counts: number[] = [];

@@ -73,6 +73,7 @@ import {
 import {
   renderPromptedLines,
   getPromptedLinesMinHeightPx,
+  monthPromptsFrom,
   promptLinesFor,
   type PromptedLinesConfig,
 } from "@/lib/modules/promptedLines";
@@ -2497,6 +2498,26 @@ for (const entry of CATALOGUE) {
     throw new Error(`Catalogue entry "${entry.slug}" collides with an existing module`);
   }
   MODULE_REGISTRY[entry.slug] = catalogue(entry.primitive as keyof typeof PRIMITIVES, entry);
+}
+
+// THE FUTURE LOG NAMES THE BOOK'S OWN MONTHS. Its prompts are month names,
+// January to June as the catalogue writes them; dated, they run from the
+// month the page is printed for - the book's start on the Beginning pages.
+// A book with no term has nothing to start from (its matter is dated at the
+// epoch, see occurrences) and keeps them; so do months someone has retyped.
+// Here rather than in the catalogue entry: an entry is words, not behaviour.
+{
+  const futureLog = MODULE_REGISTRY["future-log-months"];
+  if (futureLog) {
+    MODULE_REGISTRY["future-log-months"] = {
+      ...futureLog,
+      dated: (props, at) => {
+        if (at.start.getTime() === 0) return props;
+        const months = monthPromptsFrom(props.prompts, at.start, MONTH_NAMES);
+        return months ? { ...props, prompts: months } : props;
+      },
+    };
+  }
 }
 
 export const MODULE_TYPE_SEED = Object.entries(MODULE_REGISTRY).map(([slug, definition]) => ({
