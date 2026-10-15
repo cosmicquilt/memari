@@ -195,7 +195,6 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const cover = buildCoverPdf({
     ...dims,
     form: printer.coverForm,
-    safeIn: BINDING_SPECS[binding].coverSafeIn,
     trimWidthIn: trim.widthIn,
     trimHeightIn: trim.heightIn,
     title: journal.title,
