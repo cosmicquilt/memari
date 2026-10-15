@@ -41,6 +41,28 @@ function measure(holder: HTMLElement, layer: HTMLElement): Keep[] {
   return keep;
 }
 
+/** The strip of cream between the hero's torn edge and the covers' collage
+ *  (CoverCarousel, data-doodle-row; its tiles are its lower edge): filled
+ *  with a row of small drawings that keep off the post-it but sit closer
+ *  to the rip and the tiles than the clearance would let them. */
+function rowsOf(holder: HTMLElement, layer: HTMLElement) {
+  const band = holder.querySelector<HTMLElement>("[data-doodle-row]");
+  const tile = band?.querySelector("li");
+  if (!band || !tile) return [];
+  const origin = holder.getBoundingClientRect();
+  const torn = [...holder.querySelectorAll(`.${styles.tornEdge}`)].map((e) => e.getBoundingClientRect().bottom);
+  const y0 = (torn.length ? Math.max(...torn) : band.getBoundingClientRect().top) - origin.top + 2;
+  const y1 = tile.getBoundingClientRect().top - origin.top - 10;
+  const avoid: Keep[] = [];
+  for (const el of holder.querySelectorAll<HTMLElement>(BOXES)) {
+    if (layer.contains(el) || band.contains(el) || el.closest(`.${styles.tornEdge}`)) continue;
+    const r = el.getBoundingClientRect();
+    const [top, bottom] = [r.top - origin.top, r.bottom - origin.top];
+    if (r.width > 0 && bottom > y0 && top < y1) avoid.push([r.left - origin.left, top, r.width, r.height]);
+  }
+  return [{ y0, y1, avoid, margin: 10 }];
+}
+
 /** The blocks a drawing travels with: what text sits in, in page order. */
 const ANCHORS = "header, section, details, h1, h2, h3, p, li, figure, article";
 
@@ -144,6 +166,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
         phone,
         cancelled: () => mine !== run,
         stay: keepPlaced,
+        rows: rowsOf(holder, el),
       });
       if (out && mine === run) {
         current.current = out;

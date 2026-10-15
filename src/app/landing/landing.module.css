@@ -9,7 +9,12 @@
      a laptop's browser window - about 650px tall - pinned the hero to the
      screen's height and left "Cream on load" doing nothing, 2026-10-02):
      the film scales to the hero, and the title and post-it with it. */
-  --hero-h: max(420px, calc(100svh * (1 - var(--peek, 0) / 100)));
+  --film-h: max(420px, calc(100svh * (1 - var(--peek, 0) / 100)));
+  /* Then cropped from the top by --hero-crop % of the screen (2026-10-10:
+     "i like this zoom of the hero (~14%) but from here want it to crop from
+     the top"): the film keeps the size --film-h gives it and its bottom
+     stays at the hero's bottom; only the box above loses height. */
+  --hero-h: max(420px, calc(var(--film-h) - 100svh * var(--hero-crop, 0) / 100));
   --ink: #1c1917;
   --muted: rgba(28, 25, 23, 0.66);
   /* Cream, like the journal's pages in the hero (2026-09-25: "set the
@@ -22,7 +27,8 @@
   /* The editor's blue (ACCENT in planner/*), the tagline's "you." - and
      every other mark made by hand on the page. */
   --hand: #4a5cff;
-  background: var(--paper);
+  /* The cream; its papers lie over it (PaperLayers.tsx, .paperLayer). */
+  background-color: var(--paper);
   color: var(--ink);
   /* San Francisco where the system has it, Inter - the closest open face
      - everywhere else (sansFont.ts; 2026-09-25). */
@@ -30,6 +36,21 @@
   min-height: 100vh;
   /* Doodles in the margins never widen the page. */
   overflow-x: clip;
+  /* for the papers (PaperLayers.tsx) just above the cream and under the rest */
+  position: relative;
+  isolation: isolate;
+}
+
+/* One paper (PaperLayers.tsx): its grey picture blended hard-light over
+   what is under it - the cream and the papers before it - at its slider's
+   opacity. Under all else on the sheet. */
+.paperLayer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: repeat;
+  mix-blend-mode: hard-light;
 }
 
 /* --- nav ----------------------------------------------------------------- */
@@ -65,6 +86,13 @@
   border-bottom-color: transparent;
 }
 
+/* Still over the hero, but the page has moved from the top: the hero
+   blurred under the bar, the type still cream (2026-10-14: "blurry header
+   when moved from top spot, not starting at bottom of hero"). */
+.navClear.navMoved {
+  backdrop-filter: saturate(160%) blur(18px);
+}
+
 .navClear .brand,
 .navClear .quiet,
 .navClear .links a:hover,
@@ -88,7 +116,8 @@
 }
 
 .navClear .primary:hover {
-  background: #fff8ea;
+  /* Lighter than the cream, whatever the cream is (creamDepth). */
+  background: color-mix(in srgb, var(--cream) 35%, #fff);
 }
 
 .brand {
@@ -275,7 +304,8 @@
    nothing of it. */
 @media (max-width: 760px) {
   .page {
-    --hero-h: max(520px, calc(100svh * (1 - var(--peek-phone, 0) / 100)));
+    --film-h: max(520px, calc(100svh * (1 - var(--peek-phone, 0) / 100)));
+    --hero-h: var(--film-h); /* (the crop is the desktop's) */
   }
   .hero {
     min-height: 520px;
@@ -590,14 +620,15 @@
   z-index: -1;
   background: #24160d center / cover no-repeat;
   left: 50%;
-  top: 50%;
   /* The film's height fits the hero's; its sides run on in the extended
      desk behind it (.videoExtend), out to 1.5 times its width - so a
      shorter hero ("Cream on load") crops nothing. Only a screen wider than
      that (2.67:1) scales the film up past the hero's height. */
-  width: max(calc(100% / 1.5), calc(var(--hero-h, max(100svh, 640px)) * 16 / 9));
+  width: max(calc(100% / 1.5), calc(var(--film-h, max(100svh, 640px)) * 16 / 9));
   aspect-ratio: 16 / 9;
   transform: translate(-50%, -50%);
+  /* cropped from the top: centred on the uncropped hero, whose bottom is this one's */
+  top: calc(50% - (var(--film-h, 0px) - var(--hero-h, 0px)) / 2);
 }
 
 /* The desk beyond the film's sides (Andrew, 2026-10-01): Flow's extension of
@@ -677,21 +708,26 @@
   top: calc(42px + 2.25vh);
 }
 
-/* In a short hero the title would reach the book: the wordmark shrinks so
-   the tagline ends 10px above the book's top edge. That edge is 0.305 of
-   the film's height down it, and the film (as tall as the stage: the
-   larger of the hero's height and 0.375 of the screen's width) is centred
-   on the hero; the tagline's line takes 1.4 times its size. A screen of
-   the usual shape keeps the wordmark's full size. */
+/* In a short hero the title would reach the book, so the tagline must end
+   10px above the book's top edge. That edge is 0.305 of the film's height
+   down it, and the film (as tall as the stage: the larger of the uncropped
+   hero's height and 0.375 of the screen's width) is centred on the
+   uncropped hero, the crop taken off its top; --room is what that leaves
+   for the title's line (its size, and a tenth of it more before the
+   tagline) and the tagline's (1.5 times its size: both measured). The TAGLINE
+   gives way first, down to 12px (2026-10-14: "keep title back to larger
+   size and decrease tagline size"); only past that does the title shrink.
+   A screen of the usual shape keeps both at full size. */
 @media (min-aspect-ratio: 1/1) {
+  .titleOverFilm {
+    --room: calc(var(--hero-h) - var(--film-h) / 2 - 0.195 * max(37.5vw, var(--film-h)) - 52px - 2.25vh);
+    --tag: max(12px, min(clamp(17px, 1.9vw, 24px), calc((var(--room) - 1.1 * clamp(40px, 6.3vw, 88px)) / 1.5)));
+  }
   .titleOverFilm .wordmark {
-    font-size: max(
-      34px,
-      min(
-        clamp(40px, 6.3vw, 88px),
-        calc(var(--hero-h) / 2 - 0.195 * max(37.5vw, var(--hero-h)) - 52px - 2.25vh - 1.4 * clamp(17px, 1.9vw, 24px))
-      )
-    );
+    font-size: max(34px, min(clamp(40px, 6.3vw, 88px), calc((var(--room) - 1.5 * var(--tag)) / 1.1)));
+  }
+  .titleOverFilm .tagline {
+    font-size: var(--tag);
   }
 }
 
@@ -897,7 +933,7 @@
   position: relative;
   width: 100%;
   border-radius: 4px;
-  background: #fbf6ea;
+  background: color-mix(in srgb, var(--cream) 45%, #fff);
   box-shadow:
     0 1px 2px rgba(40, 30, 20, 0.08),
     0 18px 40px rgba(40, 30, 20, 0.14);
@@ -1202,11 +1238,18 @@
 /* Everything after the hero, so the doodle wall can lie under all of it. */
 .body {
   position: relative;
+  /* The paper is a sheet over the hero (2026-10-14: "a very subtle parallax
+     when scrolling based on the hero is below the plane of the paper"): the
+     hero slips under it as the page scrolls (VideoHero), so the body carries
+     the page's own cream and fibre and covers what passes beneath. */
+  background-color: var(--paper);
+  /* its papers (PaperLayers.tsx) above its cream, under the rest */
+  isolation: isolate;
   /* The post-it's side: 168px under a full-height hero, and as much smaller
      as the hero is ("Cream on load") - so it covers as much of the book at
      any height. Here rather than on .postit because the torn edge
      (.tornEdge) is laid out from the note's sides too. */
-  --note: clamp(104px, calc(var(--hero-h) * 0.177), 168px);
+  --note: clamp(104px, calc(var(--film-h) * 0.177), 168px);
 }
 
 /* The cream's torn top edge (TornEdge.tsx): a half each side of the

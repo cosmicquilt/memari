@@ -7,6 +7,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { currentOwner } from "@/lib/owner";
 import { SiteHeader } from "./SiteHeader";
+import { PaperLayers } from "./PaperLayers";
 import { SiteFooter } from "./SiteFooter";
 import { BodyDoodles } from "./BodyDoodles";
 import { BODY_WALL_DEFAULTS, pageVars } from "./bodyWall";
@@ -19,6 +20,7 @@ export async function SitePage({ children }: { children: ReactNode }) {
   const owner = await currentOwner();
   return (
     <div className={`${styles.page} ${script.variable} ${sans.variable}`} style={pageVars(BODY_WALL_DEFAULTS) as CSSProperties}>
+      <PaperLayers />
       <SiteHeader signedIn={owner !== null} guest={owner?.guest ?? false} solid />
       <main className={site.main}>
         <BodyDoodles band={0} />

@@ -14,6 +14,7 @@ const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const RANGES: Record<string, [number, number]> = {
   peekDesktop: [0, 40],
   peekMobile: [0, 40],
+  heroCropDesktop: [0, 30],
   bandDesktop: [0, 150],
   bandMobile: [0, 150],
   gap: [0, 48],
@@ -37,6 +38,17 @@ const RANGES: Record<string, [number, number]> = {
   youSeconds: [0.6, 6],
   curlShade: [0, 0.5],
   curlReach: [0.1, 1],
+  carouselGap: [0, 200],
+  rowDoodleSize: [0.5, 4],
+  carouselSpeed: [5, 200],
+  paper006: [0, 1],
+  paper001: [0, 1],
+  paper002: [0, 1],
+  paperFibre: [0, 1],
+  carouselBlur: [2, 30],
+  heroParallax: [0, 0.6],
+  paperCrumple: [0, 1],
+  creamDepth: [0, 2],
 };
 /** The torn edges there are (TornEdge.tsx). */
 const TORN_EDGES = new Set(["drawn", "flow-fine", "flow-bold", "none"]);

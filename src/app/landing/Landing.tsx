@@ -21,6 +21,7 @@ import type { CSSProperties } from "react";
 import { Hero } from "./Hero";
 import { VideoHero } from "./VideoHero";
 import { SiteHeader } from "./SiteHeader";
+import { PaperLayers } from "./PaperLayers";
 import { SiteFooter } from "./SiteFooter";
 import { ResizeDemo } from "./ResizeDemo";
 import { resizeDemo } from "./resizeDemoData";
@@ -31,6 +32,7 @@ import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
+import { CoverCarousel } from "./CoverCarousel";
 import { BODY_WALL_DEFAULTS, pageVars } from "./bodyWall";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
 import { Ink } from "./ink/Ink";
@@ -63,9 +65,13 @@ export function Landing({
             round it (BodyDoodles), its top edge torn (TornEdge), with the
             post-it stuck to it - the way down from the hero (PostIt). */}
         <div className={styles.body}>
+          <PaperLayers />
           <BodyDoodles />
           <TornEdge />
           <PostIt />
+
+          {/* The covers, as polaroids on real notebooks (2026-10-09). */}
+          <CoverCarousel />
 
           <section id="how" className={styles.section}>
             <Doodle

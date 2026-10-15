@@ -93,7 +93,7 @@
   padding: 18px 22px 16px;
   border-left: 3px solid var(--hand);
   border-radius: 0 8px 8px 0;
-  background: #fbf7ef;
+  background: color-mix(in srgb, var(--cream, #f5ead5) 38%, #fff);
   box-shadow: 0 1px 2px rgba(28, 25, 23, 0.06);
   font-family: var(--font-newsreader), Newsreader, Georgia, serif;
   font-size: 19px;

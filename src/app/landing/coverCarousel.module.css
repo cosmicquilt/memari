@@ -1,0 +1,182 @@
+/* The covers' collage under the hero (CoverCarousel.tsx): two rows, big
+   squares among columns of two small ones, every picture with rounded
+   corners. A band as wide as the screen up to 1600px, its ends fading into
+   the cream, always moving. */
+
+.band {
+  --cell: 150px;
+  --gap: 12px;
+  position: relative;
+  /* the whole width: the strip ends at the window's edges, under the blur,
+     not in a clipped line on a wide screen */
+  margin: 0 auto;
+  /* below the post-it stuck over the torn edge above (it hangs about
+     0.31 of its side below the hero) by --carousel-gap px, the dev
+     panel's "Collage below the post-it" (Andrew, 2026-10-10: "on load
+     desktop i want just the top of carousel visible", then "not that close
+     to postit tho. add as slider"); the strip's own 14px top is in it */
+  padding: max(0px, calc(var(--note, 168px) * 0.31 + var(--carousel-gap, 40) * 1px - 40px)) 0 0;
+}
+
+/* 40px of paper above the tiles and 44px below, for the side blur to fade
+   out in (it stopped hard at the strip's edge: "a jarring blur end at the
+   top and bottom"); the band's padding and this margin take the extra back,
+   so the tiles and what follows stay where they were */
+.strip {
+  position: relative;
+  overflow: hidden;
+  padding: 40px 0 44px;
+  margin-bottom: -22px;
+}
+
+/* The ends blur away, more toward the edge: a progressive blur from four
+   still layers over the strip, each a stronger blur (backdrop-filter)
+   limited by its own fixed mask to a narrower band at the edge. The layers
+   never move (only the strip under them does), so their masks cost nothing
+   per frame; the blur is the GPU's, on two narrow bands. (backdrop-filter
+   alone: written with its -webkit- twin, the build dropped both.) */
+.blurStart,
+.blurEnd {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  /* how far in from the screen's edge, the dev panel's "Collage edge blur
+     width" (2026-10-14: "push blur horizontally more towards the side of the
+     screen ... add slider"; it was 14%, then 9%; "move the blur and the
+     'side cream' away from center": 6%, each layer's ramp nearer the edge) */
+  width: calc(var(--carousel-blur, 6) * 1%);
+  pointer-events: none;
+}
+
+.blurStart {
+  left: 0;
+}
+
+.blurEnd {
+  right: 0;
+  transform: scaleX(-1); /* the same layers, mirrored */
+}
+
+.blurStart span,
+.blurEnd span {
+  position: absolute;
+  inset: 0;
+  /* each layer's band toward the edge (--h), and the same fade at the top
+     and bottom for all of them, so the blur ends nowhere in a line */
+  mask-image: var(--h), linear-gradient(180deg, transparent 0, #000 36px, #000 calc(100% - 40px), transparent 100%);
+  mask-composite: intersect;
+}
+
+.blurStart span:nth-child(1),
+.blurEnd span:nth-child(1) {
+  --h: linear-gradient(90deg, #000 40%, transparent 100%);
+  backdrop-filter: blur(2px);
+}
+
+.blurStart span:nth-child(2),
+.blurEnd span:nth-child(2) {
+  --h: linear-gradient(90deg, #000 22%, transparent 62%);
+  backdrop-filter: blur(5px);
+}
+
+.blurStart span:nth-child(3),
+.blurEnd span:nth-child(3) {
+  --h: linear-gradient(90deg, #000 10%, transparent 38%);
+  backdrop-filter: blur(10px);
+}
+
+.blurStart span:nth-child(4),
+.blurEnd span:nth-child(4) {
+  --h: linear-gradient(90deg, #000 0%, transparent 20%);
+  backdrop-filter: blur(18px);
+}
+
+/* and the paper's tan over it, thickest at the edge, as if the page beyond
+   the screen were blurred in too ("i also want tan in the blur on the side
+   like it was off screen") */
+.blurStart span:nth-child(5),
+.blurEnd span:nth-child(5) {
+  --h: linear-gradient(#000, #000);
+  background: linear-gradient(90deg, rgba(var(--cream-rgb, 245, 234, 213), 0.92) 0%, rgba(var(--cream-rgb, 245, 234, 213), 0.5) 10%, rgba(var(--cream-rgb, 245, 234, 213), 0.14) 26%, rgba(var(--cream-rgb, 245, 234, 213), 0) 48%);
+}
+
+.track {
+  display: flex;
+  width: max-content;
+}
+
+.track[data-moving] {
+  animation: drift linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* the second copy starts where the first began, so half the track is one loop */
+@keyframes drift {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.collage {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, var(--cell));
+  grid-auto-columns: var(--cell);
+  gap: var(--gap);
+  margin: 0;
+  padding: 0 var(--gap) 0 0;
+  list-style: none;
+}
+
+.big {
+  grid-row: span 2;
+  grid-column: span 2;
+}
+
+.big,
+.small {
+  overflow: hidden;
+  border-radius: 24px;
+  background: #e7e2d7;
+  box-shadow: 0 6px 18px -10px rgba(28, 25, 23, 0.45);
+}
+
+.small {
+  border-radius: 16px;
+}
+
+.collage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@media (max-width: 640px) {
+  .band {
+    --cell: 104px;
+    --gap: 8px;
+  }
+
+  .big {
+    border-radius: 18px;
+  }
+
+  .small {
+    border-radius: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track[data-moving] {
+    animation: none;
+  }
+
+  .strip {
+    overflow-x: auto;
+  }
+}

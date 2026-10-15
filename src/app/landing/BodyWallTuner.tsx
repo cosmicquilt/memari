@@ -7,11 +7,19 @@
 // pushed like any other change.
 
 import { useEffect, useState } from "react";
-import { BODY_WALL_DEFAULTS, bodyWallSettings, onBodyWallSettings, pageVars, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
+import { BODY_WALL_DEFAULTS, bodyWallSettings, onBodyWallSettings, pageVars, PAPER_LAYERS, setBodyWallSettings, type BodyWallSettings } from "./bodyWall";
 
 const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; max: number; step: number; unit: string }> = [
+  // First: it changes every page of the site, not just this one.
+  { key: "creamDepth", label: "Cream, whole site (0 white, 2 deep)", min: 0, max: 2, step: 0.01, unit: "x" },
   { key: "peekDesktop", label: "Cream on load, desktop", min: 0, max: 40, step: 1, unit: "% of screen" },
+  { key: "heroCropDesktop", label: "Crop hero from the top, desktop", min: 0, max: 30, step: 0.5, unit: "% of screen" },
+  { key: "heroParallax", label: "Hero parallax (below the paper)", min: 0, max: 0.6, step: 0.01, unit: "of the scroll" },
   { key: "peekMobile", label: "Cream on load, phone", min: 0, max: 40, step: 1, unit: "% of screen" },
+  { key: "carouselGap", label: "Collage below the post-it", min: 0, max: 200, step: 1, unit: "px" },
+  { key: "rowDoodleSize", label: "Doodles above the collage, size", min: 0.5, max: 4, step: 0.05, unit: "x" },
+  { key: "carouselSpeed", label: "Collage speed", min: 5, max: 200, step: 1, unit: "px/s" },
+  { key: "carouselBlur", label: "Collage edge blur width", min: 2, max: 30, step: 0.5, unit: "% of screen" },
   { key: "bandDesktop", label: "No doodles below hero, desktop", min: 0, max: 150, step: 1, unit: "% of screen" },
   { key: "bandMobile", label: "No doodles below hero, phone", min: 0, max: 150, step: 1, unit: "% of screen" },
   { key: "gap", label: "Gap between doodles", min: 0, max: 48, step: 1, unit: "px" },
@@ -34,6 +42,8 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "tornShadow", label: "Torn edge shadow", min: 0, max: 2, step: 0.05, unit: "x" },
   { key: "curlShade", label: "Post-it curl shade", min: 0, max: 0.5, step: 0.01, unit: "" },
   { key: "curlReach", label: "Post-it curl shade reaches", min: 0.1, max: 1, step: 0.05, unit: "of the curl" },
+  // last, the papers: each its own strength, any together
+  ...PAPER_LAYERS.map((p) => ({ key: p.key, label: p.label, min: 0, max: 1, step: 0.01, unit: "" })),
 ];
 
 /** The torn edges to choose from (TornEdge.tsx): the drawn deckle, Flow's

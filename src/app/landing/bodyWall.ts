@@ -25,6 +25,10 @@ export type BodyWallSettings = {
    *  percentage slider was supposed to be"). Desktop and phone. */
   peekDesktop: number;
   peekMobile: number;
+  /** Then the hero cropped from the top, % of the screen's height, the film
+   *  kept at the size the peek gives it (2026-10-10: "i like this zoom of
+   *  the hero (~14%) but from here want it to crop from the top"). Desktop. */
+  heroCropDesktop: number;
   /** Plain cream below the hero before the doodles begin, % of the screen's
    *  height - 0, the doodles fill the peek ("do want the doodle wall
    *  doodles in that cream portion peeking through at top scroll so add
@@ -86,17 +90,95 @@ export type BodyWallSettings = {
    *  bit more subtle, add to dev popup reach and opacity"). */
   curlShade: number;
   curlReach: number;
+  /** Paper between the post-it's bottom and the covers' collage under it,
+   *  CSS px (CoverCarousel.tsx; 2026-10-10: "carousel not that close to
+   *  postit tho. add as slider"). */
+  carouselGap: number;
+  /** The drawings in the strip above the collage, times their usual size
+   *  there (2026-10-10: "i wanted bigger doodles in that regiom"); never
+   *  taller than the strip. */
+  rowDoodleSize: number;
+  /** How fast the covers' collage drifts, CSS px a second (2026-10-14:
+   *  "faster carousel"; it was 26). */
+  carouselSpeed: number;
+  /** How far the collage's edge blur reaches in from each side of the
+   *  screen, % of its width (2026-10-14: "push blur ... more towards the
+   *  side of the screen ... add slider"). */
+  carouselBlur: number;
+  /** How much slower than the page the hero moves as it scrolls, a fraction
+   *  of the scroll: the hero below the paper's plane (2026-10-14). 0, none. */
+  heroParallax: number;
+  /** The papers under the cream, each 0 to 1, any together (2026-10-14:
+   *  "paper 6, 1, 3, 2 download all with light on ... color match them the
+   *  current cream", then "turn each to a type of slider so i can combine
+   *  more of them"): ambientCG scans lit from their own surface maps, the
+   *  first fibre tile, and Paper003's soft crumples alone. At 1 each has the
+   *  first fibre tile's contrast. 0 loads nothing. See PAPER_LAYERS. */
+  paper006: number;
+  paper001: number;
+  paper002: number;
+  paperFibre: number;
+  /** Paper003's soft crumples, alone (crumple_bake.py): Paper003 was 95%
+   *  crumples, so this is it. */
+  paperCrumple: number;
+  /** How cream the site is, everywhere outside the app (2026-10-15: "a dev
+   *  panel slider that changes the cream color lighter or more cream
+   *  'darker' everywhere outside of app"): 0 white, 1 the cream it has been
+   *  (#f5ead5), 2 twice as far from white. Sets --cream and --cream-rgb on
+   *  the page, which the landing, the site pages and the layouts popup all
+   *  draw from; their few lighter and deeper creams are mixes of it. */
+  creamDepth: number;
 };
 
+/** The paper layers (PaperLayers.tsx), bottom first: which setting, the
+ *  grey picture (public/landing/paper/, hard-light), and its size on the page
+ *  - the 1024 px bakes at half, so a 2x screen shows them pixel for pixel. */
+export const PAPER_LAYERS = [
+  { key: "paper006", id: "paper006", file: "Paper006.avif", size: "512px 512px", label: "Paper 006: fine tooth, faint specks" },
+  { key: "paper001", id: "paper001", file: "Paper001.avif", size: "512px 300px", label: "Paper 001: finest, even grain" },
+  { key: "paper002", id: "paper002", file: "Paper002.avif", size: "415px 535.5px", label: "Paper 002: fine, a few specks" },
+  { key: "paperFibre", id: "fibre", file: "fibre.avif", size: "256px 256px", label: "Fibre (the first paper)" },
+  { key: "paperCrumple", id: "crumples", file: "crumples.avif", size: "512px 512px", label: "Soft crumples (Paper 003)" },
+] as const satisfies ReadonlyArray<{ key: keyof BodyWallSettings; id: string; file: string; size: string; label: string }>;
+
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;
+
+/** The landing's cream, #f5ead5: what creamDepth 1 gives. */
+export const CREAM_BASE_RGB = [245, 234, 213] as const;
+
+/** The cream at `depth`: each channel that far from white along the line
+ *  to CREAM_BASE_RGB, so 0 is white, 1 the base, 2 twice as far. */
+export function creamRgb(depth: number): [number, number, number] {
+  const d = Number.isFinite(depth) ? depth : 1;
+  return CREAM_BASE_RGB.map((c) => Math.round(Math.max(0, Math.min(255, 255 - (255 - c) * d)))) as [number, number, number];
+}
+
+/** Any colour drawn for today's cream, moved to the cream at `depth`: each
+ *  channel that far from white, the same line creamRgb follows. White stays
+ *  white and #f5ead5 becomes the new cream, so a near-white drawn for the
+ *  cream (the torn edge's core) keeps its place between them. */
+export function onCreamLine(rgb: readonly [number, number, number], depth: number): [number, number, number] {
+  const d = Number.isFinite(depth) ? depth : 1;
+  return rgb.map((c) => Math.round(Math.max(0, Math.min(255, 255 - (255 - c) * d)))) as [number, number, number];
+}
+
+/** The same move as an SVG feColorMatrix, for pictures baked in today's
+ *  cream (the torn edge's photographs): c' = d c + (1 - d), per channel,
+ *  alpha kept. Use with color-interpolation-filters sRGB. */
+export function creamLineMatrix(depth: number): string {
+  const d = Number.isFinite(depth) ? depth : 1;
+  const k = (1 - d).toFixed(4);
+  return `${d} 0 0 0 ${k}  0 ${d} 0 0 ${k}  0 0 ${d} 0 ${k}  0 0 0 1 0`;
+}
 
 /** The settings the page's stylesheet reads, as its CSS variables: set on
  *  the page by Landing.tsx, and again, live, by the dev panel - one list, so
  *  the two never set different ones. */
-export function pageVars(s: BodyWallSettings): Record<string, number> {
+export function pageVars(s: BodyWallSettings): Record<string, number | string> {
   return {
     "--peek": s.peekDesktop,
     "--peek-phone": s.peekMobile,
+    "--hero-crop": s.heroCropDesktop,
     "--side-blur": s.sideBlur,
     "--side-blur-w": s.sideBlurWidth,
     "--vig-top": s.vignetteTop,
@@ -109,6 +191,18 @@ export function pageVars(s: BodyWallSettings): Record<string, number> {
     "--you-seconds": s.youSeconds,
     "--curl-shade": s.curlShade,
     "--curl-reach": s.curlReach,
+    "--carousel-gap": s.carouselGap,
+    "--carousel-blur": s.carouselBlur,
+    // The site's cream (creamDepth). --paper is var(--cream) in the stylesheet.
+    "--cream": `rgb(${creamRgb(s.creamDepth ?? 1).join(", ")})`,
+    "--cream-rgb": creamRgb(s.creamDepth ?? 1).join(", "),
+    // each paper layer: how strong, and its picture only when it shows
+    ...Object.fromEntries(
+      PAPER_LAYERS.flatMap((p) => [
+        [`--paper-${p.id}`, s[p.key]],
+        [`--paper-${p.id}-img`, s[p.key] > 0 ? `url(/landing/paper/${p.file})` : "none"],
+      ])
+    ),
   };
 }
 
@@ -166,6 +260,12 @@ export async function packAround(opts: {
   phone: boolean;
   cancelled: () => boolean;
   stay?: Placed[];
+  /** Strips to fill first with a row of small drawings, each kept only off
+   *  its own `avoid` boxes (by `margin`), not off everything by the
+   *  clearance: the cream between the hero's torn edge and the covers'
+   *  collage is too narrow for that (2026-10-10: "i also want dodles in that
+   *  region between the rip at below hero and top of carousel"). */
+  rows?: Array<{ y0: number; y1: number; avoid: Keep[]; margin: number }>;
 }): Promise<Placed[] | null> {
   const { width, height, keep, drawings, settings, phone } = opts;
   let seed = opts.seed >>> 0;
@@ -278,6 +378,50 @@ export async function packAround(opts: {
     placed.push(p);
     stayed.set(d.cls, (stayed.get(d.cls) ?? 0) + 1);
   }
+  // The rows: drawings left to right along each strip, a gap apart,
+  // stepping past what the strip must avoid - each kind whose smallest fits
+  // the strip (a wider gap above the collage lets the middle and big ones
+  // in), at the row's own size, never taller than the strip.
+  const rowScale = scale * (settings.rowDoodleSize ?? 1);
+  for (const row of opts.rows ?? []) {
+    const room = row.y1 - row.y0;
+    const pool = drawings.filter((d) => CLASSES[d.cls].size[0] * rowScale <= room || d.cls === CLASSES.length - 1);
+    if (room < 14 || !pool.length) continue;
+    const blocked = (x0: number, x1: number, y0: number, y1: number) =>
+      row.avoid.some(([ax, ay, aw, ah]) => x1 > ax - row.margin && x0 < ax + aw + row.margin && y1 > ay - row.margin && y0 < ay + ah + row.margin);
+    let bag: typeof pool = [];
+    let x = settings.gap * rand();
+    while (x < width) {
+      if (!bag.length) {
+        bag = [...pool];
+        for (let i = bag.length - 1; i > 0; i--) {
+          const j = Math.floor(rand() * (i + 1));
+          [bag[i], bag[j]] = [bag[j], bag[i]];
+        }
+      }
+      const d = bag.pop()!;
+      const [lo, hi] = CLASSES[d.cls].size;
+      const long = Math.min(room, (lo + rand() * (hi - lo)) * rowScale);
+      const k = long / Math.max(d.img.width, d.img.height);
+      const [w, h] = [d.img.width * k, d.img.height * k];
+      const cy = row.y0 + h / 2 + rand() * Math.max(0, room - h);
+      if (x + w > width) break;
+      if (blocked(x, x + w, cy - h / 2, cy + h / 2)) {
+        x += 12;
+        continue;
+      }
+      const angle = (rand() - 0.5) * 0.5;
+      const { markCells } = cellsOf(d.img, w, h, angle);
+      const [cx, ccy] = [Math.round((x + w / 2) / CELL), Math.round(cy / CELL)];
+      for (let i = 0; i < markCells.length; i += 2) {
+        const j = at(cx, ccy, markCells[i], markCells[i + 1]);
+        if (j >= 0) occ[j] = 1;
+      }
+      placed.push({ src: d.src, x: cx * CELL, y: ccy * CELL, w, h, angle });
+      x += w + settings.gap * (0.8 + rand() * 0.8);
+    }
+  }
+
   let slice = performance.now();
   for (const [ci, cls] of CLASSES.entries()) {
     const pool = drawings.filter((d) => d.cls === ci);

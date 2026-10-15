@@ -262,6 +262,64 @@ export function VideoHero() {
     };
   }, []);
 
+  // The hero lies below the paper (2026-10-14: "a very subtle parallax when
+  // scrolling based on the hero is below the plane of the paper"): it moves
+  // up slower than the page, by the dev panel's "Hero parallax" (a fraction
+  // of the scroll), so the body's sheet slides over it; none for reduced
+  // motion. Driven by a scroll timeline: the compositor moves it in the same
+  // frame as the scroll. Set from scroll events it was "very choppy"
+  // (2026-10-14) - they arrive a frame after the page has already moved, so
+  // the hero shook against it. A browser without scroll timelines (Firefox
+  // before 159) keeps the hero still rather than shaking.
+  useEffect(() => {
+    const el = hero.current;
+    const Timeline = (window as { ScrollTimeline?: new (o: { source: Element; axis: "block" }) => AnimationTimeline }).ScrollTimeline;
+    if (!el || !Timeline) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let factor = bodyWallSettings().heroParallax ?? 0.2;
+    // animation ranges came later than timelines in some browsers (Firefox
+    // had timelines without them); without, the sinking is placed by keyframe
+    // offsets along the whole scroll, so it needs the page's height
+    const ranged = "rangeEnd" in Animation.prototype;
+    const page = document.documentElement;
+    let sink: Animation | null = null;
+    // past 1.5 heroes there is nothing of it left to see, so it stops there
+    const build = () => {
+      sink?.cancel();
+      sink = null;
+      const k = still.matches ? 0 : factor;
+      if (!k) return;
+      const reach = Math.round(el.offsetHeight * 1.5);
+      const at = (y: number) => ({ transform: `translate3d(0, ${(y * k).toFixed(1)}px, 0)` });
+      const timeline = new Timeline({ source: page, axis: "block" });
+      if (ranged) {
+        sink = el.animate([at(0), at(reach)], { timeline, rangeStart: "0px", rangeEnd: `${reach}px`, fill: "both", easing: "linear" } as KeyframeAnimationOptions);
+      } else {
+        const max = Math.max(1, page.scrollHeight - page.clientHeight);
+        const stop = Math.min(reach, max);
+        const frames: Keyframe[] = [{ ...at(0), offset: 0 }, { ...at(stop), offset: stop / max }];
+        if (stop < max) frames.push({ ...at(stop), offset: 1 });
+        sink = el.animate(frames, { timeline, fill: "both", easing: "linear" } as KeyframeAnimationOptions);
+      }
+    };
+    const off = onBodyWallSettings(() => {
+      factor = bodyWallSettings().heroParallax ?? 0.2;
+      build();
+    });
+    build();
+    // the hero's height follows the window; without ranges, so does the page's
+    const resized = new ResizeObserver(() => build());
+    resized.observe(el);
+    if (!ranged) resized.observe(document.body);
+    still.addEventListener("change", build);
+    return () => {
+      off();
+      resized.disconnect();
+      still.removeEventListener("change", build);
+      sink?.cancel();
+    };
+  }, []);
+
   return (
     <section ref={hero} className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`} aria-label="Memari Studio">
       <div className={styles.videoBackdrop} style={{ backgroundImage: `url(${HERO_VIDEO.first})` }} aria-hidden="true" />

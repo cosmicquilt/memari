@@ -22,10 +22,17 @@
 //
 // Server-rendered with the saved settings, so the rip is in the first paint;
 // in development the panel's changes follow at once.
+//
+// THE CREAM SLIDER REACHES IT (2026-10-15: "the cream doesnt affect the
+// blending into the ripped paper where the body meets the hero"). The
+// photographs were baked in today's cream and the drawn rip's whites were
+// written for it, so neither followed creamDepth. Both now move along the
+// slider's own line from white (bodyWall.ts, onCreamLine): the photo through
+// a colour matrix, the drawn rip's colours computed.
 
 import { useEffect, useState } from "react";
 import { TORN_HEIGHT, TORN_LENGTH, tornHalf } from "./tornEdgeShape";
-import { bodyWallSettings, onBodyWallSettings, type BodyWallSettings } from "./bodyWall";
+import { bodyWallSettings, creamLineMatrix, onBodyWallSettings, onCreamLine, type BodyWallSettings } from "./bodyWall";
 import flow from "./tornFlow.json";
 import styles from "./landing.module.css";
 
@@ -56,15 +63,15 @@ export function TornEdge() {
   if (s.tornEdge === "drawn") {
     return (
       <>
-        <DrawnHalf side="left" shadow={s.tornShadow} />
-        <DrawnHalf side="right" shadow={s.tornShadow} />
+        <DrawnHalf side="left" shadow={s.tornShadow} depth={s.creamDepth ?? 1} />
+        <DrawnHalf side="right" shadow={s.tornShadow} depth={s.creamDepth ?? 1} />
       </>
     );
   }
   return (
     <>
-      <FlowHalf side="left" photo={s.tornEdge} scale={s.tornScale} shadow={s.tornShadow} />
-      <FlowHalf side="right" photo={s.tornEdge} scale={s.tornScale} shadow={s.tornShadow} />
+      <FlowHalf side="left" photo={s.tornEdge} scale={s.tornScale} shadow={s.tornShadow} depth={s.creamDepth ?? 1} />
+      <FlowHalf side="right" photo={s.tornEdge} scale={s.tornScale} shadow={s.tornShadow} depth={s.creamDepth ?? 1} />
     </>
   );
 }
@@ -93,8 +100,12 @@ const regionOf = (height: number) => ({ filterUnits: "userSpaceOnUse" as const, 
 /** Each half is drawn from the note outward; the left one mirrored. */
 const outward = (side: Side) => (side === "left" ? `translate(${TORN_LENGTH} 0) scale(-1 1)` : undefined);
 
-function DrawnHalf({ side, shadow }: { side: Side; shadow: number }) {
+function DrawnHalf({ side, shadow, depth }: { side: Side; shadow: number; depth: number }) {
   const half = HALVES[side];
+  // Its near-whites, drawn for today's cream, on the slider's line.
+  const rgb = (c: readonly [number, number, number]) => `rgb(${onCreamLine(c, depth).join(", ")})`;
+  const fibre = onCreamLine([255, 252, 244], depth).join(", ");
+  const mottle = onCreamLine([255, 252, 245], depth).map((c) => (c / 255).toFixed(4));
   const id = (name: string) => `torn-${side}-${name}`;
   const region = regionOf(TORN_HEIGHT);
   return (
@@ -111,7 +122,7 @@ function DrawnHalf({ side, shadow }: { side: Side; shadow: number }) {
           <feTurbulence type="fractalNoise" baseFrequency="1.6 0.9" numOctaves={3} seed={side === "left" ? 31 : 67} result="n" />
           <feDisplacementMap in="SourceGraphic" in2="n" scale={FUZZ} xChannelSelector="R" yChannelSelector="G" result="d" />
           <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={side === "left" ? 11 : 53} result="m" />
-          <feColorMatrix in="m" type="matrix" values="0 0 0 0 1  0 0 0 0 0.988  0 0 0 0 0.96  0 0 0 -0.3 1.08" result="mottle" />
+          <feColorMatrix in="m" type="matrix" values={`0 0 0 0 ${mottle[0]}  0 0 0 0 ${mottle[1]}  0 0 0 0 ${mottle[2]}  0 0 0 -0.3 1.08`} result="mottle" />
           <feComposite in="mottle" in2="d" operator="in" result="c" />
           <feGaussianBlur in="c" stdDeviation={0.3} />
         </filter>
@@ -131,17 +142,17 @@ function DrawnHalf({ side, shadow }: { side: Side; shadow: number }) {
         {SHADOWS.map(([name, up, , opacity]) => (
           <use key={name} href={`#${id("core")}`} transform={`translate(0 ${-up})`} fill={SHADOW_RGB} opacity={Math.min(1, opacity * shadow)} filter={`url(#${id(name)})`} />
         ))}
-        <use href={`#${id("core")}`} transform="translate(0 -0.7)" fill="#fffdf8" opacity={0.38} filter={`url(#${id("halo-f")})`} />
-        <use href={`#${id("core")}`} fill="#fffaf0" filter={`url(#${id("core-f")})`} />
-        <path d={half.fibres[0]} fill="none" stroke="rgba(255, 252, 244, 0.42)" strokeWidth={0.3} strokeLinecap="round" />
-        <path d={half.fibres[1]} fill="none" stroke="rgba(255, 252, 244, 0.72)" strokeWidth={0.4} strokeLinecap="round" />
+        <use href={`#${id("core")}`} transform="translate(0 -0.7)" fill={rgb([255, 253, 248])} opacity={0.38} filter={`url(#${id("halo-f")})`} />
+        <use href={`#${id("core")}`} fill={rgb([255, 250, 240])} filter={`url(#${id("core-f")})`} />
+        <path d={half.fibres[0]} fill="none" stroke={`rgba(${fibre}, 0.42)`} strokeWidth={0.3} strokeLinecap="round" />
+        <path d={half.fibres[1]} fill="none" stroke={`rgba(${fibre}, 0.72)`} strokeWidth={0.4} strokeLinecap="round" />
         <path d={half.edge} style={{ fill: "var(--paper)" }} filter={`url(#${id("edge-f")})`} />
       </g>
     </HalfSvg>
   );
 }
 
-function FlowHalf({ side, photo, scale, shadow }: { side: Side; photo: FlowKey; scale: number; shadow: number }) {
+function FlowHalf({ side, photo, scale, shadow, depth }: { side: Side; photo: FlowKey; scale: number; shadow: number; depth: number }) {
   const p = flow[photo];
   // Each side starts at its own deepest low point (the bake picked two, far
   // apart), the paper's top there on the line.
@@ -193,12 +204,17 @@ function FlowHalf({ side, photo, scale, shadow }: { side: Side; photo: FlowKey; 
             ))}
           </feMerge>
         </filter>
+        {/* The photo's cream on the slider's (see the top of the file). In
+            sRGB: the line runs in the colours as written, not in light. */}
+        <filter id={`${id}-cream`} colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values={creamLineMatrix(depth)} />
+        </filter>
       </defs>
       <g transform={outward(side)}>
         <g clipPath={`url(#${id}-above)`}>
           <g filter={`url(#${id})`}>{images}</g>
         </g>
-        {images}
+        {depth === 1 ? images : <g filter={`url(#${id}-cream)`}>{images}</g>}
       </g>
     </HalfSvg>
   );

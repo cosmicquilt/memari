@@ -3,7 +3,8 @@
 // The landing page's nav. Two looks were compared with a switch (2026-09-25:
 // a faint frosted bar, or "transparent header with white text"); Andrew
 // chose the clear one ("I like clear ... best"). Over the hero it has no
-// bar at all and cream type; below the hero, where cream type would vanish
+// bar at all and cream type, only a blur of the hero once the page has
+// moved from the top; below the hero, where cream type would vanish
 // into the cream page, it takes the faint frosted bar with dark type.
 //
 // The site's other pages (2026-10-08: Layouts, Pricing, About, Help) have
@@ -32,6 +33,15 @@ function onOverHero(cb: () => void) {
   return () => io.disconnect();
 }
 
+/** Whether the page has moved from the top: over the hero the bar then
+ *  blurs it (2026-10-14: "blurry header when moved from top spot, not
+ *  starting at bottom of hero"). A boolean, so React renders only when it
+ *  flips, not on every scroll event. */
+function onScroll(cb: () => void) {
+  window.addEventListener("scroll", cb, { passive: true });
+  return () => window.removeEventListener("scroll", cb);
+}
+
 /** The site's pages, in the nav. "How it works" is the landing page's own
  *  section; the rest are pages of their own. */
 const PAGES: Array<[href: string, label: string]> = [
@@ -45,6 +55,7 @@ const never = () => () => {};
 
 export function SiteHeader({ signedIn, guest = false, solid = false }: { signedIn: boolean; guest?: boolean; solid?: boolean }) {
   const clear = useSyncExternalStore(solid ? never : onOverHero, () => !solid && overHero, () => !solid);
+  const moved = useSyncExternalStore(solid ? never : onScroll, () => !solid && window.scrollY > 0, () => false);
   const path = usePathname();
   // On a phone the links do not fit beside the buttons: a Menu button
   // opens them under the bar. Open on the page it was opened on, so any
@@ -53,7 +64,7 @@ export function SiteHeader({ signedIn, guest = false, solid = false }: { signedI
   const menu = menuOn === path;
   const setMenu = (open: boolean | ((was: boolean) => boolean)) => setMenuOn((typeof open === "function" ? open(menu) : open) ? path : null);
   return (
-    <header className={`${styles.nav} ${clear ? styles.navClear : ""}`}>
+    <header className={`${styles.nav} ${clear ? styles.navClear : ""} ${clear && moved ? styles.navMoved : ""}`}>
       {/* The mark: "m." (2026-09-25). */}
       <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home">
         m.
