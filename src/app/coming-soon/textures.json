@@ -1,0 +1,170 @@
+[
+ {
+  "id": "Concrete034",
+  "name": "concrete",
+  "strength": 0.743,
+  "lit": "color-dodge",
+  "color": "#bababa"
+ },
+ {
+  "id": "Travertine002",
+  "name": "travertine",
+  "strength": 0.641,
+  "lit": "color-dodge",
+  "color": "#74767d"
+ },
+ {
+  "id": "Concrete036",
+  "name": "concrete",
+  "strength": 0.693,
+  "lit": "color-dodge",
+  "color": "#999589"
+ },
+ {
+  "id": "Road012A",
+  "name": "asphalt",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#434341"
+ },
+ {
+  "id": "Rubber004",
+  "name": "rubber",
+  "strength": 0.824,
+  "lit": "screen",
+  "color": "#333439"
+ },
+ {
+  "id": "Road014A",
+  "name": "asphalt",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#3d3d3b"
+ },
+ {
+  "id": "Fabric039",
+  "name": "cloth",
+  "strength": 0.824,
+  "lit": "screen",
+  "color": "#4e4e4e"
+ },
+ {
+  "id": "Asphalt024A",
+  "name": "asphalt",
+  "strength": 0.79,
+  "lit": "screen",
+  "color": "#555450"
+ },
+ {
+  "id": "Metal027",
+  "name": "steel",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#37363d"
+ },
+ {
+  "id": "Wood028",
+  "name": "wood",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#352a23"
+ },
+ {
+  "id": "Marble014",
+  "name": "marble",
+  "strength": 0.755,
+  "lit": "color-dodge",
+  "color": "#d0c4b1"
+ },
+ {
+  "id": "Ground093C",
+  "name": "sand",
+  "strength": 0.653,
+  "lit": "color-dodge",
+  "color": "#cdba96"
+ },
+ {
+  "id": "Travertine005",
+  "name": "travertine",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#615349"
+ },
+ {
+  "id": "Concrete032",
+  "name": "concrete",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#545148"
+ },
+ {
+  "id": "Wood027",
+  "name": "wood",
+  "strength": 0.78,
+  "lit": "screen",
+  "color": "#442b1d"
+ },
+ {
+  "id": "Wood052",
+  "name": "wood",
+  "strength": 0.738,
+  "lit": "color-dodge",
+  "color": "#d37f50"
+ },
+ {
+  "id": "Cardboard004",
+  "name": "kraft",
+  "strength": 0.64,
+  "lit": "color-dodge",
+  "color": "#bb9252"
+ },
+ {
+  "id": "Cardboard002",
+  "name": "kraft",
+  "strength": 0.697,
+  "lit": "color-dodge",
+  "color": "#bb9252"
+ },
+ {
+  "id": "Wood051",
+  "name": "wood",
+  "strength": 0.811,
+  "lit": "screen",
+  "color": "#463b35"
+ },
+ {
+  "id": "Concrete048",
+  "name": "concrete",
+  "strength": 0.673,
+  "lit": "color-dodge",
+  "color": "#a49a8a"
+ },
+ {
+  "id": "Concrete047A",
+  "name": "concrete",
+  "strength": 0.773,
+  "lit": "color-dodge",
+  "color": "#938a76"
+ },
+ {
+  "id": "Travertine007",
+  "name": "travertine",
+  "strength": 0.727,
+  "lit": "color-dodge",
+  "color": "#7a7469"
+ },
+ {
+  "id": "Marble020",
+  "name": "marble",
+  "strength": 0.77,
+  "lit": "color-dodge",
+  "color": "#b2a396"
+ },
+ {
+  "id": "Onyx007",
+  "name": "onyx",
+  "strength": 0.768,
+  "lit": "color-dodge",
+  "color": "#c69767"
+ }
+]

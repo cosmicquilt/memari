@@ -1,0 +1,135 @@
+/* The coming-soon page (page.tsx): the texture the whole screen, the press
+   in its middle. */
+
+.ground {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+/* The press blends with the texture under it, so nothing between them may
+   be its own layer: no opacity, transform or z-index here. A third of a
+   laptop's width, never under 240px on a phone. */
+.press {
+  position: relative;
+  width: clamp(240px, 36vw, 600px);
+  margin: 0;
+  line-height: 0;
+}
+
+.press img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* how deep this texture is pressed: both pictures scale evenly by it */
+  opacity: var(--strength, 0.6);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.shade {
+  mix-blend-mode: multiply;
+}
+
+/* the lit wall: colour-dodge brightens in proportion, as the covers' light
+   does; a dark texture's is a screen (page.tsx) */
+.light {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: var(--lit, color-dodge);
+}
+
+/* the words themselves, for screen readers and search previews */
+.words {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The way in for those with the password, at the foot of the page. A solid
+   dark pill over any texture, light or dark, so it always reads; quiet until
+   opened. */
+.pass {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.pass summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(20, 18, 16, 0.55);
+  user-select: none;
+}
+
+.pass summary::-webkit-details-marker {
+  display: none;
+}
+
+.pass[open] summary {
+  display: none;
+}
+
+.passForm {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(20, 18, 16, 0.72);
+}
+
+.passForm input {
+  width: 180px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.passForm input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.passForm button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  color: #141414;
+  background: #fff;
+  cursor: pointer;
+}
+
+.pass summary:focus-visible,
+.passForm input:focus-visible,
+.passForm button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.passWrong {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(20, 18, 16, 0.72);
+}
