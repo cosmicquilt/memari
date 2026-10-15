@@ -33,6 +33,11 @@ export async function POST(request: Request) {
     const orderId = session.metadata?.orderId;
     if (session.payment_status === "paid" && orderId) {
       const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+      // A guest's order has no email until now: they gave it on Stripe's
+      // page (2026-10-15, printActions.ts). The printer and our emails both
+      // need it, so it goes on before the book is sent.
+      const email = session.customer_details?.email;
+      if (email) await prisma.printOrder.updateMany({ where: { id: orderId, contactEmail: null }, data: { contactEmail: email } });
       // The card is kept only where renewals were asked for.
       const order = await prisma.printOrder.findUnique({ where: { id: orderId }, select: { autoRenew: true } });
       let paymentMethodId: string | undefined;

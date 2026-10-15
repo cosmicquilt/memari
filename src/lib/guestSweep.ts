@@ -13,6 +13,12 @@
 //
 // No scheduled job: this runs whenever somebody starts as a guest, which is
 // often enough and costs a few indexed queries.
+//
+// A GUEST WHO HAS ORDERED IS NEVER SWEPT (2026-10-15, when guests could
+// order). They paid; the journal their book was made from, and their
+// settings - the Stripe customer among them - stay for as long as the
+// cookie does, idle or not, so "order the next one" still finds them. The
+// orders themselves are never deleted here: they are the record of a sale.
 
 import { prisma } from "@/lib/prisma";
 import { GUEST_IDLE_DAYS, GUEST_OWNER_PREFIX } from "@/lib/guest";
@@ -27,7 +33,16 @@ export type SweepResult = {
 
 export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResult> {
   const cutoff = new Date(now.getTime() - GUEST_IDLE_DAYS * 24 * 60 * 60 * 1000);
-  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX }, updatedAt: { lt: cutoff } };
+  // Guests with an order that got as far as payment. An abandoned checkout
+  // (QUOTED) does not count: nothing was bought.
+  const customers = (
+    await prisma.printOrder.findMany({
+      where: { ownerId: { startsWith: GUEST_OWNER_PREFIX }, status: { not: "QUOTED" } },
+      select: { ownerId: true },
+      distinct: ["ownerId"],
+    })
+  ).map((row) => row.ownerId);
+  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX, notIn: customers }, updatedAt: { lt: cutoff } };
 
   const journals = await prisma.planner.deleteMany({ where: idleGuest });
 

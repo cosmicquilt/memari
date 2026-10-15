@@ -34,6 +34,13 @@ async function main() {
   const abandoned = `guest:${tag}aaaa`;
   const active = `guest:${tag}bbbb`;
   const fresh = `guest:${tag}cccc`;
+  // A guest who bought a book (2026-10-15, guest checkout), and one who only
+  // opened a payment page and left.
+  const customer = `guest:${tag}dddd`;
+  const browser = `guest:${tag}eeee`;
+  // Signing in: a guest who ordered, and the account they sign in to.
+  const signer = `guest:${tag}ffff`;
+  const signedIn = `user_${tag}claim`;
   const account = `user_${tag}`;
 
   const old = new Date(Date.now() - (GUEST_IDLE_DAYS + 5) * DAY_MS);
@@ -76,6 +83,28 @@ async function main() {
     await prisma.ownerSettings.create({ data: { ownerId, timeZone: "America/New_York" } });
     await prisma.$executeRaw`UPDATE "OwnerSettings" SET "updatedAt" = ${when} WHERE "ownerId" = ${ownerId}`;
   };
+  /** A print order at `status`, as checkout leaves one. */
+  const order = (ownerId: string, plannerId: string, status: "QUOTED" | "SUBMITTED") =>
+    prisma.printOrder.create({
+      data: {
+        ownerId,
+        plannerId,
+        title: "Sweep test",
+        startDate: new Date("2027-01-01T00:00:00Z"),
+        endDate: new Date("2027-01-30T00:00:00Z"),
+        days: 30,
+        binding: "PAPERBACK",
+        podPackageId: "0700X1000BWSTDPB060UW444MXX",
+        pageCount: 64,
+        shippingLevel: "GROUND",
+        shippingAddress: { name: "Sweep", street1: "1 Main St", city: "Springfield", stateCode: "IL", countryCode: "US", postcode: "62701" },
+        bookCents: 2499,
+        shippingCents: 599,
+        totalCents: 3098,
+        costCents: 1774,
+        status,
+      },
+    });
   const savedPage = async (ownerId: string, when: Date) => {
     const row = await prisma.savedPage.create({
       data: { ownerId, name: "Sweep test", content: [], ...page },
@@ -109,6 +138,16 @@ async function main() {
     const accountCalendar = await calendar(account, old);
     await savedPage(account, old);
     await settings(account, old);
+
+    // A CUSTOMER: idle for months, but they paid for a book. Their journal and
+    // settings (the Stripe customer) stay, and so does the order.
+    const customerJournal = await planner(customer, old);
+    await settings(customer, old);
+    const bought = await order(customer, customerJournal.id, "SUBMITTED");
+    // A guest who opened a payment page and never paid: swept as usual. The
+    // order row stays - it is not the sweep's to delete.
+    const browserJournal = await planner(browser, old);
+    const abandonedCheckout = await order(browser, browserJournal.id, "QUOTED");
 
     const result = await sweepIdleGuests();
     console.log(`  swept: ${JSON.stringify(result)}`);
@@ -155,6 +194,26 @@ async function main() {
       "nor are an account's saved pages"
     );
 
+    check(await exists("planner", customerJournal.id), "A GUEST WHO BOUGHT A BOOK KEEPS THEIR JOURNAL, however idle");
+    check((await prisma.ownerSettings.findUnique({ where: { ownerId: customer } })) !== null, "and their settings");
+    check((await prisma.printOrder.findUnique({ where: { id: bought.id } })) !== null, "and the order is never the sweep's to delete");
+    check(!(await exists("planner", browserJournal.id)), "a guest who only opened a payment page is swept like any other");
+    check((await prisma.printOrder.findUnique({ where: { id: abandonedCheckout.id } })) !== null, "though their unpaid order row stays");
+
+    // SIGNING IN brings everything along, the orders included (2026-10-15):
+    // a book bought as a guest is the account's from then on.
+    const { moveGuestWork } = await import("../src/lib/owner.js");
+    const signerJournal = await planner(signer, new Date());
+    await calendar(signer, new Date());
+    await settings(signer, new Date());
+    const signerOrder = await order(signer, signerJournal.id, "SUBMITTED");
+    await moveGuestWork(signer, signedIn);
+    check((await prisma.planner.findUnique({ where: { id: signerJournal.id } }))?.ownerId === signedIn, "signing in moves a guest's journals to the account");
+    check((await prisma.printOrder.findUnique({ where: { id: signerOrder.id } }))?.ownerId === signedIn, "AND THEIR ORDERS");
+    check((await prisma.calendar.count({ where: { ownerId: signedIn } })) === 1 && (await prisma.calendarEvent.count({ where: { ownerId: signedIn } })) === 1, "and their calendars, events and all");
+    check((await prisma.ownerSettings.findUnique({ where: { ownerId: signedIn } })) !== null, "and their settings, where the account had none");
+    check((await prisma.printOrder.count({ where: { ownerId: signer } })) + (await prisma.planner.count({ where: { ownerId: signer } })) === 0, "leaving the guest owning nothing");
+
     // EVERY KIND OF ROW A GUEST CAN OWN is named above. If a new one is added
     // to the schema and not to the sweep, this is where it should have been.
     check(
@@ -162,7 +221,8 @@ async function main() {
       `the sweep reports what it took: ${JSON.stringify(result)}`
     );
   } finally {
-    for (const ownerId of [abandoned, active, fresh, account]) {
+    await prisma.printOrder.deleteMany({ where: { ownerId: { in: [customer, browser, signer, signedIn] } } });
+    for (const ownerId of [abandoned, active, fresh, account, customer, browser, signer, signedIn]) {
       await prisma.calendar.deleteMany({ where: { ownerId } });
       await prisma.savedPage.deleteMany({ where: { ownerId } });
       await prisma.savedModule.deleteMany({ where: { ownerId } });
@@ -189,6 +249,9 @@ try {
 //     -> the "still using their journals" cases
 //   * drop the `startsWith(GUEST_OWNER_PREFIX)` filter
 //     -> "AN ACCOUNT IS NEVER SWEPT"
+//   * drop printOrder from moveGuestWork (owner.ts) -> "AND THEIR ORDERS"
+//   * drop the `notIn: customers` exclusion (2026-10-15)
+//     -> "A GUEST WHO BOUGHT A BOOK KEEPS THEIR JOURNAL"
 
 console.log(
   failures === 0

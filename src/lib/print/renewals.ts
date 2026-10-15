@@ -36,6 +36,7 @@ import { fulfilPaidOrder } from "./orders";
 import { stripe } from "./stripe";
 import { notify, renewalFailedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
+import { RENEWABLE_STATUSES } from "./renewalControls";
 
 export type ChargeResult = { ok: true; paymentIntentId: string } | { ok: false; reason: string };
 
@@ -92,8 +93,9 @@ export async function runRenewals(now: Date, deps: RenewalDeps, limit = 25): Pro
     where: {
       autoRenew: true,
       renewsAt: { lte: now },
-      // Only a book that really went to print renews.
-      status: { in: ["SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"] },
+      // Only a book that really went to print renews - or a skipped one,
+      // standing in for its days (renewalControls.ts).
+      status: { in: [...RENEWABLE_STATUSES] },
       renewals: { none: {} },
     },
     orderBy: { renewsAt: "asc" },
@@ -193,6 +195,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const cover = buildCoverPdf({
     ...dims,
     form: printer.coverForm,
+    safeIn: BINDING_SPECS[binding].coverSafeIn,
     trimWidthIn: trim.widthIn,
     trimHeightIn: trim.heightIn,
     title: journal.title,

@@ -20,7 +20,9 @@
 // and the quote is withdrawn, so a stale price cannot be paid.
 //
 // AUTO-RENEW IS OFF until switched on - "it should always default to auto
-// renew off with the option to turn it on".
+// renew off with the option to turn it on". A GUEST orders like anyone else
+// (2026-10-15), with auto-renew held off: renewing needs an account
+// (printActions.ts), so the switch says so and links to sign in.
 //
 // ORDER THE NEXT ONE: the Orders page links to the journal with
 // ?reorder=<order>, and the screen opens filled in from that book - the
@@ -286,7 +288,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
           {status && !status.ready && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
               <p style={{ margin: 0, lineHeight: 1.5 }}>{status.message}</p>
-              {(status.reason === "guest" || status.reason === "signed-out") && (
+              {status.reason === "signed-out" && (
                 <a
                   href={`/sign-in?redirect_url=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname : "/app")}`}
                   style={{ alignSelf: "flex-start", padding: "7px 14px", background: ACCENT, color: CREAM, borderRadius: CONTROL_RADIUS, textDecoration: "none", fontSize: 13 }}
@@ -444,19 +446,30 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
 
                   {current.options.length > 0 && (
                   <>
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12, lineHeight: 1.45, cursor: "pointer" }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 12, lineHeight: 1.45, cursor: status.guest ? "default" : "pointer" }}>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={autoRenew}
+                      disabled={status.guest}
                       onClick={() => setAutoRenew(!autoRenew)}
-                      style={{ flex: "none", width: 34, height: 20, padding: 2, border: "none", borderRadius: 10, background: autoRenew ? ACCENT : cream(0.18), cursor: "pointer", display: "flex", justifyContent: autoRenew ? "flex-end" : "flex-start", transition: "background 150ms ease" }}
+                      style={{ flex: "none", width: 34, height: 20, padding: 2, border: "none", borderRadius: 10, background: autoRenew ? ACCENT : cream(0.18), cursor: status.guest ? "default" : "pointer", opacity: status.guest ? 0.5 : 1, display: "flex", justifyContent: autoRenew ? "flex-end" : "flex-start", transition: "background 150ms ease" }}
                     >
                       <span style={{ width: 16, height: 16, borderRadius: 8, background: CREAM, display: "block" }} />
                     </button>
-                    <span>
-                      <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {current.range.days} days automatically before this book runs out, to the same address, at that book&apos;s own price (it is your journal as it is then). Your card is saved for it only if this is on. Turn it off any time under Orders.
-                    </span>
+                    {status.guest ? (
+                      <span>
+                        <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> needs an account, so this book is a one-off.{" "}
+                        <a href={`/sign-in?redirect_url=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname : "/app")}`} style={{ color: "#8a97ff" }}>
+                          Sign in
+                        </a>{" "}
+                        to have the next one ordered for you. Your journal comes with you.
+                      </span>
+                    ) : (
+                      <span>
+                        <strong style={{ color: CREAM, fontWeight: 600 }}>Auto-renew</strong> - order the next {current.range.days} days automatically before this book runs out, to the same address, at that book&apos;s own price (it is your journal as it is then). Your card is saved for it only if this is on. Turn it off any time under Orders.
+                      </span>
+                    )}
                   </label>
 
                   {chosen && (
@@ -470,7 +483,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                     </button>
                   )}
                   <span style={{ fontSize: 11, color: cream(0.45), lineHeight: 1.45 }}>
-                    You pay on Stripe&apos;s secure page. {current.note}
+                    You pay on Stripe&apos;s secure page{status.guest ? ", which asks for your email: we write to it when the book ships" : ""}. {current.note}
                   </span>
                   </>
                   )}

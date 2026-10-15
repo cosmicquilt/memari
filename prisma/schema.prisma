@@ -468,6 +468,10 @@ enum PrintOrderStatus {
   CANCELED
   /// Lulu rejected it, or a step failed - someone has to look.
   FAILED
+  /// A renewal the customer skipped ("skip this one", 2026-10-15): nothing
+  /// printed or charged. It stands in the chain for its days, so the book
+  /// after it is ordered as usual - see src/lib/print/renewalControls.ts.
+  SKIPPED
 }
 
 /// One printed book, from the price shown to the parcel delivered.

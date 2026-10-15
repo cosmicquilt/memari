@@ -41,19 +41,29 @@ export async function currentOwnerId(): Promise<string | null> {
 export async function claimGuestWork(userId: string): Promise<number> {
   const guestId = guestIdFromCookie((await cookies()).get(GUEST_COOKIE)?.value);
   if (!guestId) return 0;
-  const guestOwner = `${GUEST_OWNER_PREFIX}${guestId}`;
+  return moveGuestWork(`${GUEST_OWNER_PREFIX}${guestId}`, userId);
+}
+
+/** What claimGuestWork moves, once it knows whose: every row `guestOwner`
+ *  owns, to `userId`. Apart so check:guest-sweep can drive it without a
+ *  request's cookies. */
+export async function moveGuestWork(guestOwner: string, userId: string): Promise<number> {
   // CALENDARS AND THEIR EVENTS MOVE TOO. They are owned per person rather
   // than per journal, so a guest who typed events onto a week and then signed
   // in would otherwise keep the pages and lose everything written on them -
   // the journal would arrive intact and blank. Both rows are updated: an
   // event carries its own ownerId as well as its calendar's, because every
   // read filters on it directly.
-  const [journals, pages, modules, calendars, events] = await prisma.$transaction([
+  // ORDERS MOVE TOO (2026-10-15, when guests could order): a book bought as
+  // a guest is the account's from the moment they sign in, on the Orders
+  // page and for "order the next one".
+  const [journals, pages, modules, calendars, events, orders] = await prisma.$transaction([
     prisma.planner.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.savedPage.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.savedModule.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.calendar.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.calendarEvent.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
+    prisma.printOrder.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
   ]);
   // SETTINGS: the account keeps its own if it has any - a default time zone
   // somebody chose on their account is not replaced by one a guest cookie
@@ -65,7 +75,7 @@ export async function claimGuestWork(userId: string): Promise<number> {
   } else {
     await prisma.ownerSettings.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
   }
-  return journals.count + pages.count + modules.count + calendars.count + events.count;
+  return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count;
 }
 
 /** Our own sign-in page, returning to `returnTo` afterwards - it is also

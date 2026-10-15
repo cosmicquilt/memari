@@ -12,6 +12,15 @@
 //     binding each leave a FAILED renewal saying why, nothing charged or
 //     printed, and auto-renew off;
 //   - an order not yet due, and one never paid for, are left alone;
+//   - the reminder says "Your next month prints in 5 days" and carries the
+//     journal link and signed skip and pause links, which verify for their
+//     own order and action only;
+//   - skip leaves a SKIPPED order for the next days, nothing charged, with
+//     auto-renew and the card carried on; the renewal after it covers the
+//     days after the skipped ones; undo puts it back (and keeps a stop made
+//     after the skip), but not once the book after is ordered; someone
+//     else's order, and an older book of a journal, are refused; the email
+//     page's button acts only with a good signature;
 //   - print files are deleted a year after delivery, abandoned checkouts'
 //     after a month, and nothing else's;
 //   - a customer's cancel asks the printer FIRST and refunds only if it
@@ -207,12 +216,101 @@ try {
       return { sent: true };
     };
     const [first, second] = [await sendRenewalReminders(new Date(), send), await sendRenewalReminders(new Date(), send)];
-    check(first.includes(soon.id) && second.length === 0 && sent.filter((e) => /Auto-renew|ordered soon/.test(e.subject + e.text)).length >= 1, `a renewal 5 days off is reminded, once (${first.length} then ${second.length})`);
-    const mine = sent.find((e) => e.text.includes("Reminder") || e.subject.includes("soon"));
-    check(!!mine && /turn auto-renew off/i.test(mine.text) && /own/.test(mine.text), "the reminder says how to stop, and that the price is the next book's own");
+    const mine = sent.find((e) => e.text.startsWith("Reminder:"));
+    check(first.includes(soon.id) && second.length === 0 && !!mine, `a renewal 5 days off is reminded, once (${first.length} then ${second.length})`);
+    check(mine?.subject === "Your next month prints in 5 days", `the subject says what and when (${mine?.subject})`);
+    check(!!mine && /change your pages, skip this one, or pause/i.test(mine.text) && /own/.test(mine.text), "the reminder offers change, skip and pause, and says the price is the next book's own");
+    const { verifyRenewalAction } = await import("../src/lib/print/renewalControls.js");
+    const link = (action: string) => new RegExp(`/renewal/${soon.id}\\?do=${action}&sig=([0-9a-f]+)`).exec(mine?.text ?? "");
+    const [skipLink, pauseLink] = [link("skip"), link("pause")];
+    check(!!skipLink && !!pauseLink && verifyRenewalAction(soon.id, "skip", skipLink[1]) && verifyRenewalAction(soon.id, "pause", pauseLink[1]), "its skip and pause links are signed for this order");
+    check(!!skipLink && !verifyRenewalAction(soon.id, "pause", skipLink[1]) && !verifyRenewalAction(far.id, "skip", skipLink[1]) && !verifyRenewalAction(soon.id, "skip", skipLink[1].replace(/.$/, (c) => (c === "0" ? "1" : "0"))) && !verifyRenewalAction(soon.id, "delete", skipLink[1]), "and for nothing else: not the other action, another order, an altered signature or another verb");
+    const slug = (await prisma.planner.findUniqueOrThrow({ where: { id: plannerId } })).slug;
+    check(!!slug && (mine?.text.includes(`/app/j/${slug}`) ?? false), `"Change your pages" opens the journal (/app/j/${slug})`);
     check(!first.includes(far.id) && !first.includes(tomorrow.id) && !first.includes(off.id), "not one a month off, not one renewing within the day, not one with auto-renew off");
     // Run on the very same day and again - each renewal is reminded once.
     await prisma.printOrder.updateMany({ where: { id: { in: [soon.id, far.id, tomorrow.id, off.id] } }, data: { autoRenew: false } });
+  }
+
+  // --- skip, undo and stop (renewalControls.ts) -------------------------------------------
+  {
+    const { skipNextBook, undoSkip, stopAutoRenew, startAutoRenew, renewalActionUrl } = await import("../src/lib/print/renewalControls.js");
+    const said = (run: () => Promise<unknown>) => run().then(() => null, (error: Error) => error.message);
+    const plannerId = await journal("Skip check");
+    const head = await order(plannerId, { title: "Skip", renewsAt: new Date(Date.now() + 5 * DAY) });
+
+    const { skippedId } = await skipNextBook(OWNER, head.id);
+    let placeholder = await prisma.printOrder.findUniqueOrThrow({ where: { id: skippedId } });
+    let original = await prisma.printOrder.findUniqueOrThrow({ where: { id: head.id } });
+    check(placeholder.status === "SKIPPED" && iso(placeholder.startDate) === "2027-01-31" && iso(placeholder.endDate) === "2027-03-01" && placeholder.totalCents === 0 && placeholder.renewedFromId === head.id, `skip: a SKIPPED order for the next 30 days, nothing charged (${iso(placeholder.startDate)}..${iso(placeholder.endDate)}, ${placeholder.totalCents})`);
+    check(!original.autoRenew && original.renewsAt === null, "the book it skips from renews no more");
+    check(placeholder.autoRenew && placeholder.stripePaymentMethodId === "pm_check" && !!placeholder.renewsAt && placeholder.renewsAt > head.renewsAt!, `auto-renew and the card carry on, for the book after (${placeholder.renewsAt && iso(placeholder.renewsAt)})`);
+    check(/already been ordered|nothing to skip/.test((await said(() => skipNextBook(OWNER, head.id))) ?? ""), "skipping from the same book twice is refused");
+
+    await undoSkip(OWNER, skippedId);
+    original = await prisma.printOrder.findUniqueOrThrow({ where: { id: head.id } });
+    check((await prisma.printOrder.count({ where: { id: skippedId } })) === 0 && original.autoRenew && !!original.renewsAt && original.renewalReminderSentAt === null, "undo: the skip is gone and the book renews again, reminder due again");
+
+    // Skip, then stop on the skipped one, then undo: the stop stands.
+    const again = await skipNextBook(OWNER, head.id);
+    await stopAutoRenew(OWNER, again.skippedId);
+    await undoSkip(OWNER, again.skippedId);
+    original = await prisma.printOrder.findUniqueOrThrow({ where: { id: head.id } });
+    check(!original.autoRenew && original.renewsAt === null, "a stop made after a skip survives undoing the skip");
+    await startAutoRenew(OWNER, head.id);
+
+    // The chain carries on through a skip: the renewal after covers the
+    // days after the skipped ones, charged once.
+    const third = await skipNextBook(OWNER, head.id);
+    await prisma.printOrder.update({ where: { id: third.skippedId }, data: { renewsAt: new Date(Date.now() - DAY) } });
+    const { deps, calls } = fakes();
+    const outcomes = await runRenewals(now, deps);
+    const renewal = await prisma.printOrder.findFirst({ where: { renewedFromId: third.skippedId } });
+    check(outcomes.some((o) => o.orderId === third.skippedId && o.outcome === "renewed") && !!renewal && iso(renewal.startDate) === "2027-03-02" && iso(renewal.endDate) === "2027-03-31", `the book after a skip is ordered for the days after it (${renewal && `${iso(renewal.startDate)}..${iso(renewal.endDate)}`})`);
+    check(calls.charge.filter((c) => c.orderId === renewal?.id).length === 1 && !outcomes.some((o) => o.orderId === head.id), "charged once, and nothing ordered from the book before the skip");
+    check(/already been ordered/.test((await said(() => undoSkip(OWNER, third.skippedId))) ?? ""), "once the book after is ordered, the skip can't be undone");
+    placeholder = await prisma.printOrder.findUniqueOrThrow({ where: { id: third.skippedId } });
+    check(!placeholder.autoRenew && renewal?.autoRenew === true, "and auto-renew moved on to the new book");
+
+    // Refused: someone else's order, and an older book of a journal.
+    const theirs = await order(null, { ownerId: STRANGER, title: "Theirs", renewsAt: new Date(Date.now() + 5 * DAY) });
+    const errors = [await said(() => skipNextBook(OWNER, theirs.id)), await said(() => stopAutoRenew(OWNER, theirs.id)), await said(() => startAutoRenew(OWNER, theirs.id))];
+    check(errors.every((e) => /could not be found/.test(e ?? "")), `someone else's order can't be skipped, stopped or started (${errors.join(" | ")})`);
+    const olderJournal = await journal("Older check");
+    const older = await order(olderJournal, { title: "Older", renewsAt: new Date(Date.now() + 5 * DAY) });
+    await order(olderJournal, { title: "Newer", startDate: new Date("2027-01-31T00:00:00Z"), endDate: new Date("2027-03-01T00:00:00Z"), renewsAt: new Date(Date.now() + 20 * DAY) });
+    const olderErrors = [await said(() => skipNextBook(OWNER, older.id)), await said(() => startAutoRenew(OWNER, older.id))];
+    check(olderErrors.every((e) => /later book follows/.test(e ?? "")), `an older book of a journal can't be skipped or switched on (${olderErrors.join(" | ")})`);
+    await prisma.printOrder.updateMany({ where: { plannerId: { in: [plannerId, olderJournal] } }, data: { autoRenew: false, renewsAt: null } });
+
+    // The email page's button: only with the link's own signature.
+    const { actOnRenewal } = await import("../src/app/renewal/actions.js");
+    const target = await order(await journal("Email check"), { title: "Email", renewsAt: new Date(Date.now() + 5 * DAY) });
+    const form = (url: string) => {
+      const parsed = new URL(url);
+      const data = new FormData();
+      data.set("orderId", decodeURIComponent(parsed.pathname.split("/").pop()!));
+      data.set("do", parsed.searchParams.get("do")!);
+      data.set("sig", parsed.searchParams.get("sig")!);
+      return data;
+    };
+    const forged = form(renewalActionUrl(target.id, "pause"));
+    forged.set("do", "skip");
+    const refusal = await actOnRenewal({ error: null }, forged);
+    const untouched = await prisma.printOrder.findUniqueOrThrow({ where: { id: target.id } });
+    check(!!refusal.error && untouched.autoRenew, `a pause link's signature can't skip (${refusal.error})`);
+    const redirected = await actOnRenewal({ error: null }, form(renewalActionUrl(target.id, "pause"))).then(
+      () => false,
+      (error: { digest?: string }) => /NEXT_REDIRECT/.test(error?.digest ?? "")
+    );
+    const paused = await prisma.printOrder.findUniqueOrThrow({ where: { id: target.id } });
+    check(redirected && !paused.autoRenew && paused.renewsAt === null, "the pause link's button pauses, then shows the page again");
+    // Pausing from an email sent before a skip stops the skipped book's renewal.
+    const before = await order(await journal("Pause after skip check"), { title: "Pause after skip", renewsAt: new Date(Date.now() + 5 * DAY) });
+    const later = await skipNextBook(OWNER, before.id);
+    await actOnRenewal({ error: null }, form(renewalActionUrl(before.id, "pause"))).catch(() => undefined);
+    const carried = await prisma.printOrder.findUniqueOrThrow({ where: { id: later.skippedId } });
+    check(!carried.autoRenew && carried.renewsAt === null, "a pause from the email before a skip stops the book after the skip");
   }
 
   // --- what the emails say ------------------------------------------------------------

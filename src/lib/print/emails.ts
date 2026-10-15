@@ -2,8 +2,10 @@
 //
 //   placed          the book is with the printer (Stripe sends the receipt)
 //   shipped         it is in the post, with the tracking links
-//   reminder        auto-renew: the next book is ordered in about a week, at
-//                   its own price, and how to turn it off - once per book
+//   reminder        auto-renew: "Your next quarter prints in 7 days. Change
+//                   your pages, skip this one, or pause." (asked 2026-10-15) -
+//                   each a link: the journal, and the signed skip and pause
+//                   pages (src/app/renewal). Once per book
 //                   (renewalReminderSentAt). Some US states' auto-renewal
 //                   laws expect a reminder like it; this is that, not legal
 //                   advice.
@@ -23,6 +25,8 @@ import { bindingDescription, bindingFromEnum } from "./products";
 import { formatCents } from "./pricing";
 import { nextRange } from "./orderRange";
 import { rangeLabel } from "./orderBook";
+import { RENEWABLE_STATUSES, renewalActionUrl, skipPreview } from "./renewalControls";
+import { journalSlugOf } from "@/app/planner/journalSlugs";
 
 type OrderLike = {
   id: string;
@@ -46,12 +50,22 @@ function describe(order: OrderLike): string {
   return `${order.title} - ${rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })}, ${order.days} days, ${bindingDescription(bindingFromEnum(order.binding), order.podPackageId ?? "").toLowerCase()}, ${order.pageCount} pages`;
 }
 
-function compose(to: string, subject: string, heading: string, paragraphs: string[], link: string): Email {
-  const text = [...paragraphs, `Your orders: ${link}`, "", "Memari Studio"].join("\n\n");
+/** A thing the email offers to do: a button in the HTML, a line in the text. */
+type Action = { label: string; url: string; note: string };
+
+function compose(to: string, subject: string, heading: string, paragraphs: string[], link: string, actions: Action[] = []): Email {
+  const text = [...paragraphs, ...actions.map((a) => `${a.label}: ${a.url}\n${a.note}`), `Your orders: ${link}`, "", "Memari Studio"].join("\n\n");
   const html =
     `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#231f20;max-width:520px">` +
     `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:22px;margin:0 0 16px">${escapeHtml(heading)}</h1>` +
     paragraphs.map((p) => `<p style="margin:0 0 12px">${escapeHtml(p)}</p>`).join("") +
+    actions
+      .map(
+        (a) =>
+          `<p style="margin:14px 0 0"><a href="${escapeHtml(a.url)}" style="display:inline-block;padding:8px 14px;background:#4a5cff;color:#ffffff;border-radius:6px;text-decoration:none;font-size:14px">${escapeHtml(a.label)}</a></p>` +
+          `<p style="margin:4px 0 0;color:#6c6457;font-size:13px">${escapeHtml(a.note)}</p>`
+      )
+      .join("") +
     `<p style="margin:20px 0 0"><a href="${escapeHtml(link)}" style="color:#4a5cff">Your orders</a></p>` +
     `<p style="margin:24px 0 0;color:#6c6457;font-size:13px">Memari Studio</p></div>`;
   return { to, subject, text, html };
@@ -84,19 +98,46 @@ export function shippedEmail(order: OrderLike, tracking: string[]): Email {
   );
 }
 
-export function reminderEmail(order: OrderLike): Email {
+/** "quarter" for a 90-day book, and so on: what the reminder calls it. */
+export function periodWord(days: number): string {
+  if (days >= 28 && days <= 31) return "month";
+  if (days >= 89 && days <= 92) return "quarter";
+  if (days >= 365 && days <= 366) return "year";
+  return "book";
+}
+
+const longDate = (date: Date) => date.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+
+/** Where the reminder's three links go: the journal (to change pages), and
+ *  the signed skip and pause pages. */
+export type ReminderLinks = { pages: string; skip: string; pause: string };
+
+/** `afterOrderedOn`: when the book after a skipped one is ordered - from
+ *  skipPreview, the date a skip really sets; without it, worked out from
+ *  this book's own lead. */
+export function reminderEmail(order: OrderLike, links: ReminderLinks, now: Date = new Date(), afterOrderedOn?: Date): Email {
   const next = nextRange({ start: order.startDate, end: order.endDate, days: order.days });
-  const when = order.renewsAt ? order.renewsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) : "soon";
+  const after = nextRange(next);
+  const printsOn = order.renewsAt ?? now;
+  const daysAway = Math.max(1, Math.round((printsOn.getTime() - now.getTime()) / 86_400_000));
+  const word = periodWord(order.days);
+  const when = longDate(printsOn);
+  const afterOn = longDate(afterOrderedOn ?? new Date(next.end.getTime() - (order.endDate.getTime() - printsOn.getTime())));
   return compose(
     order.contactEmail ?? "",
-    "Your next journal will be ordered soon",
-    "Auto-renew: your next book",
+    `Your next ${word} prints in ${daysAway} day${daysAway === 1 ? "" : "s"}`,
+    `Your next ${word} prints on ${when}`,
     [
-      `On ${when} we'll order your next book - ${rangeLabel(next)}, ${next.days} days - and charge the card you saved.`,
-      `It is made from your journal as it is then, so its price is that book's own. This one was ${formatCents(order.totalCents)}.`,
-      "To change anything, edit your journal before then. To stop, turn auto-renew off under your orders - nothing more is ordered.",
+      `${order.title}: ${rangeLabel(next)}, ${next.days} days. We'll print it on ${when} and charge the card you saved.`,
+      `It's made from your journal as it is then, so its price is that book's own. This one was ${formatCents(order.totalCents)}.`,
+      "Before then you can change your pages, skip this one, or pause.",
     ],
-    ordersLink()
+    ordersLink(),
+    [
+      { label: "Change your pages", url: links.pages, note: `Anything you change before ${when} is in the book.` },
+      { label: "Skip this one", url: links.skip, note: `Nothing is printed or charged for ${rangeLabel(next)}. The one after (${rangeLabel(after)}) is ordered on ${afterOn}.` },
+      { label: "Pause auto-renew", url: links.pause, note: "Nothing more is ordered until you turn it back on." },
+    ]
   );
 }
 
@@ -149,7 +190,8 @@ export async function sendRenewalReminders(now: Date, send: EmailSender = sendEm
       autoRenew: true,
       renewalReminderSentAt: null,
       renewsAt: { gt: new Date(now.getTime() + day), lte: new Date(now.getTime() + 7 * day) },
-      status: { in: ["SUBMITTED", "IN_PRODUCTION", "SHIPPED", "DELIVERED"] },
+      // A skipped book renews like a printed one (renewalControls.ts).
+      status: { in: [...RENEWABLE_STATUSES] },
       renewals: { none: {} },
     },
   });
@@ -157,8 +199,22 @@ export async function sendRenewalReminders(now: Date, send: EmailSender = sendEm
   for (const order of due) {
     const claimed = await prisma.printOrder.updateMany({ where: { id: order.id, renewalReminderSentAt: null }, data: { renewalReminderSentAt: now } });
     if (claimed.count === 0) continue;
-    await notify(reminderEmail(order), send);
+    await notify(reminderEmail(order, await reminderLinks(order), now, skipPreview(order, now).afterOrderedOn), send);
     reminded.push(order.id);
   }
   return reminded;
+}
+
+/** The reminder's links for one order. The journal's own page when there
+ *  still is one, else the orders list. */
+async function reminderLinks(order: { id: string; plannerId: string | null }): Promise<ReminderLinks> {
+  let pages = ordersLink();
+  if (order.plannerId) {
+    try {
+      pages = `${appUrl()}/app/j/${await journalSlugOf(order.plannerId)}`;
+    } catch {
+      // The journal went; the orders list will say so.
+    }
+  }
+  return { pages, skip: renewalActionUrl(order.id, "skip"), pause: renewalActionUrl(order.id, "pause") };
 }
