@@ -108,6 +108,10 @@ export async function GET(request: Request) {
       loadedWidthPx = book.pages[0].pageGrid.widthPx;
       built = buildPlannerPdf(book.pages);
     } else {
+      // A level the book does not have is not made here (openBook): say so.
+      if (!planner.pages.some((page) => page.level === level && (page.variantKey ?? null) === null)) {
+        return new Response(`This journal has no ${LEVEL_LABELS[level].toLowerCase()} pages.`, { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      }
       title = `${planner.title} ${LEVEL_LABELS[level]}`;
       scope = LEVEL_LABELS[level];
       // Paper: the events in print grey, as the whole book has them.

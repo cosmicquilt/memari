@@ -58,14 +58,24 @@ export async function renderEditor(address: string) {
   // rather than to the weekly spread. An occurrence's own layout (a month's,
   // say) is part of it: without that, a page made for one month could only
   // be reached by opening it from the timeline every time.
-  const opened = parseOpenLevelCookie(cookieStore.get(OPEN_LEVEL_COOKIE)?.value) ?? {
+  const remembered = parseOpenLevelCookie(cookieStore.get(OPEN_LEVEL_COOKIE)?.value) ?? {
     level: PageLevel.WEEKLY,
     variantKey: null,
   };
+  // A level this book has (2026-10-15): the remembered one belongs to the
+  // browser, not to this journal, and opening a level the book lacks would
+  // add its pages to the print (see openBook). Weekly, else daily, monthly,
+  // the front: the page used most that exists. A book with no pages at all
+  // still opens weekly, seeded, rather than on nothing.
+  const levelsHere = new Set(
+    (await prisma.page.findMany({ where: { plannerId: journalId, variantKey: null }, select: { level: true }, distinct: ["level"] })).map((row) => row.level)
+  );
+  const fallback = [PageLevel.WEEKLY, PageLevel.DAILY, PageLevel.MONTHLY, PageLevel.FRONT_MATTER, PageLevel.BACK_MATTER].find((level) => levelsHere.has(level));
+  const opened = levelsHere.has(remembered.level) || !fallback ? remembered : { level: fallback, variantKey: null };
 
   let book;
   try {
-    book = await openBook(journalId, opened.level);
+    book = await openBook(journalId, opened.level, { seed: levelsHere.size === 0 });
   } catch (error) {
     if (error instanceof Error && error.message === "Journal not found") notFound();
     throw error;

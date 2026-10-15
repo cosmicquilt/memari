@@ -384,8 +384,17 @@ const JOURNAL_NOT_FOUND = "Journal not found";
  * One of this person's journals, with the pages of one LEVEL ready - see
  * ensureLevel. What opening a journal, switching layouts and exporting all
  * start from.
+ *
+ * A LEVEL THE BOOK DOES NOT HAVE IS SEEDED ONLY WHEN ASKED (`seed`, found
+ * 2026-10-15). A level with pages is a level that prints (generateBook), so
+ * seeding one is adding pages to the book. Opening the editor used to seed
+ * whatever level this browser last had open - weekly by default - and the
+ * whole-book export always asked for weekly: a monthly journal from "Use this
+ * month", or a planner with no weeks, came back with weekly pages after its
+ * first open and printed them. Only the timeline asks (loadLevel), which is
+ * someone choosing to open that level.
  */
-export async function openBook(journalId: string, level: PageLevel = PageLevel.WEEKLY) {
+export async function openBook(journalId: string, level: PageLevel = PageLevel.WEEKLY, options: { seed?: boolean } = {}) {
   const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
@@ -400,6 +409,8 @@ export async function openBook(journalId: string, level: PageLevel = PageLevel.W
   if (isGuestOwner(userId)) {
     await prisma.planner.update({ where: { id: planner.id }, data: { updatedAt: new Date() } });
   }
+  const has = planner.pages.some((page) => page.level === level && (page.variantKey ?? null) === null);
+  if (!has && !options.seed) return planner;
   return ensureLevel(planner, level);
 }
 

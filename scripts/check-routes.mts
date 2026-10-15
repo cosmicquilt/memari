@@ -95,6 +95,14 @@ async function main() {
   // Somebody else's journal: its real words must be a 404 to this guest.
   const stranger = await makeGuestJournal("Route check stranger");
   const strangerSlug = (await prisma.planner.findUnique({ where: { id: stranger.journalId }, select: { slug: true } }))?.slug ?? "";
+  // A journal with no weekly pages - a monthly one, as "Use this month" or a
+  // planner with no weeks makes. Opening it and exporting it must not give
+  // it weekly pages: a level with pages prints (2026-10-15, openBook).
+  const { createBookFor, validateNewJournal } = await import("../src/app/planner/bookSeeding.js");
+  const monthly = await createBookFor(
+    guest.ownerId,
+    validateNewJournal({ title: "Route check monthly", trim: "bound7x10", startISO: "2027-01-01", endISO: "2027-03-31", levels: ["FRONT_MATTER", "MONTHLY", "BACK_MATTER"], dated: true, weekStartDay: 0, font: "serif" })
+  );
 
   const routes: Expectation[] = [
     // "/" IS the landing page now, for everyone, signed in or not (the
@@ -107,6 +115,13 @@ async function main() {
     { path: "/privacy", expect: [200], as: "nobody", what: "privacy (Google fetches this one itself)" },
     { path: "/terms", expect: [200], as: "nobody", what: "terms" },
     { path: "/sign-in", expect: [200], as: "nobody", what: "sign-in" },
+    // The renewal reminder's skip and pause links work signed out; a link
+    // copied in part says so, rather than failing.
+    { path: "/renewal/not-an-order?do=skip&sig=0000", expect: [200], as: "nobody", what: "a broken skip link is a page saying so, not an error" },
+    // The gallery, and a prebuilt planner's own page (plannerTemplates.ts).
+    { path: "/layouts", expect: [200], as: "nobody", what: "the layouts gallery" },
+    { path: "/layouts/irregular-income", expect: [200], as: "nobody", what: "a whole planner's page" },
+    { path: "/layouts/week-irregular-income", expect: [200], as: "nobody", what: "one part of a planner, on its own" },
     { path: "/guest", expect: [303], as: "nobody", what: "GET /guest redirects rather than minting a guest" },
     { path: "/app", expect: [307, 302, 303], as: "nobody", what: "/app with no cookie is sent to sign-in" },
     { path: "/app", expect: [200], as: "guest", what: "the start dialog" },
@@ -117,6 +132,9 @@ async function main() {
     { path: `/app/j/${strangerSlug}`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal, by its words, is 404 - as if it did not exist" },
     { path: `/app/j/${journal.slug}`, expect: [307, 302, 303], as: "nobody", what: "a journal's words with no cookie are sent to sign-in" },
     { path: `/app/export?journal=${journal.id}`, expect: [200], as: "guest", what: "the PDF export" },
+    { path: `/app/j/${monthly.slug}`, expect: [200], as: "guest", what: "a journal with no weekly pages opens" },
+    { path: `/app/export?journal=${monthly.id}`, expect: [200, 409], as: "guest", what: "and exports as a whole book" },
+    { path: `/app/export?journal=${monthly.id}&level=WEEKLY`, expect: [404], as: "guest", what: "asking for its weekly spread says it has none" },
     // THE BOOK BEFORE IT IS BOUGHT (app/print-preview): the pages and cover
     // an order would print, for the journal's owner only.
     { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=paperback&part=interior`, expect: [200], as: "guest", what: "an order's pages, previewed" },
@@ -157,7 +175,10 @@ async function main() {
         if (marker) check(false, `${label}: answered 200, but the HTML contains "${marker}"`);
       }
     }
+    const weekly = await prisma.page.count({ where: { plannerId: monthly.id, level: "WEEKLY" } });
+    check(weekly === 0, `opening and exporting a monthly journal leaves it with no weekly pages (${weekly})`);
   } finally {
+    await prisma.planner.deleteMany({ where: { id: monthly.id } });
     await guest.remove();
     await stranger.remove();
   }

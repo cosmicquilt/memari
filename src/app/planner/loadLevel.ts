@@ -26,6 +26,8 @@ export async function loadLevel(
   if (variantKey !== null && typeof variantKey !== "string") {
     throw new Error("No such layout");
   }
-  const book = await openBook(journalId, level);
+  // Opened from the timeline: someone chose this level, so it is seeded if
+  // the book does not have it yet (see openBook).
+  const book = await openBook(journalId, level, { seed: true });
   return loadPlannerPages(book, level, variantKey);
 }
