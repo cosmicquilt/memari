@@ -46,7 +46,15 @@ export function renewalActionUrl(orderId: string, action: RenewalAction): string
 }
 
 export function verifyRenewalAction(orderId: string, action: string | null, signature: string | null): action is RenewalAction {
-  return (action === "skip" || action === "pause") && verifySiteSignature(`renewal:${orderId}:${action}`, signature);
+  if (action !== "skip" && action !== "pause") return false;
+  // With no signing secret set (production before the print keys are in),
+  // nothing could have been signed, so nothing verifies - a "link doesn't
+  // work" page, never a 500 (found on the live site 2026-10-15).
+  try {
+    return verifySiteSignature(`renewal:${orderId}:${action}`, signature);
+  } catch {
+    return false;
+  }
 }
 
 type OrderRow = Awaited<ReturnType<typeof prisma.printOrder.findFirstOrThrow>>;

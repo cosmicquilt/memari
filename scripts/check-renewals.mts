@@ -224,6 +224,24 @@ try {
     const link = (action: string) => new RegExp(`/renewal/${soon.id}\\?do=${action}&sig=([0-9a-f]+)`).exec(mine?.text ?? "");
     const [skipLink, pauseLink] = [link("skip"), link("pause")];
     check(!!skipLink && !!pauseLink && verifyRenewalAction(soon.id, "skip", skipLink[1]) && verifyRenewalAction(soon.id, "pause", pauseLink[1]), "its skip and pause links are signed for this order");
+    // No signing secret set (production before the print keys): every link
+    // fails to verify, quietly - the page says so instead of a 500.
+    // As production: development has a fallback secret (fileUrls.ts).
+    const env = process.env as Record<string, string | undefined>;
+    const saved = { secret: env.PRINT_FILE_SECRET, mode: env.NODE_ENV };
+    delete env.PRINT_FILE_SECRET;
+    env.NODE_ENV = "production";
+    let quiet = true;
+    try {
+      quiet = verifyRenewalAction(soon.id, "skip", skipLink?.[1] ?? "x") === false;
+    } catch {
+      quiet = false;
+    }
+    for (const [key, value] of [["PRINT_FILE_SECRET", saved.secret], ["NODE_ENV", saved.mode]] as const) {
+      if (value === undefined) delete env[key];
+      else env[key] = value;
+    }
+    check(quiet, "with no signing secret set, a link fails to verify rather than throwing (no 500 on the page)");
     check(!!skipLink && !verifyRenewalAction(soon.id, "pause", skipLink[1]) && !verifyRenewalAction(far.id, "skip", skipLink[1]) && !verifyRenewalAction(soon.id, "skip", skipLink[1].replace(/.$/, (c) => (c === "0" ? "1" : "0"))) && !verifyRenewalAction(soon.id, "delete", skipLink[1]), "and for nothing else: not the other action, another order, an altered signature or another verb");
     const slug = (await prisma.planner.findUniqueOrThrow({ where: { id: plannerId } })).slug;
     check(!!slug && (mine?.text.includes(`/app/j/${slug}`) ?? false), `"Change your pages" opens the journal (/app/j/${slug})`);
