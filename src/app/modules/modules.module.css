@@ -1,0 +1,183 @@
+/* The module pages (/modules and /modules/<slug>). On the site's paper and
+   type - site.module.css and landing.module.css - with only what they add:
+   the printed module, the sources, and the list of practices. */
+
+.figure {
+  margin: 0 0 40px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+/* A tall module beside the text, kept in view; above it on a narrow screen. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(0, 300px);
+  gap: 64px;
+  align-items: start;
+}
+
+.split > .figure {
+  grid-column: 2;
+  grid-row: 1;
+  position: sticky;
+  top: 88px;
+  margin: 0;
+}
+
+.split > :not(.figure) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+@media (max-width: 960px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .split > .figure {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+    margin: 0 0 40px;
+  }
+  .split > :not(.figure) {
+    grid-row: auto;
+  }
+}
+
+.drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.08), 0 8px 28px rgba(28, 25, 23, 0.1);
+}
+
+.figure figcaption {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* The drawing's text is the planner's own face. */
+.drawing text {
+  font-family: var(--font-newsreader), Newsreader, Georgia, serif;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.sources {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.sources a {
+  color: var(--ink);
+}
+
+/* A source, in its own words: set in the planner's face at reading weight,
+   on paper so the doodle wall does not run through it. One paragraph per
+   line of the source - verse keeps its lines. */
+.quote {
+  margin: 8px 0;
+  padding: 18px 22px 16px;
+  border-left: 3px solid var(--hand);
+  border-radius: 0 8px 8px 0;
+  background: #fbf7ef;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.06);
+  font-family: var(--font-newsreader), Newsreader, Georgia, serif;
+  font-size: 19px;
+  line-height: 1.5;
+  display: grid;
+  gap: 6px;
+}
+
+.quote p {
+  margin: 0;
+}
+
+.quote cite {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-style: normal;
+  color: var(--muted);
+}
+
+.related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+
+.related a {
+  color: var(--ink);
+}
+
+/* The index: a category's practices, each a name and its line. */
+.group {
+  display: grid;
+  gap: 14px;
+}
+
+.group h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+}
+
+.item {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper, #faf6ee) 70%, white);
+  box-shadow: 0 0 0 1px var(--line);
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.item:hover {
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.item b {
+  font-size: 17px;
+}
+
+.item span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.item p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}

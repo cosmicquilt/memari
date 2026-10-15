@@ -13,6 +13,7 @@
 
 import { PALETTE_MODULES, REGISTERED_SLUGS } from "./moduleRegistry";
 import { MODULE_DESCRIPTIONS } from "./moduleDescriptions";
+import { BANNED_WORDS, BRITISH_SPELLINGS } from "./plainWords";
 
 let failures = 0;
 function check(condition: boolean, message: string) {
@@ -22,27 +23,8 @@ function check(condition: boolean, message: string) {
   }
 }
 
-const BANNED = [
-  /\bdelv(e|es|ed|ing)\b/i,
-  /\bunderscor/i,
-  /\bshowcas/i,
-  /\btapestr/i,
-  /\bcrucial/i,
-  /\bmeticulous/i,
-  /\bnavigat/i,
-  /\bseamless/i,
-  /\btestament\b/i,
-  /\bintricate/i,
-  /\bultimately\b/i,
-  /\bin essence\b/i,
-  /\bit is important to\b/i,
-  /\bin today's\b/i,
-  /\bjourney\b/i,
-  /\bunlock/i,
-  /\belevate/i,
-  /—|–/, // asides set off by dashes
-];
-const BRITISH = [/\bcolour/i, /\bpractis/i, /\bfavourite/i, /\borganis/i, /\btotalled\b/i, /\bcentre\b/i];
+const BANNED = BANNED_WORDS;
+const BRITISH = BRITISH_SPELLINGS;
 
 const offered = PALETTE_MODULES.map((m) => m.slug);
 for (const slug of offered) {
