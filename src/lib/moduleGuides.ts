@@ -276,7 +276,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "The Tenth Step",
         paragraphs: [
           "The Twelve Steps were first published in 1939, in the book Alcoholics Anonymous, which members call the Big Book. The tenth step is to keep taking a personal inventory, and to admit it promptly when you are wrong.",
-          "In the chapter \"Into Action,\" the Big Book names four things to keep watching for: selfishness, dishonesty, resentment and fear. Many members look for them in a short review each night. Those four are the prompts on this module.",
+          "In the chapter \"Into Action,\" the Big Book names four things to keep watching for through the day: selfishness, dishonesty, resentment and fear. A few pages on, under the Eleventh Step, it asks members to review the day at night. Many do both at once in a short evening review, and those four are the prompts on this module.",
         ],
       },
       {
@@ -294,7 +294,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       },
     ],
     sources: [
-      { text: "Alcoholics Anonymous (Alcoholics Anonymous World Services, first published 1939), chapter 6, \"Into Action.\"" },
+      { text: "Alcoholics Anonymous (Works Publishing Company, 1939; now published by Alcoholics Anonymous World Services), chapter 6, \"Into Action.\"" },
     ],
   },
   {
@@ -1296,6 +1296,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         paragraphs: [
           "Then it asks you to set the other person's wrongs aside and look for your own: where you were selfish, dishonest, self-seeking or frightened. Many people write this as a fourth column, and this module has one.",
           "It is the hardest column, and the one the inventory is for. Most people take the finished list to their sponsor at the Fifth Step.",
+          "Your part is never the harm someone else did to you. Where someone abused you, or hurt you as a child, many sponsors say the only part to write is the resentment you still carry, and some people work through those harms with a counselor as well.",
         ],
       },
       {
@@ -1312,7 +1313,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       },
     ],
     sources: [
-      { text: "Alcoholics Anonymous (Alcoholics Anonymous World Services, first published 1939), chapter 5, \"How It Works.\"" },
+      { text: "Alcoholics Anonymous (Works Publishing Company, 1939; now published by Alcoholics Anonymous World Services), chapter 5, \"How It Works.\"" },
     ],
   },
   {
@@ -1383,7 +1384,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "One alcoholic to another",
         paragraphs: [
           "Alcoholics Anonymous began with one alcoholic talking to another. In May 1935, Bill Wilson, sober for a few months and alone on a business trip to Akron, Ohio, was tempted to drink and went looking for another alcoholic to talk to. Henrietta Seiberling, of the Akron Oxford Group, arranged for him to meet a local surgeon, Dr. Bob Smith, at the gate lodge of Stan Hywet, the Seiberling family's estate.",
-          "Smith agreed to fifteen minutes. As AA tells the story, they talked for hours. Smith's last drink, on June 10, 1935, is taken as the day AA was founded.",
+          "Smith agreed to fifteen minutes. As AA tells the story, they talked for hours. Smith's last drink, traditionally dated June 10, 1935, is taken as the day AA was founded, though some historians put it a week later.",
           "A sponsor makes that arrangement last: a member with some time sober who helps a newer one through the steps, and who answers the phone.",
         ],
       },
@@ -1524,7 +1525,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Lonely in Akron",
         paragraphs: [
-          "AA's own story starts with one of the four. In May 1935, Bill Wilson was alone in Akron, Ohio, after a business deal fell through. As AA tells it, he stood in the lobby of the Mayflower Hotel, with its bar in view, and instead of going in he looked for another alcoholic to talk to. The calls he made from the lobby led him to Dr. Bob Smith, and the two of them went on to found Alcoholics Anonymous.",
+          "The acronym came decades later, but AA's own story starts with one of the four. In May 1935, Bill Wilson was alone in Akron, Ohio, after a business deal fell through. As AA tells it, he stood in the lobby of the Mayflower Hotel, with its bar in view, and instead of going in he looked for another alcoholic to talk to. The calls he made from the lobby led him to Dr. Bob Smith, and the two of them went on to found Alcoholics Anonymous.",
         ],
       },
       {
