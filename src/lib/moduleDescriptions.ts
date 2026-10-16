@@ -156,7 +156,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "ramadan-log": "All thirty days of Ramadan, with columns for the fast, night prayer, Quran reading, sadaqah and dhikr.",
   "quran-reading-plan": "Thirty marks, one for each juz'. The Quran is divided into thirty parts, so a part a day completes it in a month, as many do in Ramadan.",
   "dhikr-counter": "Thirty-three circles to fill in for a round of dhikr. After each prayer many say SubhanAllah, Alhamdulillah and Allahu Akbar thirty-three times each.",
-  "mussar-trait": "Mussar works on one middah, a trait such as patience or humility, for a week or more at a time. Write the trait in the heading and mark the days you noticed it, practiced it and reflected on it. Menachem Mendel Lefin's Cheshbon HaNefesh (1808) works through thirteen traits this way.",
+  "mussar-trait": "Mussar, the Jewish practice of working on character, often takes one middah, a trait such as patience or humility, for a week or more at a time. Write the trait in the heading and mark the days you noticed it, practiced it and reflected on it. Menachem Mendel Lefin's Cheshbon HaNefesh (1808) works through thirteen traits this way.",
   "omer-counter": "Forty-nine marks for the Counting of the Omer, the seven weeks from the second night of Passover to Shavuot, counted each evening.",
   "parashah-study": "The week's Torah portion, what stood out, and what it asks of you. The Torah is read through in fifty-four portions over the year.",
 

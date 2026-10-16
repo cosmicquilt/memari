@@ -875,6 +875,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     slug: "mussar-trait",
     wiki: {
       Mussar: "Musar movement",
+      Haskalah: "Haskalah",
       "Israel Salanter": "Israel Salanter",
       "Menachem Mendel Lefin": "Menachem Mendel Lefin",
       "Benjamin Franklin": "Benjamin Franklin",
@@ -896,14 +897,14 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Mussar",
         paragraphs: [
-          "Mussar is the Jewish tradition of working on your character one trait at a time. A trait is called a middah, and the plural is middot. Mussar books go back to the Middle Ages, and in nineteenth-century Lithuania Rabbi Israel Salanter made the study of them into a movement.",
+          "Mussar is a Jewish tradition of ethical discipline: working on your character, often one trait at a time. A trait is called a middah, and the plural is middot. Mussar books go back to the Middle Ages, and in nineteenth-century Lithuania Rabbi Israel Salanter made the study of them into a movement.",
           "A middah is not a rule to keep. It is a habit of the heart, and the work is to notice it in yourself, practice it on purpose, and look back on how it went.",
         ],
       },
       {
         heading: "Lefin's chart",
         paragraphs: [
-          "In 1808, Rabbi Menachem Mendel Lefin published Cheshbon HaNefesh, an accounting of the soul. It works through thirteen traits, one a week, with a chart for marking each day. Lefin adapted the method from Benjamin Franklin's account of his own thirteen virtues. Salanter later had the book reprinted in Vilna, in the edition shown above.",
+          "In 1808, Menachem Mendel Lefin, a leader of the Haskalah, the Jewish Enlightenment, published Cheshbon HaNefesh, an accounting of the soul. It works through thirteen traits, one a week, with a chart for marking each day. Lefin adapted the method from Benjamin Franklin's account of his own thirteen virtues, though he did not name Franklin in the book and framed the traits in Jewish terms. Salanter later had the book reprinted in Vilna, in the edition shown above.",
           "The rabbis' old sayings already treat character this way. In Pirkei Avot, Ben Zoma turns four ideas of greatness into traits:",
         ],
         quote: {
@@ -934,6 +935,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     wiki: {
       "Counting of the Omer": "Counting of the Omer",
       Passover: "Passover",
+      "Karaite Jews": "Karaite Judaism",
+      Samaritans: "Samaritans",
       Shavuot: "Shavuot",
       Torah: "Torah",
     },
@@ -966,8 +969,9 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Night by night",
         paragraphs: [
+          "In rabbinic Judaism, Orthodox, Conservative and Reform alike, the count starts on the second night of Passover. Karaite Jews and Samaritans read the verse differently and start on the day after the Sabbath that falls in Passover week, so for them Shavuot is always a Sunday.",
           "The offering ended with the Temple, but the count goes on. Each night, once it is fully dark, the day is counted aloud after a blessing: today is one day of the Omer, and so on through forty-nine. Shavuot falls on the fiftieth day.",
-          "If you forget at night, you can still count during the next day, without the blessing. If a whole day goes by, the usual practice is to keep counting without it. Customs differ, so follow your community's.",
+          "If you forget at night, you can still count during the next day, without the blessing. If a whole day goes by, the usual practice is to keep counting the days that follow, but without the blessing. Customs differ, so follow your community's.",
         ],
       },
       {
@@ -990,6 +994,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       Moses: "Moses",
       Shabbat: "Shabbat",
       "Simchat Torah": "Simchat Torah",
+      "triennial cycle": "Triennial cycle",
     },
     photo: {
       src: "/modules/photos/parashah-study.jpg",
@@ -1008,8 +1013,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "The weekly portion",
         paragraphs: [
-          "The Torah, the five books of Moses, is read aloud in synagogue over the course of a year, in 54 weekly portions. Each portion is named for one of its first words. Part of it is read on Shabbat afternoon and on Monday and Thursday mornings, and the whole portion on the next Shabbat morning.",
-          "The cycle ends and begins again on Simchat Torah, in the autumn. Some years have fewer weeks to fill than others, so in those years some portions are read together.",
+          "The Torah, the five books of Moses, is read aloud in synagogue in 54 weekly portions. Each portion is named for one of its first words. Part of it is read on Shabbat afternoon and on Monday and Thursday mornings, and the main reading comes on the next Shabbat morning.",
+          "Most synagogues read the whole Torah in a year, and the cycle ends and begins again on Simchat Torah, in the autumn. Some years have fewer weeks to fill than others, so in those years some portions are read together. Many Conservative and Reform congregations follow a triennial cycle instead, reading a third of each portion a year.",
         ],
       },
       {
@@ -1029,7 +1034,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Three prompts with two lines each, on the weekly spread. Write the portion's name and where it starts, then what stood out to you, then what it asks of you this week.",
-          "Any Jewish calendar or synagogue newsletter gives the week's portion.",
+          "Any Jewish calendar or synagogue newsletter gives the week's portion. The verse above is from the 1917 Jewish Publication Society translation because it is free to use; many readers study with a newer one.",
         ],
       },
     ],
@@ -1843,7 +1848,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Thirteen rows, one for each virtue, in Franklin's order and his spelling, and a column for each day of the week. Mark a spot for each fault, as he did, and give the week to one virtue.",
-          "The chart outlived him. In 1808, Rabbi Menachem Mendel Lefin adapted it into Cheshbon HaNefesh, the method the Mussar Trait module follows.",
+          "The chart outlived him. In 1808, Menachem Mendel Lefin adapted it into Cheshbon HaNefesh, the method the Mussar Trait module follows.",
         ],
       },
     ],
