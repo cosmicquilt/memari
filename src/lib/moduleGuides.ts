@@ -48,7 +48,7 @@ export type GuidePhoto = {
   caption: string;
   /** Who made the picture and what it is, as the credit line reads. */
   credit: string;
-  license: "Public domain" | "CC BY 2.5" | "CC BY 3.0" | "CC BY 4.0" | "CC BY-SA 3.0" | "CC BY-SA 4.0";
+  license: "Public domain" | "CC BY 2.0" | "CC BY 2.5" | "CC BY 3.0" | "CC BY 4.0" | "CC BY-SA 2.0" | "CC BY-SA 3.0" | "CC BY-SA 4.0";
   licenseUrl?: string;
   /** The picture's page on Wikimedia Commons. */
   sourceUrl: string;
@@ -1523,6 +1523,441 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       },
     ],
     sources: [],
+  },
+  {
+    slug: "ivy-lee-six",
+    wiki: {
+      "Ivy Lee": "Ivy Lee",
+      "public relations": "Public relations",
+      "Charles M. Schwab": "Charles M. Schwab",
+      "Bethlehem Steel": "Bethlehem Steel",
+    },
+    photo: {
+      src: "/modules/photos/ivy-lee-six.jpg",
+      alt: "A black-and-white portrait of Ivy Lee, a man in a dark suit and high white collar",
+      caption: "Ivy Lee",
+      credit: "Ivy Lee, photographed by Harris & Ewing (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Ivy_Lee.jpg",
+    },
+    kicker: "A planning method",
+    lede: "At the end of each day, write the six most important tasks for tomorrow, in order. Tomorrow, work down the list.",
+    sections: [
+      {
+        heading: "Ivy Lee",
+        paragraphs: [
+          "Ivy Lee (1877 to 1934) was one of the founders of modern public relations. The method carries his name because of a story about Charles M. Schwab, the head of Bethlehem Steel.",
+          "As it is usually told, around 1918 Schwab asked Lee how his managers could get more done. Lee gave them a few minutes of advice and asked to be paid whatever Schwab thought it was worth, and a few months later Schwab sent him a check for $25,000. No record from the time has been found, and the story reaches us through later retellings, so treat the details as legend. The method does not depend on them.",
+        ],
+      },
+      {
+        heading: "The method",
+        paragraphs: ["It has five steps:"],
+        list: [
+          "At the end of the day, write down the six most important things to do tomorrow. No more than six.",
+          "Number them in order of their real importance.",
+          "Tomorrow, start on number one and stay with it until it is done. Then move to number two.",
+          "At the end of the day, carry anything unfinished onto the next day's six.",
+          "Repeat every working day.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Six numbered lines on the daily page, fixed at six however tall the page around them grows. The limit is the point: six makes you choose, and the order means you never have to decide what comes next.",
+          "Fill it in the evening before, on the next day's page, so the morning starts with number one.",
+        ],
+      },
+    ],
+    sources: [],
+  },
+  {
+    slug: "future-log-months",
+    wiki: {
+      "Bullet Journal": "Bullet journal",
+    },
+    photo: {
+      src: "/modules/photos/future-log-months.jpg",
+      alt: "A handwritten Bullet Journal week in black and red ink, decorated with washi tape and hand lettering",
+      caption: "A Bullet Journal",
+      credit: "A Bullet Journal week, 2017. Photo by Nea.salo (cropped)",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Bullet_journal_page.jpg",
+      landscape: true,
+    },
+    kicker: "A planning method",
+    lede: "The Bullet Journal's future log: six months with a few lines each, for dates too far ahead for this week's pages.",
+    sections: [
+      {
+        heading: "The Bullet Journal",
+        paragraphs: [
+          "The Bullet Journal is a way of keeping a planner on paper, made by the designer Ryder Carroll and shared online in 2013. He set it out in full in his book The Bullet Journal Method (2018). It is built from a few plain parts: a daily log, a monthly log, an index and the future log.",
+        ],
+      },
+      {
+        heading: "The future log",
+        paragraphs: [
+          "The future log sits at the front of the notebook and holds anything that belongs to a later month: a birthday in May, a renewal in September, a trip already booked.",
+          "When a new month begins, you look at its part of the future log and copy what is there onto that month's pages. Carroll calls this moving of entries from one place to another migration.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Six months with three lines each, once at the front of the book. The months are the book's own, so a book that starts in October lists October to March. Write the date beside each entry, and check the log whenever you turn to a new month.",
+        ],
+      },
+    ],
+    sources: [{ text: "Ryder Carroll, The Bullet Journal Method (Portfolio, 2018)." }],
+  },
+  {
+    slug: "index",
+    wiki: {
+      "Bullet Journal": "Bullet journal",
+    },
+    photo: {
+      src: "/modules/photos/index.jpg",
+      alt: "A hand-drawn sketchnote summarizing the Bullet Journal method, with boxed notes on topics, calendars and migration",
+      caption: "Bullet Journal, 2013",
+      credit: "Sketchnote of Ryder Carroll's Bullet Journal, October 2013, by Sacha Chua (cropped)",
+      license: "CC BY 2.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/2.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:2013-10-23_Sketchnote_Bullet_Journal_(Ryder_Carroll)_-sketchnote_-notetaking_(12798491295).jpg",
+      landscape: true,
+    },
+    kicker: "A planning method",
+    lede: "The Bullet Journal's index: topics and the pages they are on, so you can find things again.",
+    sections: [
+      {
+        heading: "Finding things again",
+        paragraphs: [
+          "A notebook fills up in the order things happen, not the order you will want them back. The Bullet Journal, Ryder Carroll's method from 2013, solves that the way books always have: number the pages, and keep an index at the front.",
+          "Whenever you start a collection, such as a reading list, the notes for a project or a plan for a trip, write its name in the index with the page it starts on.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A two-column table, Topic and Page, once at the front of the book. Add to it as you go rather than all at once. A topic that turns up in several places can list them all: 12, 40, 57.",
+          "The sketch above is a note-taker's summary of Carroll's method from October 2013, the year he shared it.",
+        ],
+      },
+    ],
+    sources: [{ text: "Ryder Carroll, The Bullet Journal Method (Portfolio, 2018)." }],
+  },
+  {
+    slug: "someday-maybe",
+    wiki: {
+      "David Allen": "David Allen (author)",
+      "Getting Things Done": "Getting Things Done",
+    },
+    photo: {
+      src: "/modules/photos/someday-maybe.jpg",
+      alt: "A close-up portrait of David Allen, smiling broadly",
+      caption: "David Allen",
+      credit: "David Allen. Photo by Robert Scoble (cropped)",
+      license: "CC BY 2.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/2.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:David_Allen.jpg",
+    },
+    kicker: "A planning method",
+    lede: "Ideas and projects you are not doing yet but do not want to lose, kept where you will see them again.",
+    sections: [
+      {
+        heading: "Getting Things Done",
+        paragraphs: [
+          "David Allen's Getting Things Done, first published in 2001, rests on one idea: anything you mean to do should be written down somewhere you trust, so your mind is not busy holding it.",
+        ],
+      },
+      {
+        heading: "Someday/Maybe",
+        paragraphs: [
+          "Not everything belongs on this week's list. Allen gives the things you might do one day a list of their own, Someday/Maybe: the language to learn, the long trip, the business idea. Writing them down stops them nagging at you and keeps them from getting lost.",
+          "In his weekly review, Allen reads the list through and moves anything whose time has come onto the active lists.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A lined list, once at the front of the book. Add to it whenever an idea turns up that is not for now.",
+          "Read it every so often, and cross out whatever no longer appeals. Letting an idea go is as useful as starting one.",
+        ],
+      },
+    ],
+    sources: [{ text: "David Allen, Getting Things Done: The Art of Stress-Free Productivity (Viking, 2001; revised 2015)." }],
+  },
+  {
+    slug: "waiting-on",
+    wiki: {
+      "Getting Things Done": "Getting Things Done",
+      "David Allen": "David Allen (author)",
+    },
+    photo: {
+      src: "/modules/photos/waiting-on.jpg",
+      alt: "A painting of a woman leaning on a white fence beside a mailbox, a dog sitting below her",
+      caption: "Waiting for the Mail",
+      credit: "Grant Wright Christian, Waiting for the Mail, mural study for the post office in Nappanee, Indiana, Smithsonian American Art Museum (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Waiting_for_the_Mail_(mural_study,_Nappanee,_Indiana_Post_Office)_SAAM-1974.28.298_1.jpg",
+      landscape: true,
+    },
+    kicker: "A planning method",
+    lede: "What you are waiting for from other people: who, what, and since when.",
+    sections: [
+      {
+        heading: "The Waiting For list",
+        paragraphs: [
+          "In Getting Things Done, David Allen keeps a separate list for everything you have handed to someone else or are expecting from them: the reply to an email, a part on order, a decision from your manager. He calls it Waiting For.",
+          "Keeping it separate means your own lists hold only what you can act on, and nothing you are owed slips out of sight.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A table on the weekly spread with three columns: Who, What and Since. The date matters most, because it tells you when to follow up. Cross out what arrives.",
+          "At the end of the week, chase anything that has waited too long, and carry the rest to next week's spread.",
+        ],
+      },
+    ],
+    sources: [{ text: "David Allen, Getting Things Done: The Art of Stress-Free Productivity (Viking, 2001; revised 2015)." }],
+  },
+  {
+    slug: "abc-priority-list",
+    wiki: {
+      "Alan Lakein": "Alan Lakein",
+      "Franklin Planner": "Franklin Planner",
+      "Hyrum W. Smith": "Hyrum W. Smith",
+    },
+    photo: {
+      src: "/modules/photos/abc-priority-list.jpg",
+      alt: "An open Franklin Planner binder with printed daily pages, loose forms and a pen",
+      caption: "Franklin Planner",
+      credit: "A Franklin Planner, about 2004. Photo by Rorybowman (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:FranklinPlanner.png",
+    },
+    kicker: "A planning method",
+    lede: "Mark each task A, B or C by how much it is worth doing, then work through the A's first.",
+    sections: [
+      {
+        heading: "Alan Lakein",
+        paragraphs: [
+          "The ABC list comes from Alan Lakein's How to Get Control of Your Time and Your Life, published in 1973. It sold more than three million copies, and Bill Clinton opens his memoir, My Life, by remembering it.",
+          "Lakein's point is that a to-do list is not a plan until it is sorted by value. Mark each item A for high value, B for medium and C for low. Then do the A's, and leave the C's without guilt: most of them can wait, and some never need doing.",
+        ],
+      },
+      {
+        heading: "Letters and numbers",
+        paragraphs: [
+          "The Franklin Planner, created by Hyrum W. Smith and popular in the 1980s and 1990s, pairs the letters with numbers, A1, A2, B1, so the order within each letter is decided too. The planner in the photograph above is one of them.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A table on the daily page: a narrow column for the letter, a wide one for the task and a box for done. Write the list first, then go back and mark the letters, then add numbers if you use them. Start on A1.",
+        ],
+      },
+    ],
+    sources: [{ text: "Alan Lakein, How to Get Control of Your Time and Your Life (New American Library, 1973)." }],
+  },
+  {
+    slug: "franklin-virtues",
+    wiki: {
+      "Benjamin Franklin": "Benjamin Franklin",
+      Autobiography: "The Autobiography of Benjamin Franklin",
+      Passy: "Passy",
+      "Golden Verses": "Golden Verses",
+      Pythagoras: "Pythagoras",
+      "Menachem Mendel Lefin": "Menachem Mendel Lefin",
+    },
+    photo: {
+      src: "/modules/photos/franklin-virtues.jpg",
+      alt: "Joseph Duplessis's portrait of an elderly Benjamin Franklin in a gray coat with a fur collar",
+      caption: "Benjamin Franklin",
+      credit: "Joseph Duplessis, Benjamin Franklin, about 1785 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Joseph_Siffrein_Duplessis_-_Benjamin_Franklin_-_Google_Art_Project.jpg",
+    },
+    kicker: "A practice of character",
+    lede: "Benjamin Franklin's thirteen virtues, charted as he kept them: a line for each virtue, a column for each day, and a spot for every fault.",
+    sections: [
+      {
+        heading: "A bold and arduous project",
+        paragraphs: [
+          "In 1733, at 27, Benjamin Franklin set out to make himself a better man by method. Half a century later he told the story in the part of his Autobiography he wrote at Passy, near Paris, in 1784:",
+        ],
+        quote: {
+          lines: [
+            "It was about this time I conceived the bold and arduous project of arriving at moral perfection. I wish'd to live without committing any fault at any time; I would conquer all that either natural inclination, custom, or company might lead me into.",
+          ],
+          cite: "Benjamin Franklin, Autobiography, written in 1784, in Frank Woodworth Pine's edition (1916)",
+        },
+      },
+      {
+        heading: "The little book",
+        paragraphs: [
+          "He chose thirteen virtues, from Temperance to Humility, and gave each a short rule. The idea of examining himself every day he took from the Golden Verses of Pythagoras, the same lines the Stoic Evening Review comes from. Then he made a chart:",
+        ],
+        quote: {
+          lines: [
+            "I made a little book, in which I allotted a page for each of the virtues. I rul'd each page with red ink, so as to have seven columns, one for each day of the week, marking each column with a letter for the day. I cross'd these columns with thirteen red lines, marking the beginning of each line with the first letter of one of the virtues, on which line, and in its proper column, I might mark, by a little black spot, every fault I found upon examination to have been committed respecting that virtue upon that day.",
+          ],
+          cite: "Benjamin Franklin, Autobiography, written in 1784, in Frank Woodworth Pine's edition (1916)",
+        },
+      },
+      {
+        heading: "Did it work?",
+        paragraphs: [
+          "He gave each week to one virtue, watching it closely while the others took their chance, so one course took thirteen weeks and four courses filled a year. It did not make him perfect, and he said so:",
+        ],
+        quote: {
+          lines: [
+            "In truth, I found myself incorrigible with respect to Order; and now I am grown old, and my memory bad, I feel very sensibly the want of it. But, on the whole, tho' I never arrived at the perfection I had been so ambitious of obtaining, but fell far short of it, yet I was, by the endeavour, a better and a happier man than I otherwise should have been if I had not attempted it...",
+          ],
+          cite: "Benjamin Franklin, Autobiography, written in 1784, in Frank Woodworth Pine's edition (1916)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Thirteen rows, one for each virtue, in Franklin's order and his spelling, and a column for each day of the week. Mark a spot for each fault, as he did, and give the week to one virtue.",
+          "The chart outlived him. In 1808, Rabbi Menachem Mendel Lefin adapted it into Cheshbon HaNefesh, the method the Mussar Trait module follows.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Autobiography of Benjamin Franklin, edited by Frank Woodworth Pine (Henry Holt, 1916).", url: "https://www.gutenberg.org/ebooks/20203" },
+    ],
+  },
+  {
+    slug: "smart-goal",
+    wiki: {
+      SMART: "SMART criteria",
+      "management by objectives": "Management by objectives",
+      "Peter Drucker": "Peter Drucker",
+    },
+    photo: {
+      src: "/modules/photos/smart-goal.jpg",
+      alt: "A black-and-white photograph of Peter Drucker, seated in a light suit in front of bookshelves",
+      caption: "Peter Drucker",
+      credit: "Peter Drucker. Photo by Jeff McNeill (cropped)",
+      license: "CC BY-SA 2.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/2.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Drucker5789.jpg",
+    },
+    kicker: "A planning method",
+    lede: "Write one goal five ways: specific, measurable, achievable, relevant and time-bound.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "SMART comes from a short article by George T. Doran in the November 1981 issue of Management Review, about how managers should write their objectives. It grew out of management by objectives, the approach Peter Drucker set out in the 1950s.",
+          "In Doran's version, the A stood for assignable, meaning someone is named to do it, and the R for realistic. Most versions since use achievable and relevant, as this module does.",
+        ],
+      },
+      {
+        heading: "Why it helps",
+        paragraphs: [
+          "A wish becomes a goal when you could tell, on a given date, whether it happened. Get fit is a wish. Run five kilometers without stopping by June 1 is a goal. The five questions are a way to turn the first into the second.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Five prompts with a line each, once at the front of the book: Specific, Measurable, Achievable, Relevant, Time-bound. Write the goal in the heading, then a line under each.",
+          "If a line will not fill, the goal needs more thought, and that is worth knowing early.",
+        ],
+      },
+    ],
+    sources: [{ text: "George T. Doran, \"There's a S.M.A.R.T. Way to Write Management's Goals and Objectives,\" Management Review 70, no. 11 (November 1981)." }],
+  },
+  {
+    slug: "gratitude-three",
+    wiki: {
+      "Martin Seligman": "Martin Seligman",
+      "University of Pennsylvania": "University of Pennsylvania",
+    },
+    photo: {
+      src: "/modules/photos/gratitude-three.jpg",
+      alt: "Martin Seligman, in a dark suit and striped tie, speaking across a table",
+      caption: "Martin Seligman",
+      credit: "Martin Seligman. U.S. Army photo by D. Myles Cullen (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Flickr_-_The_U.S._Army_-_Comprehensive_Soldiers_Fitness_(1)cropped.jpg",
+    },
+    kicker: "A tested exercise",
+    lede: "Three good things from today, numbered, written down before bed.",
+    sections: [
+      {
+        heading: "The study",
+        paragraphs: [
+          "In 2005, the psychologist Martin Seligman and his colleagues at the University of Pennsylvania tested several short exercises online, against a placebo exercise of writing about early memories. One was to write down, each night for a week, three things that went well that day and why they went well.",
+          "The people who kept it were happier and less depressed than the placebo group, and the difference was still there six months later. Many kept the habit long after the week was over.",
+        ],
+      },
+      {
+        heading: "Why it might work",
+        paragraphs: [
+          "Bad things get noticed without any help, but good ones are easy to let pass. Writing them down makes you look for them, and writing why they happened adds a second look: what you, or someone else, did to make them go well.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Three numbered lines on the daily page, headed Grateful For. Write each good thing, small or large, and a few words on why it happened. Do it at night, when the day is complete.",
+        ],
+      },
+    ],
+    sources: [{ text: "Martin E. P. Seligman, Tracy A. Steen, Nansook Park and Christopher Peterson, \"Positive Psychology Progress: Empirical Validation of Interventions,\" American Psychologist 60, no. 5 (2005), pages 410 to 421." }],
+  },
+  {
+    slug: "habit-stacking",
+    wiki: {
+      "Peter Gollwitzer": "Peter Gollwitzer",
+      "implementation intentions": "Implementation intention",
+      "B. J. Fogg": "B. J. Fogg",
+      "James Clear": "James Clear",
+      "Atomic Habits": "Atomic Habits",
+    },
+    photo: {
+      src: "/modules/photos/habit-stacking.jpg",
+      alt: "B. J. Fogg speaking at a lectern, one hand raised",
+      caption: "B. J. Fogg",
+      credit: "B. J. Fogg. Photo by Kris Krüg (cropped)",
+      license: "CC BY 2.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/2.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:B_J_Fogg_1.jpg",
+    },
+    kicker: "A planning method",
+    lede: "Two columns, After I and I will, to tie each new habit to one you already do.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "In 1999, the psychologist Peter Gollwitzer described plans in the form when this happens, I will do that, and showed that they make a goal more likely to be carried out than a plain intention. He called them implementation intentions.",
+          "The Stanford researcher B. J. Fogg built his Tiny Habits method, from 2011, on a recipe in the same shape: after I do something I already do, I will do the new thing. James Clear popularized the pattern as habit stacking in his book Atomic Habits (2018).",
+        ],
+      },
+      {
+        heading: "Why it works",
+        paragraphs: [
+          "A habit you already have happens at a set time and place without a decision. Tying the new habit to it borrows that cue. After I pour my morning coffee, I will write three lines. After I sit down on the train, I will read one page.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Two columns, After I and I will, once at the front of the book. Keep the new habit small enough that it is hard to skip, and make the anchor something you really do every day.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Peter M. Gollwitzer, \"Implementation Intentions: Strong Effects of Simple Plans,\" American Psychologist 54, no. 7 (1999)." },
+      { text: "B. J. Fogg, Tiny Habits (Houghton Mifflin Harcourt, 2019)." },
+      { text: "James Clear, Atomic Habits (Avery, 2018)." },
+    ],
   },
 ];
 
