@@ -5,16 +5,14 @@ import css from "./GuidePhoto.module.css";
 // The picture at the top of a module page: the practice's person or place,
 // as a postage stamp stuck to the page and franked - Andrew, 2026-10-15: "a
 // polaroid photo taped photorealistic as possible", then "or maybe actually
-// a stamp not a polaroid". The polaroid is kept as the other LOOK, to
-// compare; one look for every page, so the site reads as one hand.
+// a stamp not a polaroid". A taped polaroid was built beside it to compare,
+// and he kept the stamp (2026-10-16); one look for every page.
 //
 // The stamp is all CSS over the photo: perforations cut by a mask (so the
 // page shows through the holes, and the shadow under them follows the
 // teeth), a paper margin with the picture inset, its caption band, and a
 // postmark struck across one corner in uneven ink. Its size is a whole
 // number of perforations each way, so a hole falls on every corner.
-
-export const PHOTO_LOOK: "stamp" | "polaroid" = "stamp";
 
 const POSTMARK_WORD: Record<string, string> = {
   day: "DAILY",
@@ -23,7 +21,7 @@ const POSTMARK_WORD: Record<string, string> = {
   journal: "BOOK",
 };
 
-export function GuidePhoto({ photo, cadence, look = PHOTO_LOOK }: { photo: Photo; cadence?: string; look?: "stamp" | "polaroid" }) {
+export function GuidePhoto({ photo, cadence }: { photo: Photo; cadence?: string }) {
   const wide = !!photo.landscape;
   const credit = (
     <figcaption className={css.credit}>
@@ -41,23 +39,6 @@ export function GuidePhoto({ photo, cadence, look = PHOTO_LOOK }: { photo: Photo
       , via Wikimedia Commons.
     </figcaption>
   );
-
-  if (look === "polaroid") {
-    return (
-      <figure className={`${css.figure} ${css.polaroidFigure}`}>
-        <div className={css.polaroidLift}>
-          <div className={`${css.polaroid} ${wide ? css.wide : ""}`}>
-            <div className={css.polaroidPicture}>
-              <Image src={photo.src} alt={photo.alt} width={wide ? 640 : 512} height={wide ? 512 : 640} sizes="240px" priority />
-            </div>
-            <p className={css.polaroidCaption}>{photo.caption}</p>
-          </div>
-        </div>
-        <span className={css.tape} aria-hidden />
-        {credit}
-      </figure>
-    );
-  }
 
   return (
     <figure className={`${css.figure} ${css.stampFigure}`}>

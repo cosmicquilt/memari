@@ -36,7 +36,7 @@ export type GuideSection = {
 
 /**
  * A picture of the practice's person or place, shown as a postage stamp
- * stuck to the page (or a taped polaroid) - asked 2026-10-15. Openly
+ * stuck to the page - asked 2026-10-15. Openly
  * licensed only, from Wikimedia Commons, credited under it with its licence
  * and a link back; a crop is said to be one, as the CC licences ask.
  */
