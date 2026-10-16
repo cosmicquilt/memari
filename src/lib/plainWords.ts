@@ -13,7 +13,8 @@ export const BANNED_WORDS: RegExp[] = [
   /\bmeticulous/i,
   /\bnavigat/i,
   /\bseamless/i,
-  /\btestament\b/i,
+  // "a testament to" - not New or Old Testament, the names of the Bible's halves.
+  /(?<!\b(?:new|old) )\btestament\b/i,
   /\bintricate/i,
   /\bultimately\b/i,
   /\bin essence\b/i,

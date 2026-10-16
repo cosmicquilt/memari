@@ -48,7 +48,7 @@ export type GuidePhoto = {
   caption: string;
   /** Who made the picture and what it is, as the credit line reads. */
   credit: string;
-  license: "Public domain" | "CC BY 3.0" | "CC BY 4.0" | "CC BY-SA 3.0";
+  license: "Public domain" | "CC BY 2.5" | "CC BY 3.0" | "CC BY 4.0" | "CC BY-SA 3.0" | "CC BY-SA 4.0";
   licenseUrl?: string;
   /** The picture's page on Wikimedia Commons. */
   sourceUrl: string;
@@ -687,6 +687,394 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     ],
     sources: [
       { text: "The Tao Teh King, translated by James Legge, in The Sacred Books of the East, volume 39 (Oxford, 1891): chapters 37 and 78.", url: "https://www.gutenberg.org/ebooks/216" },
+    ],
+  },
+  {
+    slug: "soap-study",
+    wiki: {
+      "New Hope Christian Fellowship": "New Hope Christian Fellowship",
+      Psalms: "Psalms",
+    },
+    photo: {
+      src: "/modules/photos/soap-study.jpg",
+      alt: "Rembrandt's painting of an old woman in a red cloak and hood, reading a large open book",
+      caption: "Rembrandt, 1631",
+      credit: "Rembrandt, Old Woman Reading, Probably the Prophetess Hannah, 1631, Rijksmuseum (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Oude_lezende_vrouw,_waarschijnlijk_de_profetes_Hanna_Rijksmuseum_SK-A-3066.jpeg",
+    },
+    kicker: "A Christian practice",
+    lede: "Scripture, Observation, Application, Prayer: copy out a passage, say what it says and what it means for you, then answer it in prayer.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "SOAP is the method of Wayne Cordeiro, who started New Hope Christian Fellowship in Honolulu in 1995. He set it out in his book The Divine Mentor (2007) as a way to keep a daily journal of Bible reading. The four letters are the four steps:",
+        ],
+        list: [
+          "Scripture: copy out the verse or verses that stood out in the day's reading.",
+          "Observation: what does it say? Who is speaking, to whom, and why?",
+          "Application: what does it mean for you, today?",
+          "Prayer: answer it, in a few honest sentences.",
+        ],
+      },
+      {
+        heading: "Why write it",
+        paragraphs: [
+          "Copying a verse out by hand slows you down enough to notice it, and writing down what it means keeps the reading from passing straight through. The old picture of what this reading is for comes from the Psalms:",
+        ],
+        quote: {
+          lines: ["Thy word is a lamp unto my feet, and a light unto my path."],
+          cite: "Psalm 119:105, King James Version (1611)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Four prompts on the daily page, with more lines where there is more to write: two for the Scripture, three for the Observation, four for the Application and three for the Prayer. It is wide, eight columns of the page, so a verse has room to be copied out in full.",
+          "Read first, then write. A reading plan saves deciding each morning which passage comes next.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Wayne Cordeiro, The Divine Mentor: Growing Your Faith as You Sit at the Feet of the Savior (Bethany House, 2007)." },
+      { text: "The Holy Bible, King James Version (Project Gutenberg): Psalm 119:105.", url: "https://www.gutenberg.org/ebooks/10" },
+    ],
+  },
+  {
+    slug: "verse-mapping",
+    wiki: {
+      "Robert Estienne": "Robert Estienne",
+      "Geneva Bible": "Geneva Bible",
+      "Strong's Concordance": "Strong's Concordance",
+      "King James Version": "King James Version",
+    },
+    photo: {
+      src: "/modules/photos/verse-mapping.jpg",
+      alt: "A page of Genesis from the 1560 Geneva Bible, with a map of the Garden of Eden, numbered verses and notes in the margins",
+      caption: "Geneva Bible, 1560",
+      credit: "Genesis, from the Geneva Bible, 1560, Houghton Library, Harvard University (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Houghton_STC_2093_-_aii.jpg",
+    },
+    kicker: "A Christian practice",
+    lede: "Take one verse apart over a week: write it out, compare translations, follow its cross references, and note what it asks of you.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "Verse mapping is a recent name for an old way of studying: one verse at a time, with other Bibles and reference books open beside it. The book of Acts praises the Jews of Berea for reading this way when Paul brought them his message:",
+        ],
+        quote: {
+          lines: ["These were more noble than those in Thessalonica, in that they received the word with all readiness of mind, and searched the scriptures daily, whether those things were so."],
+          cite: "Acts 17:11, King James Version (1611)",
+        },
+      },
+      {
+        heading: "Verses and references",
+        paragraphs: [
+          "The method depends on something the Bible did not always have. The Paris printer Robert Estienne numbered the verses of the New Testament in his Greek edition of 1551, and the Geneva Bible of 1560 was the first English Bible with both chapters and verses. The page above is from it, with its verse numbers and the notes in its margins.",
+          "For following a word, Strong's Concordance, first published in 1890, lists every place each word appears in the King James Version.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Four prompts with two lines each, on the weekly spread: The verse, Other translations, Cross references, What it asks of me. One verse is enough for a week.",
+          "Copy the verse out, then note a word or phrase that reads differently in another translation. Under Cross references, write the references, not the verses, so the lines go further. The last prompt is the point of the rest: what the verse asks of you this week.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Holy Bible, King James Version (Project Gutenberg): Acts 17:11.", url: "https://www.gutenberg.org/ebooks/10" },
+      { text: "James Strong, The Exhaustive Concordance of the Bible (1890)." },
+    ],
+  },
+  {
+    slug: "lectio-divina",
+    wiki: {
+      "Lectio divina": "Lectio Divina",
+      "Rule of Saint Benedict": "Rule of Saint Benedict",
+      "Guigo II": "Guigo II",
+      "Grande Chartreuse": "Grande Chartreuse",
+      Carthusian: "Carthusians",
+      Psalms: "Psalms",
+    },
+    photo: {
+      src: "/modules/photos/lectio-divina.jpg",
+      alt: "The Grande Chartreuse monastery, a long cluster of gray roofs in a forested mountain valley",
+      caption: "Grande Chartreuse",
+      credit: "The monastery of the Grande Chartreuse, France. Photo by Floriel (cropped)",
+      license: "CC BY 2.5",
+      licenseUrl: "https://creativecommons.org/licenses/by/2.5/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:La_Grande_Chartreuse.JPG",
+      landscape: true,
+    },
+    kicker: "A Christian practice",
+    lede: "The monastic way of reading scripture slowly, in four steps: read, reflect, respond, rest.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "Lectio divina is Latin for holy reading. The Rule of Saint Benedict, written in the sixth century, sets aside hours of each monk's day for it, alongside prayer and work.",
+          "About six hundred years later, Guigo II, prior of the Grande Chartreuse, the mother house of the Carthusian monks in the French Alps, described it as a ladder of four steps in a letter known as The Ladder of Monks. He compares the steps to eating: reading puts the food in your mouth, meditation chews it, prayer tastes it, and contemplation is the sweetness itself.",
+        ],
+      },
+      {
+        heading: "The four steps",
+        paragraphs: [
+          "Choose a short passage, a few verses at most. Then:",
+        ],
+        list: [
+          "Lectio, read: read it slowly, more than once, until a word or phrase stands out.",
+          "Meditatio, reflect: turn that phrase over. Why this, and why today?",
+          "Oratio, respond: speak to God about it, in your own words.",
+          "Contemplatio, rest: stop talking, and stay with it in silence for a while.",
+        ],
+      },
+      {
+        heading: "Day and night",
+        paragraphs: [
+          "The first psalm in the Book of Psalms describes the same slow, returning kind of reading:",
+        ],
+        quote: {
+          lines: ["But his delight is in the law of the LORD; and in his law doth he meditate day and night."],
+          cite: "Psalm 1:2, King James Version (1611)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Four numbered prompts on the daily page, one for each step, with two lines under each. Write the phrase that stood out under the first, and a line or two under the next two.",
+          "The fourth step has no words of its own. A mark under it, or the minutes you sat, is enough.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Guigo II, The Ladder of Monks (Scala claustralium), twelfth century." },
+      { text: "The Rule of Saint Benedict, chapter 48, on daily manual labor and reading." },
+      { text: "The Holy Bible, King James Version (Project Gutenberg): Psalm 1:2.", url: "https://www.gutenberg.org/ebooks/10" },
+    ],
+  },
+  {
+    slug: "mussar-trait",
+    wiki: {
+      Mussar: "Musar movement",
+      "Israel Salanter": "Israel Salanter",
+      "Menachem Mendel Lefin": "Menachem Mendel Lefin",
+      "Benjamin Franklin": "Benjamin Franklin",
+      Vilna: "Vilnius",
+      "Pirkei Avot": "Pirkei Avot",
+      "Ben Zoma": "Simeon ben Zoma",
+    },
+    photo: {
+      src: "/modules/photos/mussar-trait.jpg",
+      alt: "The Hebrew title page of Cheshbon HaNefesh, printed in Vilna in 1844",
+      caption: "Cheshbon HaNefesh",
+      credit: "Title page of Lefin's Cheshbon HaNefesh, Vilna edition of 1844 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Lefin_Heshbon_HaNefesh.JPG",
+    },
+    kicker: "A Jewish practice",
+    lede: "Work on one trait of character for a week, such as patience or humility, and mark each day you noticed it, practiced it and thought it over.",
+    sections: [
+      {
+        heading: "Mussar",
+        paragraphs: [
+          "Mussar is the Jewish tradition of working on your character one trait at a time. A trait is called a middah, and the plural is middot. Mussar books go back to the Middle Ages, and in nineteenth-century Lithuania Rabbi Israel Salanter made the study of them into a movement.",
+          "A middah is not a rule to keep. It is a habit of the heart, and the work is to notice it in yourself, practice it on purpose, and look back on how it went.",
+        ],
+      },
+      {
+        heading: "Lefin's chart",
+        paragraphs: [
+          "In 1808, Rabbi Menachem Mendel Lefin published Cheshbon HaNefesh, an accounting of the soul. It works through thirteen traits, one a week, with a chart for marking each day. Lefin adapted the method from Benjamin Franklin's account of his own thirteen virtues. Salanter later had the book reprinted in Vilna, in the edition shown above.",
+          "The rabbis' old sayings already treat character this way. In Pirkei Avot, Ben Zoma turns four ideas of greatness into traits:",
+        ],
+        quote: {
+          lines: [
+            "Who is wise? He who learns from all men...",
+            "Who is mighty? He who controls his passions...",
+            "Who is rich? He who rejoices in his portion...",
+            "Who is honored? He who honors others...",
+          ],
+          cite: "Ben Zoma, in Pirkei Avot, chapter 4, translated by Joseph I. Gorfinkle (1913)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A week of days across, with three rows to mark: noticing the trait, putting it into practice, and reflecting on it. Write the trait in the heading.",
+          "Lefin's thirteen include patience, order, humility and silence, but any trait you want to grow will do. Stay with one for a week, or longer if it needs it.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Pirke Avot: The Sayings of the Jewish Fathers, translated by Joseph I. Gorfinkle (1913), chapter 4.", url: "https://www.gutenberg.org/ebooks/8547" },
+      { text: "Menachem Mendel Lefin, Cheshbon HaNefesh (Lemberg, 1808; Vilna, 1844)." },
+    ],
+  },
+  {
+    slug: "omer-counter",
+    wiki: {
+      "Counting of the Omer": "Counting of the Omer",
+      Passover: "Passover",
+      Shavuot: "Shavuot",
+      Torah: "Torah",
+    },
+    photo: {
+      src: "/modules/photos/omer-counter.jpg",
+      alt: "Part of a painted scroll with a panel for each day of the Omer, each with a large number among flowers",
+      caption: "Omer calendar, 1804",
+      credit: "Omer calendar, Italy, 1804, Jewish Museum London. Photo by Ethan Doyle White (cropped)",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:19th_Century_Italian_Omer_Calendar_at_the_Jewish_Museum_London.jpg",
+      landscape: true,
+    },
+    kicker: "A Jewish practice",
+    lede: "Forty-nine numbered marks for the Counting of the Omer, the seven weeks from the second night of Passover to Shavuot.",
+    sections: [
+      {
+        heading: "The count",
+        paragraphs: [
+          "The Torah commands a count of seven weeks from the offering of the omer, the first sheaf of the barley harvest, at Passover:",
+        ],
+        quote: {
+          lines: [
+            "And ye shall count unto you from the morrow after the day of rest, from the day that ye brought the sheaf of the waving; seven weeks shall there be complete;",
+            "even unto the morrow after the seventh week shall ye number fifty days...",
+          ],
+          cite: "Leviticus 23:15 and 16, The Holy Scriptures, Jewish Publication Society (1917)",
+        },
+      },
+      {
+        heading: "Night by night",
+        paragraphs: [
+          "The offering ended with the Temple, but the count goes on. Each night, once it is fully dark, the day is counted aloud after a blessing: today is one day of the Omer, and so on through forty-nine. Shavuot falls on the fiftieth day.",
+          "If you forget at night, you can still count during the next day, without the blessing. If a whole day goes by, the usual practice is to keep counting without it. Customs differ, so follow your community's.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Forty-nine numbered marks, grouped in weeks of seven. It goes once, at the front of the book. Mark each night's number after you count it, and the page shows at a glance whether the count is unbroken.",
+          "The scroll above, made in Italy in 1804, is an Omer calendar, with a painted panel for each day of the count.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Holy Scriptures According to the Masoretic Text (Jewish Publication Society, 1917): Leviticus 23.", url: "https://mechon-mamre.org/e/et/et0323.htm" },
+    ],
+  },
+  {
+    slug: "parashah-study",
+    wiki: {
+      "Torah portion": "Weekly Torah portion",
+      Torah: "Torah",
+      Moses: "Moses",
+      Shabbat: "Shabbat",
+      "Simchat Torah": "Simchat Torah",
+    },
+    photo: {
+      src: "/modules/photos/parashah-study.jpg",
+      alt: "A Torah scroll open on its wooden rollers, with a silver pointer lying in front of it",
+      caption: "Torah scroll",
+      credit: "Torah scroll, Eastern Europe, mid-1800s, Jewish Museum of Australia. Photo by Azoma (cropped)",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Torah_at_the_state_library_of_Victoria.jpg",
+      landscape: true,
+    },
+    kicker: "A Jewish practice",
+    lede: "The week's Torah portion, what stood out in it, and what it asks of you.",
+    sections: [
+      {
+        heading: "The weekly portion",
+        paragraphs: [
+          "The Torah, the five books of Moses, is read aloud in synagogue over the course of a year, in 54 weekly portions. Each portion is named for one of its first words. Part of it is read on Shabbat afternoon and on Monday and Thursday mornings, and the whole portion on the next Shabbat morning.",
+          "The cycle ends and begins again on Simchat Torah, in the autumn. Some years have fewer weeks to fill than others, so in those years some portions are read together.",
+        ],
+      },
+      {
+        heading: "Why study it",
+        paragraphs: [
+          "Studying the week's portion puts you on the same page as everyone else reading it that week. The Torah itself asks for its words to be part of ordinary days:",
+        ],
+        quote: {
+          lines: [
+            "And these words, which I command thee this day, shall be upon thy heart;",
+            "and thou shalt teach them diligently unto thy children, and shalt talk of them when thou sittest in thy house, and when thou walkest by the way, and when thou liest down, and when thou risest up.",
+          ],
+          cite: "Deuteronomy 6:6 and 7, The Holy Scriptures, Jewish Publication Society (1917)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Three prompts with two lines each, on the weekly spread. Write the portion's name and where it starts, then what stood out to you, then what it asks of you this week.",
+          "Any Jewish calendar or synagogue newsletter gives the week's portion.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Holy Scriptures According to the Masoretic Text (Jewish Publication Society, 1917): Deuteronomy 6.", url: "https://mechon-mamre.org/e/et/et0506.htm" },
+    ],
+  },
+  {
+    slug: "metta-practice",
+    wiki: {
+      Metta: "Maitrī",
+      Pali: "Pali",
+      "Metta Sutta": "Metta Sutta",
+      "Sutta Nipata": "Sutta Nipata",
+      Theravada: "Theravada",
+      Buddhaghosa: "Buddhaghosa",
+      Visuddhimagga: "Visuddhimagga",
+    },
+    photo: {
+      src: "/modules/photos/metta-practice.jpg",
+      alt: "A large seated Buddha carved from granite rock, eyes lowered in meditation",
+      caption: "Gal Vihara",
+      credit: "The seated Buddha of Gal Vihara, Polonnaruwa, Sri Lanka, twelfth century. Photo by Philip Nalangan (cropped)",
+      license: "CC BY 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Gal_Vihara_Polonnaruwa.jpg",
+    },
+    kicker: "A Buddhist practice",
+    lede: "Loving-kindness wished one person at a time, moving outward: yourself, someone you love, someone neutral, someone difficult, then all beings.",
+    sections: [
+      {
+        heading: "Metta",
+        paragraphs: [
+          "Metta is a Pali word for loving-kindness or friendliness: wishing others well, and meaning it. The best-known teaching on it is the Metta Sutta, ten short verses in the Sutta Nipata, an early collection of the Buddha's discourses. Theravada monks still chant it.",
+        ],
+        quote: {
+          lines: [
+            "As a mother at the risk of her life watches over her own child, her only child, so also let every one cultivate a boundless (friendly) mind towards all beings.",
+            "And let him cultivate goodwill towards all the world, a boundless (friendly) mind, above and below and across, unobstructed, without hatred, without enmity.",
+          ],
+          cite: "The Metta Sutta, Sutta Nipata 1.8, verses 7 and 8, translated by V. Fausböll (1881)",
+        },
+      },
+      {
+        heading: "One person at a time",
+        paragraphs: [
+          "The order on this module comes from later teachers. Buddhaghosa's Visuddhimagga, a manual of practice written in Sri Lanka in the fifth century, starts with yourself, then someone dear, then someone neutral, then someone hostile, until the goodwill makes no distinction between them. Modern teachers usually end with all beings.",
+          "Starting with yourself is not selfish. The Visuddhimagga's reason is that once you see how much you want to be happy, you can see that everyone else wants it too.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Five prompts with a line each, on the daily page: Myself, Someone I love, Someone neutral, Someone difficult, All beings. Sit for a minute or two with each, and wish them well in a simple phrase, such as may you be safe, may you be happy. Then write the name and the phrase you used.",
+          "Someone neutral can be anyone you passed today without a second thought: the bus driver, the person at the next desk.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Sutta-Nipâta, translated by V. Fausböll, in The Sacred Books of the East, volume 10, part 2 (Oxford, 1881): the Mettasutta.", url: "https://archive.org/details/mlbd.dhammapadasuttni0000fmax" },
+      { text: "Buddhaghosa, Visuddhimagga, chapter 9, on loving-kindness." },
     ],
   },
 ];

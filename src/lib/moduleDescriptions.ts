@@ -19,7 +19,7 @@
 // 1891 public domain; Meditations 2.1; Seneca On Anger 3.36; Epictetus
 // Discourses 3.10 and Enchiridion 1; Spiritual Exercises 43; Guigo II, The
 // Ladder of Monks (c. 1150); Cordeiro, The Divine Mentor (2007); Lefin,
-// Cheshbon HaNefesh (1812); Lakein (1973); Doran (1981); Seligman et al.
+// Cheshbon HaNefesh (1808); Lakein (1973); Doran (1981); Seligman et al.
 // (2005); Franklin to Priestley (1772); Ivy Lee (c. 1918); Eisenhower
 // (1954); 30 juz'; 49 days of the Omer from the second night of Passover;
 // 54 Torah portions; dhikr 33 each; the Big Book's four defects (Step Ten)
@@ -156,7 +156,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "ramadan-log": "All thirty days of Ramadan, with columns for the fast, taraweeh, Quran reading, sadaqah and dhikr.",
   "quran-reading-plan": "Thirty marks, one for each juz'. The Quran is divided into thirty parts, so a part a day completes it in a month, as many do in Ramadan.",
   "dhikr-counter": "Thirty-three circles to fill in for a round of dhikr. After each prayer many say SubhanAllah, Alhamdulillah and Allahu Akbar thirty-three times each.",
-  "mussar-trait": "Mussar works on one middah, a trait such as patience or humility, for a week or more at a time. Write the trait in the heading and mark the days you noticed it, practiced it and reflected on it. Menachem Mendel Lefin's Cheshbon HaNefesh (1812) works through thirteen traits this way.",
+  "mussar-trait": "Mussar works on one middah, a trait such as patience or humility, for a week or more at a time. Write the trait in the heading and mark the days you noticed it, practiced it and reflected on it. Menachem Mendel Lefin's Cheshbon HaNefesh (1808) works through thirteen traits this way.",
   "omer-counter": "Forty-nine marks for the Counting of the Omer, the seven weeks from the second night of Passover to Shavuot, counted each evening.",
   "parashah-study": "The week's Torah portion, what stood out, and what it asks of you. The Torah is read through in fifty-four portions over the year.",
 
