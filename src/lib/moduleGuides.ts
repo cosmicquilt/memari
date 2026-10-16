@@ -625,7 +625,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Its first lines",
         paragraphs: [
-          "James Legge, a Scottish missionary who became the first professor of Chinese at Oxford, published his translation in 1891. It is free to use, and it is the one quoted here. The book opens by saying that what it is about cannot be put into words:",
+          "James Legge, a Scottish missionary who became the first professor of Chinese at Oxford, published his translation in 1891. Many readers now prefer newer translations, but those are still under copyright, and Legge's is free to use, so it is the one quoted here.",
+          "The book opens with a play on its key word. Dao means a way or a road, and it can also mean to tell. So the first line can be read as the Tao that can be walked, or the Tao that can be told, is not the lasting Tao. Legge took the road:",
         ],
         quote: {
           lines: ["The Tao that can be trodden is not the enduring and unchanging Tao. The name that can be named is not the enduring and unchanging name."],
@@ -682,7 +683,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "There is nothing in the world more soft and weak than water, and yet for attacking things that are firm and strong there is nothing that can take precedence of it;—for there is nothing (so effectual) for which it can be changed.",
+            "There is nothing in the world more soft and weak than water, and yet for attacking things that are firm and strong there is nothing that can take precedence of it...",
             "Every one in the world knows that the soft overcomes the hard, and the weak the strong, but no one is able to carry it out in practice.",
           ],
           cite: "Laozi, Tao Te Ching, chapter 78, translated by James Legge (1891)",
@@ -693,6 +694,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         paragraphs: [
           "Two prompts with three lines each, on the weekly spread: Where did I force something? What would yielding have looked like? Think back over the week's arguments, deadlines and plans that would not go your way.",
           "Yielding is not giving up. It can mean waiting, asking instead of insisting, or letting a plan change shape. The aim is to notice where effort turned into strain, and to try the other way next time.",
+          "Effort itself is not the problem. Quick, hard work can still go with the grain of a situation. What this looks for is force against it.",
         ],
       },
     ],
@@ -1061,7 +1063,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Metta",
         paragraphs: [
-          "Metta is a Pali word for loving-kindness or friendliness: wishing others well, and meaning it. The best-known teaching on it is the Metta Sutta, ten short verses in the Sutta Nipata, an early collection of the Buddha's discourses. Theravada monks still chant it.",
+          "Metta is a Pali word for loving-kindness or friendliness: wishing others well, and meaning it. The best-known teaching on it is the Metta Sutta, ten short verses in the Sutta Nipata, an early collection of the Buddha's discourses. Theravada monks still chant it. Metta is goodwill, not attachment: it wishes others well without needing anything back.",
         ],
         quote: {
           lines: [
@@ -1070,6 +1072,12 @@ export const MODULE_GUIDES: ModuleGuide[] = [
           ],
           cite: "The Metta Sutta, Sutta Nipata 1.8, verses 7 and 8, translated by V. Fausböll (1881)",
         },
+      },
+      {
+        heading: "Reading the verse",
+        paragraphs: [
+          "Verse 7 compares the meditator to a mother guarding her only child. Some teachers read it as a picture of how much to feel. Others read it as a picture of how carefully to guard this goodwill once you have it.",
+        ],
       },
       {
         heading: "One person at a time",
@@ -1082,7 +1090,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Five prompts with a line each, on the daily page: Myself, Someone I love, Someone neutral, Someone difficult, All beings. Sit for a minute or two with each, and wish them well in a simple phrase, such as may you be safe, may you be happy. Then write the name and the phrase you used.",
-          "Someone neutral can be anyone you passed today without a second thought: the bus driver, the person at the next desk.",
+          "Someone neutral can be anyone you passed today without a second thought: the bus driver, the person at the next desk. For someone difficult, start with a small annoyance, not someone who has hurt you badly. The old manuals build up to the hardest people slowly.",
         ],
       },
     ],
