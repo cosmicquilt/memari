@@ -34,6 +34,28 @@ export type GuideSection = {
   list?: string[];
 };
 
+/**
+ * A picture of the practice's person or place, shown as a postage stamp
+ * stuck to the page (or a taped polaroid) - asked 2026-10-15. Openly
+ * licensed only, from Wikimedia Commons, credited under it with its licence
+ * and a link back; a crop is said to be one, as the CC licences ask.
+ */
+export type GuidePhoto = {
+  /** Under /public: the cropped picture. */
+  src: string;
+  alt: string;
+  /** Printed on the stamp, in capitals. */
+  caption: string;
+  /** Who made the picture and what it is, as the credit line reads. */
+  credit: string;
+  license: "Public domain" | "CC BY 3.0" | "CC BY 4.0" | "CC BY-SA 3.0";
+  licenseUrl?: string;
+  /** The picture's page on Wikimedia Commons. */
+  sourceUrl: string;
+  /** Wider than tall. */
+  landscape?: boolean;
+};
+
 export type ModuleGuide = {
   slug: string;
   /** "A Stoic practice" - above the title. */
@@ -43,11 +65,35 @@ export type ModuleGuide = {
   sections: GuideSection[];
   /** What the facts and quotations come from. */
   sources: Array<{ text: string; url?: string }>;
+  photo?: GuidePhoto;
+  /**
+   * The people, books and traditions the page names, linked to their
+   * Wikipedia article where the page FIRST names them ("add wiki links where
+   * relevant like people etc.", 2026-10-15): phrase as written -> article
+   * title, each checked against Wikipedia's API (no redirects, no
+   * disambiguation pages).
+   */
+  wiki?: Record<string, string>;
 };
 
 export const MODULE_GUIDES: ModuleGuide[] = [
   {
     slug: "examen",
+    wiki: {
+      "Ignatius of Loyola": "Ignatius of Loyola",
+      "Society of Jesus": "Jesuits",
+      "Pope Paul III": "Pope Paul III",
+      "Spiritual Exercises": "Spiritual Exercises",
+      "General Examen": "Examination of conscience",
+    },
+    photo: {
+      src: "/modules/photos/examen.jpg",
+      alt: "Peter Paul Rubens's painting of St. Ignatius of Loyola in red and gold vestments",
+      caption: "Ignatius of Loyola",
+      credit: "Peter Paul Rubens, Saint Ignatius of Loyola (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:St._Ignatius_of_Loyola_by_Peter_Paul_Rubens.jpg",
+    },
     kicker: "A Christian practice",
     lede: "A short prayer at the end of the day, in the five steps St. Ignatius of Loyola set down nearly five hundred years ago.",
     sections: [
@@ -90,6 +136,23 @@ export const MODULE_GUIDES: ModuleGuide[] = [
   },
   {
     slug: "stoic-evening-review",
+    wiki: {
+      Seneca: "Seneca the Younger",
+      "On Anger": "De Ira",
+      Sextius: "Quintus Sextius",
+      "Golden Verses": "Golden Verses",
+      Pythagorean: "Pythagoreanism",
+      Epictetus: "Epictetus",
+    },
+    photo: {
+      src: "/modules/photos/stoic-evening-review.jpg",
+      alt: "A marble bust of Seneca, with his name carved on the chest",
+      caption: "Seneca",
+      credit: "Bust of Seneca, Antikensammlung Berlin. Photo by Calidius (cropped)",
+      license: "CC BY-SA 3.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Seneca-berlinantikensammlung-2_copy.jpg",
+    },
     kicker: "A Stoic practice",
     lede: "Three questions answered before sleep, the way Seneca says he reviewed his day.",
     sections: [
@@ -137,6 +200,24 @@ export const MODULE_GUIDES: ModuleGuide[] = [
   },
   {
     slug: "salah-tracker",
+    wiki: {
+      Salah: "Salah",
+      "Five Pillars of Islam": "Five Pillars of Islam",
+      Fajr: "Fajr",
+      Dhuhr: "Dhuhr",
+      Asr: "Asr",
+      Maghrib: "Maghrib (prayer)",
+      Isha: "Isha (prayer)",
+    },
+    photo: {
+      src: "/modules/photos/salah-tracker.jpg",
+      alt: "The domes and six minarets of the Blue Mosque against a dawn sky",
+      caption: "Blue Mosque, Istanbul",
+      credit: "The Blue Mosque at dawn. Photo by Nithi Ruangpisit (cropped)",
+      license: "CC BY 3.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Blue_Mosque_In_Dawn_(122678105).jpeg",
+    },
     kicker: "A Muslim practice",
     lede: "A week of the five daily prayers, with a box to mark each prayer on each day.",
     sections: [
@@ -171,6 +252,19 @@ export const MODULE_GUIDES: ModuleGuide[] = [
   },
   {
     slug: "step-ten-inventory",
+    wiki: {
+      "Twelve Steps": "Twelve-step program",
+      "Alcoholics Anonymous": "The Big Book (Alcoholics Anonymous)",
+    },
+    photo: {
+      src: "/modules/photos/step-ten-inventory.jpg",
+      alt: "A white two-story house with a front porch, on a green lawn",
+      caption: "Akron, Ohio",
+      credit: "Dr. Robert Smith's house in Akron, where Alcoholics Anonymous began in 1935. Photo by Nyttend (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Dr._Bob%27s_House.jpg",
+      landscape: true,
+    },
     kicker: "A recovery practice",
     lede: "A few minutes at the end of the day to look for resentment, selfishness, dishonesty and fear, as the Tenth Step asks.",
     sections: [
@@ -201,6 +295,22 @@ export const MODULE_GUIDES: ModuleGuide[] = [
   },
   {
     slug: "eisenhower-matrix",
+    wiki: {
+      "Dwight D. Eisenhower": "Dwight D. Eisenhower",
+      "World Council of Churches": "World Council of Churches",
+      "Northwestern University": "Northwestern University",
+      "Evanston, Illinois": "Evanston, Illinois",
+      "Stephen Covey": "Stephen Covey",
+      "The 7 Habits of Highly Effective People": "The 7 Habits of Highly Effective People",
+    },
+    photo: {
+      src: "/modules/photos/eisenhower-matrix.jpg",
+      alt: "Official portrait photograph of Dwight D. Eisenhower in a gray suit",
+      caption: "Dwight D. Eisenhower",
+      credit: "Official White House portrait, May 29, 1959 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Dwight_D._Eisenhower,_official_photo_portrait,_May_29,_1959_(crop).jpg",
+    },
     kicker: "A planning method",
     lede: "Sort the week's tasks by two questions, is it urgent and is it important, and treat each of the four kinds differently.",
     sections: [
@@ -242,6 +352,39 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     ],
   },
 ];
+
+export function wikiUrl(title: string): string {
+  return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_")).replaceAll("%2C", ",")}`;
+}
+
+function phraseAt(text: string, phrase: string): number {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.search(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "u"));
+}
+
+/**
+ * A run of a guide's prose with its Wikipedia links: the first time each
+ * phrase in `pending` appears, as a whole word, it becomes a link and leaves
+ * `pending` - so call it on the page's prose in reading order with one set.
+ */
+export function wikiRuns(text: string, wiki: Record<string, string>, pending: Set<string>): Array<string | { text: string; url: string }> {
+  const runs: Array<string | { text: string; url: string }> = [];
+  let rest = text;
+  for (;;) {
+    let first: { at: number; phrase: string } | null = null;
+    for (const phrase of pending) {
+      const at = phraseAt(rest, phrase);
+      if (at >= 0 && (!first || at < first.at || (at === first.at && phrase.length > first.phrase.length))) first = { at, phrase };
+    }
+    if (!first) break;
+    if (first.at > 0) runs.push(rest.slice(0, first.at));
+    runs.push({ text: first.phrase, url: wikiUrl(wiki[first.phrase]) });
+    pending.delete(first.phrase);
+    rest = rest.slice(first.at + first.phrase.length);
+  }
+  if (rest) runs.push(rest);
+  return runs;
+}
 
 export const GUIDE_BY_SLUG: Record<string, ModuleGuide> = Object.fromEntries(MODULE_GUIDES.map((guide) => [guide.slug, guide]));
 

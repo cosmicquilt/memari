@@ -181,3 +181,35 @@
   line-height: 1.5;
   color: var(--muted);
 }
+
+/* A page with a picture: the opening beside it, and above it on a narrow
+   screen. */
+.headWithPhoto {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px 48px;
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .headWithPhoto {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .headWithPhoto > figure {
+    justify-self: center;
+  }
+}
+
+/* A name linked to its Wikipedia article: the text's own colour, a quiet
+   underline, so the page still reads as prose. */
+.wiki {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(28, 25, 23, 0.28);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.wiki:hover {
+  text-decoration-color: currentColor;
+}

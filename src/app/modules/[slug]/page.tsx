@@ -4,11 +4,12 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/app/landing/SitePage";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
-import { GUIDE_BY_SLUG, MODULE_GUIDES } from "@/lib/moduleGuides";
+import { GUIDE_BY_SLUG, MODULE_GUIDES, wikiRuns } from "@/lib/moduleGuides";
 import { moduleDrawingSvg } from "@/lib/moduleGuideDrawing";
 import { moduleDefinition } from "@/lib/moduleRegistry";
 import { describeModule } from "@/lib/moduleDescriptions";
 import own from "../modules.module.css";
+import { GuidePhoto } from "../GuidePhoto";
 
 // memari.studio/modules/<slug>: a practice, where it comes from, and the
 // module that prints it - drawn by the real renderer. Only modules with a
@@ -53,13 +54,29 @@ export default async function ModuleGuidePage({ params }: { params: Promise<{ sl
   // alone above it with the page's width empty beside it.
   const tall = !!drawing && drawing.heightPx > drawing.widthPx * 0.9;
   const related = MODULE_GUIDES.filter((other) => other.slug !== slug && moduleDefinition(other.slug)?.category === definition.category);
+  // Each name links to Wikipedia where the page first names it: one set of
+  // names still to link, used up in reading order.
+  const unlinked = new Set(Object.keys(guide.wiki ?? {}));
+  const prose = (text: string) =>
+    wikiRuns(text, guide.wiki ?? {}, unlinked).map((run, i) =>
+      typeof run === "string" ? (
+        run
+      ) : (
+        <a key={i} href={run.url} rel="noreferrer" className={own.wiki}>
+          {run.text}
+        </a>
+      ),
+    );
 
   return (
     <SitePage>
-      <header className={site.head}>
-        <p className={styles.eyebrow}>{guide.kicker}</p>
-        <h1 className={styles.headline}>{name}</h1>
-        <p className={styles.lede}>{guide.lede}</p>
+      <header className={guide.photo ? `${site.head} ${own.headWithPhoto}` : site.head}>
+        <div>
+          <p className={styles.eyebrow}>{guide.kicker}</p>
+          <h1 className={styles.headline}>{name}</h1>
+          <p className={styles.lede}>{prose(guide.lede)}</p>
+        </div>
+        {guide.photo && <GuidePhoto photo={guide.photo} cadence={definition.cadence} />}
       </header>
 
       <section className={tall ? `${site.block} ${own.split}` : site.block}>
@@ -83,12 +100,12 @@ export default async function ModuleGuidePage({ params }: { params: Promise<{ sl
             <div key={section.heading} style={{ display: "grid", gap: 22 }}>
               <h2>{section.heading}</h2>
               {section.paragraphs.map((paragraph) => (
-                <p key={paragraph.slice(0, 40)}>{paragraph}</p>
+                <p key={paragraph.slice(0, 40)}>{prose(paragraph)}</p>
               ))}
               {section.list && (
                 <ul className={own.steps}>
                   {section.list.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li key={item}>{prose(item)}</li>
                   ))}
                 </ul>
               )}
