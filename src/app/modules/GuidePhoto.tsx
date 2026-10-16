@@ -21,7 +21,7 @@ const POSTMARK_WORD: Record<string, string> = {
   journal: "BOOK",
 };
 
-export function GuidePhoto({ photo, cadence }: { photo: Photo; cadence?: string }) {
+export function GuidePhoto({ photo, cadence, priority = true }: { photo: Photo; cadence?: string; priority?: boolean }) {
   const wide = !!photo.landscape;
   const credit = (
     <figcaption className={css.credit}>
@@ -46,7 +46,7 @@ export function GuidePhoto({ photo, cadence }: { photo: Photo; cadence?: string 
         <div className={css.stampLift}>
           <div className={`${css.stamp} ${wide ? css.wide : ""}`}>
             <div className={css.stampPicture}>
-              <Image src={photo.src} alt={photo.alt} width={wide ? 640 : 512} height={wide ? 512 : 640} sizes="240px" priority />
+              <Image src={photo.src} alt={photo.alt} width={wide ? 640 : 512} height={wide ? 512 : 640} sizes="240px" priority={priority} />
             </div>
             <div className={css.stampBand}>
               <span className={css.stampLine}>

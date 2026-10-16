@@ -1232,7 +1232,7 @@ export const CATALOGUE: CatalogueEntry[] = [
   {
     slug: "negative-visualisation",
     primitive: "prompted-lines",
-    name: "Negative Visualisation",
+    name: "Negative Visualization",
     category: "Philosophy & faith",
     cadence: "week",
     paletteName: "Premeditatio",
@@ -1406,7 +1406,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Philosophy & faith",
     cadence: "week",
     paletteName: "Middah",
-    props: { heading: "Middah", habits: ["Noticed", "Practised", "Reflected"], columns: [] },
+    props: { heading: "Middah", habits: ["Noticed", "Practiced", "Reflected"], columns: [] },
     rowSpan: 5,
   },
   {

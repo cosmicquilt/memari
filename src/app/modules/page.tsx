@@ -3,12 +3,14 @@ import Link from "next/link";
 import { SitePage } from "@/app/landing/SitePage";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
-import { MODULE_GUIDES } from "@/lib/moduleGuides";
+import { GUIDE_SECTIONS, MODULE_GUIDES } from "@/lib/moduleGuides";
 import { moduleDefinition } from "@/lib/moduleRegistry";
 import own from "./modules.module.css";
+import { GuidePhoto } from "./GuidePhoto";
 
 // memari.studio/modules: the practices with a page of their own, grouped as
-// the module drawer groups them.
+// the module drawer groups them, each group with its line and its stamp
+// (GUIDE_SECTIONS).
 
 export const metadata: Metadata = {
   title: "Practices - memari. STUDIO",
@@ -36,7 +38,17 @@ export default function ModuleGuidesPage() {
       {[...groups].map(([category, guides]) => (
         <section key={category} className={site.block}>
           <div className={own.group}>
-            <h2>{category}</h2>
+            {GUIDE_SECTIONS[category] ? (
+              <div className={own.groupHead}>
+                <div className={own.groupText}>
+                  <h2>{category}</h2>
+                  <p>{GUIDE_SECTIONS[category].lede}</p>
+                </div>
+                <GuidePhoto photo={GUIDE_SECTIONS[category].photo} priority={false} />
+              </div>
+            ) : (
+              <h2>{category}</h2>
+            )}
             <ul className={own.list}>
               {guides.map((guide) => (
                 <li key={guide.slug}>

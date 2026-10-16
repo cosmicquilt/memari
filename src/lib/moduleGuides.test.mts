@@ -9,14 +9,16 @@
 //   - its picture is there, described, and credited as its licence asks
 //     (a CC picture links its licence; a crop says it is one);
 //   - every name it links to Wikipedia is linked once, where the page first
-//     names it, and the linking leaves the words as they were.
+//     names it, and the linking leaves the words as they were;
+//   - every section of the index has its line and its stamp, held to the
+//     same picture rules.
 //
 // Run with: npx tsx src/lib/moduleGuides.test.mts
 
-import { PALETTE_MODULES } from "./moduleRegistry";
+import { PALETTE_MODULES, moduleDefinition } from "./moduleRegistry";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { MODULE_GUIDES, guideProse, wikiRuns } from "./moduleGuides";
+import { GUIDE_SECTIONS, MODULE_GUIDES, guideProse, wikiRuns, type GuidePhoto } from "./moduleGuides";
 import { moduleDrawingSvg } from "./moduleGuideDrawing";
 import { BANNED_WORDS, BRITISH_SPELLINGS } from "./plainWords";
 
@@ -26,6 +28,15 @@ function check(condition: boolean, message: string) {
     failures++;
     console.error(`FAIL ${message}`);
   }
+}
+
+function checkPhoto(at: string, photo: GuidePhoto) {
+  check(existsSync(join(process.cwd(), "public", photo.src)), `${at}: the picture ${photo.src} is not in /public`);
+  check(photo.alt.length >= 20 && !/^(image|photo|picture) of/i.test(photo.alt), `${at}: the picture's alt text says too little`);
+  check(photo.caption.length > 0 && photo.caption.length <= 22, `${at}: the stamp's caption "${photo.caption}" will not fit its band`);
+  check(photo.sourceUrl.startsWith("https://commons.wikimedia.org/wiki/File:"), `${at}: the picture does not link to its Commons page`);
+  check(photo.license === "Public domain" || !!photo.licenseUrl?.startsWith("https://creativecommons.org/licenses/"), `${at}: a ${photo.license} picture must link its licence`);
+  check(/\(cropped\)$/.test(photo.credit), `${at}: the credit does not say the picture is cropped`);
 }
 
 const offered = new Set(PALETTE_MODULES.map((m) => m.slug));
@@ -58,16 +69,8 @@ for (const guide of MODULE_GUIDES) {
   const quoted = guide.sections.some((s) => s.quote);
   check(!quoted || guide.sources.length > 0, `${at}: quotes a text but lists no sources`);
 
-  const photo = guide.photo;
-  check(!!photo, `${at}: no picture`);
-  if (photo) {
-    check(existsSync(join(process.cwd(), "public", photo.src)), `${at}: the picture ${photo.src} is not in /public`);
-    check(photo.alt.length >= 20 && !/^(image|photo|picture) of/i.test(photo.alt), `${at}: the picture's alt text says too little`);
-    check(photo.caption.length > 0 && photo.caption.length <= 22, `${at}: the stamp's caption "${photo.caption}" will not fit its band`);
-    check(photo.sourceUrl.startsWith("https://commons.wikimedia.org/wiki/File:"), `${at}: the picture does not link to its Commons page`);
-    check(photo.license === "Public domain" || !!photo.licenseUrl?.startsWith("https://creativecommons.org/licenses/"), `${at}: a ${photo.license} picture must link its licence`);
-    check(/\(cropped\)$/.test(photo.credit), `${at}: the credit does not say the picture is cropped`);
-  }
+  check(!!guide.photo, `${at}: no picture`);
+  if (guide.photo) checkPhoto(at, guide.photo);
 
   // The links, made as the page makes them: the lede, then each section's
   // paragraphs and list, with one set of names used up along the way.
@@ -87,6 +90,19 @@ for (const guide of MODULE_GUIDES) {
   const drawing = moduleDrawingSvg(at);
   check(!!drawing && drawing.markup.includes("<rect") && drawing.widthPx > 0, `${at}: the module does not draw`);
 }
+
+// The index's sections: every group that has pages has its line and stamp.
+const categories = new Set<string>(MODULE_GUIDES.map((guide) => moduleDefinition(guide.slug)?.category ?? "Other"));
+for (const category of categories) {
+  const section = GUIDE_SECTIONS[category];
+  check(!!section, `the index section "${category}" has no line or stamp`);
+  if (!section) continue;
+  check(section.lede.length >= 40 && section.lede.length <= 200 && /\.$/.test(section.lede), `the index section "${category}" needs a one-sentence line`);
+  for (const word of BANNED_WORDS) check(!word.test(section.lede), `the index section "${category}" uses ${word}`);
+  for (const word of BRITISH_SPELLINGS) check(!word.test(section.lede), `the index section "${category}": British spelling ${word}`);
+  checkPhoto(`index section ${category}`, section.photo);
+}
+for (const category of Object.keys(GUIDE_SECTIONS)) check(categories.has(category), `the index section "${category}" has no pages`);
 
 if (failures > 0) {
   console.error(`\n${failures} module page check(s) failed.`);

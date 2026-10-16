@@ -907,7 +907,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "How the module works",
         paragraphs: [
-          "A week of days across, with three rows to mark: noticing the trait, putting it into practice, and reflecting on it. Write the trait in the heading.",
+          "A week of days across, with three rows to mark: Noticed, Practiced and Reflected. Write the trait in the heading, and mark each day you noticed it in yourself, put it into practice, and looked back on how it went.",
           "Lefin's thirteen include patience, order, humility and silence, but any trait you want to grow will do. Stay with one for a week, or longer if it needs it.",
         ],
       },
@@ -1993,6 +1993,62 @@ export function wikiRuns(text: string, wiki: Record<string, string>, pending: Se
   if (rest) runs.push(rest);
   return runs;
 }
+
+/**
+ * The sections of memari.studio/modules, which groups the practices as the
+ * module drawer does: a line for each, and a stamp ("on each section on the
+ * where the modules come from page should have a relevant stamp as well",
+ * 2026-10-16). Recovery reuses Dr. Bob's house from the Step Ten page.
+ */
+export const GUIDE_SECTIONS: Record<string, { lede: string; photo: GuidePhoto }> = {
+  "Philosophy & faith": {
+    lede: "Prayers, ways of reading scripture and the exercises of philosophers, from Stoic and Taoist practice to Christian, Jewish, Muslim and Buddhist ones.",
+    photo: {
+      src: "/modules/photos/section-philosophy-faith.jpg",
+      alt: "Rembrandt's painting of an old man seated by a sunlit window, beside a winding staircase",
+      caption: "Rembrandt, 1632",
+      credit: "Rembrandt, Philosopher in Meditation, 1632, Louvre (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Rembrandt_-_The_Philosopher_in_Meditation_(cleaned).jpg",
+      landscape: true,
+    },
+  },
+  Recovery: {
+    lede: "Pages for working the Twelve Steps, and for the daily habits of recovery around them.",
+    photo: {
+      src: "/modules/photos/step-ten-inventory.jpg",
+      alt: "A white two-story house with a front porch, on a green lawn",
+      caption: "Akron, Ohio",
+      credit: "Dr. Robert Smith's house in Akron, where Alcoholics Anonymous began in 1935. Photo by Nyttend (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Dr._Bob%27s_House.jpg",
+      landscape: true,
+    },
+  },
+  Planning: {
+    lede: "Named ways of deciding what to do and when, from Eisenhower's two kinds of problems to the Bullet Journal.",
+    photo: {
+      src: "/modules/photos/section-planning.jpg",
+      alt: "The page for March from Poor Richard's almanac of 1733: a verse above a printed calendar of the month",
+      caption: "Poor Richard, 1733",
+      credit: "March, from Benjamin Franklin's almanac Poor Richard for 1733 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Poor_Richard_March_1733.jpg",
+    },
+  },
+  Growth: {
+    lede: "Methods for changing yourself a little at a time, from Benjamin Franklin's chart of virtues to habit stacking.",
+    photo: {
+      src: "/modules/photos/section-growth.jpg",
+      alt: "An engraving of the young Benjamin Franklin in an apron, standing beside a wooden printing press",
+      caption: "Franklin, apprentice",
+      credit: "H. Scheibler, Benjamin Franklin as a printer's apprentice (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Benjamin_Franklin_as_an_apprentice.jpg",
+      landscape: true,
+    },
+  },
+};
 
 export const GUIDE_BY_SLUG: Record<string, ModuleGuide> = Object.fromEntries(MODULE_GUIDES.map((guide) => [guide.slug, guide]));
 
