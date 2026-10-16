@@ -163,7 +163,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "I make use of this privilege, and daily plead my cause before myself: when the lamp is taken out of my sight, and my wife, who knows my habit, has ceased to talk, I pass the whole day in review before myself, and repeat all that I have said and done: I conceal nothing from myself, and omit nothing.",
+            "I make use of this privilege, and daily plead my cause before myself: when the lamp is taken out of my sight, and my wife, who knows my habit, has ceased to talk, I pass the whole day in review before myself, and repeat all that I have said and done: I conceal nothing from myself, and omit nothing...",
           ],
           cite: "Seneca, On Anger, Book III, chapter 36, translated by Aubrey Stewart (1900)",
         },
@@ -182,7 +182,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
             "From first to last examine all, and then",
             "Blame what is wrong, in what is right rejoice.",
           ],
-          cite: "Epictetus, Discourses, Book III, chapter 10, translated by George Long (1890)",
+          cite: "Epictetus, Discourses, Book III, chapter 10, translated by George Long (1877)",
         },
       },
       {
@@ -349,6 +349,344 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     sources: [
       { text: "Dwight D. Eisenhower, Address at the Second Assembly of the World Council of Churches, Evanston, Illinois, August 19, 1954. The American Presidency Project.", url: "https://www.presidency.ucsb.edu/node/232572" },
       { text: "Stephen R. Covey, The 7 Habits of Highly Effective People (Free Press, 1989), Habit 3, \"Put First Things First.\"" },
+    ],
+  },
+  {
+    slug: "stoic-morning-page",
+    wiki: {
+      "Marcus Aurelius": "Marcus Aurelius",
+      Meditations: "Meditations",
+      Quadi: "Quadi",
+      Carnuntum: "Carnuntum",
+      Epictetus: "Epictetus",
+      "Junius Rusticus": "Junius Rusticus",
+      Stoics: "Stoicism",
+    },
+    photo: {
+      src: "/modules/photos/stoic-morning-page.jpg",
+      alt: "A Roman marble bust of Marcus Aurelius, bearded and curly haired, in a cloak",
+      caption: "Marcus Aurelius",
+      credit: "Bust of Marcus Aurelius, Glyptothek, Munich (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Marcus_Aurelius_Glyptothek_Munich.jpg",
+    },
+    kicker: "A Stoic practice",
+    lede: "Three questions to start the day with, the way Marcus Aurelius started his: by deciding in advance how he would meet it.",
+    sections: [
+      {
+        heading: "Marcus Aurelius's morning",
+        paragraphs: [
+          "Marcus Aurelius was Roman emperor from 161 until his death in 180. His Meditations are notes he wrote to himself in Greek, never meant to be read by anyone else, and he wrote some of them in army camps on the Danube frontier. The first book ends \"Among the Quadi at the Granua,\" and the second \"This in Carnuntum.\"",
+          "The second book opens with a morning exercise. Before the day begins, he names the kind of people he will meet, and reminds himself why they cannot harm him:",
+        ],
+        quote: {
+          lines: [
+            "Begin the morning by saying to thyself, I shall meet with the busybody, the ungrateful, arrogant, deceitful, envious, unsocial. All these things happen to them by reason of their ignorance of what is good and evil.",
+          ],
+          cite: "Marcus Aurelius, Meditations, Book II, section 1, translated by George Long (1862)",
+        },
+      },
+      {
+        heading: "The three questions",
+        paragraphs: [
+          "The first question is the one Epictetus taught: what is up to you, and what is not. Marcus thanks his teacher Junius Rusticus, in the Meditations' first book, for introducing him to Epictetus's lectures.",
+          "The second is the obstacle. Marcus does not pretend that obstacles can be avoided. He says they can be used:",
+        ],
+        quote: {
+          lines: [
+            "...the mind converts and changes every hindrance to its activity into an aid; and so that which is a hindrance is made a furtherance to an act; and that which is an obstacle on the road helps us on this road.",
+          ],
+          cite: "Marcus Aurelius, Meditations, Book V, section 20, translated by George Long (1862)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Three prompts with two lines each, on the daily page: What is in my control today? What obstacle should I expect? Which virtue will I need?",
+          "The Stoics counted four virtues: wisdom, justice, courage and moderation. For the third prompt, pick the one the day will ask for most. The module pairs with the Stoic Evening Review, which asks at night how the day really went.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Thoughts of Marcus Aurelius Antoninus, translated by George Long (1862): Book II, section 1; Book V, section 20; the closing lines of Books I and II; and Long's introduction, on Rusticus and Epictetus.", url: "https://www.gutenberg.org/ebooks/15877" },
+    ],
+  },
+  {
+    slug: "dichotomy-of-control",
+    wiki: {
+      Epictetus: "Epictetus",
+      Hierapolis: "Hierapolis",
+      Epaphroditus: "Epaphroditus (freedman of Nero)",
+      Nero: "Nero",
+      Domitian: "Domitian",
+      Nicopolis: "Nicopolis",
+      Arrian: "Arrian",
+      Discourses: "Discourses of Epictetus",
+      Enchiridion: "Enchiridion of Epictetus",
+    },
+    photo: {
+      src: "/modules/photos/dichotomy-of-control.jpg",
+      alt: "An engraving of Epictetus writing at a desk, a crutch under his arm, as an artist imagined him",
+      caption: "Epictetus",
+      credit: "Imagined portrait of Epictetus, frontispiece of an edition of the Enchiridion, Oxford, 1715 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Epicteti_Enchiridion_Latinis_versibus_adumbratum_(Oxford_1715)_frontispiece_(cropped).jpg",
+    },
+    kicker: "A Stoic practice",
+    lede: "Two columns, for what is up to you and what is not: the division that Epictetus's handbook opens with.",
+    sections: [
+      {
+        heading: "Epictetus",
+        paragraphs: [
+          "Epictetus was born a slave around the year 50, in Hierapolis, in what is now Turkey. In Rome he belonged to Epaphroditus, a freedman who served the emperor Nero. Once free, he taught philosophy, first in Rome and then, after the emperor Domitian banished philosophers from the city, at Nicopolis in Greece.",
+          "He wrote nothing down himself. His student Arrian recorded his lectures as the Discourses, and drew from them a short handbook, the Enchiridion. Its first lines are the whole idea of this module:",
+        ],
+        quote: {
+          lines: [
+            "Of things some are in our power, and others are not. In our power are opinion, movement towards a thing, desire, aversion, turning from a thing; and in a word, whatever are our acts. Not in our power are the body, property, reputation, offices (magisterial power), and in a word, whatever are not our own acts.",
+          ],
+          cite: "Epictetus, Enchiridion, chapter 1, translated by George Long (1877), with his Greek glosses left out",
+        },
+      },
+      {
+        heading: "Why it helps",
+        paragraphs: [
+          "The point is not to stop caring about what is out of your hands. It is to put your effort where it can change something. The same chapter ends with a test to use on anything that troubles you:",
+        ],
+        quote: {
+          lines: [
+            "Then examine it by the rules which you possess, and by this first and chiefly, whether it relates to the things which are in our power or to things which are not in our power; and if it relates to anything which is not in our power, be ready to say that it does not concern you.",
+          ],
+          cite: "Epictetus, Enchiridion, chapter 1, translated by George Long (1877)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Two columns on the daily page, headed Up to me and Not up to me. When something is on your mind, write it down on the side where it belongs.",
+          "Most worries have a part on each side. You cannot decide how an interview goes, but you can decide how well you prepare for it. Split those into both columns, then work from the left one: it is the list of what today can actually do something about.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "A Selection from the Discourses of Epictetus with the Encheiridion, translated by George Long: the Encheiridion, chapter 1, and Long's note on Epictetus's life.", url: "https://www.gutenberg.org/ebooks/10661" },
+    ],
+  },
+  {
+    slug: "memento-mori",
+    wiki: {
+      "Memento mori": "Memento mori",
+      "Marcus Aurelius": "Marcus Aurelius",
+      Seneca: "Seneca the Younger",
+      Virgil: "Virgil",
+      vanitas: "Vanitas",
+      "Philippe de Champaigne": "Philippe de Champaigne",
+    },
+    photo: {
+      src: "/modules/photos/memento-mori.jpg",
+      alt: "A painted skull on a stone ledge, between a tulip in a glass vase and an hourglass",
+      caption: "Memento mori",
+      credit: "Philippe de Champaigne, Still Life with a Skull (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Philippe_de_Champaigne_Still-Life_with_a_Skull.JPG",
+      landscape: true,
+    },
+    kicker: "A Stoic practice",
+    lede: "Fifty-two circles, one for each week of the year, filled in as the weeks go by.",
+    sections: [
+      {
+        heading: "Where it comes from",
+        paragraphs: [
+          "Memento mori is Latin for remember that you must die. The phrase is best known from Christian art, but the thought is older, and the Stoics came back to it often. Marcus Aurelius uses it in the Meditations not to frighten himself, but to get on with being good:",
+        ],
+        quote: {
+          lines: ["Do not act as if thou wert going to live ten thousand years. Death hangs over thee. While thou livest, while it is in thy power, be good."],
+          cite: "Marcus Aurelius, Meditations, Book IV, section 17, translated by George Long (1862)",
+        },
+      },
+      {
+        heading: "Seneca's version",
+        paragraphs: [
+          "Seneca turns the thought into a habit for the end of each day. In a letter on growing old, he suggests going to sleep as if the day had been the last one, quoting a line of Virgil, so that each morning after it is a gift:",
+        ],
+        quote: {
+          lines: [
+            "...let us go to our sleep with joy and gladness; let us say:",
+            "I have lived; the course which Fortune set for me",
+            "Is finished.",
+            "And if God is pleased to add another day, we should welcome it with glad hearts. That man is happiest, and is secure in his own possession of himself, who can await the morrow without apprehension. When a man has said: “I have lived!”, every morning he arises he receives a bonus.",
+          ],
+          cite: "Seneca, Letters to Lucilius, Letter 12, translated by Richard M. Gummere (1917)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Fifty-two circles, one for each week of the year, numbered every thirteen weeks so the quarters are easy to find. It goes once, at the front of the book. Fill in a circle as each week ends.",
+          "Painters of the 1600s made the same reminder into still lifes called vanitas, like the one by Philippe de Champaigne above: a flower that will fade, a skull, an hourglass running down. The page is meant the same way. The filled circles are time already spent, and the empty ones are the weeks still there to use well.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Thoughts of Marcus Aurelius Antoninus, translated by George Long (1862), Book IV, section 17.", url: "https://www.gutenberg.org/ebooks/15877" },
+      { text: "Seneca, Moral Letters to Lucilius, translated by Richard M. Gummere, volume 1 (Loeb Classical Library, 1917): Letter 12, On old age.", url: "https://en.wikisource.org/wiki/Moral_letters_to_Lucilius/Letter_12" },
+    ],
+  },
+  {
+    slug: "negative-visualisation",
+    wiki: {
+      Seneca: "Seneca the Younger",
+      "Letters to Lucilius": "Epistulae Morales ad Lucilium",
+      Lugdunum: "Lugdunum",
+      Stoics: "Stoicism",
+    },
+    photo: {
+      src: "/modules/photos/negative-visualisation.jpg",
+      alt: "The curved stone seats of the Roman theatre at Lyon, set into a hillside",
+      caption: "Lugdunum, Lyon",
+      credit: "The Roman theatre of Lugdunum, Lyon. Photo by Vincent Bloch (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Roman_theatre_in_Lyon.jpg",
+      landscape: true,
+    },
+    kicker: "A Stoic practice",
+    lede: "Once a week, picture losing something you value and how you would meet it, so that a loss never comes as a complete surprise.",
+    sections: [
+      {
+        heading: "Seneca and the fire at Lyons",
+        paragraphs: [
+          "Seneca wrote the 91st of his Letters to Lucilius after a fire destroyed the Roman city of Lugdunum, now Lyon, in a single night. His friend Liberalis took the news hard, and Seneca's letter is about why: it is the unexpected that weighs most. His answer is to expect more.",
+        ],
+        quote: {
+          lines: [
+            "Therefore, nothing ought to be unexpected by us. Our minds should be sent forward in advance to meet all problems, and we should consider, not what is wont to happen, but what can happen.",
+          ],
+          cite: "Seneca, Letters to Lucilius, Letter 91, translated by Richard M. Gummere (1920)",
+        },
+      },
+      {
+        heading: "A rehearsal, not a worry",
+        paragraphs: [
+          "The exercise is often called premeditatio malorum, Latin for the rehearsal of misfortunes. It is not the same as worrying. Worry goes round the fear again and again. The rehearsal follows it through to an answer: if this went, what would I do, and what would I still have?",
+          "Modern Stoics add a second use. Picturing the loss of something makes you notice it while you have it.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Two prompts with three lines each, on the weekly spread: What might I lose? How would I meet it? Pick one thing a week, small or large: a job, your health, a friend, a plan.",
+          "Keep the second answer practical. If something can be prepared for, such as a backup, some money put aside, or a call you have been putting off, write it on a day of this week's spread.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Seneca, Moral Letters to Lucilius, translated by Richard M. Gummere, volume 2 (Loeb Classical Library, 1920): Letter 91, On the lesson to be drawn from the burning of Lyons.", url: "https://en.wikisource.org/wiki/Moral_letters_to_Lucilius/Letter_91" },
+    ],
+  },
+  {
+    slug: "tao-daily-verse",
+    wiki: {
+      "Tao Te Ching": "Tao Te Ching",
+      Laozi: "Laozi",
+      Zhou: "Zhou dynasty",
+      "Sima Qian": "Sima Qian",
+      Guodian: "Bamboo Texts of Guodian",
+      "James Legge": "James Legge",
+    },
+    photo: {
+      src: "/modules/photos/tao-daily-verse.jpg",
+      alt: "An ink painting of an old man with a long beard riding an ox",
+      caption: "Laozi",
+      credit: "Zhang Lu, Laozi Riding an Ox, Ming dynasty (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Zhang_Lu-Laozi_Riding_an_Ox_(cropped).jpg",
+    },
+    kicker: "A Taoist practice",
+    lede: "Copy out a passage of the Tao Te Ching each day, then write what it says plainly and what it says underneath.",
+    sections: [
+      {
+        heading: "The book",
+        paragraphs: [
+          "The Tao Te Ching is a short Chinese book of 81 chapters, about five thousand characters in all. Tradition gives it to Laozi, a keeper of the archives at the court of the Zhou kings. The historian Sima Qian tells how it came to be written: leaving for the west, Laozi was stopped at a border pass by its keeper, who asked him to write down his teaching before he went. The painting above shows him on his way.",
+          "Scholars think the text grew over time. The oldest copies found, on bamboo slips in a tomb at Guodian, date from about 300 BC.",
+        ],
+      },
+      {
+        heading: "Its first lines",
+        paragraphs: [
+          "James Legge, a Scottish missionary who became the first professor of Chinese at Oxford, published his translation in 1891. It is free to use, and it is the one quoted here. The book opens by saying that what it is about cannot be put into words:",
+        ],
+        quote: {
+          lines: ["The Tao that can be trodden is not the enduring and unchanging Tao. The name that can be named is not the enduring and unchanging name."],
+          cite: "Laozi, Tao Te Ching, chapter 1, translated by James Legge (1891)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Three prompts with two lines each, on the daily page: The passage, What it says plainly, What it says underneath. Copy the line or two that stays with you, not the whole chapter. Then put it in your own words, and then write what you think it points to.",
+          "Many chapters are only a few lines long. At a chapter a day, the whole book takes under three months.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Tao Teh King, translated by James Legge, in The Sacred Books of the East, volume 39 (Oxford, 1891).", url: "https://www.gutenberg.org/ebooks/216" },
+      { text: "Sima Qian, Records of the Grand Historian, chapter 63, the life of Laozi." },
+    ],
+  },
+  {
+    slug: "wu-wei-reflection",
+    wiki: {
+      "Wu wei": "Wu wei",
+      "Tao Te Ching": "Tao Te Ching",
+      "Ma Yuan": "Ma Yuan (painter)",
+      "Southern Song": "Song dynasty",
+    },
+    photo: {
+      src: "/modules/photos/wu-wei-reflection.jpg",
+      alt: "An ink painting of rolling waves, with four Chinese characters at the left",
+      caption: "Ma Yuan, Water",
+      credit: "Ma Yuan, a leaf of the Water Album (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Ma_Yuan_-_Water_Album_-_Ten_Thousand_Riplets_on_the_Yangzi.jpg",
+      landscape: true,
+    },
+    kicker: "A Taoist practice",
+    lede: "Once a week, write down where you pushed against something, and what yielding would have looked like.",
+    sections: [
+      {
+        heading: "Doing without forcing",
+        paragraphs: [
+          "Wu wei means, word for word, without doing. In the Tao Te Ching it does not mean doing nothing. It means acting the way things already tend to go, without strain, so that the work gets done without being forced:",
+        ],
+        quote: {
+          lines: ["The Tao in its regular course does nothing (for the sake of doing it), and so there is nothing which it does not do."],
+          cite: "Laozi, Tao Te Ching, chapter 37, translated by James Legge (1891)",
+        },
+      },
+      {
+        heading: "Water",
+        paragraphs: [
+          "The book's favorite picture of it is water, which gives way to everything and still wears away stone. The painting above is a leaf from the Water Album of Ma Yuan, a court painter of the Southern Song around the year 1200.",
+        ],
+        quote: {
+          lines: [
+            "There is nothing in the world more soft and weak than water, and yet for attacking things that are firm and strong there is nothing that can take precedence of it;—for there is nothing (so effectual) for which it can be changed.",
+            "Every one in the world knows that the soft overcomes the hard, and the weak the strong, but no one is able to carry it out in practice.",
+          ],
+          cite: "Laozi, Tao Te Ching, chapter 78, translated by James Legge (1891)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Two prompts with three lines each, on the weekly spread: Where did I force something? What would yielding have looked like? Think back over the week's arguments, deadlines and plans that would not go your way.",
+          "Yielding is not giving up. It can mean waiting, asking instead of insisting, or letting a plan change shape. The aim is to notice where effort turned into strain, and to try the other way next time.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Tao Teh King, translated by James Legge, in The Sacred Books of the East, volume 39 (Oxford, 1891): chapters 37 and 78.", url: "https://www.gutenberg.org/ebooks/216" },
     ],
   },
 ];
