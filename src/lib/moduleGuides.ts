@@ -54,6 +54,8 @@ export type GuidePhoto = {
   sourceUrl: string;
   /** Wider than tall. */
   landscape?: boolean;
+  /** No postmark: a picture of scripture is not inked over. */
+  unfranked?: boolean;
 };
 
 export type ModuleGuide = {
@@ -756,6 +758,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       credit: "Genesis, from the Geneva Bible, 1560, Houghton Library, Harvard University (cropped)",
       license: "Public domain",
       sourceUrl: "https://commons.wikimedia.org/wiki/File:Houghton_STC_2093_-_aii.jpg",
+      unfranked: true,
     },
     kicker: "A Christian practice",
     lede: "Take one verse apart over a week: write it out, compare translations, follow its cross references, and note what it asks of you.",
@@ -984,6 +987,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       license: "CC BY-SA 4.0",
       licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
       sourceUrl: "https://commons.wikimedia.org/wiki/File:Torah_at_the_state_library_of_Victoria.jpg",
+      unfranked: true,
       landscape: true,
     },
     kicker: "A Jewish practice",
@@ -1076,6 +1080,449 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       { text: "The Sutta-Nipâta, translated by V. Fausböll, in The Sacred Books of the East, volume 10, part 2 (Oxford, 1881): the Mettasutta.", url: "https://archive.org/details/mlbd.dhammapadasuttni0000fmax" },
       { text: "Buddhaghosa, Visuddhimagga, chapter 9, on loving-kindness." },
     ],
+  },
+  {
+    slug: "ramadan-log",
+    wiki: {
+      Ramadan: "Ramadan",
+      "Islamic calendar": "Islamic calendar",
+      Quran: "Quran",
+      "Five Pillars of Islam": "Five Pillars of Islam",
+      Taraweeh: "Tarawih",
+      Sadaqah: "Sadaqah",
+      Dhikr: "Dhikr",
+      "Laylat al-Qadr": "Night of Power",
+      "Marmaduke Pickthall": "Marmaduke Pickthall",
+    },
+    photo: {
+      src: "/modules/photos/ramadan-log.jpg",
+      alt: "Brightly colored Ramadan lanterns in gold, green and blue, for sale on a market stall",
+      caption: "Ramadan, Cairo",
+      credit: "Ramadan lanterns, Souq el Maadi, Cairo. Photo by B. Simpson (cropped)",
+      license: "CC BY 3.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Colorful_plastic_ramadan_lanterns.jpg",
+      landscape: true,
+    },
+    kicker: "A Muslim practice",
+    lede: "All thirty days of Ramadan on one page, with a box each day for the fast, taraweeh, Quran reading, sadaqah and dhikr.",
+    sections: [
+      {
+        heading: "The month",
+        paragraphs: [
+          "Ramadan is the ninth month of the Islamic calendar, the month in which the Quran was first revealed. Fasting through it, from dawn until sunset, is one of the Five Pillars of Islam. The month lasts 29 or 30 days, from one sighting of the new crescent moon to the next.",
+          "The Islamic year follows the moon and is ten or eleven days shorter than the solar year, so Ramadan comes earlier each year and moves through all the seasons. The Quran gives the fast in the verse below, quoted in the translation Marmaduke Pickthall published in 1930:",
+        ],
+        quote: {
+          lines: [
+            "The month of Ramadan in which was revealed the Qur'ân, a guidance for mankind, and clear proofs of the guidance, and the Criterion (of right and wrong). And whosoever of you is present, let him fast the month, and whosoever of you is sick or on a journey, (let him fast the same) number of other days. Allah desireth for you ease; He desireth not hardship for you...",
+          ],
+          cite: "The Quran, Surah 2 (The Cow), verse 185, translated by Marmaduke Pickthall (1930)",
+        },
+      },
+      {
+        heading: "The five columns",
+        paragraphs: ["Each day of the month has a box in each column:"],
+        list: [
+          "Fast: from the meal before dawn, suhur, to iftar at sunset.",
+          "Taraweeh: the extra night prayers of Ramadan, in which many mosques recite the whole Quran over the month.",
+          "Quran: your own reading for the day, such as one of its thirty parts.",
+          "Sadaqah: charity given, of any size.",
+          "Dhikr: remembrance of God, in whatever form you keep it.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Thirty numbered rows, one for each day, and five columns to tick. It goes on the monthly spread and fills most of the page.",
+          "A fast missed for illness or travel is made up later, as the verse says, so leave that box empty and mark it on the day you make it up. The last ten rows are the last ten nights, when many look for Laylat al-Qadr, the Night of Power.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Meaning of the Glorious Koran, translated by Marmaduke Pickthall (Knopf, 1930): Surah 2, The Cow.", url: "https://en.wikisource.org/wiki/The_Meaning_of_the_Glorious_Koran_(1930)/The_Cow" },
+    ],
+  },
+  {
+    slug: "quran-reading-plan",
+    wiki: {
+      Quran: "Quran",
+      "juz'": "Juz'",
+      Ramadan: "Ramadan",
+      surahs: "Surah",
+      taraweeh: "Tarawih",
+      "Blue Quran": "Blue Quran",
+    },
+    photo: {
+      src: "/modules/photos/quran-reading-plan.jpg",
+      alt: "A page of the Blue Quran: lines of gold Kufic letters on deep blue parchment",
+      caption: "The Blue Quran",
+      credit: "A folio of the Blue Quran, Chester Beatty Library, Dublin (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Folio_from_the_Blue_Qur%27an_(CBL_Is_1405A,_f._1b).jpg",
+      unfranked: true,
+      landscape: true,
+    },
+    kicker: "A Muslim practice",
+    lede: "Thirty marks, one for each juz', so the whole Quran can be read in a month, as many do in Ramadan.",
+    sections: [
+      {
+        heading: "Thirty parts",
+        paragraphs: [
+          "The Quran has 114 surahs, of very different lengths. For reading and recitation it is also divided into thirty parts, each called a juz'. The parts are a division for reading, so one can begin partway through a surah.",
+          "In the Middle Ages, mosques often kept their copies of the Quran as sets of thirty volumes, one for each part. In Ramadan today, many mosques recite the whole Quran in the taraweeh prayers, often at a juz' a night.",
+        ],
+      },
+      {
+        heading: "At your own pace",
+        paragraphs: [
+          "A month is a common pace, not a rule. The Quran itself asks for what can be managed:",
+        ],
+        quote: {
+          lines: ["Recite, then, of the Qur'ân that which is easy for you."],
+          cite: "The Quran, Surah 73 (The Enshrouded One), verse 20, translated by Marmaduke Pickthall (1930)",
+        },
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Thirty numbered marks, grouped in tens. It goes once, at the front of the book. Mark each number as you finish that juz'.",
+          "A juz' a day finishes in a month. Two pages a day takes most of a year. Either way, the marks keep your place.",
+          "The page above is from the Blue Quran, written in gold on parchment dyed with indigo, sometime between the eighth and tenth centuries.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Meaning of the Glorious Koran, translated by Marmaduke Pickthall (Knopf, 1930): Surah 73, The Enshrouded One.", url: "https://en.wikisource.org/wiki/The_Meaning_of_the_Glorious_Koran_(1930)/The_Enshrouded_One" },
+    ],
+  },
+  {
+    slug: "dhikr-counter",
+    wiki: {
+      dhikr: "Dhikr",
+      Quran: "Quran",
+      "tasbih of Fatimah": "Tasbih",
+      misbaha: "Misbaha",
+    },
+    photo: {
+      src: "/modules/photos/dhikr-counter.jpg",
+      alt: "A string of pale prayer beads ending in a metal tassel with two coins",
+      caption: "Tasbih, 1909",
+      credit: "A tasbih dated 1909. Photo by Looi (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Tasbih1924.jpg",
+    },
+    kicker: "A Muslim practice",
+    lede: "Thirty-three circles to fill in for a round of dhikr, the remembrance of God.",
+    sections: [
+      {
+        heading: "Remembrance",
+        paragraphs: [
+          "Dhikr means remembrance: words in praise of God, said over and over, aloud or under the breath. The Quran asks for it once the Friday prayer is over:",
+        ],
+        quote: {
+          lines: ["And when the prayer is ended, then disperse in the land and seek of Allah's bounty, and remember Allah much, that ye may be successful."],
+          cite: "The Quran, Surah 62 (The Congregation), verse 10, translated by Marmaduke Pickthall (1930)",
+        },
+      },
+      {
+        heading: "Thirty-three",
+        paragraphs: [
+          "After each of the daily prayers, many Muslims say SubhanAllah, glory be to God, Alhamdulillah, praise be to God, and Allahu Akbar, God is greatest, thirty-three times each. One form of the round is called the tasbih of Fatimah, after the Prophet's daughter, to whom he taught it.",
+          "Prayer beads, called a misbaha or tasbih, are often strung with 33 or 99 beads to keep the same count.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Thirty-three circles on the daily page, in groups of eleven. Fill one in for each repetition, or one for each round, whichever suits you. Without beads, it keeps the count where you can see it.",
+          "A filled page is a record, not a score. The count is there to keep the mind on the words.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "The Meaning of the Glorious Koran, translated by Marmaduke Pickthall (Knopf, 1930): Surah 62, The Congregation.", url: "https://en.wikisource.org/wiki/The_Meaning_of_the_Glorious_Koran_(1930)/The_Congregation" },
+    ],
+  },
+  {
+    slug: "step-four-inventory",
+    wiki: {
+      "Twelve Steps": "Twelve-step program",
+      "Bill Wilson": "Bill W.",
+      "Alcoholics Anonymous": "The Big Book (Alcoholics Anonymous)",
+      Lois: "Lois W.",
+    },
+    photo: {
+      src: "/modules/photos/step-four-inventory.jpg",
+      alt: "A gray-shingled house with four dormer windows, snow on the ground",
+      caption: "Stepping Stones",
+      credit: "Stepping Stones, the home of Bill and Lois Wilson, Katonah, New York. Photo by Daniel Case (cropped)",
+      license: "CC BY-SA 3.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Stepping_Stones,_Katonah,_NY.jpg",
+      landscape: true,
+    },
+    kicker: "A recovery practice",
+    lede: "The Fourth Step's resentment list, in four columns: who you resent, the cause, what it affects in you, and your own part.",
+    sections: [
+      {
+        heading: "The Fourth Step",
+        paragraphs: [
+          "The fourth of the Twelve Steps is a moral inventory: an honest look at yourself, in writing. Bill Wilson wrote the Steps in 1938 for the book Alcoholics Anonymous, which members call the Big Book. It was published in 1939. He and his wife Lois later lived at Stepping Stones, the house above, from 1941 until his death in 1971.",
+          "In its chapter \"How It Works,\" the Big Book begins the inventory with resentments and sets them out in columns: the person, institution or principle you resent; the cause; and what it affects in you, such as your self-esteem, your security or your relationships.",
+        ],
+      },
+      {
+        heading: "Your own part",
+        paragraphs: [
+          "Then it asks you to set the other person's wrongs aside and look for your own: where you were selfish, dishonest, self-seeking or frightened. Many people write this as a fourth column, and this module has one.",
+          "It is the hardest column, and the one the inventory is for. Most people take the finished list to their sponsor at the Fifth Step.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A table with four columns, Person, Cause, Affects my and My part, and a row for each resentment. It goes once, at the front of the book, and runs fourteen columns wide so each entry has room.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship. This module is a page to write on, laid out around the step, not a program. The Big Book is the place to read the step itself, and your sponsor and your group are the people to work it with.",
+        ],
+      },
+    ],
+    sources: [
+      { text: "Alcoholics Anonymous (Alcoholics Anonymous World Services, first published 1939), chapter 5, \"How It Works.\"" },
+    ],
+  },
+  {
+    slug: "recovery-gratitude-list",
+    wiki: {
+      "Eric Enstrom": "Eric Enstrom",
+      Grace: "Grace (photograph)",
+    },
+    photo: {
+      src: "/modules/photos/recovery-gratitude-list.jpg",
+      alt: "A black-and-white photograph of an old man with his head bowed over folded hands, a loaf of bread and a bowl on the table before him",
+      caption: "Grace, 1918",
+      credit: "Eric Enstrom, Grace, 1918 (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:1918photoGrace-EricEnstrom.jpg",
+      landscape: true,
+    },
+    kicker: "A recovery practice",
+    lede: "A short list of what you are grateful for today, a habit many people in recovery keep every day.",
+    sections: [
+      {
+        heading: "Why a list",
+        paragraphs: [
+          "Many people in recovery keep a gratitude list, often at a sponsor's suggestion: a few things, written down each day, that went right or that they would not want to lose.",
+          "It is the other side of the inventory. The inventory looks for what went wrong and your part in it. The list looks for what went right, which on a hard day is easy to forget.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A short list on the daily page, headed Grateful Today. Write a few things, and make them specific: a call that came at the right time, a good meal, another day without a drink. Specific things are easier to feel grateful for than general ones, and easier to remember later.",
+          "The photograph above, Grace, was taken by Eric Enstrom in Bovey, Minnesota, and published in 1918.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship. This module is a page to write on, not a program. Your sponsor and your group are the people to work your recovery with.",
+        ],
+      },
+    ],
+    sources: [],
+  },
+  {
+    slug: "sponsor-contact-log",
+    wiki: {
+      "Alcoholics Anonymous": "Alcoholics Anonymous",
+      "Bill Wilson": "Bill W.",
+      "Akron, Ohio": "Akron, Ohio",
+      "Henrietta Seiberling": "Henrietta Buckler Seiberling",
+      "Bob Smith": "Bob Smith (doctor)",
+      "Stan Hywet": "Stan Hywet Hall and Gardens",
+    },
+    photo: {
+      src: "/modules/photos/sponsor-contact-log.jpg",
+      alt: "The brick and half-timbered manor house of Stan Hywet Hall above a lawn and terrace",
+      caption: "Stan Hywet, Akron",
+      credit: "Stan Hywet Hall, Akron, Ohio. Photo by Brandon Bisel (cropped)",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Stan_Hywet_Hall_2.jpg",
+      landscape: true,
+    },
+    kicker: "A recovery practice",
+    lede: "Each contact with your sponsor this week: the date, whether you called and whether you spoke, and a note of what you talked about.",
+    sections: [
+      {
+        heading: "One alcoholic to another",
+        paragraphs: [
+          "Alcoholics Anonymous began with one alcoholic talking to another. In May 1935, Bill Wilson, sober for a few months and alone on a business trip to Akron, Ohio, was tempted to drink and went looking for another alcoholic to talk to. Henrietta Seiberling, of the Akron Oxford Group, arranged for him to meet a local surgeon, Dr. Bob Smith, at the gate lodge of Stan Hywet, the Seiberling family's estate.",
+          "Smith agreed to fifteen minutes. As AA tells the story, they talked for hours. Smith's last drink, on June 10, 1935, is taken as the day AA was founded.",
+          "A sponsor makes that arrangement last: a member with some time sober who helps a newer one through the steps, and who answers the phone.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A small table on the weekly spread, with four columns: Date, Called, Spoke and Note. Tick Called when you reached out and Spoke when you actually talked, since the two are not always the same. Keep the note short: what you talked about, or what to bring up next time.",
+          "Many sponsors ask someone new to call every day. A week on one table shows whether that is happening.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship. This module is a page to write on, not a program. Your sponsor and your group are the people to work your recovery with.",
+        ],
+      },
+    ],
+    sources: [],
+  },
+  {
+    slug: "meeting-log",
+    wiki: {
+      "Alcoholics Anonymous": "Alcoholics Anonymous",
+      "Bill Wilson": "Bill W.",
+      "East Dorset, Vermont": "East Dorset, Vermont",
+    },
+    photo: {
+      src: "/modules/photos/meeting-log.jpg",
+      alt: "A meeting room wall with a Welcome to East Dorset sign above framed recovery slogans",
+      caption: "Meeting room",
+      credit: "Meeting room at the Wilson House, East Dorset, Vermont. Photo by Artaxerxes (cropped)",
+      license: "CC BY 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Meeting_room_The_Wilson_House_378_Village_Street_downtown_East_Dorset_VT_August_2026_02.jpg",
+      landscape: true,
+    },
+    kicker: "A recovery practice",
+    lede: "The meetings you went to this week, with the date, group and format, and room for a signature where a court or program asks for one.",
+    sections: [
+      {
+        heading: "Meetings",
+        paragraphs: [
+          "Meetings are where most people in recovery find their footing. By 2001, Alcoholics Anonymous counted about two million members in more than 100,000 groups.",
+          "Formats differ. At a speaker meeting, one member tells their story. At a discussion meeting, members share on a topic. A Big Book or step study reads the literature together. Open meetings welcome anyone, and closed meetings are for people who want to stop drinking.",
+          "The room above is in the Wilson House in East Dorset, Vermont, where Bill Wilson was born.",
+        ],
+      },
+      {
+        heading: "Proof of attendance",
+        paragraphs: [
+          "Courts, probation offices and treatment programs sometimes ask for proof that someone went to meetings, usually a signed card or sheet. Whether a meeting signs is up to each group, so ask the chairperson or secretary. A signature column keeps those signatures in one place instead of on loose slips.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "A table on the weekly spread with four columns: Date, Group, Format and Signature. It runs fourteen columns wide so a signature fits.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship, and a page in this book is not an official attendance record. Check with your court or program what they accept.",
+        ],
+      },
+    ],
+    sources: [],
+  },
+  {
+    slug: "ninety-in-ninety",
+    wiki: {
+      "Bill Wilson": "Bill W.",
+      "East Dorset, Vermont": "East Dorset, Vermont",
+    },
+    photo: {
+      src: "/modules/photos/ninety-in-ninety.jpg",
+      alt: "The Wilson House, a red clapboard building with white trim, on a village street",
+      caption: "East Dorset, Vermont",
+      credit: "The Wilson House, East Dorset, Vermont. Photo by Artaxerxes (cropped)",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:The_Wilson_House_378_Village_Street_East_Dorset_VT_April_2023_03.jpg",
+      landscape: true,
+    },
+    kicker: "A recovery practice",
+    lede: "Ninety cells, one for each meeting, toward the ninety meetings in ninety days often suggested to someone new to recovery.",
+    sections: [
+      {
+        heading: "Ninety in ninety",
+        paragraphs: [
+          "Ninety meetings in ninety days is one of the first suggestions many newcomers hear. It is advice, not a rule of any fellowship. The early months are often the hardest, and a meeting every day fills the hours, builds a habit and puts you among people who have stayed sober.",
+          "Many groups mark thirty, sixty and ninety days with a coin or chip, and the module numbers those three.",
+          "The Wilson House in East Dorset, Vermont, above, is where Bill Wilson was born. It has a meeting room of its own.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Ninety cells, numbered at 30, 60 and 90. It goes once, at the front of the book. Fill a cell for each meeting.",
+          "If you miss a day, do not start over at one. Keep filling cells until there are ninety. On a hard day some people go to two meetings, and both count.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship. This module is a page to write on, not a program. Your sponsor and your group are the people to work your recovery with.",
+        ],
+      },
+    ],
+    sources: [],
+  },
+  {
+    slug: "halt-check-in",
+    wiki: {
+      "Akron, Ohio": "Akron, Ohio",
+      "Bill Wilson": "Bill W.",
+      "Bob Smith": "Bob Smith (doctor)",
+      "Alcoholics Anonymous": "Alcoholics Anonymous",
+    },
+    photo: {
+      src: "/modules/photos/halt-check-in.jpg",
+      alt: "A colored postcard of the Mayflower Hotel, a tall yellow-brick tower on a street corner",
+      caption: "Mayflower, Akron",
+      credit: "The Mayflower Hotel, Akron, Ohio, on a linen postcard by Tichnor (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Mayflower_Hotel,_Akron,_Ohio_(74484).jpg",
+    },
+    kicker: "A recovery practice",
+    lede: "Are you hungry, angry, lonely or tired? Rate each from one to five, so a hard moment has a likely cause written in front of you.",
+    sections: [
+      {
+        heading: "HALT",
+        paragraphs: [
+          "HALT stands for hungry, angry, lonely and tired, four states that make a craving, or any bad decision, more likely. Recovery groups teach it as a quick check: when something feels wrong, halt, and ask which of the four it is.",
+          "Each has a plain answer. Eat something. Talk the anger through with someone. Call someone. Rest.",
+        ],
+      },
+      {
+        heading: "Lonely in Akron",
+        paragraphs: [
+          "AA's own story starts with one of the four. In May 1935, Bill Wilson was alone in Akron, Ohio, after a business deal fell through. As AA tells it, he stood in the lobby of the Mayflower Hotel, with its bar in view, and instead of going in he looked for another alcoholic to talk to. The calls he made from the lobby led him to Dr. Bob Smith, and the two of them went on to found Alcoholics Anonymous.",
+        ],
+      },
+      {
+        heading: "How the module works",
+        paragraphs: [
+          "Four rows on the daily page, Hungry, Angry, Lonely and Tired, each with five circles from one to five. Fill them in at the same time each day, or whenever a day turns hard.",
+          "Over a week, the pattern shows which of the four comes up most, and that is the one to plan for.",
+        ],
+      },
+      {
+        heading: "A note",
+        paragraphs: [
+          "Memari is not affiliated with Alcoholics Anonymous or any twelve-step fellowship. This module is a page to write on, not a program. Your sponsor and your group are the people to work your recovery with.",
+        ],
+      },
+    ],
+    sources: [],
   },
 ];
 

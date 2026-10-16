@@ -56,7 +56,7 @@ export function GuidePhoto({ photo, cadence }: { photo: Photo; cadence?: string 
             </div>
           </div>
         </div>
-        <Postmark word={POSTMARK_WORD[cadence ?? ""] ?? "MODULES"} />
+        {!photo.unfranked && <Postmark word={POSTMARK_WORD[cadence ?? ""] ?? "MODULES"} />}
       </div>
       {credit}
     </figure>
