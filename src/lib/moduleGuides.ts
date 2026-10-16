@@ -321,7 +321,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Where the name comes from",
         paragraphs: [
-          "In August 1954, President Dwight D. Eisenhower spoke to the World Council of Churches at Northwestern University, in Evanston, Illinois. Partway through, he quoted a former college president.",
+          "In August 1954, President Dwight D. Eisenhower spoke to the World Council of Churches at Northwestern University, in Evanston, Illinois. Partway through, he quoted a former college president. He did not say who, and no one knows for certain. Eisenhower had himself been president of Columbia University until 1953.",
         ],
         quote: {
           lines: [
@@ -345,8 +345,9 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "How the module works",
         paragraphs: [
-          "One grid for the week, with urgency across and importance down, and lined space in each box: Do, Schedule, Delegate, Delete. Write each task where it belongs once, then work from Do.",
+          "One grid for the week, with urgency across and importance down, and each box's name set large and faint behind the space you write in: Do, Schedule, Delegate, Delete. Write each task where it belongs once, then work from Do.",
           "The box to watch is Schedule. Important work that is never urgent is exactly what Eisenhower's college president meant, and it only gets done if it is given a time. Put each one on a day of this week's spread.",
+          "If you work alone, Delegate can still mean something: hand the task to a tool, batch it into one short slot late in the day, or ask for a later deadline so it stops being urgent.",
         ],
       },
     ],
@@ -1969,6 +1970,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "Why it works",
         paragraphs: [
           "A habit you already have happens at a set time and place without a decision. Tying the new habit to it borrows that cue. After I pour my morning coffee, I will write three lines. After I sit down on the train, I will read one page.",
+          "A 2006 review of 94 tests found that plans like these have a medium to large effect. They still take time to become automatic. In a 2010 study, new daily habits took a median of 66 days to become automatic, with estimates from 18 to 254 days, so expect months rather than weeks.",
         ],
       },
       {
@@ -1980,6 +1982,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     ],
     sources: [
       { text: "Peter M. Gollwitzer, \"Implementation Intentions: Strong Effects of Simple Plans,\" American Psychologist 54, no. 7 (1999)." },
+      { text: "Peter M. Gollwitzer and Paschal Sheeran, \"Implementation Intentions and Goal Achievement: A Meta-Analysis of Effects and Processes,\" Advances in Experimental Social Psychology 38 (2006)." },
+      { text: "Phillippa Lally and others, \"How Are Habits Formed: Modelling Habit Formation in the Real World,\" European Journal of Social Psychology 40, no. 6 (2010)." },
       { text: "B. J. Fogg, Tiny Habits (Houghton Mifflin Harcourt, 2019)." },
       { text: "James Clear, Atomic Habits (Avery, 2018)." },
     ],
