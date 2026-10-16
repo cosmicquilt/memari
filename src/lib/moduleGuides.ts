@@ -104,6 +104,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         paragraphs: [
           "Ignatius of Loyola (1491 to 1556) founded the Society of Jesus, the Jesuits, in 1540. His Spiritual Exercises, a guide for a retreat of about a month, was approved by Pope Paul III in 1548 and is still used by retreat directors today.",
           "Among its first instructions is a daily review he calls the General Examen. He gives it in five points, which are the five prompts of this module.",
+          "He also teaches a Particular Examen, which follows one chosen fault through the day: you resolve against it on rising, check yourself after the midday meal and again after supper, and mark each fall with a dot on a line. This module is the General Examen, a review of the whole day.",
         ],
         quote: {
           lines: [
@@ -150,7 +151,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       src: "/modules/photos/stoic-evening-review.jpg",
       alt: "A marble bust of Seneca, with his name carved on the chest",
       caption: "Seneca",
-      credit: "Bust of Seneca, Antikensammlung Berlin. Photo by Calidius (cropped)",
+      credit: "Seneca, one face of a double herm with Socrates, Antikensammlung Berlin. Photo by Calidius (cropped)",
       license: "CC BY-SA 3.0",
       licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
       sourceUrl: "https://commons.wikimedia.org/wiki/File:Seneca-berlinantikensammlung-2_copy.jpg",
@@ -161,7 +162,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Seneca's evening",
         paragraphs: [
-          "In his essay On Anger, written in the first century, Seneca says he learned the habit from the philosopher Sextius, who asked himself each night what bad habit he had cured that day, and in what way he was better. Seneca kept it every night.",
+          "In his essay On Anger, written in the first century, Seneca says he learned the habit from the philosopher Sextius, who asked himself each night what bad habit he had cured that day, and in what way he was better. Seneca kept it every night. He describes it as a trial, with himself as both the accused and the judge, and says anger grows gentler when it knows it must answer for itself every day.",
         ],
         quote: {
           lines: [
@@ -378,12 +379,13 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Marcus Aurelius's morning",
         paragraphs: [
-          "Marcus Aurelius was Roman emperor from 161 until his death in 180. His Meditations are notes he wrote to himself in Greek, never meant to be read by anyone else, and he wrote some of them in army camps on the Danube frontier. The first book ends \"Among the Quadi at the Granua,\" and the second \"This in Carnuntum.\"",
-          "The second book opens with a morning exercise. Before the day begins, he names the kind of people he will meet, and reminds himself why they cannot harm him:",
+          "Marcus Aurelius was Roman emperor from 161 until his death in 180. His Meditations are notes he wrote to himself in Greek, never meant to be read by anyone else, and he wrote some of them in army camps on the Danube frontier, during the Marcomannic Wars. The first book ends \"Among the Quadi at the Granua,\" and the second \"This in Carnuntum.\"",
+          "The second book opens with a morning exercise. Before the day begins, he names the kind of people he will meet, and reminds himself why they cannot harm him, and why he should not hate them:",
         ],
         quote: {
           lines: [
             "Begin the morning by saying to thyself, I shall meet with the busybody, the ungrateful, arrogant, deceitful, envious, unsocial. All these things happen to them by reason of their ignorance of what is good and evil.",
+            "...I can neither be injured by any of them, for no one can fix on me what is ugly, nor can I be angry with my kinsman, nor hate him. For we are made for co-operation, like feet, like hands, like eyelids, like the rows of the upper and lower teeth.",
           ],
           cite: "Marcus Aurelius, Meditations, Book II, section 1, translated by George Long (1862)",
         },
@@ -405,7 +407,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Three prompts with two lines each, on the daily page: What is in my control today? What obstacle should I expect? Which virtue will I need?",
-          "The Stoics counted four virtues: wisdom, justice, courage and moderation. For the third prompt, pick the one the day will ask for most. The module pairs with the Stoic Evening Review, which asks at night how the day really went.",
+          "The Stoics counted four virtues: wisdom, justice, courage and moderation, and held that they come together: you cannot have one fully without the others. For the third prompt, pick the one the day will ask for most, as a place to put your attention. The module pairs with the Stoic Evening Review, which asks at night how the day really went.",
         ],
       },
     ],
@@ -445,10 +447,16 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "Of things some are in our power, and others are not. In our power are opinion, movement towards a thing, desire, aversion, turning from a thing; and in a word, whatever are our acts. Not in our power are the body, property, reputation, offices (magisterial power), and in a word, whatever are not our own acts.",
+            "Of things some are in our power, and others are not. In our power are opinion (ὑπόληψις), movement towards a thing (ὁρμή), desire, aversion (ἔκκλισις, turning from a thing); and in a word, whatever are our own acts: not in our power are the body, property, reputation, offices (magisterial power), and in a word, whatever are not our own acts.",
           ],
-          cite: "Epictetus, Enchiridion, chapter 1, translated by George Long (1877), with his Greek glosses left out",
+          cite: "Epictetus, Enchiridion, chapter 1, translated by George Long (1877)",
         },
+      },
+      {
+        heading: "The name",
+        paragraphs: [
+          "Dichotomy of control is a modern name, made popular by William B. Irvine's A Guide to the Good Life (2009). Epictetus speaks of what is up to us and what is not, and what is up to us is narrower than control: not even our first reactions are, only what we make of them. That is why the columns on this module say up to me rather than in my control.",
+        ],
       },
       {
         heading: "Why it helps",
@@ -457,7 +465,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "Then examine it by the rules which you possess, and by this first and chiefly, whether it relates to the things which are in our power or to things which are not in our power; and if it relates to anything which is not in our power, be ready to say that it does not concern you.",
+            "Then examine it by the rules which you possess, and by this first and chiefly, whether it relates to the things which are in our power or to the things which are not in our power: and if it relates to any thing which is not in our power, be ready to say, that it does not concern you.",
           ],
           cite: "Epictetus, Enchiridion, chapter 1, translated by George Long (1877)",
         },
@@ -513,12 +521,10 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "...let us go to our sleep with joy and gladness; let us say:",
-            "I have lived; the course which Fortune set for me",
-            "Is finished.",
-            "And if God is pleased to add another day, we should welcome it with glad hearts. That man is happiest, and is secure in his own possession of himself, who can await the morrow without apprehension. When a man has said: “I have lived!”, every morning he arises he receives a bonus.",
+            "...as we go to sleep, let us say, glad and cheerful: “I have lived; I have run the course that fortune gave me.”",
+            "If God adds a tomorrow, let us receive it gladly. He is happiest, and the untroubled master of himself, who waits for tomorrow without anxiety. Whoever has said “I have lived” rises every day to a gain.",
           ],
-          cite: "Seneca, Letters to Lucilius, Letter 12, translated by Richard M. Gummere (1917)",
+          cite: "Seneca, Letters to Lucilius, Letter 12, section 9, translated from the Latin for this page (2026)",
         },
       },
       {
@@ -531,7 +537,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     ],
     sources: [
       { text: "Thoughts of Marcus Aurelius Antoninus, translated by George Long (1862), Book IV, section 17.", url: "https://www.gutenberg.org/ebooks/15877" },
-      { text: "Seneca, Moral Letters to Lucilius, translated by Richard M. Gummere, volume 1 (Loeb Classical Library, 1917): Letter 12, On old age.", url: "https://en.wikisource.org/wiki/Moral_letters_to_Lucilius/Letter_12" },
+      { text: "Seneca, Epistulae morales ad Lucilium, Letter 12, in Latin (The Latin Library).", url: "https://www.thelatinlibrary.com/sen/seneca.ep1.shtml" },
+      { text: "For the whole letter in English: Richard M. Gummere's translation, Seneca, Epistles, volume 1 (Loeb Classical Library, 1917)." },
     ],
   },
   {
@@ -561,16 +568,16 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         ],
         quote: {
           lines: [
-            "Therefore, nothing ought to be unexpected by us. Our minds should be sent forward in advance to meet all problems, and we should consider, not what is wont to happen, but what can happen.",
+            "So nothing should come to us unforeseen. The mind must be sent ahead to meet everything, and we must think not of what usually happens, but of what can happen.",
           ],
-          cite: "Seneca, Letters to Lucilius, Letter 91, translated by Richard M. Gummere (1920)",
+          cite: "Seneca, Letters to Lucilius, Letter 91, section 4, translated from the Latin for this page (2026)",
         },
       },
       {
         heading: "A rehearsal, not a worry",
         paragraphs: [
           "The exercise is often called premeditatio malorum, Latin for the rehearsal of misfortunes. It is not the same as worrying. Worry goes round the fear again and again. The rehearsal follows it through to an answer: if this went, what would I do, and what would I still have?",
-          "Modern Stoics add a second use. Picturing the loss of something makes you notice it while you have it.",
+          "The Stoics aimed at calm: a loss you have already faced in thought does not knock you over. Modern writers add a second aim, that picturing a loss makes you value what you have while you have it. The name negative visualization is theirs too, made popular by William B. Irvine's A Guide to the Good Life (2009).",
         ],
       },
       {
@@ -582,7 +589,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       },
     ],
     sources: [
-      { text: "Seneca, Moral Letters to Lucilius, translated by Richard M. Gummere, volume 2 (Loeb Classical Library, 1920): Letter 91, On the lesson to be drawn from the burning of Lyons.", url: "https://en.wikisource.org/wiki/Moral_letters_to_Lucilius/Letter_91" },
+      { text: "Seneca, Epistulae morales ad Lucilium, Letter 91, in Latin (Latin Wikisource, books 14 and 15).", url: "https://la.wikisource.org/wiki/Epistulae_morales_ad_Lucilium/Liber_XIV_-_XV" },
+      { text: "For the whole letter in English: Richard M. Gummere's translation, Seneca, Epistles, volume 2 (Loeb Classical Library, 1920), Letter 91, On the lesson to be drawn from the burning of Lyons." },
     ],
   },
   {
@@ -701,7 +709,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       src: "/modules/photos/soap-study.jpg",
       alt: "Rembrandt's painting of an old woman in a red cloak and hood, reading a large open book",
       caption: "Rembrandt, 1631",
-      credit: "Rembrandt, Old Woman Reading, Probably the Prophetess Hannah, 1631, Rijksmuseum (cropped)",
+      credit: "Rembrandt, Old Woman Reading, Probably the Prophetess Anna, 1631, Rijksmuseum (cropped)",
       license: "Public domain",
       sourceUrl: "https://commons.wikimedia.org/wiki/File:Oude_lezende_vrouw,_waarschijnlijk_de_profetes_Hanna_Rijksmuseum_SK-A-3066.jpeg",
     },
@@ -714,7 +722,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
           "SOAP is the method of Wayne Cordeiro, who started New Hope Christian Fellowship in Honolulu in 1995. He set it out in his book The Divine Mentor (2007) as a way to keep a daily journal of Bible reading. The four letters are the four steps:",
         ],
         list: [
-          "Scripture: copy out the verse or verses that stood out in the day's reading.",
+          "Scripture: read the whole passage, then copy out the verse or verses that stood out.",
           "Observation: what does it say? Who is speaking, to whom, and why?",
           "Application: what does it mean for you, today?",
           "Prayer: answer it, in a few honest sentences.",
@@ -734,7 +742,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Four prompts on the daily page, with more lines where there is more to write: two for the Scripture, three for the Observation, four for the Application and three for the Prayer. It is wide, eight columns of the page, so a verse has room to be copied out in full.",
-          "Read first, then write. A reading plan saves deciding each morning which passage comes next.",
+          "Read first, then write. Read the whole chapter or passage, so that the verse you copy is read in its setting. A reading plan saves deciding each morning which passage comes next.",
         ],
       },
     ],
@@ -746,6 +754,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
   {
     slug: "verse-mapping",
     wiki: {
+      "Stephen Langton": "Stephen Langton",
       "Robert Estienne": "Robert Estienne",
       "Geneva Bible": "Geneva Bible",
       "Strong's Concordance": "Strong's Concordance",
@@ -755,7 +764,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       src: "/modules/photos/verse-mapping.jpg",
       alt: "A page of Genesis from the 1560 Geneva Bible, with a map of the Garden of Eden, numbered verses and notes in the margins",
       caption: "Geneva Bible, 1560",
-      credit: "Genesis, from the Geneva Bible, 1560, Houghton Library, Harvard University (cropped)",
+      credit: "Genesis, with a map of the Garden of Eden, from the Geneva Bible, 1560, Houghton Library, Harvard University (cropped)",
       license: "Public domain",
       sourceUrl: "https://commons.wikimedia.org/wiki/File:Houghton_STC_2093_-_aii.jpg",
       unfranked: true,
@@ -776,8 +785,8 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Verses and references",
         paragraphs: [
-          "The method depends on something the Bible did not always have. The Paris printer Robert Estienne numbered the verses of the New Testament in his Greek edition of 1551, and the Geneva Bible of 1560 was the first English Bible with both chapters and verses. The page above is from it, with its verse numbers and the notes in its margins.",
-          "For following a word, Strong's Concordance, first published in 1890, lists every place each word appears in the King James Version.",
+          "The method depends on something the Bible did not always have. Around 1205, Stephen Langton, a Paris theologian who became Archbishop of Canterbury, divided its books into the chapters still used today. The Paris printer Robert Estienne numbered the verses of the New Testament in his Greek edition of 1551, and the Geneva Bible of 1560 was the first English Bible with both chapters and verses. The page above is from it, with its verse numbers and the notes in its margins.",
+          "For following a word, Strong's Concordance, first published in 1890, lists every place each word appears in the King James Version. It shows where a word is used. What it means in each place still depends on the sentence around it.",
         ],
       },
       {
@@ -832,7 +841,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
           "Lectio, read: read it slowly, more than once, until a word or phrase stands out.",
           "Meditatio, reflect: turn that phrase over. Why this, and why today?",
           "Oratio, respond: speak to God about it, in your own words.",
-          "Contemplatio, rest: stop talking, and stay with it in silence for a while.",
+          "Contemplatio, rest: stop talking, and rest in silence. Guigo treats this last step as a gift to receive, not something you can make happen.",
         ],
       },
       {
@@ -849,7 +858,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "How the module works",
         paragraphs: [
           "Four numbered prompts on the daily page, one for each step, with two lines under each. Write the phrase that stood out under the first, and a line or two under the next two.",
-          "The fourth step has no words of its own. A mark under it, or the minutes you sat, is enough.",
+          "The fourth step has no words of its own. It is a time to rest quietly in the presence of God, and a simple mark under it is enough.",
         ],
       },
     ],
