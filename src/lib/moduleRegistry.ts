@@ -2098,7 +2098,7 @@ const PRIMITIVES = {
             "items": { "type": "string" },
             "default": ["", "", "", ""]
           },
-          "boxNames": { "type": "string", "enum": ["large", "small"], "default": "large" },
+          "boxNames": { "type": "string", "enum": ["large", "small", "behind"], "default": "large" },
           "inside": { "type": "string", "enum": ["none", "lined", "dotted"], "default": "none" },
           "axisLabels": { "type": "boolean", "default": true }
         }
@@ -2152,6 +2152,7 @@ const PRIMITIVES = {
         options: [
           { value: "large", label: "Large" },
           { value: "small", label: "Small" },
+          { value: "behind", label: "Behind, faint" },
         ],
         window: { x: "left", y: "top", columns: 4.2, rows: 3.4 },
       },

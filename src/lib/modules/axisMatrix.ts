@@ -58,8 +58,12 @@ export type AxisMatrixConfig = {
    * each box's top corner - the large ones sit exactly where you write,
    * fine for sorting and in the way of a list. Module-edits list,
    * 2026-09-30, as are the next two.
+   *
+   * Or BEHIND: as large as the box allows and faint, centred under whatever
+   * is written there - "quadrant labels in the background center of each
+   * quadrant big translucent" (2026-10-15), the Eisenhower default.
    */
-  boxNames?: "large" | "small";
+  boxNames?: "large" | "small" | "behind";
   /** What each box holds: nothing, lines or the lattice's dots. */
   inside?: "none" | "lined" | "dotted";
   /** The axis labels, or none - a SWOT names its boxes and has no axes, and
@@ -141,6 +145,11 @@ const AXIS_BAND_HEIGHT_PT = AXIS_FONT_PT * 1.2 + AXIS_BAND_PADDING_PT * 2;
 const AXIS_GUTTER_WIDTH_PT = 9;
 // A small box name: the house's small-label size, uppercase, in the corner.
 const SMALL_NAME_FONT_PT = 6;
+// A box name BEHIND the writing: the largest of these that fits every box
+// across and a quarter of its height in capitals, at a faint ink to write
+// over - the month's faint dates are 18%.
+const BEHIND_NAME_SIZES_PT = [28, 24, 20, 18, 16, 14, 12, 11, 10, 9, 8, 7, 6, 5];
+export const BEHIND_NAME_INK = 0.18;
 const AXIS_LETTER_FONT_PT = 6;
 /**
  * Letters of a stacked label, as a multiple of their own size.
@@ -532,7 +541,30 @@ export function renderAxisMatrix(
   // What each box holds - the shared fill, box by box, on the lattice and
   // clear of the cross. Below a small name, not over it.
   const small = config.boxNames === "small";
+  const behind = config.boxNames === "behind";
   const smallSize = ptToPx(SMALL_NAME_FONT_PT);
+  // Behind: drawn first, so lines or dots in the box lie over it.
+  if (behind) {
+    const tallest = halfHeightPlot * 0.5;
+    const sizes = BEHIND_NAME_SIZES_PT.map(ptToPx).filter((size, i, all) => size <= tallest || i === all.length - 1);
+    const fitted = fitLabelSet(names.map((text) => ({ text, widthPx: halfWidth - padding * 2 })), sizes);
+    corners.forEach(([name, x, y], q) => {
+      elements.push({
+        id: id(`q-${name}`),
+        type: "text",
+        x: x + padding,
+        y: capCentredTextY(y, halfHeightPlot, fitted.fontSizePx, fontFamily),
+        width: halfWidth - padding * 2,
+        height: fitted.fontSizePx * 1.2,
+        text: fitted.texts[q],
+        fontSize: fitted.fontSizePx,
+        fontFamily,
+        fill: NEAR_BLACK,
+        align: "center",
+        opacity: BEHIND_NAME_INK,
+      });
+    });
+  }
   const smallBand = smallSize * 1.2 + ptToPx(3);
   const inside = config.inside === "lined" || config.inside === "dotted" ? config.inside : "none";
   corners.forEach(([name, x, y], q) => {
@@ -576,7 +608,7 @@ export function renderAxisMatrix(
   }
 
   corners.forEach(([name, x, y], q) => {
-    if (small) return;
+    if (small || behind) return;
     const fitted = { text: quadrantLabels.texts[q], fontSizePx: quadrantLabels.fontSizePx };
     const textHeight = fitted.fontSizePx * 1.2;
     elements.push({

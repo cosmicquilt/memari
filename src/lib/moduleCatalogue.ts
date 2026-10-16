@@ -308,9 +308,12 @@ export const CATALOGUE: CatalogueEntry[] = [
       yTop: "Vital",
       yBottom: "Minor",
       quadrants: ["Schedule", "Do", "Delete", "Delegate"],
-      // Four lists: small names in the corners, lines to write on.
-      boxNames: "small",
-      inside: "lined",
+      // Each box's name large and faint behind it, and the boxes blank to
+      // write in - "edit the default eisenhower to be not ruled and have the
+      // quadrant labels in the back ground center of each quandrant big
+      // translucent" (2026-10-15). Was small corner names over lines.
+      boxNames: "behind",
+      inside: "none",
     },
   },
   {

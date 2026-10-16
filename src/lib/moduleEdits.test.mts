@@ -697,6 +697,23 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const bareCross = ids(bare, /-cross-h$/)[0];
   const box = ids(bare, /-border$/)[0];
   check(Math.abs((bareCross.width ?? 0) - (box.width ?? 0)) < 0.5, "and the cross takes the whole width");
+  // BEHIND (2026-10-15): the names large and faint, centred under whatever is
+  // in the box - and the Eisenhower module's default, with the boxes blank.
+  const behind = draw("axis-matrix", { ...eis, boxNames: "behind", inside: "lined" }, 12, 9);
+  const faint = ids(behind, /-q-(tl|tr|bl|br)$/);
+  check(
+    faint.length === 4 && faint.every((q, i) => Number(q.fontSize) > Number(big[i].fontSize) && q.align === "center" && Math.abs(Number(q.opacity) - 0.18) < 1e-9),
+    "behind: larger than Large, centred, at 18% ink"
+  );
+  const firstRule = behind.findIndex((e) => /-q-\w+-rule\d+$/.test(String(e.id)));
+  check(firstRule > 0 && faint.every((q) => behind.indexOf(q) < firstRule), "and drawn under the box's lines");
+  const preset = moduleDefinition("eisenhower-matrix")?.previewProps as Record<string, unknown> | undefined;
+  check(preset?.boxNames === "behind" && preset?.inside === "none", "the Eisenhower module's default: names behind, boxes blank");
+  const eisDefault = draw("eisenhower-matrix", preset ?? {}, 18, 9);
+  check(
+    ids(eisDefault, /-q-\w+-(rule|dot)\d/).length === 0 && ids(eisDefault, /-q-(tl|tr|bl|br)$/).every((q) => Number(q.opacity) < 0.5),
+    "and it draws that way"
+  );
 }
 
 // --- text --------------------------------------------------------------------
