@@ -1098,7 +1098,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       "Islamic calendar": "Islamic calendar",
       Quran: "Quran",
       "Five Pillars of Islam": "Five Pillars of Islam",
-      Taraweeh: "Tarawih",
+      taraweeh: "Tarawih",
       Sadaqah: "Sadaqah",
       Dhikr: "Dhikr",
       "Laylat al-Qadr": "Night of Power",
@@ -1115,7 +1115,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       landscape: true,
     },
     kicker: "A Muslim practice",
-    lede: "All thirty days of Ramadan on one page, with a box each day for the fast, taraweeh, Quran reading, sadaqah and dhikr.",
+    lede: "All thirty days of Ramadan on one page, with a box each day for the fast, night prayer, Quran reading, sadaqah and dhikr.",
     sections: [
       {
         heading: "The month",
@@ -1135,7 +1135,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         paragraphs: ["Each day of the month has a box in each column:"],
         list: [
           "Fast: from the meal before dawn, suhur, to iftar at sunset.",
-          "Taraweeh: the extra night prayers of Ramadan. Sunni mosques pray them together, often reciting the whole Quran over the month. Shia Muslims pray their night prayer, salat al-layl, on their own, and can mark that here.",
+          "Night prayer: the extra prayers of Ramadan nights. Sunni mosques pray taraweeh together, often reciting the whole Quran over the month. Shia Muslims pray salat al-layl on their own. Either one goes in this column.",
           "Quran: your own reading for the day, such as one of its thirty parts.",
           "Sadaqah: charity given, of any size.",
           "Dhikr: remembrance of God, in whatever form you keep it.",

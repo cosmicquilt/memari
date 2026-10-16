@@ -1362,7 +1362,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: {
       heading: "Ramadan",
       habits: Array.from({ length: 30 }, (_, i) => String(i + 1)),
-      columns: ["Fast", "Taraweeh", "Quran", "Sadaqah", "Dhikr"],
+      columns: ["Fast", "Night prayer", "Quran", "Sadaqah", "Dhikr"],
     },
     columnSpan: 18,
     rowSpan: 32,

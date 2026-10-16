@@ -153,7 +153,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   "prayer-list": "A list of people and needs to pray for this week, with a box beside each.",
   "sermon-notes": "The speaker and passage, the main points, and how to apply them, on lines sized for each.",
   "salah-tracker": "A week of the five daily prayers, Fajr, Dhuhr, Asr, Maghrib and Isha, with a box for each prayer on each day.",
-  "ramadan-log": "All thirty days of Ramadan, with columns for the fast, taraweeh, Quran reading, sadaqah and dhikr.",
+  "ramadan-log": "All thirty days of Ramadan, with columns for the fast, night prayer, Quran reading, sadaqah and dhikr.",
   "quran-reading-plan": "Thirty marks, one for each juz'. The Quran is divided into thirty parts, so a part a day completes it in a month, as many do in Ramadan.",
   "dhikr-counter": "Thirty-three circles to fill in for a round of dhikr. After each prayer many say SubhanAllah, Alhamdulillah and Allahu Akbar thirty-three times each.",
   "mussar-trait": "Mussar works on one middah, a trait such as patience or humility, for a week or more at a time. Write the trait in the heading and mark the days you noticed it, practiced it and reflected on it. Menachem Mendel Lefin's Cheshbon HaNefesh (1808) works through thirteen traits this way.",
