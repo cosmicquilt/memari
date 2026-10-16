@@ -232,7 +232,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         list: [
           "Fajr, from dawn until sunrise.",
           "Dhuhr, after the sun passes its highest point.",
-          "Asr, in the afternoon.",
+          "Asr, in the afternoon. The schools differ on when it starts: most once a shadow has grown as long as the thing casting it, the Hanafi school once it is twice as long.",
           "Maghrib, just after sunset.",
           "Isha, at night, once the twilight has gone.",
         ],
@@ -241,6 +241,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "Why the times move",
         paragraphs: [
           "Because the windows follow the sun, they shift through the year and from one place to another. That is why this module leaves the times off: your mosque, a prayer-time calendar for your city, or an app will give you the day's times.",
+          "Shia Muslims pray all five too, but often join Dhuhr with Asr and Maghrib with Isha, so they pray in three sittings a day. The module has a box for each of the five either way.",
         ],
       },
       {
@@ -1134,7 +1135,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         paragraphs: ["Each day of the month has a box in each column:"],
         list: [
           "Fast: from the meal before dawn, suhur, to iftar at sunset.",
-          "Taraweeh: the extra night prayers of Ramadan, in which many mosques recite the whole Quran over the month.",
+          "Taraweeh: the extra night prayers of Ramadan. Sunni mosques pray them together, often reciting the whole Quran over the month. Shia Muslims pray their night prayer, salat al-layl, on their own, and can mark that here.",
           "Quran: your own reading for the day, such as one of its thirty parts.",
           "Sadaqah: charity given, of any size.",
           "Dhikr: remembrance of God, in whatever form you keep it.",
@@ -1179,7 +1180,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
         heading: "Thirty parts",
         paragraphs: [
           "The Quran has 114 surahs, of very different lengths. For reading and recitation it is also divided into thirty parts, each called a juz'. The parts are a division for reading, so one can begin partway through a surah.",
-          "In the Middle Ages, mosques often kept their copies of the Quran as sets of thirty volumes, one for each part. In Ramadan today, many mosques recite the whole Quran in the taraweeh prayers, often at a juz' a night.",
+          "In the Middle Ages, mosques often kept their copies of the Quran as sets of thirty volumes, one for each part. In Ramadan today, many Sunni mosques recite the whole Quran in the taraweeh prayers, often at a juz' a night.",
         ],
       },
       {
@@ -1188,7 +1189,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
           "A month is a common pace, not a rule. The Quran itself asks for what can be managed:",
         ],
         quote: {
-          lines: ["Recite, then, of the Qur'ân that which is easy for you."],
+          lines: ["...Recite, then, of the Qur'ân that which is easy for you..."],
           cite: "The Quran, Surah 73 (The Enshrouded One), verse 20, translated by Marmaduke Pickthall (1930)",
         },
       },
@@ -1210,7 +1211,7 @@ export const MODULE_GUIDES: ModuleGuide[] = [
     wiki: {
       dhikr: "Dhikr",
       Quran: "Quran",
-      "tasbih of Fatimah": "Tasbih",
+      "tasbih of Fatimah": "Tasbih of Fatimah",
       misbaha: "Misbaha",
     },
     photo: {
@@ -1237,14 +1238,15 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       {
         heading: "Thirty-three",
         paragraphs: [
-          "After each of the daily prayers, many Muslims say SubhanAllah, glory be to God, Alhamdulillah, praise be to God, and Allahu Akbar, God is greatest, thirty-three times each. One form of the round is called the tasbih of Fatimah, after the Prophet's daughter, to whom he taught it.",
+          "After each of the daily prayers, many Muslims say SubhanAllah, glory be to God, Alhamdulillah, praise be to God, and Allahu Akbar, God is greatest, thirty-three times each, and many end with a declaration of God's oneness to make a hundred.",
+          "The tasbih of Fatimah, which the Prophet taught his daughter, uses the same three phrases but says Allahu Akbar thirty-four times, also making a hundred. Shia Muslims are encouraged to recite it after every prayer.",
           "Prayer beads, called a misbaha or tasbih, are often strung with 33 or 99 beads to keep the same count.",
         ],
       },
       {
         heading: "How the module works",
         paragraphs: [
-          "Thirty-three circles on the daily page, in groups of eleven. Fill one in for each repetition, or one for each round, whichever suits you. Without beads, it keeps the count where you can see it.",
+          "Thirty-three circles on the daily page, in groups of eleven. Fill one in for each repetition, or one for each round, whichever suits you. Without beads, it keeps the count where you can see it. For the tasbih of Fatimah, say one more Allahu Akbar after the last circle.",
           "A filled page is a record, not a score. The count is there to keep the mind on the words.",
         ],
       },
