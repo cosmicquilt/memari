@@ -51,14 +51,21 @@ type BindingSpec = {
    *  prints near the customer in many countries, but its times were set
    *  from the US; BookVault prints one-off books in the UK only. */
   shipsFrom: "US" | "GB";
+  /** How far inside the trim the cover's type and marks must stay, inches -
+   *  the printer's safety margin for this binding (Andrew, 2026-10-14: "use
+   *  15mm for wire-o and 19mm for hardcover"). BookVault's PDF guide asks
+   *  15 mm on covers; Lulu asks 0.75 in on a casewrap (it folds round the
+   *  boards) and recommends 0.5 in on a paperback or coil cover. The ground
+   *  still runs out through the bleed: only what must stay whole keeps in. */
+  coverSafeIn: number;
 };
 
 export const BINDING_SPECS: Record<Binding, BindingSpec> = {
-  wireo: { label: "Metal wire-o, thick paper", short: "Metal wire-o", note: "Thick 170 gsm paper", shipsFrom: "GB" },
-  wireoStandard: { label: "Metal wire-o, standard paper", short: "Metal wire-o", note: "Standard 80 gsm paper", shipsFrom: "GB" },
-  coil: { label: "Plastic coil", short: "Plastic coil", note: "Lies flat when open", shipsFrom: "US" },
-  paperback: { label: "Paperback", short: "Paperback", note: "Slim, like a book", shipsFrom: "US" },
-  hardcover: { label: "Hardcover", short: "Hardcover", note: "Rigid boards", shipsFrom: "US" },
+  wireo: { label: "Metal wire-o, thick paper", short: "Metal wire-o", note: "Thick 170 gsm paper", shipsFrom: "GB", coverSafeIn: 15 / 25.4 },
+  wireoStandard: { label: "Metal wire-o, standard paper", short: "Metal wire-o", note: "Standard 80 gsm paper", shipsFrom: "GB", coverSafeIn: 15 / 25.4 },
+  coil: { label: "Plastic coil", short: "Plastic coil", note: "Lies flat when open", shipsFrom: "US", coverSafeIn: 0.5 },
+  paperback: { label: "Paperback", short: "Paperback", note: "Slim, like a book", shipsFrom: "US", coverSafeIn: 0.5 },
+  hardcover: { label: "Hardcover", short: "Hardcover", note: "Rigid boards", shipsFrom: "US", coverSafeIn: 0.75 },
 };
 
 /** Is this address in another country from the one the binding's printer

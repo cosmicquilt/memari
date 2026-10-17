@@ -20,7 +20,7 @@
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import { BINDING_ENUM, BINDINGS, bindingDescription, bindingFromEnum, orderableTrim, paperFor, shippedAbroad, type Binding, type BindingAvailability, type PaperColour } from "./products";
+import { BINDING_ENUM, BINDING_SPECS, BINDINGS, bindingDescription, bindingFromEnum, orderableTrim, paperFor, shippedAbroad, type Binding, type BindingAvailability, type PaperColour } from "./products";
 import { DEFAULT_PRINTER, availability, printerFor, printerForBinding, type ShippingQuote } from "./printer";
 import { orderRange, renewalDate, type OrderRange, type ShippingLevel } from "./orderRange";
 import { LULU_STOPPABLE, type PrintJob, type ShippingAddress } from "./lulu";
@@ -237,6 +237,7 @@ export async function startCheckout(
   const cover = buildCoverPdf({
     ...dims,
     form: printer.coverForm,
+    safeIn: BINDING_SPECS[input.binding].coverSafeIn,
     trimWidthIn: trim.widthIn,
     trimHeightIn: trim.heightIn,
     title: journal.title,

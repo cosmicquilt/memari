@@ -51,6 +51,9 @@ export type CoverInput = {
   /** "wrap" (the default): one sheet, widthPt by heightPt. "panels": two
    *  pages, front then back, each widthPt by heightPt. */
   form?: "wrap" | "panels";
+  /** How far inside the trim the type keeps, inches: the binding's
+   *  (BINDING_SPECS coverSafeIn). 0.5 if not given. */
+  safeIn?: number;
 };
 
 export type CoverLayout = {
@@ -113,7 +116,7 @@ function drawCover(doc: jsPDF, input: CoverInput, layout: CoverLayout, spineText
   const trimTop = layout.outerPt;
   const trimH = input.trimHeightIn * PT_PER_IN;
   const trimW = input.trimWidthIn * PT_PER_IN;
-  const safe = 0.5 * PT_PER_IN;
+  const safe = (input.safeIn ?? 0.5) * PT_PER_IN;
   const frontLeft = W - layout.outerPt - trimW;
   const title = input.title.trim() || "Journal";
   const paper = style === "ink" ? INK : CREAM;

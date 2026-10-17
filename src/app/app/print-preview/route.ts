@@ -14,7 +14,7 @@
 import { currentOwnerId } from "@/lib/owner";
 import { buildInterior, loadJournal, rangeLabel, trimInches, OrderError } from "@/lib/print/orderBook";
 import { orderRange } from "@/lib/print/orderRange";
-import { BINDINGS, type Binding } from "@/lib/print/products";
+import { BINDING_SPECS, BINDINGS, type Binding } from "@/lib/print/products";
 import { printerForBinding } from "@/lib/print/printer";
 import { buildCoverPdf, COVER_STYLES, type CoverStyle } from "@/lib/print/cover";
 import { pdfFilename } from "@/lib/plannerPdf";
@@ -70,6 +70,7 @@ export async function GET(request: Request) {
   const cover = buildCoverPdf({
     ...size,
     form: printer.coverForm,
+    safeIn: BINDING_SPECS[binding].coverSafeIn,
     trimWidthIn: trim.widthIn,
     trimHeightIn: trim.heightIn,
     title: journal.title,
