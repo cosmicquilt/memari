@@ -29,6 +29,10 @@
 // YOU_STROKES.
 //
 // Reduced motion: everything fades in, nothing slides or is written.
+//
+// `onWritten` is told when the whole line is there - the "you." written to
+// its full stop - which is when the hero's first layout comes (2026-10-15:
+// "layouts it fades in when tagline is finished animating").
 
 import { useEffect, useRef, type CSSProperties } from "react";
 import { script } from "./scriptFont";
@@ -76,8 +80,28 @@ const YOU_Y_PATCH = "M26.75 76.5 L23.6 83.6 Q22.2 86.6 22.15 89.5 C22.05 92 22.2
  *  fallback face, its letters elsewhere, is never left part hidden. */
 const YOU_DONE = 1.74;
 
-export function Wordmark({ onArrived, className }: { onArrived?: () => void; className?: string }) {
+export function Wordmark({ onArrived, onWritten, className }: { onArrived?: () => void; onWritten?: () => void; className?: string }) {
   const tagline = useRef<HTMLParagraphElement>(null);
+  const youDone = useRef<SVGRectElement>(null);
+
+  // The end of the "you." is the end of .youDone's animation, whatever the
+  // dev panel's "you." written in has stretched it to. With reduced motion
+  // there is none (it is never written, only there); a page that hydrates
+  // late finds it finished; and one cancelled - its style changed under it -
+  // still counts as done, so the hero never waits for an end that will not
+  // come.
+  useEffect(() => {
+    const rect = youDone.current;
+    if (!rect || !onWritten) return;
+    let live = true;
+    const done = () => live && onWritten();
+    const [writing] = rect.getAnimations();
+    if (!writing || writing.playState === "finished") done();
+    else writing.finished.then(done, done);
+    return () => {
+      live = false;
+    };
+  }, [onWritten]);
 
   useEffect(() => {
     const line = tagline.current;
@@ -137,7 +161,7 @@ export function Wordmark({ onArrived, className }: { onArrived?: () => void; cla
                   style={{ "--at": `${s.at}s`, "--for": `${s.for}s` } as CSSProperties}
                 />
               ))}
-              <rect className={styles.youDone} x="15" y="55" width="188" height="90" fill="#fff" style={{ "--at": `${YOU_DONE}s` } as CSSProperties} />
+              <rect ref={youDone} className={styles.youDone} x="15" y="55" width="188" height="90" fill="#fff" style={{ "--at": `${YOU_DONE}s` } as CSSProperties} />
             </mask>
             {/* The line's shadow - 1px down, 12px of blur at the full 36px
                 size, the tagline's colour - drawn after the pen's mask, over

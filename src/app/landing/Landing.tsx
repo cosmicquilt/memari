@@ -222,6 +222,7 @@ export function Landing({
               layouts={HOME_KEYS.map((key) => ({
                 key,
                 title: STARTER_BY_KEY[key].title,
+                kind: STARTER_BY_KEY[key].kind,
               }))}
             />
           </section>

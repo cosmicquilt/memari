@@ -25,7 +25,6 @@ const RANGES: Record<string, [number, number]> = {
   seed: [0, 1e9],
   sideBlur: [0, 16],
   sideBlurWidth: [0, 40],
-  openSeconds: [1, 6],
   tornScale: [0.2, 1],
   tornShadow: [0, 2],
   vignetteTop: [0, 1],

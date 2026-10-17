@@ -54,11 +54,6 @@ export type BodyWallSettings = {
    *  the page's one toolbar. */
   sideBlur: number;
   sideBlurWidth: number;
-  /** How long the book takes to open in the hero, seconds: the film is
-   *  played faster (or slower) to take that long (2026-10-02: "make book
-   *  open duration to be shorter so speed it up add slider"). Its own
-   *  length is HERO_VIDEO.seconds. */
-  openSeconds: number;
   /** The cream's torn top edge (TornEdge.tsx): the drawn deckle, one of
    *  Flow's photographs of a torn sheet, or the straight edge it replaced
    *  (2026-10-06). A photograph's size is `tornScale` of its pixels; the

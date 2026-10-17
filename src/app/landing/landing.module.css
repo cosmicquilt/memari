@@ -656,7 +656,8 @@
   display: block;
 }
 
-/* The film's resting frame, its edges already faded in (VideoHero). */
+/* The resting frames, dotted and clean, their edges already faded in
+   (VideoHero). */
 .videoStill {
   position: absolute;
   inset: 0;
@@ -665,12 +666,6 @@
   display: block;
 }
 
-.videoFrame {
-  -webkit-mask: url(/landing/hero-video-mask.png) center / 100% 100% no-repeat;
-  mask: url(/landing/hero-video-mask.png) center / 100% 100% no-repeat;
-}
-
-.videoFrame,
 .videoDrawing {
   position: absolute;
   inset: 0;
@@ -683,6 +678,31 @@
 .videoDrawing {
   mix-blend-mode: multiply;
   pointer-events: none;
+}
+
+/* The hero's still layers, and the one picture they are flattened into
+   (video/heroBake.ts) - shown instead once drawn (.hero[data-baked]),
+   the layers then out of the compositor's way. Both boxes are the
+   containing block their children were laid out in before: the stage's,
+   the hero's. The flattened one is placed on the hero's box by VideoHero. */
+.liveLayers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bakedLayers {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.hero[data-baked] .liveLayers {
+  opacity: 0;
+}
+
+.hero[data-baked] .bakedLayers {
+  opacity: 1;
 }
 
 /* A loose sheet's drawings, placed on its box in the frame (VideoHero). */
@@ -827,15 +847,11 @@
    SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1933 x 1248 (50.34%,
    57.78%). */
 @media (max-aspect-ratio: 1/1) {
-  /* Upright: the film is narrower than the screen's height allows anyway,
-     its sides cropped; no extended desk, and the film's edges unmasked. */
+  /* Upright: the frame is narrower than the screen's height allows anyway,
+     its sides cropped; no extended desk. */
   .videoExtend,
   .sideBlur {
     display: none;
-  }
-  .videoFrame {
-    -webkit-mask: none;
-    mask: none;
   }
   .videoStage {
     width: calc(100vw * 3840 / 1840);
@@ -1000,6 +1016,72 @@
 
 .spreadCard {
   margin: 0;
+  display: grid;
+  gap: 14px;
+}
+
+/* The picture grows under the pointer and settles back off it (2026-10-15).
+   In, a real spring - response 0.5s, damping 0.7, the editor's own (memory:
+   editor design language), sampled into linear() with its 4.6% overshoot -
+   while the shadow deepens as it lifts; out, a short ease with no bounce.
+   The transition named on each state is the one that runs on the way TO it.
+   Only where there is a pointer to hover with, and never with reduced motion. */
+.spreadCard > :first-child {
+  transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.spreadCard > :first-child .spreadPages {
+  transition: box-shadow 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .spreadCard:hover > :first-child,
+  .spreadCard > :first-child:focus-visible {
+    transform: scale(1.035);
+    transition: transform 700ms linear(0, 0.056, 0.188, 0.351, 0.517, 0.666, 0.79, 0.886, 0.955, 1.001, 1.029, 1.042, 1.046, 1.043, 1.037, 1.03, 1.022, 1.015, 1.01, 1.005, 1.002, 1, 0.999, 0.998, 1);
+  }
+
+  .spreadCard:hover > :first-child .spreadPages,
+  .spreadCard > :first-child:focus-visible .spreadPages {
+    box-shadow:
+      0 2px 4px rgba(40, 30, 20, 0.1),
+      0 28px 56px rgba(40, 30, 20, 0.2);
+    transition: box-shadow 400ms cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spreadCard > :first-child,
+  .spreadCard > :first-child .spreadPages {
+    transition: none;
+  }
+
+  .spreadCard:hover > :first-child,
+  .spreadCard > :first-child:focus-visible {
+    transform: none;
+  }
+}
+
+/* A layout's name under its picture, and what kind it is. */
+.spreadName {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spreadName strong {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.spreadName span {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 /* The way on from a section to its own page. */
@@ -1012,6 +1094,51 @@
 .more a,
 .facts p a {
   color: var(--ink);
+}
+
+/* The gallery's way on, as a button: a quiet pill (the page's one filled
+   button is Build for Free), centred under the grid, its arrow nudging
+   toward where it goes. */
+.more:has(.moreButton) {
+  margin-top: 56px;
+  display: flex;
+  justify-content: center;
+}
+
+.more a.moreButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background 160ms ease-out, transform 160ms ease-out;
+}
+
+.more a.moreButton:hover {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.more a.moreButton:active {
+  transform: scale(0.97);
+}
+
+.more a.moreButton:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 3px;
+}
+
+.moreArrow {
+  transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.moreButton:hover .moreArrow {
+  transform: translateX(4px);
 }
 
 .spreadPages {

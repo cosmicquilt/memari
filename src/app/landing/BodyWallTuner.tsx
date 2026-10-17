@@ -29,7 +29,6 @@ const SLIDERS: Array<{ key: keyof BodyWallSettings; label: string; min: number; 
   { key: "ink", label: "Ink strength", min: 0.05, max: 1, step: 0.01, unit: "" },
   { key: "sideBlur", label: "Hero side blur, at the edge", min: 0, max: 16, step: 0.5, unit: "px" },
   { key: "sideBlurWidth", label: "Hero side blur, reaches in", min: 0, max: 40, step: 1, unit: "% of screen" },
-  { key: "openSeconds", label: "Book opening takes", min: 1, max: 6, step: 0.1, unit: "s" },
   { key: "youSeconds", label: "\"you.\" written in", min: 0.6, max: 6, step: 0.1, unit: "s" },
   { key: "vignetteTop", label: "Hero vignette, top", min: 0, max: 1, step: 0.01, unit: "" },
   { key: "vignetteTopReach", label: "Top reaches down", min: 0, max: 60, step: 1, unit: "% of hero" },

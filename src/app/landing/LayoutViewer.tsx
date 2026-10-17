@@ -136,6 +136,9 @@ const ASPECT = (2175 * 2 + 1) / 3075;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 const PAD = 28;
+/** How long after the last pinch event the zoom is committed (the editor's
+ *  PINCH_SETTLE_MS, memory: pinch zoom). */
+const PINCH_SETTLE_MS = 150;
 
 function Popup({
   layoutKey,
@@ -329,71 +332,169 @@ const KIND_WORD = {
   pages: "Pages",
 } as const;
 
-/** The spread, fitted to its space and zoomable. */
+/** The spread, fitted to its space and zoomable.
+ *
+ * A PINCH IS A GPU SCALE UNTIL IT STOPS (2026-10-15: "touchpad pinch zooming
+ * is very jittery ... it doesn't smoothly zoom into where my mouse is"). It
+ * used to set React's zoom on every event, redrawing both pages at a new
+ * size each time, and corrected the scroll a frame later - after the next
+ * event had already read the old one - from a left-aligned picture of a
+ * spread that is centred. Now, as the editor does (memory: pinch zoom):
+ * while the pinch lasts, only a transform on the spread; PINCH_SETTLE_MS
+ * after its last event, one commit that redraws it sharp and sets the scroll
+ * in the same frame. Both ask `plan` where the spread will sit - centred on
+ * an axis it fits, else scrolled so the point under the pointer stays put,
+ * clamped as the browser will clamp - so the preview lands where the commit
+ * does. The point is fixed where the pinch starts. */
 function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
   const stage = useRef<HTMLDivElement>(null);
+  const layer = useRef<HTMLDivElement>(null);
+  const label = useRef<HTMLButtonElement>(null);
   const [fit, setFit] = useState(0);
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
+  const fitRef = useRef(0);
 
   // The width that shows both pages whole.
   useLayoutEffect(() => {
     const el = stage.current;
     if (!el) return;
-    const measure = () =>
-      setFit(
-        Math.max(
-          120,
-          Math.min(
-            el.clientWidth - PAD * 2,
-            (el.clientHeight - PAD * 2) * ASPECT,
-          ),
-        ),
-      );
+    const measure = () => {
+      const next = Math.max(120, Math.min(el.clientWidth - PAD * 2, (el.clientHeight - PAD * 2) * ASPECT));
+      fitRef.current = next;
+      setFit(next);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  /** Zoom to `next`, keeping the point under (px, py) - in the stage's own
-   *  box - where it is. */
-  const zoomTo = useCallback((next: number, px?: number, py?: number) => {
-    const el = stage.current;
-    if (!el) return;
-    const prev = zoomRef.current;
-    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-    if (z === prev) return;
-    const x = px ?? el.clientWidth / 2;
-    const y = py ?? el.clientHeight / 2;
-    const cx = el.scrollLeft + x - PAD;
-    const cy = el.scrollTop + y - PAD;
-    zoomRef.current = z;
-    setZoom(z);
-    requestAnimationFrame(() => {
-      el.scrollLeft = (cx * z) / prev + PAD - x;
-      el.scrollTop = (cy * z) / prev + PAD - y;
-    });
+  /** Where the spread sits at zoom `z` with the point at fraction (u, v) of
+   *  it under (mx, my), in the stage's own box: its left and top there, and
+   *  the scroll that puts it so. */
+  const plan = useCallback((z: number, u: number, v: number, mx: number, my: number) => {
+    const el = stage.current!;
+    const width = fitRef.current * z;
+    const height = width / ASPECT;
+    const axis = (size: number, view: number, frac: number, at: number) => {
+      // The canvas centres a spread that fits, inside its padding.
+      const start = size + PAD * 2 <= view ? (view - size) / 2 : PAD;
+      const room = Math.max(0, size + PAD * 2 - view);
+      const scroll = Math.min(room, Math.max(0, start + frac * size - at));
+      return { scroll, at: start - scroll };
+    };
+    const x = axis(width, el.clientWidth, u, mx);
+    const y = axis(height, el.clientHeight, v, my);
+    return { scrollLeft: x.scroll, scrollTop: y.scroll, left: x.at, top: y.at };
   }, []);
 
+  /** Where a zoom anchors: the point under (clientX, clientY), as a fraction
+   *  of the spread, and that point in the stage's box. */
+  const anchorAt = useCallback((clientX: number, clientY: number) => {
+    const box = stage.current!.getBoundingClientRect();
+    const r = layer.current!.getBoundingClientRect();
+    return {
+      u: r.width ? (clientX - r.left) / r.width : 0.5,
+      v: r.height ? (clientY - r.top) / r.height : 0.5,
+      mx: clientX - box.left,
+      my: clientY - box.top,
+      left0: r.left - box.left,
+      top0: r.top - box.top,
+    };
+  }, []);
+
+  type Anchor = ReturnType<typeof anchorAt>;
+  const committing = useRef<Anchor | null>(null);
+  const pinching = useRef<{ anchor: Anchor; from: number; target: number; timer: number } | null>(null);
+
+  const clamp = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
+  /** Commit `next` at `anchor`: React redraws, the layout effect scrolls. */
+  const commit = useCallback((next: number, anchor: Anchor) => {
+    const z = clamp(next);
+    committing.current = anchor;
+    if (z === zoomRef.current) {
+      // Nothing to redraw; just put the picture back as it was.
+      if (layer.current) layer.current.style.transform = "";
+      committing.current = null;
+      return;
+    }
+    zoomRef.current = z;
+    setZoom(z);
+  }, []);
+
+  /** A step (the buttons, a double click): straight to the commit. */
+  const zoomTo = useCallback(
+    (next: number, clientX?: number, clientY?: number) => {
+      const el = stage.current;
+      if (!el || !layer.current) return;
+      const box = el.getBoundingClientRect();
+      commit(next, anchorAt(clientX ?? box.left + el.clientWidth / 2, clientY ?? box.top + el.clientHeight / 2));
+    },
+    [anchorAt, commit]
+  );
+
+  /** A pinch, frame by frame: a transform toward where the commit will put
+   *  the spread, the label updated, and the commit once it settles. */
+  const pinchTo = useCallback(
+    (next: number, clientX: number, clientY: number, settleNow = false) => {
+      if (!layer.current) return;
+      let p = pinching.current;
+      if (!p) {
+        p = { anchor: anchorAt(clientX, clientY), from: zoomRef.current, target: zoomRef.current, timer: 0 };
+        pinching.current = p;
+        layer.current.style.willChange = "transform";
+      }
+      p.target = clamp(next);
+      const { anchor } = p;
+      const at = plan(p.target, anchor.u, anchor.v, anchor.mx, anchor.my);
+      const scale = p.target / p.from;
+      layer.current.style.transform = `translate(${at.left - anchor.left0}px, ${at.top - anchor.top0}px) scale(${scale})`;
+      if (label.current) label.current.textContent = `${Math.round(p.target * 100)}%`;
+      window.clearTimeout(p.timer);
+      const settle = () => {
+        const done = pinching.current;
+        if (!done) return;
+        pinching.current = null;
+        commit(done.target, done.anchor);
+      };
+      if (settleNow) settle();
+      else p.timer = window.setTimeout(settle, PINCH_SETTLE_MS);
+    },
+    [anchorAt, commit, plan]
+  );
+
+  // The commit's frame: the transform off and the scroll set, before paint.
+  useLayoutEffect(() => {
+    const el = stage.current;
+    const a = committing.current;
+    if (layer.current) {
+      layer.current.style.transform = "";
+      layer.current.style.willChange = "";
+    }
+    if (!el || !a) return;
+    committing.current = null;
+    const at = plan(zoom, a.u, a.v, a.mx, a.my);
+    el.scrollLeft = at.scrollLeft;
+    el.scrollTop = at.scrollTop;
+  }, [zoom, plan]);
+
   // Ctrl + wheel, and a trackpad's pinch (which arrives as one): zoom, not
-  // the page's own zoom.
+  // the page's own zoom. A mouse wheel's big steps are evened out.
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      const box = el.getBoundingClientRect();
-      zoomTo(
-        zoomRef.current * Math.exp(-e.deltaY * 0.01),
-        e.clientX - box.left,
-        e.clientY - box.top,
-      );
+      const delta = Math.max(-40, Math.min(40, e.deltaY));
+      const from = pinching.current?.target ?? zoomRef.current;
+      pinchTo(from * Math.exp(-delta * 0.01), e.clientX, e.clientY);
     };
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
-  }, [zoomTo]);
+  }, [pinchTo]);
 
   // Drag to look around; two fingers to pinch.
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -407,12 +508,7 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
         className={css.stage}
         data-zoomed={zoom > 1 || undefined}
         onDoubleClick={(e) => {
-          const box = e.currentTarget.getBoundingClientRect();
-          zoomTo(
-            zoomRef.current > 1 ? 1 : 2.5,
-            e.clientX - box.left,
-            e.clientY - box.top,
-          );
+          zoomTo(zoomRef.current > 1 ? 1 : 2.5, e.clientX, e.clientY);
         }}
         onPointerDown={(e) => {
           pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -434,12 +530,11 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
           const el = e.currentTarget;
           if (pinch.current && pointers.current.size === 2) {
             const [a, b] = [...pointers.current.values()];
-            const box = el.getBoundingClientRect();
-            zoomTo(
+            pinchTo(
               pinch.current.zoom *
                 (Math.hypot(a.x - b.x, a.y - b.y) / pinch.current.distance),
-              (a.x + b.x) / 2 - box.left,
-              (a.y + b.y) / 2 - box.top,
+              (a.x + b.x) / 2,
+              (a.y + b.y) / 2,
             );
             return;
           }
@@ -454,15 +549,22 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
         }}
         onPointerUp={(e) => {
           pointers.current.delete(e.pointerId);
-          if (pointers.current.size < 2) pinch.current = null;
+          if (pointers.current.size < 2 && pinch.current) {
+            pinch.current = null;
+            // Fingers off: commit now rather than after the settle.
+            const p = pinching.current;
+            if (p) pinchTo(p.target, 0, 0, true);
+          }
         }}
         onPointerCancel={(e) => {
           pointers.current.delete(e.pointerId);
           pinch.current = null;
+          const p = pinching.current;
+          if (p) pinchTo(p.target, 0, 0, true);
         }}
       >
         <div className={css.canvas} style={{ padding: PAD }}>
-          <div style={{ width: spread, flex: "none" }}>
+          <div ref={layer} data-zoom-layer="" style={{ width: spread, flex: "none", transformOrigin: "0 0" }}>
             {fit > 0 && <SpreadPages spread={detail?.spread ?? null} />}
           </div>
         </div>
@@ -477,6 +579,7 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
           −
         </button>
         <button
+          ref={label}
           type="button"
           onClick={() => zoomTo(1)}
           className={css.fitButton}

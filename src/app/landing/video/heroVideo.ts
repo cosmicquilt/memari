@@ -1,6 +1,8 @@
 // The Veo clip of the journal opening (Andrew, 2026-09-23), and where the
 // journal's pages lie in its last frame - the frame the layouts are drawn
-// onto once it has stopped.
+// onto. Since 2026-10-15 the hero shows only its resting frames, the clip
+// itself no longer played (VideoHero.tsx); what follows is how they were
+// made.
 //
 // The take is "new 4" (handoff/veo/output/new): Veo's 720p output, upscaled
 // to 4K with SeedVR2 and given three FILM in-between frames per pair of
@@ -19,7 +21,9 @@
 // - on the frames the layouts are drawn over, the journal's own dot grid
 //   taken off its pages ("once you start overlaying ... cover the
 //   underlying dot grid"), keeping the paper's light and the leaf shadows -
-//   so the layouts' grid is the only one.
+//   so the layouts' grid is the only one. The hero opens on a frame from
+//   before that (`dots`), the book already still, and fades to the clean
+//   one as the first layout comes.
 // Made in the browser with WebCodecs - the tool, and the call used, are in
 // handoff/veo/tools/ (gitignored).
 //
@@ -42,25 +46,20 @@
 // first dips, scanning in from the cover's dark board.
 
 export const HERO_VIDEO = {
-  src: "/landing/hero-open.mp4",
-  src4k: "/landing/hero-open-4k.mp4",
-  /** Screens with the device pixels for the 4K film: about 2,900 across. */
+  /** Screens with the device pixels for the 4K frames: about 2,900 across. */
   media4k: "(min-width: 1450px) and (min-resolution: 2dppx), (min-width: 1930px) and (min-resolution: 1.5dppx), (min-width: 2900px)",
-  /** Shown while the clip loads, and where it begins. */
-  first: "/landing/hero-open-first.jpg",
-  /** The resting frame: shown instead of the clip for reduced motion, and
-   *  in its place once it has ended (VideoHero) - with last4k where the 4K
-   *  film plays (media4k), the frame decoded from it. */
+  /** The book at rest with the journal's own dot grid on its pages, as the
+   *  hero opens: frame 107 of the eased 4K file (still from 104 on), the
+   *  last before the dots were cleaned off - 1080p, and 4K for media4k.
+   *  Decoded from public/landing/hero-open-4k.mp4 (scripts/_grab-dots-frame.mts). */
+  dots: "/landing/hero-open-dots.jpg",
+  dots4k: "/landing/hero-open-dots-4k.webp",
+  /** The same, its pages clean: what the layouts are drawn onto. The clip's
+   *  last frame, 111 of 111. */
   last: "/landing/hero-open-last.jpg",
   last4k: "/landing/hero-open-last-4k.webp",
   width: 3840,
   height: 2160,
-  /** Its length: 111 frames at 24 fps. */
-  seconds: 111 / 24,
-  /** When the layouts appear, in the file's seconds: as it comes to rest
-   *  ("after it is open a second or two of it then start overlaying the
-   *  pages"). Frame 108 of 111, the first with the dot grid cleaned off. */
-  drawFrom: 108 / 24,
 };
 
 export type Point = readonly [x: number, y: number];

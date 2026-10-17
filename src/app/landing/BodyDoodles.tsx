@@ -202,7 +202,6 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       const wall: Partial<ReturnType<typeof bodyWallSettings>> = { ...bodyWallSettings() };
       delete wall.sideBlur;
       delete wall.sideBlurWidth;
-      delete wall.openSeconds;
       return JSON.stringify(wall);
     };
     let packedFor = wallKey();
