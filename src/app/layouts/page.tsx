@@ -163,6 +163,17 @@ export default function LayoutsPage() {
             the editor, from hours and habits to a year in pixels.
           </p>
           <ModuleCards modules={STARTER_MODULES} />
+          {/* The practices behind them, each with a page of its own
+              (2026-10-19: "make the /modules part of the site accessable
+              from the layouts section"). */}
+          <p className={styles.more}>
+            <Link href="/modules" className={styles.moreButton}>
+              Where the modules come from
+              <span aria-hidden="true" className={styles.moreArrow}>
+                &rarr;
+              </span>
+            </Link>
+          </p>
         </section>
       </LayoutViewer>
 
