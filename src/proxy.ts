@@ -16,8 +16,11 @@ import { PREVIEW_COOKIE, hasPreview } from "@/lib/comingSoonPass";
  * that lets that browser see the whole site. The password is the
  * environment's, COMING_SOON_PASSWORD in Vercel - never the code's, which is
  * public - and with none set nobody gets past. See src/lib/comingSoonPass.ts.
+ *
+ * OFF since 2026-10-19 ("reopen memari.studio again no coming soon screen"):
+ * the site is open; the page and the password stay for next time.
  */
-const COMING_SOON = true;
+const COMING_SOON = false;
 const OFF_HOSTS = new Set(["memari.studio", "www.memari.studio"]);
 const STILL_SERVED = /^\/(?:api|trpc|coming-soon|privacy|terms|legal|renewal)(?:\/|$)/;
 
