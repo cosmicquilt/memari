@@ -100,7 +100,9 @@ let failed = false;
     console.log("Stripe: skipped - STRIPE_SECRET_KEY is not set.");
   } else {
     try {
-      const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live") ? "live" : "test";
+      // A live key is sk_live_ (full access) or rk_live_ (restricted - the
+      // "full access except sensitive operations" kind, 2026-10-19).
+      const live = /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "") ? "live" : "test";
       const endpoints = await stripe().webhookEndpoints.list({ limit: 100 });
       const existing = endpoints.data.find((endpoint) => endpoint.url === url);
       if (existing) {

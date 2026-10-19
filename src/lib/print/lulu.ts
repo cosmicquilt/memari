@@ -26,7 +26,11 @@ export const LULU_SANDBOX = "https://api.sandbox.lulu.com";
 function config() {
   const key = process.env.LULU_CLIENT_KEY;
   const secret = process.env.LULU_CLIENT_SECRET;
-  const base = (process.env.LULU_API_BASE || LULU_SANDBOX).replace(/\/+$/, "");
+  // https only: Lulu redirects http to https, and a redirected POST arrives
+  // as a GET, which its token address refuses with 405 - read as "Lulu
+  // refused the API keys" when the keys were right (2026-10-19, an http://
+  // LULU_API_BASE).
+  const base = (process.env.LULU_API_BASE || LULU_SANDBOX).trim().replace(/\/+$/, "").replace(/^http:\/\//i, "https://");
   return { key, secret, base };
 }
 

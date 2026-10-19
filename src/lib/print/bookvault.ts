@@ -484,9 +484,19 @@ export const BOOKVAULT_TOPICS = ["ORDER_CREATED", "ORDER_ACKNOWLEDGED", "ORDER_S
 
 export type BookVaultWebhook = { id?: number; url?: string; topic?: string; status?: string };
 
+/** Every webhook, a page at a time: BookVault allows at most 10 a page,
+ *  and refuses more (400, "WebhooksPerPage amount is out of range" - asked
+ *  for 100 until 2026-10-19). */
 export async function listBookVaultWebhooks(): Promise<BookVaultWebhook[]> {
-  const json = await call<{ webhooks?: BookVaultWebhook[] }>("GET", "/v4/webhooks", { query: { webhooksPerPage: "100", pageNumber: "1" } });
-  return json.webhooks ?? [];
+  const PER_PAGE = 10;
+  const all: BookVaultWebhook[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const json = await call<{ webhooks?: BookVaultWebhook[] }>("GET", "/v4/webhooks", { query: { webhooksPerPage: String(PER_PAGE), pageNumber: String(page) } });
+    const batch = json.webhooks ?? [];
+    all.push(...batch);
+    if (batch.length < PER_PAGE) break;
+  }
+  return all;
 }
 
 export async function createBookVaultWebhook(url: string, topic: string): Promise<BookVaultWebhook> {
