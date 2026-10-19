@@ -24,7 +24,7 @@ import { renderModuleInstance } from "@/lib/renderModuleInstance";
 import { flatten } from "@/lib/proofSvg";
 import { toPreviewMarks, type PreviewMark } from "@/lib/previewMarks";
 import { gridCellToPixels, type PageGrid } from "@/lib/grid";
-import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDefaults } from "@/lib/moduleRegistry";
+import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDefaults, withDaysUnder } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily } from "@/lib/theme";
 import { MONTH_GRID_ROW_SPAN, MONTH_TITLE_ROW_SPAN, WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
@@ -489,10 +489,22 @@ function placementsOf(def: HeroSpread, when: When): Placed[] {
   // Every module that prints weekdays starts them on the spread's week
   // start, as in a journal (the registry's weekStart) - a habit tracker on a
   // Monday week printed S M T W T F S until 2026-10-06.
+  // And a strip a day names the days it sits under, as in a journal (the
+  // registry's underDays, renderContext.ts's daysUnder): the left page's
+  // hours hold the week's first three days, the right page's the last four,
+  // and the sidebar is under none. Without it a strip carried on under the
+  // right page's days printed MON to THU (2026-10-19).
+  const daysUnder = (p: { page: 0 | 1; columnStart: number; columnSpan: number }): Array<number | null> =>
+    Array.from({ length: Math.max(1, Math.round(p.columnSpan / 6)) }, (_, u) => {
+      const column = p.columnStart + u * 6;
+      const day = p.page === 0 ? (column >= 6 ? (column - 6) / 6 : null) : 3 + column / 6;
+      return day === null || day > 6 ? null : (weekStartDay + day) % 7;
+    });
   for (const p of modules) {
     const props = { ...moduleSchemaDefaults(p.slug), ...(p.props ?? {}) };
     const rotate = moduleDefinition(p.slug)?.weekStart;
-    placed.push({ ...p, locked: false, props: rotate ? rotate(props, weekStartDay) : props });
+    const turned = rotate ? rotate(props, weekStartDay) : props;
+    placed.push({ ...p, locked: false, props: layout.kind === "week" ? (withDaysUnder(p.slug, turned, daysUnder(p)) as Record<string, unknown>) : turned });
   }
   return placed;
 }

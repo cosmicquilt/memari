@@ -11,6 +11,7 @@ import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { PLANNER_SPREADS } from "./plannerSpreads";
 import { ALL_PLANNERS, PLANNERS, partsOf } from "./plannerTemplates";
 import { STARTER_BY_KEY } from "./starterLayouts";
+import { CATALOGUE } from "@/lib/moduleCatalogue";
 
 let failures = 0;
 function check(name: string, condition: boolean, detail?: string) {
@@ -40,6 +41,38 @@ check("every person's week is in the hero", PEOPLE.every((p) => HERO_BY_KEY[p.ke
 /** Whether the spread's spine draws calendar events: hours with times. */
 const drawsEvents = (s: HeroSpread) => (s.layout.kind === "week" || s.layout.kind === "day") && s.layout.hours?.intervalMode !== "off";
 const dayCount = (s: HeroSpread) => (s.layout.kind === "week" ? 7 : s.layout.kind === "day" ? 2 : 0);
+
+// A STRIP A DAY RUNS THE WHOLE WEEK (2026-10-19: "it doesn't really make
+// sense to only have the icon strips be on the left page like the only have
+// to drink water some days of the week"). An icon strip with no group count
+// of its own draws a group per day it sits under, so under one page's days
+// it stops at Wednesday or starts at Thursday, and in the sidebar it is
+// under no day at all. Such a strip goes on both pages, covering all seven.
+const PER_DAY_STRIPS = new Set(
+  (CATALOGUE as Array<{ slug: string; primitive?: string; props?: Record<string, unknown> }>)
+    .filter((m) => m.primitive === "icon-strip" && !m.props?.groups)
+    .map((m) => m.slug),
+);
+for (const spread of [...HERO_SPREADS, BASE_SPREAD, ...PLANNER_SPREADS]) {
+  const layout = spread.layout;
+  if (layout.kind !== "week") continue;
+  const perDay = (slug: string, props?: Record<string, unknown>) => (PER_DAY_STRIPS.has(slug) || slug === "icon-strip") && !props?.groups;
+  for (const [slug, , props] of layout.sidebar) {
+    check(`${spread.key}: ${slug} is a strip a day, not in the sidebar`, !perDay(slug, props));
+  }
+  const days = new Map<string, Set<number>>();
+  for (const [page, slots] of [[0, layout.belowLeft], [1, layout.belowRight]] as const) {
+    for (const slot of slots) {
+      if (!perDay(slot.slug, slot.props)) continue;
+      const first = page === 0 ? Math.round((slot.columnStart - 6) / 6) : 3 + Math.round(slot.columnStart / 6);
+      const name = `${slot.slug} ${String(slot.props?.heading ?? "")}`.trim();
+      const under = days.get(name) ?? new Set<number>();
+      for (let d = 0; d < Math.max(1, Math.round(slot.columnSpan / 6)); d++) under.add(first + d);
+      days.set(name, under);
+    }
+  }
+  for (const [name, under] of days) check(`${spread.key}: ${name} runs the whole week`, under.size === 7, `under ${under.size} of 7 days`);
+}
 
 // The base week, on the hero's loose sheets (heroExtras.ts): checked as
 // strictly as the journal's spreads, and not among them.
@@ -180,6 +213,32 @@ check("the base week is undated", baseDates.length === 0 && !baseRange, `${baseD
 // (a Tuesday; the student's weeks start on Monday).
 const firstTitle = spreads[0].pages[0].marks.find((m) => m.k === "t" && /-/.test(m.t));
 check("the first spread is this week", firstTitle?.k === "t" && firstTitle.t === "SEP 21 - SEP 27", firstTitle?.k === "t" ? firstTitle.t : "no title");
+
+// The strip carried on under the right page's days names those days: the
+// day names a strip prints (MON, TUE...) are the left page's first three
+// and the right page's last four, never MON to THU again (2026-10-19).
+const SHORT_DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+for (const key of ["student", "nurse", "adhd", "chronic-illness"]) {
+  const spread = spreads.find((s) => s.key === key);
+  const monday = PEOPLE.find((p) => p.key === key)?.layout.weekStartsMonday ?? false;
+  const week = Array.from({ length: 7 }, (_, d) => SHORT_DAYS[(d + (monday ? 1 : 0)) % 7]);
+  // Only what the strips print: a day chart beside one names all seven.
+  const named = (page: 0 | 1) => {
+    const strips = (spread?.pages[page].regions ?? []).flatMap((r) => (r.kind === "box" && r.slug && /water|spoon|focus|pill|yoga|starter|plants|icon-strip/.test(r.slug) ? [r.box] : []));
+    return (spread?.pages[page].marks ?? []).flatMap((m) =>
+      m.k === "t" && SHORT_DAYS.includes(m.t.trim().toUpperCase()) && // the names sit just above the strip's box
+        strips.some(([x, y, w, h]) => m.x >= x - 1 && m.x <= x + w && m.y >= y - 24 && m.y <= y + h)
+        ? [m.t.trim().toUpperCase()]
+        : [],
+    );
+  };
+  const left = named(0);
+  const right = named(1);
+  check(`${key}: the left page's strips name only its three days`, left.every((d) => week.slice(0, 3).includes(d)), left.join(" "));
+  check(`${key}: the right page's strips name only its four days`, right.every((d) => week.slice(3).includes(d)), right.join(" "));
+  // Not passed by printing nothing: the strips that name their days do.
+  if (key !== "adhd") check(`${key}: its strips name their days`, left.length > 0 && right.length > 0, `${left.length} and ${right.length}`);
+}
 
 if (failures > 0) {
   console.error(`${failures} landing spread check(s) failed.`);

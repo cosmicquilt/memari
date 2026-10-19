@@ -998,7 +998,12 @@ export function planSpread(spread: LandingSpread, seed: number): InkItem[] {
     return page === 0 ? count : Math.min(count, 1);
   }
 
-  function colourIcons(page: 0 | 1, region: Extract<Region, { kind: "box" }>, counts: number[] | undefined) {
+  /** A strip's counts are the week's, a day each from its first day: the
+   *  left page's strip starts there, and the right page's (the same strip,
+   *  carried on under the rest of the week) at its fourth day. A day past
+   *  the counts given is filled the way a strip with none is: lived or not. */
+  function colourIcons(page: 0 | 1, region: Extract<Region, { kind: "box" }>, week: number[] | undefined) {
+    const counts = week?.slice(page === 0 ? 0 : 3);
     const what = `${region.slug} ${region.heading}`;
     const colour = /water|droplet/i.test(what) ? "#4a8fd8" : /focus|flame/i.test(what) ? "#ee8a2a" : /plant|leaf/i.test(what) ? "#4ba35a" : hand.accent.color;
     const tipped = /water|droplet|focus|flame/i.test(what);

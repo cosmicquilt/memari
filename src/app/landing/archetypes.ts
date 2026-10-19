@@ -230,14 +230,21 @@ export const PEOPLE: Person[] = [
         ["sleep-chart", 8],
         ["brain-dump", 10],
       ],
+      // Focus and water a strip a day, so on both pages in the same rows:
+      // under only the left page's days they stopped on Wednesday
+      // (2026-10-19: "it doesn't really make sense to only have the icon
+      // strips be on the left page like the only have to drink water some
+      // days of the week").
       belowLeft: [
         at("assignment-tracker", 6, BELOW_ROW, 18, 13),
         at("focus-blocks", 6, BELOW_ROW + 13, 18, 1),
         at("water-week", 6, BELOW_ROW + 14, 18, 1),
       ],
       belowRight: [
-        at("habit-tracker", 0, BELOW_ROW, 12, 15, { heading: "This Week" }),
-        at("labeled-box", 12, BELOW_ROW, 12, 15, box("After Midterms", true)),
+        at("habit-tracker", 0, BELOW_ROW, 12, 13, { heading: "This Week" }),
+        at("labeled-box", 12, BELOW_ROW, 12, 13, box("After Midterms", true)),
+        at("focus-blocks", 0, BELOW_ROW + 13, 24, 1),
+        at("water-week", 0, BELOW_ROW + 14, 24, 1),
       ],
     },
     hand: {
@@ -284,7 +291,7 @@ export const PEOPLE: Person[] = [
       ],
     },
     trackers: { "this week": ["8h sleep", "climb", "call home", "a vegetable", "no phone in bed", "water"] },
-    strips: { "focus blocks": [6, 8, 3], water: [5, 3, 2] },
+    strips: { "focus blocks": [6, 8, 3, 4], water: [5, 3, 2, 6] },
     // 1am, 2am, 12am, 2am: midterms.
     charts: { bedtime: [1, 0, 2, 0] },
   },
@@ -376,15 +383,17 @@ export const PEOPLE: Person[] = [
       weekStartsMonday: true,
       sidebar: [
         ["sleep-chart", 8],
-        ["water-week", 1],
         ["self-care-checklist", 11],
-        ["labeled-box", 13, box("Shift Bag", true)],
+        ["labeled-box", 14, box("Shift Bag", true)],
       ],
-      belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 6), at("sleep-log", 6, BELOW_ROW + 6, 18, 9)],
+      // Water a day at a time, under every day: in the sidebar it was one
+      // run of drops under no day at all (2026-10-19).
+      belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 6), at("sleep-log", 6, BELOW_ROW + 6, 18, 8), at("water-week", 6, BELOW_ROW + 14, 18, 1)],
       belowRight: [
-        at("labeled-box", 0, BELOW_ROW, 12, 15, box("After Shift", true)),
+        at("labeled-box", 0, BELOW_ROW, 12, 14, box("After Shift", true)),
         at("rest-day-marker", 12, BELOW_ROW, 12, 5),
-        at("todo-checklist", 12, BELOW_ROW + 5, 12, 10, { dayCount: 2 }),
+        at("todo-checklist", 12, BELOW_ROW + 5, 12, 9, { dayCount: 2 }),
+        at("water-week", 0, BELOW_ROW + 14, 24, 1),
       ],
     },
     hand: {
@@ -420,7 +429,7 @@ export const PEOPLE: Person[] = [
       "after shift": ["survive night 3 of 3", "shower > food > bed", "blackout curtains", "text mom I'm alive", "1 episode max"],
       "todo-checklist": ["renew BLS cert", "pay rent", "return Asha's dish", "book dentist", "vet for Mochi", "new shoes"],
     },
-    strips: { water: [6] },
+    strips: { water: [6, 5, 7, 4] },
     // Monday, the one night home: 11pm. Then bed at 8am - off the chart.
     charts: { bedtime: [3] },
     tables: {
@@ -735,9 +744,11 @@ export const PEOPLE: Person[] = [
         ["brain-dump", 16],
         ["done-list", 12],
       ],
+      // Focus blocks over every day, on both pages (2026-10-19).
       belowLeft: [at("focus-blocks", 6, BELOW_ROW, 18, 1), at("todo-checklist", 6, BELOW_ROW + 1, 18, 14, { dayCount: 3 })],
       belowRight: [
-        at("project-tracker", 0, BELOW_ROW, 24, 7),
+        at("focus-blocks", 0, BELOW_ROW, 24, 1),
+        at("project-tracker", 0, BELOW_ROW + 1, 24, 6),
         at("waiting-on", 0, BELOW_ROW + 7, 12, 8),
         at("dopamine-menu", 12, BELOW_ROW + 7, 12, 8),
       ],
@@ -788,7 +799,7 @@ export const PEOPLE: Person[] = [
         ["landlord", "fix sink", "tue"],
       ],
     },
-    strips: { "focus blocks": [2, 7, 0] },
+    strips: { "focus blocks": [2, 7, 0, 3] },
   },
   {
     key: "philosophy",
@@ -871,12 +882,18 @@ export const PEOPLE: Person[] = [
         ["labeled-box", 12, box("Pacing Plan", true)],
         ["labeled-box", 13, box("Small Wins", true)],
       ],
-      belowLeft: [at("medication-log", 6, BELOW_ROW, 18, 6), at("symptom-tracker", 6, BELOW_ROW + 6, 18, 9)],
+      // Spoons a day, along the bottom of both pages: they sat under
+      // Thursday and Friday only (2026-10-19).
+      belowLeft: [
+        at("medication-log", 6, BELOW_ROW, 18, 6),
+        at("symptom-tracker", 6, BELOW_ROW + 6, 18, 7),
+        at("spoon-count", 6, BELOW_ROW + 13, 18, 2),
+      ],
       belowRight: [
         at("energy-chart", 0, BELOW_ROW, 12, 8),
-        at("spoon-count", 0, BELOW_ROW + 8, 12, 2),
-        at("labeled-box", 0, BELOW_ROW + 10, 12, 5, box("Appointments", true)),
-        at("labeled-box", 12, BELOW_ROW, 12, 15, box("Rest Menu", true)),
+        at("labeled-box", 0, BELOW_ROW + 8, 12, 5, box("Appointments", true)),
+        at("labeled-box", 12, BELOW_ROW, 12, 13, box("Rest Menu", true)),
+        at("spoon-count", 0, BELOW_ROW + 13, 24, 2),
       ],
     },
     hand: {
@@ -916,7 +933,7 @@ export const PEOPLE: Person[] = [
     // Energy, pain, mood, sleep, out of five.
     ratings: { today: [2, 4, 2, 3] },
     charts: { energy: [3, 2, 4, 2] },
-    strips: { spoons: [9, 7] },
+    strips: { spoons: [9, 7, 10, 8] },
   },
   {
     key: "faith-christian",
