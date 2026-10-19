@@ -37,8 +37,9 @@ const BASIC_KINDS: Array<[string, string[]]> = [
   ["Calendars & grids", ["mini-month", "axis-matrix"]],
 ];
 
-/** Philosophy & faith, by tradition. */
-const FAITH_TRADITIONS: Array<[string, string[]]> = [
+/** Philosophy & faith, by tradition. (memari.studio/modules files its
+ *  practices by these too - moduleGuides.ts, guideSection.) */
+export const FAITH_TRADITIONS: Array<[string, string[]]> = [
   ["Stoic", ["stoic-morning-page", "stoic-evening-review", "dichotomy-of-control", "memento-mori", "negative-visualisation"]],
   ["Taoist", ["tao-daily-verse", "wu-wei-reflection"]],
   ["Buddhist & meditation", ["metta-practice", "meditation-minutes"]],

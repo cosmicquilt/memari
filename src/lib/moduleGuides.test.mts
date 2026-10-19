@@ -15,10 +15,10 @@
 //
 // Run with: npx tsx src/lib/moduleGuides.test.mts
 
-import { PALETTE_MODULES, moduleDefinition } from "./moduleRegistry";
+import { PALETTE_MODULES } from "./moduleRegistry";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { GUIDE_SECTIONS, MODULE_GUIDES, guideProse, wikiRuns, type GuidePhoto } from "./moduleGuides";
+import { GUIDE_SECTIONS, MODULE_GUIDES, guideProse, guideSection, guideSections, wikiRuns, type GuidePhoto } from "./moduleGuides";
 import { moduleDrawingSvg } from "./moduleGuideDrawing";
 import { BANNED_WORDS, BRITISH_SPELLINGS } from "./plainWords";
 
@@ -92,7 +92,14 @@ for (const guide of MODULE_GUIDES) {
 }
 
 // The index's sections: every group that has pages has its line and stamp.
-const categories = new Set<string>(MODULE_GUIDES.map((guide) => moduleDefinition(guide.slug)?.category ?? "Other"));
+const categories = new Set<string>(MODULE_GUIDES.map((guide) => guideSection(guide.slug)));
+// Philosophy and faith apart (2026-10-19): the Stoic and Taoist practices
+// under Philosophy, none of the traditions' under it.
+for (const guide of MODULE_GUIDES) {
+  if (/^A (Stoic|Taoist) practice$/.test(guide.kicker)) check(guideSection(guide.slug) === "Philosophy", `${guide.slug}: a philosopher's practice not under Philosophy`);
+  if (/^A (Christian|Jewish|Muslim|Buddhist) practice$/.test(guide.kicker)) check(guideSection(guide.slug) === "Faith", `${guide.slug}: a tradition's practice not under Faith`);
+}
+check(guideSections().reduce((n, [, guides]) => n + guides.length, 0) === MODULE_GUIDES.length, "the index leaves a practice out");
 for (const category of categories) {
   const section = GUIDE_SECTIONS[category];
   check(!!section, `the index section "${category}" has no line or stamp`);

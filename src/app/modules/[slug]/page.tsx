@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/app/landing/SitePage";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
-import { GUIDE_BY_SLUG, MODULE_GUIDES, wikiRuns } from "@/lib/moduleGuides";
+import { GUIDE_BY_SLUG, MODULE_GUIDES, guideSection, guideSections, wikiRuns } from "@/lib/moduleGuides";
 import { moduleDrawingSvg } from "@/lib/moduleGuideDrawing";
 import { moduleDefinition } from "@/lib/moduleRegistry";
 import { describeModule } from "@/lib/moduleDescriptions";
@@ -53,7 +53,9 @@ export default async function ModuleGuidePage({ params }: { params: Promise<{ sl
   // A tall, narrow module sits beside the text on a wide screen, rather than
   // alone above it with the page's width empty beside it.
   const tall = !!drawing && drawing.heightPx > drawing.widthPx * 0.9;
-  const related = MODULE_GUIDES.filter((other) => other.slug !== slug && moduleDefinition(other.slug)?.category === definition.category);
+  // The practices filed beside this one on the index: a Stoic page's are
+  // the other philosophers', not the faiths'.
+  const related = guideSections().find(([section]) => section === guideSection(slug))?.[1].filter((other) => other.slug !== slug) ?? [];
   // Each name links to Wikipedia where the page first names it: one set of
   // names still to link, used up in reading order.
   const unlinked = new Set(Object.keys(guide.wiki ?? {}));

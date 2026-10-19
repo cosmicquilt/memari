@@ -14,6 +14,9 @@
 // - Plain words: none of the filler the descriptions also avoid, no asides
 //   set off by dashes, American spelling. Quotes keep their own words.
 //
+import { moduleDefinition } from "./moduleRegistry";
+import { FAITH_TRADITIONS } from "./paletteGroups";
+
 // First batch, 2026-10-15, for Andrew to judge the tone before the rest:
 // examen, stoic-evening-review, salah-tracker, step-ten-inventory,
 // eisenhower-matrix.
@@ -2024,36 +2027,15 @@ export function wikiRuns(text: string, wiki: Record<string, string>, pending: Se
 }
 
 /**
- * The sections of memari.studio/modules, which groups the practices as the
- * module drawer does: a line for each, and a stamp ("on each section on the
+ * The sections of memari.studio/modules, in the order shown (Planning and
+ * Growth first, 2026-10-19), which group the practices as the module drawer
+ * does (guideSection): a line for each, and a stamp ("on each section on the
  * where the modules come from page should have a relevant stamp as well",
- * 2026-10-16). Recovery reuses Dr. Bob's house from the Step Ten page.
+ * 2026-10-16). Recovery reuses Dr. Bob's
+ * house from the Step Ten page, and Faith the old woman reading from the
+ * SOAP page.
  */
 export const GUIDE_SECTIONS: Record<string, { lede: string; photo: GuidePhoto }> = {
-  "Philosophy & faith": {
-    lede: "Prayers, ways of reading scripture and the exercises of philosophers, from Stoic and Taoist practice to Christian, Jewish, Muslim and Buddhist ones.",
-    photo: {
-      src: "/modules/photos/section-philosophy-faith.jpg",
-      alt: "Rembrandt's painting of an old man seated by a sunlit window, beside a winding staircase",
-      caption: "Rembrandt, 1632",
-      credit: "Rembrandt, Philosopher in Meditation, 1632, Louvre (cropped)",
-      license: "Public domain",
-      sourceUrl: "https://commons.wikimedia.org/wiki/File:Rembrandt_-_The_Philosopher_in_Meditation_(cleaned).jpg",
-      landscape: true,
-    },
-  },
-  Recovery: {
-    lede: "Pages for working the Twelve Steps, and for the daily habits of recovery around them.",
-    photo: {
-      src: "/modules/photos/step-ten-inventory.jpg",
-      alt: "A white two-story house with a front porch, on a green lawn",
-      caption: "Akron, Ohio",
-      credit: "Dr. Robert Smith's house in Akron, where Alcoholics Anonymous began in 1935. Photo by Nyttend (cropped)",
-      license: "Public domain",
-      sourceUrl: "https://commons.wikimedia.org/wiki/File:Dr._Bob%27s_House.jpg",
-      landscape: true,
-    },
-  },
   Planning: {
     lede: "Named ways of deciding what to do and when, from Eisenhower's two kinds of problems to the Bullet Journal.",
     photo: {
@@ -2077,9 +2059,80 @@ export const GUIDE_SECTIONS: Record<string, { lede: string; photo: GuidePhoto }>
       landscape: true,
     },
   },
+  Philosophy: {
+    lede: "The exercises of philosophers, from the Stoics' evening review to reading the Tao Te Ching a verse a day.",
+    photo: {
+      src: "/modules/photos/section-philosophy-faith.jpg",
+      alt: "Rembrandt's painting of an old man seated by a sunlit window, beside a winding staircase",
+      caption: "Rembrandt, 1632",
+      credit: "Rembrandt, Philosopher in Meditation, 1632, Louvre (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Rembrandt_-_The_Philosopher_in_Meditation_(cleaned).jpg",
+      landscape: true,
+    },
+  },
+  Faith: {
+    lede: "Prayers, meditations and ways of reading scripture, from Christian, Jewish, Muslim and Buddhist practice.",
+    photo: {
+      src: "/modules/photos/soap-study.jpg",
+      alt: "Rembrandt's painting of an old woman in a red cloak and hood, reading a large open book",
+      caption: "Rembrandt, 1631",
+      credit: "Rembrandt, Old Woman Reading, Probably the Prophetess Anna, 1631, Rijksmuseum (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Oude_lezende_vrouw,_waarschijnlijk_de_profetes_Hanna_Rijksmuseum_SK-A-3066.jpeg",
+    },
+  },
+  Recovery: {
+    lede: "Pages for working the Twelve Steps, and for the daily habits of recovery around them.",
+    photo: {
+      src: "/modules/photos/step-ten-inventory.jpg",
+      alt: "A white two-story house with a front porch, on a green lawn",
+      caption: "Akron, Ohio",
+      credit: "Dr. Robert Smith's house in Akron, where Alcoholics Anonymous began in 1935. Photo by Nyttend (cropped)",
+      license: "Public domain",
+      sourceUrl: "https://commons.wikimedia.org/wiki/File:Dr._Bob%27s_House.jpg",
+      landscape: true,
+    },
+  },
 };
 
 export const GUIDE_BY_SLUG: Record<string, ModuleGuide> = Object.fromEntries(MODULE_GUIDES.map((guide) => [guide.slug, guide]));
+
+/** The drawer's traditions the index files under Philosophy. The rest of
+ *  the drawer's Philosophy & faith go under Faith. */
+const PHILOSOPHIES = new Set(["Stoic", "Taoist"]);
+const PHILOSOPHY_SLUGS = new Set(FAITH_TRADITIONS.filter(([tradition]) => PHILOSOPHIES.has(tradition)).flatMap(([, slugs]) => slugs));
+/** A Philosophy & faith module's place in the drawer: its tradition, then
+ *  its place within it. */
+const DRAWER_PLACE = new Map(FAITH_TRADITIONS.flatMap(([, slugs], t) => slugs.map((slug, i) => [slug, t * 100 + i] as const)));
+
+/**
+ * The index section a practice is filed under: its module's drawer group,
+ * except that the drawer's one Philosophy & faith group is two sections on
+ * the index (2026-10-19: "on /modules can you separate philosophy and
+ * faith") - the Stoic and Taoist practices under Philosophy, the Buddhist,
+ * Christian, Muslim and Jewish ones under Faith. The drawer keeps its group.
+ */
+export function guideSection(slug: string): string {
+  const category = moduleDefinition(slug)?.category ?? "Other";
+  if (category !== "Philosophy & faith") return category;
+  return PHILOSOPHY_SLUGS.has(slug) ? "Philosophy" : "Faith";
+}
+
+/** The index's sections with their practices, in GUIDE_SECTIONS' order (any
+ *  other after): Philosophy and Faith a tradition at a time, as the drawer
+ *  has them; the rest in the order written. */
+export function guideSections(): Array<[section: string, guides: ModuleGuide[]]> {
+  const sections = new Map<string, ModuleGuide[]>(Object.keys(GUIDE_SECTIONS).map((section) => [section, []]));
+  for (const guide of MODULE_GUIDES) {
+    const section = guideSection(guide.slug);
+    sections.set(section, [...(sections.get(section) ?? []), guide]);
+  }
+  const place = (guide: ModuleGuide) => DRAWER_PLACE.get(guide.slug) ?? Infinity;
+  return [...sections]
+    .filter(([, guides]) => guides.length > 0)
+    .map(([section, guides]) => [section, [...guides].sort((a, b) => place(a) - place(b))]);
+}
 
 /** Every word of a guide that is OURS, not a source's - what the plain-words
  *  rules apply to. Quotations keep their own words. */
