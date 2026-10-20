@@ -1,14 +1,16 @@
 // GET /api/cron/renewals - once a day (vercel.json): order the books whose
 // auto-renew day has come (src/lib/print/renewals.ts), read back BookVault's
-// open orders (it sends no event when one fails), and delete print files
-// past keeping. Vercel's cron calls it with CRON_SECRET as a bearer
-// token; anything else is refused.
+// open orders (it sends no event when one fails), follow shipped books
+// until they arrive (src/lib/print/delivery.ts: carrier trackers, and the
+// customer asked), and delete print files past keeping. Vercel's cron calls
+// it with CRON_SECRET as a bearer token; anything else is refused.
 
 import { runRenewals, liveDeps, pruneOldPrintFiles, type RenewalOutcome } from "@/lib/print/renewals";
 import { orderingConfigured, refreshBookVaultOrders } from "@/lib/print/orders";
 import { bookVaultConfigured } from "@/lib/print/bookvault";
 import { appUrl } from "@/lib/print/fileUrls";
 import { sendRenewalReminders } from "@/lib/print/emails";
+import { runDeliveryChecks } from "@/lib/print/delivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +34,9 @@ export async function GET(request: Request) {
   // set, since a reminder needs neither printer nor payment.
   const reminded = await sendRenewalReminders(now);
   const bookvault = bookVaultConfigured() ? await refreshBookVaultOrders() : "not configured";
+  // After BookVault's read-back, so a book it has just shipped is followed
+  // today. Trackers only with EasyPost's key; the customer is asked anyway.
+  const delivery = await runDeliveryChecks(now);
   const pruned = await pruneOldPrintFiles(now);
-  return Response.json({ renewals, reminded, bookvault, pruned });
+  return Response.json({ renewals, reminded, bookvault, delivery, pruned });
 }

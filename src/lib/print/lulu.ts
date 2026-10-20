@@ -235,7 +235,7 @@ export async function coverDimensions(podPackageId: string, pageCount: number): 
   return { widthPt: Number(json.width), heightPt: Number(json.height) };
 }
 
-export type PrintJob = { id: number; status: { name: string; message?: string }; line_items?: Array<{ tracking_urls?: string[]; tracking_id?: string }> };
+export type PrintJob = { id: number; status: { name: string; message?: string }; line_items?: Array<{ tracking_urls?: string[]; tracking_id?: string; carrier_name?: string }> };
 
 /** Send a paid order to print. Lulu charges our card on file now. */
 export async function createPrintJob(input: {

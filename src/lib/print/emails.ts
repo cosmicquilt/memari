@@ -14,6 +14,12 @@
 //   cancelled       the customer stopped it; the whole payment is coming
 //                   back
 //   adminAlert      to ADMIN_EMAIL: a paid order is not printing
+//   arrival         "Has your book arrived?" about 12 days after it shipped
+//                   (18 from the UK) - two signed links, yes and not yet
+//                   (src/app/arrival, delivery.ts). Once per book.
+//   deliveryAlert   to ADMIN_EMAIL: books that may not have arrived - no
+//                   carrier scan, a return or failure, or the customer says
+//                   not yet
 //
 // Plain words, short, one link back to Orders. The HTML is the text with a
 // heading, so the two never say different things.
@@ -165,6 +171,46 @@ export function adminAlertEmail(order: OrderLike, why: string): Email | null {
   const to = process.env.ADMIN_EMAIL;
   if (!to) return null;
   return compose(to, `Order needs attention: ${order.title}`, "A paid order is not printing", [describe(order), why, `Order ${order.id}`], `${appUrl()}/app/admin/orders`);
+}
+
+/** Where the arrival email's two answers go: signed pages (delivery.ts). */
+export type ArrivalLinks = { yes: string; notYet: string };
+
+export function arrivalEmail(order: OrderLike & { shippedAt?: Date | null }, links: ArrivalLinks): Email {
+  const left = order.shippedAt ? `It left the printer on ${longDate(order.shippedAt)}, so it should be with you by now.` : "It should be with you by now.";
+  return compose(
+    order.contactEmail ?? "",
+    "Has your journal arrived?",
+    "Has your book arrived?",
+    [describe(order), left, "If it hasn't come, tell us and we'll track it down and put it right."],
+    ordersLink(),
+    [
+      { label: "Yes, it's here", url: links.yes, note: "Thank you. Nothing else to do." },
+      { label: "Not yet", url: links.notYet, note: "We'll look into it straight away and email you." },
+    ]
+  );
+}
+
+/** A book that may not have arrived, for the admin alert. */
+export type DeliveryAlertItem = OrderLike & { shippedAt?: Date | null; deliveryProblem: string | null };
+
+export function deliveryAlertEmail(orders: DeliveryAlertItem[]): Email | null {
+  const to = process.env.ADMIN_EMAIL;
+  if (!to || orders.length === 0) return null;
+  const one = orders.length === 1;
+  return compose(
+    to,
+    one ? `A book may not have arrived: ${orders[0].title}` : `${orders.length} books may not have arrived`,
+    one ? "A book may not have arrived" : `${orders.length} books may not have arrived`,
+    orders.flatMap((order) => {
+      const links = Array.isArray(order.trackingUrls) ? (order.trackingUrls as string[]) : [];
+      return [
+        `${describe(order)}. Shipped ${order.shippedAt ? longDate(order.shippedAt) : "(date unknown)"}; to ${order.contactEmail ?? "no email"}.`,
+        `${order.deliveryProblem ?? "No reason recorded."} Order ${order.id}.${links.length > 0 ? ` Tracking: ${links.join("  ")}` : ""}`,
+      ];
+    }),
+    `${appUrl()}/app/admin/orders`
+  );
 }
 
 /** Send, and log - never throw. An email is never why an order fails. */

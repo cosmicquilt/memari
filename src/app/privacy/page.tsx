@@ -35,6 +35,11 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     deleteAccount): everything the person made and their Clerk user go;
 //     PrintOrder rows stay, as "Orders are kept" below says, with
 //     auto-renew off so nothing more is charged
+//   - DELIVERY (2026-10-19, src/lib/print/delivery.ts): a shipped book's
+//     tracking number (and the carrier's name) goes to EasyPost, which
+//     reads the carrier's scans; no name, address or email goes with it.
+//     The customer is emailed once to ask whether the book arrived, and
+//     their answer is kept on the order
 //
 // If any of that changes, this page changes in the same commit.
 
@@ -45,7 +50,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="8 October 2026">
+    <LegalPage title="Privacy" updated="19 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
@@ -125,7 +130,9 @@ export default function PrivacyPage() {
         number and email you give for delivery, what you ordered (the journal, the days, the
         binding, the shipping) and what it cost, and the two files the book is printed from
         &mdash; its pages and its cover. If you turn auto-renew on we also keep a reference to the
-        card Stripe saved for it; the card itself never reaches us.
+        card Stripe saved for it; the card itself never reaches us. Once the book has shipped we
+        keep its tracking number, where the carrier says it is, and, if you answer our &ldquo;has
+        it arrived?&rdquo; email, your answer.
       </P>
 
       <H2>What we do not do</H2>
@@ -198,7 +205,8 @@ export default function PrivacyPage() {
         </LI>
         <LI>
           <A href="https://resend.com/legal/privacy-policy">Resend</A> &mdash; the emails about your
-          orders: that a book is printing, has shipped, or will renew. They receive your email
+          orders: that a book is printing, has shipped, or will renew, and once to ask whether it
+          arrived. They receive your email
           address and what the email says, and nothing else.
         </LI>
         <LI>
@@ -211,6 +219,11 @@ export default function PrivacyPage() {
           in the UK) &mdash; printing and posting metal wire-o books. For each such order they receive
           the delivery name, address, phone number and email, and the book&rsquo;s files, and pass the
           address to the carrier that delivers it and, for a book going abroad, to customs.
+        </LI>
+        <LI>
+          <A href="https://legal.easypost.com/#privacy-policy">EasyPost</A> &mdash; following a shipped book
+          until it arrives, so we notice one that is lost before you have to tell us. They receive
+          the parcel&rsquo;s tracking number and the carrier&rsquo;s name, and nothing about you.
         </LI>
       </UL>
 

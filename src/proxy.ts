@@ -22,7 +22,7 @@ import { PREVIEW_COOKIE, hasPreview } from "@/lib/comingSoonPass";
  */
 const COMING_SOON = false;
 const OFF_HOSTS = new Set(["memari.studio", "www.memari.studio"]);
-const STILL_SERVED = /^\/(?:api|trpc|coming-soon|privacy|terms|legal|renewal)(?:\/|$)/;
+const STILL_SERVED = /^\/(?:api|trpc|coming-soon|privacy|terms|legal|renewal|arrival)(?:\/|$)/;
 
 export default clerkMiddleware(async (_auth, req) => {
   // the address the visitor asked for, as the platform passes it on

@@ -1,5 +1,6 @@
 // memari.studio/app/admin/orders - every order, the ones that need a person
-// first: paid but not printing (FAILED, or stuck at PAID for over an hour).
+// first: paid but not printing (FAILED, or stuck at PAID for over an hour),
+// then shipped books that may not have arrived (src/lib/print/delivery.ts).
 // Only for the accounts in ADMIN_OWNER_IDS; anyone else gets a 404, so the
 // page does not say it exists.
 
@@ -20,7 +21,7 @@ export default async function AdminOrdersPage() {
   if (!owner || owner.guest || !isAdmin(owner.id)) notFound();
 
   const hourAgo = anHourAgo();
-  const [attention, recent] = await Promise.all([
+  const [attention, notArrived, recent] = await Promise.all([
     prisma.printOrder.findMany({
       where: {
         stripePaymentIntentId: { not: null },
@@ -28,9 +29,10 @@ export default async function AdminOrdersPage() {
       },
       orderBy: { updatedAt: "desc" },
     }),
+    prisma.printOrder.findMany({ where: { status: { in: ["SHIPPED", "DELIVERED"] }, deliveryProblem: { not: null } }, orderBy: { shippedAt: "asc" } }),
     prisma.printOrder.findMany({ where: { status: { not: "QUOTED" } }, orderBy: { createdAt: "desc" }, take: 50 }),
   ]);
-  const needing = new Set(attention.map((o) => o.id));
+  const needing = new Set([...attention, ...notArrived].map((o) => o.id));
 
   const row = (order: (typeof recent)[number]) => {
     const paid = !!order.stripePaymentIntentId;
@@ -50,7 +52,13 @@ export default async function AdminOrdersPage() {
           {order.renewedFromId ? ` · renewal of ${order.renewedFromId}` : ""}
         </div>
         {order.failureReason && <div style={{ color: cream(0.75), lineHeight: 1.5 }}>{order.failureReason}</div>}
-        <OrderActions orderId={order.id} canRetry={paid && (order.status === "FAILED" || order.status === "PAID")} canRefund={paid && order.status !== "CANCELED"} />
+        {(order.shippedAt || order.trackingCode) && <Delivery order={order} />}
+        <OrderActions
+          orderId={order.id}
+          canRetry={paid && (order.status === "FAILED" || order.status === "PAID")}
+          canRefund={paid && order.status !== "CANCELED"}
+          canMarkArrived={!!order.deliveryProblem || order.status === "SHIPPED"}
+        />
       </article>
     );
   };
@@ -63,11 +71,45 @@ export default async function AdminOrdersPage() {
           Needs attention ({attention.length})
         </h2>
         {attention.length === 0 ? <p style={{ margin: 0, fontSize: 12, color: cream(0.5) }}>Nothing paid is stuck.</p> : attention.map(row)}
+        <h2 style={{ margin: "12px 0 0", fontSize: 13, color: cream(0.6), textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Not arrived ({notArrived.length})
+        </h2>
+        {notArrived.length === 0 ? <p style={{ margin: 0, fontSize: 12, color: cream(0.5) }}>Every shipped book is moving or answered for.</p> : notArrived.map(row)}
         <h2 style={{ margin: "12px 0 0", fontSize: 13, color: cream(0.6), textTransform: "uppercase", letterSpacing: "0.06em" }}>Recent</h2>
         {recent.filter((o) => !needing.has(o.id)).map(row)}
       </div>
     </main>
   );
+}
+
+type Order = Awaited<ReturnType<typeof prisma.printOrder.findMany>>[number];
+
+/** Where a shipped book is: days since it left, the carrier's last word, the
+ *  customer's answer, and why it is flagged. */
+function Delivery({ order }: { order: Order }) {
+  const days = order.shippedAt ? daysSince(order.shippedAt) : null;
+  const links = Array.isArray(order.trackingUrls) ? (order.trackingUrls as string[]) : [];
+  const answer = order.arrivalAnswer === "ARRIVED" ? "customer: arrived" : order.arrivalAnswer === "NOT_YET" ? "customer: not yet" : order.arrivalAskedAt ? "customer: asked, no answer" : null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, lineHeight: 1.5 }}>
+      <div style={{ color: cream(0.6) }}>
+        {order.shippedAt ? `shipped ${order.shippedAt.toISOString().slice(0, 10)} (${days} day${days === 1 ? "" : "s"} ago)` : "shipped (date unknown)"}
+        {order.deliveredAt ? ` · delivered ${order.deliveredAt.toISOString().slice(0, 10)}` : ""}
+        {` · carrier: ${order.trackerStatus ? order.trackerStatus.replace(/_/g, " ") : order.trackingCode ? "not read yet" : "no tracking number"}`}
+        {answer ? ` · ${answer}` : ""}
+        {links.map((url, index) => (
+          <a key={url} href={url} target="_blank" rel="noreferrer" style={{ color: "#8fa0ff", marginLeft: 8 }}>
+            {links.length > 1 ? `tracking ${index + 1}` : "tracking"}
+          </a>
+        ))}
+      </div>
+      {order.deliveryProblem && <div style={{ color: "#ffb4a8" }}>{order.deliveryProblem}</div>}
+    </div>
+  );
+}
+
+function daysSince(date: Date): number {
+  return Math.floor((Date.now() - date.getTime()) / 86_400_000);
 }
 
 /** "Stuck" means paid and still not with the printer an hour on - the

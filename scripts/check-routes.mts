@@ -118,6 +118,8 @@ async function main() {
     // The renewal reminder's skip and pause links work signed out; a link
     // copied in part says so, rather than failing.
     { path: "/renewal/not-an-order?do=skip&sig=0000", expect: [200], as: "nobody", what: "a broken skip link is a page saying so, not an error" },
+    // And "has it arrived?" (src/lib/print/delivery.ts), the same way.
+    { path: "/arrival/not-an-order?a=no&sig=0000", expect: [200], as: "nobody", what: "a broken arrival link is a page saying so, not an error" },
     // The gallery, and a prebuilt planner's own page (plannerTemplates.ts).
     { path: "/layouts", expect: [200], as: "nobody", what: "the layouts gallery" },
     { path: "/layouts/irregular-income", expect: [200], as: "nobody", what: "a whole planner's page" },

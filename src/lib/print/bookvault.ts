@@ -452,6 +452,10 @@ export type JobReport = {
   name: string | null;
   status?: "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" | "DELIVERED" | "CANCELED" | "FAILED";
   tracking: string[];
+  /** The carrier's tracking number, and the carrier where the printer names
+   *  it - what delivery.ts follows the parcel by. */
+  trackingCode?: string;
+  carrier?: string;
   message?: string;
 };
 
@@ -469,13 +473,14 @@ const PROGRESS: Record<string, JobReport["status"]> = {
  *  deleted order is cancelled; one BookVault could not process has failed. */
 export function bookVaultReport(order: BookVaultOrder): JobReport {
   const tracking = order.fulfillment?.trackingDetails?.combinedURL ? [order.fulfillment.trackingDetails.combinedURL] : [];
-  if (order.metadata?.status === "Deleted") return { name: "Deleted", status: "CANCELED", tracking };
+  const trackingCode = order.fulfillment?.trackingDetails?.trackingNumber?.trim() || undefined;
+  if (order.metadata?.status === "Deleted") return { name: "Deleted", status: "CANCELED", tracking, trackingCode };
   if (order.criticalError) {
     const why = (order.messages ?? []).filter((m) => m.level === "Error").map((m) => m.message || m.errorText).filter(Boolean).join("; ");
-    return { name: "Error", status: "FAILED", tracking, message: why || undefined };
+    return { name: "Error", status: "FAILED", tracking, trackingCode, message: why || undefined };
   }
   const name = order.fulfillment?.progress?.status ?? null;
-  return { name, status: name ? PROGRESS[name] : undefined, tracking };
+  return { name, status: name ? PROGRESS[name] : undefined, tracking, trackingCode };
 }
 
 // --- Webhooks ---------------------------------------------------------------------

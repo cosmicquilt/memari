@@ -375,10 +375,13 @@ const LULU_TO_STATUS: Record<string, "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" |
 
 /** Lulu's report on a print job, onto its order. */
 export async function applyLuluStatus(job: PrintJob): Promise<void> {
+  const tracked = (job.line_items ?? []).find((item) => item.tracking_id);
   await applyJobStatus(String(job.id), {
     name: job.status?.name ?? null,
     status: LULU_TO_STATUS[job.status?.name ?? ""],
     tracking: (job.line_items ?? []).flatMap((item) => item.tracking_urls ?? []),
+    trackingCode: tracked?.tracking_id?.trim() || undefined,
+    carrier: tracked?.carrier_name?.trim() || undefined,
     message: job.status?.message,
   });
 }
@@ -427,7 +430,8 @@ export async function applyJobStatus(jobId: string, report: JobReport): Promise<
     const before = await prisma.printOrder.findFirst({ where: { luluPrintJobId: jobId } });
     const moved = await prisma.printOrder.updateMany({
       where: { luluPrintJobId: jobId, status: { notIn: status === "SHIPPED" ? ["SHIPPED", "DELIVERED"] : ["FAILED"] } },
-      data: { status, ...(tracking.length > 0 ? { trackingUrls: tracking } : {}) },
+      // When it shipped is what delivery.ts counts from.
+      data: { status, ...(status === "SHIPPED" ? { shippedAt: new Date() } : {}), ...(tracking.length > 0 ? { trackingUrls: tracking } : {}) },
     });
     if (before && moved.count > 0) {
       if (status === "SHIPPED") await notify(shippedEmail(before, tracking));
@@ -439,19 +443,26 @@ export async function applyJobStatus(jobId: string, report: JobReport): Promise<
     data: {
       luluStatus: report.name,
       ...(tracking.length > 0 ? { trackingUrls: tracking } : {}),
+      ...(report.trackingCode ? { trackingCode: report.trackingCode } : {}),
+      ...(report.carrier ? { trackingCarrier: report.carrier } : {}),
     },
   });
   // A cancelled order stays cancelled: a printer's news can arrive out of order,
   // and a late "waiting to print" must not bring back a book that was
-  // stopped and refunded.
+  // stopped and refunded. Nor does a late "shipped" undo a delivery the
+  // carrier or the customer has told us of (delivery.ts).
   if (!status) return;
   await prisma.printOrder.updateMany({
-    where: { luluPrintJobId: jobId, status: { not: "CANCELED" } },
+    where: { luluPrintJobId: jobId, status: { notIn: status === "DELIVERED" ? ["CANCELED"] : ["CANCELED", "DELIVERED"] } },
     data: {
       status,
       ...(status === "FAILED" ? { failureReason: `The printer reported ${said}.` } : {}),
     },
   });
+  // Lulu sometimes hears of a delivery itself; the day is when we heard.
+  if (status === "DELIVERED") {
+    await prisma.printOrder.updateMany({ where: { luluPrintJobId: jobId, status: "DELIVERED", deliveredAt: null }, data: { deliveredAt: new Date() } });
+  }
 }
 
 /** Lulu's statuses in which a job can still be stopped (lulu.ts). Each

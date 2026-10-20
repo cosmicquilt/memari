@@ -541,6 +541,30 @@ model PrintOrder {
   /// Why it FAILED, in words someone can act on.
   failureReason  String?
 
+  /// DID IT ARRIVE (2026-10-19) - src/lib/print/delivery.ts. Neither printer
+  /// says when a book is delivered, so a carrier tracker and the customer do.
+  /// When the printer reported it shipped: what the checks count from.
+  shippedAt         DateTime?
+  /// When it arrived: the carrier's delivered scan, the customer's "yes", or
+  /// an admin's word.
+  deliveredAt       DateTime?
+  /// The carrier's tracking number, and the carrier where the printer named it.
+  trackingCode      String?
+  trackingCarrier   String?
+  /// EasyPost's tracker for it, what it last said, and when it was read.
+  trackerId         String?
+  trackerStatus     String?
+  trackerCheckedAt  DateTime?
+  /// The "has your book arrived?" email: when it went, and the answer -
+  /// ARRIVED or NOT_YET.
+  arrivalAskedAt    DateTime?
+  arrivalAnswer     String?
+  arrivalAnsweredAt DateTime?
+  /// Why it may not have arrived, in words someone can act on; and when the
+  /// admin was emailed about it (once).
+  deliveryProblem   String?
+  deliveryAlertedAt DateTime?
+
   files PrintFile[]
 
   createdAt DateTime @default(now())
@@ -548,6 +572,7 @@ model PrintOrder {
 
   @@index([ownerId])
   @@index([status, renewsAt])
+  @@index([status, shippedAt])
 }
 
 /// A print-ready PDF of an order: its interior or its cover, kept with the

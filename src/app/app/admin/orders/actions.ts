@@ -1,6 +1,6 @@
 "use server";
 
-// The admin page's two buttons. Each checks the person pressing it is an
+// The admin page's buttons. Each checks the person pressing it is an
 // admin (ADMIN_OWNER_IDS) before doing anything - the page hiding them is
 // not the guard.
 
@@ -9,6 +9,7 @@ import { currentOwner } from "@/lib/owner";
 import { isAdmin, refundOrder, retryOrder } from "@/lib/print/admin";
 import { OrderError } from "@/lib/print/orders";
 import { appUrl } from "@/lib/print/fileUrls";
+import { markArrivedByAdmin } from "@/lib/print/delivery";
 
 type Result = { ok: true; message: string } | { ok: false; error: string };
 
@@ -49,6 +50,18 @@ export async function refundOrderAction(orderId: string, why: string): Promise<R
             ? "Refunded, and the print job cancelled."
             : "Refunded.",
     };
+  } catch (error) {
+    return said(error);
+  }
+}
+
+/** The book is with its reader after all (they said so by reply, or the
+ *  carrier caught up): delivered, and off the "Not arrived" list. */
+export async function markArrivedAction(orderId: string): Promise<Result> {
+  if (!(await admin())) return { ok: false, error: "Not allowed." };
+  try {
+    await markArrivedByAdmin(orderId);
+    return { ok: true, message: "Marked arrived." };
   } catch (error) {
     return said(error);
   }
