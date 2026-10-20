@@ -9,13 +9,16 @@ import { ownerPreferences } from "@/app/planner/ownerSettings";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
 import { BACKDROP_COOKIE, parseBackdropCookie } from "@/lib/backdropCookie";
 import { WALL_VARIANTS } from "@/app/landing/doodleWall";
+import { featuredItems } from "@/app/planner/featured";
 
 // memari.studio/app - the start dialog: open one of your journals, or create
 // one. Asked for 2026-09-21, modelled on Photoshop's New Document dialog. A
 // journal's own address, /app/j/<id>, skips this and opens it directly.
-export default async function AppPage() {
+export default async function AppPage({ searchParams }: { searchParams: Promise<{ otter?: string }> }) {
+  // /app?otter: straight to the otter's quiz (the landing page's post-it).
+  const otter = (await searchParams).otter !== undefined;
   const owner = await currentOwner();
-  if (!owner) redirect(signInPath("/app"));
+  if (!owner) redirect(signInPath(otter ? "/app?otter=1" : "/app"));
   // Signed in on a browser that was used as a guest: bring that work along.
   if (!owner.guest) await claimGuestWork(owner.id);
 
@@ -42,6 +45,8 @@ export default async function AppPage() {
       preferences={preferences}
       guest={owner.guest ? { journalLimit: GUEST_JOURNAL_LIMIT, idleDays: GUEST_IDLE_DAYS } : null}
       backdrop={{ theme: parseBackdropCookie(jar.get(BACKDROP_COOKIE)?.value), variant: pickWall() }}
+      featured={featuredItems()}
+      otter={otter}
     />
   );
 }

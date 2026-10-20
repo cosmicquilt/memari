@@ -49,12 +49,14 @@ export type LayoutEntry = {
 
 type Tuple = [slug: string, rowSpan: number, props?: Record<string, unknown>];
 type SlotLike = { slug: string; columnSpan: number; rowSpan: number; props?: Record<string, unknown> };
-/** Where a module sits in a layout's description, to read and to replace. */
-type SlotRef = { list: string; index: number; slug: string; columnSpan: number; rowSpan: number; props?: Record<string, unknown> };
+/** Where a module sits in a layout's description, to read and to replace.
+ *  Shared with the otter's quiz (planner/otterPlanner.ts), which fills a
+ *  layout's cells the same way. */
+export type SlotRef = { list: string; index: number; slug: string; columnSpan: number; rowSpan: number; props?: Record<string, unknown> };
 
 const SIDEBAR_COLUMNS = 6;
 
-function slotsOf(def: HeroSpread): SlotRef[] {
+export function slotsOf(def: HeroSpread): SlotRef[] {
   const layout = def.layout as unknown as Record<string, unknown>;
   const refs: SlotRef[] = [];
   if (Array.isArray(layout.sidebar)) {
@@ -74,7 +76,7 @@ function slotsOf(def: HeroSpread): SlotRef[] {
 
 /** The layout with one module changed: a deep enough copy that the
  *  original is never touched. */
-function withSlot(def: HeroSpread, ref: SlotRef, slug: string, props: Record<string, unknown> | undefined): HeroSpread {
+export function withSlot(def: HeroSpread, ref: SlotRef, slug: string, props: Record<string, unknown> | undefined): HeroSpread {
   const layout = structuredClone(def.layout) as unknown as Record<string, unknown>;
   if (ref.list === "sidebar") {
     (layout.sidebar as Tuple[])[ref.index] = [slug, ref.rowSpan, props];
@@ -257,7 +259,7 @@ function swapMoves(def: HeroSpread): Move[] {
 // ------------------------------------------------------------ checking
 
 /** The hero's check, and the hours or the month still fitting theirs. */
-function valid(def: HeroSpread): boolean {
+export function valid(def: HeroSpread): boolean {
   if (spreadProblems(def).length > 0) return false;
   for (const p of spreadPlacements(def)) {
     if (!p.locked || !p.slug.endsWith("-core")) continue;

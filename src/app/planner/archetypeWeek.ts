@@ -18,7 +18,8 @@
 // And a PREBUILT PLANNER (2026-10-15, landing/plannerTemplates.ts): a whole
 // book whose front pages, months, weeks and days are each laid out from a
 // spread of their own - createJournalFromPlanner, the same steps once per
-// part.
+// part. The otter's quiz (2026-10-20, otterPlanner.ts) makes its book the
+// same way, from spreads it put together: createJournalFromParts.
 //
 // The locked spine stays - the week title, the hours, the month's title and
 // calendar - but takes the spread's SETTINGS: the hours' range, increments
@@ -211,11 +212,30 @@ export function journalForPlanner(planner: PlannerTemplate, title: string, brows
  *  laid out from its spread, in one transaction. */
 export async function createJournalFromPlanner(ownerId: string, planner: PlannerTemplate, title: string, browserTimeZone: string | null): Promise<BookWithPages> {
   const parts = partsOf(planner).map(({ part, key }) => ({ part, spread: HERO_BY_KEY[key] }));
+  return createJournalFromParts(ownerId, parts, journalForPlanner(planner, title, browserTimeZone), planner.key);
+}
+
+/** The levels a book of these parts has: the Beginning and the End round
+ *  its months, weeks and days, in binding order. */
+export function levelsForParts(parts: Array<{ part: PlannerPart }>): PageLevel[] {
+  const inner = (["month", "week", "day"] as const).filter((p) => parts.some(({ part }) => part === p)).map((p) => PART_LEVEL[p]);
+  return [PageLevel.FRONT_MATTER, ...inner, PageLevel.BACK_MATTER];
+}
+
+/** A new journal for `ownerId` made as `journal` says, each part laid out
+ *  from its spread - every module type checked first, then one
+ *  transaction, so a journal is never left half laid out. */
+export async function createJournalFromParts(
+  ownerId: string,
+  parts: Array<{ part: PlannerPart; spread: HeroSpread }>,
+  journal: NewJournal,
+  what: string
+): Promise<BookWithPages> {
   const bySlug = await moduleTypesFor(
     parts.map(({ spread }) => spread),
-    planner.key
+    what
   );
-  const book = await createBookFor(ownerId, journalForPlanner(planner, title, browserTimeZone));
+  const book = await createBookFor(ownerId, journal);
   const writes: Prisma.PrismaPromise<unknown>[] = [];
   for (const { part, spread } of parts) writes.push(...(await layOutLevel(book, spread, PART_LEVEL[part], bySlug)));
   await prisma.$transaction(writes);

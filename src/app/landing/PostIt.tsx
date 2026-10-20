@@ -150,9 +150,9 @@ export function PostIt() {
 
   return (
     <a
-      href="#how"
+      href="/app?otter=1"
       className={flatOn ? `${styles.postit} ${styles.postitZoomed}` : styles.postit}
-      aria-label="Scroll down to how Memari works"
+      aria-label="Build your planner with the otter"
       onPointerEnter={(e) => e.pointerType === "mouse" && setOver(true)}
       onPointerLeave={() => setOver(false)}
       onFocus={() => setOver(true)}
@@ -160,12 +160,9 @@ export function PostIt() {
       onPointerDown={press}
       onClick={(e) => {
         // A key press (Enter) has no pointer down: the paw goes up here.
+        // Then on to the otter's quiz in the app (2026-10-20; it scrolled
+        // down to how Memari works before).
         if (e.detail === 0) press();
-        const target = document.getElementById("how");
-        if (!target) return;
-        e.preventDefault();
-        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        target.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
       }}
     >
       <span className={styles.postitShadow} />

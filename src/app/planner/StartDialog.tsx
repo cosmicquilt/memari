@@ -2,13 +2,19 @@
 
 // The start dialog: what memari.studio/app opens on. Asked for 2026-09-21 -
 // a Photoshop-style New Document dialog tailored to journals: SAVED (open one
-// of yours) and CREATE (make a new one), in the editor's own chrome. It shows
+// of yours) and CREATE (make a new one), in the editor's own chrome; and from
+// 2026-10-19 FEATURED, what Memari has made - planners, layouts and modules
+// to start from (StartFeatured.tsx). It shows
 // at /app and nowhere else; a journal's own link, /app/j/<id>, goes straight
 // into it ("make it popup if you go to /app but not to a planner link").
 //
 // Returning is one step: the journal this browser last had open is already
 // selected, so Enter or a double click opens it. First time, with nothing
-// saved, it opens on Create.
+// saved, it opens on the OTTER'S QUIZ (OtterQuiz.tsx, 2026-10-20: "otter
+// should be in same popup first time and have a way for them to retake"),
+// which builds a first planner from a few answers; the otter's card in
+// Featured and in Create, and /app?otter, take it again, and Start blank
+// instead leaves it for Create.
 //
 // A guest (see guest.ts) sees what that means - journals kept in this
 // browser, deleted after a while unopened - and how to keep them: sign in.
@@ -53,6 +59,9 @@ import type { SavedModuleCard, SavedPageCard } from "./savedItems";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { usePrefersReducedMotion } from "./useMediaQuery";
 import { CREAM, CREAM_RGB, onCream } from "@/lib/cream";
+import { StartFeatured } from "./StartFeatured";
+import { OTTER_CARD_STYLES, OTTER_STYLES, OtterCard, OtterQuiz } from "./OtterQuiz";
+import type { Featured } from "./featured";
 
 // The editor's chrome - see the design-language memory. Solid surfaces, one
 // accent spent on the primary action and on selection, labels small and
@@ -213,7 +222,14 @@ function termLabel(start: string | null, end: string | null): string {
 
 const levelsLabel = (levels: PageLevel[]) => levels.map((l) => LEVEL_LABELS[l]).join(" · ") || "No pages yet";
 
+/** Journals, Pages, Modules: the sections of Saved, and of Featured. */
 type SavedSection = "journals" | "pages" | "modules";
+type Tab = "featured" | "saved" | "create";
+const TABS: Array<[Tab, string]> = [
+  ["featured", "Featured"],
+  ["saved", "Saved"],
+  ["create", "Create"],
+];
 
 export function StartDialog({
   journals: initialJournals,
@@ -225,6 +241,8 @@ export function StartDialog({
   preferences,
   guest,
   backdrop,
+  featured,
+  otter = false,
 }: {
   journals: JournalCard[];
   savedPages: SavedPageCard[];
@@ -239,16 +257,22 @@ export function StartDialog({
   /** The background this browser chose, and which of the walls this load
    *  shows (the page picks it, so the server and the first frame agree). */
   backdrop: { theme: BackdropTheme; variant: number };
+  /** What Memari has made, for Featured (featured.ts). */
+  featured: Featured;
+  /** Open on the otter's quiz (/app?otter), whatever else there is. */
+  otter?: boolean;
 }) {
   const router = useRouter();
   const [journals, setJournals] = useState(initialJournals);
   const [savedPages, setSavedPages] = useState(initialSavedPages);
   const [savedModules, setSavedModules] = useState(initialSavedModules);
   const [section, setSection] = useState<SavedSection>("journals");
-  const [tab, setTab] = useState<"saved" | "create">(initialJournals.length > 0 ? "saved" : "create");
+  const [featuredSection, setFeaturedSection] = useState<SavedSection>("journals");
+  const [tab, setTab] = useState<Tab>(initialJournals.length > 0 ? "saved" : "featured");
+  const [quiz, setQuiz] = useState(otter || initialJournals.length === 0);
   // The pill's travel is owned HERE because this component survives the
   // section change that replaces the strip - see useSectionPillTravel.
-  useSectionPillTravel(section, tab === "saved");
+  useSectionPillTravel(quiz ? null : tab === "saved" ? `saved:${section}` : tab === "featured" ? `featured:${featuredSection}` : null);
   const [selectedId, setSelectedId] = useState<string | null>(lastJournalId ?? initialJournals[0]?.id ?? null);
   const [backTo, setBackTo] = useState<string | null>(lastJournalId);
   const [leaving, setLeaving] = useState(false);
@@ -278,6 +302,7 @@ export function StartDialog({
 
   return (
     <div
+      className="sd-backdrop"
       style={{
         position: "fixed",
         inset: 0,
@@ -285,10 +310,9 @@ export function StartDialog({
         ...(TONES[toneOf(theme)] as CSSProperties),
         display: "grid",
         placeItems: "center",
-        padding: 16,
       }}
     >
-      <style>{STYLES}</style>
+      <style>{STYLES + OTTER_STYLES + OTTER_CARD_STYLES}</style>
       <div
         role="dialog"
         aria-modal="true"
@@ -296,32 +320,37 @@ export function StartDialog({
         className="sd-dialog"
         style={{ background: PANEL, color: TEXT, border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden", cursor: leaving ? "progress" : undefined }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "end", background: HEADER, borderBottom: `1px solid ${LINE}`, padding: "0 16px" }}>
+        <div className="sd-header" style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "end", background: HEADER, borderBottom: `1px solid ${LINE}` }}>
           <strong style={{ alignSelf: "center", padding: "12px 0" }}>
-            memari. <span style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
+            m<span className="sd-emari">emari</span>. <span className="sd-studio" style={{ fontWeight: 200, fontSize: "0.8em", letterSpacing: "0.1em" }}>STUDIO</span>
           </strong>
-          <TabStrip tab={tab}>
-            {(["saved", "create"] as const).map((t) => (
+          <TabStrip tab={quiz ? "otter" : tab}>
+            {TABS.map(([t, label], index) => (
               <button
                 key={t}
                 type="button"
                 role="tab"
                 data-tab={t}
                 id={`start-tab-${t}`}
-                aria-selected={tab === t}
+                aria-selected={!quiz && tab === t}
                 aria-controls="start-panel"
-                tabIndex={tab === t ? 0 : -1}
+                tabIndex={quiz ? (index === 0 ? 0 : -1) : tab === t ? 0 : -1}
                 className="sd-tab"
-                onClick={() => setTab(t)}
+                onClick={() => {
+                  setQuiz(false);
+                  setTab(t);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                    const next = tab === "saved" ? "create" : "saved";
+                    const step = event.key === "ArrowRight" ? 1 : -1;
+                    const next = TABS[(index + step + TABS.length) % TABS.length][0];
+                    setQuiz(false);
                     setTab(next);
                     document.getElementById(`start-tab-${next}`)?.focus();
                   }
                 }}
               >
-                {t === "saved" ? "Saved" : "Create"}
+                {label}
               </button>
             ))}
           </TabStrip>
@@ -349,19 +378,47 @@ export function StartDialog({
         {guest && (
           <p className="sd-guest">
             You&rsquo;re using Memari as a guest. Your journals stay in this browser, and one you haven&rsquo;t opened
-            for {guest.idleDays} days is deleted. <Link href="/sign-in?redirect_url=%2Fapp">Sign in</Link> to keep them
-            &mdash; they come with you.
+            for {guest.idleDays} days is deleted. <Link href="/sign-in?redirect_url=%2Fapp">Sign in</Link> to keep them,
+            and they come with you.
           </p>
         )}
+        {quiz ? (
+          <OtterQuiz
+            guestLimit={guest && journals.length >= guest.journalLimit ? guest.journalLimit : null}
+            leaving={leaving}
+            onExit={() => {
+              setQuiz(false);
+              setTab("create");
+            }}
+            onDone={open}
+          />
+        ) : (
         <div id="start-panel" role="tabpanel" aria-labelledby={`start-tab-${tab}`} className="sd-body">
-          {tab === "saved" && section === "pages" ? (
+          {tab === "featured" ? (
+            <StartFeatured
+              featured={featured}
+              section={featuredSection}
+              switcher={
+                <SectionSwitch
+                  label="Featured"
+                  section={featuredSection}
+                  onChange={setFeaturedSection}
+                  counts={[featured.planners.length, featured.layouts.length, featured.moduleCount]}
+                />
+              }
+              guestLimit={guest && journals.length >= guest.journalLimit ? guest.journalLimit : null}
+              leaving={leaving}
+              onLeave={() => setLeaving(true)}
+              otterCard={<OtterCard onClick={() => setQuiz(true)} />}
+            />
+          ) : tab === "saved" && section === "pages" ? (
             <SavedItems
               // Keyed by kind: the two sections are the same component in the
               // same place, and without a key the one shown second inherited
               // the first's selection - an id it does not have.
               key="page"
               kind="page"
-              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              switcher={<SectionSwitch label="Saved" section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
               items={savedPages.map((page) => ({
                 id: page.id,
                 name: page.name,
@@ -384,7 +441,7 @@ export function StartDialog({
             <SavedItems
               key="module"
               kind="module"
-              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              switcher={<SectionSwitch label="Saved" section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
               items={savedModules.map((module) => ({
                 id: module.id,
                 name: module.name,
@@ -409,7 +466,7 @@ export function StartDialog({
             />
           ) : tab === "saved" ? (
             <SavedJournals
-              switcher={<SectionSwitch section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              switcher={<SectionSwitch label="Saved" section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
               journals={journals}
               selectedId={selectedId}
               onSelect={setSelectedId}
@@ -421,7 +478,7 @@ export function StartDialog({
                 setJournals(rest);
                 setSelectedId(rest[0]?.id ?? null);
                 if (backTo === id) setBackTo(null);
-                if (rest.length === 0) setTab("create");
+                if (rest.length === 0) setTab("featured");
               }}
               leaving={leaving}
             />
@@ -433,9 +490,11 @@ export function StartDialog({
               onCreated={open}
               leaving={leaving}
               guestLimit={guest && journals.length >= guest.journalLimit ? guest.journalLimit : null}
+              otterCard={<OtterCard onClick={() => setQuiz(true)} />}
             />
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -443,12 +502,15 @@ export function StartDialog({
 
 // --- Saved -----------------------------------------------------------------
 
-/** Journals, Pages, Modules - which kind of saved thing Saved is showing. */
+/** Journals, Pages, Modules - which kind of thing Saved, or Featured, is
+ *  showing. */
 function SectionSwitch({
+  label,
   section,
   onChange,
   counts,
 }: {
+  label: string;
   section: SavedSection;
   onChange: (section: SavedSection) => void;
   counts: [number, number, number];
@@ -471,7 +533,7 @@ function SectionSwitch({
     <div
       className="sd-seg"
       role="group"
-      aria-label="Saved"
+      aria-label={label}
       ref={strip}
       data-measured={box ? "" : undefined}
       style={{ position: "relative" }}
@@ -527,15 +589,19 @@ function SectionSwitch({
  * travel with the Web Animations API - which takes an explicit from and to,
  * and so needs no before-and-after paint to compare.
  */
-function useSectionPillTravel(section: SavedSection, showing: boolean) {
-  const previous = useRef<number | null>(null);
+function useSectionPillTravel(active: string | null) {
+  // `active` is "<tab>:<section>", or null where no strip is shown. The pill
+  // travels only within one tab's strip: Featured's and Saved's are two
+  // strips, and a move from one to the other is not a slide.
+  const previous = useRef<{ strip: string; left: number } | null>(null);
   const reduceMotion = usePrefersReducedMotion();
 
   useLayoutEffect(() => {
-    if (!showing) {
+    if (active === null) {
       previous.current = null;
       return;
     }
+    const strip = active.split(":")[0];
     // THE PILL IS NOT THERE YET when this first runs. The strip measures
     // itself in its own layout effect and renders the pill on the render
     // after that, and a child's effects run before its parent's - so on the
@@ -591,8 +657,8 @@ function useSectionPillTravel(section: SavedSection, showing: boolean) {
         return;
       }
       const left = Number(pill.style.transform.match(/translate\((-?[\d.]+)px/)?.[1]) || 0;
-      const from = previous.current;
-      previous.current = left;
+      const from = previous.current?.strip === strip ? previous.current.left : null;
+      previous.current = { strip, left };
       if (from === null || from === left || reduceMotion) return;
       pill.animate(
         [
@@ -607,7 +673,7 @@ function useSectionPillTravel(section: SavedSection, showing: boolean) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [section, showing, reduceMotion]);
+  }, [active, reduceMotion]);
 }
 
 const trimLabelFor = (widthPx: number) =>
@@ -1012,6 +1078,7 @@ function CreateJournal({
   onCreated,
   leaving,
   guestLimit,
+  otterCard,
 }: {
   templates: Record<PageLevel, ThumbnailPage[]>;
   defaultTerm: { start: string; end: string };
@@ -1020,6 +1087,8 @@ function CreateJournal({
   leaving: boolean;
   /** Set when a guest already has as many journals as a guest may keep. */
   guestLimit: number | null;
+  /** The otter's card: a planner built from a few answers instead. */
+  otterCard: ReactNode;
 }) {
   const [presetId, setPresetId] = useState(PRESETS[0].id);
   const [levels, setLevels] = useState<PageLevel[]>(PRESETS[0].levels);
@@ -1086,6 +1155,8 @@ function CreateJournal({
   return (
     <>
       <div className="sd-main">
+        <div className="sd-label">Or let the otter build one</div>
+        <div className="sd-grid">{otterCard}</div>
         <div className="sd-label">Blank journals ({PRESETS.length})</div>
         <div className="sd-grid">
           {PRESETS.map((preset) => (
@@ -1161,7 +1232,7 @@ function CreateJournal({
         {guestLimit !== null && (
           <p style={{ color: DIM, fontSize: 12, margin: 0, lineHeight: 1.45 }}>
             A guest can keep {guestLimit} journals. <Link href="/sign-in?redirect_url=%2Fapp" style={{ color: INK }}>Sign in</Link> to
-            make more &mdash; the ones you have come with you.
+            make more. The ones you have come with you.
           </p>
         )}
         <div className="sd-actions">
@@ -1240,6 +1311,9 @@ const STYLES = `
 .sd-main { padding: 20px 22px; overflow: auto; display: grid; gap: 14px; align-content: start; border-right: 1px solid ${LINE}; }
 .sd-details { padding: 20px; overflow: auto; display: grid; gap: 16px; align-content: start; grid-auto-rows: max-content; }
 .sd-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: ${DIM}; }
+.sd-backdrop { padding: 16px; }
+.sd-header { column-gap: 12px; padding: 0 16px; }
+.sd-tabs { gap: 32px; }
 .sd-tab { background: none; border: none; color: ${DIM}; font: inherit; font-size: 15px; padding: 14px 2px 12px; border-bottom: 2px solid transparent; cursor: pointer; min-height: 44px; }
 .sd-tab[aria-selected="true"] { color: ${INK}; }
 /* Until the sliding bar has measured the tabs - the page as the server sent
@@ -1281,6 +1355,18 @@ const STYLES = `
    that can travel. Until then the button keeps its own background, so the
    chosen section is marked on the very first paint. */
 .sd-seg[data-measured] button[aria-pressed="true"] { background: none; }
+.sd-lede { margin: 0; font-size: 13px; line-height: 1.5; color: ${DIM}; max-width: 560px; }
+.sd-group { display: grid; gap: 10px; }
+.sd-group + .sd-group { margin-top: 10px; }
+.sd-group > h3 { margin: 0; }
+.sd-heading { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; color: ${INK}; text-wrap: balance; }
+.sd-text { margin: 0; font-size: 13px; line-height: 1.55; }
+.sd-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sd-parts li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.sd-parts .sd-thumb { flex: none; }
+/* "Use this" stays in reach at the foot of a long details column. */
+.sd-use { position: sticky; bottom: -20px; z-index: 1; margin: 0 -20px -20px; padding: 14px 20px 20px; background: ${PANEL}; border-top: 1px solid ${LINE}; display: grid; gap: 10px; }
+.sd-list { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; line-height: 1.4; }
 .sd-count { border-top: 1px solid ${LINE}; padding-top: 12px; display: grid; gap: 2px; }
 .sd-count b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .sd-count small { font-size: 12px; color: ${DIM}; }
@@ -1290,6 +1376,20 @@ const STYLES = `
 .sd-primary { background: ${ACCENT}; border-color: ${ACCENT}; color: #fff; }
 .sd-link { background: none; border: none; padding: 0; color: ${INK}; font: inherit; text-decoration: underline; cursor: pointer; }
 .sd-tab:focus-visible, .sd-card:focus-visible, .sd-btn:focus-visible, .sd-chip:focus-visible, .sd-seg button:focus-visible, .sd-x:focus-visible, .sd-disclosure:focus-visible, .sd-link:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+/* Three tabs, the wordmark and the header's buttons in a phone's width. */
+@media (max-width: 520px) {
+  .sd-studio { display: none; }
+  .sd-header { column-gap: 8px; padding: 0 12px; }
+  .sd-tabs { gap: 12px; }
+  .sd-tab { font-size: 14px; }
+}
+/* Narrower still: the wordmark becomes the mark, "m.", and the margin
+   round the dialog halves. */
+@media (max-width: 400px) {
+  .sd-emari { display: none; }
+  .sd-backdrop { padding: 8px; }
+  .sd-header { padding: 0 10px; }
+}
 @media (max-width: 760px) {
   .sd-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: auto; }
   .sd-main { border-right: none; border-bottom: 1px solid ${LINE}; overflow: visible; }
@@ -1329,7 +1429,11 @@ function useSlidingHighlight(active: string, selectedSelector: string) {
   const measure = useCallback(
     (slide: boolean) => {
       const control = strip.current?.querySelector<HTMLElement>(selectedSelector);
-      if (!control) return;
+      // Nothing chosen (the otter's quiz is up): no highlight under anything.
+      if (!control) {
+        setBox(null);
+        return;
+      }
       setBox({
         left: control.offsetLeft,
         width: control.offsetWidth,
@@ -1425,7 +1529,7 @@ function BackdropMenu({ theme, variant, onChange }: { theme: BackdropTheme; vari
   );
 }
 
-function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactNode }) {
+function TabStrip({ tab, children }: { tab: Tab | "otter"; children: ReactNode }) {
   const { strip, box } = useSlidingHighlight(tab, '[aria-selected="true"]');
   const reduceMotion = usePrefersReducedMotion();
 
@@ -1436,7 +1540,7 @@ function TabStrip({ tab, children }: { tab: "saved" | "create"; children: ReactN
       aria-label="Start"
       className="sd-tabs"
       data-measured={box ? "" : undefined}
-      style={{ position: "relative", display: "flex", gap: 32 }}
+      style={{ position: "relative", display: "flex" }}
     >
       {children}
       {box && (
