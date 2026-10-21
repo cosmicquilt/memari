@@ -42,9 +42,13 @@ import { DEFAULT_CALENDAR_COLOUR } from "@/lib/calendarColours";
 import { PolotnoJsonRenderer } from "./PolotnoJsonRenderer";
 import {
   boxAt,
+  clockOf,
+  columnForEvent,
   drawnEventBoxes,
   endMinutesForDrag,
   hhmmOf,
+  isoDaysOn,
+  minutesOf,
   slotAt,
   type DrawnEventBox,
   type SlotHit,
@@ -260,14 +264,16 @@ export function EventLayer({
           )
         : placed.find((e) => e.allDay && e.day === hit.day);
       const row = drawn?.id ? byId.get(drawn.id) : undefined;
-      const date = columnDates[hit.day];
-      if (!drawn || !row || !date) return;
+      const column = columnDates[hit.day];
+      if (!drawn || !row || !column) return;
+      // Drawn past midnight ("26:00"): it is the next day's, at 02:00.
+      const nextDay = minutesOf(drawn.startTime) >= 1440;
       setDraft({
         id: row.id,
         title: row.title,
-        date,
-        start: drawn.startTime,
-        end: drawn.endTime,
+        date: nextDay ? isoDaysOn(column, 1) : column,
+        start: hhmmOf(minutesOf(drawn.startTime)),
+        end: hhmmOf(minutesOf(drawn.endTime)),
         allDay: row.allDay,
         rrule: row.rrule,
         calendarId: row.calendarId,
@@ -337,15 +343,18 @@ export function EventLayer({
       e.currentTarget.releasePointerCapture?.(e.pointerId);
       const span = spanOf(dragging);
       setDragging(null);
-      const date = columnDates[span.day];
+      const column = columnDates[span.day];
       // NO DATE, NO EVENT. An undated book has no day for a column, so there
       // is no instant to store - and storing one anyway would put a date on a
       // planner whose whole point is not having them.
-      if (!date) return;
+      if (!column) return;
+      // DRAWN IN THE HOURS PAST MIDNIGHT, it happens the next day: 1:00 in
+      // Monday's column is Tuesday 1:00. One that only ends past midnight
+      // keeps its day, and its end before its start says the next day.
       setDraft({
         id: null,
         title: "",
-        date,
+        date: span.start >= 1440 ? isoDaysOn(column, 1) : column,
         start: hhmmOf(span.start),
         end: hhmmOf(span.end),
         allDay: false,
@@ -445,8 +454,9 @@ export function EventLayer({
       return {
         id: PREVIEW_ID,
         day: span.day,
-        startTime: hhmmOf(span.start),
-        endTime: hhmmOf(span.end),
+        // Not wrapped: drawn where the drag is, past midnight included.
+        startTime: clockOf(span.start),
+        endTime: clockOf(span.end),
         label: UNTITLED_EVENT,
         source: "manual",
         colour: colourOf(calendars.find((c) => c.visible && !c.source)?.id ?? null),
@@ -454,19 +464,34 @@ export function EventLayer({
     }
     const making = draft && !draft.id ? draft : landing;
     if (!making) return null;
-    const day = columnDates.indexOf(making.date);
-    if (day < 0) return null;
+    if (making.allDay) {
+      const day = columnDates.indexOf(making.date);
+      if (day < 0) return null;
+      return {
+        id: PREVIEW_ID,
+        day,
+        startTime: "00:00",
+        endTime: "23:59",
+        label: making.title.trim() || UNTITLED_EVENT,
+        source: "manual",
+        colour: colourOf(making.calendarId),
+        allDay: true,
+      };
+    }
+    // Where it will be drawn - the evening before, for an early morning on
+    // hours that run past midnight.
+    const at = columnForEvent(columnDates, grid, making.date, making.start, making.end);
+    if (!at) return null;
     return {
       id: PREVIEW_ID,
-      day,
-      startTime: making.allDay ? "00:00" : making.start,
-      endTime: making.allDay ? "23:59" : making.end,
+      day: at.day,
+      startTime: at.startTime,
+      endTime: at.endTime,
       label: making.title.trim() || UNTITLED_EVENT,
       source: "manual",
       colour: colourOf(making.calendarId),
-      ...(making.allDay ? { allDay: true } : {}),
     };
-  }, [dragging, draft, landing, calendars, columnDates, spanOf]);
+  }, [dragging, draft, landing, calendars, columnDates, spanOf, grid]);
 
   // DRAWN BY THE RENDERER, not styled to resemble it. The preview used to be
   // a hand-made box - its own border, its own width, its own colour - and was
@@ -724,7 +749,11 @@ function EventPopup({
               />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ ...label, marginBottom: 4 }}>Ends</div>
+              <div style={{ ...label, marginBottom: 4 }}>
+                Ends
+                {/* Before the start: the next day, as the hours mark it. */}
+                {draft.end < draft.start && <sup style={{ marginLeft: 3 }}>+1</sup>}
+              </div>
               <input
                 type="time"
                 value={draft.end}

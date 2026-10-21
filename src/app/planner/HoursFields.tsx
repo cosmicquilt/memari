@@ -33,15 +33,13 @@ export const WEEK_START_DAY_LABELS = [
 ];
 
 // Snaps a raw "HH:MM" <input type="time"> value to the nearest 30-min
-// mark — requested directly: "round inputs to the nearest 30 mins."
-// Clamped to [00:00, 23:30] rather than wrapping past midnight (e.g. a
-// typed 23:45 becomes 23:30, not 00:00) — this app has no notion of an
-// overnight range yet (updateHourlySettings already rejects endTime <=
-// startTime), so wrapping would just produce a value the server refuses.
+// mark — requested directly: "round inputs to the nearest 30 mins." A typed
+// 23:45 goes on to 00:00: since 2026-10-20 the hours can run past midnight,
+// so an end at 00:00 is midnight, the end of the day, not its start.
 export function roundToNearestHalfHour(time: string): string {
   const [h, m] = time.split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
-  const snapped = Math.min(23 * 60 + 30, Math.max(0, Math.round((h * 60 + m) / 30) * 30));
+  const snapped = (Math.round((h * 60 + m) / 30) * 30) % 1440;
   const snappedHour = Math.floor(snapped / 60);
   const snappedMinute = snapped % 60;
   return `${String(snappedHour).padStart(2, "0")}:${String(snappedMinute).padStart(2, "0")}`;
@@ -171,7 +169,13 @@ export function HoursFields({
               />
             </label>
             <label style={{ ...rowStyle, flex: 1 }}>
-              <span style={labelStyle}>End</span>
+              <span style={labelStyle}>
+                End
+                {/* The next day, marked the way the hours will mark it. */}
+                {values.endTime < values.startTime && (
+                  <sup style={{ marginLeft: 3, fontSize: "0.8em" }}>+1</sup>
+                )}
+              </span>
               <input
                 type="time"
                 step={1800}
@@ -182,6 +186,12 @@ export function HoursFields({
               />
             </label>
           </div>
+          {values.endTime < values.startTime && (
+            <p style={{ ...labelStyle, margin: 0, lineHeight: 1.45 }}>Runs past midnight. The hours after it are marked +1.</p>
+          )}
+          {values.endTime === values.startTime && (
+            <p style={{ ...labelStyle, margin: 0, lineHeight: 1.45 }}>Start and end can&rsquo;t be the same time.</p>
+          )}
           <label style={rowStyle}>
             <span style={labelStyle}>Row height</span>
             <select

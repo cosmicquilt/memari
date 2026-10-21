@@ -264,8 +264,8 @@ export const QUESTIONS: Question[] = [
     options: (a) => [
       { id: "early", label: "Early bird", hint: "5 AM to 9 PM" },
       { id: "day", label: "Daytime", hint: "7 AM to 11 PM" },
-      { id: "owl", label: "Night owl", hint: "10 AM to midnight" },
-      ...(one(a, "fills") === "shifts" ? [{ id: "nights", label: "Nights", hint: "Noon to midnight for now" }] : []),
+      { id: "owl", label: "Night owl", hint: "10 AM to 2 AM" },
+      ...(one(a, "fills") === "shifts" ? [{ id: "nights", label: "Nights", hint: "7 PM to 7 AM" }] : []),
     ],
   },
   {
@@ -476,7 +476,7 @@ export function guessLine(input: Answers): string {
 export const REACTIONS: Record<string, string> = {
   "rhythm:owl": "A night owl! Otters are up at dusk too.",
   "rhythm:early": "An early bird. I'll start your hours at five.",
-  "rhythm:nights": "Nights. Hours past midnight are on their way, so for now your day runs to midnight.",
+  "rhythm:nights": "Nights. Your day runs from 7 in the evening to 7 the next morning, the hours after midnight marked +1.",
   "pages:day": "Daily pages! A nice thick book, then.",
   "hourly:lists": "Lists it is. Your days will be open dots to write on.",
   "dated:undated": "Undated, so you can start any day you like.",

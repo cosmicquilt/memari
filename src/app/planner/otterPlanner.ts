@@ -425,9 +425,8 @@ function hoursFrom(answers: Answers, base: HoursSettings | undefined): HoursSett
     out.intervalMinutes = 30;
     out.compactHourRows = undefined;
   }
-  // Hours past midnight are coming (the editor change agreed 19 October);
-  // until then a night runs to midnight.
-  const ranges: Record<string, [string, string]> = { early: ["05:00", "21:00"], day: ["07:00", "23:00"], owl: ["10:00", "24:00"], nights: ["12:00", "24:00"] };
+  // An end before the start runs on past midnight, marked +1 (2026-10-20).
+  const ranges: Record<string, [string, string]> = { early: ["05:00", "21:00"], day: ["07:00", "23:00"], owl: ["10:00", "02:00"], nights: ["19:00", "07:00"] };
   const range = ranges[one(answers, "rhythm") ?? ""];
   if (range) [out.startTime, out.endTime] = range;
   return out;
@@ -477,15 +476,15 @@ function termFrom(answers: Answers, weekStartDay: 0 | 1, today: Date): { startIS
   return { startISO: iso(start), endISO: iso(end) };
 }
 
-/** Question 16's rows, cleaned: a title, at least one day, a start before
- *  its end. (A night shift that ends the next morning waits for hours past
- *  midnight.) */
+/** Question 16's rows, cleaned: a title, at least one day, and a start and
+ *  end that differ - an end before the start is the next morning, a night
+ *  shift. */
 function scheduleFrom(answers: Answers): ScheduleEntry[] {
   if (one(answers, "schedule") !== "add") return [];
   const time = (t: unknown) => (typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : null);
   return (answers.details?.schedule ?? [])
     .map((e) => ({ title: String(e.title ?? "").trim().slice(0, 60), days: [...new Set((e.days ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))], from: time(e.from), to: time(e.to) }))
-    .filter((e): e is ScheduleEntry => Boolean(e.title && e.days.length > 0 && e.from && e.to && e.from < e.to))
+    .filter((e): e is ScheduleEntry => Boolean(e.title && e.days.length > 0 && e.from && e.to && e.from !== e.to))
     .slice(0, 8);
 }
 

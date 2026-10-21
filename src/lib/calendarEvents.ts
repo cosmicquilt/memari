@@ -86,8 +86,13 @@ type Occurrence = {
 
 const DAY_MS = 86_400_000;
 const utcMidnight = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-const hhmm = (d: Date) =>
-  `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+/** "HH:MM" of `d` counted from the column's midnight `dayStart` - so past
+ *  that day's end it reads "25:30", which is how the hours draw the next
+ *  morning in the same column. At most two days on. */
+const clockFrom = (dayStart: number, d: Date) => {
+  const minutes = Math.max(0, Math.min(2 * 1440, Math.round((d.getTime() - dayStart) / 60_000)));
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+};
 
 /** RFC 5545 weekday codes, in getUTCDay order. */
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
@@ -263,15 +268,26 @@ function recursOn(event: StoredEvent, dayStart: number): boolean {
  *   spread gets three, the right four.
  *
  * An event is placed by the day its START falls on. One running past
- * midnight is drawn on the day it began and clipped by the grid's own hours,
- * rather than split across two columns: a column is a day, and half an event
- * appearing at the top of the next one reads as a second event.
+ * midnight is drawn on the day it began, to its real end ("25:00"), and
+ * clipped by the grid's own hours, rather than split across two columns: a
+ * column is a day, and half an event appearing at the top of the next one
+ * reads as a second event.
+ *
+ * HOURS PAST MIDNIGHT (2026-10-20): when the grid runs on into the next
+ * morning - 10:00 to 02:00 - an event at 1:00 the next day belongs in THIS
+ * column's last rows, so the next day's events starting before
+ * `overnightMinutes` past midnight are placed here too, a day on ("25:00").
+ * The next day's own column starts later than that (the hours are never
+ * longer than a day), so nothing is drawn twice.
  */
 export function eventsForDays(
   events: StoredEvent[],
   days: GridDay[],
   /** The BOOK's zone - what the page's clock reads. See the header. */
-  bookZone: string = DEFAULT_ZONE
+  bookZone: string = DEFAULT_ZONE,
+  /** How far past midnight the grid's hours run - hourlyGridCore's
+   *  overnightMinutes. 0, the hours end by midnight. */
+  overnightMinutes = 0
 ): HourlyGridEvent[] {
   const out: HourlyGridEvent[] = [];
   const zone = isTimeZone(bookZone) ? bookZone : DEFAULT_ZONE;
@@ -282,23 +298,30 @@ export function eventsForDays(
 
     for (const event of events) {
       if (event.deletedAt) continue;
-
-      for (const { start, end, title, occurrence } of occurrencesOn(event, dayStart, zone)) {
+      const place = (found: Occurrence) =>
         out.push({
           id: event.id,
           // WHICH OCCURRENCE, for a series: it keys the marks - a daily series
           // with one day moved onto the next puts two blocks of one event in
           // one column - and it tells the popup which week "only this one"
           // means.
-          ...(occurrence !== undefined ? { occurrence: String(occurrence) } : {}),
+          ...(found.occurrence !== undefined ? { occurrence: String(found.occurrence) } : {}),
           day: index,
-          startTime: event.allDay ? "00:00" : hhmm(start),
-          endTime: event.allDay ? "23:59" : hhmm(end),
-          label: title || event.title,
+          startTime: event.allDay ? "00:00" : clockFrom(dayStart, found.start),
+          endTime: event.allDay ? "23:59" : clockFrom(dayStart, found.end),
+          label: found.title || event.title,
           source: event.calendar?.source ? "google-calendar" : "manual",
           ...(event.allDay ? { allDay: true } : {}),
           ...(event.calendar?.colour ? { colour: event.calendar.colour } : {}),
         });
+
+      for (const found of occurrencesOn(event, dayStart, zone)) place(found);
+      // The next morning's, in this column's hours past midnight.
+      if (overnightMinutes > 0 && !event.allDay) {
+        const nextDay = dayStart + DAY_MS;
+        for (const found of occurrencesOn(event, nextDay, zone)) {
+          if (found.start.getTime() < nextDay + overnightMinutes * 60_000) place(found);
+        }
       }
     }
   });

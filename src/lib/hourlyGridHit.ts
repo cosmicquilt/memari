@@ -58,10 +58,52 @@ export function endMinutesForDrag(grid: HourlyGridGeometry, from: SlotHit, toSlo
   return grid.startMinutes + (last + 1) * grid.intervalMinutes;
 }
 
-/** "HH:MM" from minutes since midnight - the form HourlyGridEvent uses. */
+/** "HH:MM" from minutes since midnight, on a 24-hour clock - what an event
+ *  is SAVED with. Past midnight it wraps: 1560 is "02:00". */
 export function hhmmOf(minutes: number): string {
   const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/** "HH:MM" from the column's midnight WITHOUT wrapping - what an event is
+ *  DRAWN with: 1560 is "26:00", 2am in the same column's hours past
+ *  midnight (HourlyGridEvent). */
+export function clockOf(minutes: number): string {
+  const m = Math.max(0, Math.min(2 * 1440, Math.round(minutes)));
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/** Minutes from "HH:MM", past 24:00 too. */
+export function minutesOf(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** "YYYY-MM-DD" `n` days on. */
+export function isoDaysOn(iso: string, n: number): string {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Where a saved event's day and times are drawn on a page: its own day's
+ * column, or - for an early-morning event on hours that run past midnight -
+ * the evening before, a day on ("26:00"). The inverse of how a drag past
+ * midnight is dated (EventLayer). Null when neither column is on the page.
+ */
+export function columnForEvent(
+  columnDates: ReadonlyArray<string | null>,
+  grid: Pick<HourlyGridGeometry, "startMinutes" | "endMinutes">,
+  date: string,
+  start: string,
+  end: string
+): { day: number; startTime: string; endTime: string } | null {
+  const from = minutesOf(start);
+  const to = minutesOf(end) <= from ? minutesOf(end) + 1440 : minutesOf(end);
+  const own = columnDates.indexOf(date);
+  if (own >= 0 && from >= grid.startMinutes) return { day: own, startTime: clockOf(from), endTime: clockOf(to) };
+  const before = columnDates.indexOf(isoDaysOn(date, -1));
+  if (before >= 0 && from + 1440 < grid.endMinutes) return { day: before, startTime: clockOf(from + 1440), endTime: clockOf(to + 1440) };
+  return own >= 0 ? { day: own, startTime: clockOf(from), endTime: clockOf(to) } : null;
 }
 
 export type DrawnEventBox = {

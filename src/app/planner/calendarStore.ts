@@ -274,10 +274,15 @@ function parse(input: EventInput, zone: string) {
   const startsAt = instantFromWall(input.date, input.start, zone);
   let endsAt = instantFromWall(input.date, input.end, zone);
   if (!startsAt || !endsAt) throw new Error("Bad date");
-  // AN END BEFORE ITS START draws a block of negative height, which the
-  // renderer clamps to nothing - so the event would save and then be
-  // invisible, which reads as "it did not save". Pin it to the start instead.
-  if (endsAt.getTime() < startsAt.getTime()) endsAt = startsAt;
+  // AN END BEFORE ITS START IS THE NEXT DAY: a night shift from 19:00 to
+  // 07:00 (2026-10-20, with hours past midnight). It used to be pinned to the
+  // start, when the hours stopped at midnight and such an end could only be
+  // a mistake. The next day's same wall time, in the book's zone - so a
+  // shift across a clock change still ends at 07:00.
+  if (endsAt.getTime() < startsAt.getTime()) {
+    const next = new Date(Date.parse(`${input.date}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
+    endsAt = instantFromWall(next, input.end, zone) ?? new Date(endsAt.getTime() + DAY_MS);
+  }
   return {
     title: title || UNTITLED_EVENT,
     startsAt,

@@ -339,7 +339,8 @@ function ScheduleForm({ entries, weekStartsMonday, onChange }: { entries: Schedu
             <span style={{ color: DIM }}>to</span>
             <input type="time" className="sd-input" value={row.to} onChange={(e) => set(i, { to: e.target.value })} aria-label="To" />
           </div>
-          {row.from >= row.to && <p className="sd-meta" style={{ margin: 0 }}>Times past midnight are coming soon. For now, end it before midnight.</p>}
+          {row.to < row.from && <p className="sd-meta" style={{ margin: 0 }}>Ends the next morning.</p>}
+          {row.to === row.from && <p className="sd-meta" style={{ margin: 0 }}>Start and end can&rsquo;t be the same time.</p>}
         </div>
       ))}
       {rows.length < 8 && (

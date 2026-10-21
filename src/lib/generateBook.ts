@@ -27,7 +27,7 @@
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
 import { dayIconsOf } from "./dayIcons";
-import { placePageEvents, propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
+import { pageOvernightMinutes, placePageEvents, propsForRender, spreadDayLabels, type PageRenderContext } from "./renderContext";
 import type { StoredEvent } from "./calendarEvents";
 import { effectiveZone } from "./timeZone";
 import {
@@ -183,6 +183,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
         occurrence: slot.at,
         dayLabels,
         hasHours: page.moduleInstances.some((mi) => mi.moduleType.slug === "hourly-grid-core"),
+        overnightMinutes: pageOvernightMinutes(page.moduleInstances),
         events: planner.events,
         zone: effectiveZone(planner.timeZone, planner.ownerTimeZone),
         print: true,

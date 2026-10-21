@@ -18,8 +18,11 @@ import type { DayIconMark } from "@/lib/dayIcons";
 
 export type HourlyGridEvent = {
   day: number; // 0-indexed within this block's dayCount
-  startTime: string; // "HH:MM", 24-hour
-  endTime: string; // "HH:MM", 24-hour
+  // "HH:MM", 24-hour, from the column's own midnight - so "25:30" is 1:30
+  // the next morning, drawn in this column's hours past midnight. An end
+  // earlier than its start is read the same way: the next day.
+  startTime: string;
+  endTime: string;
   label: string;
   source: "manual" | "google-calendar";
   /** Drawn in the banner band above the hours instead of against a time -
@@ -49,7 +52,11 @@ export type HourlyGridCoreConfig = {
   // already drawn.
   dayLabels: Array<{ name: string; date?: number | null }>;
   startTime: string; // "05:30"
-  endTime: string; // "23:30"
+  // "23:30". An end at or before the start is the NEXT day (2026-10-20,
+  // "times past midnight should stay with the previous times with a super
+  // script +1 after the time like in google flights"): "10:00" to "02:00"
+  // is sixteen hours in one column, the last two labelled 12:00+1, 1:00+1.
+  endTime: string;
   intervalMinutes: number; // 30
   hourLineStyle: "full" | "low-transparency" | "gone";
   dayBorder: boolean;
@@ -110,6 +117,35 @@ function timeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
+const DAY_MINUTES = 1440;
+
+/**
+ * The hours' span in minutes from the column's midnight: an end at or before
+ * the start runs on into the next day, so 10:00 to 02:00 is 600 to 1560.
+ * One reading, used by everything that measures the hours - the renderer,
+ * its height, the click geometry - so they cannot disagree about it.
+ */
+export function hoursSpan(startTime: string, endTime: string): { startMinutes: number; endMinutes: number } {
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(endTime);
+  return { startMinutes, endMinutes: endMinutes <= startMinutes ? endMinutes + DAY_MINUTES : endMinutes };
+}
+
+/** How far past midnight the hours run, in minutes - 0 for hours that end
+ *  by midnight. What eventsForDays pulls the next morning's events in by. */
+export function overnightMinutes(config: Partial<Pick<HourlyGridCoreConfig, "startTime" | "endTime">>): number {
+  const { endMinutes } = hoursSpan(config.startTime ?? DEFAULT_HOURLY_SETTINGS.startTime, config.endTime ?? DEFAULT_HOURLY_SETTINGS.endTime);
+  return Math.max(0, endMinutes - DAY_MINUTES);
+}
+
+/** An event's span from its column's midnight - its end the next day when
+ *  it is earlier than its start. */
+function eventSpan(event: Pick<HourlyGridEvent, "startTime" | "endTime">): { from: number; to: number } {
+  const from = timeToMinutes(event.startTime);
+  const to = timeToMinutes(event.endTime);
+  return { from, to: to < from ? to + DAY_MINUTES : to };
+}
+
 /**
  * The hours to draw, with anything missing filled in.
  *
@@ -130,8 +166,7 @@ function hoursOrDefaults(config: Partial<HourlyGridCoreConfig>): {
   intervalMinutes: number;
 } {
   return {
-    startMinutes: timeToMinutes(config.startTime ?? DEFAULT_HOURLY_SETTINGS.startTime),
-    endMinutes: timeToMinutes(config.endTime ?? DEFAULT_HOURLY_SETTINGS.endTime),
+    ...hoursSpan(config.startTime ?? DEFAULT_HOURLY_SETTINGS.startTime, config.endTime ?? DEFAULT_HOURLY_SETTINGS.endTime),
     // `||` not `??`: a stored zero is not an interval, it is a division by
     // zero dressed as a setting.
     intervalMinutes: config.intervalMinutes || DEFAULT_HOURLY_SETTINGS.intervalMinutes,
@@ -326,6 +361,16 @@ const TIME_LABEL_BOX_WIDTH_PT = 14;
  * tab above it.
  */
 const EVENT_LEFT_INSET_PT = TIME_LABEL_BOX_WIDTH_PT + 1.5;
+/**
+ * THE NEXT DAY'S TIMES carry a raised +1 after them, as Google Flights marks
+ * an arrival the next morning. The labels already fill their 14pt box (12:00
+ * at 5pt is 12.6pt wide), so the +1 sits just past the box, a 3pt figure
+ * 3.2pt wide, past the box's border so the line does not run through it -
+ * and on hours that run past midnight the events are held 3pt further off
+ * the labels, so a block never covers one (12:00+1 ends 18pt in).
+ */
+const NEXT_DAY_MARK_PT = 3;
+const NEXT_DAY_EVENT_INSET_PT = 3;
 const TIME_LABEL_BOX_HEIGHT_PT = 8.9;
 const TIME_LABEL_BOX_WIDTH_STROKE_PT = 0.1;
 
@@ -707,7 +752,7 @@ const eventBorder = (fill: string) => atLightness(fill, 0.65);
 function concurrencyColumns(events: HourlyGridEvent[]): Map<HourlyGridEvent, { column: number; of: number }> {
   const placed = new Map<HourlyGridEvent, { column: number; of: number }>();
   const spans = events
-    .map((event) => ({ event, from: timeToMinutes(event.startTime), to: timeToMinutes(event.endTime) }))
+    .map((event) => ({ event, ...eventSpan(event) }))
     .sort((a, b) => a.from - b.from || b.to - a.to);
 
   let cluster: typeof spans = [];
@@ -885,6 +930,7 @@ export function renderHourlyGridCore(
 
   const {
     startMinutes,
+    endMinutes,
     intervalMinutes,
     rowCount,
     rowHeight,
@@ -1120,6 +1166,25 @@ export function renderHourlyGridCore(
           fill: "#666666",
           align: "center",
         });
+        if (rowMinutes >= DAY_MINUTES) {
+          // Raised to the top of the figures, just past the end of the time.
+          const markSize = ptToPx(NEXT_DAY_MARK_PT);
+          const textRight = dayX + labelBoxWidth / 2 + textWidthPx(timeLabelText, timeLabelFontSize, FONT_FAMILY) / 2;
+          const timeTop = labelBoxTop + labelBoxHeight - timeLabelTextHeight - timeLabelBottomGap;
+          elements.push({
+            id: id(`d${d}-r${i}-next`),
+            type: "text",
+            x: Math.max(textRight + ptToPx(0.3), dayX + labelBoxWidth + ptToPx(0.5)),
+            y: timeTop + (timeLabelTextHeight - timeLabelFontSize) / 2 - markSize * 0.25,
+            width: textWidthPx("+1", markSize, FONT_FAMILY) + ptToPx(0.5),
+            height: markSize * 1.2,
+            text: "+1",
+            fontSize: markSize,
+            fontFamily: FONT_FAMILY,
+            fill: "#666666",
+            align: "left",
+          });
+        }
 
         if (lineOpacity > 0) {
           // Filled thin rect, not a zero-height stroked one — Polotno
@@ -1234,17 +1299,25 @@ export function renderHourlyGridCore(
     const timedToday =
       config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d && !e.allDay);
     const stacking = concurrencyColumns(timedToday);
+    // Past midnight, the labels carry a +1 the events keep clear of.
+    const eventInsetPt = EVENT_LEFT_INSET_PT + (endMinutes > DAY_MINUTES ? NEXT_DAY_EVENT_INSET_PT : 0);
     for (const event of timedToday) {
-      const evStart = timeToMinutes(event.startTime);
-      const evEnd = timeToMinutes(event.endTime);
+      // CLIPPED TO THE HOURS. An event before the first row or after the
+      // last was drawn anyway, over the day tab or off the bottom of the
+      // block; now the part outside the hours is left off, and an event
+      // wholly outside them is not drawn at all.
+      const span = eventSpan(event);
+      const evStart = Math.max(span.from, startMinutes);
+      const evEnd = Math.min(span.to, endMinutes);
+      if (evEnd <= evStart) continue;
       const evY = gridTop + ((evStart - startMinutes) / intervalMinutes) * rowHeight;
       const evHeight = ((evEnd - evStart) / intervalMinutes) * rowHeight;
 
       // HELD OFF THE TIME LABELS - see EVENT_LEFT_INSET_PT. Drawn from the
       // column's left edge, the block and its own label sat on top of
       // "8:30".
-      const trackX = dayX + ptToPx(EVENT_LEFT_INSET_PT);
-      const trackWidth = dayColumnWidth - ptToPx(EVENT_LEFT_INSET_PT) - 2;
+      const trackX = dayX + ptToPx(eventInsetPt);
+      const trackWidth = dayColumnWidth - ptToPx(eventInsetPt) - 2;
       // Its share of the track, if anything else is running at the same time.
       const { column, of } = stacking.get(event) ?? { column: 0, of: 1 };
       const share = trackWidth / of;

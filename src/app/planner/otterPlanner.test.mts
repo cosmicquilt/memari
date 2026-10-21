@@ -88,7 +88,8 @@ check("and the exam countdown waits at the front", slugs(base, "front").includes
 const hoursOf = (a: Answers) => (week(a).layout as { hours?: { startTime?: string; endTime?: string; intervalMode?: string; intervalMinutes?: number } }).hours ?? {};
 check("lists, not hours: the days go dotted", hoursOf({ ...base, hourly: ["lists"] }).intervalMode === "off");
 check("an early bird's hours start at 5", hoursOf({ ...base, rhythm: ["early"] }).startTime === "05:00");
-check("a night owl's run to midnight", hoursOf({ ...base, rhythm: ["owl"] }).endTime === "24:00");
+check("a night owl's run to 2 the next morning", hoursOf({ ...base, rhythm: ["owl"] }).endTime === "02:00");
+check("a night shift's, 7 PM to 7 AM", (() => { const h = hoursOf({ ...base, fills: ["shifts"], follow: ["nights"], rhythm: ["nights"] }); return h.startTime === "19:00" && h.endTime === "07:00"; })());
 check("by the hour", hoursOf({ ...base, hourly: ["hour"] }).intervalMinutes === 60);
 const sunday = planFromAnswers({ ...base, weekStart: ["sunday"], pages: ["month", "week", "day"] }, undefined, TODAY);
 check("a Sunday week, on every page", sunday.weekStartDay === 0 && sunday.parts.every((p) => p.spread.layout.weekStartsMonday === false));
@@ -104,7 +105,7 @@ check("the book starts on the 1st of next month, for three months", marked.start
 const picked = planFromAnswers({ ...base, start: ["pick"], details: { startDate: "2027-02-15" } }, undefined, TODAY);
 check("or on the date picked", picked.startISO === "2027-02-15" && picked.endISO === "2027-05-14", `${picked.startISO} ${picked.endISO}`);
 const scheduled = planFromAnswers({ ...base, schedule: ["add"], details: { schedule: [{ title: "Bio lab", days: [1, 3], from: "13:00", to: "16:00" }, { title: "Night", days: [2], from: "22:00", to: "06:00" }, { title: "", days: [1], from: "09:00", to: "10:00" }] } }, undefined, TODAY);
-check("a weekly class is kept; a shift past midnight and an untitled one are not (yet)", scheduled.schedule.length === 1 && scheduled.schedule[0].title === "Bio lab");
+check("a weekly class and a night shift are kept; an untitled one is not", scheduled.schedule.length === 2 && scheduled.schedule[1].title === "Night" && scheduled.schedule[1].to === "06:00");
 check("rather not say: no practice", !slugs({ ...base, practice: ["private"], practices: ["examen"] }, "week").includes("examen"));
 check("a practice picked goes in", slugs({ ...base, practice: ["christian"], practices: ["examen"] }, "week").includes("examen"));
 check("routing drops what is no longer asked", routedAnswers({ ...base, pages: ["month"], hourly: ["half"] }).hourly === undefined);

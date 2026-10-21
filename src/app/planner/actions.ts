@@ -3090,8 +3090,11 @@ export async function updateHourlySettings(journalId: string, settings: {
   if (startMinutes === null || endMinutes === null) {
     throw new Error("Invalid start/end time");
   }
-  if (endMinutes <= startMinutes) {
-    throw new Error("End time must be after start time");
+  // An end before the start runs on past midnight (2026-10-20): 10:00 to
+  // 02:00 is sixteen hours, the last two marked +1. The same time at both
+  // ends would be a whole day, which is not a choice anyone means.
+  if (endMinutes === startMinutes) {
+    throw new Error("Start and end can't be the same time");
   }
 
   const planner = await prisma.planner.findFirst({

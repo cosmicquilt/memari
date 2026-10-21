@@ -25,7 +25,7 @@ import { eventsForDays, type StoredEvent } from "./calendarEvents";
 import { dayIconsOf, iconsOnDates, isoDay, monthCellDates, type DayIcon } from "./dayIcons";
 import type { MonthCalendarCell } from "./monthCalendar";
 import { dayUnitColumns, type PageGrid } from "./grid";
-import { EVENT_PRINT_GREY, type HourlyGridEvent } from "./modules/hourlyGridCore";
+import { EVENT_PRINT_GREY, overnightMinutes, type HourlyGridEvent } from "./modules/hourlyGridCore";
 import { isSpineSlug, withDates, withDaysUnder, withWeekStart, withoutDates } from "./moduleRegistry";
 import { WEEKDAY_NAMES, columnDates, occurrences, type OccurrenceContext, type PageLevel } from "./pageLevels";
 import { effectiveZone } from "./timeZone";
@@ -129,6 +129,15 @@ export type RenderContextBook = {
  * money, so anything printed takes EVENT_PRINT_GREY whichever calendar the
  * event is on. A calendar's colour is a screen affordance.
  */
+/** How far past midnight a page's hours run - 0 for a page with none, or
+ *  with increments off, which draws no events. */
+export function pageOvernightMinutes(instances: ReadonlyArray<{ moduleType: { slug: string }; propValues?: unknown }>): number {
+  const hours = instances.find((mi) => mi.moduleType.slug === "hourly-grid-core");
+  if (!hours) return 0;
+  const props = (hours.propValues ?? {}) as { startTime?: string; endTime?: string; intervalMode?: string };
+  return props.intervalMode === "off" ? 0 : overnightMinutes(props);
+}
+
 export function placePageEvents(args: {
   level: PageLevel;
   dated: boolean;
@@ -136,15 +145,18 @@ export function placePageEvents(args: {
   dayLabels: DayLabel[] | null;
   /** Whether the page has the hours, which are what draw events. */
   hasHours: boolean;
+  /** How far past midnight those hours run (hourlyGridCore's
+   *  overnightMinutes): the next morning's events are drawn in them. */
+  overnightMinutes?: number;
   /** The owner's stored events, unfiltered; absent, the page draws none. */
   events?: StoredEvent[];
   /** effectiveZone(book, owner). */
   zone: string;
   print?: boolean;
 }): { events: HourlyGridEvent[] | null; columnDates: Array<string | null> | null } {
-  const { level, dated, occurrence, dayLabels, hasHours, events, zone, print } = args;
+  const { level, dated, occurrence, dayLabels, hasHours, events, zone, print, overnightMinutes } = args;
   const grid = dated && occurrence && dayLabels && hasHours ? columnDates(level, occurrence.start, dayLabels) : null;
-  const placed = grid && events ? eventsForDays(events, grid.map((date) => ({ date })), zone) : null;
+  const placed = grid && events ? eventsForDays(events, grid.map((date) => ({ date })), zone, overnightMinutes ?? 0) : null;
   return {
     events: placed && print ? placed.map((event) => ({ ...event, colour: EVENT_PRINT_GREY })) : placed,
     columnDates: grid ? grid.map((d) => (d ? d.toISOString().slice(0, 10) : null)) : null,
@@ -203,6 +215,7 @@ export function renderContextForPage(
     occurrence,
     dayLabels,
     hasHours,
+    overnightMinutes: pageOvernightMinutes(page.moduleInstances),
     events,
     zone: effectiveZone(book.timeZone, book.ownerTimeZone),
     print: options.print,
