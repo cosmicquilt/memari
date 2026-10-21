@@ -30,6 +30,7 @@ import { LayoutGallery } from "./LayoutGallery";
 import { HOME_KEYS, STARTER_BY_KEY } from "./starterLayouts";
 import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
+import { InkPaperFilter } from "./InkPaperFilter";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
 import { CoverCarousel } from "./CoverCarousel";
@@ -55,7 +56,12 @@ export function Landing({
       // How much of the section below the hero shows on opening, the hero's
       // side blur and its vignette (bodyWall.ts).
       style={pageVars(BODY_WALL_DEFAULTS) as CSSProperties}
+      data-text-paper={(BODY_WALL_DEFAULTS.textPaper ?? 0) > 0 || undefined}
+      data-text-paper-links={BODY_WALL_DEFAULTS.textPaperLinks || undefined}
+      data-text-paper-all={BODY_WALL_DEFAULTS.textPaperOffPaper || undefined}
+      data-doodle-paper={(BODY_WALL_DEFAULTS.doodlePaper ?? 0) > 0 || undefined}
     >
+      <InkPaperFilter />
       <SiteHeader signedIn={signedIn} guest={guest} />
 
       <main>
@@ -121,7 +127,7 @@ export function Landing({
             </div>
             <ol className={styles.steps}>
               <li>
-                <span className={styles.stepNumber}>
+                <span className={styles.stepNumber} data-paper-inline="">
                   1
                   <Ink
                     drawing={circleDrawing(31)}
@@ -138,7 +144,7 @@ export function Landing({
                 </p>
               </li>
               <li>
-                <span className={styles.stepNumber}>
+                <span className={styles.stepNumber} data-paper-inline="">
                   2
                   <Ink
                     drawing={circleDrawing(32)}
@@ -155,7 +161,7 @@ export function Landing({
                 </p>
               </li>
               <li>
-                <span className={styles.stepNumber}>
+                <span className={styles.stepNumber} data-paper-inline="">
                   3
                   <Ink
                     drawing={circleDrawing(33)}

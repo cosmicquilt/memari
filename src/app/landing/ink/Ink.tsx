@@ -66,6 +66,8 @@ export function Ink({
       overflow="visible"
       aria-hidden="true"
       focusable="false"
+      // the paper in the drawings (InkPaperFilter.tsx)
+      data-ink=""
     >
       <defs>
         {drawing.strokes.map((s, i) => {

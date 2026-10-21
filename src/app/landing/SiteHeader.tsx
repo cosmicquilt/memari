@@ -64,7 +64,7 @@ export function SiteHeader({ signedIn, guest = false, solid = false }: { signedI
   const menu = menuOn === path;
   const setMenu = (open: boolean | ((was: boolean) => boolean)) => setMenuOn((typeof open === "function" ? open(menu) : open) ? path : null);
   return (
-    <header className={`${styles.nav} ${clear ? styles.navClear : ""} ${clear && moved ? styles.navMoved : ""}`}>
+    <header className={`${styles.nav} ${clear ? styles.navClear : ""} ${clear && moved ? styles.navMoved : ""}`} data-off-paper="">
       {/* The mark: "m." (2026-09-25). */}
       <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home">
         m.

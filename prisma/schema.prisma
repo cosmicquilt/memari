@@ -264,11 +264,16 @@ model SavedPage {
   marginPx    Float
   // SavedPageContent - one list of module slots per page. See savedItems.ts.
   content     Json
+  // Where it was saved from when that was a layout of ours ("layout:student",
+  // templateSaving.ts), so its Save button shows Saved and a second press
+  // does not make a second copy. Null when saved from a journal.
+  sourceKey   String?
   pages       Page[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([ownerId])
+  @@index([ownerId, sourceKey])
 }
 
 // A module somebody saved with its settings - Saved > Modules. Linked the
@@ -284,10 +289,29 @@ model SavedModule {
   propValues   Json             @default("{}")
   columnSpan   Int
   rowSpan      Int
+  // As SavedPage's: "module:water-week" from the module list, or
+  // "layout:student#4" for a module on one of our layouts. Null when saved
+  // from a journal.
+  sourceKey    String?
   instances    ModuleInstance[]
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
+  @@index([ownerId])
+  @@index([ownerId, sourceKey])
+}
+
+// One of our prebuilt planners somebody saved to come back to (2026-10-21):
+// Saved > Journals lists it with Use this planner. A bookmark, by the
+// planner's key (plannerTemplates.ts), not a copy - the planner is ours and
+// using it makes the journal.
+model SavedPlanner {
+  id          String   @id @default(cuid())
+  ownerId     String
+  templateKey String
+  createdAt   DateTime @default(now())
+
+  @@unique([ownerId, templateKey])
   @@index([ownerId])
 }
 

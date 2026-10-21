@@ -59,9 +59,10 @@ import type { SavedModuleCard, SavedPageCard } from "./savedItems";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { usePrefersReducedMotion } from "./useMediaQuery";
 import { CREAM, CREAM_RGB, onCream } from "@/lib/cream";
-import { StartFeatured } from "./StartFeatured";
+import { SavedPlannerCards, SavedPlannerDetails, StartFeatured, type UseProps } from "./StartFeatured";
+import { onTemplateSaved } from "./templateSaved";
 import { OTTER_CARD_STYLES, OTTER_STYLES, OtterCard, OtterQuiz } from "./OtterQuiz";
-import type { Featured } from "./featured";
+import type { Featured, FeaturedPlanner } from "./featured";
 
 // The editor's chrome - see the design-language memory. Solid surfaces, one
 // accent spent on the primary action and on selection, labels small and
@@ -243,6 +244,8 @@ export function StartDialog({
   backdrop,
   featured,
   otter = false,
+  savedPlanners: initialSavedPlanners = [],
+  openSaved,
 }: {
   journals: JournalCard[];
   savedPages: SavedPageCard[];
@@ -261,15 +264,34 @@ export function StartDialog({
   featured: Featured;
   /** Open on the otter's quiz (/app?otter), whatever else there is. */
   otter?: boolean;
+  /** Planners of ours this person saved, by key (templateSaving.ts). */
+  savedPlanners?: string[];
+  /** Open on Saved, at this section (/app?saved=pages - the link in the
+   *  message after a save). */
+  openSaved?: SavedSection;
 }) {
   const router = useRouter();
   const [journals, setJournals] = useState(initialJournals);
   const [savedPages, setSavedPages] = useState(initialSavedPages);
   const [savedModules, setSavedModules] = useState(initialSavedModules);
-  const [section, setSection] = useState<SavedSection>("journals");
+  // A save from Featured refreshes the page's data (below); the lists here
+  // take the new ones when they arrive - React's pattern for state that
+  // follows a prop, set while rendering rather than in an effect.
+  const [savedFrom, setSavedFrom] = useState({ pages: initialSavedPages, modules: initialSavedModules });
+  if (savedFrom.pages !== initialSavedPages || savedFrom.modules !== initialSavedModules) {
+    setSavedFrom({ pages: initialSavedPages, modules: initialSavedModules });
+    setSavedPages(initialSavedPages);
+    setSavedModules(initialSavedModules);
+  }
+  const savedPlanners = useMemo(
+    () => initialSavedPlanners.flatMap((key) => featured.planners.find((p) => p.key === key) ?? []),
+    [initialSavedPlanners, featured.planners]
+  );
+  useEffect(() => onTemplateSaved(() => router.refresh()), [router]);
+  const [section, setSection] = useState<SavedSection>(openSaved ?? "journals");
   const [featuredSection, setFeaturedSection] = useState<SavedSection>("journals");
-  const [tab, setTab] = useState<Tab>(initialJournals.length > 0 ? "saved" : "featured");
-  const [quiz, setQuiz] = useState(otter || initialJournals.length === 0);
+  const [tab, setTab] = useState<Tab>(openSaved || initialJournals.length > 0 ? "saved" : "featured");
+  const [quiz, setQuiz] = useState(!openSaved && (otter || initialJournals.length === 0));
   // The pill's travel is owned HERE because this component survives the
   // section change that replaces the strip - see useSectionPillTravel.
   useSectionPillTravel(quiz ? null : tab === "saved" ? `saved:${section}` : tab === "featured" ? `featured:${featuredSection}` : null);
@@ -466,8 +488,10 @@ export function StartDialog({
             />
           ) : tab === "saved" ? (
             <SavedJournals
-              switcher={<SectionSwitch label="Saved" section={section} onChange={setSection} counts={[journals.length, savedPages.length, savedModules.length]} />}
+              switcher={<SectionSwitch label="Saved" section={section} onChange={setSection} counts={[journals.length + savedPlanners.length, savedPages.length, savedModules.length]} />}
               journals={journals}
+              savedPlanners={savedPlanners}
+              use={{ guestLimit: guest && journals.length >= guest.journalLimit ? guest.journalLimit : null, leaving, onLeave: () => setLeaving(true) }}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onOpen={open}
@@ -682,6 +706,8 @@ const trimLabelFor = (widthPx: number) =>
 function SavedJournals({
   switcher,
   journals,
+  savedPlanners,
+  use,
   selectedId,
   onSelect,
   onOpen,
@@ -692,6 +718,9 @@ function SavedJournals({
 }: {
   switcher: ReactNode;
   journals: JournalCard[];
+  /** Planners of ours saved here, under the journals. */
+  savedPlanners: FeaturedPlanner[];
+  use: UseProps;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpen: (id: string) => void;
@@ -700,7 +729,11 @@ function SavedJournals({
   onDeleted: (id: string) => void;
   leaving: boolean;
 }) {
-  const selected = journals.find((j) => j.id === selectedId) ?? null;
+  // A saved planner chosen instead of a journal; choosing a journal again
+  // puts it back.
+  const [plannerKey, setPlannerKey] = useState<string | null>(null);
+  const plannerChosen = savedPlanners.find((p) => p.key === plannerKey) ?? null;
+  const selected = plannerChosen ? null : (journals.find((j) => j.id === selectedId) ?? null);
   const firstFocus = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     firstFocus.current?.focus();
@@ -725,8 +758,11 @@ function SavedJournals({
                 ref={journal.id === selectedId ? firstFocus : undefined}
                 type="button"
                 className="sd-card"
-                aria-pressed={journal.id === selectedId}
-                onClick={() => onSelect(journal.id)}
+                aria-pressed={!plannerChosen && journal.id === selectedId}
+                onClick={() => {
+                  setPlannerKey(null);
+                  onSelect(journal.id);
+                }}
                 onDoubleClick={() => onOpen(journal.id)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -750,9 +786,12 @@ function SavedJournals({
             </button>
           </div>
         )}
+        {savedPlanners.length > 0 && <SavedPlannerCards planners={savedPlanners} selectedKey={plannerChosen?.key ?? null} onSelect={setPlannerKey} />}
       </div>
       <aside className="sd-details" aria-live="polite">
-        {selected ? (
+        {plannerChosen ? (
+          <SavedPlannerDetails key={plannerChosen.key} planner={plannerChosen} {...use} />
+        ) : selected ? (
           <JournalDetails key={selected.id} journal={selected} onOpen={onOpen} onRenamed={onRenamed} onDeleted={onDeleted} leaving={leaving} />
         ) : (
           <p style={{ color: DIM, margin: 0 }}>Select a journal to see it here.</p>
@@ -1332,6 +1371,14 @@ const STYLES = `
 .sd-card:hover { opacity: 0.85; }
 .sd-card[aria-pressed="true"] { opacity: 1; outline-color: ${ACCENT}; }
 .sd-new { background: transparent; border: 1px dashed ${ink(0.25)}; opacity: 0.8; }
+/* A picture that opens the zoom (SpreadZoom.tsx): plain, the cursor says so. */
+.sd-zoomable { display: block; width: 100%; padding: 0; border: none; background: none; cursor: zoom-in; border-radius: 4px; }
+.sd-zoomable:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+/* Use this, on the zoom's dark header. */
+.sd-zoomuse { height: 36px; padding: 0 16px; border: none; border-radius: 999px; background: #fff; color: #1c1917; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.sd-zoomuse:hover:not(:disabled) { background: #f1efe9; }
+.sd-zoomuse:disabled { opacity: 0.6; cursor: default; }
+.sd-zoomuse:focus-visible { outline: 2px solid #8a97ff; outline-offset: 2px; }
 .sd-thumb { display: flex; align-items: center; justify-content: center; height: 118px; background: var(--sd-thumb); border-radius: 4px; padding: 8px; overflow: hidden; }
 .sd-name { font-size: 13.5px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-meta { font-size: 12px; color: ${DIM}; line-height: 1.3; }
@@ -1364,6 +1411,7 @@ const STYLES = `
 .sd-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .sd-parts li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .sd-parts .sd-thumb { flex: none; }
+.sd-parts .sd-zoomable { width: auto; flex: none; }
 /* "Use this" stays in reach at the foot of a long details column. */
 .sd-use { position: sticky; bottom: -20px; z-index: 1; margin: 0 -20px -20px; padding: 14px 20px 20px; background: ${PANEL}; border-top: 1px solid ${LINE}; display: grid; gap: 10px; }
 .sd-list { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; line-height: 1.4; }

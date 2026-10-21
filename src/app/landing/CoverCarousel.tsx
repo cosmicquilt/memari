@@ -126,7 +126,7 @@ export function CoverCarousel() {
   }, [order]);
 
   return (
-    <section className={styles.band} aria-label="Covers on real notebooks" data-doodle-row>
+    <section className={styles.band} aria-label="Covers on real notebooks" data-doodle-row data-paper-skip="">
       <div className={styles.strip}>
         {/* the ends blur away (2026-10-14: "instead of transparent gradient
             on sides of carousel can you make it more of a cool blur

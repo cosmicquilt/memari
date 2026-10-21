@@ -9,6 +9,7 @@ import { FONT_SERIF } from "@/lib/theme";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import type { PageGrid } from "@/lib/grid";
 import type { ModuleSummary } from "./starterLayouts";
+import { SaveButton } from "@/app/planner/templateSaved";
 import site from "./site.module.css";
 
 /** The bound book's page, as the landing page's spreads use it (spreads.ts,
@@ -21,7 +22,11 @@ export function ModuleCards({ modules }: { modules: ModuleSummary[] }) {
     <ul className={site.moduleGrid} style={{ listStyle: "none", padding: 0, margin: "32px 0 0" }}>
       {modules.map((m) => (
         <li key={m.slug}>
-          <div className={site.modulePaper}>
+          <div className={site.modulePaper} style={{ position: "relative" }}>
+            {/* Save, beside the module's own preview (2026-10-21). */}
+            <span className={site.moduleSave}>
+              <SaveButton save={{ kind: "module", slug: m.slug }} variant="icon" what={`the ${m.name} module`} />
+            </span>
             <ModulePreview
               slug={m.slug}
               previewProps={PALETTE_INFO_BY_SLUG.get(m.slug)?.previewProps ?? {}}

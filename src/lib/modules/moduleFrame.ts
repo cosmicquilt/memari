@@ -58,6 +58,18 @@ export const BORDER_WIDTH_PT = 0.5;
 export const RULE_WIDTH_PT = 0.3;
 
 /**
+ * The ink of a line ruled for writing on: a prompt's answer lines, a note
+ * box's lines, a month's lined days, a to-do's and a table's rows, a
+ * matrix's lined quarters. One value, so they are one style - 2026-10-21:
+ * "change the ruled lines (within all modules that allow it ex. the note
+ * box) to have the same style as the response lines in the prompt response
+ * modules". The note box's were full ink and the month's 0.5 until then.
+ * Borders, header rules and a table's totals rule stay full ink: they are
+ * structure, not somewhere to write.
+ */
+export const WRITING_LINE_OPACITY = 0.6;
+
+/**
  * The heading sizes, largest first - labeled-box's own ladder.
  *
  * labeled-box is the module there are most of on a page (Notes,

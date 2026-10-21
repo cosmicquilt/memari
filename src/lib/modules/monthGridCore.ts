@@ -463,7 +463,6 @@ export function renderMonthGridCore(
             lattice,
             id,
             tag: `w${w}-d${d}-`,
-            lineOpacity: 0.5,
           })
         );
       }

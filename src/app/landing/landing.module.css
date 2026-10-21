@@ -1201,6 +1201,16 @@
   white-space: nowrap;
 }
 
+/* The paper in the text paints letters only inside a box, and the hand's
+   loops reach outside its own: the y of "you." left of it, under the
+   heading's. With the paper on, its box reaches round them - padding, given
+   back as margin, so nothing moves (an inline box's top and bottom padding
+   never move the line). */
+.page[data-text-paper] .hand {
+  padding: 0.4em 0.5em;
+  margin: 0 -0.5em 0 calc(0.22em - 0.5em);
+}
+
 /* A word with a pen mark on it (Underlined, Circled). */
 .marked {
   position: relative;
@@ -1413,6 +1423,73 @@
   mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
+}
+
+/* PAPER THROUGH THE DOODLES (bodyWall.ts, doodlePaper, inkPaper): the
+   paper's photos laid over each drawing's solid blue as background layers,
+   each at its share (inkStack), so the grain shows in the pen. Inside the
+   drawing's mask, which clips them to the lines; the drawing's fade is its
+   opacity (BodyDoodles.tsx). Drawn only while the slider is above 0. */
+.bodyDoodles[data-paper] .bodyDoodle {
+  background-image: var(--doodle-paper-image);
+  background-size: var(--doodle-paper-size);
+  background-position: 0 0;
+  background-repeat: repeat;
+  background-blend-mode: var(--doodle-paper-blend);
+}
+
+/* PAPER THROUGH THE PEN DRAWINGS (doodlePaper): the underlines, circles
+   and margin doodles that write themselves in (Ink) take the same steps as
+   an SVG filter (InkPaperFilter.tsx). Off the paper only with the text's
+   off-paper switch; never in what is skipped. */
+.page[data-doodle-paper] [data-ink]:not(:where([data-off-paper] *, [data-paper-skip] *)),
+.page[data-doodle-paper][data-text-paper-all] [data-ink]:not(:where([data-paper-skip] *)) {
+  filter: url(#ink-paper);
+}
+
+/* PAPER THROUGH THE TEXT (textPaper): the same photo inside the letters, over
+   each element's own colour. Background layers: the paper's photos, each
+   at its share (bodyWall.ts, inkStack, from textPaper and inkPaper), over
+   the colour as it shows on the cream, solid (--text-paper-base: the soft
+   ink is see-through, and the photos would make it solid and dark) - those
+   clipped to the text - and a clear one clipped to the padding box. The element's own background colour is
+   left alone and paints with that last layer, so a pill or a chip keeps its
+   fill and only its letters take the paper.
+
+   Which text: a heading, paragraph or list item whose text is all plain
+   (bold, italic, links, a span marked data-paper-inline, a pen drawing -
+   an svg is never text), whole; and inside any of them, each element that
+   has no children of its own, and each marked span (the hand-written and
+   underlined words of the headings: "Design a week once."; an underlined
+   word's span is positioned, so it paints its own). Not a container with structure inside it:
+   text clipped from a container takes in its descendants' letters whatever
+   hides or clips them, and the hero's title (a hidden copy, a sliding
+   window) showed its hidden layers. Its leaves each keep their own.
+
+   Links and buttons with their switch (data-text-paper-links), else they
+   keep their own ink. On the paper only, unless the off-paper switch is on
+   (data-text-paper-all): the hero, the nav and popups carry data-off-
+   paper. Never pictures or form controls, the collage, the post-it or the
+   dev panel (data-paper-skip). One rule per pair of switches, so nothing
+   outside them is ever touched. */
+.page[data-text-paper] :is(:is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) :not(:has(*)), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) [data-paper-inline]):not(:where(a, button, a *, button *, [data-off-paper], [data-off-paper] *, [role="dialog"], [role="dialog"] *, [data-paper-skip], [data-paper-skip] *, svg, svg *, img, canvas, video, input, select, textarea, br, wbr)),
+.page[data-text-paper][data-text-paper-links] :is(:is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) :not(:has(*)), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) [data-paper-inline], :is(a, button):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(a, button) :not(:has(*))):not(:where([data-off-paper], [data-off-paper] *, [role="dialog"], [role="dialog"] *, [data-paper-skip], [data-paper-skip] *, svg, svg *, img, canvas, video, input, select, textarea, br, wbr)),
+.page[data-text-paper][data-text-paper-all] :is(:is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) :not(:has(*)), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) [data-paper-inline]):not(:where(a, button, a *, button *, [data-paper-skip], [data-paper-skip] *, svg, svg *, img, canvas, video, input, select, textarea, br, wbr)),
+.page[data-text-paper][data-text-paper-links][data-text-paper-all] :is(:is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) :not(:has(*)), :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, label, th, td) [data-paper-inline], :is(a, button):not(:has(:not(strong, em, b, i, small, a, span:not([class]), [data-paper-inline], svg, svg *, br, wbr, code, abbr, time, cite, q, mark, sup, sub))), :is(a, button) :not(:has(*))):not(:where([data-paper-skip], [data-paper-skip] *, svg, svg *, img, canvas, video, input, select, textarea, br, wbr)) {
+  background-image: var(--text-paper-image), linear-gradient(var(--text-paper-base) 0 0), linear-gradient(transparent 0 0);
+  background-size: var(--text-paper-size), auto, auto;
+  background-position: 0 0;
+  background-repeat: repeat;
+  background-blend-mode: var(--text-paper-blend), normal, normal;
+  -webkit-background-clip: var(--text-paper-clip), text, padding-box;
+  background-clip: var(--text-paper-clip), text, padding-box;
+  -webkit-text-fill-color: transparent;
+}
+
+/* A link left out keeps its own ink: without this it would take the clear
+   fill of the paragraph it sits in, and show the paragraph's colour. */
+.page[data-text-paper]:not([data-text-paper-links]) :is(a, button) {
+  -webkit-text-fill-color: currentColor;
 }
 
 /* The post-it (PostIt.tsx). --note is its side; STUCK (0.24) of it is the

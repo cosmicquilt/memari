@@ -1,0 +1,308 @@
+/* The start dialog's zoom (SpreadZoom.tsx): a spread on a dark see-through
+   backdrop, a header of white type, and for a planner the timeline in small
+   along the foot. Its own colours, since it sits outside the dialog's. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(12, 11, 10, 0.74);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fade 180ms ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  gap: 8px;
+  color: #fff;
+  pointer-events: none;
+}
+
+.frame[data-timeline] {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.frame > * {
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------------ header */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.titles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kind {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  display: flex;
+  gap: 8px;
+}
+
+.partName {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.partName::before {
+  content: "·";
+  margin-right: 8px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A planner's part, saved on its own: beside the title. */
+.partSave {
+  margin-right: auto;
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.headActions form {
+  margin: 0;
+}
+
+.close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  transition: background 140ms ease-out;
+}
+
+.close:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.close:focus-visible,
+.tile:focus-visible,
+.zoomButton:focus-visible {
+  outline: 2px solid #8a97ff;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------- stage */
+
+.stage {
+  position: relative;
+  min-height: 0;
+  display: grid;
+}
+
+.stage > * {
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------- timeline */
+
+/* The editor's timeline, in small: a dark glass strip, a level to a
+   column, its name above and how often it repeats below. */
+.timeline {
+  justify-self: center;
+  max-width: 100%;
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  border-radius: 14px;
+  background: rgba(30, 30, 32, 0.86);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.level {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.level + .level {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.levelName,
+.repeats {
+  font-size: 10.5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.levelName {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.repeats {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tile {
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  outline: 2px solid transparent;
+  cursor: pointer;
+  transition: background 140ms ease-out, outline-color 140ms ease-out;
+}
+
+.tile:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tile[aria-current] {
+  outline-color: #6f7dff;
+  background: rgba(111, 125, 255, 0.16);
+}
+
+.tilePages {
+  display: block;
+  /* Two pages side by side, 60px tall. */
+  width: calc(60px * (2175 * 2 + 1) / 3075);
+}
+
+.tilePages > div {
+  box-shadow: none;
+}
+
+/* ------------------------------------------------- the magnifier */
+
+/* Around a card (or the details' picture): what the magnifier sits on. */
+.holder {
+  position: relative;
+  display: grid;
+}
+
+.holder > button:first-child {
+  height: 100%;
+}
+
+.zoomButton {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  /* A dark glass on a light disc, as the Layouts page's. */
+  background: rgba(255, 255, 255, 0.92);
+  color: #1c1917;
+  box-shadow: 0 1px 5px rgba(20, 12, 6, 0.28);
+  cursor: zoom-in;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+
+.holder:hover .zoomButton,
+.holder:focus-within .zoomButton,
+.zoomAlways {
+  opacity: 1;
+  transform: none;
+}
+
+.zoomButton:hover {
+  background: #fff;
+  transform: scale(1.08);
+}
+
+/* No hover on a touch screen: always there. */
+@media (hover: none) {
+  .zoomButton {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .frame {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .title {
+    font-size: 16px;
+  }
+
+  /* The title on a row of its own, the buttons under it; the Save buttons
+     down to their bookmark. */
+  .head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .titles {
+    flex: 1 1 100%;
+  }
+
+  .head [data-tone="dark"] > span {
+    display: none;
+  }
+
+  .head [data-tone="dark"] {
+    padding: 0 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    animation: none;
+  }
+
+  .zoomButton,
+  .tile {
+    transition: none;
+  }
+}

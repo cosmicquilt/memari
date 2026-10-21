@@ -10,6 +10,8 @@ import { moduleDefinition } from "@/lib/moduleRegistry";
 import { describeModule } from "@/lib/moduleDescriptions";
 import own from "../modules.module.css";
 import { GuidePhoto } from "../GuidePhoto";
+import { PALETTE_INFO_BY_SLUG } from "@/lib/paletteGroups";
+import { SaveButton } from "@/app/planner/templateSaved";
 
 // memari.studio/modules/<slug>: a practice, where it comes from, and the
 // module that prints it - drawn by the real renderer. Only modules with a
@@ -94,6 +96,11 @@ export default async function ModuleGuidePage({ params }: { params: Promise<{ sl
             <figcaption>
               The {name} module as it prints, {where}. The dots are the page&rsquo;s quarter-inch grid.
             </figcaption>
+            {PALETTE_INFO_BY_SLUG.has(slug) && (
+              <div style={{ marginTop: 12 }}>
+                <SaveButton save={{ kind: "module", slug }} what={`the ${name} module`} label="Save module" />
+              </div>
+            )}
           </figure>
         )}
 

@@ -75,7 +75,15 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
   } else {
     await prisma.ownerSettings.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
   }
-  return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count;
+  // SAVED PLANNERS (bookmarks of ours, templateSaving.ts): one the account
+  // already has is kept once - the pair is unique, so these are copied with
+  // the duplicates skipped rather than moved.
+  const planners = await prisma.savedPlanner.findMany({ where: { ownerId: guestOwner }, select: { templateKey: true } });
+  if (planners.length > 0) {
+    await prisma.savedPlanner.createMany({ data: planners.map((p) => ({ ownerId: userId, templateKey: p.templateKey })), skipDuplicates: true });
+    await prisma.savedPlanner.deleteMany({ where: { ownerId: guestOwner } });
+  }
+  return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count + planners.length;
 }
 
 /** Our own sign-in page, returning to `returnTo` afterwards - it is also

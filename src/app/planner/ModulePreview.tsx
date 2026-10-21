@@ -30,6 +30,7 @@ export const ModulePreview = memo(function ModulePreview({
   draw,
   initialWidthPx,
   maxHeightPx,
+  rowSpan: rows,
   instanceKey = "preview",
 }: {
   slug: string;
@@ -42,15 +43,19 @@ export const ModulePreview = memo(function ModulePreview({
   initialWidthPx: number;
   /** Very tall modules (a year in pixels) are cut here, fading out. */
   maxHeightPx?: number;
+  /** Rows to draw it at, if more than its fewest: Featured's cards draw
+   *  every module past their height so each is cut and fades, and its
+   *  details show that same drawing whole. */
+  rowSpan?: number;
   /** Distinguishes two previews of one module on screen at once. */
   instanceKey?: string;
 }) {
   const preview = useMemo(() => {
     const previewColumns = dayUnitColumns(pageGrid);
-    const rowSpan = getMinRowSpanForSlug(slug, pageGrid, previewColumns, previewProps);
+    const rowSpan = Math.max(getMinRowSpanForSlug(slug, pageGrid, previewColumns, previewProps), rows ?? 0);
     const placement = { columnStart: 0, rowStart: 0, columnSpan: previewColumns, rowSpan };
     return { placement, rect: gridCellToPixels(pageGrid, placement) };
-  }, [slug, previewProps, pageGrid]);
+  }, [slug, previewProps, pageGrid, rows]);
   const elements = useMemo(
     () =>
       draw

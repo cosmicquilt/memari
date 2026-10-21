@@ -41,6 +41,25 @@
   letter-spacing: -0.02em;
 }
 
+/* A shelf of planners: Planning, Growth... under the Planners heading. */
+.shelf {
+  margin-top: 48px;
+  scroll-margin-top: 88px;
+}
+
+.shelf .layoutGrid {
+  margin-top: 18px;
+}
+
+.shelfTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .blockLede {
   margin: 0;
   max-width: 640px;
@@ -296,6 +315,17 @@
     0 10px 26px rgba(40, 30, 20, 0.1);
   display: grid;
   align-items: start;
+}
+
+/* Save, at the module preview's corner: on the paper, a light disc. */
+.moduleSave {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(20, 12, 6, 0.18);
 }
 
 .moduleName {

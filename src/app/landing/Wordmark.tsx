@@ -135,7 +135,11 @@ export function Wordmark({ onArrived, onWritten, className }: { onArrived?: () =
         </span>
       </h1>
       <p ref={tagline} className={styles.tagline}>
-        a journal as unique as <span className={styles.srOnly}>you.</span>
+        {/* Its words in a span of their own: the paper in the text
+            (landing.module.css) reaches leaves, not this line with its
+            drawing and its hidden "you." */}
+        <span>a journal as unique as </span>
+        <span className={styles.srOnly}>you.</span>
         {/* The viewBox runs 40 units clear of the text's ink all round: room
             for its shadow - see .you. */}
         <svg

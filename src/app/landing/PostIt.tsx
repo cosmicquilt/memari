@@ -152,6 +152,9 @@ export function PostIt() {
     <a
       href="/app?otter=1"
       className={flatOn ? `${styles.postit} ${styles.postitZoomed}` : styles.postit}
+      // Its words are a drawing, not text, and its layers are paper photos:
+      // the text's paper (landing.module.css) has nothing to do here.
+      data-paper-skip=""
       aria-label="Build your planner with the otter"
       onPointerEnter={(e) => e.pointerType === "mouse" && setOver(true)}
       onPointerLeave={() => setOver(false)}

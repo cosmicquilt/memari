@@ -25,6 +25,7 @@ import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
   RULE_WIDTH_PT,
+  WRITING_LINE_OPACITY,
   borderElement,
   contentTopPx,
   headerElements,
@@ -278,7 +279,7 @@ export function renderPromptedLines(
         height: ruleWidth,
         fill: NEAR_BLACK,
         stroke: "none",
-        opacity: 0.6,
+        opacity: WRITING_LINE_OPACITY,
       });
     }
 

@@ -12,20 +12,22 @@
 // modules' pictures are fetched or drawn there, so none of that weight is
 // in every /app load.
 
-import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf, plannerMakes } from "@/app/landing/plannerTemplates";
+import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf, plannerMakes, plannerShelves } from "@/app/landing/plannerTemplates";
 import { KIND_SECTIONS, LISTED_STARTERS, actionLabel, makesWhat, modulesOf, type StarterKind } from "@/app/landing/starterLayouts";
 import { MODULE_GUIDES } from "@/lib/moduleGuides";
 import { PALETTE_INFO } from "@/lib/paletteGroups";
 
 export type FeaturedPlanner = {
   key: string;
+  /** The shelf it is on: "Planning", "Faith". */
+  group: string;
   title: string;
   forWhom: string;
   line: string;
   /** The spread its card shows. */
   cover: string;
   /** Each part of the book, named, with the spread it is laid out as. */
-  parts: Array<{ name: string; key: string }>;
+  parts: Array<{ part: "front" | "month" | "week" | "day"; name: string; key: string }>;
   /** What "Use this planner" makes, in a sentence. */
   makes: string;
 };
@@ -44,6 +46,7 @@ export type FeaturedLayout = {
 };
 
 export type Featured = {
+  /** In shelf order, so a shelf's planners are together. */
   planners: FeaturedPlanner[];
   layouts: FeaturedLayout[];
   /** The kinds, in the gallery's order, with their headings. */
@@ -60,13 +63,14 @@ let built: Featured | null = null;
 /** Built once per server: it is the same for everyone until a deploy. */
 export function featuredItems(): Featured {
   built ??= {
-    planners: PLANNERS.map((planner) => ({
+    planners: plannerShelves(PLANNERS).flatMap((shelf) => shelf.planners).map((planner) => ({
       key: planner.key,
+      group: planner.group,
       title: planner.title,
       forWhom: planner.forWhom,
       line: planner.line,
       cover: coverSpreadOf(planner),
-      parts: partsOf(planner).map(({ part, key }) => ({ name: PART_NAMES[part], key })),
+      parts: partsOf(planner).map(({ part, key }) => ({ part, name: PART_NAMES[part], key })),
       makes: plannerMakes(planner),
     })),
     layouts: LISTED_STARTERS.map((starter) => ({

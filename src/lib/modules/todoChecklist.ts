@@ -20,7 +20,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import {
-  RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
+  RULE_WIDTH_PT, WRITING_LINE_OPACITY, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
 import { capCentredTextY, fitLabel } from "@/lib/modules/textFit";
@@ -511,7 +511,7 @@ export function renderTodoChecklist(
         height: rowLineWidth,
         fill: NEAR_BLACK,
         stroke: "none",
-        opacity: 0.6,
+        opacity: WRITING_LINE_OPACITY,
       });
     }
   }

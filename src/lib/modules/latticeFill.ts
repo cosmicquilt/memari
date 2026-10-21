@@ -13,7 +13,7 @@
 // page. moduleHouseStyle.test.mts checks all three.
 
 import { ptToPx } from "@/lib/print-spec";
-import { NEAR_BLACK, RULE_WIDTH_PT, moduleGapPx, rowHeightPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
+import { NEAR_BLACK, RULE_WIDTH_PT, WRITING_LINE_OPACITY, moduleGapPx, rowHeightPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
 
 export type FillStyle = "none" | "lined" | "dotted" | "graph";
 
@@ -94,8 +94,8 @@ export function latticeFill(options: {
   id: (name: string) => string;
   tag?: string;
   inset?: number;
-  /** Ink of a lined rule. The note box's lines are full ink; rows inside a
-   *  structure (a table, a matrix) are lighter, as the to-do's are. */
+  /** Ink of a lined rule: a writing line's, as a prompt's answers are
+   *  (moduleFrame's WRITING_LINE_OPACITY), unless a caller says otherwise. */
   lineOpacity?: number;
   skipX?: number[];
 }): FrameElement[] {
@@ -122,7 +122,7 @@ export function latticeFill(options: {
 
   if (style === "lined") {
     for (const row of rows) {
-      elements.push(rule(`${tag}rule${row.index}`, region.left + lineInset, row.y - weight / 2, region.right - region.left - lineInset * 2, weight, options.lineOpacity));
+      elements.push(rule(`${tag}rule${row.index}`, region.left + lineInset, row.y - weight / 2, region.right - region.left - lineInset * 2, weight, options.lineOpacity ?? WRITING_LINE_OPACITY));
     }
     return elements;
   }

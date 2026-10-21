@@ -578,7 +578,6 @@ export function renderAxisMatrix(
         lattice,
         id,
         tag: `q-${name}-`,
-        lineOpacity: 0.6,
       })
     );
   });

@@ -4,7 +4,7 @@
 // slots at their times, a dotted day's rows, a month's squares.
 //
 // Run as part of: npm test
-import { SPREAD_DEFS, baseSheetSpread, landingSpreads, spreadProblems } from "./spreads";
+import { LANDING_PAGE_GRID, SPREAD_DEFS, baseSheetSpread, landingSpreads, layoutPreview, spreadProblems } from "./spreads";
 import { PEOPLE, SIDEBAR_FROM_ROW } from "./archetypes";
 import { BASE_SPREAD, HERO_BY_KEY, HERO_SPREADS, type HeroSpread } from "./heroSpreads";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
@@ -120,6 +120,36 @@ for (const def of PLANNER_SPREADS) {
   check(`${def.key}: its own key`, HERO_BY_KEY[def.key] === def);
 }
 check("every planner can be made", PLANNERS.length === ALL_PLANNERS.length && PLANNERS.length > 0, `${PLANNERS.length} of ${ALL_PLANNERS.length}`);
+
+// WHAT PRINTS CAN BE READ, AND THE HOURS FILL THEIR ROWS (2026-10-21). The
+// planner library's first measure found a flare log's 0 to 10 circles
+// numbered at 2.3pt (ten circles in a six-column sidebar) and three weeks
+// whose hours stopped an inch and a half above the modules under them.
+// Each passed every check above: a module may shrink its words to fit, and
+// the hours' box counts as filled whatever the grid draws in it.
+const PT = 300 / 72; // the landing page's pixels: 75 to the quarter inch
+const CELL = 75;
+for (const def of [...HERO_SPREADS, ...PLANNER_SPREADS]) {
+  const preview = layoutPreview(def, new Date(Date.UTC(2026, 0, 5)));
+  // The +1 after midnight is a superscript, small on purpose.
+  const tiny = preview.pages.flatMap((page) =>
+    page.marks.flatMap((m) => (m.k === "t" && m.t.trim() && m.t.trim() !== "+1" && m.z < 4 * PT ? [`"${m.t.trim()}" at ${(m.z / PT).toFixed(1)}pt`] : [])),
+  );
+  check(`${def.key}: no words printed under 4pt`, tiny.length === 0, tiny.slice(0, 3).join(", "));
+  if (!drawsEvents(def)) continue;
+  const layout = def.layout as { kind: "week" | "day"; hoursRows?: number };
+  const boxBottom = LANDING_PAGE_GRID.marginPx + (layout.hoursRows ?? 20) * CELL;
+  // The right page's hours: the rule under the last time is the grid's foot.
+  const marks = preview.pages[1].marks;
+  const times = marks.filter((m): m is Extract<typeof m, { k: "t" }> => m.k === "t" && /^\d{1,2}:\d{2}$/.test(m.t.trim()));
+  check(`${def.key}: its hours print their times`, times.length > 0);
+  if (times.length === 0) continue;
+  const lastTime = Math.max(...times.map((t) => t.y + t.z));
+  const feet = marks.flatMap((m) => (m.k === "r" && m.h <= 3 && m.w > 100 && m.y >= lastTime - 5 && m.y <= boxBottom + 2 ? [m.y] : []));
+  const foot = feet.length > 0 ? Math.min(...feet) : lastTime;
+  const blank = (boxBottom - foot) / CELL;
+  check(`${def.key}: its hours fill their rows`, blank <= 1.2, `${blank.toFixed(1)} rows blank under them: set hoursRows to what they draw`);
+}
 for (const planner of ALL_PLANNERS) {
   const parts = partsOf(planner);
   check(`${planner.key}: has a week, a month or a day`, parts.some(({ part }) => part !== "front"));

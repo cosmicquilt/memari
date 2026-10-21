@@ -78,8 +78,9 @@ export function journalFor(spread: HeroSpread, title: string, browserTimeZone: s
   };
 }
 
-/** What a spine keeps from the spread: its settings, not its dates. */
-function spineSettings(placed: Placed): Record<string, unknown> {
+/** What a spine keeps from the spread: its settings, not its dates. Also
+ *  what a layout saved to Saved keeps (templateSaving.ts). */
+export function spineSettings(placed: Placed): Record<string, unknown> {
   if (placed.slug === "month-grid-core") return { inside: placed.props.inside };
   // The hours: everything but the days they are drawn for and what is on them.
   const dated = new Set(["dayCount", "dayLabels", "events"]);

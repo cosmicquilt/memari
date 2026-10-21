@@ -7,6 +7,7 @@ import { resolveLayout, similarTo } from "../../similarLayouts";
 import { actionLabel, makesWhat } from "../../starterLayouts";
 import { PLANNER_BY_KEY, PLANNER_OF_SPREAD } from "../../plannerTemplates";
 import type { LayoutDetail } from "../../layoutDetail";
+import { layoutModules } from "@/app/planner/templateSaving";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ key
     spread: layoutPreview(entry.def),
     planner: planner ? { key: planner.key, title: planner.title } : undefined,
     similar: similarTo(entry.key).map((s) => ({ key: s.key, title: s.title, changes: s.changes, spread: layoutPreview(s.def) })),
+    modules: layoutModules(entry.def),
   };
   return Response.json(detail, { headers: { "Cache-Control": "public, max-age=3600, s-maxage=3600" } });
 }

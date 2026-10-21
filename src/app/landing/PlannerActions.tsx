@@ -10,17 +10,28 @@
 
 import { orderingConfigured } from "@/lib/print/orders";
 import { UseThisWeek } from "./UseThisWeek";
+import { SaveButton } from "@/app/planner/templateSaved";
+import { PLANNER_BY_KEY } from "./plannerTemplates";
 
 export function orderAsIsOffered(): boolean {
   return orderingConfigured().ok || process.env.NODE_ENV !== "production";
 }
 
 export function PlannerActions({ plannerKey }: { plannerKey: string }) {
-  if (!orderAsIsOffered()) return <UseThisWeek spreadKey={plannerKey} label="Use this planner" />;
+  // Save, to come back to from Saved in the app (2026-10-21).
+  const save = <SaveButton save={{ kind: "planner", key: plannerKey }} what={`the ${PLANNER_BY_KEY[plannerKey]?.title ?? ""} planner`} />;
+  if (!orderAsIsOffered())
+    return (
+      <>
+        <UseThisWeek spreadKey={plannerKey} label="Use this planner" />
+        {save}
+      </>
+    );
   return (
     <>
       <UseThisWeek spreadKey={plannerKey} label="Order as is" then="order" />
       <UseThisWeek spreadKey={plannerKey} label="Change it first" quiet />
+      {save}
     </>
   );
 }

@@ -134,7 +134,7 @@ export function Hero() {
   }, []);
 
   return (
-    <section ref={hero} className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`} aria-label="Memari Studio">
+    <section ref={hero} className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`} aria-label="Memari Studio" data-off-paper="">
       <div className={styles.backdrop} aria-hidden="true" />
       <canvas ref={canvas} className={styles.desk} style={{ opacity: ready ? 1 : 0, transition: readyHidden ? "none" : undefined }} aria-hidden="true" />
       <div className={styles.grain} aria-hidden="true" />

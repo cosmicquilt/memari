@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { SitePage } from "@/app/landing/SitePage";
 import { LayoutCard, LayoutViewer } from "@/app/landing/LayoutViewer";
 import { UseThisWeek } from "@/app/landing/UseThisWeek";
+import { SaveButton } from "@/app/planner/templateSaved";
 import {
   KIND_SECTIONS,
   STARTERS,
@@ -110,10 +111,13 @@ export default async function LayoutPage({
               )}
             </div>
             <div>
-              <UseThisWeek
-                spreadKey={starter.key}
-                label={actionLabel(starter.kind)}
-              />
+              <div className={site.cardActions}>
+                <UseThisWeek
+                  spreadKey={starter.key}
+                  label={actionLabel(starter.kind)}
+                />
+                <SaveButton save={{ kind: "layout", key: starter.key }} what={`the ${starter.title} layout`} />
+              </div>
               <p
                 className={site.note}
                 style={{ marginTop: 12, lineHeight: 1.5 }}
@@ -158,10 +162,13 @@ export default async function LayoutPage({
               ? "Put them at the front of a journal and design the rest around them. Memari lays out every page after, each one dated, ready to print at home or as a bound book."
               : `Design it once. Memari repeats it for every ${starter.kind} you choose, each one dated, ready to print at home or as a bound book.`}
           </p>
-          <UseThisWeek
-            spreadKey={starter.key}
-            label={actionLabel(starter.kind)}
-          />
+          <div className={site.cardActions} style={{ justifyContent: "center" }}>
+            <UseThisWeek
+              spreadKey={starter.key}
+              label={actionLabel(starter.kind)}
+            />
+            <SaveButton save={{ kind: "layout", key: starter.key }} what={`the ${starter.title} layout`} />
+          </div>
         </section>
       </LayoutViewer>
     </SitePage>

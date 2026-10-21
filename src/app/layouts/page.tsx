@@ -11,8 +11,9 @@ import {
   STARTER_MODULES,
   actionLabel,
 } from "@/app/landing/starterLayouts";
-import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf } from "@/app/landing/plannerTemplates";
+import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf, plannerShelves, shelfId } from "@/app/landing/plannerTemplates";
 import { PlannerActions } from "@/app/landing/PlannerActions";
+import { SaveButton } from "@/app/planner/templateSaved";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
 
@@ -68,38 +69,50 @@ export default function LayoutsPage() {
             </h2>
             <p className={site.blockLede}>
               A whole book made for one kind of life: the pages at the front,
-              and a spread for every month and week, all laid out. Change any
-              of it.
+              and a spread for every month, week or day, all laid out. Change
+              any of it.
             </p>
-            <div className={site.layoutGrid}>
-              {PLANNERS.map((planner) => (
-                <article key={planner.key} className={site.card}>
-                  <LayoutCard spreadKey={coverSpreadOf(planner)} title={planner.title} />
-                  <div>
-                    <h3 className={site.cardTitle}>
-                      <Link href={`/layouts/${planner.key}`} className={site.cardLink}>
-                        {planner.title}
-                      </Link>
-                    </h3>
-                    <p className={site.hours}>{planner.forWhom}</p>
-                    <p className={site.cardText}>{planner.line}</p>
-                    <ul className={site.parts} aria-label="In the book">
-                      {partsOf(planner).map(({ part }) => (
-                        <li key={part}>{PART_NAMES[part]}</li>
-                      ))}
-                    </ul>
-                    {/* A text link, not a third button: two buttons and a
-                        third wrapped onto a line of its own (2026-10-15). */}
-                    <Link href={`/layouts/${planner.key}`} className={site.textLink}>
-                      See every page
-                    </Link>
-                  </div>
-                  <div className={site.cardActions}>
-                    <PlannerActions plannerKey={planner.key} />
-                  </div>
-                </article>
+            <nav aria-label="Kinds of planner" className={site.kinds} data-keepout>
+              {plannerShelves(PLANNERS).map(({ group, planners }) => (
+                <a key={group} href={`#${shelfId(group)}`}>
+                  {group} <span>{planners.length}</span>
+                </a>
               ))}
-            </div>
+            </nav>
+            {plannerShelves(PLANNERS).map(({ group, planners }) => (
+              <div key={group} id={shelfId(group)} className={site.shelf}>
+                <h3 className={site.shelfTitle}>{group}</h3>
+                <div className={site.layoutGrid}>
+                  {planners.map((planner) => (
+                    <article key={planner.key} className={site.card}>
+                      <LayoutCard spreadKey={coverSpreadOf(planner)} title={planner.title} />
+                      <div>
+                        <h4 className={site.cardTitle}>
+                          <Link href={`/layouts/${planner.key}`} className={site.cardLink}>
+                            {planner.title}
+                          </Link>
+                        </h4>
+                        <p className={site.hours}>{planner.forWhom}</p>
+                        <p className={site.cardText}>{planner.line}</p>
+                        <ul className={site.parts} aria-label="In the book">
+                          {partsOf(planner).map(({ part }) => (
+                            <li key={part}>{PART_NAMES[part]}</li>
+                          ))}
+                        </ul>
+                        {/* A text link, not a third button: two buttons and a
+                            third wrapped onto a line of its own (2026-10-15). */}
+                        <Link href={`/layouts/${planner.key}`} className={site.textLink}>
+                          See every page
+                        </Link>
+                      </div>
+                      <div className={site.cardActions}>
+                        <PlannerActions plannerKey={planner.key} />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ))}
           </section>
         )}
 
@@ -143,6 +156,7 @@ export default function LayoutsPage() {
                     >
                       What&rsquo;s on it
                     </Link>
+                    <SaveButton save={{ kind: "layout", key: starter.key }} variant="icon" what={`the ${starter.title} layout`} />
                   </div>
                 </article>
               ))}

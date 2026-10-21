@@ -116,6 +116,45 @@ export type BodyWallSettings = {
   /** Paper003's soft crumples, alone (crumple_bake.py): Paper003 was 95%
    *  crumples, so this is it. */
   paperCrumple: number;
+  /** PAPER THROUGH THE INK (2026-10-21: "a slider that uses the effect ...
+   *  on the /app background behind popup on the doodles ... so the paper
+   *  texture shows ... on the doodle wall on the website pages outside of
+   *  /app ... both for doodles and for the text on the page, separate
+   *  sliders"). The start dialog's backdrop lays its paper photo over the
+   *  doodle wall in overlay (StartDialog.tsx, backdropStyle), so the grain
+   *  shows in the pen lines. These lay the same photo over the site's
+   *  doodles, and inside its headings' and paragraphs' letters, 0 to 3: 0
+   *  as it was, 1 the paper at its own strength (inkPaper), past 1 laid on
+   *  again ("i dont see it applying": the start dialog's photo is faint on
+   *  the site's bolder lines). */
+  doodlePaper: number;
+  textPaper: number;
+  /** Which paper goes into the ink (2026-10-21: "does it only apply the
+   *  line paper texture not the downloaded ones", then "have a switch or dev
+   *  panel options for seeing the difference"): "site", the site's own
+   *  paper, every layer at the strength the page lays it under the cream;
+   *  "app", the start dialog's photo (/landing/paper.jpg); or one of
+   *  PAPER_LAYERS' ids alone, at its full strength. See INK_PAPERS. */
+  inkPaper: InkPaper;
+  /** How the paper meets the ink: "overlay", the ink's own colour grained,
+   *  as the start dialog lays its photo (a grain even about mid-grey leaves
+   *  the ink's tone where it was); "hard-light", flecks of paper through
+   *  the ink, as the page lays its own papers (it lifts dark ink paler, and
+   *  a broad photo like the crumples fades whole patches of a drawing);
+   *  "through", the overlay's grain and the paper showing through the ink
+   *  in small gaps where a pen skips its tooth, none at 0, in full at 1.5,
+   *  laid on twice at 3
+   *  (2026-10-21: "3 still doesn't look very different" - grain alone
+   *  cannot be strong on dark ink, overlay never takes it past twice its
+   *  own value). */
+  inkBlend: "overlay" | "hard-light" | "through";
+  /** The text's paper on links and buttons too (2026-10-21: "a switch to
+   *  include link/button with the text"); off, they keep their own ink. */
+  textPaperLinks: boolean;
+  /** And on text that is not on the paper: the hero's title and tagline,
+   *  the nav, a popup ("another to apply the effect to text
+   *  not over paper"). Those regions carry data-off-paper. */
+  textPaperOffPaper: boolean;
   /** How cream the site is, everywhere outside the app (2026-10-15: "a dev
    *  panel slider that changes the cream color lighter or more cream
    *  'darker' everywhere outside of app"): 0 white, 1 the cream it has been
@@ -137,6 +176,140 @@ export const PAPER_LAYERS = [
 ] as const satisfies ReadonlyArray<{ key: keyof BodyWallSettings; id: string; file: string; size: string; label: string }>;
 
 export const BODY_WALL_DEFAULTS: BodyWallSettings = saved as BodyWallSettings;
+
+/** The papers the ink can take (inkPaper): the site's whole paper, the
+ *  start dialog's photo, or one of the site's layers alone. */
+export type InkPaper = "site" | "app" | (typeof PAPER_LAYERS)[number]["id"];
+export const INK_PAPERS: Array<{ id: InkPaper; label: string }> = [
+  { id: "site", label: "The site's paper: every layer, as mixed" },
+  { id: "app", label: "The app's paper (paper.jpg)" },
+  ...PAPER_LAYERS.map((p) => ({ id: p.id as InkPaper, label: `Only ${p.label}` })),
+];
+
+/** One photo in the ink: its picture, its size, its blend, how much. A
+ *  "normal" one is a map of the paper's gaps (white where the paper shows). */
+type InkLayer = { src: string; size: string; blend: "overlay" | "hard-light" | "normal"; weight: number };
+
+/** The papers with a tooth for a pen to skip, and their gap maps (scratchpad
+ *  fleck_bake.cjs: each photo's darkest 6% open, fading out by its darkest
+ *  30%, at the size the page shows it).
+ *  Not the crumples: folds, not tooth - their darkest spots are whole
+ *  creases, and would open holes the size of a drawing. */
+const GAPS: Record<string, string> = {
+  app: "/landing/fleck-paper.avif",
+  paper006: "/landing/paper/fleck-Paper006.avif",
+  paper001: "/landing/paper/fleck-Paper001.avif",
+  paper002: "/landing/paper/fleck-Paper002.avif",
+  fibre: "/landing/paper/fleck-fibre.avif",
+};
+
+/** Where on the slider the gaps are in full; past it they are laid on
+ *  again, and the soft edges of the map open too. */
+const GAPS_FULL_AT = 1.5;
+
+/** The photos the ink takes at a strength (inkPaper, inkBlend), the whole
+ *  site's paper at the page's own mix of its layers. The site's are their
+ *  ink- copies, moved to average mid-grey (scratchpad ink_paper_bake.cjs):
+ *  the originals average ~155, which would lift the ink paler as well as
+ *  grain it - the copies add the grain and not the tone. */
+function inkLayers(s: BodyWallSettings, strength: number): InkLayer[] {
+  if (strength <= 0) return [];
+  const choice = s.inkPaper ?? "app";
+  const look = s.inkBlend ?? "overlay";
+  const blend = look === "hard-light" ? "hard-light" : "overlay";
+  // each photo and its share: the app's alone, one layer alone, or the
+  // site's layers at the page's own strengths
+  const papers =
+    choice === "app"
+      ? [{ id: "app", src: "/landing/paper.jpg", size: "256px 256px", share: 1 }]
+      : PAPER_LAYERS.filter((p) => (choice === "site" ? s[p.key] > 0 : p.id === choice)).map((p) => ({
+          id: p.id as string,
+          src: `/landing/paper/ink-${p.file}`,
+          size: p.size,
+          share: choice === "site" ? s[p.key] : 1,
+        }));
+  const grain: InkLayer[] = papers.map((p) => ({ src: p.src, size: p.size, blend, weight: p.share * strength }));
+  if (look !== "through") return grain;
+  // the gaps, in full at GAPS_FULL_AT, shared among the papers by their
+  // strengths: the site's four together open about as much as one alone
+  const toothed = papers.filter((p) => GAPS[p.id]);
+  const total = toothed.reduce((sum, p) => sum + p.share, 0);
+  const gaps: InkLayer[] = toothed.map((p) => ({
+    src: GAPS[p.id],
+    size: p.size,
+    blend: "normal",
+    weight: (p.share / total) * (strength / GAPS_FULL_AT),
+  }));
+  return [...grain, ...gaps];
+}
+
+/** One step of the paper in the ink, bottom first: a photo laid on in its
+ *  blend, a wash back toward the ink by `alpha`, or the paper's colour in
+ *  darken. The stylesheet's background stacks (inkStack) and the drawings'
+ *  filter (InkPaperFilter.tsx) are both built from these. */
+export type InkStep = { kind: "photo"; src: string; size: string; blend: InkLayer["blend"] } | { kind: "wash"; alpha: number } | { kind: "paper" };
+
+/** A layer has no opacity of its own (a background layer, a filter's
+ *  picture), so a photo's share is a wash of the ink laid over it: weakest
+ *  first, the wash after each takes what is under it to its share of the
+ *  next one up, and the last wash to the top one's own, so each photo ends
+ *  at its weight. Past 1, a photo is laid on again. The gaps are white; on
+ *  top, the paper's colour in darken takes them to the paper and leaves the
+ *  ink, darker in every channel, as it was. */
+export function inkSteps(layers: InkLayer[]): InkStep[] {
+  const units = layers
+    .flatMap((l) => Array.from({ length: Math.ceil(l.weight - 1e-3) }, (_, i) => ({ ...l, weight: Math.min(1, l.weight - i) })))
+    .filter((l) => l.weight > 1e-3)
+    .sort((a, b) => a.weight - b.weight);
+  const steps: InkStep[] = [];
+  units.forEach((u, i) => {
+    steps.push({ kind: "photo", src: u.src, size: u.size, blend: u.blend });
+    const keep = i + 1 < units.length ? u.weight / units[i + 1].weight : u.weight;
+    if (keep < 0.999) steps.push({ kind: "wash", alpha: Math.round((1 - keep) * 1000) / 1000 });
+  });
+  if (units.some((u) => u.blend === "normal")) steps.push({ kind: "paper" });
+  return steps;
+}
+
+/** The steps as background layers over a solid base colour (the doodles'
+ *  blue, a letter's own colour), top first. At least one layer always, so
+ *  the lists in the stylesheet stay whole. */
+export function inkStack(layers: InkLayer[], base: (alpha: number) => string, paper: string) {
+  const bottomUp = inkSteps(layers).map((step) =>
+    step.kind === "photo"
+      ? { image: `url(${step.src})`, size: step.size, blend: step.blend as string }
+      : step.kind === "wash"
+        ? { image: `linear-gradient(${base(step.alpha)} 0 0)`, size: "auto", blend: "normal" }
+        : { image: `linear-gradient(${paper} 0 0)`, size: "auto", blend: "darken" }
+  );
+  if (!bottomUp.length) bottomUp.push({ image: "linear-gradient(transparent 0 0)", size: "auto", blend: "normal" });
+  return bottomUp.reverse();
+}
+
+/** The steps the pen drawings take (Ink, through InkPaperFilter.tsx): the
+ *  doodles' slider and paper. */
+export function drawingInkSteps(s: BodyWallSettings) {
+  return inkSteps(inkLayers(s, s.doodlePaper ?? 0));
+}
+
+/** The colour a letter shows on the cream, as a solid colour: its own
+ *  laid over the cream at its own alpha, then alpha 1 (left out, a
+ *  relative colour keeps its origin's). currentColor stays a word in the
+ *  variable, so each letter's own colour is the one used. */
+function textPaperBase([r, g, b]: [number, number, number]) {
+  return `rgb(from currentColor calc(r * alpha + ${r} * (1 - alpha)) calc(g * alpha + ${g} * (1 - alpha)) calc(b * alpha + ${b} * (1 - alpha)) / 1)`;
+}
+
+/** A stack as the variables the stylesheet reads: images, sizes, blends,
+ *  and a clip to the letters for each (the text's). */
+function stackVars(name: string, stack: ReturnType<typeof inkStack>) {
+  return {
+    [`${name}-image`]: stack.map((l) => l.image).join(", "),
+    [`${name}-size`]: stack.map((l) => l.size).join(", "),
+    [`${name}-blend`]: stack.map((l) => l.blend).join(", "),
+    [`${name}-clip`]: stack.map(() => "text").join(", "),
+  };
+}
 
 /** The landing's cream, #f5ead5: what creamDepth 1 gives. */
 export const CREAM_BASE_RGB = [245, 234, 213] as const;
@@ -188,6 +361,23 @@ export function pageVars(s: BodyWallSettings): Record<string, number | string> {
     "--curl-reach": s.curlReach,
     "--carousel-gap": s.carouselGap,
     "--carousel-blur": s.carouselBlur,
+    // The paper in the ink, as background layers (inkStack): over the
+    // doodles' blue, and over each letter's own colour.
+    ...stackVars("--doodle-paper", inkStack(inkLayers(s, s.doodlePaper ?? 0), (a) => `rgba(${BODY_INK_RGB}, ${a})`, `rgb(${creamRgb(s.creamDepth ?? 1).join(", ")})`)),
+    // A letter's colour as it shows on the cream, solid: the photos are
+    // solid, so over a see-through colour (the soft ink, 0.66) they would
+    // turn the letters solid, darker and heavier than they were.
+    "--text-paper-base": textPaperBase(creamRgb(s.creamDepth ?? 1)),
+    ...stackVars(
+      "--text-paper",
+      inkStack(
+        inkLayers(s, s.textPaper ?? 0),
+        (a) => `color-mix(in srgb, var(--text-paper-base) ${Math.round(a * 1000) / 10}%, transparent)`,
+        // the paper, or the letter's own colour where it is lighter (white
+        // on a button stays white)
+        `rgb(from var(--text-paper-base) ${creamRgb(s.creamDepth ?? 1).map((c, i) => `max(${"rgb"[i]}, ${c})`).join(" ")})`
+      )
+    ),
     // The site's cream (creamDepth). --paper is var(--cream) in the stylesheet.
     "--cream": `rgb(${creamRgb(s.creamDepth ?? 1).join(", ")})`,
     "--cream-rgb": creamRgb(s.creamDepth ?? 1).join(", "),

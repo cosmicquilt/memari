@@ -10,6 +10,7 @@ import { SiteHeader } from "./SiteHeader";
 import { PaperLayers } from "./PaperLayers";
 import { SiteFooter } from "./SiteFooter";
 import { BodyDoodles } from "./BodyDoodles";
+import { InkPaperFilter } from "./InkPaperFilter";
 import { BODY_WALL_DEFAULTS, pageVars } from "./bodyWall";
 import { sans } from "./sansFont";
 import { script } from "./scriptFont";
@@ -19,7 +20,11 @@ import site from "./site.module.css";
 export async function SitePage({ children }: { children: ReactNode }) {
   const owner = await currentOwner();
   return (
-    <div className={`${styles.page} ${script.variable} ${sans.variable}`} style={pageVars(BODY_WALL_DEFAULTS) as CSSProperties}>
+    <div className={`${styles.page} ${script.variable} ${sans.variable}`} style={pageVars(BODY_WALL_DEFAULTS) as CSSProperties} data-text-paper={(BODY_WALL_DEFAULTS.textPaper ?? 0) > 0 || undefined}
+      data-text-paper-links={BODY_WALL_DEFAULTS.textPaperLinks || undefined}
+      data-text-paper-all={BODY_WALL_DEFAULTS.textPaperOffPaper || undefined}
+      data-doodle-paper={(BODY_WALL_DEFAULTS.doodlePaper ?? 0) > 0 || undefined}>
+      <InkPaperFilter />
       <PaperLayers />
       <SiteHeader signedIn={owner !== null} guest={owner?.guest ?? false} solid />
       <main className={site.main}>

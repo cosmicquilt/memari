@@ -21,6 +21,8 @@
 
 import { BELOW_ROW, type Hand, type Slot } from "./archetypes";
 import type { HeroSpread } from "./heroSpreads";
+import { LIBRARY_SPREADS } from "./plannerLibrary";
+import { LIBRARY_SPREADS_2 } from "./plannerLibrary2";
 
 const at = (slug: string, columnStart: number, rowStart: number, columnSpan: number, rowSpan: number, props?: Record<string, unknown>): Slot => ({
   slug,
@@ -47,7 +49,7 @@ const UNWRITTEN: Pick<HeroSpread, "hand" | "doodles" | "events" | "calendar"> = 
   calendar: [],
 };
 
-export const PLANNER_SPREADS: HeroSpread[] = [
+const FIRST_PLANNERS: HeroSpread[] = [
   // ============================================================== ADHD
   // The research's second niche (Gemini A report, "ADHD Brain-Dump & Done
   // List"): a day of three things and what actually got done, beside open
@@ -197,3 +199,7 @@ export const PLANNER_SPREADS: HeroSpread[] = [
     ...UNWRITTEN,
   },
 ];
+
+/** Every planner's spreads: the first two, and the library (2026-10-21,
+ *  plannerLibrary.ts). */
+export const PLANNER_SPREADS: HeroSpread[] = [...FIRST_PLANNERS, ...LIBRARY_SPREADS, ...LIBRARY_SPREADS_2];

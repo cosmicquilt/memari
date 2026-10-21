@@ -427,6 +427,7 @@ export function VideoHero() {
       ref={hero}
       className={`${styles.hero} ${HAND_FONT_CLASSES.join(" ")}`}
       aria-label="Memari Studio"
+      data-off-paper=""
       data-baked={showBaked ? "" : undefined}
     >
       <div className={styles.videoBackdrop} style={{ backgroundImage: `url(${HERO_VIDEO.dots})` }} aria-hidden="true" />

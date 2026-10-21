@@ -43,7 +43,7 @@ export function LayoutGallery({ layouts }: { layouts: Array<{ key: string; title
       <p className={styles.more}>
         <Link href="/layouts" className={styles.moreButton}>
           See all layouts
-          <span aria-hidden="true" className={styles.moreArrow}>
+          <span aria-hidden="true" className={styles.moreArrow} data-paper-inline="">
             &rarr;
           </span>
         </Link>

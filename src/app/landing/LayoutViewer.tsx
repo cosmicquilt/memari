@@ -29,15 +29,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { LayoutDetail } from "./layoutDetail";
+import type { LayoutDetail, LayoutModuleBox } from "./layoutDetail";
+import type { LandingSpread } from "./spreads";
 import { SpreadPages, SpreadPreview, type PreviewSet } from "./SpreadPreview";
 import { UseThisWeek } from "./UseThisWeek";
+import { ModuleSaveRegions, SaveButton, type SaveRegion } from "@/app/planner/templateSaved";
 import css from "./layoutViewer.module.css";
 
 const ViewerContext = createContext<((key: string) => void) | null>(null);
 
 const details = new Map<string, Promise<LayoutDetail>>();
-function loadDetail(key: string): Promise<LayoutDetail> {
+/** A layout's detail, fetched once a page: the popup's, and the start
+ *  dialog's zoom's for its modules' places (planner/SpreadZoom.tsx). */
+export function loadDetail(key: string): Promise<LayoutDetail> {
   let hit = details.get(key);
   if (!hit) {
     hit = fetch(`/landing/layouts/${encodeURIComponent(key)}`).then((r) => {
@@ -231,7 +235,7 @@ function Popup({
           </svg>
         </button>
 
-        <ZoomStage key={layoutKey} detail={detail} />
+        <ZoomStage key={layoutKey} spread={detail?.spread ?? null} overlay={detail ? moduleRegions(detail.key, detail.modules) : undefined} />
 
         <aside className={css.side}>
           {failed ? (
@@ -271,6 +275,7 @@ function Popup({
               )}
               <div className={css.actions}>
                 <UseThisWeek spreadKey={detail.key} label={detail.action} />
+                <SaveButton save={{ kind: "layout", key: detail.key }} what={`the ${detail.title} layout`} />
                 {!detail.changes.length && (
                   <Link
                     href={`/layouts/${detail.baseKey}`}
@@ -325,6 +330,18 @@ function Popup({
   );
 }
 
+/** A layout's modules as regions to save from, page by page, for the zoom
+ *  stage's overlay (2026-10-21): Save on hover, centred in each module. */
+export function moduleRegions(layoutKey: string, modules: LayoutModuleBox[]): [ReactNode, ReactNode] {
+  const page = (p: 0 | 1) => {
+    const regions: SaveRegion[] = modules
+      .filter((m) => m.page === p)
+      .map((m) => ({ save: { kind: "layout-module", key: layoutKey, slot: m.slot }, name: m.name, box: m.box }));
+    return <ModuleSaveRegions regions={regions} pageWidthPx={2175} pageHeightPx={3075} />;
+  };
+  return [page(0), page(1)];
+}
+
 const KIND_WORD = {
   week: "A week",
   month: "A month",
@@ -345,8 +362,21 @@ const KIND_WORD = {
  * in the same frame. Both ask `plan` where the spread will sit - centred on
  * an axis it fits, else scrolled so the point under the pointer stays put,
  * clamped as the browser will clamp - so the preview lands where the commit
- * does. The point is fixed where the pinch starts. */
-function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
+ * does. The point is fixed where the pinch starts.
+ *
+ * Also the start dialog's zoom (planner/SpreadZoom.tsx, 2026-10-21), there
+ * on a dark see-through backdrop: `tone="dark"` drops the paper behind the
+ * spread and lifts the spread off the dark with a shadow. */
+export function ZoomStage({
+  spread,
+  tone = "paper",
+  overlay,
+}: {
+  spread: LandingSpread | null;
+  tone?: "paper" | "dark";
+  /** Over each page, scaled with it: the modules' Save regions. */
+  overlay?: [ReactNode, ReactNode];
+}) {
   const stage = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const label = useRef<HTMLButtonElement>(null);
@@ -354,13 +384,16 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   const fitRef = useRef(0);
+  // On the dark, the zoom bar sits under the spread rather than over its
+  // foot: room for it below.
+  const padBottom = tone === "dark" ? PAD + 44 : PAD;
 
   // The width that shows both pages whole.
   useLayoutEffect(() => {
     const el = stage.current;
     if (!el) return;
     const measure = () => {
-      const next = Math.max(120, Math.min(el.clientWidth - PAD * 2, (el.clientHeight - PAD * 2) * ASPECT));
+      const next = Math.max(120, Math.min(el.clientWidth - PAD * 2, (el.clientHeight - PAD - padBottom) * ASPECT));
       fitRef.current = next;
       setFit(next);
     };
@@ -368,7 +401,7 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [padBottom]);
 
   /** Where the spread sits at zoom `z` with the point at fraction (u, v) of
    *  it under (mx, my), in the stage's own box: its left and top there, and
@@ -377,17 +410,17 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
     const el = stage.current!;
     const width = fitRef.current * z;
     const height = width / ASPECT;
-    const axis = (size: number, view: number, frac: number, at: number) => {
+    const axis = (size: number, view: number, frac: number, at: number, before: number, after: number) => {
       // The canvas centres a spread that fits, inside its padding.
-      const start = size + PAD * 2 <= view ? (view - size) / 2 : PAD;
-      const room = Math.max(0, size + PAD * 2 - view);
+      const start = size + before + after <= view ? before + (view - before - after - size) / 2 : before;
+      const room = Math.max(0, size + before + after - view);
       const scroll = Math.min(room, Math.max(0, start + frac * size - at));
       return { scroll, at: start - scroll };
     };
-    const x = axis(width, el.clientWidth, u, mx);
-    const y = axis(height, el.clientHeight, v, my);
+    const x = axis(width, el.clientWidth, u, mx, PAD, PAD);
+    const y = axis(height, el.clientHeight, v, my, PAD, padBottom);
     return { scrollLeft: x.scroll, scrollTop: y.scroll, left: x.at, top: y.at };
-  }, []);
+  }, [padBottom]);
 
   /** Where a zoom anchors: the point under (clientX, clientY), as a fraction
    *  of the spread, and that point in the stage's box. */
@@ -469,6 +502,11 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
   useLayoutEffect(() => {
     const el = stage.current;
     const a = committing.current;
+    // The label is written here and by pinchTo, never by React: a pinch
+    // replaces its text, and React would then go on updating the text it
+    // had - detached - so after one pinch the label stayed where the pinch
+    // left it whatever the zoom became (found 2026-10-21: 498% after Fit).
+    if (label.current) label.current.textContent = `${Math.round(zoom * 100)}%`;
     if (layer.current) {
       layer.current.style.transform = "";
       layer.current.style.willChange = "";
@@ -499,13 +537,14 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
   // Drag to look around; two fingers to pinch.
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; zoom: number } | null>(null);
-  const spread = (fit || 0) * zoom;
+  const spreadWidth = (fit || 0) * zoom;
 
   return (
-    <div className={css.stageWrap}>
+    <div className={css.stageWrap} data-tone={tone}>
       <div
         ref={stage}
         className={css.stage}
+        data-tone={tone}
         data-zoomed={zoom > 1 || undefined}
         onDoubleClick={(e) => {
           zoomTo(zoomRef.current > 1 ? 1 : 2.5, e.clientX, e.clientY);
@@ -563,9 +602,20 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
           if (p) pinchTo(p.target, 0, 0, true);
         }}
       >
-        <div className={css.canvas} style={{ padding: PAD }}>
-          <div ref={layer} data-zoom-layer="" style={{ width: spread, flex: "none", transformOrigin: "0 0" }}>
-            {fit > 0 && <SpreadPages spread={detail?.spread ?? null} />}
+        <div className={css.canvas} style={{ padding: `${PAD}px ${PAD}px ${padBottom}px` }}>
+          <div ref={layer} data-zoom-layer="" style={{ position: "relative", width: spreadWidth, flex: "none", transformOrigin: "0 0" }}>
+            {fit > 0 && <SpreadPages spread={spread} />}
+            {/* The pages' places, as SpreadPages lays them: side by side, a
+                pixel apart. */}
+            {fit > 0 && overlay && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", gap: 1 }}>
+                {overlay.map((node, i) => (
+                  <div key={i} style={{ position: "relative", flex: "1 1 0" }}>
+                    {node}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -584,9 +634,7 @@ function ZoomStage({ detail }: { detail: LayoutDetail | null }) {
           onClick={() => zoomTo(1)}
           className={css.fitButton}
           aria-label="Fit the whole spread"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
+        />
         <button
           type="button"
           onClick={() => zoomTo(zoomRef.current * 1.5)}

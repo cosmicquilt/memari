@@ -48,6 +48,8 @@ const RANGES: Record<string, [number, number]> = {
   heroParallax: [0, 0.6],
   paperCrumple: [0, 1],
   creamDepth: [0, 2],
+  doodlePaper: [0, 3],
+  textPaper: [0, 3],
 };
 /** The torn edges there are (TornEdge.tsx). */
 const TORN_EDGES = new Set(["drawn", "flow-fine", "flow-bold", "none"]);
@@ -70,6 +72,15 @@ export async function POST(request: Request) {
   }
   if (typeof body.newEachLoad !== "boolean") return Response.json({ error: "newEachLoad must be true or false" }, { status: 400 });
   out.newEachLoad = body.newEachLoad;
+  const inkPapers = new Set(["site", "app", "paper006", "paper001", "paper002", "fibre", "crumples"]);
+  if (typeof body.inkPaper !== "string" || !inkPapers.has(body.inkPaper)) return Response.json({ error: `inkPaper must be one of ${[...inkPapers].join(", ")}` }, { status: 400 });
+  out.inkPaper = body.inkPaper;
+  if (typeof body.inkBlend !== "string" || !["overlay", "hard-light", "through"].includes(body.inkBlend)) return Response.json({ error: "inkBlend must be overlay, hard-light or through" }, { status: 400 });
+  out.inkBlend = body.inkBlend;
+  for (const key of ["textPaperLinks", "textPaperOffPaper"] as const) {
+    if (typeof body[key] !== "boolean") return Response.json({ error: `${key} must be true or false` }, { status: 400 });
+    out[key] = body[key];
+  }
   if (typeof body.tornEdge !== "string" || !TORN_EDGES.has(body.tornEdge)) return Response.json({ error: `tornEdge must be one of ${[...TORN_EDGES].join(", ")}` }, { status: 400 });
   out.tornEdge = body.tornEdge;
   await writeFile(FILE, `${JSON.stringify(out, null, 2)}\n`);

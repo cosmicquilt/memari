@@ -8,15 +8,21 @@ import { Ink } from "./Ink";
 import { arrowDrawing, circleDrawing, doodleDrawing, underlineDrawing, type DoodleKind } from "./pen";
 import styles from "../landing.module.css";
 
-/** Words in the handwriting face, in the editor's blue. */
+/** Words in the handwriting face, in the editor's blue. data-paper-inline:
+ *  the paper in the text (landing.module.css) may take the heading round it
+ *  whole, and the words themselves. */
 export function Hand({ children }: { children: ReactNode }) {
-  return <span className={styles.hand}>{children}</span>;
+  return (
+    <span className={styles.hand} data-paper-inline="">
+      {children}
+    </span>
+  );
 }
 
 /** A word underlined in pen - `twice` for emphasis. */
 export function Underlined({ children, seed, twice = false, delay = 0.35 }: { children: ReactNode; seed: number; twice?: boolean; delay?: number }) {
   return (
-    <span className={styles.marked}>
+    <span className={styles.marked} data-paper-inline="">
       {children}
       <Ink drawing={underlineDrawing(seed, twice)} className={twice ? styles.underlineTwice : styles.underline} stretch delay={delay} />
     </span>
@@ -26,7 +32,7 @@ export function Underlined({ children, seed, twice = false, delay = 0.35 }: { ch
 /** A word with a loose loop drawn round it. */
 export function Circled({ children, seed, delay = 0.3 }: { children: ReactNode; seed: number; delay?: number }) {
   return (
-    <span className={styles.marked}>
+    <span className={styles.marked} data-paper-inline="">
       {children}
       <Ink drawing={circleDrawing(seed)} className={styles.circle} stretch delay={delay} />
     </span>

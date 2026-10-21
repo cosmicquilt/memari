@@ -16,8 +16,10 @@ import type { Category } from "@/lib/moduleRegistry";
 import { describeModule } from "@/lib/moduleDescriptions";
 import { FONT_SERIF } from "@/lib/theme";
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
-import type { PageGrid } from "@/lib/grid";
+import { cellHeightPx, dayUnitColumns, gridCellToPixels, type PageGrid } from "@/lib/grid";
+import { getMinRowSpanForSlug } from "@/lib/moduleMinRowSpan";
 import { revealDetails } from "./StartFeatured";
+import { SaveButton } from "./templateSaved";
 
 export type FeaturedModulesProps = {
   switcher: ReactNode;
@@ -34,6 +36,28 @@ const TRIM = PLANNER_TRIMS.bound7x10;
 const GRID: PageGrid = { widthPx: TRIM.widthPx, heightPx: TRIM.heightPx, gridColumns: 24, gridRows: TRIM.gridRows, boxInsetPx: 6, marginPx: TRIM.marginPx };
 
 type Filter = "All" | Category;
+
+/** A card's drawing: its width, and the height it is cut at. */
+const CARD = { widthPx: 116, heightPx: 102 };
+
+/**
+ * The rows a card draws its module at (2026-10-21): "I want the modules to
+ * appear even if they are now smaller (note boxes) at the height of the
+ * largest preview ... like habit trackers are", with the fade that says
+ * there is more below. Its fewest rows if those already run past the card;
+ * otherwise enough to pass it by a row, so a note box or a prompt is cut
+ * and fades like the tall ones. The details draw the same rows, whole.
+ */
+function cardRows(module: PaletteModuleInfo): number {
+  const columns = dayUnitColumns(GRID);
+  const fewest = getMinRowSpanForSlug(module.slug, GRID, columns, module.previewProps);
+  const drawnWidth = gridCellToPixels(GRID, { columnStart: 0, rowStart: 0, columnSpan: columns, rowSpan: 1 }).width;
+  const scale = CARD.widthPx / drawnWidth;
+  // r rows draw r cells less the box inset at each end; one row more than
+  // the card shows, so the fade always has module under it.
+  const past = Math.ceil((CARD.heightPx / scale + 2 * GRID.boxInsetPx) / cellHeightPx(GRID)) + 1;
+  return Math.max(fewest, past);
+}
 
 /** Each group's modules in the palette's order: section by section. */
 const BY_GROUP: Array<[Category, PaletteModuleInfo[]]> = GROUPS.map((group) => [
@@ -91,7 +115,7 @@ export function FeaturedModules({ switcher, guides }: FeaturedModulesProps) {
                   }}
                 >
                   <span className="sd-thumb" style={{ alignItems: "flex-start" }}>
-                    <Drawn module={module} widthPx={116} maxHeightPx={102} />
+                    <Drawn module={module} widthPx={CARD.widthPx} maxHeightPx={CARD.heightPx} rowSpan={cardRows(module)} />
                   </span>
                   <span className="sd-name">{module.name}</span>
                   <span className="sd-meta">{module.cadence ? CADENCE_LABELS[module.cadence] : module.section}</span>
@@ -120,7 +144,8 @@ function ModuleDetails({ module, guide }: { module: PaletteModuleInfo; guide: bo
         <h2 className="sd-heading">{module.name}</h2>
       </div>
       <span className="sd-thumb" style={{ height: "auto", minHeight: 120, padding: 12 }}>
-        <Drawn module={module} widthPx={200} maxHeightPx={300} eager />
+        {/* The card's drawing, whole: what was under its fade. */}
+        <Drawn module={module} widthPx={200} rowSpan={cardRows(module)} eager />
       </span>
       {description && <p className="sd-text">{description}</p>}
       <dl className="sd-facts">
@@ -133,8 +158,11 @@ function ModuleDetails({ module, guide }: { module: PaletteModuleInfo; guide: bo
           </>
         )}
       </dl>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <SaveButton save={{ kind: "module", slug: module.slug }} what={`the ${module.name} module`} label="Save module" />
+      </div>
       <p style={{ color: DIM, fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>
-        Open a journal, then drag it onto a page from the Modules panel: {where}.
+        Saved, it waits in the Modules panel&rsquo;s Saved section once a journal is open. Or drag it onto a page from {where}.
       </p>
       {guide && (
         <a href={`/modules/${module.slug}`} target="_blank" rel="noopener" className="sd-link" style={{ color: INK, fontSize: 13 }}>
@@ -148,7 +176,7 @@ function ModuleDetails({ module, guide }: { module: PaletteModuleInfo; guide: bo
 /** A module's real drawing, made once its card comes near the visible part
  *  of the list - a hundred and more at once is what made the palette slow
  *  (memory: memari-editor-render-cost). The box is sized from the start. */
-function Drawn({ module, widthPx, maxHeightPx, eager = false }: { module: PaletteModuleInfo; widthPx: number; maxHeightPx: number; eager?: boolean }) {
+function Drawn({ module, widthPx, maxHeightPx, rowSpan, eager = false }: { module: PaletteModuleInfo; widthPx: number; maxHeightPx?: number; rowSpan?: number; eager?: boolean }) {
   const holder = useRef<HTMLSpanElement | null>(null);
   const [draw, setDraw] = useState(eager);
   useEffect(() => {
@@ -176,6 +204,7 @@ function Drawn({ module, widthPx, maxHeightPx, eager = false }: { module: Palett
         draw={draw}
         initialWidthPx={widthPx}
         maxHeightPx={maxHeightPx}
+        rowSpan={rowSpan}
         instanceKey={eager ? "featured-detail" : "featured"}
       />
     </span>

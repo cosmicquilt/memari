@@ -29,6 +29,7 @@ import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
   RULE_WIDTH_PT,
+  WRITING_LINE_OPACITY,
   borderElement,
   contentTopPx,
   headerElements,
@@ -490,7 +491,7 @@ export function renderColumnTable(
       height: thickness,
       fill: NEAR_BLACK,
       stroke: "none",
-      opacity: isTotalsRule ? 1 : 0.6,
+      opacity: isTotalsRule ? 1 : WRITING_LINE_OPACITY,
     });
   }
 

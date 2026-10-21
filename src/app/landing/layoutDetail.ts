@@ -22,4 +22,10 @@ export type LayoutDetail = {
   /** The prebuilt planner it is a part of (plannerTemplates.ts), if any. */
   planner?: { key: string; title: string };
   similar: Array<{ key: string; title: string; changes: string[]; spread: LandingSpread }>;
+  /** Its modules that can be saved on their own, and where each is drawn
+   *  (page, box in the page's print px) - for Save on hover (2026-10-21).
+   *  The spine goes with the page and is not among them. */
+  modules: LayoutModuleBox[];
 };
+
+export type LayoutModuleBox = { slot: number; page: 0 | 1; box: [number, number, number, number]; name: string; slug: string };

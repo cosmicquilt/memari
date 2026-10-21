@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { journalsOf, templatePreviews } from "@/app/planner/journals";
 import { StartDialog } from "@/app/planner/StartDialog";
 import { savedModulesOf, savedPagesOf } from "@/app/planner/savedItems";
+import { savedPlannerKeys } from "@/app/planner/templateSaving";
 import { ownerPreferences } from "@/app/planner/ownerSettings";
 import { LAST_JOURNAL_COOKIE, parseLastJournalCookie } from "@/lib/lastJournalCookie";
 import { BACKDROP_COOKIE, parseBackdropCookie } from "@/lib/backdropCookie";
@@ -14,18 +15,23 @@ import { featuredItems } from "@/app/planner/featured";
 // memari.studio/app - the start dialog: open one of your journals, or create
 // one. Asked for 2026-09-21, modelled on Photoshop's New Document dialog. A
 // journal's own address, /app/j/<id>, skips this and opens it directly.
-export default async function AppPage({ searchParams }: { searchParams: Promise<{ otter?: string }> }) {
+export default async function AppPage({ searchParams }: { searchParams: Promise<{ otter?: string; saved?: string }> }) {
   // /app?otter: straight to the otter's quiz (the landing page's post-it).
-  const otter = (await searchParams).otter !== undefined;
+  const params = await searchParams;
+  const otter = params.otter !== undefined;
+  // /app?saved=pages: Saved, at that section - the link in the message after
+  // a save (templateSaved.tsx).
+  const openSaved = params.saved === "journals" || params.saved === "pages" || params.saved === "modules" ? params.saved : undefined;
   const owner = await currentOwner();
-  if (!owner) redirect(signInPath(otter ? "/app?otter=1" : "/app"));
+  if (!owner) redirect(signInPath(otter ? "/app?otter=1" : openSaved ? `/app?saved=${openSaved}` : "/app"));
   // Signed in on a browser that was used as a guest: bring that work along.
   if (!owner.guest) await claimGuestWork(owner.id);
 
-  const [journals, savedPages, savedModules, preferences] = await Promise.all([
+  const [journals, savedPages, savedModules, savedPlanners, preferences] = await Promise.all([
     journalsOf(owner.id),
     savedPagesOf(owner.id),
     savedModulesOf(owner.id),
+    savedPlannerKeys(owner.id),
     ownerPreferences(owner.id),
   ]);
   const jar = await cookies();
@@ -47,6 +53,8 @@ export default async function AppPage({ searchParams }: { searchParams: Promise<
       backdrop={{ theme: parseBackdropCookie(jar.get(BACKDROP_COOKIE)?.value), variant: pickWall() }}
       featured={featuredItems()}
       otter={otter}
+      savedPlanners={savedPlanners}
+      openSaved={openSaved}
     />
   );
 }

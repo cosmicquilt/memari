@@ -93,6 +93,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   // the block above it when the page grows (see pack).
   const anchors = useRef<Array<{ el: Element; top: number }>>([]);
   const [ink, setInk] = useState(bodyWallSettings().ink);
+  const [paper, setPaper] = useState((bodyWallSettings().doodlePaper ?? 0) > 0);
 
   useEffect(() => {
     const el = layer.current;
@@ -115,6 +116,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       const mine = ++run;
       const settings = bodyWallSettings();
       setInk(settings.ink);
+      setPaper((settings.doodlePaper ?? 0) > 0);
       const width = holder.clientWidth;
       const height = holder.clientHeight;
       // Each drawing moves as far as the block above it did - an answer
@@ -202,10 +204,18 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       const wall: Partial<ReturnType<typeof bodyWallSettings>> = { ...bodyWallSettings() };
       delete wall.sideBlur;
       delete wall.sideBlurWidth;
+      // Nor the paper sliders: they change how the drawings look, not where.
+      delete wall.doodlePaper;
+      delete wall.textPaper;
+      delete wall.inkPaper;
+      delete wall.inkBlend;
       return JSON.stringify(wall);
     };
     let packedFor = wallKey();
     const off = onBodyWallSettings(() => {
+      // The paper's strength is a variable on the page; only whether it is
+      // drawn at all is this layer's.
+      setPaper((bodyWallSettings().doodlePaper ?? 0) > 0);
       if (wallKey() === packedFor) return;
       packedFor = wallKey();
       window.clearTimeout(timer);
@@ -221,7 +231,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   }, [bandOverride]);
 
   return (
-    <div ref={layer} className={styles.bodyDoodles} aria-hidden="true">
+    <div ref={layer} className={styles.bodyDoodles} aria-hidden="true" data-paper={paper || undefined}>
       {placed.map((p, i) => (
         <span
           key={i}
@@ -233,7 +243,10 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
               width: p.w,
               height: p.h,
               transform: `rotate(${p.angle}rad)`,
-              backgroundColor: `rgba(${BODY_INK_RGB}, ${ink})`,
+              // The blue solid and the fade as opacity, so the paper in
+              // the ink (landing.module.css) blends over solid blue.
+              backgroundColor: `rgb(${BODY_INK_RGB})`,
+              opacity: ink,
               WebkitMaskImage: `url(${p.src})`,
               maskImage: `url(${p.src})`,
             } as CSSProperties
