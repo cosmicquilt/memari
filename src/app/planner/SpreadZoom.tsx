@@ -91,6 +91,9 @@ export function SpreadZoom({
     const opener = document.activeElement as HTMLElement | null;
     const root = document.documentElement;
     const was = root.style.overflow;
+    // the scrollbar's room kept, so nothing under it is laid out again
+    const gutter = root.style.scrollbarGutter;
+    root.style.scrollbarGutter = "stable";
     root.style.overflow = "hidden";
     closeButton.current?.focus();
     const key = (e: KeyboardEvent) => {
@@ -108,6 +111,7 @@ export function SpreadZoom({
     window.addEventListener("keydown", key, true);
     return () => {
       root.style.overflow = was;
+      root.style.scrollbarGutter = gutter;
       window.removeEventListener("keydown", key, true);
       opener?.focus?.();
     };

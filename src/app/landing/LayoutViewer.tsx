@@ -186,9 +186,15 @@ function Popup({
   }, [layoutKey, attempt]);
 
   // The page under it stays where it was; Escape closes; focus starts on X.
+  // Its scrollbar's room is kept while it cannot scroll (2026-10-21: the
+  // doodle wall "reloading whenever exiting a popup"): with the bar gone the
+  // page was 15px wider, and the wall laid itself out again for the new
+  // width - and again when the popup closed.
   useEffect(() => {
     const root = document.documentElement;
     const was = root.style.overflow;
+    const gutter = root.style.scrollbarGutter;
+    root.style.scrollbarGutter = "stable";
     root.style.overflow = "hidden";
     closeButton.current?.focus();
     const key = (e: KeyboardEvent) => {
@@ -197,6 +203,7 @@ function Popup({
     window.addEventListener("keydown", key);
     return () => {
       root.style.overflow = was;
+      root.style.scrollbarGutter = gutter;
       window.removeEventListener("keydown", key);
     };
   }, [onClose]);

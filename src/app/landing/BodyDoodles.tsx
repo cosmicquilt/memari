@@ -7,8 +7,11 @@
 //
 // Each drawing is an element masked by its own drawing and filled with the
 // blue, not a page-high canvas: at a 2x screen that canvas would hold about
-// a hundred megabytes. The drawings load after the page has, so the hero
-// never waits for them.
+// a hundred megabytes. The drawings are asked for as the wall mounts, at low
+// priority, so the hero (asked for first, at high: VideoHero) never waits
+// for them, and laid out once the type has settled - not after every picture
+// on the page has loaded, which on a 9 Mb/s line left the paper bare for
+// eleven seconds (2026-10-21: "the doodle loading in after the paper").
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import choices from "./doodleChoices.json";
@@ -74,6 +77,7 @@ const load = (src: string) => {
       src,
       new Promise((resolve) => {
         const img = new Image();
+        img.fetchPriority = "low";
         img.onload = () => resolve(img);
         img.onerror = () => resolve(null);
         img.src = src;
@@ -211,17 +215,19 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       }
     };
 
-    // After the page has loaded and settled: the hero first.
+    // The drawings asked for now, behind the hero's pictures; the wall laid
+    // out once the type is in (a face arriving later moves the lines the
+    // drawings keep clear of) and the page has a quiet moment.
+    for (const full of choices.body ?? choices.wall) void load(`/landing/doodles/${full}.webp`);
     let started = false;
     const start = () => {
       if (started) return;
       started = true;
       const go = () => void pack();
-      if ("requestIdleCallback" in window) window.requestIdleCallback(go, { timeout: 1500 });
-      else setTimeout(go, 300);
+      if ("requestIdleCallback" in window) window.requestIdleCallback(go, { timeout: 500 });
+      else setTimeout(go, 100);
     };
-    if (document.readyState === "complete") start();
-    else window.addEventListener("load", start, { once: true });
+    void (document.fonts?.ready ?? Promise.resolve()).then(start);
 
     // Again when the width changes (a phone's address bar only changes the
     // height), or the content grows or shrinks by more than a line.
@@ -255,10 +261,11 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     });
     return () => {
       run++;
+      // a page left before its type arrived does not start the wall after
+      started = true;
       ro.disconnect();
       off();
       window.clearTimeout(timer);
-      window.removeEventListener("load", start);
     };
   }, [bandOverride]);
 
