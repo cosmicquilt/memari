@@ -126,9 +126,9 @@ try {
   );
   // an edit to the template reaches her journal - the copy every editing action makes
   const page = tplPages.find((p) => p.moduleInstances.length)!;
-  const module = page.moduleInstances[0];
-  const marked = { ...(module.propValues as Record<string, unknown>), checkBusinessMark: "edited in the template" };
-  await prisma.moduleInstance.update({ where: { id: module.id }, data: { propValues: marked } });
+  const edited = page.moduleInstances[0];
+  const marked = { ...(edited.propValues as Record<string, unknown>), checkBusinessMark: "edited in the template" };
+  await prisma.moduleInstance.update({ where: { id: edited.id }, data: { propValues: marked } });
   const { syncLinkedPages, savedPagesOf } = await import("../src/app/planner/savedItems");
   await syncLinkedPages([page.id]);
   const herPage = herPages[tplPages.indexOf(page)];
