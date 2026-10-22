@@ -966,7 +966,15 @@
    editor design language), sampled into linear() with its 4.6% overshoot -
    while the shadow deepens as it lifts; out, a short ease with no bounce.
    The transition named on each state is the one that runs on the way TO it.
-   Only where there is a pointer to hover with, and never with reduced motion. */
+   Never with reduced motion.
+
+   It follows the pointer itself, not what the device says it has
+   (2026-10-22: "only the magnifying glass increases in size on hover not
+   the layout it self"): a laptop with a touchscreen reports its primary
+   pointer as a finger - (hover: hover) and (pointer: fine) are false even
+   with the trackpad in hand - so a media query kept the picture still while
+   the magnifier, ungated, grew. LayoutGallery.tsx marks the card
+   data-pointer-over while a mouse or pen is over it, never a finger. */
 .spreadCard > :first-child {
   transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -975,20 +983,18 @@
   transition: box-shadow 260ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .spreadCard:hover > :first-child,
-  .spreadCard > :first-child:focus-visible {
-    transform: scale(1.035);
-    transition: transform 700ms linear(0, 0.056, 0.188, 0.351, 0.517, 0.666, 0.79, 0.886, 0.955, 1.001, 1.029, 1.042, 1.046, 1.043, 1.037, 1.03, 1.022, 1.015, 1.01, 1.005, 1.002, 1, 0.999, 0.998, 1);
-  }
+.spreadCard[data-pointer-over] > :first-child,
+.spreadCard > :first-child:focus-visible {
+  transform: scale(1.035);
+  transition: transform 700ms linear(0, 0.056, 0.188, 0.351, 0.517, 0.666, 0.79, 0.886, 0.955, 1.001, 1.029, 1.042, 1.046, 1.043, 1.037, 1.03, 1.022, 1.015, 1.01, 1.005, 1.002, 1, 0.999, 0.998, 1);
+}
 
-  .spreadCard:hover > :first-child .spreadPages,
-  .spreadCard > :first-child:focus-visible .spreadPages {
-    box-shadow:
-      0 2px 4px rgba(40, 30, 20, 0.1),
-      0 28px 56px rgba(40, 30, 20, 0.2);
-    transition: box-shadow 400ms cubic-bezier(0.2, 0, 0, 1);
-  }
+.spreadCard[data-pointer-over] > :first-child .spreadPages,
+.spreadCard > :first-child:focus-visible .spreadPages {
+  box-shadow:
+    0 2px 4px rgba(40, 30, 20, 0.1),
+    0 28px 56px rgba(40, 30, 20, 0.2);
+  transition: box-shadow 400ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -997,7 +1003,7 @@
     transition: none;
   }
 
-  .spreadCard:hover > :first-child,
+  .spreadCard[data-pointer-over] > :first-child,
   .spreadCard > :first-child:focus-visible {
     transform: none;
   }

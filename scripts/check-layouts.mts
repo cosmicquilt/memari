@@ -87,6 +87,28 @@ try {
   // the spring may still be a hair from rest
   const scale = Number(/^matrix\(([\d.]+),/.exec(grown)?.[1] ?? 1);
   say(Math.abs(scale - 1.035) < 0.002, `the landing page: a layout grows under the pointer (${grown})`);
+
+  // and on a laptop with a touchscreen, which tells the page its pointer is
+  // a finger - hovered with the mouse all the same (2026-10-22: "only the
+  // magnifying glass increases in size on hover not the layout it self")
+  const touchLaptop = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true });
+  const t2 = await touchLaptop.newPage();
+  await t2.goto(`${server.base}/`, { waitUntil: "load", timeout: 120_000 });
+  const fig2 = t2.locator('figure[class*="spreadCard"]').first();
+  await fig2.scrollIntoViewIfNeeded();
+  const pic2 = fig2.locator("button").first();
+  const box2 = (await pic2.boundingBox())!;
+  await t2.mouse.move(box2.x + box2.width / 2, box2.y + box2.height / 2);
+  await t2.waitForTimeout(1200);
+  const grown2 = await pic2.evaluate((el) => getComputedStyle(el).transform);
+  const scale2 = Number(/^matrix\(([\d.]+),/.exec(grown2)?.[1] ?? 1);
+  const hover2 = await t2.evaluate("matchMedia('(hover: hover)').matches");
+  say(Math.abs(scale2 - 1.035) < 0.002, `with a touchscreen too (the page told hover: ${hover2}), the mouse grows the layout (${grown2})`);
+  await t2.mouse.move(2, 2);
+  await t2.waitForTimeout(600);
+  const back = await pic2.evaluate((el) => getComputedStyle(el).transform);
+  say(back === "none" || back === "matrix(1, 0, 0, 1, 0, 0)", `and it settles back when the mouse leaves (${back})`);
+  await touchLaptop.close();
 } finally {
   await browser.close();
   await server.stop?.();
