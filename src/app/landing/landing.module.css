@@ -445,12 +445,10 @@
   right: 0;
   padding-top: 0.25em;
   overflow: hidden;
-  animation: slideFromLeft 1.3s var(--glide) 0.7s both;
 }
 
 .revealInner {
   display: block;
-  animation: slideFromRight 1.3s var(--glide) 0.7s both;
 }
 
 /* The dot's rail is exactly as wide as the letters; the mover travels it on
@@ -468,7 +466,6 @@
   display: block;
   width: 100%;
   height: 100%;
-  animation: slideFromLeft 1.3s var(--glide) 0.7s both;
 }
 
 .dot {
@@ -476,69 +473,6 @@
   top: 0;
   left: 100%;
   transform-origin: 50% 85%;
-  animation: dotIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
-}
-
-@keyframes slideFromLeft {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes slideFromRight {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes dotIn {
-  from {
-    opacity: 0;
-    transform: scale(0.2);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes studioIn {
-  from {
-    opacity: 0;
-    transform: translateY(0.1em);
-    filter: blur(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-    filter: none;
-  }
-}
-
-@keyframes taglineIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 .studio {
@@ -553,7 +487,6 @@
      centre. */
   margin-right: -0.1em;
   text-transform: uppercase;
-  animation: studioIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) 1.9s both;
 }
 
 .tagline {
@@ -565,8 +498,6 @@
   color: rgba(var(--cream-rgb), 0.9);
   text-shadow: 0 1px 12px rgba(20, 12, 6, 0.45);
   letter-spacing: 0.01em;
-  /* Its delay is OPEN_AFTER_MS's starting point in Wordmark.tsx. */
-  animation: taglineIn 1s cubic-bezier(0.22, 1, 0.36, 1) 2.35s both;
 }
 
 /* "you." handwritten, in the editor's blue (ACCENT in planner/*). Set a
@@ -608,34 +539,15 @@
    zero-length end drew a dot of the letter there - in some browsers, not
    others. So each is hidden until its animation runs, and its dash waits
    clear of both its ends (a gap of 2, an offset a little past 1). */
+/* Written whole from the start (2026-10-22: "just for them to be there on
+   load"): the pen's band drawn in full, and the "written" mask shown. */
 .youPen {
-  visibility: hidden;
   stroke-dasharray: 1 2;
-  stroke-dashoffset: 1.02;
-  --you-pace: calc(var(--you-seconds, 1.7) / var(--you-base, 1.7));
-  animation: youWrite calc(var(--for) * var(--you-pace)) cubic-bezier(0.4, 0.1, 0.6, 0.95) calc(3.15s + var(--at) * var(--you-pace)) forwards;
-}
-
-@keyframes youWrite {
-  from {
-    visibility: visible;
-    stroke-dashoffset: 1.02;
-  }
-  to {
-    visibility: visible;
-    stroke-dashoffset: 0;
-  }
+  stroke-dashoffset: 0;
 }
 
 .youDone {
-  opacity: 0;
-  animation: youDone 0.01s linear calc(3.15s + var(--at) * var(--you-seconds, 1.7) / var(--you-base, 1.7)) forwards;
-}
-
-@keyframes youDone {
-  to {
-    opacity: 1;
-  }
+  opacity: 1;
 }
 
 /* --- the hero as a film (VideoHero) ----------------------------------------- */
@@ -1369,34 +1281,8 @@
   .desk {
     transition: none;
   }
-  .window,
-  .revealInner,
-  .dotMover {
-    animation: none;
-  }
-  .reveal,
-  .dot,
-  .studio,
-  .tagline {
-    animation: fadeIn 0.6s ease-out both;
-  }
-  .studio {
-    animation-delay: 0.25s;
-  }
-  .tagline {
-    animation-delay: 0.5s;
-  }
-  .you {
-    animation: fadeIn 0.6s ease-out 0.9s both;
-  }
-  /* Not written: there from the start, fading in with it. */
-  .youPen,
-  .youDone {
-    animation: none;
-    visibility: visible;
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
+  /* (The title and tagline used to fade in here; since 2026-10-22 they are
+     there on load for everyone, with no animation at all.) */
 }
 
 /* ---- The body below the hero: its doodle wall and the post-it (2026-10-01) */

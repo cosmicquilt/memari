@@ -30,6 +30,14 @@
 //
 // Reduced motion: everything fades in, nothing slides or is written.
 //
+// NONE OF IT MOVES NOW (2026-10-22: "get rid of the hero title and tagline
+// animations how they animate in just for them to be there on load"): the
+// keyframes are gone from the stylesheet and every part rests where it ends;
+// the "you." is drawn whole. With no animation to wait for, `onWritten` and
+// `onArrived` are told at once (below), so the hero opens as soon as it can.
+// The structure stays - the window, the dot's rail, the pen's strokes - in
+// case it should move again.
+//
 // `onWritten` is told when the whole line is there - the "you." written to
 // its full stop - which is when the hero's first layout comes (2026-10-15:
 // "layouts it fades in when tagline is finished animating").
