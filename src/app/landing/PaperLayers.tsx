@@ -21,7 +21,8 @@ export function PaperLayers() {
       key={p.id}
       aria-hidden="true"
       className={styles.paperLayer}
-      style={{ backgroundImage: `var(--paper-${p.id}-img, none)`, backgroundSize: p.size, opacity: `var(--paper-${p.id}, 0)` }}
+      // --wall-shown: 0 until the doodle wall is laid out (BodyDoodles)
+      style={{ backgroundImage: `var(--paper-${p.id}-img, none)`, backgroundSize: p.size, opacity: `calc(var(--paper-${p.id}, 0) * var(--wall-shown, 1))` }}
     />
   ));
 }

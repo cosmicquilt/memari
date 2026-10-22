@@ -51,6 +51,35 @@
   pointer-events: none;
   background-repeat: repeat;
   mix-blend-mode: hard-light;
+  transition: opacity 500ms ease-out;
+}
+
+/* THE PAPER AND THE DOODLES ARRIVE TOGETHER (2026-10-21: "i want the doodles
+   to arrive at same time as paper"). Until the doodle wall is laid out and
+   its paper baked (BodyDoodles sets data-wall-ready on the page), the
+   paper's texture (.paperLayer) and the wall wait at 0 - the cream is there
+   from the first frame - then both fade in at once. Should the wall never
+   say so (no script, a failed picture), they come anyway after 5s. */
+@property --wall-shown {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+.page:not([data-wall-ready]) {
+  --wall-shown: 0;
+  animation: wallAnyway 0s linear 5s forwards;
+}
+
+@keyframes wallAnyway {
+  to {
+    --wall-shown: 1;
+  }
+}
+
+.bodyDoodles {
+  opacity: var(--wall-shown, 1);
+  transition: opacity 500ms ease-out;
 }
 
 /* --- nav ----------------------------------------------------------------- */

@@ -7,13 +7,18 @@
 //
 // Each drawing is an element masked by its own drawing and filled with the
 // blue, not a page-high canvas: at a 2x screen that canvas would hold about
-// a hundred megabytes. The drawings are asked for as the wall mounts, at low
-// priority, so the hero (asked for first, at high: VideoHero) never waits
-// for them, and laid out once the type has settled - not after every picture
-// on the page has loaded, which on a 9 Mb/s line left the paper bare for
-// eleven seconds (2026-10-21: "the doodle loading in after the paper").
+// a hundred megabytes.
+//
+// The drawings arrive with the paper (2026-10-21: "the doodle loading in
+// after the paper", then "i want the doodles to arrive at same time as
+// paper"): asked for in the page's head beside the paper's photos, behind
+// the hero's (VideoHero, high), and laid out once the type is in. Until
+// the wall is laid out - and its paper baked - the page's paper texture
+// waits too (data-wall-ready on the page; landing.module.css), then both
+// fade in together. The cream is there from the first frame.
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { preload } from "react-dom";
 import choices from "./doodleChoices.json";
 import { wallClassOf } from "./doodleWall";
 import { BODY_INK_RGB, PHONE_WIDTH, bodyWallSettings, onBodyWallSettings, packAround, type Keep, type Placed } from "./bodyWall";
@@ -77,7 +82,6 @@ const load = (src: string) => {
       src,
       new Promise((resolve) => {
         const img = new Image();
-        img.fetchPriority = "low";
         img.onload = () => resolve(img);
         img.onerror = () => resolve(null);
         img.src = src;
@@ -90,7 +94,18 @@ const load = (src: string) => {
  *  the settings' band under its hero; the site's other pages (SitePage) have
  *  no hero, and start the drawings straight away. */
 export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
+  // in the page's head, with the paper's photos
+  for (const full of choices.body ?? choices.wall) preload(`/landing/doodles/${full}.webp`, { as: "image" });
   const layer = useRef<HTMLDivElement>(null);
+  // The first layout done, and the wall's paper baked (or none wanted):
+  // then the page's paper and the drawings show, together.
+  const [packedOnce, setPackedOnce] = useState(false);
+  const [bakedOnce, setBakedOnce] = useState(false);
+  useEffect(() => {
+    if (!packedOnce || !bakedOnce) return;
+    const page = layer.current?.closest(`.${styles.page}`);
+    page?.setAttribute("data-wall-ready", "");
+  }, [packedOnce, bakedOnce]);
   const [placed, setPlaced] = useState<Placed[]>([]);
   // What is on the page now, for a pack that keeps what still fits.
   const current = useRef<Placed[]>([]);
@@ -120,6 +135,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
         if (url) URL.revokeObjectURL(url);
         url = next;
         setPaper(next);
+        setBakedOnce(true);
       });
     };
     bake();
@@ -212,6 +228,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       if (out && mine === run) {
         current.current = out;
         setPlaced(out);
+        setPackedOnce(true);
       }
     };
 
