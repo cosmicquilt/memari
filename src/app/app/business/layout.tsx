@@ -14,6 +14,7 @@ import { currentBusiness } from "@/lib/business";
 import { BusinessNav } from "./BusinessNav";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { ToastHost } from "./Toast";
+import { ThemeLab } from "./ThemeLab";
 import css from "./business.module.css";
 
 export const metadata: Metadata = { title: "memari. for businesses", robots: { index: false } };
@@ -24,7 +25,7 @@ export default async function BusinessLayout({ children }: { children: ReactNode
   if (!ctx) redirect(signInPath("/app/business"));
   const { business } = ctx;
   return (
-    <main className={css.biz}>
+    <main className={css.biz} data-biz-root="">
       <ToastHost>
         <header className={css.top}>
           {business ? (
@@ -48,6 +49,8 @@ export default async function BusinessLayout({ children }: { children: ReactNode
           <section className={css.start}>{children}</section>
         )}
       </ToastHost>
+      {/* the candidate themes, side by side - development only */}
+      {process.env.NODE_ENV !== "production" && <ThemeLab />}
     </main>
   );
 }
