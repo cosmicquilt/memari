@@ -1,20 +1,32 @@
-// memari. for businesses - one client: their details, their book, where it
-// goes.
+// memari. for businesses - one client: their journal and books, then their
+// details and where their books go.
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
+import { BOOK_MONTHS, ORDER_WORDS, currentBusiness, shippableAddress } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
-import { ClientForm, type ClientValues } from "../../forms";
+import { journalSlugOf } from "@/app/planner/journalSlugs";
+import { BuildJournalButton, ClientForm, type ClientValues } from "../../forms";
+import css from "../../business.module.css";
+
+const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 export default async function ClientPage({ params }: { params: Promise<{ clientId: string }> }) {
   const business = (await currentBusiness())!.business!;
   const { clientId } = await params;
   const [client, templates] = await Promise.all([
-    prisma.businessClient.findFirst({ where: { id: clientId, businessId: business.id } }),
+    prisma.businessClient.findFirst({
+      where: { id: clientId, businessId: business.id },
+      include: { template: { include: { planner: { select: { title: true } } } }, planner: { select: { id: true, title: true } } },
+    }),
     prisma.businessTemplate.findMany({ where: { businessId: business.id }, include: { planner: { select: { title: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
   if (!client) notFound();
+  const slug = client.planner ? await journalSlugOf(client.planner.id) : null;
+  const orders = client.planner
+    ? await prisma.printOrder.findMany({ where: { plannerId: client.planner.id, status: { not: "QUOTED" } }, orderBy: { startDate: "desc" } })
+    : [];
   const values: ClientValues = {
     id: client.id,
     name: client.name,
@@ -26,9 +38,60 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
     note: client.note,
     address: (client.shippingAddress as ClientValues["address"]) ?? undefined,
   };
+  const canOrder = !!shippableAddress(client.shippingAddress);
   return (
     <>
       <h1>{client.name}</h1>
+      <div className={css.card}>
+        <h2>Their journal</h2>
+        {client.planner && slug ? (
+          <>
+            <p className={css.dim}>
+              Built from {client.template ? <strong style={{ color: "var(--ink)" }}>{client.template.planner.title}</strong> : "a template"}. What you change in the template&rsquo;s pages
+              reaches this journal, and every client&rsquo;s, until a book is printed: a printed book never changes.
+            </p>
+            <div className={css.actions}>
+              <Link href={`/app/j/${slug}/order`} className={`${css.btn} ${canOrder ? css.primary : ""}`} aria-disabled={!canOrder || undefined}>
+                Order their book
+              </Link>
+              <Link href={`/app/j/${slug}`} className={css.btn}>
+                Open their journal
+              </Link>
+            </div>
+            {!canOrder && <p className={css.dim}>Add where their books go, below, and the order screen fills it in.</p>}
+            {orders.length > 0 && (
+              <div className={css.steps}>
+                {orders.map((o) => (
+                  <div key={o.id} className={css.step} style={{ gridTemplateColumns: "minmax(0, 1fr) auto" }}>
+                    <span>
+                      <span className={css.strong}>
+                        {date(o.startDate)} to {date(o.endDate)}
+                      </span>
+                      <br />
+                      <span className={css.dim}>{o.title}</span>
+                    </span>
+                    <span className={`${css.tag} ${o.status === "FAILED" ? css.tagWarn : o.status === "SHIPPED" || o.status === "DELIVERED" ? css.tagOk : ""}`}>
+                      {ORDER_WORDS[o.status] ?? o.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : client.template ? (
+          <>
+            <p className={css.dim}>
+              From <strong style={{ color: "var(--ink)" }}>{client.template.planner.title}</strong>, titled &ldquo;{client.coverName || client.name}&rdquo;
+              {client.startDate ? `, starting ${date(client.startDate)}` : ""}. It stays linked to the template, so your later changes to its pages reach it too.
+            </p>
+            <div className={css.actions}>
+              <BuildJournalButton clientId={client.id} />
+            </div>
+          </>
+        ) : (
+          <p className={css.dim}>Choose a template for them, below, then build their journal from it.</p>
+        )}
+      </div>
       <ClientForm client={values} templates={templates.map((t) => ({ id: t.id, title: t.planner.title }))} countries={countryOptions()} months={BOOK_MONTHS} />
     </>
   );

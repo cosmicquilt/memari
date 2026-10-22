@@ -28,6 +28,7 @@ import { nextRange, type ShippingLevel } from "@/lib/print/orderRange";
 import { bindingFromEnum, paperOfSku, type Binding, type PaperColour } from "@/lib/print/products";
 import { orderableBindings } from "@/lib/print/printer";
 import type { ShippingAddress } from "@/lib/print/lulu";
+import type { ClientOrderDefaults } from "@/lib/business";
 
 /** Ready, with the bindings that can be ordered here (each one's printer has
  *  its keys), in the screen's order - the first is chosen to start with. */
@@ -173,6 +174,16 @@ export async function cancelOrder(orderId: string): Promise<{ ok: true } | { ok:
 }
 
 export type ReorderDefaults = { startISO: string; days: number; binding: Binding; paper: PaperColour; address: ShippingAddress; level: ShippingLevel };
+
+/** A client's book (memari. for businesses): the order screen for a client's
+ *  journal, filled in from the client (clientOrderDefaultsFor). Null for any
+ *  journal that is not one of the person's clients'. */
+export async function clientOrderDefaults(journalId: string): Promise<ClientOrderDefaults | null> {
+  const owner = await orderingOwner();
+  if ("ready" in owner) return null;
+  const { clientOrderDefaultsFor } = await import("@/lib/business");
+  return clientOrderDefaultsFor(owner.id, journalId);
+}
 
 /**
  * "Order the next one" (the Orders page): the order screen filled in from an

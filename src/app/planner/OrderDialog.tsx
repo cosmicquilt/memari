@@ -33,7 +33,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
-import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, type OrderingStatus } from "./printActions";
+import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, type OrderingStatus } from "./printActions";
 import type { Quote } from "@/lib/print/orders";
 import { BINDINGS, BINDING_SPECS, DEFAULT_PAPER, PAPER_LABELS, paperChoices, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
 import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
@@ -115,6 +115,8 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   // Filled in from an earlier book: true once its choices are on screen, so
   // the hint under Starting says where the date came from.
   const [fromEarlier, setFromEarlier] = useState(false);
+  // Filled in from a client's details (memari. for businesses): whose.
+  const [forClient, setForClient] = useState<string | null>(null);
   // That book's shipping, chosen again when it is still offered.
   const [preferredLevel, setPreferredLevel] = useState<ShippingLevel | null>(null);
   // Said when a book too long for its binding's paper was moved to another
@@ -141,8 +143,19 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [value, earlier] = await Promise.all([orderingStatus(), reorderId ? reorderDefaults(reorderId, journalId) : null]);
+      const [value, earlier, client] = await Promise.all([
+        orderingStatus(),
+        reorderId ? reorderDefaults(reorderId, journalId) : null,
+        reorderId ? null : clientOrderDefaults(journalId),
+      ]);
       if (!live) return;
+      if (client) {
+        setDays(client.days);
+        setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === client.days) ? "" : String(client.days));
+        if (client.startISO && client.startISO >= isoDay(new Date())) setStartISO(client.startISO);
+        if (client.address) setAddress({ ...EMPTY_ADDRESS, ...client.address });
+        setForClient(client.client);
+      }
       if (earlier) {
         setDays(earlier.days);
         setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === earlier.days) ? "" : String(earlier.days));
@@ -329,8 +342,10 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                 <input type="date" value={startISO} onChange={(event) => changed(setStartISO)(event.target.value)} style={{ ...inputStyle, width: 180 }} />
                 <span style={{ fontSize: 11, color: cream(0.45), lineHeight: 1.4 }}>
                   {fromEarlier
-                    ? "The day after your last book ends - the same length, binding and address, all yours to change."
-                    : "Suggested: the first day of your week after a book posted today would arrive."}
+                    ? "The day after your last book ends: the same length, binding and address, all yours to change."
+                    : forClient
+                      ? `From ${forClient}'s details: their address, their book's length, and when it starts. All yours to change.`
+                      : "Suggested: the first day of your week after a book posted today would arrive."}
                 </span>
               </Section>
 

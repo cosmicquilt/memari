@@ -86,7 +86,7 @@ try {
   await tab.locator('input[name="phoneNumber"]').fill("+1 503 555 0100");
   await tab.getByRole("button", { name: "Save" }).click();
   await tab.waitForURL("**/app/business/clients");
-  say((await tab.getByText("Ready", { exact: true }).count()) === 1, "with an address, a template and a start: Ready");
+  say((await tab.getByText("Address", { exact: true }).count()) === 0 && (await tab.getByText("Journal", { exact: true }).count()) === 1, "with an address, a template and a start: only her journal left to build");
   const client = await prisma.businessClient.findFirst({ where: { businessId: business!.id } });
   say((client?.shippingAddress as { countryCode?: string } | null)?.countryCode === "US" && client?.email === "maya@example.com", "her address and email are kept");
   await shoot(tab, "biz-clients");
@@ -100,6 +100,66 @@ try {
   await tab.getByRole("button", { name: "Undo" }).click();
   await tab.waitForTimeout(800);
   say(!(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.archivedAt, "Undo brings her back");
+
+  // HER JOURNAL, built from the template and linked to it.
+  await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
+  say((await tab.getByText("Journal", { exact: true }).count()) > 0, "before it is built, the list says Maya needs her journal");
+  await tab.getByRole("link", { name: /Maya Okafor/ }).click();
+  await tab.getByRole("heading", { name: "Maya Okafor" }).waitFor();
+  await shoot(tab, "biz-client-build");
+  await tab.getByRole("button", { name: "Build their journal" }).click();
+  await tab.getByRole("link", { name: "Open their journal" }).waitFor({ timeout: 60_000 });
+  await shoot(tab, "biz-client-journal");
+  const built = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+  const journalId = built?.plannerId;
+  say(!!journalId, "Build their journal: Maya has a journal");
+  const [tplPages, herPages] = await Promise.all(
+    [guest.journalId, journalId!].map((id) =>
+      prisma.page.findMany({ where: { plannerId: id }, include: { moduleInstances: { select: { id: true, propValues: true, moduleTypeId: true } } }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] })
+    )
+  );
+  const herJournal = await prisma.planner.findUnique({ where: { id: journalId! } });
+  say(herJournal?.title === "Maya Okafor" && herJournal.ownerId === guest.ownerId && herJournal.startDate?.toISOString().slice(0, 10) === "2027-01-04", `her journal: her name, the coach's, from her start (${herJournal?.title}, ${herJournal?.startDate?.toISOString().slice(0, 10)})`);
+  say(
+    tplPages.length > 0 && tplPages.length === herPages.length && tplPages.every((p, i) => p.savedPageId && p.savedPageId === herPages[i].savedPageId && p.moduleInstances.length === herPages[i].moduleInstances.length),
+    `every one of the template's ${tplPages.length} pages is linked, and hers carries the same link and modules`
+  );
+  // an edit to the template reaches her journal - the copy every editing action makes
+  const page = tplPages.find((p) => p.moduleInstances.length)!;
+  const module = page.moduleInstances[0];
+  const marked = { ...(module.propValues as Record<string, unknown>), checkBusinessMark: "edited in the template" };
+  await prisma.moduleInstance.update({ where: { id: module.id }, data: { propValues: marked } });
+  const { syncLinkedPages, savedPagesOf } = await import("../src/app/planner/savedItems");
+  await syncLinkedPages([page.id]);
+  const herPage = herPages[tplPages.indexOf(page)];
+  const herModules = await prisma.moduleInstance.findMany({ where: { pageId: herPage.id } });
+  say(herModules.some((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in the template"), "an edit to the template's page reaches Maya's journal");
+  say(!(await savedPagesOf(guest.ownerId)).some((sp) => tplPages.some((p) => p.savedPageId === sp.id)), "the template's links stay out of the coach's Saved list");
+  // the coach's calendar is not in her book
+  const { createEventFor, eventsForJournal } = await import("../src/app/planner/calendarStore");
+  const event = { title: "Coach's own dentist", date: "2027-01-06", start: "10:00", end: "11:00", allDay: false, rrule: null };
+  await createEventFor(guest.ownerId, guest.journalId, event);
+  const [inTemplate, inHers] = await Promise.all([eventsForJournal(guest.ownerId, guest.journalId), eventsForJournal(guest.ownerId, journalId!)]);
+  say(inTemplate.some((e) => e.title === "Coach's own dentist") && inHers.length === 0, `the coach's event shows in their own journal, not in Maya's (${inTemplate.length} / ${inHers.length})`);
+  let refused = "";
+  try {
+    await createEventFor(guest.ownerId, journalId!, { ...event, title: "x" });
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  say(refused.includes("client's journal"), "an event cannot be added to a client's journal");
+  // her order screen, filled in from her details (the order dialog applies
+  // these; locally ordering is off - no Stripe keys - so read them directly)
+  const orderHref = await tab.getByRole("link", { name: "Order their book" }).getAttribute("href");
+  const { clientOrderDefaultsFor } = await import("../src/lib/business");
+  const fill = await clientOrderDefaultsFor(guest.ownerId, journalId!);
+  say(
+    !!orderHref?.endsWith("/order") && fill?.client === "Maya Okafor" && fill.startISO === "2027-01-04" && fill.days === 90 && fill.address?.street1 === "120 Elm Street",
+    `"Order their book" opens her order screen, filled in: her start, 90 days, her address (${JSON.stringify({ start: fill?.startISO, days: fill?.days, street: fill?.address?.street1 })})`
+  );
+  say((await clientOrderDefaultsFor(guest.ownerId, guest.journalId)) === null, "a journal that is not a client's is not filled in");
+  await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
+  say((await tab.getByText("Ready", { exact: true }).count()) === 1, "with her journal built: Ready");
 
   // Settings: a logo; and a bad one is refused.
   await tab.getByRole("link", { name: "Settings" }).click();
@@ -124,6 +184,36 @@ try {
   await tab.getByRole("link", { name: "Orders" }).click();
   await tab.getByRole("heading", { name: "Orders" }).waitFor();
   say((await tab.getByText("No books ordered yet").count()) === 1, "Orders: none yet, and where to start");
+
+  // A book of hers, paid for (a row as checkout leaves one): it is on Orders
+  // and her page, and her next book starts the day after it ends.
+  await prisma.printOrder.create({
+    data: {
+      ownerId: guest.ownerId,
+      plannerId: journalId!,
+      status: "PAID",
+      title: "Maya Okafor",
+      startDate: new Date("2027-01-04T00:00:00Z"),
+      endDate: new Date("2027-04-03T00:00:00Z"),
+      days: 90,
+      binding: "PAPERBACK",
+      podPackageId: "check-business",
+      pageCount: 100,
+      shippingLevel: "GROUND",
+      shippingAddress: { name: "Maya Okafor" },
+      bookCents: 2975,
+      shippingCents: 500,
+      totalCents: 3475,
+      costCents: 1500,
+    },
+  });
+  await tab.reload({ waitUntil: "networkidle" });
+  say((await tab.getByText("Maya Okafor", { exact: true }).count()) > 0 && (await tab.getByText("Approved", { exact: true }).count()) === 1, "Orders: her book, Approved");
+  await shoot(tab, "biz-orders");
+  say((await clientOrderDefaultsFor(guest.ownerId, journalId!))?.startISO === "2027-04-04", "her next book starts the day after this one ends (4 Apr 2027)");
+  await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
+  say((await tab.getByText("Approved", { exact: true }).count()) === 1, "her page lists the book");
+  await shoot(tab, "biz-client-journal");
 
   // The switcher, and the template gone from the guest's own journals.
   await tab.getByRole("button", { name: /Northwind Coaching/ }).click();
@@ -155,6 +245,10 @@ try {
   const moved = await prisma.business.findUnique({ where: { ownerId: ACCOUNT }, include: { _count: { select: { clients: true, templates: true } } } });
   say(moved?.name === "Northwind Coaching" && moved._count.clients === 1 && moved._count.templates === 1, "signing in brings the business, its client and its template");
 } finally {
+  await prisma.printOrder.deleteMany({ where: { ownerId: { in: [guest.ownerId, ACCOUNT] } } });
+  await prisma.planner.deleteMany({ where: { ownerId: { in: [guest.ownerId, ACCOUNT] }, id: { not: guest.journalId } } });
+  await prisma.savedPage.deleteMany({ where: { ownerId: { in: [guest.ownerId, ACCOUNT] } } });
+  await prisma.calendarEvent.deleteMany({ where: { ownerId: { in: [guest.ownerId, ACCOUNT] } } });
   await prisma.business.deleteMany({ where: { ownerId: { in: [guest.ownerId, ACCOUNT] } } });
   await prisma.ownerSettings.deleteMany({ where: { ownerId: ACCOUNT } });
   await prisma.calendar.deleteMany({ where: { ownerId: ACCOUNT } });

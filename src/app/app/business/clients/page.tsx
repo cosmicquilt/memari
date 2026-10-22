@@ -67,7 +67,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
             {archived && <span />}
           </div>
           {clients.map((c) => {
-            const needs = [!shippableAddress(c.shippingAddress) && "Address", !c.templateId && "Template", !c.startDate && "Start date"].filter(Boolean) as string[];
+            const needs = [
+              !shippableAddress(c.shippingAddress) && "Address",
+              !c.templateId && "Template",
+              !c.startDate && "Start date",
+              c.templateId && !c.plannerId && "Journal",
+            ].filter(Boolean) as string[];
             const cells = (
               <>
                 <span className={`${css.cell} ${css.strong}`}>

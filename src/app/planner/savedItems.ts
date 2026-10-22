@@ -575,7 +575,9 @@ function previewsOf(saved: { content: Prisma.JsonValue } & PageSize, fontFamily:
  *  draw them in - the open journal's, or the serif outside one. */
 export async function savedPagesOf(ownerId: string, fontFamily = resolveFontFamily("serif")): Promise<SavedPageCard[]> {
   const saved = await prisma.savedPage.findMany({
-    where: { ownerId },
+    // not the links a business template's pages were given to reach its
+    // clients' journals (businessJournals.ts) - those are the template's
+    where: { ownerId, NOT: { sourceKey: { startsWith: "template:" } } },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     include: { pages: { select: { plannerId: true } } },
   });

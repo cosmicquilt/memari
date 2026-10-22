@@ -13,6 +13,7 @@ import type { Business } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentOwner, type Owner } from "@/lib/owner";
 import type { ShippingAddress } from "@/lib/print/lulu";
+import { nextRange } from "@/lib/print/orderRange";
 
 export type BusinessContext = { owner: Owner; business: Business | null };
 
@@ -25,8 +26,20 @@ export async function currentBusiness(): Promise<BusinessContext | null> {
   return { owner, business };
 }
 
+/** Is this journal a client's? Their journal shows none of the coach's own
+ *  calendars - a client's book must not carry the coach's appointments
+ *  (calendarStore.ts). Here, not in businessJournals.ts, so the calendar
+ *  code can ask without importing the saved-pages code. */
+export async function isClientJournal(plannerId: string): Promise<boolean> {
+  return !!(await prisma.businessClient.findUnique({ where: { plannerId }, select: { id: true } }));
+}
+
 /** How many months a client's book runs: the lengths the shop sells. */
 export const BOOK_MONTHS = [1, 3, 6, 12] as const;
+
+/** Those lengths in days, as an order counts them (src/lib/print/orderRange.ts:
+ *  30, 90 and 365 are its presets; six months is a custom length). */
+export const BOOK_DAYS: Record<number, number> = { 1: 30, 3: 90, 6: 182, 12: 365 };
 
 /** A client's address as stored, if it has everything a printer needs. */
 export function shippableAddress(raw: unknown): ShippingAddress | null {
@@ -89,8 +102,34 @@ export async function businessHome(business: Business): Promise<{ steps: Checkli
     ...(templateCount > 0
       ? clients.filter((c) => !c.templateId).map((c) => ({ key: `template-${c.id}`, label: "No template chosen", detail: c.name, href: `/app/business/clients/${c.id}` }))
       : []),
+    ...clients
+      .filter((c) => c.templateId && !c.plannerId)
+      .map((c) => ({ key: `journal-${c.id}`, label: "Journal not built yet", detail: c.name, href: `/app/business/clients/${c.id}` })),
   ];
   return { steps, tasks };
+}
+
+/** A client's order screen, filled in: whose, their address, their book's
+ *  length, and its start - the day after their last book ends, or their
+ *  first book's start. Null for a journal that is not one of the owner's
+ *  clients'. The action (printActions.ts) checks who is asking first. */
+export type ClientOrderDefaults = { client: string; startISO: string | null; days: number; address: Partial<ShippingAddress> | null };
+
+export async function clientOrderDefaultsFor(ownerId: string, journalId: string): Promise<ClientOrderDefaults | null> {
+  const client = await prisma.businessClient.findFirst({ where: { plannerId: journalId, business: { ownerId } } });
+  if (!client) return null;
+  const days = BOOK_DAYS[client.bookMonths] ?? client.bookMonths * 30;
+  const last = await prisma.printOrder.findFirst({
+    where: { plannerId: journalId, ownerId, status: { notIn: ["QUOTED", "CANCELED", "SKIPPED"] } },
+    orderBy: { endDate: "desc" },
+  });
+  const start = last ? nextRange({ start: last.startDate, end: last.endDate, days: last.days }).start : client.startDate;
+  return {
+    client: client.name,
+    startISO: start ? start.toISOString().slice(0, 10) : null,
+    days,
+    address: (client.shippingAddress as Partial<ShippingAddress> | null) ?? null,
+  };
 }
 
 /** What an order's status says, in the business's words. */

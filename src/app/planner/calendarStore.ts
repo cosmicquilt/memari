@@ -16,6 +16,7 @@
 // query is filtered by it. An id arriving from the browser is never trusted
 // to belong to whoever sent it.
 
+import { isClientJournal } from "@/lib/business";
 import { prisma } from "@/lib/prisma";
 import { UNTITLED_EVENT, type StoredEvent } from "@/lib/calendarEvents";
 import { DEFAULT_ZONE, FLOATING, instantFromWall, toWallTime, wallDate } from "@/lib/timeZone";
@@ -78,7 +79,7 @@ export async function defaultCalendarFor(ownerId: string): Promise<{ id: string;
  * the browser and never appears in an error message.
  */
 export async function calendarsFor(ownerId: string, plannerId?: string) {
-  const [calendars, hidden] = await Promise.all([
+  const [calendars, hidden, client] = await Promise.all([
     prisma.calendar.findMany({
       where: { ownerId },
       orderBy: { createdAt: "asc" },
@@ -94,11 +95,13 @@ export async function calendarsFor(ownerId: string, plannerId?: string) {
     plannerId
       ? prisma.hiddenCalendar.findMany({ where: { plannerId }, select: { calendarId: true } })
       : Promise.resolve([]),
+    plannerId ? isClientJournal(plannerId) : Promise.resolve(false),
   ]);
   const hiddenIds = new Set(hidden.map((h) => h.calendarId));
   return calendars.map(({ _count, syncToken, ...c }) => ({
     ...c,
-    visible: !hiddenIds.has(c.id),
+    // a client's journal shows none of them (memari. for businesses)
+    visible: !client && !hiddenIds.has(c.id),
     eventCount: _count.events,
     // WHY A SUBSCRIPTION IS STALE, if it is - the last read's failure in the
     // words fetchIcs chose for a person, never the address. syncToken itself
@@ -188,6 +191,11 @@ export async function deleteCalendarFor(ownerId: string, calendarId: string): Pr
  * is for callers that do not come through this one.
  */
 export async function eventsForJournal(ownerId: string, plannerId: string): Promise<EditableEvent[]> {
+  // A CLIENT'S JOURNAL (memari. for businesses) shows none of its owner's
+  // calendars: the owner is their coach, and a client's book must not carry
+  // the coach's own appointments. The editor and every printed book read
+  // their events here.
+  if (await isClientJournal(plannerId)) return [];
   const hidden = await prisma.hiddenCalendar.findMany({
     where: { plannerId },
     select: { calendarId: true },
@@ -301,6 +309,9 @@ export async function createEventFor(
   journalId: string,
   input: EventInput
 ): Promise<EditableEvent> {
+  // Your calendars are not shown in a client's journal (eventsForJournal),
+  // so an event typed there would land somewhere it cannot be seen.
+  if (await isClientJournal(journalId)) throw new Error("This is a client's journal: your calendars don't show in it. Add events in your own journals.");
   const zone = await zoneOfJournal(ownerId, journalId);
   const calendarId = input.calendarId
     ? (await prisma.calendar.findFirstOrThrow({ where: { id: input.calendarId, ownerId }, select: { id: true } })).id

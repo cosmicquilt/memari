@@ -5,8 +5,8 @@
 // once with an undo.
 
 import Link from "next/link";
-import { useActionState, useTransition } from "react";
-import { addTemplate, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, type FormState } from "./actions";
+import { useActionState, useState, useTransition } from "react";
+import { addTemplate, buildJournalFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, type FormState } from "./actions";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
 
@@ -292,5 +292,33 @@ export function RemoveTemplateButton({ templateId, plannerId, title }: { templat
     >
       Stop using
     </button>
+  );
+}
+
+/** Build a client's journal from their template. */
+export function BuildJournalButton({ clientId, disabled }: { clientId: string; disabled?: boolean }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className={`${css.btn} ${css.primary}`}
+        disabled={disabled || pending}
+        onClick={() =>
+          start(async () => {
+            const result = await buildJournalFor(clientId);
+            setError(result.error ?? null);
+          })
+        }
+      >
+        {pending ? "Building…" : "Build their journal"}
+      </button>
+      {error && (
+        <p className={css.error} role="alert">
+          {error}
+        </p>
+      )}
+    </>
   );
 }

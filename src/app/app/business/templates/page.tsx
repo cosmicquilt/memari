@@ -16,7 +16,11 @@ export default async function TemplatesPage() {
     prisma.businessTemplate.findMany({
       where: { businessId: business!.id },
       orderBy: { createdAt: "asc" },
-      include: { planner: { select: { id: true, title: true, slug: true } }, _count: { select: { clients: { where: { archivedAt: null } } } } },
+      include: {
+        planner: { select: { id: true, title: true, slug: true } },
+        _count: { select: { clients: { where: { archivedAt: null } } } },
+        clients: { where: { archivedAt: null, plannerId: { not: null } }, select: { id: true } },
+      },
     }),
     // the journals that could become one: yours, not a client's, not one already
     prisma.planner.findMany({
@@ -46,6 +50,12 @@ export default async function TemplatesPage() {
               <span className={css.cell}>
                 <span className={css.label}>Clients</span>
                 {t._count.clients}
+                {t.clients.length > 0 && (
+                  <span className={css.dim}>
+                    {" "}
+                    · your edits reach {t.clients.length === 1 ? "1 journal" : `${t.clients.length} journals`}
+                  </span>
+                )}
               </span>
               <span className={css.actions}>
                 <Link href={`/app/j/${t.planner.slug ?? t.planner.id}`} className={css.btn}>
