@@ -12,7 +12,7 @@
 // page is open - that is in fact when they are most likely to, having just
 // watched something move.
 
-import { createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 /**
  * useLayoutEffect on the client, useEffect on the server.
@@ -58,8 +58,53 @@ export const usePrefersHighContrast = () => useMediaQuery("(prefers-contrast: mo
  * a touch screen, where the first contact is already a tap - an invisible
  * control that takes taps would delete a module nobody could see, so they
  * keep the old behaviour there.
+ *
+ * FOLLOWS THE POINTER IN HAND, not the device's answer (2026-10-22). It was
+ * useMediaQuery("(hover: hover)"), which a laptop with a touchscreen
+ * answers "no" - its primary pointer is a finger - even with the trackpad
+ * in hand, so there the badges stayed click-through and invisible until the
+ * module was entered: the bug above, back on that laptop (the landing's
+ * layouts had the same cause: "only the magnifying glass increases in size
+ * on hover"). Now it starts from (any-hover: hover), true wherever any input
+ * can hover, then follows the pointer actually used: a mouse or pen moving
+ * or pressing makes it true; a finger touching the screen makes it false
+ * until a mouse moves again. A tap stays safe: its pointerdown arrives first
+ * and makes the badges click-through again before its click can land.
+ * TO UNDO: put back `export const usePointerCanHover = () =>
+ * useMediaQuery("(hover: hover)");` and delete the store below.
  */
-export const usePointerCanHover = () => useMediaQuery("(hover: hover)");
+let pointerCanHoverValue: boolean | null = null;
+const pointerListeners = new Set<() => void>();
+
+function pointerSeen(event: PointerEvent) {
+  const can = event.pointerType !== "touch";
+  if (can === pointerCanHoverValue) return;
+  pointerCanHoverValue = can;
+  for (const listener of pointerListeners) listener();
+}
+
+function subscribePointer(listener: () => void) {
+  // One pair of listeners for every badge on the page, not one per module.
+  if (pointerListeners.size === 0) {
+    window.addEventListener("pointerdown", pointerSeen, true);
+    window.addEventListener("pointermove", pointerSeen, { capture: true, passive: true });
+  }
+  pointerListeners.add(listener);
+  return () => {
+    pointerListeners.delete(listener);
+    if (pointerListeners.size === 0) {
+      window.removeEventListener("pointerdown", pointerSeen, true);
+      window.removeEventListener("pointermove", pointerSeen, true);
+    }
+  };
+}
+
+function pointerCanHoverNow() {
+  if (pointerCanHoverValue === null) pointerCanHoverValue = window.matchMedia("(any-hover: hover)").matches;
+  return pointerCanHoverValue;
+}
+
+export const usePointerCanHover = () => useSyncExternalStore(subscribePointer, pointerCanHoverNow, () => false);
 
 /**
  * The ratio the SERVER rendered for, read from the viewport cookie.
