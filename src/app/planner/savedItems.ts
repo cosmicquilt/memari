@@ -576,8 +576,10 @@ function previewsOf(saved: { content: Prisma.JsonValue } & PageSize, fontFamily:
 export async function savedPagesOf(ownerId: string, fontFamily = resolveFontFamily("serif")): Promise<SavedPageCard[]> {
   const saved = await prisma.savedPage.findMany({
     // not the links a business template's pages were given to reach its
-    // clients' journals (businessJournals.ts) - those are the template's
-    where: { ownerId, NOT: { sourceKey: { startsWith: "template:" } } },
+    // clients' journals (businessJournals.ts) - those are the template's.
+    // `sourceKey: null` spelled out: NOT over a null column is not true in
+    // SQL, and every saved page of one's own has none.
+    where: { ownerId, OR: [{ sourceKey: null }, { NOT: { sourceKey: { startsWith: "template:" } } }] },
     orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     include: { pages: { select: { plannerId: true } } },
   });

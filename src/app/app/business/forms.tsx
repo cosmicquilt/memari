@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, updateTemplateClients, type FormState } from "./actions";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
 
@@ -313,6 +313,37 @@ export function BuildJournalButton({ clientId, disabled }: { clientId: string; d
         }
       >
         {pending ? "Building…" : "Build their journal"}
+      </button>
+      {error && (
+        <p className={css.error} role="alert">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Update a template's clients' journals that are behind it, after the
+ *  impact line has said whose next books it changes. */
+export function UpdateClientsButton({ templateId, count }: { templateId: string; count: number }) {
+  const toast = useToast();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className={`${css.btn} ${css.primary}`}
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            const result = await updateTemplateClients(templateId);
+            setError(result.error ?? null);
+            if (result.updated !== undefined) toast({ message: result.updated === 1 ? "1 journal updated" : `${result.updated} journals updated` });
+          })
+        }
+      >
+        {pending ? "Updating…" : count === 1 ? "Update their journal" : "Update their journals"}
       </button>
       {error && (
         <p className={css.error} role="alert">

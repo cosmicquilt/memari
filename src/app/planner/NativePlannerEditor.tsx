@@ -81,6 +81,7 @@
 // more often), and it's what makes a reorder read as a reorder while
 // it's happening instead of only being revealed once you let go.
 
+import type { BusinessRole } from "@/lib/business";
 import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
@@ -5048,6 +5049,7 @@ export function NativePlannerEditor({
   onUiChange,
   journalTitle,
   guest = false,
+  business = null,
 }: {
   pages: LoadedPage[];
   /** The owner's stored events and calendars. The events are ALREADY DRAWN on
@@ -5082,6 +5084,9 @@ export function NativePlannerEditor({
   /** Someone using Memari without an account: the header offers to keep
    *  their work by signing in. See guest.ts. */
   guest?: boolean;
+  /** A template of the owner's business, or a client's journal: said in the
+   *  header, so an edit's reach is never a surprise (lib/business.ts). */
+  business?: BusinessRole;
 }) {
   const refreshPages = useRefreshPages();
   // Local, seeded from the server's copy. These used to be read straight
@@ -10747,6 +10752,33 @@ export function NativePlannerEditor({
           >
             {journalTitle}
           </span>
+        )}
+        {business && (
+          <a
+            href={business.kind === "template" ? "/app/business/templates" : `/app/business/clients/${business.clientId}`}
+            title={
+              business.kind === "template"
+                ? "A template of your business: what you change on its pages reaches its clients' journals, and their next books"
+                : "A client's journal: built from a template, which changes it too. Your calendars are not shown in it."
+            }
+            style={{
+              flexShrink: 0,
+              fontSize: 12,
+              color: CREAM,
+              textDecoration: "none",
+              background: business.kind === "template" ? "rgba(74, 92, 255, 0.35)" : "#2a2a2a",
+              borderRadius: 999,
+              padding: "4px 10px",
+              marginLeft: 8,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {business.kind === "template"
+              ? business.reach === 0
+                ? "Template"
+                : `Template · your edits reach ${business.reach === 1 ? "1 journal" : `${business.reach} journals`}`
+              : `${business.name}'s journal`}
+          </a>
         )}
         {guest && (
           <a

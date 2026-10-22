@@ -135,6 +135,12 @@ try {
   const herModules = await prisma.moduleInstance.findMany({ where: { pageId: herPage.id } });
   say(herModules.some((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in the template"), "an edit to the template's page reaches Maya's journal");
   say(!(await savedPagesOf(guest.ownerId)).some((sp) => tplPages.some((p) => p.savedPageId === sp.id)), "the template's links stay out of the coach's Saved list");
+  // and a page saved the ordinary way still is (no source key: a NOT over a
+  // null column would hide it)
+  const ordinary = await prisma.savedPage.create({
+    data: { ownerId: guest.ownerId, name: "My own page", pageCount: 1, widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, gridGapPx: 12, marginPx: 187.5, content: { pages: [[]] } },
+  });
+  say((await savedPagesOf(guest.ownerId)).some((sp) => sp.id === ordinary.id), "a page saved the ordinary way is still in the coach's Saved list");
   // the coach's calendar is not in her book
   const { createEventFor, eventsForJournal } = await import("../src/app/planner/calendarStore");
   const event = { title: "Coach's own dentist", date: "2027-01-06", start: "10:00", end: "11:00", allDay: false, rrule: null };
@@ -214,6 +220,43 @@ try {
   await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
   say((await tab.getByText("Approved", { exact: true }).count()) === 1, "her page lists the book");
   await shoot(tab, "biz-client-journal");
+
+  // THE EDITOR SAYS WHAT A JOURNAL IS to the business, and what an edit reaches.
+  const templateSlug = (await prisma.planner.findUnique({ where: { id: guest.journalId } }))!.slug ?? guest.journalId;
+  await tab.goto(`${server.base}/app/j/${templateSlug}`, { waitUntil: "networkidle" });
+  say((await tab.getByRole("link", { name: "Template · your edits reach 1 journal" }).count()) === 1, "the template's editor: Template · your edits reach 1 journal");
+  await tab.screenshot({ path: shots ? `${shots}/biz-editor-template.png` : "/dev/null", clip: { x: 0, y: 0, width: 1280, height: 120 } }).catch(() => {});
+  await tab.goto(`${server.base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+  say((await tab.getByRole("link", { name: "Maya Okafor's journal" }).count()) === 1, "her journal's editor: Maya Okafor's journal");
+
+  // A CHANGE A LINK CANNOT CARRY - a page added to the template, a setting -
+  // waits for an update, which is said first, and keeps her own page.
+  const weekly = tplPages.filter((p) => p.level === "WEEKLY" && p.variantKey === null);
+  await prisma.page.create({ data: { plannerId: guest.journalId, level: "WEEKLY", position: weekly.length } });
+  const tplTheme = ((await prisma.planner.findUnique({ where: { id: guest.journalId } }))!.theme ?? {}) as Record<string, unknown>;
+  await prisma.planner.update({ where: { id: guest.journalId }, data: { theme: { ...tplTheme, weekStartDay: tplTheme.weekStartDay === 1 ? 0 : 1 } } });
+  const herWeekly = herPages.filter((p) => p.level === "WEEKLY" && p.variantKey === null);
+  const ownPage = await prisma.page.create({ data: { plannerId: journalId!, level: "WEEKLY", position: herWeekly.length } });
+  const { clientsBehind } = await import("../src/lib/businessJournals");
+  const behindNow = await clientsBehind(template!.id);
+  say(behindNow.length === 1 && behindNow[0].name === "Maya Okafor", "after a page is added and a setting changed, her journal is behind the template");
+  await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+  say((await tab.getByText("This changes the next book for 1 client: Maya Okafor.", { exact: false }).count()) === 1, "Templates says first whose next book an update changes");
+  await shoot(tab, "biz-templates-behind");
+  await tab.getByRole("button", { name: "Update their journal" }).click();
+  await tab.getByRole("status").filter({ hasText: "1 journal updated" }).waitFor({ timeout: 60_000 });
+  const after = await prisma.page.findMany({ where: { plannerId: journalId! }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  const tplAfter = await prisma.page.findMany({ where: { plannerId: guest.journalId }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  const herTheme = (await prisma.planner.findUnique({ where: { id: journalId! } }))!.theme as Record<string, unknown>;
+  const kept = after.find((p) => p.id === ownPage.id);
+  say(
+    tplAfter.every((t) => t.savedPageId && after.some((p) => p.savedPageId === t.savedPageId && p.level === t.level && p.position === t.position)),
+    `after the update she has every page of the template, the new one too, linked, in its place (${tplAfter.length} pages)`
+  );
+  say(herTheme?.weekStartDay === (tplTheme.weekStartDay === 1 ? 0 : 1), "and the template's changed setting");
+  say(!!kept && kept.position === weekly.length + 1, `her own page is kept, after the template's (position ${kept?.position})`);
+  say((await clientsBehind(template!.id)).length === 0, "and nothing is behind any more");
+  say((await tab.getByText("pages or settings changed").count()) === 0, "Templates no longer asks");
 
   // The switcher, and the template gone from the guest's own journals.
   await tab.getByRole("button", { name: /Northwind Coaching/ }).click();

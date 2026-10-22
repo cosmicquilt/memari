@@ -45,6 +45,7 @@
 // no sooner (~1.0s after the click either way, in dev; production is
 // several times faster).
 
+import type { BusinessRole } from "@/lib/business";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageLevel } from "@/lib/pageLevels";
 import type { ViewportSize } from "@/lib/viewportCookie";
@@ -70,6 +71,7 @@ export function EditorShell({
   load = loadLevel,
   guest = false,
   saved: initialSaved,
+  business = null,
 }: {
   initial: LoadedPlanner & { level: PageLevel };
   initialViewport: ViewportSize | null;
@@ -84,6 +86,8 @@ export function EditorShell({
   guest?: boolean;
   /** Saved > Pages and Saved > Modules - see savedContext.tsx. */
   saved?: SavedItems;
+  /** A template of the owner's business, or a client's journal (lib/business.ts). */
+  business?: BusinessRole;
 }) {
   const [open, setOpen] = useState<OpenLayout>({ ...initial, ui: null });
   // The layout just clicked, shown as selected in the timeline while it
@@ -285,12 +289,13 @@ export function EditorShell({
         onUiChange={reportView}
         journalTitle={open.journal.title}
         guest={guest}
+        business={business}
       />
     ),
     // `generation` is in the editor's key, so it MUST be here: a memo that
     // does not watch it returns the same element and the rebuild never
     // happens. Caught by the exhaustive-deps rule, which was right.
-    [open, initialViewport, drawerHeight, reportView, guest, editorKey]
+    [open, initialViewport, drawerHeight, reportView, guest, editorKey, business]
   );
 
   return (

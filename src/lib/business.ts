@@ -34,6 +34,22 @@ export async function isClientJournal(plannerId: string): Promise<boolean> {
   return !!(await prisma.businessClient.findUnique({ where: { plannerId }, select: { id: true } }));
 }
 
+/** What a journal is to its owner's business, for the editor's pill: a
+ *  template (and how many clients' journals its edits reach), a client's
+ *  journal, or neither. */
+export type BusinessRole = { kind: "template"; reach: number } | { kind: "client"; clientId: string; name: string } | null;
+
+export async function businessRoleOf(plannerId: string): Promise<BusinessRole> {
+  const [template, client] = await Promise.all([
+    prisma.businessTemplate.findUnique({ where: { plannerId }, select: { id: true } }),
+    prisma.businessClient.findUnique({ where: { plannerId }, select: { id: true, name: true } }),
+  ]);
+  if (client) return { kind: "client", clientId: client.id, name: client.name };
+  if (template)
+    return { kind: "template", reach: await prisma.businessClient.count({ where: { templateId: template.id, plannerId: { not: null }, archivedAt: null } }) };
+  return null;
+}
+
 /** How many months a client's book runs: the lengths the shop sells. */
 export const BOOK_MONTHS = [1, 3, 6, 12] as const;
 

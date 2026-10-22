@@ -366,6 +366,9 @@
 /* Lists: a table on a wide screen, cards on a phone. */
 .list {
   display: grid;
+  /* the rows share these columns (subgrid), so a heading lines up with its
+     column whatever the other rows hold */
+  grid-template-columns: var(--cols, minmax(0, 1fr));
   background: var(--card);
   border-radius: 12px;
   box-shadow: 0 0 0 1px var(--line);
@@ -373,8 +376,9 @@
 }
 
 .row {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: var(--cols);
+  grid-template-columns: subgrid;
   gap: 12px;
   align-items: center;
   min-height: 52px;
@@ -434,6 +438,7 @@ a.row:hover {
 }
 
 .empty {
+  grid-column: 1 / -1;
   padding: 28px 16px;
   text-align: center;
   color: var(--dim);
@@ -580,6 +585,9 @@ a.row:hover {
   /* rows become cards */
   .rowHead {
     display: none;
+  }
+  .list {
+    grid-template-columns: minmax(0, 1fr);
   }
   .row {
     grid-template-columns: minmax(0, 1fr);

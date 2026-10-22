@@ -1,6 +1,6 @@
 // memari. for businesses: a client's journal, built from their template
-// (2026-10-22; handoff/research/B2B-findings-summary.md, "How templates
-// should work").
+// and kept up to date with it (2026-10-22; handoff/research/
+// B2B-findings-summary.md, "How templates should work").
 //
 // LINKED, so the coach's edits reach every client. Each of the template's
 // pages is linked to a saved page (savedItems.ts) - one the coach made, or
@@ -11,9 +11,11 @@
 // calls. A printed book never changes: its PDF was stored when it was paid
 // for (PrintFile).
 //
-// What a link does not carry: pages added to or taken from the template
-// after a client's journal was built, and the journal's own settings (its
-// fonts, its week). Those come with a rebuild, not yet built.
+// WHAT A LINK DOES NOT CARRY: pages added to or taken from the template, and
+// the journal's own settings (its fonts, its week, its page size). Those
+// reach a client's journal when the coach updates it (updateClientJournal),
+// after being told how many clients' next books it changes - Templates shows
+// which journals are behind (clientsBehind).
 //
 // A plain server module, like savedItems.ts: it trusts the ownerId it is
 // handed. The business actions check who is asking and call in.
@@ -23,6 +25,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { savePagesAs } from "@/app/planner/savedItems";
 import { BOOK_DAYS } from "@/lib/business";
 
+type Tx = Prisma.TransactionClient;
 const DAY = 24 * 60 * 60 * 1000;
 
 const LEVEL_NAMES: Record<string, string> = {
@@ -36,6 +39,75 @@ const LEVEL_NAMES: Record<string, string> = {
 /** The saved pages a template's own pages are linked through, made here. */
 export const templateSourceKey = (plannerId: string) => `template:${plannerId}`;
 
+const PAGE_ORDER = [{ level: "asc" as const }, { variantKey: "asc" as const }, { position: "asc" as const }];
+
+/** Every page of a template linked, so an edit to it reaches its clients'
+ *  journals - one page per link (a spread's two pages each have their own);
+ *  then its pages with their modules. */
+async function linkedTemplate(ownerId: string, plannerId: string) {
+  const template = await prisma.planner.findFirst({
+    where: { id: plannerId, ownerId },
+    include: { pages: { where: { savedPageId: null }, select: { id: true, level: true, position: true } } },
+  });
+  if (!template) throw new Error("Their template's journal is gone.");
+  for (const page of template.pages) {
+    const saved = await savePagesAs(ownerId, [page.id], `${template.title}: ${LEVEL_NAMES[page.level] ?? "page"} ${page.position + 1}`);
+    await prisma.savedPage.update({ where: { id: saved.id }, data: { sourceKey: templateSourceKey(template.id) } });
+  }
+  const pages = await prisma.page.findMany({ where: { plannerId: template.id }, include: { moduleInstances: true }, orderBy: PAGE_ORDER });
+  return { template, pages };
+}
+
+type TemplatePage = Awaited<ReturnType<typeof linkedTemplate>>["pages"][number];
+
+/** One of the template's pages copied into a client's journal, with its link
+ *  and its modules. */
+async function copyPage(tx: Tx, plannerId: string, page: TemplatePage) {
+  const copy = await tx.page.create({
+    data: {
+      plannerId,
+      level: page.level,
+      variantKey: page.variantKey,
+      position: page.position,
+      widthPx: page.widthPx,
+      heightPx: page.heightPx,
+      gridColumns: page.gridColumns,
+      gridRows: page.gridRows,
+      gridGapPx: page.gridGapPx,
+      marginPx: page.marginPx,
+      savedPageId: page.savedPageId,
+      savedPageIndex: page.savedPageIndex,
+    },
+  });
+  if (page.moduleInstances.length)
+    await tx.moduleInstance.createMany({
+      data: page.moduleInstances.map((m) => ({
+        moduleTypeId: m.moduleTypeId,
+        placementMode: m.placementMode,
+        locked: m.locked,
+        x: m.x,
+        y: m.y,
+        width: m.width,
+        height: m.height,
+        columnStart: m.columnStart,
+        rowStart: m.rowStart,
+        columnSpan: m.columnSpan,
+        rowSpan: m.rowSpan,
+        zIndex: m.zIndex,
+        propValues: (m.propValues ?? {}) as Prisma.InputJsonValue,
+        savedModuleId: m.savedModuleId,
+        pageId: copy.id,
+      })),
+    });
+}
+
+/** The template's own settings, as a client's journal takes them. */
+const settingsOf = (template: { dated: boolean; timeZone: string | null; theme: Prisma.JsonValue | null }) => ({
+  dated: template.dated,
+  timeZone: template.timeZone,
+  theme: template.theme === null ? Prisma.DbNull : (template.theme as Prisma.InputJsonValue),
+});
+
 /** Build a client's journal from their template; their journal's id. Does
  *  nothing more for a client who has one already. */
 export async function buildClientJournal(ownerId: string, clientId: string): Promise<string> {
@@ -46,23 +118,7 @@ export async function buildClientJournal(ownerId: string, clientId: string): Pro
   if (!client) throw new Error("That client is not one of yours.");
   if (client.plannerId) return client.plannerId;
   if (!client.template) throw new Error("Choose a template for them first.");
-  const template = await prisma.planner.findFirst({
-    where: { id: client.template.plannerId, ownerId },
-    include: { pages: { where: { savedPageId: null }, select: { id: true, level: true, position: true } } },
-  });
-  if (!template) throw new Error("Their template's journal is gone.");
-
-  // Every page of the template linked, so an edit to it reaches this
-  // journal. One page per link: a spread's two pages each have their own.
-  for (const page of template.pages) {
-    const saved = await savePagesAs(ownerId, [page.id], `${template.title}: ${LEVEL_NAMES[page.level] ?? "page"} ${page.position + 1}`);
-    await prisma.savedPage.update({ where: { id: saved.id }, data: { sourceKey: templateSourceKey(template.id) } });
-  }
-  const pages = await prisma.page.findMany({
-    where: { plannerId: template.id },
-    include: { moduleInstances: true },
-    orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }],
-  });
+  const { template, pages } = await linkedTemplate(ownerId, client.template.plannerId);
 
   // Their dates: from their first book's start, for as long as each book runs.
   const startDate = client.startDate;
@@ -72,59 +128,126 @@ export async function buildClientJournal(ownerId: string, clientId: string): Pro
   return prisma.$transaction(
     async (tx) => {
       const planner = await tx.planner.create({
-        data: {
-          ownerId,
-          title: client.coverName || client.name,
-          dated: template.dated,
-          timeZone: template.timeZone,
-          theme: template.theme === null ? Prisma.DbNull : (template.theme as Prisma.InputJsonValue),
-          startDate,
-          endDate,
-        },
+        data: { ownerId, title: client.coverName || client.name, ...settingsOf(template), startDate, endDate },
       });
-      for (const page of pages) {
-        const copy = await tx.page.create({
-          data: {
-            plannerId: planner.id,
-            level: page.level,
-            variantKey: page.variantKey,
-            position: page.position,
-            widthPx: page.widthPx,
-            heightPx: page.heightPx,
-            gridColumns: page.gridColumns,
-            gridRows: page.gridRows,
-            gridGapPx: page.gridGapPx,
-            marginPx: page.marginPx,
-            savedPageId: page.savedPageId,
-            savedPageIndex: page.savedPageIndex,
-          },
-        });
-        if (page.moduleInstances.length)
-          await tx.moduleInstance.createMany({
-            data: page.moduleInstances.map((m) => ({
-              moduleTypeId: m.moduleTypeId,
-              placementMode: m.placementMode,
-              locked: m.locked,
-              x: m.x,
-              y: m.y,
-              width: m.width,
-              height: m.height,
-              columnStart: m.columnStart,
-              rowStart: m.rowStart,
-              columnSpan: m.columnSpan,
-              rowSpan: m.rowSpan,
-              zIndex: m.zIndex,
-              propValues: (m.propValues ?? {}) as Prisma.InputJsonValue,
-              savedModuleId: m.savedModuleId,
-              pageId: copy.id,
-            })),
-          });
-      }
+      for (const page of pages) await copyPage(tx, planner.id, page);
       await tx.businessClient.update({ where: { id: client.id }, data: { plannerId: planner.id } });
       return planner.id;
     },
     { timeout: 30_000 }
   );
+}
+
+/**
+ * Bring a client's journal back in line with their template: its settings,
+ * and its pages - every page the template links, in the template's order,
+ * with a page the template has dropped taken out. A page of the client's
+ * own (not one of the template's) is kept, after the template's in its set.
+ * Their title and dates are theirs and stay. A client without a journal
+ * gets one built.
+ */
+export async function updateClientJournal(ownerId: string, clientId: string): Promise<string> {
+  const client = await prisma.businessClient.findFirst({
+    where: { id: clientId, business: { ownerId } },
+    include: { template: true },
+  });
+  if (!client) throw new Error("That client is not one of yours.");
+  if (!client.template) throw new Error("Choose a template for them first.");
+  if (!client.plannerId) return buildClientJournal(ownerId, clientId);
+  const plannerId = client.plannerId;
+  const { template, pages } = await linkedTemplate(ownerId, client.template.plannerId);
+  const links = pages.map((p) => p.savedPageId!);
+
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.planner.update({ where: { id: plannerId }, data: settingsOf(template) });
+      // the template's pages, as they were: linked to one it uses, or to one
+      // it was given and has since dropped
+      await tx.page.deleteMany({
+        where: { plannerId, OR: [{ savedPageId: { in: links } }, { savedPage: { sourceKey: templateSourceKey(template.id) } }] },
+      });
+      // their own pages, out of the way of the template's positions
+      const own = await tx.page.findMany({ where: { plannerId }, orderBy: PAGE_ORDER, select: { id: true, level: true, variantKey: true, position: true } });
+      for (const page of own) await tx.page.update({ where: { id: page.id }, data: { position: page.position + 100_000 } });
+      for (const page of pages) await copyPage(tx, plannerId, page);
+      // and back, after the template's pages in each set
+      const filled = new Map<string, number>();
+      for (const page of pages) {
+        const set = `${page.level}:${page.variantKey ?? ""}`;
+        filled.set(set, Math.max(filled.get(set) ?? 0, page.position + 1));
+      }
+      for (const page of own) {
+        const set = `${page.level}:${page.variantKey ?? ""}`;
+        const position = filled.get(set) ?? 0;
+        filled.set(set, position + 1);
+        await tx.page.update({ where: { id: page.id }, data: { position } });
+      }
+    },
+    { timeout: 60_000 }
+  );
+  return plannerId;
+}
+
+/** Keys in order, so two copies of one theme compare equal. */
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stable((value as Record<string, unknown>)[k])}`)
+      .join(",")}}`;
+  return JSON.stringify(value ?? null);
+}
+
+type ShapePage = { level: string; variantKey: string | null; position: number; savedPageId: string | null; savedPageIndex: number | null };
+
+/** What a client's journal takes from its template: its settings, and which
+ *  linked page is where. A page the template has not linked yet (one added
+ *  since) has no link, so it differs from every client's. */
+function shapeOf(planner: { dated: boolean; timeZone: string | null; theme: Prisma.JsonValue | null }, pages: ShapePage[]) {
+  return stable({
+    dated: planner.dated,
+    timeZone: planner.timeZone,
+    theme: planner.theme,
+    pages: pages.map((p) => [p.level, p.variantKey, p.position, p.savedPageId, p.savedPageIndex]),
+  });
+}
+
+const SHAPE_SELECT = { level: true, variantKey: true, position: true, savedPageId: true, savedPageIndex: true } as const;
+
+/** The clients of a template whose journals are behind it: pages added or
+ *  taken away, or its settings changed, since they were built or updated. */
+export async function clientsBehind(templateId: string): Promise<Array<{ id: string; name: string }>> {
+  const row = await prisma.businessTemplate.findUnique({
+    where: { id: templateId },
+    include: {
+      planner: { include: { pages: { orderBy: PAGE_ORDER, select: SHAPE_SELECT } } },
+      clients: {
+        where: { archivedAt: null, plannerId: { not: null } },
+        include: { planner: { include: { pages: { orderBy: PAGE_ORDER, select: { ...SHAPE_SELECT, savedPage: { select: { sourceKey: true } } } } } } },
+      },
+    },
+  });
+  if (!row) return [];
+  const links = new Set(row.planner.pages.map((p) => p.savedPageId).filter(Boolean));
+  const source = templateSourceKey(row.plannerId);
+  const want = shapeOf(row.planner, row.planner.pages);
+  return row.clients
+    .filter((c) => {
+      const theirs = c.planner!.pages.filter((p) => (p.savedPageId && links.has(p.savedPageId)) || p.savedPage?.sourceKey === source);
+      return shapeOf(c.planner!, theirs) !== want;
+    })
+    .map((c) => ({ id: c.id, name: c.name }));
+}
+
+/** Update every one of a template's clients' journals that is behind it;
+ *  how many were. */
+export async function updateClientsOf(ownerId: string, templateId: string): Promise<number> {
+  const row = await prisma.businessTemplate.findFirst({ where: { id: templateId, business: { ownerId } }, select: { id: true } });
+  if (!row) throw new Error("That template is not one of yours.");
+  const behind = await clientsBehind(templateId);
+  for (const client of behind) await updateClientJournal(ownerId, client.id);
+  return behind.length;
 }
 
 /** How many clients' journals an edit to this template's pages reaches. */

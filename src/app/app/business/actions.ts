@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
-import { buildClientJournal } from "@/lib/businessJournals";
+import { buildClientJournal, updateClientsOf } from "@/lib/businessJournals";
 import { COUNTRY_CODES } from "@/lib/print/countries";
 
 export type FormState = { error?: string; saved?: boolean } | null;
@@ -117,6 +117,19 @@ export async function buildJournalFor(clientId: string): Promise<{ error?: strin
   }
   revalidatePath("/app/business", "layout");
   return {};
+}
+
+/** Bring every journal of a template's clients that is behind it up to
+ *  date: its pages and settings (businessJournals.ts). How many changed. */
+export async function updateTemplateClients(templateId: string): Promise<{ updated?: number; error?: string }> {
+  const { owner } = await myBusiness();
+  try {
+    const updated = await updateClientsOf(owner.id, templateId);
+    revalidatePath("/app/business", "layout");
+    return { updated };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Their journals could not be updated." };
+  }
 }
 
 /** Archive a client, or bring one back (the undo). Their journal and books

@@ -10,6 +10,7 @@
 // cookie, or the weekly spread. The old addresses redirect here - see
 // next.config.ts.
 
+import { businessRoleOf } from "@/lib/business";
 import { claimGuestWork, currentOwner, signInPath } from "@/lib/owner";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
@@ -85,6 +86,9 @@ export async function renderEditor(address: string) {
   // fits this journal's page size; Saved > Modules for the palette. The
   // editor refreshes these without a reload, through the same function.
   const saved = await savedItemsFor(owner.id, book);
+  // a template of the owner's business, or a client's journal: said beside
+  // its title, so an edit's reach is never a surprise (memari. for businesses)
+  const business = await businessRoleOf(journalId);
 
   return (
     <EditorShell
@@ -93,6 +97,7 @@ export async function renderEditor(address: string) {
       initialDpr={initialViewport?.dpr ?? 1}
       guest={owner.guest}
       saved={saved}
+      business={business}
     />
   );
 }
