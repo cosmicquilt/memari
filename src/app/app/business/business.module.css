@@ -53,6 +53,22 @@
   --row-pad-x: 24px;
   --step-pad: 14px;
   --control-h: 40px;
+  /* the charts (charts.tsx): one series in the pen's blue; the ordered
+     stages a ramp of that blue, light to dark, validated with the dataviz
+     skill's validate_palette.js against the card (all checks pass); the past
+     a quiet warm grey; the status colours kept for warnings, each always
+     drawn with an icon and words */
+  --series-1: #4a5cff;
+  --ord-1: #93abff;
+  --ord-2: #6c86ff;
+  --ord-3: #4a5cff;
+  --ord-4: #3442bc;
+  --deemph: #cfc9c0;
+  --grid: rgba(28, 25, 23, 0.08);
+  --axis: rgba(28, 25, 23, 0.28);
+  --st-warning: #fab219;
+  --st-serious: #ec835a;
+  --st-critical: #d03b3b;
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
@@ -555,6 +571,391 @@ a.step:hover + .step {
   border-radius: inherit;
 }
 
+/* The charts (charts.tsx). */
+.chart {
+  margin: 0;
+  min-width: 0;
+  align-content: start;
+}
+
+.chartHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chartTitle {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.chartTitle p {
+  font-size: 14px;
+}
+
+.chartSwitch {
+  flex: none;
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: var(--btn-bg);
+  color: var(--dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chartSwitch:hover {
+  background: var(--btn-bg-hover);
+  color: var(--ink);
+}
+
+.chartSwitch[aria-pressed="true"] {
+  background: var(--here);
+  color: var(--accent);
+}
+
+/* a filter row and the charts it filters, kept together */
+.chartGroup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* two charts side by side, one above the other when narrow */
+.chartPair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--card-gap);
+}
+
+.plot {
+  position: relative;
+  min-width: 0;
+}
+
+.plot svg {
+  display: block;
+  overflow: visible;
+}
+
+.chartMark {
+  outline: none;
+  cursor: default;
+}
+
+.chartMark:focus-visible > rect:first-child {
+  stroke: var(--accent);
+  stroke-width: 2px;
+}
+
+.axisText {
+  fill: var(--dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.valueText {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmentText {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.todayText {
+  fill: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rowText {
+  fill: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rowLink:hover .rowText,
+.rowLink:focus-visible .rowText {
+  fill: var(--accent);
+  text-decoration: underline;
+}
+
+.rowLink:focus-visible {
+  outline: none;
+}
+
+.rowState {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font-size: 13px;
+  color: var(--dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowState[data-state="out"],
+.rowState[data-state="soon"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* under the name, on a narrow screen */
+.rowState[data-narrow] {
+  height: 20px;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.statusIcon {
+  flex: none;
+}
+
+.tip {
+  position: absolute;
+  z-index: 5;
+  width: max-content;
+  max-width: 190px;
+  transform: translateY(-100%);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 8px 24px rgba(28, 25, 23, 0.12);
+  font-size: 13px;
+  line-height: 1.35;
+  pointer-events: none;
+  display: grid;
+  gap: 3px;
+}
+
+.tipTitle {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.tipRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tipRow span:last-child {
+  color: var(--dim);
+}
+
+.tipKey {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.stageBar {
+  display: grid;
+  gap: 14px;
+}
+
+/* the headline numbers */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--card-gap);
+}
+
+.tile {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 20px 22px;
+  border-radius: var(--radius-card);
+  background: var(--card);
+  box-shadow: var(--card-ring);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.tile:hover {
+  box-shadow:
+    var(--card-ring),
+    0 0 0 1px var(--line);
+}
+
+.tileLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.tileValue {
+  font-family: var(--font-head);
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: proportional-nums;
+}
+
+.tileChange {
+  font-size: 13px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.spark {
+  display: block;
+  margin-top: 6px;
+}
+
+/* how many have reached each step */
+.barList {
+  display: grid;
+  gap: 10px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr) 64px;
+  gap: 12px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.barTrack {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--series-1);
+}
+
+.barValue {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* a warning under a chart's title: icon and words, never colour alone */
+.attention {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* a chart's table view */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.dataTable th:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+
+.dataTable thead th {
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* a row of choices over the charts: the months they cover */
+.range {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-btn);
+  background: var(--btn-bg);
+  justify-self: start;
+}
+
+.range a {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: var(--radius-btn);
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.range a:hover {
+  color: var(--ink);
+}
+
+.range a[aria-current="page"] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.1);
+}
+
 /* The start: before there is a business. */
 .start {
   max-width: 560px;
@@ -612,6 +1013,9 @@ a.step:hover + .step {
 }
 
 @media (max-width: 767px) {
+  .biz {
+    --card-pad: 18px;
+  }
   .body {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
@@ -646,5 +1050,21 @@ a.step:hover + .step {
     display: inline;
     color: var(--dim);
     margin-right: 6px;
+  }
+  .barRow {
+    grid-template-columns: minmax(0, 1fr) 64px;
+    gap: 4px 12px;
+  }
+  .barLabel {
+    grid-column: 1 / -1;
+  }
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tile {
+    padding: 16px;
+  }
+  .tileValue {
+    font-size: 28px;
   }
 }

@@ -221,6 +221,33 @@ try {
   say((await tab.getByText("Approved", { exact: true }).count()) === 1, "her page lists the book");
   await shoot(tab, "biz-client-journal");
 
+  // THE CHARTS (2026-10-22, charts.tsx): what they draw matches the rows,
+  // each has a table of the same numbers, and a mark answers the keyboard.
+  const thisMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  await tab.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
+  const tileValues = await tab.locator('[class*="tileValue"]').allTextContents();
+  say(tileValues.join("|") === "1|1|$34.75|0", `Home's numbers: 1 client, 1 book and $34.75 this quarter, nobody running out (${tileValues.join(", ")})`);
+  const coverage = tab.getByRole("figure", { name: "Who has pages, and until when" });
+  say((await coverage.getByRole("link", { name: "Maya Okafor: To 3 Apr" }).count()) === 1, "Home's timeline: Maya, covered to 3 Apr, her name a link to her");
+  await coverage.locator('g[aria-label^="Maya Okafor: book 4 Jan to 3 Apr"]').focus();
+  say((await tab.getByRole("status").filter({ hasText: "4 Jan to 3 Apr" }).count()) === 1, "her book, reached by keyboard, says its dates in a tooltip");
+  await shoot(tab, "biz-home-charts");
+  await coverage.getByRole("button", { name: "Table" }).click();
+  say((await coverage.getByRole("row", { name: /Maya Okafor 1 3 Apr To 3 Apr/ }).count()) === 1, "its Table: the same numbers as a table");
+  await tab.goto(`${server.base}/app/business/orders`, { waitUntil: "networkidle" });
+  say((await tab.locator('g[aria-label="Approved: 1"]').count()) === 1 && (await tab.locator('g[aria-label="In production: 0"]').count()) === 0, "Orders: the stage bar, one book Approved and no empty segment drawn");
+  const columns = tab.locator('svg[aria-label="Books ordered"] g[tabindex="0"]');
+  say((await columns.count()) === 12 && (await tab.locator(`svg[aria-label="Books ordered"] g[aria-label="${thisMonth}: 1"]`).count()) === 1, `Orders: 12 months of books, 1 in ${thisMonth}`);
+  say((await tab.locator(`svg[aria-label="Spent"] g[aria-label="${thisMonth}: $34.75"]`).count()) === 1, "and spent, $34.75 this month, on a chart of its own");
+  await tab.getByRole("link", { name: "6 months", exact: true }).click();
+  await tab.waitForURL("**/orders?range=6");
+  await tab.waitForTimeout(400);
+  say((await columns.count()) === 6, "6 months: the charts redraw over 6");
+  await shoot(tab, "biz-orders-charts");
+  await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
+  say((await tab.getByRole("listitem", { name: "First book ordered: 1 of 1" }).count()) === 1, "Clients: how many have reached each step, the first book 1 of 1");
+  await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
+
   // HER OWN PAGE, by a private link (clientPortal.ts): no account, no cookie.
   await tab.getByRole("button", { name: "Make their link" }).click();
   const linkBox = tab.getByLabel("Maya's link");

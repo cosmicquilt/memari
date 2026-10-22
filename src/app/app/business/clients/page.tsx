@@ -1,10 +1,14 @@
 // memari. for businesses - Clients: everyone the business makes books for,
-// with what each still needs. Archived clients on their own tab.
+// with what each still needs. Archived clients on their own tab. Over the
+// current list (2026-10-22): how many have reached each step on the way to
+// a first book - where setup gets stuck, which the list shows one by one.
 
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { currentBusiness, shippableAddress } from "@/lib/business";
+import { businessStats } from "@/lib/businessStats";
+import { BarList, ChartCard } from "../charts";
 import { RestoreClientButton } from "../forms";
 import css from "../business.module.css";
 
@@ -20,6 +24,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     orderBy: [{ name: "asc" }],
     include: { template: { include: { planner: { select: { title: true } } } } },
   });
+  const setup = archived || !clients.length ? null : (await businessStats(business.id, 1)).setup;
   const cols = { "--cols": archived ? "minmax(0, 2fr) minmax(0, 1.4fr) auto" : "minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr)" } as CSSProperties;
   return (
     <>
@@ -29,6 +34,15 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           Add client
         </Link>
       </div>
+      {setup && (
+        <ChartCard
+          title="On the way to a first book"
+          sub={`How many of your ${setup[0].count} current ${setup[0].count === 1 ? "client has" : "clients have"} done each step.`}
+          table={{ head: ["Step", "Clients", "Of all"], rows: setup.map((s) => [s.label, s.count, `${Math.round((s.count / Math.max(1, setup[0].count)) * 100)}%`]) }}
+        >
+          <BarList steps={setup.slice(1)} of={setup[0].count} />
+        </ChartCard>
+      )}
       <div className={css.actions}>
         <Link href="/app/business/clients" className={css.btn} aria-current={archived ? undefined : "page"} style={archived ? undefined : { background: "var(--here)", color: "var(--accent)" }}>
           Current
