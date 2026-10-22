@@ -221,6 +221,58 @@ try {
   say((await tab.getByText("Approved", { exact: true }).count()) === 1, "her page lists the book");
   await shoot(tab, "biz-client-journal");
 
+  // HER OWN PAGE, by a private link (clientPortal.ts): no account, no cookie.
+  await tab.getByRole("button", { name: "Make their link" }).click();
+  const linkBox = tab.getByLabel("Maya's link");
+  await linkBox.waitFor();
+  const link = await linkBox.inputValue();
+  say(/\/c\/[A-Za-z0-9_-]{43}$/.test(link), "Make their link: a private link, shown to copy");
+  await shoot(tab, "biz-client-link");
+  const stored = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+  say(!!stored?.accessTokenHash && !link.includes(stored.accessTokenHash), "only the link's hash is kept");
+  const visitor = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await visitor.addInitScript(HIDE_DEV);
+  const her = await visitor.newPage();
+  const opened = await her.goto(link, { waitUntil: "networkidle" });
+  say(opened?.status() === 200 && (await her.getByRole("heading", { name: "Maya, your journal" }).count()) === 1, "with no account or cookie, the link opens her page");
+  await her.waitForTimeout(1500);
+  const canvases = await her.locator("canvas").count();
+  say(canvases >= tplPages.length, `her page shows her journal's pages (${canvases} drawn)`);
+  say((await her.getByText("Approved", { exact: true }).count()) === 1, "and her book");
+  const privacy = await her.evaluate(() => ({
+    referrer: document.querySelector('meta[name="referrer"]')?.getAttribute("content"),
+    robots: document.querySelector('meta[name="robots"]')?.getAttribute("content") ?? "",
+  }));
+  say(privacy.referrer === "no-referrer" && privacy.robots.includes("noindex"), `it is private: no referrer, not indexed (${JSON.stringify(privacy)})`);
+  await her.screenshot({ path: shots ? `${shots}/biz-portal.png` : "/dev/null", fullPage: true }).catch(() => {});
+  // she corrects her address
+  await her.locator('input[name="street1"]').fill("121 Elm Street");
+  await her.getByRole("button", { name: "Save" }).click();
+  await her.getByText("Saved. Your next book comes here.").waitFor();
+  const corrected = (await prisma.businessClient.findUnique({ where: { id: client!.id } }))!.shippingAddress as { street1?: string };
+  say(corrected?.street1 === "121 Elm Street", "she corrects her address from her page, and it reaches the coach's record");
+  // the coach sees she opened it
+  await tab.reload({ waitUntil: "networkidle" });
+  say((await tab.getByText(/Maya last opened it on/).count()) === 1, "the coach sees she opened it");
+  // a phone
+  const herPhone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true });
+  const small2 = await herPhone.newPage();
+  await small2.goto(link, { waitUntil: "networkidle" });
+  const over2 = await small2.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  say(over2 <= 0, `her page on a phone: no sideways scroll (${over2}px)`);
+  await herPhone.close();
+  // a new link stops the old; turning it off closes the page
+  await tab.getByRole("button", { name: "Make a new link" }).click();
+  await linkBox.waitFor();
+  await tab.waitForTimeout(300);
+  const newLink = await linkBox.inputValue();
+  say(newLink !== link && (await her.goto(link))?.status() === 404 && (await her.goto(newLink))?.status() === 200, "a new link: the old one stops working, the new one opens");
+  await tab.getByRole("button", { name: "Turn it off" }).click();
+  await tab.waitForTimeout(800);
+  say((await her.goto(newLink))?.status() === 404 && !(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash, "turned off: her page is closed");
+  say((await her.goto(`${server.base}/c/not-a-real-token`))?.status() === 404, "a made-up link opens nothing");
+  await visitor.close();
+
   // THE EDITOR SAYS WHAT A JOURNAL IS to the business, and what an edit reaches.
   const templateSlug = (await prisma.planner.findUnique({ where: { id: guest.journalId } }))!.slug ?? guest.journalId;
   await tab.goto(`${server.base}/app/j/${templateSlug}`, { waitUntil: "networkidle" });

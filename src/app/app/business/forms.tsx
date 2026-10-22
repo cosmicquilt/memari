@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, updateTemplateClients, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, makeLinkFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
 
@@ -351,5 +351,82 @@ export function UpdateClientsButton({ templateId, count }: { templateId: string;
         </p>
       )}
     </>
+  );
+}
+
+/** Their own page: make a private link for a client, show it once to copy,
+ *  make a new one (the old stops working), or turn it off. */
+export function ClientLink({ clientId, name, made, seen }: { clientId: string; name: string; made: string | null; seen: string | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const make = () =>
+    start(async () => {
+      const result = await makeLinkFor(clientId);
+      setError(result.error ?? null);
+      setUrl(result.url ?? null);
+      setCopied(false);
+    });
+  const copy = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const first = name.split(" ")[0];
+  return (
+    <div className={css.card}>
+      <h2>Their page</h2>
+      <p className={css.dim}>
+        A private link for {first}: their journal, their books, and where their books go, which they can correct. No account, nothing to install. Anyone with the link can open it, so send it only to
+        them.
+      </p>
+      {url ? (
+        <>
+          <div className={css.actions}>
+            <input type="text" readOnly value={url} aria-label={`${first}'s link`} onFocus={(e) => e.currentTarget.select()} style={{ flex: "1 1 280px" }} />
+            <button type="button" className={`${css.btn} ${css.primary}`} onClick={copy}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p className={css.dim}>Shown once: it is not kept anywhere but here. Send it to {first} however you usually talk.</p>
+        </>
+      ) : made ? (
+        <p>
+          A link was made on {made}
+          {seen ? `, and ${first} last opened it on ${seen}.` : `; ${first} has not opened it yet.`}
+        </p>
+      ) : null}
+      <div className={css.actions}>
+        <button type="button" className={`${css.btn} ${url || made ? "" : css.primary}`} disabled={pending} onClick={make}>
+          {url || made ? "Make a new link" : "Make their link"}
+        </button>
+        {(url || made) && (
+          <button
+            type="button"
+            className={css.btn}
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                await turnOffLinkFor(clientId);
+                setUrl(null);
+              })
+            }
+          >
+            Turn it off
+          </button>
+        )}
+      </div>
+      {(url || made) && <p className={css.dim}>A new link stops the old one working.</p>}
+      {error && (
+        <p className={css.error} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

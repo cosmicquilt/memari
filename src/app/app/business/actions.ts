@@ -4,7 +4,10 @@
 // whose business it is (currentBusiness) and reads its input as untrusted.
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { makeClientLink, turnOffClientLink } from "@/lib/clientPortal";
+import { appUrl } from "@/lib/print/fileUrls";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
 import { buildClientJournal, updateClientsOf } from "@/lib/businessJournals";
@@ -130,6 +133,29 @@ export async function updateTemplateClients(templateId: string): Promise<{ updat
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Their journals could not be updated." };
   }
+}
+
+/** A private link to a client's own page (clientPortal.ts): the full
+ *  address, shown to the coach once - only its hash is kept. */
+export async function makeLinkFor(clientId: string): Promise<{ url?: string; error?: string }> {
+  const { owner } = await myBusiness();
+  try {
+    const token = await makeClientLink(owner.id, clientId);
+    const list = await headers();
+    const host = list.get("x-forwarded-host") ?? list.get("host");
+    const proto = list.get("x-forwarded-proto") ?? "https";
+    revalidatePath(`/app/business/clients/${clientId}`);
+    return { url: `${appUrl(host ? `${proto}://${host}` : undefined)}/c/${token}` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The link could not be made." };
+  }
+}
+
+/** Turn a client's link off: their page closes. */
+export async function turnOffLinkFor(clientId: string): Promise<void> {
+  const { owner } = await myBusiness();
+  await turnOffClientLink(owner.id, clientId);
+  revalidatePath(`/app/business/clients/${clientId}`);
 }
 
 /** Archive a client, or bring one back (the undo). Their journal and books

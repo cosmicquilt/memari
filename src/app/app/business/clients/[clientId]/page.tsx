@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, ORDER_WORDS, currentBusiness, shippableAddress } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
-import { BuildJournalButton, ClientForm, type ClientValues } from "../../forms";
+import { BuildJournalButton, ClientForm, ClientLink, type ClientValues } from "../../forms";
 import css from "../../business.module.css";
 
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -92,6 +92,12 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
           <p className={css.dim}>Choose a template for them, below, then build their journal from it.</p>
         )}
       </div>
+      <ClientLink
+        clientId={client.id}
+        name={client.name}
+        made={client.accessMadeAt ? date(client.accessMadeAt) : null}
+        seen={client.accessSeenAt ? date(client.accessSeenAt) : null}
+      />
       <ClientForm client={values} templates={templates.map((t) => ({ id: t.id, title: t.planner.title }))} countries={countryOptions()} months={BOOK_MONTHS} />
     </>
   );

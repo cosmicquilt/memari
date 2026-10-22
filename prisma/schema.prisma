@@ -680,6 +680,15 @@ model BusinessClient {
   planner         Planner?          @relation("BusinessClientJournal", fields: [plannerId], references: [id], onDelete: SetNull)
   /// The coach's own note on them; never printed.
   note            String?
+  /// THEIR OWN PAGE (2026-10-22, memari. for businesses v1.5): a private
+  /// link the coach gives them - /c/<token> - with their journal, their
+  /// books and where their books go. Only the token's SHA-256 is kept, so
+  /// the database alone cannot open anyone's page; a new link replaces the
+  /// old, and clearing it turns the page off. See src/lib/clientPortal.ts.
+  accessTokenHash String?           @unique
+  /// When the link was made, and when it was last opened.
+  accessMadeAt    DateTime?
+  accessSeenAt    DateTime?
   archivedAt      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
