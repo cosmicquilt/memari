@@ -11,6 +11,7 @@ import { PaperLayers } from "./PaperLayers";
 import { SiteFooter } from "./SiteFooter";
 import { BodyDoodles } from "./BodyDoodles";
 import { InkPaperFilter } from "./InkPaperFilter";
+import { SiteGround } from "./SiteGround";
 import { BODY_WALL_DEFAULTS, pageVars } from "./bodyWall";
 import { sans } from "./sansFont";
 import { script } from "./scriptFont";
@@ -24,6 +25,7 @@ export async function SitePage({ children }: { children: ReactNode }) {
       data-text-paper-links={BODY_WALL_DEFAULTS.textPaperLinks || undefined}
       data-text-paper-all={BODY_WALL_DEFAULTS.textPaperOffPaper || undefined}
       data-doodle-paper={(BODY_WALL_DEFAULTS.doodlePaper ?? 0) > 0 || undefined}>
+      <SiteGround />
       <InkPaperFilter />
       <PaperLayers />
       <SiteHeader signedIn={owner !== null} guest={owner?.guest ?? false} solid />

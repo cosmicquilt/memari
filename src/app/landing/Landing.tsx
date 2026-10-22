@@ -31,6 +31,7 @@ import { HOME_KEYS, STARTER_BY_KEY } from "./starterLayouts";
 import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
 import { InkPaperFilter } from "./InkPaperFilter";
+import { SiteGround } from "./SiteGround";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
 import { CoverCarousel } from "./CoverCarousel";
@@ -61,6 +62,7 @@ export function Landing({
       data-text-paper-all={BODY_WALL_DEFAULTS.textPaperOffPaper || undefined}
       data-doodle-paper={(BODY_WALL_DEFAULTS.doodlePaper ?? 0) > 0 || undefined}
     >
+      <SiteGround />
       <InkPaperFilter />
       <SiteHeader signedIn={signedIn} guest={guest} />
 
