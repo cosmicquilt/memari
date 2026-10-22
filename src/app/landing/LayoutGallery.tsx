@@ -29,7 +29,9 @@ const KIND_WORDS: Record<StarterKind, string> = {
 };
 
 /** A mouse or pen over a card marks it (landing.module.css .spreadCard);
- *  a finger never does - a tap opens the layout, nothing to grow for. */
+ *  a finger never does - a tap opens the layout, nothing to grow for. On
+ *  any move too, not only on entering, so a pointer already resting on a
+ *  card when the page's script arrives still grows it. */
 const pointerOver = (e: PointerEvent<HTMLElement>) => {
   if (e.pointerType !== "touch") e.currentTarget.setAttribute("data-pointer-over", "");
 };
@@ -40,7 +42,7 @@ export function LayoutGallery({ layouts }: { layouts: Array<{ key: string; title
     <LayoutViewer>
       <div className={styles.gallery}>
         {layouts.map((layout) => (
-          <figure key={layout.key} className={styles.spreadCard} onPointerEnter={pointerOver} onPointerLeave={pointerOut}>
+          <figure key={layout.key} className={styles.spreadCard} onPointerEnter={pointerOver} onPointerMove={pointerOver} onPointerLeave={pointerOut}>
             <LayoutCard spreadKey={layout.key} title={layout.title} set="home" />
             <figcaption className={styles.spreadName}>
               <strong>{layout.title}</strong>

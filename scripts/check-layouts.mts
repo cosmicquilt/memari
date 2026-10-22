@@ -75,6 +75,8 @@ try {
 
   // the landing page: a layout grows under the pointer
   await tab.goto(`${server.base}/`, { waitUntil: "load", timeout: 120_000 });
+  // the page's script attached to the cards (React's props on the node)
+  await tab.waitForFunction(`Object.keys(document.querySelector('figure[class*="spreadCard"]') || {}).some((k) => k.startsWith("__reactProps"))`, undefined, { timeout: 60_000 });
   const figure = tab.locator('figure[class*="spreadCard"]').first();
   await figure.scrollIntoViewIfNeeded();
   await tab.mouse.move(2, 2);
@@ -94,6 +96,8 @@ try {
   const touchLaptop = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true });
   const t2 = await touchLaptop.newPage();
   await t2.goto(`${server.base}/`, { waitUntil: "load", timeout: 120_000 });
+  // the page's script attached to the cards (React's props on the node)
+  await t2.waitForFunction(`Object.keys(document.querySelector('figure[class*="spreadCard"]') || {}).some((k) => k.startsWith("__reactProps"))`, undefined, { timeout: 60_000 });
   const fig2 = t2.locator('figure[class*="spreadCard"]').first();
   await fig2.scrollIntoViewIfNeeded();
   const pic2 = fig2.locator("button").first();
