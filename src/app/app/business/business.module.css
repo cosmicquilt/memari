@@ -631,6 +631,8 @@ a.step:hover + .step {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: var(--card-gap);
+  /* one turned to its table grows; its neighbour keeps its own height */
+  align-items: start;
 }
 
 .plot {
@@ -727,7 +729,7 @@ a.step:hover + .step {
   position: absolute;
   z-index: 5;
   width: max-content;
-  max-width: 190px;
+  max-width: 260px;
   transform: translateY(-100%);
   padding: 8px 10px;
   border-radius: 10px;
@@ -752,6 +754,10 @@ a.step:hover + .step {
   align-items: center;
   gap: 6px;
   font-variant-numeric: tabular-nums;
+}
+
+.tipRow strong {
+  white-space: nowrap;
 }
 
 .tipRow span:last-child {

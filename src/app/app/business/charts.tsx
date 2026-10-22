@@ -96,7 +96,7 @@ type Tip = { x: number; y: number; title?: string; rows: TipRow[] } | null;
 
 function Tooltip({ tip, width }: { tip: Tip; width: number }) {
   if (!tip) return null;
-  const left = Math.max(0, Math.min(width - 190, tip.x - 95));
+  const left = Math.max(0, Math.min(width - 230, tip.x - 115));
   return (
     <div className={css.tip} style={{ left, top: tip.y }} role="status">
       {tip.title && <div className={css.tipTitle}>{tip.title}</div>}
