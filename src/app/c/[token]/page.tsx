@@ -10,7 +10,6 @@ import { portalFor } from "@/lib/clientPortal";
 import { ORDER_WORDS } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { BusinessMark } from "@/app/app/business/WorkspaceSwitcher";
-import { ThemeLab } from "@/app/app/business/ThemeLab";
 import { AddressForm, JournalPages } from "./PortalParts";
 import css from "@/app/app/business/business.module.css";
 
@@ -100,7 +99,6 @@ export default async function ClientPortal({ params }: { params: Promise<{ token
           </Link> This page is private to you: anyone with its link can open it.
         </p>
       </div>
-      {process.env.NODE_ENV !== "production" && <ThemeLab />}
     </main>
   );
 }
