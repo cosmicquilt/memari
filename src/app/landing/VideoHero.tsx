@@ -23,6 +23,7 @@
 // is being drawn, while the window is resized, and while pinched in.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { preload } from "react-dom";
 import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
@@ -51,7 +52,25 @@ const AT_REST = BOOK_ON_SHEETS.right.length - 1;
 /** How long the hero's size must hold before its picture is drawn again. */
 const REBAKE_AFTER_MS = 200;
 
+/** The hero's own pictures, asked for in the page's head and before anything
+ *  else on it (2026-10-21: "fix the hero loading the side overlaid parts -
+ *  load it first before the rest of the hero"). Found the usual way, the
+ *  desk beyond the frame's sides came in last - plain images, fetched at
+ *  normal priority behind the paper and the collage's covers: 4.2s on a
+ *  9 Mb/s line against 2.5s for the middle, the screen's edges empty until
+ *  then. The dotted frame is a CSS background, found only once the
+ *  stylesheet is read. All of them first and at high priority, so the hero
+ *  arrives whole. */
+function preloadHero() {
+  const high = { as: "image", fetchPriority: "high" } as const;
+  preload(HERO_VIDEO.dots, high);
+  preload(HERO_VIDEO.dots4k, { ...high, media: HERO_VIDEO.media4k });
+  for (const side of ["left", "right"] as const) preload(`/landing/hero-extend-${side}.webp`, high);
+  for (const id of SHEET_IDS) preload(sheetPath(id), high);
+}
+
 export function VideoHero() {
+  preloadHero();
   const hero = useRef<HTMLElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const dotsFrame = useRef<HTMLCanvasElement>(null);
@@ -453,6 +472,7 @@ export function VideoHero() {
                 className={styles.videoExtendSide}
                 src={`/landing/hero-extend-${side}.webp`}
                 alt=""
+                fetchPriority="high"
                 style={{ ...place, visibility: sidesReady ? "hidden" : "visible" }}
               />,
               <canvas
