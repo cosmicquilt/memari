@@ -1,0 +1,296 @@
+"use client";
+
+// The business screens' forms: starting the business, its settings, a
+// client, choosing a template - and the buttons that change something at
+// once with an undo.
+
+import Link from "next/link";
+import { useActionState, useTransition } from "react";
+import { addTemplate, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, type FormState } from "./actions";
+import { useToast } from "./Toast";
+import css from "./business.module.css";
+
+function Status({ state }: { state: FormState }) {
+  if (state?.error) return <p className={css.error} role="alert">{state.error}</p>;
+  if (state?.saved) return <p className={css.saved} role="status">Saved</p>;
+  return null;
+}
+
+export function StartBusinessForm() {
+  const [state, action, pending] = useActionState(startBusiness, null);
+  return (
+    <form action={action} className={css.form}>
+      <label className={css.field}>
+        <span>Your business&rsquo;s name</span>
+        <input type="text" name="name" required maxLength={80} placeholder="Northwind Coaching" autoComplete="organization" />
+        <small>You can change it, and add your logo, in Settings.</small>
+      </label>
+      <Status state={state} />
+      <div className={css.actions}>
+        <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>
+          Start
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function SettingsForm({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const [state, action, pending] = useActionState(saveBusinessSettings, null);
+  return (
+    <form action={action} className={css.form}>
+      <div className={css.fields}>
+        <label className={css.field}>
+          <span>Name</span>
+          <input type="text" name="name" required maxLength={80} defaultValue={name} autoComplete="organization" />
+        </label>
+        <label className={css.field}>
+          <span>Logo</span>
+          <input type="url" name="logoUrl" defaultValue={logoUrl ?? ""} placeholder="https://…/logo.png" />
+          <small>The address of your logo picture, a square one if you have it.</small>
+        </label>
+      </div>
+      <Status state={state} />
+      <div className={css.actions}>
+        <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export type ClientValues = {
+  id?: string;
+  name?: string;
+  coverName?: string | null;
+  email?: string | null;
+  startDate?: string | null;
+  bookMonths?: number;
+  templateId?: string | null;
+  note?: string | null;
+  address?: Partial<Record<"name" | "street1" | "street2" | "city" | "stateCode" | "postcode" | "countryCode" | "phoneNumber", string>>;
+};
+
+export function ClientForm({
+  client,
+  templates,
+  countries,
+  months,
+}: {
+  client: ClientValues;
+  templates: Array<{ id: string; title: string }>;
+  countries: Array<{ code: string; name: string }>;
+  months: readonly number[];
+}) {
+  const [state, action, pending] = useActionState(saveClient, null);
+  const a = client.address ?? {};
+  return (
+    <form action={action} className={css.form}>
+      {client.id && <input type="hidden" name="id" value={client.id} />}
+      <div className={css.card}>
+        <h2>Client</h2>
+        <div className={css.fields}>
+          <label className={css.field}>
+            <span>Name</span>
+            <input type="text" name="name" required maxLength={120} defaultValue={client.name ?? ""} autoComplete="off" />
+          </label>
+          <label className={css.field}>
+            <span>Name on the cover</span>
+            <input type="text" name="coverName" maxLength={120} defaultValue={client.coverName ?? ""} />
+            <small>If it is not the name above.</small>
+          </label>
+          <label className={css.field}>
+            <span>Email</span>
+            <input type="email" name="email" maxLength={200} defaultValue={client.email ?? ""} autoComplete="off" />
+          </label>
+        </div>
+      </div>
+      <div className={css.card}>
+        <h2>Their book</h2>
+        <div className={css.fields}>
+          <label className={css.field}>
+            <span>Template</span>
+            <select name="templateId" defaultValue={client.templateId ?? ""}>
+              <option value="">{templates.length ? "Choose later" : "No templates yet"}</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={css.field}>
+            <span>First book starts</span>
+            <input type="date" name="startDate" defaultValue={client.startDate ?? ""} />
+          </label>
+          <label className={css.field}>
+            <span>Each book runs</span>
+            <select name="bookMonths" defaultValue={String(client.bookMonths ?? 3)}>
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {m === 1 ? "1 month" : m === 12 ? "A year" : `${m} months`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className={css.card}>
+        <h2>Where their books go</h2>
+        <div className={css.fields}>
+          <label className={css.field}>
+            <span>Name on the parcel</span>
+            <input type="text" name="addressName" maxLength={120} defaultValue={a.name ?? ""} autoComplete="off" />
+            <small>Their name, if left empty.</small>
+          </label>
+          <label className={`${css.field} ${css.wide}`}>
+            <span>Address</span>
+            <input type="text" name="street1" maxLength={200} defaultValue={a.street1 ?? ""} autoComplete="off" />
+          </label>
+          <label className={`${css.field} ${css.wide}`}>
+            <span>Address, second line</span>
+            <input type="text" name="street2" maxLength={200} defaultValue={a.street2 ?? ""} autoComplete="off" />
+          </label>
+          <label className={css.field}>
+            <span>City</span>
+            <input type="text" name="city" maxLength={120} defaultValue={a.city ?? ""} autoComplete="off" />
+          </label>
+          <label className={css.field}>
+            <span>State or region</span>
+            <input type="text" name="stateCode" maxLength={40} defaultValue={a.stateCode ?? ""} autoComplete="off" />
+          </label>
+          <label className={css.field}>
+            <span>Postcode</span>
+            <input type="text" name="postcode" maxLength={20} defaultValue={a.postcode ?? ""} autoComplete="off" />
+          </label>
+          <label className={css.field}>
+            <span>Country</span>
+            <select name="countryCode" defaultValue={a.countryCode ?? "US"}>
+              {countries.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={css.field}>
+            <span>Phone</span>
+            <input type="tel" name="phoneNumber" maxLength={40} defaultValue={a.phoneNumber ?? ""} autoComplete="off" />
+            <small>The courier asks for one.</small>
+          </label>
+        </div>
+      </div>
+      <div className={css.card}>
+        <label className={css.field}>
+          <span>Your note</span>
+          <textarea name="note" maxLength={2000} defaultValue={client.note ?? ""} />
+          <small>Only you see it; it is never printed.</small>
+        </label>
+      </div>
+      <Status state={state} />
+      <div className={css.actions}>
+        <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>
+          {client.id ? "Save" : "Add client"}
+        </button>
+        <Link href="/app/business/clients" className={css.btn}>
+          Cancel
+        </Link>
+        {client.id && <ArchiveClientButton id={client.id} name={client.name ?? "this client"} />}
+      </div>
+    </form>
+  );
+}
+
+/** Archive at once, with an undo. Their journal and books are kept. */
+export function ArchiveClientButton({ id, name }: { id: string; name: string }) {
+  const toast = useToast();
+  const [pending, start] = useTransition();
+  return (
+    <button
+      type="button"
+      className={css.btn}
+      disabled={pending}
+      onClick={() =>
+        start(async () => {
+          await setClientArchived(id, true);
+          toast({ message: `${name} archived`, undo: () => setClientArchived(id, false) });
+        })
+      }
+    >
+      Archive
+    </button>
+  );
+}
+
+export function RestoreClientButton({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  return (
+    <button type="button" className={css.btn} disabled={pending} onClick={() => start(() => setClientArchived(id, false))}>
+      Restore
+    </button>
+  );
+}
+
+export function AddTemplateForm({ journals }: { journals: Array<{ id: string; title: string }> }) {
+  const [state, action, pending] = useActionState(addTemplate, null);
+  if (!journals.length)
+    return (
+      <p className={css.dim}>
+        Every journal of yours is a template already. <Link href="/app">Make a new journal</Link> to use as another.
+      </p>
+    );
+  return (
+    <form action={action} className={css.form}>
+      <div className={css.fields}>
+        <label className={css.field}>
+          <span>Use one of your journals</span>
+          <select name="plannerId" required defaultValue="">
+            <option value="" disabled>
+              Choose a journal
+            </option>
+            {journals.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <Status state={state} />
+      <div className={css.actions}>
+        <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>
+          Make it a template
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Stop using a journal as a template, at once, with an undo. */
+export function RemoveTemplateButton({ templateId, plannerId, title }: { templateId: string; plannerId: string; title: string }) {
+  const toast = useToast();
+  const [pending, start] = useTransition();
+  return (
+    <button
+      type="button"
+      className={css.btn}
+      disabled={pending}
+      onClick={() =>
+        start(async () => {
+          await removeTemplate(templateId);
+          toast({
+            message: `${title} is no longer a template`,
+            undo: async () => {
+              const form = new FormData();
+              form.set("plannerId", plannerId);
+              await addTemplate(null, form);
+            },
+          });
+        })
+      }
+    >
+      Stop using
+    </button>
+  );
+}

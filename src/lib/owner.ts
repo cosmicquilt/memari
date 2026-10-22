@@ -75,6 +75,12 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
   } else {
     await prisma.ownerSettings.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
   }
+  // A BUSINESS a guest started (memari. for businesses) comes with them,
+  // unless the account has one already - one each, for now. Its clients and
+  // templates hang off it, and its journals moved above.
+  if (!(await prisma.business.findUnique({ where: { ownerId: userId }, select: { id: true } }))) {
+    await prisma.business.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
+  }
   // SAVED PLANNERS (bookmarks of ours, templateSaving.ts): one the account
   // already has is kept once - the pair is unique, so these are copied with
   // the duplicates skipped rather than moved.

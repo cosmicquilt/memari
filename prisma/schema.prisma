@@ -45,16 +45,16 @@ enum PageLevel {
 // prebuilt starter planners (weekly/monthly/quarterly/yearly "bases")
 // that get cloned into a new owned Planner when a user starts fresh.
 model Planner {
-  id         String    @id @default(cuid())
+  id               String            @id @default(cuid())
   // Clerk user ID. Not an FK yet — syncing Clerk users into our own
   // `User` table via webhook is a later task, not a blocker for this.
-  ownerId    String
-  title      String
+  ownerId          String
+  title            String
   /// The journal's address in words - /app/j/frosty-otter-4821 (2026-10-04,
   /// src/lib/journalSlug.ts). Unique across every journal. Null on one made
   /// before slugs existed until it is next opened or listed, which gives it
   /// one; templates never need one.
-  slug       String?   @unique
+  slug             String?           @unique
   // Does this planner carry DATES, or is it a template you write them into?
   // The free tier is the undated one (see the business model: the book is
   // derived from templates, and a template has no dates). Undated is applied
@@ -64,14 +64,14 @@ model Planner {
   // Defaults true: every planner that existed before this column did was a
   // dated one, and a default that silently blanked them would be a migration
   // that deleted content.
-  dated      Boolean   @default(true)
+  dated            Boolean           @default(true)
   // What term this book covers. Sequence generation turns the templates
   // into pages by walking this range - so many weeks, so many days.
   // Nullable: every planner that existed before this was a single spread
   // with no term at all, and a made-up range would be a lie about what
   // somebody built.
-  startDate  DateTime?
-  endDate    DateTime?
+  startDate        DateTime?
+  endDate          DateTime?
   // The zone this book's clock reads (an IANA name). Every event is an
   // INSTANT, and a page draws it at its wall-clock time here - a book, not a
   // person, because a planner is printed for a place: a travel journal for a
@@ -84,13 +84,17 @@ model Planner {
   // made before zones existed follows the default, which is what it would
   // have chosen. See effectiveZone in src/lib/timeZone.ts - the one place
   // the two are combined.
-  timeZone   String?
-  isTemplate Boolean   @default(false)
-  theme      Json?
-  pages      Page[]
-  printOrders PrintOrder[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  timeZone         String?
+  isTemplate       Boolean           @default(false)
+  theme            Json?
+  pages            Page[]
+  printOrders      PrintOrder[]
+  /// memari. for businesses: this journal as one of a business's
+  /// templates, or as a client's journal built from one (see Business).
+  businessTemplate BusinessTemplate? @relation("BusinessTemplateJournal")
+  businessClient   BusinessClient?   @relation("BusinessClientJournal")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([ownerId])
 }
@@ -446,12 +450,12 @@ model HiddenCalendar {
 /// (Clerk holds the account), so this is where a preference that belongs to
 /// the PERSON rather than to one book lives.
 model OwnerSettings {
-  ownerId   String   @id
+  ownerId          String   @id
   /// The zone every book follows unless it has one of its own. STORED, not
   /// read from the browser each time: the PDF is drawn on the server, which
   /// has no browser, and two devices in two zones must not print the same
   /// book two ways. Seeded from the browser the first time it is missing.
-  timeZone  String?
+  timeZone         String?
   /// The person's customer at Stripe, made the first time they order, so
   /// every order and any renewal is one customer with one saved card.
   stripeCustomerId String?
@@ -459,9 +463,9 @@ model OwnerSettings {
   /// week start, page size, font. JSON so another default is not another
   /// migration - read only through src/lib/preferences.ts, which drops
   /// anything it does not recognise.
-  preferences Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  preferences      Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 // ─── Ordering a printed book (2026-10-04) ───────────────────────────────────
@@ -512,17 +516,17 @@ model PrintOrder {
   planner   Planner?         @relation(fields: [plannerId], references: [id], onDelete: SetNull)
   status    PrintOrderStatus @default(QUOTED)
 
-  title      String
+  title        String
   /// First and last day covered, both included; `days` of them.
-  startDate  DateTime
-  endDate    DateTime
-  days       Int
-  binding    PrintBinding
+  startDate    DateTime
+  endDate      DateTime
+  days         Int
+  binding      PrintBinding
   /// The printer's SKU - Lulu's pod_package_id or BookVault's transient
   /// product SKU (src/lib/print/products.ts, bookvault.ts).
   podPackageId String
   /// Printed pages, padded to a multiple of four.
-  pageCount  Int
+  pageCount    Int
 
   /// MAIL, PRIORITY_MAIL, GROUND, EXPEDITED or EXPRESS.
   shippingLevel   String
@@ -540,15 +544,15 @@ model PrintOrder {
 
   /// Off unless turned on. When on, the next book - the same number of days
   /// straight after this one - is charged and ordered on `renewsAt`.
-  autoRenew Boolean   @default(false)
-  renewsAt  DateTime?
+  autoRenew             Boolean      @default(false)
+  renewsAt              DateTime?
   /// When the "your next book is ordered in a week" email went, so it goes
   /// once - see src/lib/print/emails.ts.
   renewalReminderSentAt DateTime?
   /// The order this one renewed, if it was a renewal.
-  renewedFromId String?
-  renewedFrom   PrintOrder?  @relation("Renewals", fields: [renewedFromId], references: [id], onDelete: SetNull)
-  renewals      PrintOrder[] @relation("Renewals")
+  renewedFromId         String?
+  renewedFrom           PrintOrder?  @relation("Renewals", fields: [renewedFromId], references: [id], onDelete: SetNull)
+  renewals              PrintOrder[] @relation("Renewals")
 
   stripeCheckoutSessionId String? @unique
   stripePaymentIntentId   String?
@@ -611,4 +615,74 @@ model PrintFile {
   createdAt DateTime   @default(now())
 
   @@unique([orderId, kind])
+}
+
+// MEMARI. FOR BUSINESSES (2026-10-22: "find notes on memari. for businesses
+// feature and start building" - handoff/research/B2B-findings-summary.md).
+// A coach's workspace. v1 is the coach alone, with no client logins: they
+// add their clients, make templates of their own journals, build each
+// client a journal from a template, and order each client's book shipped to
+// that client.
+//
+// EVERYTHING STAYS OWNED BY THE COACH'S OWN ID. A client's journal is an
+// ordinary journal of the coach's (ownerId), marked as the client's by
+// BusinessClient.plannerId, so the editor, linked saved pages and ordering
+// work on it unchanged. Staff accounts (v2) would move the business's rows
+// to a business owner id in one migration.
+model Business {
+  id        String             @id @default(cuid())
+  /// The coach: a Clerk user id. One business each, for now.
+  ownerId   String             @unique
+  name      String
+  /// The business's logo, an https URL - on its screens and, later, its
+  /// books.
+  logoUrl   String?
+  clients   BusinessClient[]
+  templates BusinessTemplate[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+/// One of the coach's journals, as a template: what a client's journal is
+/// built from. The journal stays an ordinary one the coach edits.
+model BusinessTemplate {
+  id         String           @id @default(cuid())
+  businessId String
+  business   Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plannerId  String           @unique
+  planner    Planner          @relation("BusinessTemplateJournal", fields: [plannerId], references: [id], onDelete: Cascade)
+  clients    BusinessClient[]
+  createdAt  DateTime         @default(now())
+
+  @@index([businessId])
+}
+
+/// One of the coach's clients. No login in v1: the coach keeps the details
+/// and orders their books.
+model BusinessClient {
+  id              String            @id @default(cuid())
+  businessId      String
+  business        Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String
+  /// The name on their book's cover, when it is not the name above.
+  coverName       String?
+  email           String?
+  /// Where their books go - ShippingAddress (src/lib/print/lulu.ts).
+  shippingAddress Json?
+  /// When their first book starts, and how many months each book runs.
+  startDate       DateTime?
+  bookMonths      Int               @default(3)
+  /// The template their journal is built from.
+  templateId      String?
+  template        BusinessTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  /// Their journal, once built.
+  plannerId       String?           @unique
+  planner         Planner?          @relation("BusinessClientJournal", fields: [plannerId], references: [id], onDelete: SetNull)
+  /// The coach's own note on them; never printed.
+  note            String?
+  archivedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([businessId])
 }

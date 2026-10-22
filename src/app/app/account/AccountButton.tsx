@@ -21,6 +21,7 @@ const LINKS: Array<[href: string, label: string]> = [
   ["/app/account/profile", "Account"],
   ["/app/account/preferences", "Preferences"],
   ["/app/account/orders", "Orders"],
+  ["/app/business", "memari. for businesses"],
 ];
 
 function GuestFigure({ size }: { size: number }) {

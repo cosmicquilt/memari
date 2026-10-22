@@ -47,10 +47,12 @@ const COVER_ORDER: PageLevel[] = ["WEEKLY", "MONTHLY", "DAILY", "FRONT_MATTER", 
 
 const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
-/** Every journal of `ownerId`, newest first, as Saved lists them. */
+/** Every journal of `ownerId`, newest first, as Saved lists them. Not the
+ *  ones a business of theirs uses - its templates and its clients' journals
+ *  are listed in the business (src/app/app/business). */
 export async function journalsOf(ownerId: string): Promise<JournalCard[]> {
   const planners = await prisma.planner.findMany({
-    where: { ownerId, isTemplate: false },
+    where: { ownerId, isTemplate: false, businessTemplate: { is: null }, businessClient: { is: null } },
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     include: WITH_PAGES,
   });
