@@ -29,12 +29,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import type { LayoutDetail, LayoutModuleBox } from "./layoutDetail";
 import type { LandingSpread } from "./spreads";
 import { SpreadPages, SpreadPreview, type PreviewSet } from "./SpreadPreview";
 import { UseThisWeek } from "./UseThisWeek";
 import { ModuleSaveRegions, SaveButton, type SaveRegion } from "@/app/planner/templateSaved";
 import css from "./layoutViewer.module.css";
+import landing from "./landing.module.css";
 
 const ViewerContext = createContext<((key: string) => void) | null>(null);
 
@@ -69,15 +71,22 @@ export function LayoutViewer({ children }: { children: ReactNode }) {
   return (
     <ViewerContext.Provider value={open}>
       {children}
-      {stack.length > 0 && (
-        <Popup
-          layoutKey={stack[stack.length - 1]}
-          canGoBack={stack.length > 1}
-          onBack={() => setStack((s) => s.slice(0, -1))}
-          onOpen={(key) => setStack((s) => [...s, key])}
-          onClose={close}
-        />
-      )}
+      {/* Into the page's own root, beside the nav (2026-10-21: "the header
+          should be behind popup not over it"): where the cards are - inside
+          the landing's body, which is a stacking context of its own - no
+          z-index lifts it over the nav, which sits above that body. The
+          page's root still carries the site's fonts and colours. */}
+      {stack.length > 0 &&
+        createPortal(
+          <Popup
+            layoutKey={stack[stack.length - 1]}
+            canGoBack={stack.length > 1}
+            onBack={() => setStack((s) => s.slice(0, -1))}
+            onOpen={(key) => setStack((s) => [...s, key])}
+            onClose={close}
+          />,
+          document.querySelector(`.${landing.page}`) ?? document.body
+        )}
     </ViewerContext.Provider>
   );
 }
