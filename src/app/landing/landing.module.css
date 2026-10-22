@@ -1419,6 +1419,8 @@
 .bodyDoodle {
   position: absolute;
   display: block;
+  /* the wall's blue at its fade (BodyDoodles.tsx) */
+  background-color: var(--doodle-ink);
   -webkit-mask-size: 100% 100%;
   mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
@@ -1426,16 +1428,13 @@
 }
 
 /* PAPER THROUGH THE DOODLES (bodyWall.ts, doodlePaper, inkPaper): the
-   paper's photos laid over each drawing's solid blue as background layers,
-   each at its share (inkStack), so the grain shows in the pen. Inside the
-   drawing's mask, which clips them to the lines; the drawing's fade is its
-   opacity (BodyDoodles.tsx). Drawn only while the slider is above 0. */
-.bodyDoodles[data-paper] .bodyDoodle {
-  background-image: var(--doodle-paper-image);
-  background-size: var(--doodle-paper-size);
-  background-position: 0 0;
-  background-repeat: repeat;
-  background-blend-mode: var(--doodle-paper-blend);
+   wall's blue with the paper's steps and its fade, baked into one picture
+   (wallPaper.ts, BodyDoodles.tsx sets --wall-paper) - one plain layer per
+   drawing, not ~18 blended ones, which stalled the scroll. Inside the
+   drawing's mask, which clips it to the lines. While the page has the
+   paper (the hold-to-compare button takes the page's attribute away). */
+.page[data-doodle-paper] .bodyDoodles[data-paper] .bodyDoodle {
+  background: var(--wall-paper);
 }
 
 /* PAPER THROUGH THE PEN DRAWINGS (doodlePaper): the underlines, circles

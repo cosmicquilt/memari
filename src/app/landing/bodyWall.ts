@@ -286,8 +286,8 @@ export function inkStack(layers: InkLayer[], base: (alpha: number) => string, pa
   return bottomUp.reverse();
 }
 
-/** The steps the pen drawings take (Ink, through InkPaperFilter.tsx): the
- *  doodles' slider and paper. */
+/** The steps the drawings take - the wall (baked, wallPaper.ts) and the
+ *  pen drawings (Ink, InkPaperFilter.tsx): the doodles' slider and paper. */
 export function drawingInkSteps(s: BodyWallSettings) {
   return inkSteps(inkLayers(s, s.doodlePaper ?? 0));
 }
@@ -361,9 +361,8 @@ export function pageVars(s: BodyWallSettings): Record<string, number | string> {
     "--curl-reach": s.curlReach,
     "--carousel-gap": s.carouselGap,
     "--carousel-blur": s.carouselBlur,
-    // The paper in the ink, as background layers (inkStack): over the
-    // doodles' blue, and over each letter's own colour.
-    ...stackVars("--doodle-paper", inkStack(inkLayers(s, s.doodlePaper ?? 0), (a) => `rgba(${BODY_INK_RGB}, ${a})`, `rgb(${creamRgb(s.creamDepth ?? 1).join(", ")})`)),
+    // The paper in the text, as background layers (inkStack) over each
+    // letter's own colour. (The wall's is baked: wallPaper.ts.)
     // A letter's colour as it shows on the cream, solid: the photos are
     // solid, so over a see-through colour (the soft ink, 0.66) they would
     // turn the letters solid, darker and heavier than they were.

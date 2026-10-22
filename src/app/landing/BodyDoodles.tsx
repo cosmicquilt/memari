@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import choices from "./doodleChoices.json";
 import { wallClassOf } from "./doodleWall";
 import { BODY_INK_RGB, PHONE_WIDTH, bodyWallSettings, onBodyWallSettings, packAround, type Keep, type Placed } from "./bodyWall";
+import { WALL_PAPER_TILE, bakeWallPaper, wallPaperKey } from "./wallPaper";
 import styles from "./landing.module.css";
 
 /** What the page shows, to keep clear of: text by its lines (a paragraph's
@@ -93,7 +94,42 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   // the block above it when the page grows (see pack).
   const anchors = useRef<Array<{ el: Element; top: number }>>([]);
   const [ink, setInk] = useState(bodyWallSettings().ink);
-  const [paper, setPaper] = useState((bodyWallSettings().doodlePaper ?? 0) > 0);
+  // The paper in the drawings, baked into one picture (wallPaper.ts): a blob
+  // URL once it is ready, and again whenever the sliders change its look.
+  const [paper, setPaper] = useState<string | null>(null);
+
+  useEffect(() => {
+    let bakedFor = "";
+    let url: string | null = null;
+    let timer = 0;
+    let live = true;
+    const bake = () => {
+      const settings = bodyWallSettings();
+      const key = wallPaperKey(settings);
+      if (key === bakedFor) return;
+      bakedFor = key;
+      void bakeWallPaper(settings).then((next) => {
+        if (!live || bakedFor !== key) {
+          if (next) URL.revokeObjectURL(next);
+          return;
+        }
+        if (url) URL.revokeObjectURL(url);
+        url = next;
+        setPaper(next);
+      });
+    };
+    bake();
+    const off = onBodyWallSettings(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(bake, 150);
+    });
+    return () => {
+      live = false;
+      off();
+      window.clearTimeout(timer);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, []);
 
   useEffect(() => {
     const el = layer.current;
@@ -116,7 +152,6 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       const mine = ++run;
       const settings = bodyWallSettings();
       setInk(settings.ink);
-      setPaper((settings.doodlePaper ?? 0) > 0);
       const width = holder.clientWidth;
       const height = holder.clientHeight;
       // Each drawing moves as far as the block above it did - an answer
@@ -213,9 +248,6 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     };
     let packedFor = wallKey();
     const off = onBodyWallSettings(() => {
-      // The paper's strength is a variable on the page; only whether it is
-      // drawn at all is this layer's.
-      setPaper((bodyWallSettings().doodlePaper ?? 0) > 0);
       if (wallKey() === packedFor) return;
       packedFor = wallKey();
       window.clearTimeout(timer);
@@ -231,7 +263,13 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   }, [bandOverride]);
 
   return (
-    <div ref={layer} className={styles.bodyDoodles} aria-hidden="true" data-paper={paper || undefined}>
+    <div
+      ref={layer}
+      className={styles.bodyDoodles}
+      aria-hidden="true"
+      data-paper={paper ? "" : undefined}
+      style={paper ? ({ "--wall-paper": `url(${paper}) 0 0 / ${WALL_PAPER_TILE}px ${WALL_PAPER_TILE}px` } as CSSProperties) : undefined}
+    >
       {placed.map((p, i) => (
         <span
           key={i}
@@ -243,10 +281,8 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
               width: p.w,
               height: p.h,
               transform: `rotate(${p.angle}rad)`,
-              // The blue solid and the fade as opacity, so the paper in
-              // the ink (landing.module.css) blends over solid blue.
-              backgroundColor: `rgb(${BODY_INK_RGB})`,
-              opacity: ink,
+              // a variable, so the baked paper can take the colour's place
+              "--doodle-ink": `rgba(${BODY_INK_RGB}, ${ink})`,
               WebkitMaskImage: `url(${p.src})`,
               maskImage: `url(${p.src})`,
             } as CSSProperties
