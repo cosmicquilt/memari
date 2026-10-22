@@ -12,7 +12,8 @@ import {
   actionLabel,
 } from "@/app/landing/starterLayouts";
 import { PART_NAMES, PLANNERS, coverSpreadOf, partsOf, plannerShelves, shelfId } from "@/app/landing/plannerTemplates";
-import { PlannerActions } from "@/app/landing/PlannerActions";
+import { PlannerActions, orderAsIsOffered } from "@/app/landing/PlannerActions";
+import { PlannerCard } from "@/app/landing/PlannerCard";
 import { SaveButton } from "@/app/planner/templateSaved";
 import styles from "@/app/landing/landing.module.css";
 import site from "@/app/landing/site.module.css";
@@ -30,6 +31,7 @@ export const metadata: Metadata = {
 };
 
 export default function LayoutsPage() {
+  const orderAsIs = orderAsIsOffered();
   return (
     <SitePage>
       <LayoutViewer>
@@ -85,7 +87,7 @@ export default function LayoutsPage() {
                 <div className={site.layoutGrid}>
                   {planners.map((planner) => (
                     <article key={planner.key} className={site.card}>
-                      <LayoutCard spreadKey={coverSpreadOf(planner)} title={planner.title} />
+                      <PlannerCard plannerKey={planner.key} title={planner.title} cover={coverSpreadOf(planner)} parts={partsOf(planner)} orderAsIs={orderAsIs} />
                       <div>
                         <h4 className={site.cardTitle}>
                           <Link href={`/layouts/${planner.key}`} className={site.cardLink}>

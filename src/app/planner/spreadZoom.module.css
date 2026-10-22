@@ -39,6 +39,46 @@
 
 /* ------------------------------------------------------------ header */
 
+/* Use buttons from outside the start dialog (the site's PlannerCard.tsx),
+   as the dialog's own sd-zoomuse: a white pill, and a quiet ringed one. */
+.use,
+.useQuiet {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.use {
+  border: none;
+  background: #fff;
+  color: #1c1917;
+}
+
+.use:hover {
+  background: #f1efe9;
+}
+
+.useQuiet {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #fff;
+}
+
+.useQuiet:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.use:focus-visible,
+.useQuiet:focus-visible {
+  outline: 2px solid #8a97ff;
+  outline-offset: 2px;
+}
+
 .head {
   display: flex;
   align-items: center;

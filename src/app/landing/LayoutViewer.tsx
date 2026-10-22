@@ -130,8 +130,9 @@ export function LayoutCard({
 }
 
 /** The round magnifier over a layout that opens bigger - always shown, so
- *  it reads as something to click (2026-10-08). */
-function ZoomHint({ small = false }: { small?: boolean }) {
+ *  it reads as something to click (2026-10-08). A planner's card has it too
+ *  (PlannerCard.tsx). */
+export function ZoomHint({ small = false }: { small?: boolean }) {
   return (
     <span className={small ? `${css.zoomHint} ${css.zoomHintSmall}` : css.zoomHint} aria-hidden="true">
       <svg width={small ? 14 : 16} height={small ? 14 : 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
