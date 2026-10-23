@@ -136,7 +136,12 @@ export async function clientOrderDefaultsFor(ownerId: string, journalId: string)
   if (!client) return null;
   const days = BOOK_DAYS[client.bookMonths] ?? client.bookMonths * 30;
   const last = await prisma.printOrder.findFirst({
-    where: { plannerId: journalId, ownerId, status: { notIn: ["QUOTED", "CANCELED", "SKIPPED"] } },
+    // A FAILED order that was never paid - a renewal that could not be
+    // charged - leaves its days still to come (review, 2026-10-23: it pushed
+    // a client's next book past them). One that WAS paid - the printer
+    // refused it, and it waits for a retry or a refund - still holds them,
+    // or the same days would be sold again (second review).
+    where: { plannerId: journalId, ownerId, OR: [{ status: { notIn: ["QUOTED", "CANCELED", "SKIPPED", "FAILED"] } }, { status: "FAILED", stripePaymentIntentId: { not: null } }] },
     orderBy: { endDate: "desc" },
   });
   const start = last ? nextRange({ start: last.startDate, end: last.endDate, days: last.days }).start : client.startDate;

@@ -40,6 +40,7 @@ for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
 const { prisma } = await import("../src/lib/prisma.js");
 const { createBookFor, validateNewJournal } = await import("../src/app/planner/bookSeeding.js");
 const { runRenewals, pruneOldPrintFiles } = await import("../src/lib/print/renewals.js");
+const { fulfilPaidOrder } = await import("../src/lib/print/orders.js");
 type Deps = import("../src/lib/print/renewals.js").RenewalDeps;
 
 const OWNER = "renewals-check-throwaway";
@@ -158,6 +159,42 @@ try {
     await Promise.all([runRenewals(now, a.deps), runRenewals(now, b.deps)]);
     const renewals = await prisma.printOrder.count({ where: { renewedFromId: raced.id } });
     check(renewals === 1 && a.calls.charge.length + b.calls.charge.length === 1, `two runs at once renew it once (${renewals} renewals, ${a.calls.charge.length + b.calls.charge.length} charges)`);
+  }
+
+  // --- days already paid for (review, 2026-10-23) ----------------------------------
+  // A coach's client paid for the next days themselves (clientPays.ts): the
+  // coach's renewal must not charge for them again or print a second copy.
+  {
+    const plannerId = await journal("Covered check");
+    const coachs = await order(plannerId, { title: "Covered" });
+    await order(plannerId, { title: "Paid by the client", status: "PAID", startDate: new Date("2027-01-31T00:00:00Z"), endDate: new Date("2027-03-01T00:00:00Z"), autoRenew: false, renewsAt: null, paidByClient: true, markupCents: 1000, stripePaymentMethodId: null });
+    const { deps, calls } = fakes();
+    const outcomes = await runRenewals(now, deps);
+    const mine = outcomes.find((o) => o.orderId === coachs.id);
+    const renewals = await prisma.printOrder.count({ where: { renewedFromId: coachs.id } });
+    const after = await prisma.printOrder.findUnique({ where: { id: coachs.id } });
+    check(mine?.outcome === "skipped" && renewals === 0 && !calls.fulfil.length, `days a client already paid for: no renewal, nothing charged or printed (${mine?.outcome}: ${mine?.detail ?? ""})`);
+    check(!!after && !after.autoRenew && after.renewsAt === null, "and the coach's auto-renew is off");
+  }
+  {
+    // a client's payment page still open counts as those days ordered
+    const plannerId = await journal("Open page check");
+    const coachs = await order(plannerId, { title: "Open page" });
+    await order(plannerId, { title: "Client's open page", status: "QUOTED", startDate: new Date("2027-01-31T00:00:00Z"), endDate: new Date("2027-03-01T00:00:00Z"), autoRenew: false, renewsAt: null, paidByClient: true, stripePaymentMethodId: null, stripeCheckoutSessionId: "cs_check_open" });
+    const { deps, calls } = fakes();
+    const outcomes = await runRenewals(now, deps);
+    const mine = outcomes.find((o) => o.orderId === coachs.id);
+    check(mine?.outcome === "skipped" && !calls.fulfil.length && (await prisma.printOrder.count({ where: { renewedFromId: coachs.id } })) === 0, `a client's payment page open for those days: no renewal (${mine?.outcome}: ${mine?.detail ?? ""})`);
+  }
+  {
+    // the client's payment landing ends the coach's chain at once
+    const plannerId = await journal("Client pays check");
+    const coachs = await order(plannerId, { title: "Coach's chain", renewsAt: new Date(Date.now() + 20 * DAY) });
+    const theirs = await order(plannerId, { title: "Client's", status: "QUOTED", startDate: new Date("2027-01-31T00:00:00Z"), endDate: new Date("2027-03-01T00:00:00Z"), autoRenew: false, renewsAt: null, paidByClient: true, stripePaymentMethodId: null, luluPrintJobId: "at-the-printer-already" });
+    await fulfilPaidOrder(theirs.id, { paymentIntentId: "pi_check" }, "https://example.com");
+    const after = await prisma.printOrder.findUnique({ where: { id: coachs.id } });
+    const paid = await prisma.printOrder.findUnique({ where: { id: theirs.id } });
+    check(paid?.status === "PAID" && !!after && !after.autoRenew && after.renewsAt === null, "a client's book paid for: the coach's renewals of that journal end");
   }
 
   // --- what stops a renewal ---------------------------------------------------------

@@ -50,6 +50,9 @@ type OrderLike = {
   renewedFromId?: string | null;
   failureReason?: string | null;
   trackingUrls?: unknown;
+  /** A coach's client paid (clientPays.ts): they have no account, so no
+   *  link to one - their coach is who to ask. */
+  paidByClient?: boolean;
 };
 
 function describe(order: OrderLike): string {
@@ -59,8 +62,11 @@ function describe(order: OrderLike): string {
 /** A thing the email offers to do: a button in the HTML, a line in the text. */
 type Action = { label: string; url: string; note: string };
 
-function compose(to: string, subject: string, heading: string, paragraphs: string[], link: string, actions: Action[] = []): Email {
-  const text = [...paragraphs, ...actions.map((a) => `${a.label}: ${a.url}\n${a.note}`), `Your orders: ${link}`, "", "Memari Studio"].join("\n\n");
+/** `link`: the person's Orders page, or null for a coach's client, who has
+ *  none - then they are told to ask their coach. */
+function compose(to: string, subject: string, heading: string, paragraphs: string[], link: string | null, actions: Action[] = []): Email {
+  const last = link ? `Your orders: ${link}` : CLIENT_ASKS;
+  const text = [...paragraphs, ...actions.map((a) => `${a.label}: ${a.url}\n${a.note}`), last, "", "Memari Studio"].join("\n\n");
   const html =
     `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#231f20;max-width:520px">` +
     `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:22px;margin:0 0 16px">${escapeHtml(heading)}</h1>` +
@@ -72,12 +78,15 @@ function compose(to: string, subject: string, heading: string, paragraphs: strin
           `<p style="margin:4px 0 0;color:#6c6457;font-size:13px">${escapeHtml(a.note)}</p>`
       )
       .join("") +
-    `<p style="margin:20px 0 0"><a href="${escapeHtml(link)}" style="color:#4a5cff">Your orders</a></p>` +
+    (link ? `<p style="margin:20px 0 0"><a href="${escapeHtml(link)}" style="color:#4a5cff">Your orders</a></p>` : `<p style="margin:20px 0 0">${escapeHtml(CLIENT_ASKS)}</p>`) +
     `<p style="margin:24px 0 0;color:#6c6457;font-size:13px">Memari Studio</p></div>`;
   return { to, subject, text, html };
 }
 
 const ordersLink = () => `${appUrl()}/app/account/orders`;
+const CLIENT_ASKS = "Questions about your book? Ask your coach: they set it up for you.";
+/** The Orders page for the person who ordered; none for a coach's client. */
+const linkFor = (order: OrderLike) => (order.paidByClient ? null : ordersLink());
 
 export function placedEmail(order: OrderLike): Email {
   const renewal = !!order.renewedFromId;
@@ -90,7 +99,7 @@ export function placedEmail(order: OrderLike): Email {
       describe(order),
       `${formatCents(order.totalCents)}, charged to your card${renewal ? " on file" : ""}. Printing takes 3-5 business days, then the post; we'll email when it ships.`,
     ],
-    ordersLink()
+    linkFor(order)
   );
 }
 
@@ -99,8 +108,8 @@ export function shippedEmail(order: OrderLike, tracking: string[]): Email {
     order.contactEmail ?? "",
     "Your journal has shipped",
     "Your book is in the post",
-    [describe(order), tracking.length > 0 ? `Track it: ${tracking.join("  ")}` : "The carrier has it; tracking will show under your orders if there is any."],
-    ordersLink()
+    [describe(order), tracking.length > 0 ? `Track it: ${tracking.join("  ")}` : `The carrier has it; tracking will show ${order.paidByClient ? "on your page" : "under your orders"} if there is any.`],
+    linkFor(order)
   );
 }
 
@@ -162,8 +171,12 @@ export function cancelledEmail(order: OrderLike): Email {
     order.contactEmail ?? "",
     "Your journal order is cancelled",
     "Your order is cancelled",
-    [describe(order), `The printer has stopped it, and the whole ${formatCents(order.totalCents)} is refunded to your card - banks take 5-10 business days to show it.`, "Auto-renew is off for it. You can order again from your journal whenever you like."],
-    ordersLink()
+    [
+      describe(order),
+      `The printer has stopped it, and the whole ${formatCents(order.totalCents)} is refunded to your card - banks take 5-10 business days to show it.`,
+      order.paidByClient ? "You can order it again from your page whenever you like." : "Auto-renew is off for it. You can order again from your journal whenever you like.",
+    ],
+    linkFor(order)
   );
 }
 
@@ -183,7 +196,7 @@ export function arrivalEmail(order: OrderLike & { shippedAt?: Date | null }, lin
     "Has your journal arrived?",
     "Has your book arrived?",
     [describe(order), left, "If it hasn't come, tell us and we'll track it down and put it right."],
-    ordersLink(),
+    linkFor(order),
     [
       { label: "Yes, it's here", url: links.yes, note: "Thank you. Nothing else to do." },
       { label: "Not yet", url: links.notYet, note: "We'll look into it straight away and email you." },

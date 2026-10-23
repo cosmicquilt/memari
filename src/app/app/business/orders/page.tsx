@@ -10,6 +10,7 @@ import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 import { ORDER_WORDS, businessJournalIds, currentBusiness } from "@/lib/business";
 import { businessStats } from "@/lib/businessStats";
+import { coachReceives } from "@/lib/print/clientPays";
 import { ChartCard, Columns, StageBar, WarnIcon } from "../charts";
 import css from "../business.module.css";
 
@@ -76,7 +77,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             </ChartCard>
             <ChartCard
               title="Spent"
-              sub="What you paid each month, shipping included."
+              sub="What you paid each month, shipping included. Books your clients paid for are not in it."
               table={{ head: ["Month", "Spent"], rows: spend.map((b) => [b.long, money(b.value * 100, stats.currency)]) }}
             >
               <Columns data={spend} label="Spent" currency={stats.currency} />
@@ -121,6 +122,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <span className={css.cell}>
                   <span className={css.label}>Total</span>
                   {money(o.totalCents, o.currency)}
+                  {o.paidByClient && (
+                    <span className={css.dim} style={{ display: "block", fontSize: 12 }}>
+                      {o.status === "CANCELED" ? "Paid by them, refunded" : `Paid by them${o.markupCents ? `, you receive ${money(coachReceives(o.markupCents), o.currency)}` : ""}`}
+                    </span>
+                  )}
                 </span>
               </div>
             );

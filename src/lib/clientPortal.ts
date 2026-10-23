@@ -27,6 +27,9 @@ const hashOf = (token: string) => createHash("sha256").update(token).digest("hex
 /** A token's shape: what randomBytes(32) gives in base64url. Anything else
  *  is not looked up at all. */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
+/** Could this be a link's token at all - before anything else is done
+ *  with it (clientOrders.ts keys a limiter by it). */
+export const tokenShapeOk = (token: unknown): token is string => typeof token === "string" && TOKEN.test(token);
 
 /** A new link for a client of the owner's business; the token, to be shown
  *  to the coach once. Any earlier link stops working. */
@@ -48,7 +51,7 @@ export async function clientForToken(token: string) {
   if (!TOKEN.test(token)) return null;
   const client = await prisma.businessClient.findUnique({
     where: { accessTokenHash: hashOf(token) },
-    include: { business: { select: { name: true, logoUrl: true } } },
+    include: { business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, payoutsReady: true, stripeAccountId: true } } },
   });
   return client && !client.archivedAt ? client : null;
 }
@@ -116,7 +119,7 @@ export async function portalFor(token: string): Promise<PortalData | null> {
     }));
   }
   return {
-    business: client.business,
+    business: { name: client.business.name, logoUrl: client.business.logoUrl },
     client: {
       name: client.name,
       coverName: client.coverName,

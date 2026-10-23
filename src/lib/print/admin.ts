@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { fulfilPaidOrder, OrderError } from "./orders";
 import { printerFor } from "./printer";
 import { stripe } from "./stripe";
+import { refundParams } from "./clientPays";
 
 /** Is this account one of the people who run Memari? ADMIN_OWNER_IDS is a
  *  comma-separated list of Clerk user ids, set in the environment. */
@@ -51,8 +52,9 @@ export async function refundOrder(orderId: string, why: string): Promise<{ print
       printerCancelled = false;
     }
   }
-  // One refund per order, however many times this is pressed.
-  await stripe().refunds.create({ payment_intent: order.stripePaymentIntentId }, { idempotencyKey: `refund-${order.id}` });
+  // One refund per order, however many times this is pressed - with a
+  // coach's share taken back from them (clientPays.ts).
+  await stripe().refunds.create(refundParams({ stripePaymentIntentId: order.stripePaymentIntentId, markupCents: order.markupCents, payoutAccountId: order.payoutAccountId }), { idempotencyKey: `refund-${order.id}` });
   await prisma.printOrder.update({
     where: { id: order.id },
     data: {

@@ -539,6 +539,14 @@ model PrintOrder {
   shippingCents Int
   totalCents    Int
   currency      String @default("USD")
+  /// Paid by a coach's client from their own page, not by the owner
+  /// (memari. for businesses, 2026-10-22).
+  paidByClient    Boolean @default(false)
+  /// Of totalCents, the coach's share on top of Memari's price.
+  markupCents     Int     @default(0)
+  /// The coach's Stripe account the share went to (a destination charge):
+  /// a refund takes the share back from it.
+  payoutAccountId String?
   /// What Lulu quoted to charge us, tax included.
   costCents     Int
 
@@ -637,6 +645,16 @@ model Business {
   /// The business's logo, an https URL - on its screens and, later, its
   /// books.
   logoUrl   String?
+  /// Who pays for clients' books (2026-10-22): the coach (false, the
+  /// default - they order each one) or the client, from their own page.
+  clientsPay     Boolean @default(false)
+  /// What a client pays on top of Memari's price, the coach's share; 0 is
+  /// Memari's price. More than 0 only with payouts ready.
+  markupCents    Int     @default(0)
+  /// The coach's Stripe Connect account (Express), for their share.
+  stripeAccountId String? @unique
+  /// Stripe has said it can take payments and pay out to it.
+  payoutsReady   Boolean @default(false)
   clients   BusinessClient[]
   templates BusinessTemplate[]
   createdAt DateTime           @default(now())

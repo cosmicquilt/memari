@@ -16,8 +16,10 @@ import type { PrintCost } from "./lulu";
 export const BOOK_MARGIN = 0.45;
 /** No book costs less than this, however thin. */
 export const MIN_BOOK_PRICE_CENTS = 1200;
-/** Stripe's card fee, roughly: 2.9% + 30c, more for cards from abroad. */
-const CARD_FEE_SHARE = 0.039;
+/** Stripe's card fee, roughly: 2.9% + 30c, more for cards from abroad.
+ *  Exported for a coach's share (clientPays.ts): the fee on it is Memari's
+ *  to pay at Stripe, so it is kept back from the share. */
+export const CARD_FEE_SHARE = 0.039;
 const CARD_FEE_FIXED_CENTS = 30;
 
 export type Price = {

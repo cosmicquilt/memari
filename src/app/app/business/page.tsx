@@ -19,6 +19,8 @@ import { shortDate, stateWords } from "./chartWords";
 import { StartBusinessForm } from "./forms";
 import css from "./business.module.css";
 
+const money = (cents: number, currency: string) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 const quarterName = (d: Date) => {
   const first = new Date(Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1));
   const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 2, 1));
@@ -79,6 +81,18 @@ export default async function BusinessHome() {
       note: onTheirWay(stats.pipeline),
       href: "/app/business/orders",
     },
+    ...(business.clientsPay || hl.earned.now || hl.earned.before
+      ? [
+          {
+            label: "Earned this quarter",
+            value: money(hl.earned.now, hl.spend.currency),
+            note: hl.clientBooks ? `Your share of ${hl.clientBooks} ${hl.clientBooks === 1 ? "book" : "books"} clients paid for` : "Your share of books clients pay for",
+            spark: stats.monthly.map((m) => m.earned / 100),
+            sparkLabel: "Earned each month, the last 12 months",
+            href: "/app/business/orders",
+          },
+        ]
+      : []),
     {
       label: "Running out",
       value: String(hl.runningOut),

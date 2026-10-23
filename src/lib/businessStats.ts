@@ -13,13 +13,16 @@
 //     by the stage they are at - ordered stages, one hue light to dark;
 //   - how setup is going                 setup(): clients through the steps
 //     to a first book.
-// Money is what the coach paid (totalCents), never what a book cost us.
+// Money is what the coach paid (totalCents), never what a book cost us; a
+// book a client paid for themselves (paidByClient, 2026-10-22) is not the
+// coach's spending - its share on top (markupCents) is what they earned.
 //
 // SERVER-ONLY.
 
 import { prisma } from "@/lib/prisma";
 import { shippableAddress } from "@/lib/business";
 import type { PrintOrderStatus } from "@/generated/prisma/enums";
+import { coachReceives } from "@/lib/print/clientPays";
 
 const DAY = 24 * 60 * 60 * 1000;
 /** Orders that are books - not a checkout left unpaid, cancelled or skipped. */
@@ -47,12 +50,18 @@ async function businessBooks(businessId: string) {
   const orders = ids.length
     ? await prisma.printOrder.findMany({
         where: { plannerId: { in: ids }, status: BOOKS },
-        select: { id: true, plannerId: true, status: true, startDate: true, endDate: true, createdAt: true, totalCents: true, currency: true, title: true },
+        select: { id: true, plannerId: true, status: true, startDate: true, endDate: true, createdAt: true, totalCents: true, currency: true, title: true, paidByClient: true, markupCents: true },
         orderBy: { startDate: "asc" },
       })
     : [];
   return { clients, orders };
 }
+
+/** What the coach paid: books they ordered, not ones their clients paid for. */
+const spentOn = (orders: Array<{ totalCents: number; paidByClient: boolean }>) => orders.reduce((sum, o) => sum + (o.paidByClient ? 0 : o.totalCents), 0);
+/** What reached them of books their clients paid for: each share after the
+ *  card fee on it, as Stripe pays it out (clientPays.ts coachReceives). */
+const earnedOn = (orders: Array<{ markupCents: number; paidByClient: boolean }>) => orders.reduce((sum, o) => sum + (o.paidByClient && o.markupCents > 0 ? coachReceives(o.markupCents) : 0), 0);
 
 const quarterStart = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1));
 
@@ -60,6 +69,10 @@ export type Headline = {
   activeClients: number;
   books: { now: number; before: number };
   spend: { now: number; before: number; currency: string };
+  /** Their share of books clients paid for themselves. */
+  earned: { now: number; before: number };
+  /** Books this quarter a client paid for. */
+  clientBooks: number;
   runningOut: number;
 };
 
@@ -79,7 +92,7 @@ export type CoverageRow = {
   state: "out" | "soon" | "ok" | "not started";
 };
 
-export type Monthly = Array<{ month: string; label: string; long: string; books: number; spend: number }>;
+export type Monthly = Array<{ month: string; label: string; long: string; books: number; spend: number; earned: number }>;
 export type Pipeline = Array<{ stage: Stage; count: number }>;
 export type SetupStep = { label: string; count: number };
 
@@ -134,7 +147,9 @@ export async function businessStats(businessId: string, range: number | "all" = 
   const headline: Headline = {
     activeClients: active.length,
     books: { now: thisQ.length, before: prevQ.length },
-    spend: { now: thisQ.reduce((s, o) => s + o.totalCents, 0), before: prevQ.reduce((s, o) => s + o.totalCents, 0), currency: orders[0]?.currency ?? "USD" },
+    spend: { now: spentOn(thisQ), before: spentOn(prevQ), currency: orders[0]?.currency ?? "USD" },
+    earned: { now: earnedOn(thisQ), before: earnedOn(prevQ) },
+    clientBooks: thisQ.filter((o) => o.paidByClient).length,
     runningOut: coverage.filter((r) => r.state === "out" || r.state === "soon").length,
   };
 
@@ -149,7 +164,8 @@ export async function businessStats(businessId: string, range: number | "all" = 
       label: start.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" }),
       long: start.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }),
       books: these.length,
-      spend: these.reduce((s, o) => s + o.totalCents, 0),
+      spend: spentOn(these),
+      earned: earnedOn(these),
     });
   }
 

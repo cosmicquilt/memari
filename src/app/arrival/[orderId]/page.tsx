@@ -40,8 +40,8 @@ function Body({ order, answer, signature }: { order: Order; answer: ArrivalAnswe
   if (order.status !== "SHIPPED" && order.status !== "DELIVERED") {
     return (
       <Card title="Nothing to answer here">
-        <p className={styles.text}>This order isn&apos;t on its way any more. Your Orders page says what happened to it.</p>
-        <Links />
+        <p className={styles.text}>This order isn&apos;t on its way any more. {order.paidByClient ? "Your coach can tell you what happened to it." : "Your Orders page says what happened to it."}</p>
+        <Links client={order.paidByClient} />
       </Card>
     );
   }
@@ -77,7 +77,7 @@ function Body({ order, answer, signature }: { order: Order; answer: ArrivalAnswe
       return (
         <Card title="Glad it arrived">
           <p className={styles.text}>Thank you for letting us know. Enjoy filling it in.</p>
-          <Links />
+          <Links client={order.paidByClient} />
         </Card>
       );
     }
@@ -95,7 +95,7 @@ function Body({ order, answer, signature }: { order: Order; answer: ArrivalAnswe
         {facts}
         <p className={styles.text}>We&apos;ll check with the printer and the carrier and email you at {order.contactEmail ?? "the address on your order"}.</p>
         <p className={styles.muted}>If it turns up in the meantime, the &ldquo;Yes, it&apos;s here&rdquo; link in our email tells us.</p>
-        <Links />
+        <Links client={order.paidByClient} />
       </Card>
     );
   }
@@ -131,10 +131,12 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Links() {
+/** `client`: a coach's client paid (clientPays.ts) - no account, no Orders
+ *  page to send them to. */
+function Links({ client = false }: { client?: boolean }) {
   return (
     <div className={styles.links}>
-      <Link href="/app/account/orders">Your orders</Link>
+      {!client && <Link href="/app/account/orders">Your orders</Link>}
       <Link href="/help">Help</Link>
     </div>
   );

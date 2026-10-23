@@ -171,12 +171,12 @@ try {
   await tab.getByRole("link", { name: "Settings" }).click();
   await tab.getByRole("heading", { name: "Settings" }).waitFor();
   await tab.getByLabel("Logo").fill("http://example.com/logo.png");
-  await tab.getByRole("button", { name: "Save" }).click();
+  await tab.getByRole("button", { name: "Save" }).first().click();
   await tab.waitForTimeout(1500);
   say((await tab.getByRole("alert").filter({ hasText: "https" }).count()) === 1, "a logo address that is not https is refused");
   // a real picture (the otter, standing in for a coach's logo), so the shots show one
   await tab.getByLabel("Logo").fill("https://memari.studio/landing/otter/otter-1.webp");
-  await tab.getByRole("button", { name: "Save" }).click();
+  await tab.getByRole("button", { name: "Save" }).first().click();
   await tab.getByText("Saved").waitFor();
   say(!!(await prisma.business.findUnique({ where: { id: business!.id } }))?.logoUrl, "an https logo is saved");
 
@@ -348,6 +348,72 @@ try {
   say(again?.accessTokenHash === afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "pressed again within a minute: no second link, the first still opens");
   say((await linkBox.count()) === 1 && (await linkBox.inputValue()) === emailedLink, "and the link already shown stays there to copy");
   await shoot(tab, "biz-client-email");
+  // WHO PAYS FOR BOOKS (2026-10-22, clientPays.ts / payouts.ts /
+  // clientOrders.ts). Stripe is not set up on this machine, so what can be
+  // seen without it: the choice saved, a share waiting on payouts, her page
+  // offering her next book but saying ordering is not open, and a book she
+  // paid for counted as earned, not as the coach's spending.
+  {
+    await tab.goto(`${server.base}/app/business/settings`, { waitUntil: "networkidle" });
+    await tab.getByRole("radio", { name: /^Your clients/ }).check();
+    await tab.getByRole("radio", { name: /^Memari.s price What you would pay/ }).check();
+    await tab.getByRole("button", { name: "Save" }).last().click();
+    await tab.waitForTimeout(800);
+    let biz = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
+    say(biz?.clientsPay === true && biz.markupCents === 0, "Who pays for books: Your clients, at Memari's price, saved");
+    await tab.getByRole("radio", { name: /^Memari.s price, plus your share/ }).check();
+    await tab.getByLabel("Your share, each book ($)").fill("10");
+    say((await tab.getByText("You receive $8.61 of it", { exact: false }).count()) === 1, "a $10 share: it says the coach receives $8.61, the card fee and $1 towards paying them kept back");
+    const payoutCountries = await tab.getByLabel("Where you are paid").locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+    say(payoutCountries.includes("US") && payoutCountries.includes("GB") && payoutCountries.includes("DE") && payoutCountries.includes("CA") && payoutCountries.includes("CH") && !payoutCountries.includes("AU"), `where they can be paid: the US, UK, Europe, Canada, Switzerland - not yet Australia (${payoutCountries.length - 1} countries)`);
+    say((await tab.getByLabel("Where you are paid").inputValue()) === "", "no country chosen for them: the coach must pick one");
+    await tab.getByRole("button", { name: "Save" }).last().click();
+    await tab.waitForTimeout(800);
+    biz = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
+    say(biz?.markupCents === 1000 && !biz.payoutsReady, "the share is kept, $10, payouts not set up");
+    say((await tab.getByText(/Until then, clients pay Memari.s price\./).count()) === 1 && (await tab.getByRole("button", { name: "Set up payouts" }).isDisabled()), "until payouts are set up clients pay Memari's price, and with payments off here Set up payouts cannot be pressed");
+    say((await tab.getByText("Sign in to set up payouts: they belong to your account.").count()) === 1, "and a guest is told payouts need an account");
+    await tab.getByLabel("Your share, each book ($)").fill("500");
+    await tab.getByRole("button", { name: "Save" }).last().click();
+    await tab.getByRole("alert").filter({ hasText: "from $3 to $200" }).waitFor({ timeout: 10_000 });
+    say((await prisma.business.findUnique({ where: { ownerId: guest.ownerId } }))?.markupCents === 1000, "a share of $500 is refused, the $10 kept");
+    await shoot(tab, "biz-settings-payer");
+
+    // her page: her next book offered, ordering not open on this machine
+    const reader = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const herPage = await reader.newPage();
+    await herPage.goto(emailedLink, { waitUntil: "networkidle" });
+    say((await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 1, "her page: Order your next book, saying ordering is not open yet (no payment keys here)");
+    const html = await herPage.content();
+    say(!html.includes("acct_") && !html.includes(guest.ownerId) && !html.includes("markupCents"), "her page carries no Stripe account, owner id or share");
+    await herPage.goto(`${emailedLink}?placed=1`, { waitUntil: "networkidle" });
+    say((await herPage.getByText("Thank you: your book is ordered.").count()) === 1 && (await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 0, "back from paying: thanks, and not the same order form again");
+    await reader.close();
+
+    // a book she paid for herself, with the coach's $10 share
+    const before = await prisma.printOrder.count({ where: { plannerId: journalId! } });
+    const hers = await prisma.printOrder.create({
+      data: { ownerId: guest.ownerId, plannerId: journalId!, status: "PAID", title: "Maya Okafor", startDate: new Date("2027-04-04T00:00:00Z"), endDate: new Date("2027-07-02T00:00:00Z"), days: 90, binding: "PAPERBACK", podPackageId: "check-business", pageCount: 100, shippingLevel: "GROUND", shippingAddress: { name: "Maya Okafor" }, bookCents: 3975, shippingCents: 500, totalCents: 4475, costCents: 1500, paidByClient: true, markupCents: 1000, payoutAccountId: "acct_test" },
+    });
+    await tab.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
+    const values = await tab.locator('[class*="tileValue"]').allTextContents();
+    const labels = await tab.locator('[class*="tileLabel"]').allTextContents();
+    say(labels.some((l) => l.includes("Earned this quarter")) && values.includes("$8.61"), `Home: Earned this quarter, $8.61 - her $10 share after what is kept back (${labels.join(" / ")}: ${values.join(", ")})`);
+    await tab.goto(`${server.base}/app/business/orders`, { waitUntil: "networkidle" });
+    say((await tab.locator(`svg[aria-label="Spent"] g[aria-label="${thisMonth}: $34.75"]`).count()) === 1, "Orders: what she paid is not the coach's spending (still $34.75 this month)");
+    say((await tab.getByText("Paid by them, you receive $8.61").count()) === 1, "and her book is marked paid by her, with what reaches the coach");
+    await prisma.printOrder.delete({ where: { id: hers.id } });
+    // a book that failed never printed: her next one still starts where it did
+    const failed = await prisma.printOrder.create({
+      data: { ownerId: guest.ownerId, plannerId: journalId!, status: "FAILED", title: "Maya Okafor", startDate: new Date("2027-04-04T00:00:00Z"), endDate: new Date("2027-07-02T00:00:00Z"), days: 90, binding: "PAPERBACK", podPackageId: "check-business", pageCount: 0, shippingLevel: "GROUND", shippingAddress: { name: "Maya Okafor" }, bookCents: 0, shippingCents: 0, totalCents: 0, costCents: 0 },
+    });
+    say((await clientOrderDefaultsFor(guest.ownerId, journalId!))?.startISO === "2027-04-04", "a FAILED book never paid for does not push her next start past its days (still 4 Apr 2027)");
+    // but one she paid for, which the printer refused, still holds its days
+    await prisma.printOrder.update({ where: { id: failed.id }, data: { stripePaymentIntentId: "pi_check_refused", totalCents: 4475 } });
+    say((await clientOrderDefaultsFor(guest.ownerId, journalId!))?.startISO === "2027-07-03", "a FAILED book she paid for (waiting on a retry or refund) still holds its days: her next starts 3 Jul 2027");
+    await prisma.printOrder.delete({ where: { id: failed.id } });
+    say((await prisma.printOrder.count({ where: { plannerId: journalId! } })) === before, "(the made-up book taken away again)");
+  }
   await visitor.close();
 
   // THE EDITOR SAYS WHAT A JOURNAL IS to the business, and what an edit reaches.
@@ -387,6 +453,8 @@ try {
   say(herTheme?.weekStartDay === (tplTheme.weekStartDay === 1 ? 0 : 1), "and the template's changed setting");
   say(!!kept && kept.position === weekly.length + 1, `her own page is kept, after the template's (position ${kept?.position})`);
   say((await clientsBehind(template!.id)).length === 0, "and nothing is behind any more");
+  // the page redraws a moment after the toast; wait for the notice to go
+  await tab.getByText("pages or settings changed").waitFor({ state: "detached", timeout: 15_000 }).catch(() => {});
   say((await tab.getByText("pages or settings changed").count()) === 0, "Templates no longer asks");
 
   // RESET TO THEIR TEMPLATE from her journal's editor (2026-10-22): her own

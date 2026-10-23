@@ -624,6 +624,59 @@ a.row:hover {
   justify-items: center;
 }
 
+/* A choice of one, each with a line under it (who pays, at what price). */
+.choices {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: grid;
+  gap: 8px;
+}
+
+.choicesLegend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-input);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  background: var(--here);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.choice input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.choice span {
+  display: grid;
+  gap: 2px;
+}
+
+.choice small {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.payouts {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
 /* Home: the checklist and the to-dos. */
 .steps {
   display: grid;

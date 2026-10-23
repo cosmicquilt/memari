@@ -10,6 +10,8 @@ import { currentUser } from "@clerk/nextjs/server";
 import { makeClientLink, turnOffClientLink } from "@/lib/clientPortal";
 import { clientLinkEmail, sendableEmail } from "@/lib/clientLinkEmail";
 import { sendEmail } from "@/lib/email";
+import { PayoutsError, discardUnfinishedPayouts, payoutsDashboardUrl, payoutsSetupUrl } from "@/lib/payouts";
+import { MAX_SHARE_CENTS, MIN_SHARE_CENTS } from "@/lib/print/clientPays";
 import { appUrl } from "@/lib/print/fileUrls";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
@@ -61,6 +63,73 @@ export async function saveBusinessSettings(_: FormState, form: FormData): Promis
   await prisma.business.update({ where: { id: business.id }, data: { name, logoUrl: logoUrl || null } });
   revalidatePath("/app/business", "layout");
   return { saved: true };
+}
+
+/** Who pays for clients' books (2026-10-22): the coach, or the client from
+ *  their own page - at Memari's price, or with the coach's share on top. A
+ *  share is kept even before payouts are set up, and added to a client's
+ *  price only once they are (payouts.ts shareInForce). */
+export async function saveBookPayer(_: FormState, form: FormData): Promise<FormState> {
+  const { business } = await myBusiness();
+  const clientsPay = text(form, "who", 10) === "client";
+  const withShare = clientsPay && text(form, "price", 10) === "share";
+  let markupCents = 0;
+  if (withShare) {
+    const dollars = Number(text(form, "share", 12).replace(/[$,\s]/g, ""));
+    const cents = Math.round(dollars * 100);
+    if (!Number.isFinite(dollars) || cents < MIN_SHARE_CENTS || cents > MAX_SHARE_CENTS) return { error: `Your share is an amount from $${MIN_SHARE_CENTS / 100} to $${MAX_SHARE_CENTS / 100} a book.` };
+    markupCents = cents;
+  }
+  await prisma.business.update({ where: { id: business.id }, data: { clientsPay, markupCents } });
+  revalidatePath("/app/business", "layout");
+  return { saved: true };
+}
+
+/** Off to Stripe to set up payouts for the coach's share, in their country. */
+export async function startPayouts(country: string): Promise<{ error: string }> {
+  const { owner, business } = await myBusiness();
+  // A Stripe account for payouts is the person's, kept with their account;
+  // a guest's business lives in a cookie that can be lost (review,
+  // 2026-10-23).
+  if (owner.guest) return { error: "Sign in to set up payouts: they belong to your account." };
+  let url: string;
+  try {
+    const email = (await currentUser())?.primaryEmailAddress?.emailAddress ?? null;
+    const list = await headers();
+    const host = list.get("x-forwarded-host") ?? list.get("host");
+    const proto = list.get("x-forwarded-proto") ?? "https";
+    url = await payoutsSetupUrl(business.id, email, appUrl(host ? `${proto}://${host}` : undefined), String(country ?? "").toUpperCase().slice(0, 2));
+  } catch (error) {
+    return { error: error instanceof PayoutsError ? error.message : "Payouts could not be set up just now." };
+  }
+  redirect(url);
+}
+
+/** Start payouts again from the country question - only while Stripe has
+ *  not been given their details (a coach who chose the wrong country). */
+export async function resetPayouts(): Promise<{ error: string }> {
+  const { owner, business } = await myBusiness();
+  if (owner.guest) return { error: "Sign in to set up payouts." };
+  try {
+    await discardUnfinishedPayouts(business.id);
+  } catch (error) {
+    return { error: error instanceof PayoutsError ? error.message : "Payouts could not be started again just now." };
+  }
+  revalidatePath("/app/business/settings");
+  return { error: "" };
+}
+
+/** The coach's own Stripe dashboard: payouts, their bank, tax forms. */
+export async function openPayouts(): Promise<{ error: string }> {
+  const { owner, business } = await myBusiness();
+  if (owner.guest) return { error: "Sign in to see your payouts." };
+  let url: string;
+  try {
+    url = await payoutsDashboardUrl(business.id);
+  } catch (error) {
+    return { error: error instanceof PayoutsError ? error.message : "Stripe could not be opened just now." };
+  }
+  redirect(url);
 }
 
 /** Add a client, or change one: `id` in the form says which. */

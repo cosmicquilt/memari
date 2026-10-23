@@ -164,6 +164,36 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const fail = async (reason: string) => ({ orderId: order.id, renewalId: await failRenewal(order, reason, deps), outcome: "failed" as const, detail: reason });
 
   if (!order.plannerId) return fail("its journal was deleted");
+
+  // NOT FOR DAYS ALREADY PAID FOR (review, 2026-10-23): another live order
+  // of this journal covering any of the next book's days - a coach's client
+  // who paid for it themselves (clientPays.ts), or a book ordered by hand -
+  // ends this chain without a charge. Before, the coach's card was charged
+  // and a second copy printed.
+  const next = nextRange({ start: order.startDate, end: order.endDate, days: order.days });
+  // A client's payment page still open counts too (it can be paid for a
+  // day; second review, 2026-10-23).
+  const covered = await prisma.printOrder.findFirst({
+    where: {
+      plannerId: order.plannerId,
+      id: { not: order.id },
+      startDate: { lte: next.end },
+      endDate: { gte: next.start },
+      // the same rule as a client's next book (business.ts): a paid book the
+      // printer refused still holds its days (third review)
+      OR: [
+        { status: { notIn: ["QUOTED", "CANCELED", "SKIPPED", "FAILED"] } },
+        { status: "FAILED", stripePaymentIntentId: { not: null } },
+        { status: "QUOTED", paidByClient: true, stripeCheckoutSessionId: { not: null }, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (covered) {
+    await prisma.printOrder.update({ where: { id: order.id }, data: { autoRenew: false, renewsAt: null } });
+    return { orderId: order.id, outcome: "skipped", detail: `its next days are already ordered (${covered.id})` };
+  }
+
   if (!order.stripePaymentMethodId) return fail("no card was saved with the order");
   const settings = await prisma.ownerSettings.findUnique({ where: { ownerId: order.ownerId } });
   if (!settings?.stripeCustomerId) return fail("no card was saved with the order");

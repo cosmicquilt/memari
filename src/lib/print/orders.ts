@@ -27,6 +27,7 @@ import { LULU_STOPPABLE, type PrintJob, type ShippingAddress } from "./lulu";
 import { BookVaultError, bookVaultReport, getBookVaultOrder, type JobReport } from "./bookvault";
 import type { PlannerTrimKey } from "@/lib/planner-trims";
 import { priceFromCost, type Price } from "./pricing";
+import { clientSessionParams, payerProblem, refundParams, withMarkup, type ClientPayer } from "./clientPays";
 import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
@@ -215,21 +216,38 @@ async function stripeCustomer(ownerId: string, email: string | undefined, name: 
   return customer.id;
 }
 
+/** The price or the dates moved between what a client was shown and what
+ *  would be charged: nothing is made, and their page asks for prices again. */
+export class PriceMovedError extends OrderError {}
+
 /**
  * Price the order again, keep its files with a QUOTED order, and open
  * Stripe's payment page for it. Returns the page's address.
+ *
+ * `payer`: a coach's client paying from their own page (clientPays.ts) -
+ * the order stays the owner's (the journal is theirs), the price carries
+ * the coach's share, the receipt goes to the client, nothing renews, and
+ * with a share the payment is a destination charge to the coach.
  */
 export async function startCheckout(
   ownerId: string,
   input: OrderInput & { level: ShippingLevel; autoRenew: boolean; email?: string },
-  origin: string
+  origin: string,
+  payer?: ClientPayer
 ): Promise<{ url: string; orderId: string }> {
+  if (payer) {
+    const problem = payerProblem(payer);
+    if (problem) throw new OrderError(problem);
+  }
   const { journal, range, interior, availability, sku, address, quotes, printer } = await priced(input, ownerId);
   const fit = availability.find((a) => a.binding === input.binding);
   if (!fit?.ok) throw new OrderError(fit && !fit.ok ? fit.reason : "Choose a binding.");
   const chosen = quotes.find((q) => q.level === input.level);
   if (!chosen) throw new OrderError("That shipping option is not available to this address. Choose another.");
-  const price = priceFromCost(chosen.cost);
+  const price = payer ? withMarkup(priceFromCost(chosen.cost), payer.markupCents) : priceFromCost(chosen.cost);
+  // what the client was shown is what they pay, or nothing is made
+  if (payer?.expectTotalCents !== undefined && payer.expectTotalCents !== price.totalCents) throw new PriceMovedError("The price has changed since you saw it. See prices again.");
+  const share = payer && payer.markupCents > 0 ? payer.markupCents : 0;
   const shippingName = chosen.label ?? printer.levelLabel(input.level);
 
   const trim = trimInches(interior.trim);
@@ -244,7 +262,7 @@ export async function startCheckout(
     dates: journal.dated ? rangeLabel(range) : "",
   });
 
-  const contactEmail = input.email || address.email;
+  const contactEmail = payer ? payer.email : input.email || address.email;
   const order = await prisma.printOrder.create({
     data: {
       ownerId,
@@ -265,7 +283,10 @@ export async function startCheckout(
       totalCents: price.totalCents,
       currency: price.currency,
       costCents: price.costCents,
-      autoRenew: input.autoRenew,
+      autoRenew: payer ? false : input.autoRenew,
+      paidByClient: !!payer,
+      markupCents: share,
+      payoutAccountId: share ? payer!.destination : null,
       files: {
         create: [
           { kind: "interior", bytes: new Uint8Array(interior.bytes) },
@@ -275,6 +296,20 @@ export async function startCheckout(
     },
   });
 
+  const description = `${bindingDescription(input.binding, sku)}, ${rangeLabel(range)}, ${interior.pageCount} pages`;
+  if (payer) {
+    const session = await stripe().checkout.sessions.create(
+      clientSessionParams({ orderId: order.id, title: journal.title, description, shippingName, price, payer, expiresAt: Math.floor(Date.now() / 1000) + 23 * 60 * 60 })
+    );
+    await prisma.printOrder.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: session.id } });
+    if (!session.url) throw new OrderError("Stripe did not open a payment page. Try again.");
+    // The client's page is open for these days: the owner's own renewals of
+    // this journal end now, not only once the payment lands (second review)
+    // - but only once the page really exists, so a Stripe failure leaves
+    // them as they were (third review, 2026-10-23).
+    await prisma.printOrder.updateMany({ where: { plannerId: journal.id, id: { not: order.id }, autoRenew: true }, data: { autoRenew: false, renewsAt: null } });
+    return { url: session.url, orderId: order.id };
+  }
   const customer = await stripeCustomer(ownerId, contactEmail, address.name);
   const session = await stripe().checkout.sessions.create({
     mode: "payment",
@@ -320,6 +355,12 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
     data: { status: "PAID", stripePaymentIntentId: payment.paymentIntentId, stripePaymentMethodId: payment.paymentMethodId },
   });
   const order = await prisma.printOrder.findUnique({ where: { id: orderId } });
+  // A coach's client paid for their own book: the coach's own renewals of
+  // that journal end, so its days are never bought twice (renewals.ts
+  // guards the same; review, 2026-10-23).
+  if (order?.paidByClient && order.plannerId) {
+    await prisma.printOrder.updateMany({ where: { plannerId: order.plannerId, id: { not: order.id }, autoRenew: true }, data: { autoRenew: false, renewsAt: null } });
+  }
   if (!order || order.status !== "PAID" || order.luluPrintJobId) return;
   try {
     const job = await printerFor(order.printer).submit({
@@ -499,7 +540,9 @@ export function liveCancelDeps(): CancelDeps {
     // The same key as the admin's refund (admin.ts): whoever presses first,
     // the payment is refunded once.
     refund: async (paymentIntentId, orderId) => {
-      await stripe().refunds.create({ payment_intent: paymentIntentId }, { idempotencyKey: `refund-${orderId}` });
+      // a coach's share comes back from them (clientPays.ts)
+      const paid = await prisma.printOrder.findUnique({ where: { id: orderId }, select: { markupCents: true, payoutAccountId: true } });
+      await stripe().refunds.create(refundParams({ stripePaymentIntentId: paymentIntentId, markupCents: paid?.markupCents ?? 0, payoutAccountId: paid?.payoutAccountId ?? null }), { idempotencyKey: `refund-${orderId}` });
     },
     email: sendEmail,
   };

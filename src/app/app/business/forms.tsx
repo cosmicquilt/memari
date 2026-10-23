@@ -6,7 +6,8 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, openPayouts, removeTemplate, resetPayouts, saveBookPayer, saveBusinessSettings, saveClient, setClientArchived, startBusiness, startPayouts, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
+import { coachReceives } from "@/lib/print/clientPays";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
 
@@ -57,6 +58,155 @@ export function SettingsForm({ name, logoUrl }: { name: string; logoUrl: string 
         </button>
       </div>
     </form>
+  );
+}
+
+/** Who pays for clients' books, and at what price (2026-10-22). The coach
+ *  pays (the default), or clients pay from their own page: at Memari's
+ *  price, or with the coach's share on top, paid out through Stripe Connect
+ *  once their payouts are set up. */
+export function BookPayerForm({
+  clientsPay,
+  markupCents,
+  payouts,
+  paymentsOn,
+  guest = false,
+  countries = [],
+}: {
+  clientsPay: boolean;
+  markupCents: number;
+  /** none: no Stripe account; pending: made, Stripe wants more; ready. */
+  payouts: "none" | "pending" | "ready";
+  /** Payments switched on on this site (Stripe and the printer). */
+  paymentsOn: boolean;
+  /** Trying it as a guest: payouts need an account (actions.ts startPayouts). */
+  guest?: boolean;
+  /** Where a coach can be paid (clientPays.ts PAYOUT_COUNTRIES), named. */
+  countries?: Array<{ code: string; name: string }>;
+}) {
+  const [state, action, pending] = useActionState(saveBookPayer, null);
+  const [who, setWho] = useState(clientsPay ? "client" : "coach");
+  const [price, setPrice] = useState(markupCents > 0 ? "share" : "memari");
+  const [share, setShare] = useState(markupCents > 0 ? (markupCents / 100).toFixed(2).replace(/\.00$/, "") : "10");
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+  // no country until the coach chooses one: a US account made by default
+  // for a coach in Germany could not be paid there (third review)
+  const [country, setCountry] = useState("");
+  const [going, go] = useTransition();
+  const shareCents = Math.round(Number(share.replace(/[$,\s]/g, "")) * 100);
+  const receives = Number.isFinite(shareCents) && shareCents > 0 ? `$${(coachReceives(shareCents) / 100).toFixed(2)}` : null;
+  const viaStripe = (step: () => Promise<{ error: string }>) =>
+    go(async () => {
+      const result = await step();
+      setPayoutError(result?.error ?? null);
+    });
+  return (
+    <div className={css.card}>
+      <h2>Who pays for books</h2>
+      <form action={action} className={css.form}>
+        <fieldset className={css.choices}>
+          <legend className="sr-only">Who pays</legend>
+          <label className={css.choice}>
+            <input type="radio" name="who" value="coach" checked={who === "coach"} onChange={() => setWho("coach")} />
+            <span>
+              <strong>You</strong>
+              <small>You order and pay for each client&rsquo;s book, from their page here.</small>
+            </span>
+          </label>
+          <label className={css.choice}>
+            <input type="radio" name="who" value="client" checked={who === "client"} onChange={() => setWho("client")} />
+            <span>
+              <strong>Your clients</strong>
+              <small>They order each book themselves from their own page, and it is sent to them. You can still order one for them.</small>
+            </span>
+          </label>
+        </fieldset>
+        {who === "client" && (
+          <fieldset className={css.choices}>
+            <legend className={css.choicesLegend}>What they pay</legend>
+            <label className={css.choice}>
+              <input type="radio" name="price" value="memari" checked={price === "memari"} onChange={() => setPrice("memari")} />
+              <span>
+                <strong>Memari&rsquo;s price</strong>
+                <small>What you would pay. Nothing to set up.</small>
+              </span>
+            </label>
+            <label className={css.choice}>
+              <input type="radio" name="price" value="share" checked={price === "share"} onChange={() => setPrice("share")} />
+              <span>
+                <strong>Memari&rsquo;s price, plus your share</strong>
+                <small>Paid to you through Stripe, to your bank.</small>
+              </span>
+            </label>
+            {price === "share" && (
+              <label className={css.field} style={{ maxWidth: 260, marginLeft: 30 }}>
+                <span>Your share, each book ($)</span>
+                <input type="text" name="share" inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} aria-describedby="share-note" />
+                <small id="share-note">{receives && shareCents >= 300 ? `You receive ${receives} of it: the card fee on it and $1 towards Stripe's cost of paying you are kept back.` : "From $3 to $200."}</small>
+              </label>
+            )}
+          </fieldset>
+        )}
+        <Status state={state} />
+        <div className={css.actions}>
+          <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>
+            Save
+          </button>
+        </div>
+      </form>
+      {who === "client" && price === "share" && (
+        <div className={css.payouts}>
+          {payouts === "ready" ? (
+            <>
+              <p>
+                <span className={`${css.tag} ${css.tagOk}`}>Payouts ready</span> Your share is added to what your clients pay.
+              </p>
+              <button type="button" className={css.btn} disabled={going} onClick={() => viaStripe(openPayouts)}>
+                Open your Stripe
+              </button>
+            </>
+          ) : (
+            <>
+              <p>
+                {payouts === "pending" ? "Stripe needs a few more details before it can pay you." : "To be paid your share, connect a Stripe account: Stripe asks for your details and your bank."}{" "}
+                Until then, clients pay Memari&rsquo;s price.
+              </p>
+              {guest && <p className={css.dim}>Sign in to set up payouts: they belong to your account.</p>}
+              {payouts === "none" && (
+                <label className={css.field} style={{ maxWidth: 320 }}>
+                  <span>Where you are paid</span>
+                  <select value={country} onChange={(e) => setCountry(e.target.value)} aria-describedby="payout-countries">
+                    <option value="" disabled>
+                      Choose your country
+                    </option>
+                    {countries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small id="payout-countries">The US, the UK, Europe, Canada and Switzerland for now. Elsewhere, your clients can still pay Memari&rsquo;s price.</small>
+                </label>
+              )}
+              <button type="button" className={`${css.btn} ${css.primary}`} disabled={going || !paymentsOn || guest || (payouts === "none" && !country)} onClick={() => viaStripe(() => startPayouts(country))}>
+                {going ? "Opening Stripe…" : payouts === "pending" ? "Finish setting up payouts" : "Set up payouts"}
+              </button>
+              {payouts === "pending" && (
+                <button type="button" className={css.btn} disabled={going} onClick={() => viaStripe(resetPayouts)}>
+                  Start again in another country
+                </button>
+              )}
+            </>
+          )}
+          {payoutError && (
+            <p className={css.error} role="alert">
+              {payoutError}
+            </p>
+          )}
+        </div>
+      )}
+      {who === "client" && !paymentsOn && <p className={css.dim}>Payments are not switched on on this site yet, so clients will see that ordering is not open.</p>}
+    </div>
   );
 }
 

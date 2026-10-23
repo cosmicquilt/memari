@@ -7,10 +7,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { portalFor } from "@/lib/clientPortal";
+import { portalOrdering } from "@/lib/clientOrders";
 import { ORDER_WORDS } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { BusinessMark } from "@/app/app/business/WorkspaceSwitcher";
-import { AddressForm, JournalPages } from "./PortalParts";
+import { AddressForm, JournalPages, OrderBook } from "./PortalParts";
 import css from "@/app/app/business/business.module.css";
 
 // private: never in a search engine, and the link is not passed on to any
@@ -20,10 +21,14 @@ export const dynamic = "force-dynamic";
 
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
-export default async function ClientPortal({ params }: { params: Promise<{ token: string }> }) {
+export default async function ClientPortal({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ placed?: string }> }) {
   const { token } = await params;
   const data = await portalFor(token);
   if (!data) notFound();
+  const ordering = await portalOrdering(token);
+  // back from Stripe's payment page, paid (the book appears below once
+  // Stripe has told us, a moment later)
+  const placed = (await searchParams).placed === "1";
   const { business, client, journal, books } = data;
   const first = client.name.split(" ")[0];
   return (
@@ -54,6 +59,23 @@ export default async function ClientPortal({ params }: { params: Promise<{ token
             </div>
           )}
         </section>
+
+        {placed && (
+          <div className={css.card} role="status">
+            <p>
+              <strong>Thank you: your book is ordered.</strong> We&rsquo;ll email when it is printed and posted, and you can follow it here.
+            </p>
+          </div>
+        )}
+
+        {!placed && (ordering.open || ordering.why) && (
+          <section className={css.page}>
+            <h2>Order your next book</h2>
+            <div className={css.card}>
+              <OrderBook token={token} ordering={ordering} businessName={business.name} />
+            </div>
+          </section>
+        )}
 
         <section className={css.page}>
           <h2>Your books</h2>
