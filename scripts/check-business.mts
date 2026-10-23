@@ -247,6 +247,38 @@ try {
   await shoot(tab, "biz-orders-charts");
   await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
   say((await tab.getByRole("listitem", { name: "First book ordered: 1 of 1" }).count()) === 1, "Clients: how many have reached each step, the first book 1 of 1");
+
+  // LIGHT, DARK OR AUTOMATIC (2026-10-22, Appearance.tsx): Automatic follows
+  // the system from the first paint; a choice holds against it and over a
+  // reload; the client's own page is not touched by it.
+  {
+    const night = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: "dark" });
+    await night.addCookies([{ name: guest.cookieName, value: guest.cookieValue, domain: new URL(server.base).hostname, path: "/" }]);
+    // the mode before React: the page's bundles blocked, so only the inline
+    // script in the HTML can have set it
+    const bare = await night.newPage();
+    await bare.route("**/_next/static/**/*.js", (route) => route.abort());
+    await bare.goto(`${server.base}/app/business`, { waitUntil: "domcontentloaded" });
+    const first = await bare.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode") ?? "unset");
+    await bare.close();
+    const dark = await night.newPage();
+    await dark.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
+    const ground = (page: typeof dark) => page.evaluate(() => getComputedStyle(document.querySelector("[data-biz-root]")!).backgroundColor);
+    const darkGround = await ground(dark);
+    say(first === "dark" && darkGround !== "rgb(247, 244, 238)", `Automatic with the system dark: dark from the first paint (${first}, ${darkGround})`);
+    await dark.getByRole("button", { name: /^Appearance/ }).click();
+    await dark.getByRole("menuitemradio", { name: /^Light/ }).click();
+    await dark.waitForTimeout(200);
+    const chosen = await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"));
+    await dark.reload({ waitUntil: "networkidle" });
+    const kept = await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"));
+    say(chosen === "light" && kept === "light" && (await ground(dark)) === "rgb(247, 244, 238)", `Light chosen holds against the system, and over a reload (${chosen}, ${kept})`);
+    await dark.getByRole("button", { name: /^Appearance/ }).click();
+    await dark.getByRole("menuitemradio", { name: /^Dark/ }).click();
+    await dark.waitForTimeout(200);
+    say((await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"))) === "dark", "Dark chosen: dark");
+    await night.close();
+  }
   await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
 
   // HER OWN PAGE, by a private link (clientPortal.ts): no account, no cookie.

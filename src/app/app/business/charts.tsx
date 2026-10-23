@@ -332,8 +332,9 @@ export function Columns({ data, label, currency }: { data: Array<{ label: string
 /* ------------------------------------------------------------- stage bar */
 
 const RAMP = ["var(--ord-1)", "var(--ord-2)", "var(--ord-3)", "var(--ord-4)"];
-/** The count's ink on each ramp step: dark on the light end, white after. */
-const RAMP_INK = ["var(--ink)", "#ffffff", "#ffffff", "#ffffff"];
+/** The count's ink on each ramp step: dark on the light end, white after -
+ *  and the other way round on the dark ramp (business.module.css). */
+const RAMP_INK = ["var(--ord-ink-1)", "var(--ord-ink-2)", "var(--ord-ink-3)", "var(--ord-ink-4)"];
 
 /** Part of a whole, in order: one bar split by stage, light (first) to dark
  *  (last), with a 2px gap between segments. A count is written inside its

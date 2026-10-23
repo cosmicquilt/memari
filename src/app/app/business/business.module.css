@@ -69,6 +69,17 @@
   --st-warning: #fab219;
   --st-serious: #ec835a;
   --st-critical: #d03b3b;
+  /* the count written on each ramp step: dark on the light end */
+  --ord-ink-1: #1c1917;
+  --ord-ink-2: #ffffff;
+  --ord-ink-3: #ffffff;
+  --ord-ink-4: #ffffff;
+  --error: #c4291c;
+  --tag-warn-bg: rgba(178, 80, 0, 0.1);
+  --tag-ok-bg: rgba(31, 122, 58, 0.1);
+  --track: rgba(28, 25, 23, 0.08);
+  --pop-shadow: 0 12px 32px rgba(28, 25, 23, 0.12);
+  --chip-shadow: 0 1px 3px rgba(28, 25, 23, 0.1);
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
@@ -76,6 +87,123 @@
   font-size: var(--body);
   line-height: 1.47;
   color-scheme: light;
+}
+
+/* DARK (2026-10-22: "I also want a dark mode switch for this ui too"):
+   Light, Dark or Automatic from the switch in the top bar (Appearance.tsx),
+   set on the root as data-mode before the first paint. Three dark looks to
+   choose from, shown side by side in the proof and switchable in
+   development: Studio Night (Studio's own dark - its cream in the shadow,
+   cream type, the pen's blue lifted for the dark), Graphite (Apple's dark,
+   as the candidate of 2026-10-22, and the editor's dialogs' #1c1c1e), and
+   Midnight (pen-ink navy). The charts' dark steps are their own, validated
+   with the dataviz skill against each look's card: the stage ramp runs dark
+   to bright (#3d4bd1 to #bcc4ff), its dimmest 2.5:1 on all three. */
+.biz[data-mode="dark"] {
+  color-scheme: dark;
+  /* filled buttons keep Studio's deeper blue: white on it is 4.9:1, where
+     on the lifted blue the links use it would be 3.0:1 */
+  --primary-bg: #4a5cff;
+  --primary-hover: #5b6cff;
+  --primary-ink: #ffffff;
+  --nav-here-bg: transparent;
+  --card-ring: none;
+  --ord-1: #3d4bd1;
+  --ord-2: #5b6cff;
+  --ord-3: #8b97ff;
+  --ord-4: #bcc4ff;
+  --ord-ink-1: #ffffff;
+  --ord-ink-2: #ffffff;
+  --ord-ink-3: #1c1917;
+  --ord-ink-4: #1c1917;
+  --grid: rgba(255, 255, 255, 0.08);
+  --axis: rgba(255, 255, 255, 0.3);
+  --error: #ff6b5e;
+  --warn: #ffa64d;
+  --ok: #4cd77a;
+  --tag-warn-bg: rgba(255, 166, 77, 0.14);
+  --tag-ok-bg: rgba(76, 215, 122, 0.14);
+  --track: rgba(255, 255, 255, 0.1);
+  --pop-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --chip-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --toast-bg: #2c2c2e;
+}
+
+.biz[data-mode="dark"]:not([data-dark-look]),
+.biz[data-mode="dark"][data-dark-look="night"] {
+  --bg: #12100e;
+  --card: #1f1c19;
+  --ink: #f4efe6;
+  --dim: rgba(244, 239, 230, 0.62);
+  --faint: rgba(244, 239, 230, 0.42);
+  --line: rgba(244, 239, 230, 0.1);
+  --hover: rgba(244, 239, 230, 0.06);
+  --here: rgba(125, 139, 255, 0.18);
+  --accent: #7d8bff;
+  --accent-hover: #919dff;
+  --series-1: #8b97ff;
+  --deemph: #4d4842;
+  --btn-bg: rgba(244, 239, 230, 0.08);
+  --btn-bg-hover: rgba(244, 239, 230, 0.14);
+  --top-bg: rgba(18, 16, 14, 0.78);
+  --input-bg: #2a2622;
+  --input-line: rgba(244, 239, 230, 0.16);
+  --tag-bg: rgba(244, 239, 230, 0.08);
+}
+
+.biz[data-mode="dark"][data-dark-look="graphite"] {
+  --bg: #000000;
+  --card: #1c1c1e;
+  --ink: #f5f5f7;
+  --dim: #98989d;
+  --faint: #6e6e73;
+  --line: rgba(255, 255, 255, 0.1);
+  --hover: rgba(255, 255, 255, 0.06);
+  --here: rgba(107, 123, 255, 0.2);
+  --accent: #6b7bff;
+  --accent-hover: #7d8bff;
+  --series-1: #8b97ff;
+  --deemph: #48484a;
+  --btn-bg: rgba(255, 255, 255, 0.1);
+  --btn-bg-hover: rgba(255, 255, 255, 0.16);
+  --top-bg: rgba(0, 0, 0, 0.72);
+  --input-bg: #2c2c2e;
+  --input-line: rgba(255, 255, 255, 0.14);
+  --tag-bg: rgba(255, 255, 255, 0.1);
+}
+
+.biz[data-mode="dark"][data-dark-look="midnight"] {
+  --bg: #0b0d1a;
+  --card: #171a2e;
+  --ink: #eef0ff;
+  --dim: rgba(238, 240, 255, 0.62);
+  --faint: rgba(238, 240, 255, 0.42);
+  --line: rgba(238, 240, 255, 0.1);
+  --hover: rgba(238, 240, 255, 0.06);
+  --here: rgba(138, 151, 255, 0.2);
+  --accent: #8a97ff;
+  --accent-hover: #a0aaff;
+  --series-1: #8b97ff;
+  --deemph: #3b4062;
+  --btn-bg: rgba(238, 240, 255, 0.08);
+  --btn-bg-hover: rgba(238, 240, 255, 0.14);
+  --top-bg: rgba(11, 13, 26, 0.78);
+  --input-bg: #20243d;
+  --input-line: rgba(238, 240, 255, 0.16);
+  --tag-bg: rgba(238, 240, 255, 0.08);
+}
+
+/* past the page's ends - an overscroll, a short page - the same ground */
+:global(html):has(.biz[data-mode="dark"]) {
+  background: #12100e;
+}
+
+:global(html):has(.biz[data-mode="dark"][data-dark-look="graphite"]) {
+  background: #000000;
+}
+
+:global(html):has(.biz[data-mode="dark"][data-dark-look="midnight"]) {
+  background: #0b0d1a;
 }
 
 .top {
@@ -137,7 +265,7 @@
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: var(--accent);
+  background: var(--primary-bg);
   color: #fff;
   font-size: 13px;
   font-weight: 700;
@@ -162,7 +290,7 @@
   background: var(--card);
   box-shadow:
     0 0 0 1px var(--line),
-    0 12px 32px rgba(0, 0, 0, 0.12);
+    var(--pop-shadow);
   display: grid;
   gap: 2px;
 }
@@ -180,6 +308,80 @@
 
 .switcherItem:hover {
   background: var(--hover);
+}
+
+/* The appearance switch, top right (Appearance.tsx). */
+.appearanceButton {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.appearanceButton:hover,
+.appearanceButton[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.appearanceMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--pop-shadow);
+  display: grid;
+  gap: 2px;
+}
+
+.appearanceMenu .switcherItem {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuHeading {
+  padding: 10px 10px 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lookSwatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.lookSwatch[data-look="night"] {
+  background: linear-gradient(135deg, #1f1c19 50%, #f4efe6 50%);
+}
+
+.lookSwatch[data-look="graphite"] {
+  background: linear-gradient(135deg, #1c1c1e 50%, #6b7bff 50%);
+}
+
+.lookSwatch[data-look="midnight"] {
+  background: linear-gradient(135deg, #171a2e 50%, #8a97ff 50%);
 }
 
 .switcherItem small {
@@ -403,7 +605,7 @@
 }
 
 .error {
-  color: #c4291c;
+  color: var(--error);
   font-size: 13px;
 }
 
@@ -484,12 +686,12 @@ a.row:hover {
 }
 
 .tagWarn {
-  background: rgba(178, 80, 0, 0.1);
+  background: var(--tag-warn-bg);
   color: var(--warn);
 }
 
 .tagOk {
-  background: rgba(31, 122, 58, 0.1);
+  background: var(--tag-ok-bg);
   color: var(--ok);
 }
 
@@ -547,8 +749,8 @@ a.step:hover + .step {
 }
 
 .done .tick {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary-bg);
+  border-color: var(--primary-bg);
   color: #fff;
 }
 
@@ -560,7 +762,7 @@ a.step:hover + .step {
 .progress {
   height: 6px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--track);
   overflow: hidden;
 }
 
@@ -736,7 +938,7 @@ a.step:hover + .step {
   background: var(--card);
   box-shadow:
     0 0 0 1px var(--line),
-    0 8px 24px rgba(28, 25, 23, 0.12);
+    var(--pop-shadow);
   font-size: 13px;
   line-height: 1.35;
   pointer-events: none;
@@ -959,7 +1161,7 @@ a.tile:hover {
 .range a[aria-current="page"] {
   background: var(--card);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.1);
+  box-shadow: var(--chip-shadow);
 }
 
 /* The start: before there is a business. */
