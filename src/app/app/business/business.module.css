@@ -91,14 +91,13 @@
 
 /* DARK (2026-10-22: "I also want a dark mode switch for this ui too"):
    Light, Dark or Automatic from the switch in the top bar (Appearance.tsx),
-   set on the root as data-mode before the first paint. Three dark looks to
-   choose from, shown side by side in the proof and switchable in
-   development: Studio Night (Studio's own dark - its cream in the shadow,
-   cream type, the pen's blue lifted for the dark), Graphite (Apple's dark,
-   as the candidate of 2026-10-22, and the editor's dialogs' #1c1c1e), and
-   Midnight (pen-ink navy). The charts' dark steps are their own, validated
-   with the dataviz skill against each look's card: the stage ramp runs dark
-   to bright (#3d4bd1 to #bcc4ff), its dimmest 2.5:1 on all three. */
+   set on the root as data-mode before the first paint. STUDIO NIGHT, chosen
+   2026-10-22 ("I like studio night") from three (Graphite, Apple's dark,
+   and Midnight, pen-ink navy, were the others; git 5a611fd): Studio's own
+   dark - its cream in the shadow, cream type, the pen's blue lifted for the
+   dark. The charts' dark steps are their own, validated with the dataviz
+   skill against its card: the stage ramp runs dark to bright (#3d4bd1 to
+   #bcc4ff), its dimmest 2.5:1. */
 .biz[data-mode="dark"] {
   color-scheme: dark;
   /* filled buttons keep Studio's deeper blue: white on it is 4.9:1, where
@@ -129,8 +128,7 @@
   --toast-bg: #2c2c2e;
 }
 
-.biz[data-mode="dark"]:not([data-dark-look]),
-.biz[data-mode="dark"][data-dark-look="night"] {
+.biz[data-mode="dark"] {
   --bg: #12100e;
   --card: #1f1c19;
   --ink: #f4efe6;
@@ -151,59 +149,9 @@
   --tag-bg: rgba(244, 239, 230, 0.08);
 }
 
-.biz[data-mode="dark"][data-dark-look="graphite"] {
-  --bg: #000000;
-  --card: #1c1c1e;
-  --ink: #f5f5f7;
-  --dim: #98989d;
-  --faint: #6e6e73;
-  --line: rgba(255, 255, 255, 0.1);
-  --hover: rgba(255, 255, 255, 0.06);
-  --here: rgba(107, 123, 255, 0.2);
-  --accent: #6b7bff;
-  --accent-hover: #7d8bff;
-  --series-1: #8b97ff;
-  --deemph: #48484a;
-  --btn-bg: rgba(255, 255, 255, 0.1);
-  --btn-bg-hover: rgba(255, 255, 255, 0.16);
-  --top-bg: rgba(0, 0, 0, 0.72);
-  --input-bg: #2c2c2e;
-  --input-line: rgba(255, 255, 255, 0.14);
-  --tag-bg: rgba(255, 255, 255, 0.1);
-}
-
-.biz[data-mode="dark"][data-dark-look="midnight"] {
-  --bg: #0b0d1a;
-  --card: #171a2e;
-  --ink: #eef0ff;
-  --dim: rgba(238, 240, 255, 0.62);
-  --faint: rgba(238, 240, 255, 0.42);
-  --line: rgba(238, 240, 255, 0.1);
-  --hover: rgba(238, 240, 255, 0.06);
-  --here: rgba(138, 151, 255, 0.2);
-  --accent: #8a97ff;
-  --accent-hover: #a0aaff;
-  --series-1: #8b97ff;
-  --deemph: #3b4062;
-  --btn-bg: rgba(238, 240, 255, 0.08);
-  --btn-bg-hover: rgba(238, 240, 255, 0.14);
-  --top-bg: rgba(11, 13, 26, 0.78);
-  --input-bg: #20243d;
-  --input-line: rgba(238, 240, 255, 0.16);
-  --tag-bg: rgba(238, 240, 255, 0.08);
-}
-
 /* past the page's ends - an overscroll, a short page - the same ground */
 :global(html):has(.biz[data-mode="dark"]) {
   background: #12100e;
-}
-
-:global(html):has(.biz[data-mode="dark"][data-dark-look="graphite"]) {
-  background: #000000;
-}
-
-:global(html):has(.biz[data-mode="dark"][data-dark-look="midnight"]) {
-  background: #0b0d1a;
 }
 
 .top {
@@ -353,35 +301,6 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.menuHeading {
-  padding: 10px 10px 4px;
-  border-top: 1px solid var(--line);
-  margin-top: 4px;
-  color: var(--dim);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.lookSwatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  flex: none;
-  box-shadow: 0 0 0 1px var(--line);
-}
-
-.lookSwatch[data-look="night"] {
-  background: linear-gradient(135deg, #1f1c19 50%, #f4efe6 50%);
-}
-
-.lookSwatch[data-look="graphite"] {
-  background: linear-gradient(135deg, #1c1c1e 50%, #6b7bff 50%);
-}
-
-.lookSwatch[data-look="midnight"] {
-  background: linear-gradient(135deg, #171a2e 50%, #8a97ff 50%);
 }
 
 .switcherItem small {

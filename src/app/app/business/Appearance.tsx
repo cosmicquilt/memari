@@ -5,28 +5,17 @@
 // (localStorage - a per-viewer convenience, not an account setting), set on
 // the root as data-mode by APPEARANCE_SCRIPT before the first paint, so a
 // dark screen never flashes light. Automatic follows the system, and keeps
-// following it while the page is open.
-//
-// Which dark: three looks are offered for choosing (business.module.css -
-// Studio Night, Graphite, Midnight). In development the menu can switch
-// between them; elsewhere it is Studio Night until one is chosen.
+// following it while the page is open. The dark is Studio Night
+// (business.module.css), chosen from three on 2026-10-22.
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import css from "./business.module.css";
 
 type Mode = "light" | "dark" | "auto";
-type Look = "night" | "graphite" | "midnight";
 const MODE_KEY = "memari-biz-appearance";
-const LOOK_KEY = "memari-biz-dark-look";
-const LOOKS: Array<{ key: Look; name: string; note: string }> = [
-  { key: "night", name: "Studio Night", note: "Warm, cream type" },
-  { key: "graphite", name: "Graphite", note: "Apple's dark" },
-  { key: "midnight", name: "Midnight", note: "Pen-ink navy" },
-];
-const CHOOSING_LOOK = process.env.NODE_ENV !== "production";
 
 /** Run first thing inside the root: the stored choice, applied before paint. */
-export const APPEARANCE_SCRIPT = `(function(){var r=document.currentScript&&document.currentScript.parentElement;if(!r)return;var m="auto",l="night";try{m=localStorage.getItem("${MODE_KEY}")||"auto";${CHOOSING_LOOK ? `l=localStorage.getItem("${LOOK_KEY}")||"night";` : ""}}catch(e){}var d=m==="dark"||(m==="auto"&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);r.setAttribute("data-mode",d?"dark":"light");r.setAttribute("data-dark-look",l)})()`;
+export const APPEARANCE_SCRIPT = `(function(){var r=document.currentScript&&document.currentScript.parentElement;if(!r)return;var m="auto";try{m=localStorage.getItem("${MODE_KEY}")||"auto"}catch(e){}var d=m==="dark"||(m==="auto"&&window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);r.setAttribute("data-mode",d?"dark":"light")})()`;
 
 const read = (key: string, fallback: string) => {
   try {
@@ -46,11 +35,10 @@ const subscribe = (fn: () => void) => {
 };
 const systemDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-function apply(mode: Mode, look: Look) {
+function apply(mode: Mode) {
   const root = document.querySelector<HTMLElement>("[data-biz-root]");
   if (!root) return;
   root.setAttribute("data-mode", mode === "dark" || (mode === "auto" && systemDark()) ? "dark" : "light");
-  root.setAttribute("data-dark-look", look);
 }
 
 function save(key: string, value: string) {
@@ -64,19 +52,18 @@ function save(key: string, value: string) {
 
 export function AppearanceSwitch() {
   const mode = useSyncExternalStore(subscribe, () => read(MODE_KEY, "auto") as Mode, () => "auto" as Mode);
-  const look = useSyncExternalStore(subscribe, () => (CHOOSING_LOOK ? (read(LOOK_KEY, "night") as Look) : "night"), () => "night" as Look);
   const [open, setOpen] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
 
   // What is stored, on the page - and Automatic keeps up with the system.
   useEffect(() => {
-    apply(mode, look);
+    apply(mode);
     if (mode !== "auto") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const follow = () => apply("auto", look);
+    const follow = () => apply("auto");
     media.addEventListener("change", follow);
     return () => media.removeEventListener("change", follow);
-  }, [mode, look]);
+  }, [mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -122,31 +109,6 @@ export function AppearanceSwitch() {
               {mode === m.key && <span className={css.check}>✓</span>}
             </button>
           ))}
-          {CHOOSING_LOOK && (
-            <>
-              <div className={css.menuHeading}>Dark look (development, to choose)</div>
-              {LOOKS.map((l) => (
-                <button
-                  key={l.key}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={look === l.key}
-                  className={css.switcherItem}
-                  onClick={() => {
-                    save(LOOK_KEY, l.key);
-                    if (mode === "light") save(MODE_KEY, "dark");
-                  }}
-                >
-                  <span className={css.lookSwatch} data-look={l.key} aria-hidden="true" />
-                  <span>
-                    {l.name}
-                    <small>{l.note}</small>
-                  </span>
-                  {look === l.key && <span className={css.check}>✓</span>}
-                </button>
-              ))}
-            </>
-          )}
         </div>
       )}
     </div>

@@ -26,7 +26,7 @@ export default async function BusinessLayout({ children }: { children: ReactNode
   if (!ctx) redirect(signInPath("/app/business"));
   const { business } = ctx;
   return (
-    // data-mode and data-dark-look are set by the script before React
+    // data-mode is set by the script before React
     // arrives, hence suppressHydrationWarning on this one element.
     <main className={css.biz} data-biz-root="" suppressHydrationWarning>
       <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
