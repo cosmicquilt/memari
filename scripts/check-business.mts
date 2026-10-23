@@ -354,9 +354,11 @@ try {
   const templateSlug = (await prisma.planner.findUnique({ where: { id: guest.journalId } }))!.slug ?? guest.journalId;
   await tab.goto(`${server.base}/app/j/${templateSlug}`, { waitUntil: "networkidle" });
   say((await tab.getByRole("link", { name: "Template · your edits reach 1 journal" }).count()) === 1, "the template's editor: Template · your edits reach 1 journal");
+  say((await tab.getByRole("button", { name: /^Reset to/ }).count()) === 0, "and no Reset to Template on a template: its pages are what every client's journal follows");
   await tab.screenshot({ path: shots ? `${shots}/biz-editor-template.png` : "/dev/null", clip: { x: 0, y: 0, width: 1280, height: 120 } }).catch(() => {});
   await tab.goto(`${server.base}/app/j/${journalId}`, { waitUntil: "networkidle" });
   say((await tab.getByRole("link", { name: "Maya Okafor's journal" }).count()) === 1, "her journal's editor: Maya Okafor's journal");
+  say((await tab.getByRole("button", { name: "Reset to their template" }).count()) === 1, "and its reset says it goes back to her template");
 
   // A CHANGE A LINK CANNOT CARRY - a page added to the template, a setting -
   // waits for an update, which is said first, and keeps her own page.
@@ -386,6 +388,21 @@ try {
   say(!!kept && kept.position === weekly.length + 1, `her own page is kept, after the template's (position ${kept?.position})`);
   say((await clientsBehind(template!.id)).length === 0, "and nothing is behind any more");
   say((await tab.getByText("pages or settings changed").count()) === 0, "Templates no longer asks");
+
+  // RESET TO THEIR TEMPLATE from her journal's editor (2026-10-22): her own
+  // page goes, and her journal is the template's pages again, linked.
+  await tab.goto(`${server.base}/app/j/${journalId}`, { waitUntil: "networkidle" });
+  tab.once("dialog", (dialog) => void dialog.accept());
+  await tab.getByRole("button", { name: "Reset to their template" }).click();
+  await tab.getByRole("button", { name: "Reset to their template" }).waitFor({ timeout: 60_000 });
+  await tab.waitForTimeout(800);
+  const reset = await prisma.page.findMany({ where: { plannerId: journalId! }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  const tplNow = await prisma.page.findMany({ where: { plannerId: guest.journalId }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  say(
+    !reset.some((p) => p.id === ownPage.id) && reset.length === tplNow.length && tplNow.every((t) => reset.some((p) => p.savedPageId === t.savedPageId && p.level === t.level && p.position === t.position)),
+    `Reset to their template: her own page gone, the template's ${tplNow.length} pages, linked, in their places (${reset.length})`
+  );
+  await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
 
   // The switcher, and the template gone from the guest's own journals.
   await tab.getByRole("button", { name: /Northwind Coaching/ }).click();

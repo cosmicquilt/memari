@@ -146,7 +146,7 @@ export async function buildClientJournal(ownerId: string, clientId: string): Pro
  * Their title and dates are theirs and stay. A client without a journal
  * gets one built.
  */
-export async function updateClientJournal(ownerId: string, clientId: string): Promise<string> {
+export async function updateClientJournal(ownerId: string, clientId: string, { reset = false }: { reset?: boolean } = {}): Promise<string> {
   const client = await prisma.businessClient.findFirst({
     where: { id: clientId, business: { ownerId } },
     include: { template: true },
@@ -166,6 +166,10 @@ export async function updateClientJournal(ownerId: string, clientId: string): Pr
       await tx.page.deleteMany({
         where: { plannerId, OR: [{ savedPageId: { in: links } }, { savedPage: { sourceKey: templateSourceKey(template.id) } }] },
       });
+      // a reset (the editor's Reset to Template on a client's journal,
+      // 2026-10-22): their own pages go too, so the journal is the template
+      // again; otherwise they are kept, after the template's
+      if (reset) await tx.page.deleteMany({ where: { plannerId } });
       // their own pages, out of the way of the template's positions
       const own = await tx.page.findMany({ where: { plannerId }, orderBy: PAGE_ORDER, select: { id: true, level: true, variantKey: true, position: true } });
       for (const page of own) await tx.page.update({ where: { id: page.id }, data: { position: page.position + 100_000 } });

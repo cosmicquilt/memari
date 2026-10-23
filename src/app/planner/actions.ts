@@ -1,6 +1,8 @@
 "use server";
 
 import { currentOwnerId } from "@/lib/owner";
+import { businessRoleOf } from "@/lib/business";
+import { updateClientJournal } from "@/lib/businessJournals";
 import { GUEST_JOURNAL_LIMIT, GUEST_SAVED_LIMIT, isGuestOwner } from "@/lib/guest";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
@@ -674,6 +676,21 @@ export async function resetPlannerToTemplate(journalId: string) {
   const userId = await currentOwnerId();
   if (!userId) {
     throw new Error("Not signed in");
+  }
+
+  // A JOURNAL OF A BUSINESS is reset to its own template, not to the app's
+  // first layout (2026-10-22): a client's journal becomes its template
+  // again, pages added to it alone dropped; a template is not reset here at
+  // all - its pages are what every client's journal follows, and its
+  // linked pages would part from theirs (the editor hides the button).
+  const own = await prisma.planner.findFirst({ where: journalWhere(userId, journalId), select: { id: true } });
+  if (own) {
+    const role = await businessRoleOf(own.id);
+    if (role?.kind === "template") throw new Error("This journal is a template of your business: resetting it would change every client's journal, so it is not reset from here.");
+    if (role?.kind === "client") {
+      await updateClientJournal(userId, role.clientId, { reset: true });
+      return;
+    }
   }
 
   const planner = await prisma.planner.findFirst({

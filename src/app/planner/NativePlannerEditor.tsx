@@ -10485,8 +10485,12 @@ export function NativePlannerEditor({
   // reload did. What it no longer throws away is the DOCUMENT: the drawer's
   // scroll and detent survive. See pagesRefreshContext.
   const [isResettingPlanner, setIsResettingPlanner] = useState(false);
+  // A client's journal is reset to its business template instead (actions.ts,
+  // 2026-10-22), which drops pages added to it alone - so it says so.
   const handleResetPlannerToTemplate = useCallback(async () => {
-    const confirmed = window.confirm("Reset to original template?");
+    const confirmed = window.confirm(
+      business?.kind === "client" ? `Put ${business.name}'s journal back to their template? Pages added to their journal alone are removed.` : "Reset to original template?"
+    );
     if (!confirmed) return;
     setIsResettingPlanner(true);
     try {
@@ -10496,7 +10500,7 @@ export function NativePlannerEditor({
       setSaveError(err instanceof Error ? err.message : String(err));
       setIsResettingPlanner(false);
     }
-  }, [journalId, refreshPages]);
+  }, [journalId, refreshPages, business]);
 
   // Live preview: while a drag is in progress, recompute where things
   // would land if released right now, and turn that into per-instance
@@ -10816,26 +10820,37 @@ export function NativePlannerEditor({
             marginLeft:auto pushes this and everything after it to the
             header's right edge, same trick saveError used on its own
             before this existed. */}
-        <button
-          type="button"
-          onClick={handleResetPlannerToTemplate}
-          disabled={isResettingPlanner}
-          title="Debug: wipe the sidebar (Things I'm Grateful For / Reminders / Notes) and the to-do area below the hourly grid on both pages, and put back the original template"
-          style={{
-            marginLeft: "auto",
-            flexShrink: 0,
-            padding: "4px 10px",
-            fontSize: 12,
-            background: "#3a3a3a",
-            color: onCream(0xdd),
-            border: "none",
-            borderRadius: 6,
-            cursor: isResettingPlanner ? "default" : "pointer",
-            opacity: isResettingPlanner ? 0.6 : 1,
-          }}
-        >
-          {isResettingPlanner ? "Resetting…" : "Reset to Template"}
-        </button>
+        {/* Not on a template of a business: its pages are what every client's
+            journal follows (resetPlannerToTemplate refuses one too). The
+            spacer keeps what follows at the header's right edge. */}
+        {business?.kind === "template" ? (
+          <span style={{ marginLeft: "auto" }} />
+        ) : (
+          <button
+            type="button"
+            onClick={handleResetPlannerToTemplate}
+            disabled={isResettingPlanner}
+            title={
+              business?.kind === "client"
+                ? `Put ${business.name}'s journal back to their template: pages added to their journal alone are removed`
+                : "Debug: wipe the sidebar (Things I'm Grateful For / Reminders / Notes) and the to-do area below the hourly grid on both pages, and put back the original template"
+            }
+            style={{
+              marginLeft: "auto",
+              flexShrink: 0,
+              padding: "4px 10px",
+              fontSize: 12,
+              background: "#3a3a3a",
+              color: onCream(0xdd),
+              border: "none",
+              borderRadius: 6,
+              cursor: isResettingPlanner ? "default" : "pointer",
+              opacity: isResettingPlanner ? 0.6 : 1,
+            }}
+          >
+            {isResettingPlanner ? "Resetting…" : business?.kind === "client" ? "Reset to their template" : "Reset to Template"}
+          </button>
+        )}
         {/* Last in the header, per request. The fragment's two children —
             the button and its own status line — become direct flex children
             here and pick up the header's own gap, so no wrapper is needed;
