@@ -41,7 +41,7 @@
 // one - see the pill travel probe.
 
 import { chromium, type Browser, type Locator, type Page, type Request } from "playwright-core";
-import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar, retypeModule } from "./appUnderTest.mjs";
+import { ensureServer, makeGuestJournal, disconnect, incrementsOffSpread, storedRows, storedModules, flushUnderHours, setWeeklySidebar, retypeModule, seedLevel } from "./appUnderTest.mjs";
 import {
   DRAWER_CLOSED_HEIGHT,
   DRAWER_COMPACT_HEIGHT,
@@ -2304,6 +2304,9 @@ const textOnThePage: Probe = {
       }
 
       // --- A TABLE'S COLUMNS, AND DIVIDERS - on the Beginning page ----------
+      // The guest journal has no front matter, and a visit no longer adds a
+      // level (see seedLevel): seeded as the timeline's open seeds it.
+      await seedLevel(guest.journalId, "FRONT_MATTER");
       await setLevel("FRONT_MATTER");
       await load();
       const matter = (await storedModules(guest.journalId)).filter((m) => m.level === "FRONT_MATTER" && m.slug === "labeled-box");
@@ -3560,7 +3563,10 @@ const addBoxes: Probe = {
         { name: "memari-open", value: "FRONT_MATTER", domain: "localhost", path: "/" },
       ]);
       const tab = await context.newPage();
-      // The first visit makes the front-matter pages; then they are laid out.
+      // The front-matter pages, seeded as the timeline's open seeds them - a
+      // visit no longer adds a level the book lacks (see seedLevel). Then a
+      // first visit, and they are laid out for the second.
+      await seedLevel(guest.journalId, "FRONT_MATTER");
       await tab.goto(`${base}/app/j/${guest.journalId}`, { waitUntil: "networkidle" });
       await tab.waitForTimeout(2500);
       const front = await prisma.moduleInstance.findMany({

@@ -11,6 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import type { PageLevel } from "../src/lib/pageLevels.js";
 
 // .env FIRST, at module load. prisma.ts and guest.ts both read process.env
 // when they are first evaluated, so anything that imports them has to come
@@ -399,6 +400,24 @@ export async function retypeModule(instanceId: string, slug: string, propValues:
   if (!type) throw new Error(`no module type ${slug} - is the database seeded?`);
   await prisma.moduleInstance.update({ where: { id: instanceId }, data: { moduleTypeId: type.id, propValues: propValues as never } });
   return type.name;
+}
+
+/**
+ * One level of a journal seeded - its pages made and laid out - the way
+ * opening it from the timeline seeds it (loadLevel asks openBook to, and
+ * openBook runs ensureLevel once it knows the journal is theirs).
+ *
+ * A VISIT NO LONGER DOES THIS (2026-10-15). Opening the editor used to seed
+ * whatever level the `memari-open` cookie named; now it opens only a level
+ * the book has, falling back to one it does (see renderEditor). The guest
+ * journal is made without front or back matter, so a probe that wants one
+ * seeds it here before it visits.
+ */
+export async function seedLevel(journalId: string, level: PageLevel): Promise<void> {
+  const { prisma } = await import("../src/lib/prisma.js");
+  const { ensureLevel, WITH_PAGES } = await import("../src/app/planner/bookSeeding.js");
+  const book = await prisma.planner.findUniqueOrThrow({ where: { id: journalId }, include: WITH_PAGES });
+  await ensureLevel(book, level);
 }
 
 /** Every module of a journal, by slug, with its stored props - for checking
