@@ -25,6 +25,8 @@ const WRITING_TARGET = 14;
 type Pair = [PageSurface, PageSurface];
 type Phase =
   | { name: "waiting" }
+  /** On the page and fading in; writing from `at`, or once it is planned. */
+  | { name: "starting"; at: number }
   | { name: "writing"; clock: InkClock; timeline: Timed[]; duration: number }
   | { name: "resting"; since: number };
 
@@ -40,6 +42,8 @@ export class PageLoop {
   private cycle = 0;
   private nextTimeline: { timeline: Timed[]; duration: number } | null = null;
   private nextReady = false;
+  /** The first spread's writing, planned while it appears. */
+  private firstWriting: Promise<unknown> | null = null;
 
   constructor(
     private readonly spreads: LandingSpread[],
@@ -64,7 +68,7 @@ export class PageLoop {
     for (const [i, page] of spread.pages.entries()) await pair[i].print(page, spread.fontFamily, i === 0 ? "left" : "right");
   }
 
-  private async prepareWriting(spread: LandingSpread) {
+  private async prepareWriting(spread: LandingSpread, { first = false } = {}) {
     await Promise.all([...familiesFor(spread.key).map((family) => document.fonts.load(`40px ${family}`).catch(() => [])), loadArtIndex()]);
     // A spread whose writing fails is shown unwritten rather than stopping
     // the loop on it: a throw here left the hero on one week forever.
@@ -75,7 +79,9 @@ export class PageLoop {
       console.error(`Writing ${spread.key}'s week failed:`, error);
     }
     const { strokes, duration } = inkTimeline(plan, WRITING_TARGET, this.cycle + 1);
-    await prepareInk(strokes, this.showing[0].scale);
+    // the first spread's letters for its opening seconds, the rest warmed
+    // behind the pen; later spreads are prepared while one rests
+    await prepareInk(strokes, this.showing[0].scale, first ? { firstSeconds: 3 } : {});
     return { timeline: strokes, duration };
   }
 
@@ -84,31 +90,50 @@ export class PageLoop {
     this.changed(1, this.showing[1].canvas);
   }
 
-  /** Print the first spread, blank, ready to appear. */
+  /** Print the first spread, blank, ready to appear - and plan its writing
+   *  alongside, not first (2026-10-22: "i want the layout and other
+   *  starting animations for the hero journal to start sooner"). Getting
+   *  the ink ready took 0.8 to 1.1 s and the layout waited for it, though
+   *  the writing is not wanted until the layout has faded in, 1.6 s later:
+   *  now the layout comes as soon as it is printed, and the writing is
+   *  planned while it fades (start() waits for it, if it must). */
   async ready() {
+    this.firstWriting = this.prepareWriting(this.spreadAt(0), { first: true })
+      // the ink failing leaves the spread unwritten, never the hero stuck
+      .catch((error) => {
+        console.error("Planning the first spread's writing failed:", error);
+        return { timeline: [] as Timed[], duration: 0 };
+      })
+      .then((writing) => {
+        this.nextTimeline = writing;
+      });
     await this.print(this.spreadAt(0), this.showing);
-    this.nextTimeline = await this.prepareWriting(this.spreadAt(0));
     this.show();
   }
 
   /** The finished picture, for reduced motion: the first spread written. */
-  still() {
+  async still() {
+    await this.firstWriting;
     if (!this.nextTimeline) return;
     paintInk(this.nextTimeline.timeline, Infinity, [this.showing[0].layers, this.showing[1].layers], this.showing[0].scale);
     for (const s of this.showing) s.compose();
     this.show();
   }
 
-  /** The clip has stopped: the first layout is on the page; start writing. */
+  /** The first layout is coming onto the page: write from `now`, or as
+   *  soon after as its writing is planned. */
   start(now: number) {
-    if (this.phase.name !== "waiting" || !this.nextTimeline) return;
-    this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
-    this.nextTimeline = null;
+    if (this.phase.name !== "waiting") return;
+    this.phase = { name: "starting", at: now };
   }
 
   update(now: number) {
     const phase = this.phase;
-    if (phase.name === "writing") {
+    if (phase.name === "starting") {
+      if (!this.nextTimeline) return;
+      this.phase = { name: "writing", clock: new InkClock(Math.max(phase.at, now) + BEFORE_WRITING), ...this.nextTimeline };
+      this.nextTimeline = null;
+    } else if (phase.name === "writing") {
       const t = phase.clock.advance(now);
       if (t < 0) return;
       const [left, right] = this.showing;

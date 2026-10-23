@@ -75,6 +75,24 @@ try {
 
   // the landing page: a layout grows under the pointer
   await tab.goto(`${server.base}/`, { waitUntil: "load", timeout: 120_000 });
+  // the hero's first layout comes as soon as it is printed and its writing
+  // is planned while it fades in (2026-10-22: "start sooner"): it appears,
+  // then writes, with strokes - the order the change made (pageLoop.ts)
+  const order: string[] = await tab.evaluate(`new Promise((resolve) => {
+    const seen = [];
+    const t0 = performance.now();
+    const poll = () => {
+      const canvas = document.querySelector('canvas[class*="videoDrawing"]');
+      const pages = window.__video && window.__video.pages;
+      if (canvas && canvas.style.opacity === "1" && !seen.includes("appears")) seen.push("appears");
+      if (pages && pages.phase.name === "writing" && !seen.includes("writes")) seen.push("writes:" + pages.phase.timeline.length);
+      if (seen.length >= 2 || performance.now() - t0 > 30000) return resolve(seen);
+      requestAnimationFrame(poll);
+    };
+    poll();
+  })`);
+  say(order.length === 2 && order[0] === "appears" && /^writes:[1-9]/.test(order[1]), `the hero's first layout appears, then is written in (${order.join(", ") || "neither"})`);
+
   // the page's script attached to the cards (React's props on the node)
   await tab.waitForFunction(`Object.keys(document.querySelector('figure[class*="spreadCard"]') || {}).some((k) => k.startsWith("__reactProps"))`, undefined, { timeout: 60_000 });
   const figure = tab.locator('figure[class*="spreadCard"]').first();

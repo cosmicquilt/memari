@@ -52,6 +52,23 @@ const AT_REST = BOOK_ON_SHEETS.right.length - 1;
 /** How long the hero's size must hold before its picture is drawn again. */
 const REBAKE_AFTER_MS = 200;
 
+/** The page renderer's code and the spreads it draws, asked for the moment
+ *  this module runs in the browser rather than once hydration reaches the
+ *  effect that uses them (2026-10-22: the hero's first layout "to start
+ *  sooner"): measured in development, the effect began 1.3 s in and the
+ *  pieces took 0.65 s more. Only the landing page imports this module. */
+const heroPieces =
+  typeof window === "undefined"
+    ? null
+    : Promise.all([
+        import("./video/pageWarp"),
+        import("./video/pageLoop"),
+        fetch("/landing/spreads").then((r) => r.json() as Promise<LandingSpread[]>),
+      ]);
+// handled where it is awaited; this only keeps a failure from being
+// reported as unhandled before then
+heroPieces?.catch(() => {});
+
 /** The hero's own pictures, asked for in the page's head and before anything
  *  else on it (2026-10-21: "fix the hero loading the side overlaid parts -
  *  load it first before the rest of the hero"). Found the usual way, the
@@ -306,10 +323,14 @@ export function VideoHero() {
       if (drawing || !pages) return;
       drawing = true;
       if (reduce) {
-        pages.still();
-        paint();
-        setInstant(true);
-        setDrawn(true);
+        // written before it is shown: its writing may still be planning
+        const still = pages;
+        void still.still().then(() => {
+          if (disposed) return;
+          paint();
+          setInstant(true);
+          setDrawn(true);
+        });
         return;
       }
       loop = pages;
@@ -324,11 +345,12 @@ export function VideoHero() {
     afterWritten.current = ready;
 
     (async () => {
-      const [{ PageWarp }, { PageLoop }, spreads] = await Promise.all([
-        import("./video/pageWarp"),
-        import("./video/pageLoop"),
-        fetch("/landing/spreads").then((r) => r.json() as Promise<LandingSpread[]>),
-      ]);
+      const [{ PageWarp }, { PageLoop }, spreads] = await (heroPieces ??
+        Promise.all([
+          import("./video/pageWarp"),
+          import("./video/pageLoop"),
+          fetch("/landing/spreads").then((r) => r.json() as Promise<LandingSpread[]>),
+        ]));
       if (disposed) return;
       let warp: InstanceType<typeof PageWarp>;
       // As many pixels as the stage shows, at most the frame's.

@@ -678,12 +678,27 @@ function chiselSwipe(ctx: CanvasRenderingContext2D, points: number[][], nib: num
  * in idle moments: roughening letters into the paper takes a few hundred
  * milliseconds a spread, which the frames that write must not pay.
  */
-export async function prepareInk(timeline: Timed[], scale: number) {
+/** `firstSeconds`: resolve once the letters written in the first that many
+ *  seconds are ready, and warm the rest behind - for the hero's first
+ *  spread, which waits on this (2026-10-22: "start sooner"). A letter not
+ *  warmed by the time the pen reaches it is made then (paintGlyph). */
+export async function prepareInk(timeline: Timed[], scale: number, { firstSeconds }: { firstSeconds?: number } = {}) {
   // The drawn doodles: fetched together, then each drawn into its sprite.
   const arts = timeline.filter((s): s is TimedArt => s.kind === "art");
   const made = await Promise.all(arts.map((a) => (a.tile ? prepareTile(a.tile.place, a.tile.color, a.tile.round, scale, a.seed) : a.ref ? prepareArt(a.ref, a.box, scale, a.seed, a.angle) : null)));
   arts.forEach((a, i) => (a.art = made[i]));
   const glyphs = timeline.filter((s): s is TimedGlyph => s.kind === "glyph");
+  if (firstSeconds !== undefined) {
+    const soon = glyphs.filter((g) => g.t0 < firstSeconds);
+    for (const g of soon) spriteOf(g.run, g.glyph, scale);
+    void warmGlyphs(glyphs.filter((g) => g.t0 >= firstSeconds), scale);
+    return;
+  }
+  await warmGlyphs(glyphs, scale);
+}
+
+/** Each letter's sprite made ahead, in idle moments, a few ms at a time. */
+async function warmGlyphs(glyphs: TimedGlyph[], scale: number) {
   let at = 0;
   while (at < glyphs.length) {
     await new Promise<void>((resolve) => {
