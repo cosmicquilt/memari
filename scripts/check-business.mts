@@ -226,7 +226,8 @@ try {
   const thisMonth = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
   await tab.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
   const tileValues = await tab.locator('[class*="tileValue"]').allTextContents();
-  say(tileValues.join("|") === "1|1|$34.75|0", `Home's numbers: 1 client, 1 book and $34.75 this quarter, nobody running out (${tileValues.join(", ")})`);
+  say(tileValues.join("|") === "1|1|1|0", `Home's numbers: 1 client, 1 book this quarter, 1 on the way, nobody running out (${tileValues.join(", ")})`);
+  say((await tab.getByText("1 approved", { exact: true }).count()) === 1, "and the book on its way is Approved");
   const coverage = tab.getByRole("figure", { name: "Who has pages, and until when" });
   say((await coverage.getByRole("link", { name: "Maya Okafor: To 3 Apr" }).count()) === 1, "Home's timeline: Maya, covered to 3 Apr, her name a link to her");
   await coverage.locator('g[aria-label^="Maya Okafor: book 4 Jan to 3 Apr"]').focus();

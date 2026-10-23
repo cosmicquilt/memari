@@ -3,7 +3,11 @@
 // to-do list (what wants you) first, as the research had it
 // (handoff/research/B2B-findings-summary.md); and under it, once there is a
 // client, the charts asked for on 2026-10-22 - four headline numbers, and
-// who has pages until when, most urgent first. The research's "no charts"
+// who has pages until when, most urgent first. The third number was what
+// was spent this quarter until "instead of spent this quarter I like
+// revenue" - revenue the app cannot know (what clients pay the coach is
+// never recorded), so, as asked next, "just swap it out for a different
+// statistic": the books on their way. Spending is still on Orders. The research's "no charts"
 // was against charts for their own sake: each here answers a question the
 // to-dos raise (who runs out next? are books going up?).
 
@@ -15,8 +19,6 @@ import { shortDate, stateWords } from "./chartWords";
 import { StartBusinessForm } from "./forms";
 import css from "./business.module.css";
 
-const money = (cents: number, currency: string) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 const quarterName = (d: Date) => {
   const first = new Date(Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1));
   const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 2, 1));
@@ -24,9 +26,15 @@ const quarterName = (d: Date) => {
   return `${m(first)} to ${m(last)}`;
 };
 /** "3 more than Jul to Sep", "1 fewer", "same as": the change in words. */
-function change(now: number, before: number, period: string, say: (n: number) => string = String): StatTileData["change"] {
+function change(now: number, before: number, period: string): StatTileData["change"] {
   if (now === before) return { dir: "same", text: `Same as ${period}` };
-  return now > before ? { dir: "up", text: `${say(now - before)} more than ${period}` } : { dir: "down", text: `${say(before - now)} ${say === String ? "fewer" : "less"} than ${period}` };
+  return now > before ? { dir: "up", text: `${now - before} more than ${period}` } : { dir: "down", text: `${before - now} fewer than ${period}` };
+}
+/** "1 approved, 2 printing, 1 shipped": where the books on their way are. */
+function onTheirWay(pipeline: Array<{ stage: string; count: number }>): string {
+  const words: Record<string, string> = { Approved: "approved", "In production": "printing", Shipped: "shipped" };
+  const parts = pipeline.filter((p) => words[p.stage] && p.count > 0).map((p) => `${p.count} ${words[p.stage]}`);
+  return parts.length ? parts.join(", ") : "None printing or in the post";
 }
 
 export default async function BusinessHome() {
@@ -52,7 +60,8 @@ export default async function BusinessHome() {
     );
   const [{ steps, tasks }, stats] = await Promise.all([businessHome(business), businessStats(business.id, 12)]);
   const done = steps.filter((s) => s.done).length;
-  const { headline: hl, currency } = stats;
+  const { headline: hl } = stats;
+  const coming = stats.pipeline.filter((p) => p.stage !== "Delivered").reduce((n, p) => n + p.count, 0);
   const lastQuarter = quarterName(new Date(Date.UTC(new Date().getUTCFullYear(), Math.floor(new Date().getUTCMonth() / 3) * 3 - 1, 1)));
   const tiles: StatTileData[] = [
     { label: "Current clients", value: String(hl.activeClients), note: `${stats.setup[4].count} with a book ordered`, href: "/app/business/clients" },
@@ -65,11 +74,9 @@ export default async function BusinessHome() {
       href: "/app/business/orders",
     },
     {
-      label: "Spent this quarter",
-      value: money(hl.spend.now, currency),
-      change: change(hl.spend.now, hl.spend.before, lastQuarter, (n) => money(n, currency)),
-      spark: stats.monthly.map((m) => m.spend / 100),
-      sparkLabel: "Spent each month, the last 12 months",
+      label: "Books on the way",
+      value: String(coming),
+      note: onTheirWay(stats.pipeline),
       href: "/app/business/orders",
     },
     {
