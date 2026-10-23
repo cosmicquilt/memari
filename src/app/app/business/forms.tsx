@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, makeLinkFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, removeTemplate, saveBusinessSettings, saveClient, setClientArchived, startBusiness, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
 
@@ -356,17 +356,36 @@ export function UpdateClientsButton({ templateId, count }: { templateId: string;
 
 /** Their own page: make a private link for a client, show it once to copy,
  *  make a new one (the old stops working), or turn it off. */
-export function ClientLink({ clientId, name, made, seen }: { clientId: string; name: string; made: string | null; seen: string | null }) {
+/** A client's own page, by a private link: made here and copied, or
+ *  emailed to them (2026-10-22). Either way the link is new and any earlier
+ *  one stops working, which the card says before it happens. */
+export function ClientLink({ clientId, name, email, made, seen }: { clientId: string; name: string; email: string | null; made: string | null; seen: string | null }) {
   const [url, setUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const make = () =>
     start(async () => {
       const result = await makeLinkFor(clientId);
       setError(result.error ?? null);
       setUrl(result.url ?? null);
+      setSentTo(null);
       setCopied(false);
+    });
+  const send = () =>
+    start(async () => {
+      const result = await emailLinkTo(clientId);
+      setCopied(false);
+      if (result.sent) {
+        setSentTo(result.to);
+        setUrl(null);
+        setError(null);
+      } else {
+        setSentTo(null);
+        setUrl(result.url ?? null);
+        setError(result.error);
+      }
     });
   const copy = async () => {
     if (!url) return;
@@ -378,6 +397,7 @@ export function ClientLink({ clientId, name, made, seen }: { clientId: string; n
     }
   };
   const first = name.split(" ")[0];
+  const hasLink = !!(url || made || sentTo);
   return (
     <div className={css.card}>
       <h2>Their page</h2>
@@ -385,7 +405,11 @@ export function ClientLink({ clientId, name, made, seen }: { clientId: string; n
         A private link for {first}: their journal, their books, and where their books go, which they can correct. No account, nothing to install. Anyone with the link can open it, so send it only to
         them.
       </p>
-      {url ? (
+      {sentTo ? (
+        <p className={css.saved} role="status">
+          Sent to {sentTo}. Replies go to you.
+        </p>
+      ) : url ? (
         <>
           <div className={css.actions}>
             <input type="text" readOnly value={url} aria-label={`${first}'s link`} onFocus={(e) => e.currentTarget.select()} style={{ flex: "1 1 280px" }} />
@@ -402,10 +426,15 @@ export function ClientLink({ clientId, name, made, seen }: { clientId: string; n
         </p>
       ) : null}
       <div className={css.actions}>
-        <button type="button" className={`${css.btn} ${url || made ? "" : css.primary}`} disabled={pending} onClick={make}>
-          {url || made ? "Make a new link" : "Make their link"}
+        {email && (
+          <button type="button" className={`${css.btn} ${css.primary}`} disabled={pending} onClick={send}>
+            {pending ? "Sending…" : hasLink ? `Email ${first} a new link` : `Email ${first} their link`}
+          </button>
+        )}
+        <button type="button" className={`${css.btn} ${email || hasLink ? "" : css.primary}`} disabled={pending} onClick={make}>
+          {hasLink ? "Make a new link to copy" : "Make a link to copy"}
         </button>
-        {(url || made) && (
+        {hasLink && (
           <button
             type="button"
             className={css.btn}
@@ -414,6 +443,7 @@ export function ClientLink({ clientId, name, made, seen }: { clientId: string; n
               start(async () => {
                 await turnOffLinkFor(clientId);
                 setUrl(null);
+                setSentTo(null);
               })
             }
           >
@@ -421,7 +451,10 @@ export function ClientLink({ clientId, name, made, seen }: { clientId: string; n
           </button>
         )}
       </div>
-      {(url || made) && <p className={css.dim}>A new link stops the old one working.</p>}
+      <p className={css.dim}>
+        {email ? <>Emails go to {email}. </> : <>Add {first}&rsquo;s email below to send it from here. </>}
+        {hasLink && "A new link, emailed or copied, stops the old one working."}
+      </p>
       {error && (
         <p className={css.error} role="alert">
           {error}

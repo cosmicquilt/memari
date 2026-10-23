@@ -7,7 +7,9 @@
 // not undo the order it was about, so callers get a result to log.
 // Server-only.
 
-export type Email = { to: string; subject: string; text: string; html: string };
+/** `replyTo`: where an answer goes, when not to us (a coach's client
+ *  writes back to the coach - clientLinkEmail.ts). */
+export type Email = { to: string; subject: string; text: string; html: string; replyTo?: string };
 export type EmailResult = { sent: boolean; id?: string; reason?: string };
 export type EmailSender = (email: Email) => Promise<EmailResult>;
 
@@ -25,7 +27,7 @@ export const sendEmail: EmailSender = async (email) => {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [email.to], subject: email.subject, text: email.text, html: email.html }),
+      body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [email.to], subject: email.subject, text: email.text, html: email.html, ...(email.replyTo ? { reply_to: email.replyTo } : {}) }),
     });
     const body = await response.text();
     if (!response.ok) {

@@ -6,7 +6,10 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { currentUser } from "@clerk/nextjs/server";
 import { makeClientLink, turnOffClientLink } from "@/lib/clientPortal";
+import { clientLinkEmail, sendableEmail } from "@/lib/clientLinkEmail";
+import { sendEmail } from "@/lib/email";
 import { appUrl } from "@/lib/print/fileUrls";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
@@ -137,18 +140,55 @@ export async function updateTemplateClients(templateId: string): Promise<{ updat
 
 /** A private link to a client's own page (clientPortal.ts): the full
  *  address, shown to the coach once - only its hash is kept. */
+/** Where a client's page lives, on whichever host this was asked from. */
+async function portalUrl(token: string): Promise<string> {
+  const list = await headers();
+  const host = list.get("x-forwarded-host") ?? list.get("host");
+  const proto = list.get("x-forwarded-proto") ?? "https";
+  return `${appUrl(host ? `${proto}://${host}` : undefined)}/c/${token}`;
+}
+
 export async function makeLinkFor(clientId: string): Promise<{ url?: string; error?: string }> {
   const { owner } = await myBusiness();
   try {
     const token = await makeClientLink(owner.id, clientId);
-    const list = await headers();
-    const host = list.get("x-forwarded-host") ?? list.get("host");
-    const proto = list.get("x-forwarded-proto") ?? "https";
     revalidatePath(`/app/business/clients/${clientId}`);
-    return { url: `${appUrl(host ? `${proto}://${host}` : undefined)}/c/${token}` };
+    return { url: await portalUrl(token) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The link could not be made." };
   }
+}
+
+/** Email a client their link (2026-10-22, "Email the client their link").
+ *  Only the link's hash is kept, so the one they have cannot be sent again:
+ *  this makes a new link - the old one stops working - and emails it, with
+ *  replies going to the coach's own address when they are signed in. Not
+ *  twice within a minute, so a double press is one email. If the email is
+ *  not sent (email not set up here, or refused), the new link comes back to
+ *  copy, and the coach is told so: the old link has stopped either way. */
+export type EmailLinkResult = { sent: true; to: string } | { sent: false; to?: string; url?: string; error: string };
+export async function emailLinkTo(clientId: string): Promise<EmailLinkResult> {
+  const { owner, business } = await myBusiness();
+  const client = await prisma.businessClient.findFirst({ where: { id: clientId, businessId: business.id, archivedAt: null }, select: { id: true, name: true, email: true, accessMadeAt: true } });
+  if (!client) return { sent: false, error: "That client is not one of yours." };
+  const to = sendableEmail(client.email);
+  if (!to) return { sent: false, error: `${client.name.split(" ")[0]} has no email address yet: add it below.` };
+  if (client.accessMadeAt && Date.now() - client.accessMadeAt.getTime() < 60_000) return { sent: false, to, error: "A link was made for them a moment ago. Give it a minute before sending another." };
+  const token = await makeClientLink(owner.id, client.id);
+  const url = await portalUrl(token);
+  const replyTo = owner.guest ? null : ((await currentUser())?.primaryEmailAddress?.emailAddress ?? null);
+  const result = await sendEmail(clientLinkEmail({ to, businessName: business.name, clientName: client.name, url, replyTo }));
+  revalidatePath(`/app/business/clients/${client.id}`);
+  if (result.sent) return { sent: true, to };
+  return {
+    sent: false,
+    to,
+    url,
+    error:
+      result.reason === "not configured"
+        ? "Email is not set up on this site yet, so nothing was sent. Here is their new link to send yourself; the old one has stopped working."
+        : "The email could not be sent. Here is their new link to send yourself; the old one has stopped working.",
+  };
 }
 
 /** Turn a client's link off: their page closes. */

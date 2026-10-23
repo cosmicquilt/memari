@@ -95,6 +95,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
       <ClientLink
         clientId={client.id}
         name={client.name}
+        email={client.email}
         made={client.accessMadeAt ? date(client.accessMadeAt) : null}
         seen={client.accessSeenAt ? date(client.accessSeenAt) : null}
       />

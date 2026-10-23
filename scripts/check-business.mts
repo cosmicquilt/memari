@@ -282,7 +282,8 @@ try {
   await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
 
   // HER OWN PAGE, by a private link (clientPortal.ts): no account, no cookie.
-  await tab.getByRole("button", { name: "Make their link" }).click();
+  say((await tab.getByText("Emails go to maya@example.com.", { exact: false }).count()) === 1, "Their page says where an emailed link goes");
+  await tab.getByRole("button", { name: "Make a link to copy" }).click();
   const linkBox = tab.getByLabel("Maya's link");
   await linkBox.waitFor();
   const link = await linkBox.inputValue();
@@ -322,7 +323,7 @@ try {
   say(over2 <= 0, `her page on a phone: no sideways scroll (${over2}px)`);
   await herPhone.close();
   // a new link stops the old; turning it off closes the page
-  await tab.getByRole("button", { name: "Make a new link" }).click();
+  await tab.getByRole("button", { name: "Make a new link to copy" }).click();
   await linkBox.waitFor();
   await tab.waitForTimeout(300);
   const newLink = await linkBox.inputValue();
@@ -331,6 +332,21 @@ try {
   await tab.waitForTimeout(800);
   say((await her.goto(newLink))?.status() === 404 && !(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash, "turned off: her page is closed");
   say((await her.goto(`${server.base}/c/not-a-real-token`))?.status() === 404, "a made-up link opens nothing");
+
+  // EMAILED (2026-10-22, emailLinkTo; the words are clientLinkEmail.test).
+  // Email is not set up on this machine, so nothing is sent: the coach is
+  // told so, and the new link is shown to copy - the old one has stopped.
+  await tab.getByRole("button", { name: "Email Maya their link" }).click();
+  await tab.getByRole("alert").filter({ hasText: "Email is not set up on this site yet" }).waitFor({ timeout: 20_000 });
+  const emailedLink = await linkBox.inputValue();
+  const afterEmail = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+  say(/\/c\/[A-Za-z0-9_-]{43}$/.test(emailedLink) && !!afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "Email Maya their link, with email not set up here: a new link made and shown to copy, and it opens her page");
+  say((await tab.getByText("nothing was sent", { exact: false }).count()) === 1, "and the coach is told nothing was sent");
+  await tab.getByRole("button", { name: "Email Maya a new link" }).click();
+  await tab.getByRole("alert").filter({ hasText: "a moment ago" }).waitFor({ timeout: 20_000 });
+  const again = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+  say(again?.accessTokenHash === afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "pressed again within a minute: no second link, the first still opens");
+  await shoot(tab, "biz-client-email");
   await visitor.close();
 
   // THE EDITOR SAYS WHAT A JOURNAL IS to the business, and what an edit reaches.
