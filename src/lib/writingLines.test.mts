@@ -9,7 +9,7 @@
 // Run as part of: npm test
 
 import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
-import { WRITING_LINE_OPACITY } from "./modules/moduleFrame";
+import { INNER_RULE_OPACITY, WRITING_LINE_OPACITY } from "./modules/moduleFrame";
 import type { PageGrid } from "./grid";
 import { moduleSchemaDefaults } from "./moduleRegistry";
 
@@ -86,8 +86,40 @@ for (const { c, found, left, right } of lines) {
   }
 }
 
+// Inner rules at the answer lines' ink too (2026-10-22: "i would like the
+// internal lines to be at lower opacity like response lines"): the lines
+// inside a module's border that divide it. The border and the rule under
+// the heading stay full ink.
+const INNER: Array<{ name: string; slug: string; span: [number, number]; props: Record<string, unknown>; line: RegExp }> = [
+  { name: "an hourly grid's hour lines", slug: "hourly-grid-core", span: [24, 20], props: {}, line: /-d\d+-r\d+-rule$/ },
+  { name: "a table's column dividers", slug: "column-table", span: [12, 10], props: {}, line: /-c\d+-divider$/ },
+  { name: "the rule under a table's column heads", slug: "column-table", span: [12, 10], props: {}, line: /-heads-rule$/ },
+  { name: "a month grid's lines", slug: "month-grid-core", span: [24, 16], props: {}, line: /-(w\d+-d\d+-rule|w\d+-rule|head-d\d+-rule)$/ },
+  { name: "a habit tracker's rule beside its names", slug: "habit-tracker", span: [12, 10], props: {}, line: /-name-col-rule$/ },
+  { name: "a matrix's cross", slug: "axis-matrix", span: [24, 18], props: {}, line: /-cross-[vh]$/ },
+  { name: "the rule under a rating strip's heads", slug: "rating-strip", span: [12, 8], props: {}, line: /-head-rule$/ },
+];
+let inner = 0;
+for (const c of INNER) {
+  const { elements } = render(c.slug, c.span[0], c.span[1], c.props);
+  const found = elements.filter((e) => typeof e.id === "string" && c.line.test(e.id));
+  if (found.length === 0) fail(`${c.name} (${c.slug}): none drawn`);
+  for (const e of found) {
+    inner++;
+    if (Math.abs(Number(e.opacity ?? 1) - refInk) > 1e-9) {
+      fail(`${c.name}: ${e.id} at ${Number(e.opacity ?? 1)} ink, the answer lines' is ${refInk}`);
+      break;
+    }
+  }
+  const structure = elements.filter((e) => typeof e.id === "string" && /-(header-rule|border)$/.test(e.id));
+  for (const e of structure) {
+    if (Number(e.opacity ?? 1) !== 1) fail(`${c.name}: ${e.id} is at ${e.opacity} ink - a border or heading rule stays full ink`);
+  }
+}
+if (Math.abs(INNER_RULE_OPACITY - refInk) > 1e-9) fail(`inner rules are at ${INNER_RULE_OPACITY}, the answer lines at ${refInk}`);
+
 if (failures > 0) {
   console.error(`${failures} writing line check(s) failed.`);
   process.exit(1);
 }
-console.log(`All writing line checks passed (${lines.reduce((n, l) => n + l.found.length, 0)} lines in ${CASES.length} kinds of module, each at ${refInk} ink and ${refWeight.toFixed(2)}px, as a prompt's answers are).`);
+console.log(`All writing line checks passed (${lines.reduce((n, l) => n + l.found.length, 0)} lines in ${CASES.length} kinds of module, each at ${refInk} ink and ${refWeight.toFixed(2)}px, as a prompt's answers are; ${inner} inner rules at the same ink).`);

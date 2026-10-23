@@ -29,6 +29,7 @@ import {
   HEADER_HEIGHT_PT,
   NEAR_BLACK,
   RULE_WIDTH_PT,
+  INNER_RULE_OPACITY,
   WRITING_LINE_OPACITY,
   borderElement,
   contentTopPx,
@@ -430,6 +431,7 @@ export function renderColumnTable(
         height: bodyBottom - headsTop,
         fill: NEAR_BLACK,
         stroke: "none",
+        opacity: INNER_RULE_OPACITY,
       });
     }
   });
@@ -450,6 +452,7 @@ export function renderColumnTable(
     height: ruleWidth,
     fill: NEAR_BLACK,
     stroke: "none",
+    opacity: INNER_RULE_OPACITY,
   });
 
   const rowCount = Math.max(0, Math.floor((bodyBottom - bodyTop) / rowHeight + 1e-6));

@@ -20,6 +20,7 @@ import { GLYPH_SHAPES, glyphElement, glyphSizeToFit, isIconShape, type GlyphShap
 import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import {
   HEADER_HEIGHT_PT,
+  INNER_RULE_OPACITY,
   NEAR_BLACK,
   RULE_WIDTH_PT,
   borderElement,
@@ -250,6 +251,7 @@ export function renderRatingStrip(
     height: ruleWidth,
     fill: NEAR_BLACK,
     stroke: "none",
+    opacity: INNER_RULE_OPACITY,
   });
 
   const labelWidth = geometry.width * LABEL_SHARE - padding * 2;

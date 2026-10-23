@@ -31,7 +31,7 @@
 //   fixed one-per-column.
 
 import { ptToPx } from "@/lib/print-spec";
-import { RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
+import { INNER_RULE_OPACITY, RULE_WIDTH_PT, contentTopPx, type FrameLattice } from "@/lib/modules/moduleFrame";
 import type { MonthCalendarCell } from "@/lib/monthCalendar";
 import { capCentredTextY, textInkBand, textWidthPx } from "@/lib/modules/textFit";
 import { latticeFill } from "./latticeFill";
@@ -281,6 +281,7 @@ export function renderMonthGridCore(
       height: headerHeight,
       fill: LINE_COLOR,
       stroke: "none",
+      opacity: INNER_RULE_OPACITY,
     });
   }
 
@@ -437,6 +438,7 @@ export function renderMonthGridCore(
           height: Math.min(rowHeight, geometry.y + geometry.height - rowY),
           fill: LINE_COLOR,
           stroke: "none",
+          opacity: INNER_RULE_OPACITY,
         });
       }
     }
@@ -478,6 +480,7 @@ export function renderMonthGridCore(
       height: lineWidth,
       fill: LINE_COLOR,
       stroke: "none",
+      opacity: INNER_RULE_OPACITY,
     });
     if (w < config.weekCount - 1) {
       elements.push({
@@ -490,6 +493,7 @@ export function renderMonthGridCore(
         height: lineWidth,
         fill: LINE_COLOR,
         stroke: "none",
+        opacity: INNER_RULE_OPACITY,
       });
     }
   }

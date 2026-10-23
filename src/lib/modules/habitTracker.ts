@@ -36,7 +36,7 @@ import { estimateTextWidthPx, fitLabel, fitLabelSet, capCentredTextY } from "./t
 import { ptToPx } from "@/lib/print-spec";
 import { weekdayInitials } from "@/lib/weekDays";
 import {
-  RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
+  INNER_RULE_OPACITY, RULE_WIDTH_PT, contentTopPx, fitHeading, truncateHeading,
   HEADER_HEIGHT_PT as FRAME_HEADER_HEIGHT_PT,
   type FrameLattice } from "@/lib/modules/moduleFrame";
 
@@ -424,6 +424,7 @@ export function renderHabitTracker(
     height: contentHeight,
     fill: NEAR_BLACK,
     stroke: "none",
+    opacity: INNER_RULE_OPACITY,
   });
 
   // Day-letter headers + their column dividers.

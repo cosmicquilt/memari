@@ -13,7 +13,7 @@
 // page. moduleHouseStyle.test.mts checks all three.
 
 import { ptToPx } from "@/lib/print-spec";
-import { NEAR_BLACK, RULE_WIDTH_PT, WRITING_LINE_OPACITY, moduleGapPx, rowHeightPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
+import { NEAR_BLACK, RULE_WIDTH_PT, WRITING_LINE_OPACITY, rowHeightPx, writingLineInsetPx, type FrameElement, type FrameGeometry, type FrameLattice } from "./moduleFrame";
 
 export type FillStyle = "none" | "lined" | "dotted" | "graph";
 
@@ -103,7 +103,7 @@ export function latticeFill(options: {
   if (style === "none") return [];
   const tag = options.tag ?? "";
   const inset = options.inset ?? 8;
-  const lineInset = options.inset ?? moduleGapPx(lattice);
+  const lineInset = options.inset ?? writingLineInsetPx(lattice);
   const weight = ptToPx(RULE_WIDTH_PT);
   const rows = latticeRowsIn(geometry, lattice, region.top, region.bottom);
   const elements: FrameElement[] = [];

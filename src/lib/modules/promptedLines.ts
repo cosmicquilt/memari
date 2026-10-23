@@ -29,8 +29,8 @@ import {
   borderElement,
   contentTopPx,
   headerElements,
-  moduleGapPx,
   rowHeightPx,
+  writingLineInsetPx,
   type FrameLattice,
 } from "@/lib/modules/moduleFrame";
 
@@ -268,7 +268,7 @@ export function renderPromptedLines(
       }
       // A lined answer stops the gap between modules short of each side -
       // see moduleGapPx - wider than the prompt's own padding.
-      const lineInset = moduleGapPx(lattice);
+      const lineInset = writingLineInsetPx(lattice);
       elements.push({
         id: id(`p${p}-line${line}`),
         type: "figure",

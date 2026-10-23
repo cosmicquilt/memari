@@ -745,9 +745,11 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 // "ruled lines internal to the body of module ... inset horizontally equal to
 // the distance between modules", "only lined ruled interiors", "not
 // checklists" (2026-10-15). A Lined writing space stops the gap between two
-// neighbouring modules (two box insets) short of each side of what it rules.
+// neighbouring modules (two box insets) short of each side of what it rules -
+// TWICE that gap since 2026-10-22 ("both of them to have double their current
+// horizontal inset from the sides of the modules"): 24px on the page, not 12.
 {
-  const gap = PAGE.boxInsetPx * 2;
+  const gap = PAGE.boxInsetPx * 2 * 2;
   const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
   const box = gridCellToPixels(PAGE, { columnStart: 0, rowStart: 0, columnSpan: 12, rowSpan: 6 });
   const edges = (e: RenderedPolotnoElement) => ({ left: Number(e.x), right: Number(e.x) + Number(e.width) });
@@ -787,7 +789,7 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
 
   // Checklists keep their own lines.
   const todo = ids(draw("todo-checklist", { heading: "To-do" }, 12, 6), /-d0-row\d+$/);
-  check(todo.length > 0 && !todo.some((r) => near(edges(r).left - box.x, gap)), "a checklist's rows are not inset by the gap");
+  check(todo.length > 0 && !todo.some((r) => near(edges(r).left - box.x, gap) || near(edges(r).left - box.x, gap / 2)), "a checklist's rows are not inset by the gap");
 }
 
 // --- month calendar ----------------------------------------------------------

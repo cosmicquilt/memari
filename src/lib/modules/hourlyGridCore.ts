@@ -11,7 +11,7 @@
 // PDF), not an eyeballed guess — see the comments on each one.
 
 import { ptToPx } from "@/lib/print-spec";
-import { RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
+import { INNER_RULE_OPACITY, RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
 import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
 import { glyphElement } from "@/lib/modules/glyphs";
 import type { DayIconMark } from "@/lib/dayIcons";
@@ -941,8 +941,10 @@ export function renderHourlyGridCore(
     columnX,
   } = hourlyGridGeometry(geometry, config, lattice);
 
+  // "Solid" is a module's inner-rule ink, the writing lines' (2026-10-22);
+  // "Faint" lighter still.
   const lineOpacity =
-    config.hourLineStyle === "full" ? 1 : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
+    config.hourLineStyle === "full" ? INNER_RULE_OPACITY : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
 
   for (let d = 0; d < config.dayCount; d++) {
     const dayX = columnX[d];

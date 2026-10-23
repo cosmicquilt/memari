@@ -30,6 +30,7 @@ import { fitLabelSet, capCentredTextY } from "@/lib/modules/textFit";
 import { latticeFill } from "./latticeFill";
 import {
   HEADER_HEIGHT_PT,
+  INNER_RULE_OPACITY,
   NEAR_BLACK,
   RULE_WIDTH_PT,
   borderElement,
@@ -473,6 +474,7 @@ export function renderAxisMatrix(
     height: gridBottom - gridTop,
     fill: NEAR_BLACK,
     stroke: "none",
+    opacity: INNER_RULE_OPACITY,
   });
   elements.push({
     id: id("cross-h"),
@@ -484,6 +486,7 @@ export function renderAxisMatrix(
     height: crossWidth,
     fill: NEAR_BLACK,
     stroke: "none",
+    opacity: INNER_RULE_OPACITY,
   });
 
   // Centred in the quadrant, large and pale - a name for the box rather

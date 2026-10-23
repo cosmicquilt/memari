@@ -70,6 +70,18 @@ export const RULE_WIDTH_PT = 0.3;
 export const WRITING_LINE_OPACITY = 0.6;
 
 /**
+ * The ink of a module's inner rules - the lines inside its border that
+ * divide it rather than give somewhere to write: an hourly grid's hour
+ * lines, a table's column dividers and the rule under its column heads, a
+ * month grid's lines, a habit tracker's rule beside its names, a matrix's
+ * cross, the rule under a rating strip's heads. The writing lines' ink (2026-10-22: "i would like the internal
+ * lines to be at lower opacity like response lines"). Still full ink: the
+ * border, the rule under the heading, a table's totals rule, checkboxes and
+ * a chart's axes.
+ */
+export const INNER_RULE_OPACITY = WRITING_LINE_OPACITY;
+
+/**
  * The heading sizes, largest first - labeled-box's own ladder.
  *
  * labeled-box is the module there are most of on a page (Notes,
@@ -267,6 +279,19 @@ export function rowHeightPx(lattice?: FrameLattice): number {
  */
 export function moduleGapPx(lattice?: FrameLattice): number {
   return lattice ? lattice.insetPx * 2 : 12;
+}
+
+/**
+ * How far a writing line stops short of each side of the space it rules: a
+ * prompt's answer lines, a note box's lines (and where a numbered or
+ * bulleted one starts), a month's lined days, a matrix's lined quarters.
+ * Twice the gap between modules (2026-10-22: "both of them to have double
+ * their current horizontal inset from the sides of the modules"); it was
+ * the gap itself from 2026-10-15. Rows that run to the border - a to-do's,
+ * a table's - have no inset to double.
+ */
+export function writingLineInsetPx(lattice?: FrameLattice): number {
+  return moduleGapPx(lattice) * 2;
 }
 
 /** The box's own border - identical in all of them. */
