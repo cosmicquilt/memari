@@ -86,6 +86,14 @@
   line-height: 1.08;
 }
 
+/* The paper is painted inside the box only, and at 1.08 the last line's
+   descenders hang below it: room for them, given back (see .headline in
+   landing.module.css). */
+[data-text-paper] .end h2 {
+  padding-bottom: 0.16em;
+  margin-bottom: -0.16em;
+}
+
 .note {
   margin: 0;
   font-size: 14px;

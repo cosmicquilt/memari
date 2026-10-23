@@ -1158,6 +1158,17 @@
   margin: 0 -0.5em 0 calc(0.22em - 0.5em);
 }
 
+/* A heading set this tight (line-height 1.04) has its last line's
+   descenders hanging below its box, and the paper is painted only inside
+   the box, so the tail of a y or a g was cut off (2026-10-22: "the bottom
+   of the y ... in 'Weeks, months and days. No two alike.' is cut off").
+   Room under it for them, given back below so nothing moves. Its margin is
+   0, so the negative one is all of it. */
+.page[data-text-paper] .headline {
+  padding-bottom: 0.16em;
+  margin-bottom: -0.16em;
+}
+
 /* A word with a pen mark on it (Underlined, Circled). */
 .marked {
   position: relative;
