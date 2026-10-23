@@ -346,6 +346,7 @@ try {
   await tab.getByRole("alert").filter({ hasText: "a moment ago" }).waitFor({ timeout: 20_000 });
   const again = await prisma.businessClient.findUnique({ where: { id: client!.id } });
   say(again?.accessTokenHash === afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "pressed again within a minute: no second link, the first still opens");
+  say((await linkBox.count()) === 1 && (await linkBox.inputValue()) === emailedLink, "and the link already shown stays there to copy");
   await shoot(tab, "biz-client-email");
   await visitor.close();
 

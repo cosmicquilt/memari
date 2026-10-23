@@ -382,8 +382,12 @@ export function ClientLink({ clientId, name, email, made, seen }: { clientId: st
         setUrl(null);
         setError(null);
       } else {
-        setSentTo(null);
-        setUrl(result.url ?? null);
+        // a press refused (a moment ago, no address) makes no link: the one
+        // already shown, if any, stays to copy
+        if (result.url) {
+          setSentTo(null);
+          setUrl(result.url);
+        }
         setError(result.error);
       }
     });
