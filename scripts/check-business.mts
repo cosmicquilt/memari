@@ -385,13 +385,16 @@ try {
 
     // her page: her next book offered, ordering not open on this machine
     const reader = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await reader.addInitScript(HIDE_DEV);
     const herPage = await reader.newPage();
     await herPage.goto(emailedLink, { waitUntil: "networkidle" });
     say((await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 1, "her page: Order your next book, saying ordering is not open yet (no payment keys here)");
+    await shoot(herPage, "biz-portal-order");
     const html = await herPage.content();
     say(!html.includes("acct_") && !html.includes(guest.ownerId) && !html.includes("markupCents"), "her page carries no Stripe account, owner id or share");
     await herPage.goto(`${emailedLink}?placed=1`, { waitUntil: "networkidle" });
     say((await herPage.getByText("Thank you: your book is ordered.").count()) === 1 && (await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 0, "back from paying: thanks, and not the same order form again");
+    await shoot(herPage, "biz-portal-placed");
     await reader.close();
 
     // a book she paid for herself, with the coach's $10 share
