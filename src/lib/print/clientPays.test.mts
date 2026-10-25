@@ -7,7 +7,7 @@
 import { PAYOUT_COUNTRIES, clientBookStart, clientSessionParams, coachReceives, destinationSplit, payerProblem, refundParams, withMarkup, type ClientPayer } from "./clientPays";
 import type { Price } from "./pricing";
 import { arrivalEmail, cancelledEmail, placedEmail, shippedEmail } from "./emails";
-import { shareInForce } from "../payouts";
+import { coachAccountParams, shareInForce } from "../payouts";
 
 let failures = 0;
 const check = (ok: boolean, what: string) => {
@@ -87,6 +87,17 @@ check(new Date(`${monday}T00:00:00Z`).getUTCDay() === 1, `on the journal's week 
 // the slowest post, standard mail from abroad (31 days), whatever the binding: the dates shown are the dates charged
 check(lapsed >= "2026-11-23", `far enough out for a book posted from abroad by standard mail (${lapsed})`);
 check(PAYOUT_COUNTRIES.includes("US") && PAYOUT_COUNTRIES.includes("GB") && PAYOUT_COUNTRIES.includes("DE") && PAYOUT_COUNTRIES.includes("CA") && PAYOUT_COUNTRIES.includes("CH") && !PAYOUT_COUNTRIES.includes("AU") && !PAYOUT_COUNTRIES.includes("IN"), "coaches can be paid in the US, UK, EEA, Canada and Switzerland, not yet Australia or India");
+
+// the coach's Stripe account (Accounts v2, 2026-10-25): what the sandbox accepted
+const us = coachAccountParams({ country: "US", name: "Northwind Coaching", email: "coach@example.com", businessId: "b1" });
+check(us.dashboard === "express" && us.defaults?.responsibilities?.fees_collector === "application" && us.defaults?.responsibilities?.losses_collector === "application", "a coach's account: their Express dashboard, Memari paying Stripe's fees and covering losses");
+check(us.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.requested === true && !us.configuration?.merchant, "in the US: able to receive their share, and nothing else");
+check(us.identity?.country === "US" && us.display_name === "Northwind Coaching" && us.contact_email === "coach@example.com" && us.metadata?.businessId === "b1", "in their country, under the business's name, with the business's id");
+check(!!us.include?.includes("configuration.recipient"), "read back with what it can do, which Stripe leaves out unless asked");
+const uk = coachAccountParams({ country: "GB", name: "Northwind Coaching", email: "coach@example.co.uk", businessId: "b1" });
+check(uk.configuration?.merchant?.capabilities?.card_payments?.requested === true && uk.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.requested === true, "outside the US: card payments too, without which Stripe refuses transfers there");
+check(uk.contact_email === "coach@example.co.uk", "always with the coach's email, which Stripe requires of an account that receives transfers");
+check(PAYOUT_COUNTRIES.filter((c) => c !== "US").every((c) => !!coachAccountParams({ country: c, name: "n", email: "e@example.com", businessId: "b" }).configuration?.merchant), "every payout country but the US asks for card payments");
 
 if (failures) {
   console.error(`\n${failures} client-pays check(s) failed.`);

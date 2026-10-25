@@ -388,7 +388,15 @@ try {
     await reader.addInitScript(HIDE_DEV);
     const herPage = await reader.newPage();
     await herPage.goto(emailedLink, { waitUntil: "networkidle" });
-    say((await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 1, "her page: Order your next book, saying ordering is not open yet (no payment keys here)");
+    // what her page offers depends on whether this machine has payment and printer keys
+    if ((await import("../src/lib/print/orders")).orderingConfigured().ok) {
+      say(
+        (await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByRole("group", { name: "Binding" }).count()) === 1 && (await herPage.getByRole("button", { name: "See prices" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 0,
+        "her page: Order your next book, with its bindings and See prices (payment keys here)"
+      );
+    } else {
+      say((await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 1, "her page: Order your next book, saying ordering is not open yet (no payment keys here)");
+    }
     await shoot(herPage, "biz-portal-order");
     const html = await herPage.content();
     say(!html.includes("acct_") && !html.includes(guest.ownerId) && !html.includes("markupCents"), "her page carries no Stripe account, owner id or share");
