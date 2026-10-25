@@ -377,6 +377,10 @@ try {
     await tab.getByRole("button", { name: "Save" }).last().click();
     await tab.getByRole("alert").filter({ hasText: "from $3 to $200" }).waitFor({ timeout: 10_000 });
     say((await prisma.business.findUnique({ where: { ownerId: guest.ownerId } }))?.markupCents === 1000, "a share of $500 is refused, the $10 kept");
+    say(
+      (await tab.getByRole("radio", { name: /^Your clients/ }).isChecked()) && (await tab.getByRole("radio", { name: /^Memari.s price, plus your share/ }).isChecked()),
+      "after the refusal the choices on screen are still the ones made (React's form reset had put them back)"
+    );
     await shoot(tab, "biz-settings-payer");
 
     // her page: her next book offered, ordering not open on this machine

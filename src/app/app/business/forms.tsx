@@ -85,6 +85,7 @@ export function BookPayerForm({
   countries?: Array<{ code: string; name: string }>;
 }) {
   const [state, action, pending] = useActionState(saveBookPayer, null);
+  const [, startSave] = useTransition();
   const [who, setWho] = useState(clientsPay ? "client" : "coach");
   const [price, setPrice] = useState(markupCents > 0 ? "share" : "memari");
   const [share, setShare] = useState(markupCents > 0 ? (markupCents / 100).toFixed(2).replace(/\.00$/, "") : "10");
@@ -103,7 +104,17 @@ export function BookPayerForm({
   return (
     <div className={css.card}>
       <h2>Who pays for books</h2>
-      <form action={action} className={css.form}>
+      <form
+        className={css.form}
+        // Dispatched by hand, not as <form action>: React resets a form after
+        // its action, which put the radios back to how the page loaded while
+        // the card still showed the choice made (seen in the proof shot).
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
+          startSave(() => action(form));
+        }}
+      >
         <fieldset className={css.choices}>
           <legend className="sr-only">Who pays</legend>
           <label className={css.choice}>
@@ -142,7 +153,7 @@ export function BookPayerForm({
               <label className={css.field} style={{ maxWidth: 260, marginLeft: 30 }}>
                 <span>Your share, each book ($)</span>
                 <input type="text" name="share" inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} aria-describedby="share-note" />
-                <small id="share-note">{receives && shareCents >= 300 ? `You receive ${receives} of it: the card fee on it and $1 towards Stripe's cost of paying you are kept back.` : "From $3 to $200."}</small>
+                <small id="share-note">{receives && shareCents >= 300 && shareCents <= 20000 ? `You receive ${receives} of it: the card fee on it and $1 towards Stripe's cost of paying you are kept back.` : "From $3 to $200."}</small>
               </label>
             )}
           </fieldset>
