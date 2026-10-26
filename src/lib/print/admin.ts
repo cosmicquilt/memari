@@ -61,7 +61,7 @@ export async function refundOrder(orderId: string, why: string): Promise<{ print
       status: "CANCELED",
       autoRenew: false,
       renewsAt: null,
-      failureReason: `Refunded ${new Date().toISOString().slice(0, 10)}: ${why}${printerCancelled === false ? " (the printer had already started it)" : ""}`,
+      failureReason: `Refunded ${new Date().toISOString().slice(0, 10)}: ${why}${printerCancelled === false ? " (the printer would not stop it)" : ""}`,
     },
   });
   return { printerCancelled };

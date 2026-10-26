@@ -53,6 +53,7 @@ import { leadDays, nextRange, orderRange, renewalDate, suggestedStart } from "./
 import { priceFromCost, BOOK_MARGIN, MIN_BOOK_PRICE_CENTS } from "./pricing";
 import { printFileUrl, signPrintFile, verifyPrintFile } from "./fileUrls";
 import { toCents, verifyLuluWebhook, withArrivals } from "./lulu";
+import { arrivesLabel } from "./arrives";
 import { buildCoverPdf, coverLayout } from "./cover";
 import { rangeLabel } from "./orderBook";
 
@@ -266,6 +267,11 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   check(dated[1].arrives?.earliest === "2026-10-14", "express: its own");
   check(dated[2].arrives === undefined, "a level Lulu gave no dates for has none - never another level's");
   check(withArrivals(quotes, null).every((q) => !("arrives" in q)), "no options: no dates, quotes unchanged");
+  // and in words, on the order screen and a client's page alike (2026-10-25:
+  // the client's page printed "Arrives 2026-11-02 to 2026-11-05")
+  check(arrivesLabel({ earliest: "2026-11-02", latest: "2026-11-05" }) === "Arrives 2 – 5 Nov", `within a month: "${arrivesLabel({ earliest: "2026-11-02", latest: "2026-11-05" })}"`);
+  check(arrivesLabel({ earliest: "2026-10-30", latest: "2026-11-04" }) === "Arrives 30 Oct – 4 Nov", "across months: both named");
+  check(arrivesLabel({ earliest: "2026-11-03", latest: "2026-11-03" }) === "Arrives 3 Nov", "one day: one date");
 }
 
 // --- metal wire-o at BookVault (2026-10-08) -------------------------------------------

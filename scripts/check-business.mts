@@ -394,6 +394,18 @@ try {
         (await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByRole("group", { name: "Binding" }).count()) === 1 && (await herPage.getByRole("button", { name: "See prices" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 0,
         "her page: Order your next book, with its bindings and See prices (payment keys here)"
       );
+      // prices for a paperback: post to choose with dates in words, or why
+      // not - never an empty list of post (2026-10-25, paying as a client)
+      await herPage.getByRole("radio", { name: "paperback" }).check();
+      await herPage.getByRole("button", { name: "See prices" }).click();
+      // the form's own message: Next puts an empty role=alert on every page
+      await herPage.locator('input[name="level"], p[role="alert"]').first().waitFor({ timeout: 60_000 });
+      const post = await herPage.locator('input[name="level"]').evaluateAll((rs) => rs.map((r) => (r.closest("label") as HTMLElement).innerText.replace(/\s+/g, " ").trim()));
+      const why = await herPage.locator('p[role="alert"]').textContent({ timeout: 1000 }).catch(() => null);
+      say(
+        (post.length > 0 && post.every((p) => !/\d{4}-\d{2}-\d{2}/.test(p))) || (post.length === 0 && !!why && (await herPage.locator("legend", { hasText: /^Post$/ }).count()) === 0),
+        `her paperback: ${post.length ? `post to choose, dates in words (${post[0]})` : `the reason, and no empty post list (${why})`}`
+      );
     } else {
       say((await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 1 && (await herPage.getByText("Ordering is not open yet", { exact: false }).count()) === 1, "her page: Order your next book, saying ordering is not open yet (no payment keys here)");
     }

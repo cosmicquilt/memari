@@ -39,7 +39,14 @@ export async function saveMyAddress(token: string, _: AddressState, form: FormDa
 
 /** Their book's prices, in a binding, to their address. */
 export type MyQuote =
-  | { ok: true; options: Array<{ level: ShippingLevel; label: string; totalCents: number; arrives?: { earliest: string; latest: string } }>; pageCount: number; range: { startISO: string; days: number; label: string } }
+  | {
+      ok: true;
+      options: Array<{ level: ShippingLevel; label: string; totalCents: number; arrives?: { earliest: string; latest: string } }>;
+      pageCount: number;
+      range: { startISO: string; days: number; label: string };
+      /** Which bindings this book can be: a short one cannot be a paperback (2026-10-25). */
+      fits: Array<{ binding: Binding; ok: boolean; reason?: string }>;
+    }
   | { ok: false; error: string };
 export async function quoteMyBook(token: string, binding: Binding): Promise<MyQuote> {
   try {
@@ -49,6 +56,7 @@ export async function quoteMyBook(token: string, binding: Binding): Promise<MyQu
       pageCount: quote.pageCount,
       range: { startISO: quote.range.startISO, days: quote.range.days, label: quote.range.label },
       options: quote.options.map((o) => ({ level: o.level, label: o.label, totalCents: o.price.totalCents, ...(o.arrives ? { arrives: o.arrives } : {}) })),
+      fits: quote.availability.map((a) => ({ binding: a.binding, ok: a.ok, ...(a.ok ? {} : { reason: a.reason }) })),
     };
   } catch (error) {
     return failure(error, "pricing your book");

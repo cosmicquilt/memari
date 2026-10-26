@@ -34,6 +34,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
 import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, type OrderingStatus } from "./printActions";
+import { arrivesLabel } from "@/lib/print/arrives";
 import type { Quote } from "@/lib/print/orders";
 import { BINDINGS, BINDING_SPECS, DEFAULT_PAPER, PAPER_LABELS, paperChoices, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
 import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
@@ -97,15 +98,6 @@ function Choice({ selected, disabled, onPick, children, title }: { selected: boo
 
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-/** "Arrives 21 – 28 Oct" (or "30 Oct – 4 Nov"), from a printer's ISO dates. */
-function arrivesLabel(arrives: { earliest: string; latest: string }): string {
-  const date = (iso: string) => new Date(`${iso}T12:00:00Z`);
-  const day = (iso: string) => date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-  if (arrives.earliest === arrives.latest) return `Arrives ${day(arrives.earliest)}`;
-  const sameMonth = arrives.earliest.slice(0, 7) === arrives.latest.slice(0, 7);
-  return `Arrives ${sameMonth ? date(arrives.earliest).getUTCDate() : day(arrives.earliest)} – ${day(arrives.latest)}`;
 }
 
 const EMPTY_ADDRESS: ShippingAddress = { name: "", street1: "", street2: "", city: "", stateCode: "", countryCode: "US", postcode: "", phoneNumber: "" };

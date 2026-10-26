@@ -10,6 +10,7 @@ import type { PortalPage } from "@/lib/clientPortal";
 import type { PortalOrdering } from "@/lib/clientOrders";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import { BINDING_SPECS, type Binding } from "@/lib/print/products";
+import { arrivesLabel } from "@/lib/print/arrives";
 import { formatCents } from "@/lib/print/pricing";
 import { payForMyBook, quoteMyBook, saveMyAddress, type AddressState, type MyQuote } from "./actions";
 import css from "@/app/app/business/business.module.css";
@@ -119,6 +120,8 @@ export function OrderBook({ token, ordering, businessName }: { token: string; or
   const first = ordering.open ? ordering.bindings[0] : null;
   const [binding, setBinding] = useState<Binding | null>(first);
   const [quote, setQuote] = useState<Extract<MyQuote, { ok: true }> | null>(null);
+  // which bindings the book can be, known from the first prices asked for
+  const [fits, setFits] = useState<Extract<MyQuote, { ok: true }>["fits"] | null>(null);
   const [level, setLevel] = useState<string | null>(null);
   const [email, setEmail] = useState(ordering.open ? (ordering.email ?? "") : "");
   const [error, setError] = useState<string | null>(null);
@@ -142,11 +145,20 @@ export function OrderBook({ token, ordering, businessName }: { token: string; or
       const ask = ++asked.current;
       const result = await quoteMyBook(token, binding);
       if (ask !== asked.current) return;
-      if (result.ok) {
-        setQuote(result);
-        setLevel(result.options[0]?.level ?? null);
-        setError(null);
-      } else setError(result.error);
+      if (!result.ok) return setError(result.error);
+      setFits(result.fits);
+      // a binding the book cannot be, or no post to them: say so, rather
+      // than an empty list of post (found paying as a client, 2026-10-25)
+      const fit = result.fits.find((f) => f.binding === binding);
+      if (fit && !fit.ok) {
+        setBinding(null);
+        const another = result.fits.some((f) => f.ok && ordering.bindings.includes(f.binding));
+        return setError(`${fit.reason} ${another ? "Choose another binding." : `Ask ${businessName} about it.`}`);
+      }
+      if (result.options.length === 0) return setError(`No post can reach your address just now. Check it below, or ask ${businessName}.`);
+      setQuote(result);
+      setLevel(result.options[0]?.level ?? null);
+      setError(null);
     });
   const pay = () =>
     binding &&
@@ -171,15 +183,18 @@ export function OrderBook({ token, ordering, businessName }: { token: string; or
       </p>
       <fieldset className={css.choices}>
         <legend className={css.choicesLegend}>Binding</legend>
-        {ordering.bindings.map((b) => (
-          <label key={b} className={css.choice}>
-            <input type="radio" name="binding" value={b} checked={binding === b} disabled={pending} onChange={() => pick(b)} />
-            <span>
-              <strong>{BINDING_SPECS[b].label}</strong>
-              <small>{BINDING_SPECS[b].note}</small>
-            </span>
-          </label>
-        ))}
+        {ordering.bindings.map((b) => {
+          const unfit = fits?.find((f) => f.binding === b && !f.ok);
+          return (
+            <label key={b} className={css.choice} aria-disabled={unfit ? true : undefined} style={unfit ? { opacity: 0.55 } : undefined}>
+              <input type="radio" name="binding" value={b} checked={binding === b} disabled={pending || !!unfit} onChange={() => pick(b)} />
+              <span>
+                <strong>{BINDING_SPECS[b].label}</strong>
+                <small>{unfit?.reason ?? BINDING_SPECS[b].note}</small>
+              </span>
+            </label>
+          );
+        })}
       </fieldset>
       {!quote ? (
         <div className={css.actions}>
@@ -198,11 +213,7 @@ export function OrderBook({ token, ordering, businessName }: { token: string; or
                   <strong>
                     {o.label}: {formatCents(o.totalCents)}
                   </strong>
-                  {o.arrives && (
-                    <small>
-                      Arrives {o.arrives.earliest} to {o.arrives.latest}
-                    </small>
-                  )}
+                  {o.arrives && <small>{arrivesLabel(o.arrives)}</small>}
                 </span>
               </label>
             ))}
