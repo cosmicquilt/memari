@@ -340,6 +340,17 @@ eq(
   const fillers = facing.pages.filter((p) => p.filler);
   check(fillers.length > 0, "a book with day pages between its weeks has dot grid pages");
   check(fillers.every((p) => p.elements.length > 500 && p.elements.every((e) => String(e.id).startsWith("filler-dot-"))), "and they are pages of dots");
+  // On the lattice, and every dot's whole width inside the margin: on 7 x 10
+  // the margin IS the printer's 0.5in safety line, so a dot centred on the
+  // outermost lattice line puts half of itself over it (check:print).
+  const filler = fillers[0];
+  const grid = filler.pageGrid;
+  const pitch = (grid.widthPx - grid.marginPx * 2) / grid.gridColumns;
+  const onLattice = (v: number) => Math.abs((v - grid.marginPx) / pitch - Math.round((v - grid.marginPx) / pitch)) < 1e-6;
+  const dots = filler.elements.map((e) => ({ x: e.x ?? 0, y: e.y ?? 0, w: e.width ?? 0, h: e.height ?? 0 }));
+  check(dots.every((d) => onLattice(d.x + d.w / 2) && onLattice(d.y + d.h / 2)), "every dot is centred on a lattice point");
+  const clearance = Math.min(...dots.map((d) => Math.min(d.x, d.y, grid.widthPx - d.x - d.w, grid.heightPx - d.y - d.h) - grid.marginPx));
+  check(clearance >= 0, `every dot clears the margin (the tightest by ${clearance.toFixed(3)}px)`);
   const daily = facing.summary.find((row) => row.level === "DAILY")!;
   eq(facing.pages.length - fillers.length, facing.summary.reduce((n, row) => n + row.pages, 0), "and they are not any level's pages");
   check(daily.pages > 0, "the days are there");

@@ -246,6 +246,12 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
  * A page of the dot grid - the page's own lattice, every quarter inch, in
  * the dot a dotted note box uses (latticeDot) - shaped like the spread page
  * it sits before. What goes where a spread would otherwise split.
+ *
+ * The lattice's INNER points only. Its outermost line is the margin itself,
+ * which on 7 x 10 is exactly the printer's 0.5in safety line, so a dot
+ * centred there puts half its width inside it (0.494in, check:print). The
+ * next point in, a quarter inch further, is the first one on the lattice
+ * whose whole dot clears - the same edge a module's dotted fill leaves off.
  */
 function dotGridPage(like: BookSource["pages"][number], level: PageLevel): GeneratedPage {
   const pageGrid: PageGrid = {
@@ -259,8 +265,8 @@ function dotGridPage(like: BookSource["pages"][number], level: PageLevel): Gener
   const cellWidth = (pageGrid.widthPx - pageGrid.marginPx * 2) / pageGrid.gridColumns;
   const cellHeight = (pageGrid.heightPx - pageGrid.marginPx * 2) / pageGrid.gridRows;
   const elements: RenderedPolotnoElement[] = [];
-  for (let row = 0; row <= pageGrid.gridRows; row++) {
-    for (let column = 0; column <= pageGrid.gridColumns; column++) {
+  for (let row = 1; row < pageGrid.gridRows; row++) {
+    for (let column = 1; column < pageGrid.gridColumns; column++) {
       elements.push(latticeDot(`filler-dot-${row}-${column}`, pageGrid.marginPx + column * cellWidth, pageGrid.marginPx + row * cellHeight) as RenderedPolotnoElement);
     }
   }
