@@ -117,6 +117,7 @@ async function order(plannerId: string | null, overrides: Record<string, unknown
 }
 
 async function cleanUp() {
+  await prisma.business.deleteMany({ where: { ownerId: OWNER } });
   await prisma.printOrder.deleteMany({ where: { ownerId: { in: [OWNER, STRANGER] } } });
   await prisma.planner.deleteMany({ where: { ownerId: OWNER } });
   await prisma.ownerSettings.deleteMany({ where: { ownerId: OWNER } });
@@ -195,6 +196,47 @@ try {
     const after = await prisma.printOrder.findUnique({ where: { id: coachs.id } });
     const paid = await prisma.printOrder.findUnique({ where: { id: theirs.id } });
     check(paid?.status === "PAID" && !!after && !after.autoRenew && after.renewsAt === null, "a client's book paid for: the coach's renewals of that journal end");
+  }
+
+  // --- a client's journal: their address now, and archiving (review, 2026-10-26) ---
+  // The client corrects "Where your books go" on their page after the coach
+  // turned auto-renew on: the next book is priced for and posted to the new
+  // address, not the last book's. A client the coach archived gets no more.
+  {
+    const business = await prisma.business.create({ data: { ownerId: OWNER, name: "Renewals check business" } });
+    const moved = { name: "Maya Check", street1: "22 New Road", city: "Leeds", countryCode: "GB", postcode: "LS1 4AP", phoneNumber: "+441130000000" };
+    const plannerId = await journal("Client moved check");
+    await prisma.businessClient.create({ data: { businessId: business.id, name: "Maya", plannerId, shippingAddress: moved } });
+    const coachs = await order(plannerId, { title: "Coach's renewal" });
+    const { deps, calls } = fakes();
+    const priced: unknown[] = [];
+    const watched: typeof deps = { ...deps, printCost: async (printer, sku, pages, address, level) => (priced.push(address), deps.printCost(printer, sku, pages, address, level)) };
+    const outcomes = await runRenewals(now, watched);
+    const mine = outcomes.find((o) => o.orderId === coachs.id);
+    const renewal = await prisma.printOrder.findFirst({ where: { renewedFromId: coachs.id } });
+    const shipTo = renewal?.shippingAddress as { street1?: string; countryCode?: string } | undefined;
+    check(mine?.outcome === "renewed" && shipTo?.street1 === "22 New Road" && shipTo?.countryCode === "GB", `the renewal goes to the client's address now (${mine?.outcome}: ${shipTo?.street1 ?? "none"}, ${shipTo?.countryCode ?? ""})`);
+    check((priced.at(-1) as { street1?: string } | undefined)?.street1 === "22 New Road", "and is priced for that address");
+    check(calls.charge.some((c) => c.orderId === renewal?.id), "and charged as usual");
+
+    const gonePlanner = await journal("Archived client check");
+    await prisma.businessClient.create({ data: { businessId: business.id, name: "Former", plannerId: gonePlanner, archivedAt: new Date() } });
+    const gone = await order(gonePlanner, { title: "Archived client's renewal" });
+    const archived = fakes();
+    const goneOutcomes = await runRenewals(now, archived.deps);
+    const goneMine = goneOutcomes.find((o) => o.orderId === gone.id);
+    const goneAfter = await prisma.printOrder.findUnique({ where: { id: gone.id } });
+    check(goneMine?.outcome === "skipped" && archived.calls.charge.length === 0 && archived.calls.fulfil.length === 0 && (await prisma.printOrder.count({ where: { renewedFromId: gone.id } })) === 0, `an archived client's book is not renewed, nothing charged (${goneMine?.outcome}: ${goneMine?.detail ?? ""})`);
+    check(!!goneAfter && !goneAfter.autoRenew && goneAfter.renewsAt === null, "and its auto-renew is off");
+
+    // ...and the coach is not told it "prints in 5 days" beforehand.
+    const { sendRenewalReminders } = await import("../src/lib/print/emails.js");
+    const laterPlanner = await journal("Archived client reminder check");
+    await prisma.businessClient.create({ data: { businessId: business.id, name: "Former too", plannerId: laterPlanner, archivedAt: new Date() } });
+    const later = await order(laterPlanner, { title: "Archived client's reminder", renewsAt: new Date(Date.now() + 5 * DAY) });
+    const sent: string[] = [];
+    const reminded = await sendRenewalReminders(new Date(), async (email) => (sent.push(email.subject), { sent: true }));
+    check(!reminded.includes(later.id) && (await prisma.printOrder.findUnique({ where: { id: later.id } }))?.renewalReminderSentAt === null, `an archived client's renewal gets no reminder (${reminded.length} reminded)`);
   }
 
   // --- what stops a renewal ---------------------------------------------------------

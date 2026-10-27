@@ -138,7 +138,10 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
       const [value, earlier, client] = await Promise.all([
         orderingStatus(),
         reorderId ? reorderDefaults(reorderId, journalId) : null,
-        reorderId ? null : clientOrderDefaults(journalId),
+        // A client's journal: their details, on a reorder too - the address
+        // they give now, not the one the last book went to (review,
+        // 2026-10-26).
+        clientOrderDefaults(journalId),
       ]);
       if (!live) return;
       if (client) {
@@ -157,7 +160,7 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
         if (BINDINGS.includes(earlier.binding)) setBinding(earlier.binding);
         // The colour it was printed on, where its binding has a choice.
         if (paperChoices(earlier.binding).length > 1) setPaper(earlier.paper);
-        setAddress({ ...EMPTY_ADDRESS, ...earlier.address });
+        setAddress({ ...EMPTY_ADDRESS, ...(client?.address ?? earlier.address) });
         setPreferredLevel(earlier.level);
         setFromEarlier(true);
       } else if (value.ready && !value.bindings.includes(BINDINGS[0])) {

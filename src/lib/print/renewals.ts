@@ -37,6 +37,7 @@ import { stripe } from "./stripe";
 import { notify, renewalFailedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
 import { RENEWABLE_STATUSES } from "./renewalControls";
+import { shippableAddress } from "@/lib/business";
 
 export type ChargeResult = { ok: true; paymentIntentId: string } | { ok: false; reason: string };
 
@@ -194,6 +195,16 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
     return { orderId: order.id, outcome: "skipped", detail: `its next days are already ordered (${covered.id})` };
   }
 
+  // A CLIENT'S JOURNAL (review, 2026-10-26): the next book goes where the
+  // client says now - on their own page ("Saved. Your next book comes
+  // here.") or in the coach's form - not where the last one went; and a
+  // client the coach has archived gets no more books, with nothing charged.
+  const client = await prisma.businessClient.findUnique({ where: { plannerId: order.plannerId }, select: { archivedAt: true, shippingAddress: true } });
+  if (client?.archivedAt) {
+    await prisma.printOrder.update({ where: { id: order.id }, data: { autoRenew: false, renewsAt: null } });
+    return { orderId: order.id, outcome: "skipped", detail: "its client was archived" };
+  }
+
   if (!order.stripePaymentMethodId) return fail("no card was saved with the order");
   const settings = await prisma.ownerSettings.findUnique({ where: { ownerId: order.ownerId } });
   if (!settings?.stripeCustomerId) return fail("no card was saved with the order");
@@ -211,7 +222,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
 
   // On the same paper as the book it renews.
   const sku = printer.sku(binding, interior.trim, paperOfSku(order.podPackageId))!;
-  const address = order.shippingAddress as unknown as ShippingAddress;
+  const address = shippableAddress(client?.shippingAddress) ?? (order.shippingAddress as unknown as ShippingAddress);
   const level = order.shippingLevel as ShippingLevel;
   let cost: PrintCost;
   try {
@@ -245,7 +256,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
       printer: order.printer,
       pageCount: interior.pageCount,
       shippingLevel: order.shippingLevel,
-      shippingAddress: order.shippingAddress as Prisma.InputJsonValue,
+      shippingAddress: address as unknown as Prisma.InputJsonValue,
       contactEmail: order.contactEmail,
       bookCents: price.bookCents,
       shippingCents: price.shippingCents,

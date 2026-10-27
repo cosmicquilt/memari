@@ -254,8 +254,19 @@ export async function sendRenewalReminders(now: Date, send: EmailSender = sendEm
       renewals: { none: {} },
     },
   });
+  // Not a client the coach has archived: that renewal stops, uncharged, when
+  // it comes (renewals.ts), so "prints in 5 days" would be untrue (review,
+  // 2026-10-26). Found here rather than in the query: a NOT over the
+  // journal's relation would also drop orders whose journal is gone.
+  const plannerIds = due.map((order) => order.plannerId).filter((id): id is string => !!id);
+  const archived = new Set(
+    plannerIds.length
+      ? (await prisma.businessClient.findMany({ where: { plannerId: { in: plannerIds }, archivedAt: { not: null } }, select: { plannerId: true } })).map((client) => client.plannerId)
+      : []
+  );
   const reminded: string[] = [];
   for (const order of due) {
+    if (order.plannerId && archived.has(order.plannerId)) continue;
     const claimed = await prisma.printOrder.updateMany({ where: { id: order.id, renewalReminderSentAt: null }, data: { renewalReminderSentAt: now } });
     if (claimed.count === 0) continue;
     await notify(reminderEmail(order, await reminderLinks(order), now, skipPreview(order, now).afterOrderedOn), send);
