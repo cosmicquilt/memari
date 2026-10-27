@@ -32,7 +32,7 @@ import { buildCoverPdf } from "./cover";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
-import { adminAlertEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
+import { adminAlertEmail, bankPaymentFailedEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
 
 export { OrderError };
@@ -344,6 +344,43 @@ export async function startCheckout(
   await prisma.printOrder.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: session.id } });
   if (!session.url) throw new OrderError("Stripe did not open a payment page. Try again.");
   return { url: session.url, orderId: order.id };
+}
+
+/**
+ * A CHECKOUT FINISHED WITH A PAYMENT THAT TAKES DAYS TO CLEAR (2026-10-26):
+ * a US bank account, which Stripe reports as completed but "unpaid". From
+ * now on the order's days are taken (holdsDays.ts: QUOTED with its payment
+ * intent), so they are not sold again while the bank settles; the book is
+ * sent when Stripe says it cleared (async_payment_succeeded, fulfilPaidOrder)
+ * and ended when it did not (failClearingPayment). Safe to repeat.
+ */
+export async function recordClearingPayment(orderId: string, paymentIntentId: string, email?: string | null): Promise<boolean> {
+  if (email) await prisma.printOrder.updateMany({ where: { id: orderId, contactEmail: null }, data: { contactEmail: email } });
+  // not once the bank has refused it: a late, re-sent "completed" must not
+  // take its days again
+  const recorded = await prisma.printOrder.updateMany({ where: { id: orderId, status: "QUOTED", stripePaymentIntentId: null, failureReason: null }, data: { stripePaymentIntentId: paymentIntentId } });
+  return recorded.count === 1;
+}
+
+/** The bank said no: nothing was taken. The order goes back to being a
+ *  checkout never finished (QUOTED, no payment): its days are free again,
+ *  no list shows it as a book, and whoever paid is told. Not FAILED (review,
+ *  2026-10-26): that read as a paid book gone wrong - "We will be in touch",
+ *  "Paid by them, you receive $3.20", a task on the coach's Home. */
+export async function failClearingPayment(orderId: string, send: EmailSender = sendEmail): Promise<boolean> {
+  const failed = await prisma.printOrder.updateMany({
+    where: { id: orderId, status: "QUOTED", failureReason: null },
+    data: {
+      stripePaymentIntentId: null,
+      autoRenew: false,
+      renewsAt: null,
+      failureReason: "The bank payment did not go through, so this book was not ordered and nothing was taken.",
+    },
+  });
+  if (failed.count !== 1) return false;
+  const order = await prisma.printOrder.findUnique({ where: { id: orderId } });
+  if (order) await notify(bankPaymentFailedEmail(order), send);
+  return true;
 }
 
 /** Paid: send it to print. Safe to call again - an order past QUOTED/PAID

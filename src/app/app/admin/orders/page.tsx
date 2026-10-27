@@ -13,6 +13,7 @@ import { rangeLabel } from "@/lib/print/orderBook";
 import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { OrderActions } from "./OrderActions";
+import { LISTED } from "@/lib/print/holdsDays";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export default async function AdminOrdersPage() {
       orderBy: { updatedAt: "desc" },
     }),
     prisma.printOrder.findMany({ where: { status: { in: ["SHIPPED", "DELIVERED"] }, deliveryProblem: { not: null } }, orderBy: { shippedAt: "asc" } }),
-    prisma.printOrder.findMany({ where: { status: { not: "QUOTED" } }, orderBy: { createdAt: "desc" }, take: 50 }),
+    prisma.printOrder.findMany({ where: { OR: LISTED }, orderBy: { createdAt: "desc" }, take: 50 }),
   ]);
   const needing = new Set([...attention, ...notArrived].map((o) => o.id));
 

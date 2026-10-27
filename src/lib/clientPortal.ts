@@ -21,6 +21,7 @@ import { fontFamilyFromTheme } from "@/lib/theme";
 import { pageThumbnail } from "@/app/planner/loadPlannerPages";
 import type { PreviewMark } from "@/lib/previewMarks";
 import type { ShippingAddress } from "@/lib/print/lulu";
+import { HOLDS_DAYS } from "@/lib/print/holdsDays";
 
 const hashOf = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -95,7 +96,10 @@ export async function portalFor(token: string): Promise<PortalData | null> {
         },
       }),
       prisma.printOrder.findMany({
-        where: { plannerId: client.plannerId, status: { notIn: ["QUOTED", "CANCELED", "SKIPPED"] } },
+        // their books: the ones holding days - with a payment still
+        // clearing, and without a renewal that failed unpaid, which would
+        // never come (review, 2026-10-26; holdsDays.ts)
+        where: { plannerId: client.plannerId, OR: HOLDS_DAYS },
         orderBy: { startDate: "desc" },
       }),
     ]);

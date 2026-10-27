@@ -13,6 +13,7 @@ import { businessStats } from "@/lib/businessStats";
 import { coachReceives } from "@/lib/print/clientPays";
 import { ChartCard, Columns, StageBar, WarnIcon } from "../charts";
 import css from "../business.module.css";
+import { LISTED } from "@/lib/print/holdsDays";
 
 const RANGES = [
   { key: "6", label: "6 months" },
@@ -30,7 +31,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const [journals, stats] = await Promise.all([businessJournalIds(business.id), businessStats(business.id, range === "all" ? "all" : Number(range))]);
   const ids = [...journals.templates, ...journals.clients];
   const [orders, clients] = await Promise.all([
-    ids.length ? prisma.printOrder.findMany({ where: { plannerId: { in: ids }, status: { not: "QUOTED" } }, orderBy: { createdAt: "desc" } }) : [],
+    ids.length ? prisma.printOrder.findMany({ where: { plannerId: { in: ids }, OR: LISTED }, orderBy: { createdAt: "desc" } }) : [],
     prisma.businessClient.findMany({ where: { businessId: business.id, plannerId: { not: null } }, select: { plannerId: true, name: true } }),
   ]);
   const clientOf = new Map(clients.map((c) => [c.plannerId!, c.name]));
@@ -124,7 +125,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   {money(o.totalCents, o.currency)}
                   {o.paidByClient && (
                     <span className={css.dim} style={{ display: "block", fontSize: 12 }}>
-                      {o.status === "CANCELED" ? "Paid by them, refunded" : `Paid by them${o.markupCents ? `, you receive ${money(coachReceives(o.markupCents), o.currency)}` : ""}`}
+                      {o.status === "CANCELED"
+                        ? "Paid by them, refunded"
+                        : o.status === "QUOTED"
+                          ? "Paid by them from a bank account, still clearing"
+                          : `Paid by them${o.markupCents ? `, you receive ${money(coachReceives(o.markupCents), o.currency)}` : ""}`}
                     </span>
                   )}
                 </span>

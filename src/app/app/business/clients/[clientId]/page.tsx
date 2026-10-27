@@ -9,11 +9,13 @@ import { countryOptions } from "@/lib/print/countries";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { BuildJournalButton, ClientForm, ClientLink, type ClientValues } from "../../forms";
 import css from "../../business.module.css";
+import { LISTED } from "@/lib/print/holdsDays";
 
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 export default async function ClientPage({ params }: { params: Promise<{ clientId: string }> }) {
-  const business = (await currentBusiness())!.business!;
+  const current = (await currentBusiness())!;
+  const business = current.business!;
   const { clientId } = await params;
   const [client, templates] = await Promise.all([
     prisma.businessClient.findFirst({
@@ -25,7 +27,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
   if (!client) notFound();
   const slug = client.planner ? await journalSlugOf(client.planner.id) : null;
   const orders = client.planner
-    ? await prisma.printOrder.findMany({ where: { plannerId: client.planner.id, status: { not: "QUOTED" } }, orderBy: { startDate: "desc" } })
+    ? await prisma.printOrder.findMany({ where: { plannerId: client.planner.id, OR: LISTED }, orderBy: { startDate: "desc" } })
     : [];
   const values: ClientValues = {
     id: client.id,
@@ -46,10 +48,18 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
         <h2>Their journal</h2>
         {client.planner && slug ? (
           <>
-            <p className={css.dim}>
-              Built from {client.template ? <strong style={{ color: "var(--ink)" }}>{client.template.planner.title}</strong> : "a template"}. What you change in the template&rsquo;s pages
-              reaches this journal, and every client&rsquo;s, until a book is printed: a printed book never changes.
-            </p>
+            {client.template ? (
+              <p className={css.dim}>
+                Built from <strong style={{ color: "var(--ink)" }}>{client.template.planner.title}</strong>. What you change in the template&rsquo;s pages reaches this journal,
+                and every client&rsquo;s, until a book is printed: a printed book never changes. What you change in this journal is for {client.name} alone, until that page
+                changes in the template.
+              </p>
+            ) : (
+              <p className={css.dim}>
+                On no template now, so nothing reaches this journal from one. Choose a template for {client.name} below and their journal is rebuilt from it, with the pages
+                of their own kept.
+              </p>
+            )}
             <div className={css.actions}>
               <Link href={`/app/j/${slug}/order`} className={`${css.btn} ${canOrder ? css.primary : ""}`} aria-disabled={!canOrder || undefined}>
                 Order their book
@@ -98,6 +108,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
         email={client.email}
         made={client.accessMadeAt ? date(client.accessMadeAt) : null}
         seen={client.accessSeenAt ? date(client.accessSeenAt) : null}
+        guest={current.owner.guest}
       />
       <ClientForm client={values} templates={templates.map((t) => ({ id: t.id, title: t.planner.title }))} countries={countryOptions()} months={BOOK_MONTHS} />
     </>

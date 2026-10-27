@@ -134,6 +134,19 @@ try {
   const herPage = herPages[tplPages.indexOf(page)];
   const herModules = await prisma.moduleInstance.findMany({ where: { pageId: herPage.id } });
   say(herModules.some((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in the template"), "an edit to the template's page reaches Maya's journal");
+  // ...and one made in HER journal stays in hers (review, 2026-10-26): never
+  // copied back to the template, its saved page, or on to another client.
+  {
+    const hers = herModules.find((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in the template")!;
+    await prisma.moduleInstance.update({ where: { id: hers.id }, data: { propValues: { ...(hers.propValues as Record<string, unknown>), checkBusinessMark: "edited in Maya's journal" } } });
+    const spread = await syncLinkedPages([herPage.id]);
+    const tplNow = await prisma.moduleInstance.findMany({ where: { pageId: page.id } });
+    const savedNow = await prisma.savedPage.findUnique({ where: { id: page.savedPageId! } });
+    say(
+      spread.length === 0 && !tplNow.some((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in Maya's journal") && !JSON.stringify(savedNow?.content ?? {}).includes("edited in Maya's journal"),
+      `an edit made in Maya's journal stays in hers: not copied to the template or its saved page (${spread.length} other pages rewritten)`
+    );
+  }
   say(!(await savedPagesOf(guest.ownerId)).some((sp) => tplPages.some((p) => p.savedPageId === sp.id)), "the template's links stay out of the coach's Saved list");
   // and a page saved the ordinary way still is (no source key: a NOT over a
   // null column would hide it)
@@ -282,7 +295,12 @@ try {
   await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
 
   // HER OWN PAGE, by a private link (clientPortal.ts): no account, no cookie.
-  say((await tab.getByText("Emails go to maya@example.com.", { exact: false }).count()) === 1, "Their page says where an emailed link goes");
+  // A guest is not emailed for (clientLinkSend.ts, review 2026-10-26): the
+  // card says why, and offers the link to copy instead.
+  say(
+    (await tab.getByText("Sign in to have Memari email it to maya@example.com", { exact: false }).count()) === 1 && (await tab.getByRole("button", { name: /^Email Maya/ }).count()) === 0,
+    "as a guest, her card says to sign in for Memari to email her link, and has no email button"
+  );
   await tab.getByRole("button", { name: "Make a link to copy" }).click();
   const linkBox = tab.getByLabel("Maya's link");
   await linkBox.waitFor();
@@ -333,20 +351,42 @@ try {
   say((await her.goto(newLink))?.status() === 404 && !(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash, "turned off: her page is closed");
   say((await her.goto(`${server.base}/c/not-a-real-token`))?.status() === 404, "a made-up link opens nothing");
 
-  // EMAILED (2026-10-22, emailLinkTo; the words are clientLinkEmail.test).
-  // Email is not set up on this machine, so nothing is sent: the coach is
-  // told so, and the new link is shown to copy - the old one has stopped.
-  await tab.getByRole("button", { name: "Email Maya their link" }).click();
-  await tab.getByRole("alert").filter({ hasText: "Email is not set up on this site yet" }).waitFor({ timeout: 20_000 });
-  const emailedLink = await linkBox.inputValue();
-  const afterEmail = await prisma.businessClient.findUnique({ where: { id: client!.id } });
-  say(/\/c\/[A-Za-z0-9_-]{43}$/.test(emailedLink) && !!afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "Email Maya their link, with email not set up here: a new link made and shown to copy, and it opens her page");
-  say((await tab.getByText("nothing was sent", { exact: false }).count()) === 1, "and the coach is told nothing was sent");
-  await tab.getByRole("button", { name: "Email Maya a new link" }).click();
-  await tab.getByRole("alert").filter({ hasText: "a moment ago" }).waitFor({ timeout: 20_000 });
-  const again = await prisma.businessClient.findUnique({ where: { id: client!.id } });
-  say(again?.accessTokenHash === afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "pressed again within a minute: no second link, the first still opens");
-  say((await linkBox.count()) === 1 && (await linkBox.inputValue()) === emailedLink, "and the link already shown stays there to copy");
+  // EMAILED (2026-10-22; the words are clientLinkEmail.test). The steps the
+  // button takes (clientLinkSend.ts), run here as the coach once signed in,
+  // with a sender standing in for Resend so nothing is ever really sent.
+  let emailedLink = "";
+  {
+    const { emailClientLink, LINKS_PER_DAY } = await import("../src/lib/clientLinkSend");
+    const business = await prisma.business.findUniqueOrThrow({ where: { ownerId: guest.ownerId } });
+    const sent: string[] = [];
+    const notSetUp = async (email: { to: string }) => (sent.push(email.to), { sent: false, reason: "not configured" });
+    const asCoach = (guestNow: boolean, now?: Date) =>
+      emailClientLink({ owner: { id: guest.ownerId, guest: guestNow }, business, clientId: client!.id, portalUrl: (token) => `${server.base}/c/${token}`, replyTo: () => "coach@example.com", send: notSetUp, now });
+    const hashBefore = (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash ?? null;
+    const asGuest = await asCoach(true);
+    say(!asGuest.sent && /Sign in/.test(asGuest.error) && sent.length === 0 && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash === hashBefore, "a guest asking anyway is refused: nothing sent, no new link made");
+    const first = await asCoach(false, new Date(Date.now() + 61_000));
+    emailedLink = !first.sent ? first.url ?? "" : "";
+    const afterEmail = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+    say(!first.sent && /not set up/.test(first.error) && sent[0] === "maya@example.com" && /\/c\/[A-Za-z0-9_-]{43}$/.test(emailedLink) && (await her.goto(emailedLink))?.status() === 200, "signed in, with email not set up: a new link made, offered to copy, and it opens her page");
+    const again = await asCoach(false);
+    const stillSame = await prisma.businessClient.findUnique({ where: { id: client!.id } });
+    say(!again.sent && /a moment ago/.test(again.error) && stillSame?.accessTokenHash === afterEmail?.accessTokenHash && (await her.goto(emailedLink))?.status() === 200, "pressed again within a minute: no second link, the first still opens");
+    // a business's day of links is capped
+    // counted from the emails: one already, and the rest of a day's
+    await prisma.clientLinkEmail.createMany({ data: Array.from({ length: LINKS_PER_DAY - 1 }, () => ({ businessId: business.id })) });
+    const capped = await asCoach(false, new Date(Date.now() + 120_000));
+    say(!capped.sent && new RegExp(`${LINKS_PER_DAY} links in a day`).test(capped.error) && sent.length === 1, `after ${LINKS_PER_DAY} links emailed in a day, no more are`);
+    // and turning the link off does not start the count again
+    const { turnOffClientLink } = await import("../src/lib/clientPortal");
+    await turnOffClientLink(guest.ownerId, client!.id);
+    const afterOff = await asCoach(false, new Date(Date.now() + 180_000));
+    say(!afterOff.sent && /links in a day/.test(afterOff.error) && sent.length === 1, "turning her link off and asking again is still refused");
+    await prisma.clientLinkEmail.deleteMany({ where: { businessId: business.id } });
+    // (her link back, for what follows)
+    const { makeClientLink } = await import("../src/lib/clientPortal");
+    emailedLink = `${server.base}/c/${await makeClientLink(guest.ownerId, client!.id)}`;
+  }
   await shoot(tab, "biz-client-email");
   // WHO PAYS FOR BOOKS (2026-10-22, clientPays.ts / payouts.ts /
   // clientOrders.ts). Stripe is not set up on this machine, so what can be
@@ -480,6 +520,13 @@ try {
   say(herTheme?.weekStartDay === (tplTheme.weekStartDay === 1 ? 0 : 1), "and the template's changed setting");
   say(!!kept && kept.position === weekly.length + 1, `her own page is kept, after the template's (position ${kept?.position})`);
   say((await clientsBehind(template!.id)).length === 0, "and nothing is behind any more");
+  // ...and what the coach wrote in HER journal on a template page is still
+  // there (second review, 2026-10-26): the update keeps her copy of a page
+  // the template still has, rather than copying it again.
+  {
+    const herCopy = await prisma.page.findFirst({ where: { plannerId: journalId!, savedPageId: page.savedPageId, savedPageIndex: page.savedPageIndex }, include: { moduleInstances: true } });
+    say(!!herCopy?.moduleInstances.some((m) => (m.propValues as Record<string, unknown>).checkBusinessMark === "edited in Maya's journal"), "the update keeps the edit made in Maya's journal");
+  }
   // the page redraws a moment after the toast; wait for the notice to go
   await tab.getByText("pages or settings changed").waitFor({ state: "detached", timeout: 15_000 }).catch(() => {});
   say((await tab.getByText("pages or settings changed").count()) === 0, "Templates no longer asks");
@@ -497,6 +544,66 @@ try {
     !reset.some((p) => p.id === ownPage.id) && reset.length === tplNow.length && tplNow.every((t) => reset.some((p) => p.savedPageId === t.savedPageId && p.level === t.level && p.position === t.position)),
     `Reset to their template: her own page gone, the template's ${tplNow.length} pages, linked, in their places (${reset.length})`
   );
+
+  // FIXED IN REVIEW (2026-10-26): the name on the cover reaches her journal's
+  // title, which every cover prints; moving her to another template takes
+  // the old one's pages away rather than keeping them beside the new one's;
+  // and "Stop using" a template, then Undo, puts its clients back on it - a
+  // client's journal following its own template, and nothing else.
+  {
+    await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
+    await tab.locator('input[name="coverName"]').fill("Maya O.");
+    await tab.getByRole("button", { name: "Save" }).click();
+    await tab.waitForURL("**/app/business/clients");
+    say((await prisma.planner.findUnique({ where: { id: journalId! } }))?.title === "Maya O.", "a corrected name on the cover reaches her journal, so her next cover prints it");
+
+    const { createBookFor, validateNewJournal } = await import("../src/app/planner/bookSeeding.js");
+    const second = await createBookFor(
+      guest.ownerId,
+      validateNewJournal({ title: "Second template", trim: "bound7x10", startISO: "2027-01-04", endISO: "2027-03-31", levels: ["WEEKLY"], dated: true, weekStartDay: 0, font: "serif" })
+    );
+    const secondTemplate = await prisma.businessTemplate.create({ data: { businessId: business!.id, plannerId: second.id } });
+    const own = await prisma.page.create({ data: { plannerId: journalId!, level: "WEEKLY", position: 500 } });
+    const aLinks = new Set((await prisma.page.findMany({ where: { plannerId: guest.journalId, savedPageId: { not: null } }, select: { savedPageId: true } })).map((p) => p.savedPageId));
+    await tab.goto(`${server.base}/app/business/clients/${client!.id}`, { waitUntil: "networkidle" });
+    await tab.getByLabel("Template").selectOption(secondTemplate.id);
+    await tab.getByRole("button", { name: "Save" }).click();
+    await tab.waitForURL("**/app/business/clients", { timeout: 60_000 });
+    const moved = await prisma.page.findMany({ where: { plannerId: journalId! }, include: { savedPage: { select: { sourceKey: true } } } });
+    const bPages = await prisma.page.findMany({ where: { plannerId: second.id } });
+    say(
+      !moved.some((p) => p.savedPageId && aLinks.has(p.savedPageId)) && !moved.some((p) => p.savedPage?.sourceKey === `template:${guest.journalId}`) && moved.length === bPages.length + 1 && moved.some((p) => p.id === own.id),
+      `moved to another template: the old one's pages gone, the new one's ${bPages.length} in, her own page kept (${moved.length} pages)`
+    );
+
+    // an edit to the new template reaches her; then Stop using, and Undo
+    const { syncLinkedPages } = await import("../src/app/planner/savedItems");
+    const bPage = (await prisma.page.findMany({ where: { plannerId: second.id }, include: { moduleInstances: true } })).find((p) => p.moduleInstances.length && p.savedPageId)!;
+    const mark = async (word: string) => {
+      const m = bPage.moduleInstances[0];
+      await prisma.moduleInstance.update({ where: { id: m.id }, data: { propValues: { ...(m.propValues as Record<string, unknown>), checkBusinessMark: word } } });
+      await syncLinkedPages([bPage.id]);
+      const hers = await prisma.page.findFirst({ where: { plannerId: journalId!, savedPageId: bPage.savedPageId, savedPageIndex: bPage.savedPageIndex }, include: { moduleInstances: true } });
+      return !!hers?.moduleInstances.some((x) => (x.propValues as Record<string, unknown>).checkBusinessMark === word);
+    };
+    say(await mark("edited in the second template"), "an edit to her new template reaches her journal");
+    await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+    const stop = () => tab.locator("div, li, article, section").filter({ hasText: "Second template" }).filter({ has: tab.getByRole("button", { name: "Stop using" }) }).last().getByRole("button", { name: "Stop using" });
+    await stop().click();
+    await tab.getByText("Second template is no longer a template").waitFor();
+    say((await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === null, "Stop using: she is on no template");
+    await tab.getByRole("button", { name: "Undo" }).click();
+    await tab.waitForTimeout(1500);
+    const back = await prisma.businessTemplate.findUnique({ where: { plannerId: second.id } });
+    say(!!back && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === back.id, "Undo: the journal is a template again, and she is back on it");
+    say(await mark("edited after the undo"), "and its edits reach her again");
+    await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+    await stop().click();
+    await tab.getByText("Second template is no longer a template").waitFor();
+    await tab.waitForTimeout(500);
+    say(!(await mark("edited once it was no template")), "once it is not her template, its edits no longer reach her journal");
+    await prisma.planner.delete({ where: { id: second.id } });
+  }
   await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
 
   // The switcher, and the template gone from the guest's own journals.

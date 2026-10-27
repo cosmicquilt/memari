@@ -38,6 +38,7 @@ import { notify, renewalFailedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
 import { RENEWABLE_STATUSES } from "./renewalControls";
 import { shippableAddress } from "@/lib/business";
+import { HOLDS_DAYS } from "./holdsDays";
 
 export type ChargeResult = { ok: true; paymentIntentId: string } | { ok: false; reason: string };
 
@@ -182,11 +183,8 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
       endDate: { gte: next.start },
       // the same rule as a client's next book (business.ts): a paid book the
       // printer refused still holds its days (third review)
-      OR: [
-        { status: { notIn: ["QUOTED", "CANCELED", "SKIPPED", "FAILED"] } },
-        { status: "FAILED", stripePaymentIntentId: { not: null } },
-        { status: "QUOTED", paidByClient: true, stripeCheckoutSessionId: { not: null }, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-      ],
+      // and a bank payment still clearing (holdsDays.ts, 2026-10-26)
+      OR: [...HOLDS_DAYS, { status: "QUOTED", paidByClient: true, stripeCheckoutSessionId: { not: null }, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }],
     },
     select: { id: true },
   });

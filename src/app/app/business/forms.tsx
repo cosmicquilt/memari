@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, openPayouts, removeTemplate, resetPayouts, saveBookPayer, saveBusinessSettings, saveClient, setClientArchived, startBusiness, startPayouts, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, openPayouts, removeTemplate, resetPayouts, restoreTemplate, saveBookPayer, saveBusinessSettings, saveClient, setClientArchived, startBusiness, startPayouts, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
 import { coachReceives } from "@/lib/print/clientPays";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
@@ -439,13 +439,12 @@ export function RemoveTemplateButton({ templateId, plannerId, title }: { templat
       disabled={pending}
       onClick={() =>
         start(async () => {
-          await removeTemplate(templateId);
+          const { clientIds } = await removeTemplate(templateId);
           toast({
             message: `${title} is no longer a template`,
+            // its clients back on it too (review, 2026-10-26)
             undo: async () => {
-              const form = new FormData();
-              form.set("plannerId", plannerId);
-              await addTemplate(null, form);
+              await restoreTemplate(plannerId, clientIds);
             },
           });
         })
@@ -520,7 +519,7 @@ export function UpdateClientsButton({ templateId, count }: { templateId: string;
 /** A client's own page, by a private link: made here and copied, or
  *  emailed to them (2026-10-22). Either way the link is new and any earlier
  *  one stops working, which the card says before it happens. */
-export function ClientLink({ clientId, name, email, made, seen }: { clientId: string; name: string; email: string | null; made: string | null; seen: string | null }) {
+export function ClientLink({ clientId, name, email, made, seen, guest = false }: { clientId: string; name: string; email: string | null; made: string | null; seen: string | null; guest?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -591,12 +590,13 @@ export function ClientLink({ clientId, name, email, made, seen }: { clientId: st
         </p>
       ) : null}
       <div className={css.actions}>
-        {email && (
+        {/* Memari emails only for a signed-in coach (clientLinkSend.ts). */}
+        {email && !guest && (
           <button type="button" className={`${css.btn} ${css.primary}`} disabled={pending} onClick={send}>
             {pending ? "Sending…" : hasLink ? `Email ${first} a new link` : `Email ${first} their link`}
           </button>
         )}
-        <button type="button" className={`${css.btn} ${email || hasLink ? "" : css.primary}`} disabled={pending} onClick={make}>
+        <button type="button" className={`${css.btn} ${(email && !guest) || hasLink ? "" : css.primary}`} disabled={pending} onClick={make}>
           {hasLink ? "Make a new link to copy" : "Make a link to copy"}
         </button>
         {hasLink && (
@@ -617,7 +617,13 @@ export function ClientLink({ clientId, name, email, made, seen }: { clientId: st
         )}
       </div>
       <p className={css.dim}>
-        {email ? <>Emails go to {email}. </> : <>Add {first}&rsquo;s email below to send it from here. </>}
+        {guest ? (
+          <>Sign in to have Memari email it to {email ?? first}; until then, make the link and send it yourself. </>
+        ) : email ? (
+          <>Emails go to {email}. </>
+        ) : (
+          <>Add {first}&rsquo;s email below to send it from here. </>
+        )}
         {hasLink && "A new link, emailed or copied, stops the old one working."}
       </p>
       {error && (

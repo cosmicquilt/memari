@@ -8,14 +8,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
 import { makeClientLink, turnOffClientLink } from "@/lib/clientPortal";
-import { clientLinkEmail, sendableEmail } from "@/lib/clientLinkEmail";
-import { sendEmail } from "@/lib/email";
+import { emailClientLink, type EmailLinkResult } from "@/lib/clientLinkSend";
 import { PayoutsError, discardUnfinishedPayouts, payoutsDashboardUrl, payoutsSetupUrl } from "@/lib/payouts";
 import { MAX_SHARE_CENTS, MIN_SHARE_CENTS } from "@/lib/print/clientPays";
 import { appUrl } from "@/lib/print/fileUrls";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
-import { buildClientJournal, updateClientsOf } from "@/lib/businessJournals";
+import { buildClientJournal, formerTemplateOf, updateClientJournal, updateClientsOf } from "@/lib/businessJournals";
 import { COUNTRY_CODES } from "@/lib/print/countries";
 
 export type FormState = { error?: string; saved?: boolean } | null;
@@ -134,7 +133,7 @@ export async function openPayouts(): Promise<{ error: string }> {
 
 /** Add a client, or change one: `id` in the form says which. */
 export async function saveClient(_: FormState, form: FormData): Promise<FormState> {
-  const { business } = await myBusiness();
+  const { owner, business } = await myBusiness();
   const id = text(form, "id", 40);
   const name = text(form, "name", 120);
   if (!name) return { error: "A client needs a name." };
@@ -172,9 +171,26 @@ export async function saveClient(_: FormState, form: FormData): Promise<FormStat
     shippingAddress: hasAddress ? address : undefined,
   };
   if (id) {
-    const found = await prisma.businessClient.findFirst({ where: { id, businessId: business.id }, select: { id: true } });
+    const found = await prisma.businessClient.findFirst({ where: { id, businessId: business.id }, select: { id: true, plannerId: true, templateId: true, template: { select: { plannerId: true } } } });
     if (!found) return { error: "That client is not one of yours." };
     await prisma.businessClient.update({ where: { id }, data });
+    if (found.plannerId) {
+      // The name on the cover is the journal's title, which every book's
+      // cover prints: a correction reaches the next book (review, 2026-10-26).
+      await prisma.planner.update({ where: { id: found.plannerId }, data: { title: data.coverName || name } });
+      // Moved to another template: their journal is rebuilt from it, the old
+      // one's pages taken away and their own kept (businessJournals.ts).
+      if (templateId && templateId !== found.templateId) {
+        try {
+          await updateClientJournal(owner.id, id, { leaving: found.template?.plannerId ?? (await formerTemplateOf(found.plannerId)) });
+        } catch (error) {
+          // the template they were on, back: left naming the new one, a later
+          // Update would add its pages beside the old one's (review, 2026-10-26)
+          await prisma.businessClient.update({ where: { id }, data: { templateId: found.templateId } });
+          return { error: error instanceof Error ? error.message : "Their journal could not be moved to that template." };
+        }
+      }
+    }
   } else {
     await prisma.businessClient.create({ data: { ...data, businessId: business.id } });
   }
@@ -235,29 +251,21 @@ export async function makeLinkFor(clientId: string): Promise<{ url?: string; err
  *  twice within a minute, so a double press is one email. If the email is
  *  not sent (email not set up here, or refused), the new link comes back to
  *  copy, and the coach is told so: the old link has stopped either way. */
-export type EmailLinkResult = { sent: true; to: string } | { sent: false; to?: string; url?: string; error: string };
+export type { EmailLinkResult } from "@/lib/clientLinkSend";
+
+/** Email a client their link (src/lib/clientLinkSend.ts: never from a
+ *  guest, at most LINKS_PER_DAY a day). */
 export async function emailLinkTo(clientId: string): Promise<EmailLinkResult> {
   const { owner, business } = await myBusiness();
-  const client = await prisma.businessClient.findFirst({ where: { id: clientId, businessId: business.id, archivedAt: null }, select: { id: true, name: true, email: true, accessMadeAt: true } });
-  if (!client) return { sent: false, error: "That client is not one of yours." };
-  const to = sendableEmail(client.email);
-  if (!to) return { sent: false, error: `${client.name.split(" ")[0]} has no email address yet: add it below.` };
-  if (client.accessMadeAt && Date.now() - client.accessMadeAt.getTime() < 60_000) return { sent: false, to, error: "A link was made for them a moment ago. Give it a minute before sending another." };
-  const token = await makeClientLink(owner.id, client.id);
-  const url = await portalUrl(token);
-  const replyTo = owner.guest ? null : ((await currentUser())?.primaryEmailAddress?.emailAddress ?? null);
-  const result = await sendEmail(clientLinkEmail({ to, businessName: business.name, clientName: client.name, url, replyTo }));
-  revalidatePath(`/app/business/clients/${client.id}`);
-  if (result.sent) return { sent: true, to };
-  return {
-    sent: false,
-    to,
-    url,
-    error:
-      result.reason === "not configured"
-        ? "Email is not set up on this site yet, so nothing was sent. Here is their new link to send yourself; the old one has stopped working."
-        : "The email could not be sent. Here is their new link to send yourself; the old one has stopped working.",
-  };
+  const result = await emailClientLink({
+    owner,
+    business,
+    clientId,
+    portalUrl,
+    replyTo: async () => (owner.guest ? null : ((await currentUser())?.primaryEmailAddress?.emailAddress ?? null)),
+  });
+  revalidatePath(`/app/business/clients/${clientId}`);
+  return result;
 }
 
 /** Turn a client's link off: their page closes. */
@@ -292,10 +300,32 @@ export async function addTemplate(_: FormState, form: FormData): Promise<FormSta
 }
 
 /** Stop using a journal as a template; the journal goes back to your own
- *  journals, and clients who used it keep theirs. */
-export async function removeTemplate(templateId: string): Promise<void> {
+ *  journals, and clients who used it keep theirs - which no longer follow
+ *  it (savedItems.ts: a client's journal follows its own template only).
+ *  Returns the clients it was the template of, for the undo. */
+export async function removeTemplate(templateId: string): Promise<{ clientIds: string[] }> {
   const { business } = await myBusiness();
+  const clients = await prisma.businessClient.findMany({ where: { templateId, businessId: business.id }, select: { id: true } });
   await prisma.businessTemplate.deleteMany({ where: { id: templateId, businessId: business.id } });
   revalidatePath("/app/business", "layout");
   revalidatePath("/app");
+  return { clientIds: clients.map((c) => c.id) };
+}
+
+/** Stop using's undo (review, 2026-10-26): the journal a template again, and
+ *  its clients back on it - before, the undo made a new template that no
+ *  client used. Only this business's clients still without a template. */
+export async function restoreTemplate(plannerId: string, clientIds: string[]): Promise<{ error?: string }> {
+  const { owner, business } = await myBusiness();
+  const planner = await prisma.planner.findFirst({
+    where: { id: plannerId, ownerId: owner.id, isTemplate: false, businessClient: { is: null }, businessTemplate: { is: null } },
+    select: { id: true },
+  });
+  if (!planner) return { error: "That journal can't be a template again." };
+  const template = await prisma.businessTemplate.create({ data: { businessId: business.id, plannerId: planner.id } });
+  const ids = Array.isArray(clientIds) ? clientIds.filter((id): id is string => typeof id === "string").slice(0, 1000) : [];
+  if (ids.length) await prisma.businessClient.updateMany({ where: { id: { in: ids }, businessId: business.id, templateId: null }, data: { templateId: template.id } });
+  revalidatePath("/app/business", "layout");
+  revalidatePath("/app");
+  return {};
 }

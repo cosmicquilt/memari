@@ -6,9 +6,11 @@
 // pages is linked to a saved page (savedItems.ts) - one the coach made, or
 // one made here and kept out of their Saved list (sourceKey
 // "template:<journal id>") - and the client's copy of that page carries the
-// same link. An edit to the template, or to any client's copy, is then copied
-// to every other use by syncLinkedPages, which every editing action already
-// calls. A printed book never changes: its PDF was stored when it was paid
+// same link. An edit to the template is then copied to every client's copy
+// by syncLinkedPages, which every editing action already calls. An edit made
+// in one client's journal stays there (2026-10-26): it is never copied back
+// to the template or on to other clients, and the template's next change to
+// that page replaces it. A printed book never changes: its PDF was stored when it was paid
 // for (PrintFile).
 //
 // WHAT A LINK DOES NOT CARRY: pages added to or taken from the template, and
@@ -38,6 +40,14 @@ const LEVEL_NAMES: Record<string, string> = {
 
 /** The saved pages a template's own pages are linked through, made here. */
 export const templateSourceKey = (plannerId: string) => `template:${plannerId}`;
+
+/** The template a client's journal was built from, read from its pages'
+ *  links - for a client whose template the coach has since stopped using,
+ *  and so no longer names (review, 2026-10-26). */
+export async function formerTemplateOf(journalId: string): Promise<string | undefined> {
+  const page = await prisma.page.findFirst({ where: { plannerId: journalId, savedPage: { sourceKey: { startsWith: "template:" } } }, select: { savedPage: { select: { sourceKey: true } } } });
+  return page?.savedPage?.sourceKey?.slice("template:".length) || undefined;
+}
 
 const PAGE_ORDER = [{ level: "asc" as const }, { variantKey: "asc" as const }, { position: "asc" as const }];
 
@@ -146,7 +156,7 @@ export async function buildClientJournal(ownerId: string, clientId: string): Pro
  * Their title and dates are theirs and stay. A client without a journal
  * gets one built.
  */
-export async function updateClientJournal(ownerId: string, clientId: string, { reset = false }: { reset?: boolean } = {}): Promise<string> {
+export async function updateClientJournal(ownerId: string, clientId: string, { reset = false, leaving }: { reset?: boolean; leaving?: string } = {}): Promise<string> {
   const client = await prisma.businessClient.findFirst({
     where: { id: clientId, business: { ownerId } },
     include: { template: true },
@@ -157,23 +167,62 @@ export async function updateClientJournal(ownerId: string, clientId: string, { r
   const plannerId = client.plannerId;
   const { template, pages } = await linkedTemplate(ownerId, client.template.plannerId);
   const links = pages.map((p) => p.savedPageId!);
+  // MOVED TO ANOTHER TEMPLATE (`leaving`: the journal of the one they were on,
+  // review 2026-10-26): its pages go as well. Kept, they were taken for the
+  // client's own and the new template's were added beside them - every set
+  // twice, at a higher price. The client's own pages still stay.
+  const leftLinks = leaving
+    ? (await prisma.page.findMany({ where: { plannerId: leaving, savedPageId: { not: null } }, select: { savedPageId: true } })).map((p) => p.savedPageId!)
+    : [];
 
   await prisma.$transaction(
     async (tx) => {
       await tx.planner.update({ where: { id: plannerId }, data: settingsOf(template) });
-      // the template's pages, as they were: linked to one it uses, or to one
-      // it was given and has since dropped
+      // KEPT, NOT COPIED AGAIN (review, 2026-10-26): their copy of a page the
+      // template still has is kept as it is - the template's edits have
+      // reached it through its link already, and what the coach wrote on it
+      // for this client stays (an edit in a client's journal is theirs,
+      // savedItems.ts). Copied again, every such edit was lost on Update.
+      // Only its place is set again. Not on a reset, and not a copy of a
+      // different size (a page size change links the template's pages anew).
+      const keyOf = (p: { level: string; variantKey: string | null; savedPageId: string | null; savedPageIndex: number | null; widthPx: number; heightPx: number }) =>
+        `${p.level}:${p.variantKey ?? ""}:${p.savedPageId}:${p.savedPageIndex ?? 0}:${p.widthPx}x${p.heightPx}`;
+      const copies = new Map<string, string[]>();
+      if (!reset)
+        for (const copy of await tx.page.findMany({ where: { plannerId, savedPageId: { in: links } }, orderBy: PAGE_ORDER })) {
+          const key = keyOf(copy);
+          copies.set(key, [...(copies.get(key) ?? []), copy.id]);
+        }
+      const plan = pages.map((page) => ({ page, keep: copies.get(keyOf(page))?.shift() ?? null }));
+      const kept = plan.flatMap((p) => (p.keep ? [p.keep] : []));
+      // the template's pages, as they were and not kept: linked to one it
+      // uses, to one it was given and has since dropped, or to the template
+      // they are leaving
       await tx.page.deleteMany({
-        where: { plannerId, OR: [{ savedPageId: { in: links } }, { savedPage: { sourceKey: templateSourceKey(template.id) } }] },
+        where: {
+          plannerId,
+          id: { notIn: kept },
+          OR: [
+            { savedPageId: { in: [...links, ...leftLinks] } },
+            { savedPage: { sourceKey: templateSourceKey(template.id) } },
+            ...(leaving ? [{ savedPage: { sourceKey: templateSourceKey(leaving) } }] : []),
+          ],
+        },
       });
       // a reset (the editor's Reset to Template on a client's journal,
       // 2026-10-22): their own pages go too, so the journal is the template
       // again; otherwise they are kept, after the template's
       if (reset) await tx.page.deleteMany({ where: { plannerId } });
-      // their own pages, out of the way of the template's positions
-      const own = await tx.page.findMany({ where: { plannerId }, orderBy: PAGE_ORDER, select: { id: true, level: true, variantKey: true, position: true } });
-      for (const page of own) await tx.page.update({ where: { id: page.id }, data: { position: page.position + 100_000 } });
-      for (const page of pages) await copyPage(tx, plannerId, page);
+      // their own pages and the kept copies, out of the way of the template's
+      // positions
+      const rest = await tx.page.findMany({ where: { plannerId }, orderBy: PAGE_ORDER, select: { id: true, level: true, variantKey: true, position: true } });
+      for (const page of rest) await tx.page.update({ where: { id: page.id }, data: { position: page.position + 100_000 } });
+      for (const { page, keep } of plan) {
+        if (keep) await tx.page.update({ where: { id: keep }, data: { position: page.position } });
+        else await copyPage(tx, plannerId, page);
+      }
+      const keptIds = new Set(kept);
+      const own = rest.filter((page) => !keptIds.has(page.id));
       // and back, after the template's pages in each set
       const filled = new Map<string, number>();
       for (const page of pages) {

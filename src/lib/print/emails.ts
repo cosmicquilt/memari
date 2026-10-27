@@ -13,6 +13,8 @@
 //                   charged
 //   cancelled       the customer stopped it; the whole payment is coming
 //                   back
+//   bankFailed      a bank (ACH) payment did not clear: nothing taken, the
+//                   book not ordered, order it again (2026-10-26)
 //   adminAlert      to ADMIN_EMAIL: a paid order is not printing
 //   arrival         "Has your book arrived?" about 12 days after it shipped
 //                   (18 from the UK) - two signed links, yes and not yet
@@ -175,6 +177,22 @@ export function cancelledEmail(order: OrderLike): Email {
       describe(order),
       `The printer has stopped it, and the whole ${formatCents(order.totalCents)} is refunded to your card - banks take 5-10 business days to show it.`,
       order.paidByClient ? "You can order it again from your page whenever you like." : "Auto-renew is off for it. You can order again from your journal whenever you like.",
+    ],
+    linkFor(order)
+  );
+}
+
+/** A payment that takes days to clear (a US bank account) came back
+ *  refused: nothing was taken and the book was not ordered (holdsDays.ts). */
+export function bankPaymentFailedEmail(order: OrderLike): Email {
+  return compose(
+    order.contactEmail ?? "",
+    "Your bank payment didn't go through",
+    "Your bank payment didn't go through",
+    [
+      describe(order),
+      `Your bank didn't clear the ${formatCents(order.totalCents)} payment, so the book wasn't ordered and nothing was taken.`,
+      order.paidByClient ? "You can order it again from your page, by card or from another account." : "You can order it again from your journal whenever you like.",
     ],
     linkFor(order)
   );

@@ -1,7 +1,7 @@
 "use server";
 
 import { currentOwnerId } from "@/lib/owner";
-import { businessRoleOf } from "@/lib/business";
+import { businessRoleOf, isClientJournal } from "@/lib/business";
 import { updateClientJournal } from "@/lib/businessJournals";
 import { GUEST_JOURNAL_LIMIT, GUEST_SAVED_LIMIT, isGuestOwner } from "@/lib/guest";
 import { prisma } from "@/lib/prisma";
@@ -2006,8 +2006,12 @@ export async function updateModuleConfig(
   // its instances take them, and every page holding one is synced. The
   // editor is told whether any use besides this one is in this journal, so
   // it can reload rather than go on showing the old settings there.
-  const touchedPages = instance.savedModuleId
-    ? await spreadSavedModuleProps(userId, instance.savedModuleId, sanitized as Prisma.InputJsonValue)
+  // Except in a client's journal (review, 2026-10-26): an edit there stays
+  // there, as a page's does (syncLinkedPages) - never handed to the template
+  // and every other client's copy of the module.
+  const spreads = !!instance.savedModuleId && !(await isClientJournal(instance.page.plannerId));
+  const touchedPages = spreads
+    ? await spreadSavedModuleProps(userId, instance.savedModuleId!, sanitized as Prisma.InputJsonValue, instance.page.plannerId)
     : [instance.pageId];
   const rewritten = await syncLinkedPages(touchedPages);
   const otherUsesHere = await prisma.moduleInstance.count({
@@ -2015,7 +2019,7 @@ export async function updateModuleConfig(
       id: { not: instance.id },
       page: { plannerId: instance.page.plannerId },
       OR: [
-        ...(instance.savedModuleId ? [{ savedModuleId: instance.savedModuleId }] : []),
+        ...(spreads ? [{ savedModuleId: instance.savedModuleId! }] : []),
         { pageId: { in: rewritten } },
       ],
     },

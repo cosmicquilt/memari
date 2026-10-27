@@ -31,6 +31,7 @@ import { AutoRenewSwitch } from "./AutoRenewSwitch";
 import { CancelOrderButton } from "./CancelOrderButton";
 import { ComingUpList, UndoSkipButton, type ComingUp } from "./RenewalControls";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
+import { LISTED, isClearing } from "@/lib/print/holdsDays";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,8 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
   if (!owner) redirect(signInPath("/app/account/orders"));
   const { placed } = await searchParams;
   const orders = await prisma.printOrder.findMany({
-    where: { ownerId: owner.id, OR: [{ status: { not: "QUOTED" } }, ...(placed ? [{ id: placed }] : [])] },
+    // a payment still clearing is listed too ("Confirming payment"; holdsDays.ts)
+    where: { ownerId: owner.id, OR: [...LISTED, ...(placed ? [{ id: placed }] : [])] },
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { renewals: true } } },
   });
@@ -70,7 +72,9 @@ export default async function PrintedBooksPage({ searchParams }: { searchParams:
   const latest = new Map<string, (typeof orders)[number]>();
   for (const order of orders) {
     const unordered = order.status === "FAILED" && !!order.renewedFromId;
-    if (!order.plannerId || !(CHAIN.includes(order.status) || unordered)) continue;
+    // a book whose bank payment is clearing holds its days, so it is the
+    // latest too: "Order the next" starts after it (holdsDays.ts)
+    if (!order.plannerId || !(CHAIN.includes(order.status) || unordered || isClearing(order))) continue;
     const held = latest.get(order.plannerId);
     if (!held || order.endDate > held.endDate || (order.endDate.getTime() === held.endDate.getTime() && order.createdAt > held.createdAt)) latest.set(order.plannerId, order);
   }

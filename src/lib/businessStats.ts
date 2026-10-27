@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { shippableAddress } from "@/lib/business";
 import type { PrintOrderStatus } from "@/generated/prisma/enums";
 import { coachReceives } from "@/lib/print/clientPays";
+import { PAYMENT_CLEARING } from "@/lib/print/holdsDays";
 
 const DAY = 24 * 60 * 60 * 1000;
 /** Orders that are books - not a checkout left unpaid, cancelled or skipped. */
@@ -32,6 +33,8 @@ const BOOKS = { notIn: ["QUOTED", "CANCELED", "SKIPPED"] as PrintOrderStatus[] }
 export const STAGES = ["Approved", "In production", "Shipped", "Delivered"] as const;
 export type Stage = (typeof STAGES)[number];
 const STAGE_OF: Record<string, Stage | null> = {
+  // a bank payment clearing (holdsDays.ts): ordered, not yet paid
+  QUOTED: "Approved",
   PAID: "Approved",
   SUBMITTED: "Approved",
   IN_PRODUCTION: "In production",
@@ -49,7 +52,9 @@ async function businessBooks(businessId: string) {
   const ids = [...clients.flatMap((c) => (c.plannerId ? [c.plannerId] : [])), ...templates.map((t) => t.plannerId)];
   const orders = ids.length
     ? await prisma.printOrder.findMany({
-        where: { plannerId: { in: ids }, status: BOOKS },
+        // and a book whose bank payment is clearing: it covers its days
+        // (holdsDays.ts, 2026-10-26)
+        where: { plannerId: { in: ids }, OR: [{ status: BOOKS }, PAYMENT_CLEARING] },
         select: { id: true, plannerId: true, status: true, startDate: true, endDate: true, createdAt: true, totalCents: true, currency: true, title: true, paidByClient: true, markupCents: true },
         orderBy: { startDate: "asc" },
       })
@@ -58,10 +63,12 @@ async function businessBooks(businessId: string) {
 }
 
 /** What the coach paid: books they ordered, not ones their clients paid for. */
-const spentOn = (orders: Array<{ totalCents: number; paidByClient: boolean }>) => orders.reduce((sum, o) => sum + (o.paidByClient ? 0 : o.totalCents), 0);
+const spentOn = (orders: Array<{ totalCents: number; paidByClient: boolean; status: string }>) =>
+  orders.reduce((sum, o) => sum + (o.paidByClient || o.status === "QUOTED" ? 0 : o.totalCents), 0);
 /** What reached them of books their clients paid for: each share after the
  *  card fee on it, as Stripe pays it out (clientPays.ts coachReceives). */
-const earnedOn = (orders: Array<{ markupCents: number; paidByClient: boolean }>) => orders.reduce((sum, o) => sum + (o.paidByClient && o.markupCents > 0 ? coachReceives(o.markupCents) : 0), 0);
+const earnedOn = (orders: Array<{ markupCents: number; paidByClient: boolean; status: string }>) =>
+  orders.reduce((sum, o) => sum + (o.paidByClient && o.markupCents > 0 && o.status !== "QUOTED" ? coachReceives(o.markupCents) : 0), 0);
 
 const quarterStart = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1));
 

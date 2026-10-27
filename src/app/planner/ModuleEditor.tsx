@@ -50,6 +50,7 @@ import { useJournalId } from "./journalContext";
 import { useAsyncAction } from "./useAsyncAction";
 import { useRefreshPages } from "./pagesRefreshContext";
 import { CREAM, cream, onCream } from "@/lib/cream";
+import { useClientJournal } from "./clientJournalContext";
 
 const ACCENT = "#4a5cff";
 const SURFACE = "#1c1c1e";
@@ -173,6 +174,7 @@ export function ModuleEditor({
   /** The committed props, so the page behind can redraw without a reload. */
   onSaved: (instanceId: string, propValues: Record<string, unknown>) => void;
 }) {
+  const clientJournal = useClientJournal();
   const refreshPages = useRefreshPages();
   const journalId = useJournalId();
   const definition = moduleDefinition(editing.slug);
@@ -993,7 +995,9 @@ export function ModuleEditor({
               <div style={{ color: CREAM, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 Saved as &ldquo;{editing.savedModule.name}&rdquo;
               </div>
-              Linked: a change here changes it everywhere it is used.
+              {clientJournal
+                ? `Linked to your template: a change here stays in ${clientJournal}'s journal, until it changes in the template.`
+                : "Linked: a change here changes it everywhere it is used."}
             </>
           ) : saveName === null ? (
             <button

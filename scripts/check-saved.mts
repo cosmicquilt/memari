@@ -184,7 +184,7 @@ try {
     },
   });
   const heading = { ...(sidebarBox.propValues as object), heading: "One heading everywhere" };
-  const touched = await saved.spreadSavedModuleProps(OWNER, tracker.id, heading);
+  const touched = await saved.spreadSavedModuleProps(OWNER, tracker.id, heading, letter.id);
   await saved.syncLinkedPages(touched);
   const uses = await prisma.moduleInstance.findMany({ where: { savedModuleId: tracker.id } });
   check(uses.length === 3, `three uses: A, B's copy of the spread, the Letter page (got ${uses.length})`);
@@ -196,7 +196,7 @@ try {
     (await savedContentOf(week.id, 0)).includes("One heading everywhere"),
     "and the saved spread it sits in"
   );
-  await refuses(() => saved.spreadSavedModuleProps(STRANGER, tracker.id, {}), "a stranger cannot change my saved module");
+  await refuses(() => saved.spreadSavedModuleProps(STRANGER, tracker.id, {}, letter.id), "a stranger cannot change my saved module");
   await refuses(() => saved.savedModuleForAdd(prisma, STRANGER, tracker.id), "or place it");
 
   // --- Deleting -----------------------------------------------------------

@@ -657,6 +657,8 @@ model Business {
   payoutsReady   Boolean @default(false)
   clients   BusinessClient[]
   templates BusinessTemplate[]
+  /// emailed client links, counted per day (clientLinkSend.ts)
+  linkEmails ClientLinkEmail[]
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 }
@@ -712,4 +714,16 @@ model BusinessClient {
   updatedAt       DateTime          @updatedAt
 
   @@index([businessId])
+}
+
+/// memari. for businesses: one client link Memari emailed (src/lib/clientLinkSend.ts),
+/// kept only to count them - at most LINKS_PER_DAY a day per business, so Memari's
+/// own address can't be made to send without limit (review, 2026-10-26).
+model ClientLinkEmail {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([businessId, createdAt])
 }

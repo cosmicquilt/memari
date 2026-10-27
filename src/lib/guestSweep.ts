@@ -20,6 +20,7 @@
 // cookie does, idle or not, so "order the next one" still finds them. The
 // orders themselves are never deleted here: they are the record of a sale.
 
+import { LISTED } from "@/lib/print/holdsDays";
 import { prisma } from "@/lib/prisma";
 import { GUEST_IDLE_DAYS, GUEST_OWNER_PREFIX } from "@/lib/guest";
 
@@ -34,10 +35,11 @@ export type SweepResult = {
 export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResult> {
   const cutoff = new Date(now.getTime() - GUEST_IDLE_DAYS * 24 * 60 * 60 * 1000);
   // Guests with an order that got as far as payment. An abandoned checkout
-  // (QUOTED) does not count: nothing was bought.
+  // (QUOTED) does not count: nothing was bought. A bank payment still
+  // clearing does (holdsDays.ts, 2026-10-26).
   const customers = (
     await prisma.printOrder.findMany({
-      where: { ownerId: { startsWith: GUEST_OWNER_PREFIX }, status: { not: "QUOTED" } },
+      where: { ownerId: { startsWith: GUEST_OWNER_PREFIX }, OR: LISTED },
       select: { ownerId: true },
       distinct: ["ownerId"],
     })

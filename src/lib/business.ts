@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { currentOwner, type Owner } from "@/lib/owner";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import { nextRange } from "@/lib/print/orderRange";
+import { HOLDS_DAYS } from "@/lib/print/holdsDays";
 
 export type BusinessContext = { owner: Owner; business: Business | null };
 
@@ -37,14 +38,14 @@ export async function isClientJournal(plannerId: string): Promise<boolean> {
 /** What a journal is to its owner's business, for the editor's pill: a
  *  template (and how many clients' journals its edits reach), a client's
  *  journal, or neither. */
-export type BusinessRole = { kind: "template"; reach: number } | { kind: "client"; clientId: string; name: string } | null;
+export type BusinessRole = { kind: "template"; reach: number } | { kind: "client"; clientId: string; name: string; templated: boolean } | null;
 
 export async function businessRoleOf(plannerId: string): Promise<BusinessRole> {
   const [template, client] = await Promise.all([
     prisma.businessTemplate.findUnique({ where: { plannerId }, select: { id: true } }),
-    prisma.businessClient.findUnique({ where: { plannerId }, select: { id: true, name: true } }),
+    prisma.businessClient.findUnique({ where: { plannerId }, select: { id: true, name: true, templateId: true } }),
   ]);
-  if (client) return { kind: "client", clientId: client.id, name: client.name };
+  if (client) return { kind: "client", clientId: client.id, name: client.name, templated: !!client.templateId };
   if (template)
     return { kind: "template", reach: await prisma.businessClient.count({ where: { templateId: template.id, plannerId: { not: null }, archivedAt: null } }) };
   return null;
@@ -141,7 +142,8 @@ export async function clientOrderDefaultsFor(ownerId: string, journalId: string)
     // a client's next book past them). One that WAS paid - the printer
     // refused it, and it waits for a retry or a refund - still holds them,
     // or the same days would be sold again (second review).
-    where: { plannerId: journalId, ownerId, OR: [{ status: { notIn: ["QUOTED", "CANCELED", "SKIPPED", "FAILED"] } }, { status: "FAILED", stripePaymentIntentId: { not: null } }] },
+    // A bank payment still clearing holds its days too (holdsDays.ts).
+    where: { plannerId: journalId, ownerId, OR: HOLDS_DAYS },
     orderBy: { endDate: "desc" },
   });
   const start = last ? nextRange({ start: last.startDate, end: last.endDate, days: last.days }).start : client.startDate;
@@ -155,7 +157,8 @@ export async function clientOrderDefaultsFor(ownerId: string, journalId: string)
 
 /** What an order's status says, in the business's words. */
 export const ORDER_WORDS: Record<string, string> = {
-  QUOTED: "Awaiting payment",
+  // The only QUOTED orders a list shows are payments clearing (holdsDays.ts).
+  QUOTED: "Payment clearing",
   PAID: "Approved",
   SUBMITTED: "Approved",
   IN_PRODUCTION: "In production",

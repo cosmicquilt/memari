@@ -8,7 +8,8 @@
 //   BookVault  each order topic -> <site>/api/bookvault/webhook?sig=...
 //          (BookVault does not sign them: the address carries our own key,
 //          made from PRINT_FILE_SECRET, so that secret must be the site's)
-//   Stripe checkout.session.completed and .async_payment_succeeded
+//   Stripe checkout.session.completed, .async_payment_succeeded and
+//   .async_payment_failed (a bank payment that did not clear, 2026-10-26)
 //          -> <site>/api/stripe/webhook; Stripe shows the endpoint's signing
 //          secret ONCE, when it is made: this prints it, to be set as
 //          STRIPE_WEBHOOK_SECRET where the site runs.
@@ -105,12 +106,25 @@ let failed = false;
       const live = /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "") ? "live" : "test";
       const endpoints = await stripe().webhookEndpoints.list({ limit: 100 });
       const existing = endpoints.data.find((endpoint) => endpoint.url === url);
+      const events: Array<"checkout.session.completed" | "checkout.session.async_payment_succeeded" | "checkout.session.async_payment_failed"> = [
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+        "checkout.session.async_payment_failed",
+      ];
       if (existing) {
-        console.log(`Stripe: already sends to ${url} (${existing.id}, ${live} mode). Its signing secret is in the Stripe dashboard under Developers > Webhooks.`);
+        // An endpoint made before an event was added gets it now (the bank
+        // payment that did not clear, 2026-10-26), its others kept.
+        const missing = existing.enabled_events.includes("*") ? [] : events.filter((event) => !existing.enabled_events.includes(event));
+        if (missing.length) {
+          await stripe().webhookEndpoints.update(existing.id, { enabled_events: [...new Set([...existing.enabled_events, ...missing])] as typeof events });
+          console.log(`Stripe: ${url} (${existing.id}, ${live} mode) now also sends ${missing.join(", ")}.`);
+        } else {
+          console.log(`Stripe: already sends to ${url} (${existing.id}, ${live} mode). Its signing secret is in the Stripe dashboard under Developers > Webhooks.`);
+        }
       } else {
         const made = await stripe().webhookEndpoints.create({
           url,
-          enabled_events: ["checkout.session.completed", "checkout.session.async_payment_succeeded"],
+          enabled_events: events,
           description: "Memari: paid orders go to print",
         });
         console.log(`Stripe: now sends paid checkouts to ${url} (${made.id}, ${live} mode).`);

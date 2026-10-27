@@ -211,8 +211,20 @@ export async function syncLinkedPages(pageIds: Iterable<string | null | undefine
     where: { id: { in: ids }, savedPageId: { not: null } },
     include: { ...MODULES_WITH_TYPE, planner: { select: { ownerId: true } }, savedPage: true },
   });
+  // A CLIENT'S JOURNAL KEEPS ITS OWN EDITS (review, 2026-10-26). Its pages
+  // are linked copies of its template's, so the template's edits reach them;
+  // but an edit made in one client's journal, for that client, was copied
+  // back into the template and on to every other client's journal and next
+  // book - one client's goals on another's page. It stays on the page it was
+  // made on, until that page next changes in the template (which replaces
+  // it, as the editor says) or the coach resets the journal.
+  const plannerIds = [...new Set(linked.map((page) => page.plannerId))];
+  const clientJournals = new Set(
+    plannerIds.length ? (await prisma.businessClient.findMany({ where: { plannerId: { in: plannerIds } }, select: { plannerId: true } })).map((client) => client.plannerId) : []
+  );
   const rewritten: string[] = [];
   for (const page of linked) {
+    if (clientJournals.has(page.plannerId)) continue;
     const saved = page.savedPage;
     const index = page.savedPageIndex ?? 0;
     // A link to another owner's saved page cannot be made through any action
@@ -233,9 +245,18 @@ export async function syncLinkedPages(pageIds: Iterable<string | null | undefine
           id: { not: page.id },
           planner: { ownerId: saved.ownerId },
         },
-        select: { id: true },
+        select: { id: true, plannerId: true, planner: { select: { businessClient: { select: { template: { select: { plannerId: true } } } } } } },
       });
+      // A CLIENT'S JOURNAL FOLLOWS ITS OWN TEMPLATE, AND NOTHING ELSE
+      // (review, 2026-10-26): it takes this edit only when its template does -
+      // the journal edited, or one of the journals this edit reaches (the
+      // coach's own journal can share a saved page with a template). Not a
+      // journal the coach stopped using as a template, nor the template the
+      // client was moved off; and a template never disagrees with its clients.
+      const followed = new Set([page.plannerId, ...others.filter((o) => !o.planner.businessClient).map((o) => o.plannerId)]);
       for (const other of others) {
+        const client = other.planner.businessClient;
+        if (client && !(client.template && followed.has(client.template.plannerId))) continue;
         await writeSlots(tx, other.id, saved.ownerId, slots);
         rewritten.push(other.id);
       }
@@ -454,12 +475,21 @@ export async function saveModuleAs(ownerId: string, instanceId: unknown, rawName
 export async function spreadSavedModuleProps(
   ownerId: string,
   savedModuleId: string,
-  propValues: Prisma.InputJsonValue
+  propValues: Prisma.InputJsonValue,
+  /** the journal the edit was made in */
+  editedIn: string
 ): Promise<string[]> {
   const saved = await ownedSavedModule(prisma, ownerId, savedModuleId);
-  const uses = await prisma.moduleInstance.findMany({
+  const all = await prisma.moduleInstance.findMany({
     where: { savedModuleId: saved.id, page: { planner: { ownerId } } },
-    select: { id: true, pageId: true },
+    select: { id: true, pageId: true, page: { select: { plannerId: true, planner: { select: { businessClient: { select: { template: { select: { plannerId: true } } } } } } } } },
+  });
+  // A client's journal takes it only when its template does (as a page's
+  // edit, syncLinkedPages; review 2026-10-26).
+  const followed = new Set([editedIn, ...all.filter((use) => !use.page.planner.businessClient).map((use) => use.page.plannerId)]);
+  const uses = all.filter((use) => {
+    const client = use.page.planner.businessClient;
+    return !client || (!!client.template && followed.has(client.template.plannerId));
   });
   await prisma.$transaction([
     prisma.savedModule.update({ where: { id: saved.id }, data: { propValues } }),

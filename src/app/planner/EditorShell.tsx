@@ -60,6 +60,7 @@ import { NativePlannerEditor, type EditorUi } from "./NativePlannerEditor";
 import { TimelineDrawer, DRAWER_DEFAULT_HEIGHT, SLIDE_MS } from "./TimelineDrawer";
 import { usePrefersReducedMotion, ServerDevicePixelRatio } from "./useMediaQuery";
 import { loadLevel } from "./loadLevel";
+import { ClientJournalProvider } from "./clientJournalContext";
 
 /** A layout, and the view it opens with - the view the previous one left. */
 type OpenLayout = LoadedPlanner & { level: PageLevel; ui: EditorUi | null };
@@ -303,6 +304,7 @@ export function EditorShell({
       <PagesRefreshProvider value={refreshPages}>
         <JournalProvider value={journalId}>
           <SavedProvider value={saved}>
+          <ClientJournalProvider value={business?.kind === "client" ? business.name : null}>
         {editor}
         <TimelineDrawer
           editorKey={editorKey}
@@ -320,6 +322,7 @@ export function EditorShell({
             void openLevel(next, nextVariant);
           }}
         />
+          </ClientJournalProvider>
           </SavedProvider>
         </JournalProvider>
       </PagesRefreshProvider>

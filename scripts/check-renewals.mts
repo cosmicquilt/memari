@@ -239,6 +239,48 @@ try {
     check(!reminded.includes(later.id) && (await prisma.printOrder.findUnique({ where: { id: later.id } }))?.renewalReminderSentAt === null, `an archived client's renewal gets no reminder (${reminded.length} reminded)`);
   }
 
+  // --- a bank payment still clearing holds its days (holdsDays.ts, 2026-10-26) ---
+  // Checkout completes "unpaid" with a US bank account; it settles days later.
+  // Until then the days are taken: not renewed over, not offered again.
+  {
+    const { recordClearingPayment, failClearingPayment } = await import("../src/lib/print/orders.js");
+    const { clientOrderDefaultsFor } = await import("../src/lib/business.js");
+    const { HOLDS_DAYS, LISTED } = await import("../src/lib/print/holdsDays.js");
+    const business = await prisma.business.findUniqueOrThrow({ where: { ownerId: OWNER } });
+    const plannerId = await journal("Clearing check");
+    await prisma.businessClient.create({ data: { businessId: business.id, name: "Clearing", plannerId, startDate: new Date("2027-01-01T00:00:00Z"), bookMonths: 1 } });
+    const coachs = await order(plannerId, { title: "Coach's book" });
+    const theirs = await order(plannerId, { title: "Paid by bank", status: "QUOTED", startDate: new Date("2027-01-31T00:00:00Z"), endDate: new Date("2027-03-01T00:00:00Z"), autoRenew: false, renewsAt: null, paidByClient: true, stripePaymentMethodId: null, stripeCheckoutSessionId: "cs_check_bank", createdAt: new Date(Date.now() - 3 * DAY) });
+    const before = await clientOrderDefaultsFor(OWNER, plannerId);
+    check(before?.startISO === "2027-01-31", `before the bank payment is recorded, the next book starts at its days (${before?.startISO})`);
+
+    check(await recordClearingPayment(theirs.id, "pi_check_bank", "bank@example.com"), "a finished bank checkout is recorded as clearing");
+    check(!(await recordClearingPayment(theirs.id, "pi_check_bank_again")), "and recording it again changes nothing");
+    const clearing = await prisma.printOrder.findUniqueOrThrow({ where: { id: theirs.id } });
+    check(clearing.status === "QUOTED" && clearing.stripePaymentIntentId === "pi_check_bank" && clearing.contactEmail === "check@example.com", `it stays QUOTED with its payment intent, nothing printed (${clearing.status}, ${clearing.stripePaymentIntentId})`);
+    const held = await prisma.printOrder.findMany({ where: { plannerId, OR: HOLDS_DAYS }, select: { id: true } });
+    const listed = await prisma.printOrder.findMany({ where: { plannerId, OR: LISTED }, select: { id: true } });
+    check(held.some((o) => o.id === theirs.id) && listed.some((o) => o.id === theirs.id), "a clearing payment holds its days and is listed");
+    const after = await clientOrderDefaultsFor(OWNER, plannerId);
+    check(after?.startISO === "2027-03-02", `while it clears, the next book starts after it, so its days are not sold again (${after?.startISO})`);
+    const { deps, calls } = fakes();
+    const outcomes = await runRenewals(now, deps);
+    const mine = outcomes.find((o) => o.orderId === coachs.id);
+    check(mine?.outcome === "skipped" && !calls.charge.length && (await prisma.printOrder.count({ where: { renewedFromId: coachs.id } })) === 0, `the coach's renewal over those days is not ordered, three days after the page opened (${mine?.outcome}: ${mine?.detail ?? ""})`);
+
+    const sent: Array<{ to: string; subject: string }> = [];
+    check(await failClearingPayment(theirs.id, async (email) => (sent.push(email), { sent: true })), "the bank refusing it ends the order");
+    const refused = await prisma.printOrder.findUniqueOrThrow({ where: { id: theirs.id } });
+    check(refused.status === "QUOTED" && refused.stripePaymentIntentId === null && /did not go through/.test(refused.failureReason ?? ""), `a checkout never finished again (QUOTED, no payment), saying why - not a FAILED "book" (${refused.status}: ${refused.failureReason})`);
+    check(!(await prisma.printOrder.findMany({ where: { plannerId, OR: LISTED }, select: { id: true } })).some((o) => o.id === theirs.id), "and no list shows it as a book");
+    check(!(await recordClearingPayment(theirs.id, "pi_check_bank_late")), "a late, re-sent completion can't take its days again");
+    check(sent.length === 1 && sent[0].to === "check@example.com" && /didn't go through/.test(sent[0].subject), `the payer is told (${sent.map((e) => `${e.to}: ${e.subject}`).join("; ")})`);
+    const freed = await clientOrderDefaultsFor(OWNER, plannerId);
+    check(freed?.startISO === "2027-01-31", `its days are free again (${freed?.startISO})`);
+    check(!(await prisma.printOrder.findMany({ where: { plannerId, OR: HOLDS_DAYS }, select: { id: true } })).some((o) => o.id === theirs.id), "and a renewal that failed unpaid holds nothing, so a client's page does not list it");
+    check(!(await failClearingPayment(theirs.id, async () => ({ sent: true }))), "ending it again changes nothing");
+  }
+
   // --- what stops a renewal ---------------------------------------------------------
   {
     const plannerId = await journal("Declined check");

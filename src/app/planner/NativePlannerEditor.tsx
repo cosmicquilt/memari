@@ -10763,7 +10763,9 @@ export function NativePlannerEditor({
             title={
               business.kind === "template"
                 ? "A template of your business: what you change on its pages reaches its clients' journals, and their next books"
-                : "A client's journal: built from a template, which changes it too. Your calendars are not shown in it."
+                : business.templated
+                  ? "A client's journal, built from a template. Changes to the template reach it; what you change here stays in this journal, until that page changes in the template. Your calendars are not shown in it."
+                  : "A client's journal, on no template now: nothing reaches it from one until you choose a template for them. Your calendars are not shown in it."
             }
             style={{
               flexShrink: 0,

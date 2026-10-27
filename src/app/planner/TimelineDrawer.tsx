@@ -82,6 +82,7 @@ import { PagePreview } from "./PagePreview";
 import { PREVIEW_RADIUS } from "./editorStyle";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/anchoredPanel";
 import { CREAM, cream, onCream } from "@/lib/cream";
+import { useClientJournal } from "./clientJournalContext";
 
 // --- geometry, from the spec -----------------------------------------
 //
@@ -2166,6 +2167,7 @@ function PageCardInner({
   reduceMotion: boolean;
   onOpen: () => void;
 }) {
+  const clientJournal = useClientJournal();
   const refreshPages = useRefreshPages();
   const count = pages.length;
   const first = pages[0];
@@ -2175,7 +2177,7 @@ function PageCardInner({
     (count === 1
       ? `${LEVEL_LABELS[first.level]} page ${first.position + 1} - ${first.moduleCount} module(s)`
       : `${LEVEL_LABELS[first.level]} spread, pages ${first.position + 1}-${pages[count - 1].position + 1} - ${moduleCount} module(s)`) +
-    (linked ? ` - saved as "${linked.name}": editing it changes every use` : "");
+    (linked ? (clientJournal ? ` - from your template: editing it here changes only ${clientJournal}'s journal` : ` - saved as "${linked.name}": editing it changes every use`) : "");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   // Outline with an OFFSET, not a border: a border sits inside the box and
@@ -2963,6 +2965,7 @@ function CardMenu({
   linked: TimelinePage["saved"];
   savedInSet: string;
 }) {
+  const clientJournal = useClientJournal();
   const refreshPages = useRefreshPages();
   const saved = useSavedItems().pages;
   const [pending, error, run] = useAsyncAction();
@@ -2983,7 +2986,9 @@ function CardMenu({
             </span>
           </div>
           <div style={{ marginTop: 4, fontSize: 11, color: cream(0.6) }}>
-            Linked: a change to this {kind} changes it in every journal that uses it.
+            {clientJournal
+              ? `Linked to your template: a change to this ${kind} here stays in ${clientJournal}'s journal, until it changes in the template.`
+              : `Linked: a change to this ${kind} changes it in every journal that uses it.`}
           </div>
         </div>
       ) : (
