@@ -75,12 +75,16 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
   } else {
     await prisma.ownerSettings.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
   }
-  // A BUSINESS a guest started (memari. for businesses) comes with them,
-  // unless the account has one already - one each, for now. Its clients and
-  // templates hang off it, and its journals moved above.
-  if (!(await prisma.business.findUnique({ where: { ownerId: userId }, select: { id: true } }))) {
-    await prisma.business.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } });
-  }
+  // A BUSINESS a guest started (memari. for businesses) comes with them. Its
+  // clients and templates hang off it, and its journals moved above. An
+  // account with a business already - one each, for now - takes the guest's
+  // clients, templates and emailed-link count into its own, and the guest's
+  // goes (review, 2026-10-27): left behind, it was out of the account's
+  // reach and still the guest cookie's, so whoever used that browser as a
+  // guest next had its clients' names and addresses. The account's name,
+  // logo and payouts stand; a guest cannot set up payouts.
+  const guestBusiness = await prisma.business.findUnique({ where: { ownerId: guestOwner }, select: { id: true } });
+  if (guestBusiness) await moveGuestBusiness(guestBusiness.id, guestOwner, userId);
   // SAVED PLANNERS (bookmarks of ours, templateSaving.ts): one the account
   // already has is kept once - the pair is unique, so these are copied with
   // the duplicates skipped rather than moved.
@@ -90,6 +94,54 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
     await prisma.savedPlanner.deleteMany({ where: { ownerId: guestOwner } });
   }
   return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count + planners.length;
+}
+
+/** The guest's business to the account (moveGuestWork): moved whole when
+ *  the account has none, merged into the account's when it has one.
+ *
+ *  EVERY WRITE IS SCOPED TO THE GUEST STILL OWNING IT. Claims run on every
+ *  page that claims, so two can run at once (two tabs; a reload during the
+ *  sign-in redirect), and the second may have read the guest's business just
+ *  before the first moved it. Unscoped, the second then found the account
+ *  "already had" a business - the very one just moved - and merged it into
+ *  itself and deleted it, every client with it (review, 2026-10-27). Scoped,
+ *  a claim that lags does nothing. */
+export async function moveGuestBusiness(guestBusinessId: string, guestOwner: string, userId: string): Promise<void> {
+  const own = await prisma.business.findUnique({ where: { ownerId: userId }, select: { id: true } });
+  if (own?.id === guestBusinessId) return;
+  const theGuests = { id: guestBusinessId, ownerId: guestOwner };
+  if (!own) {
+    await prisma.business.updateMany({ where: theGuests, data: { ownerId: userId } });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.businessClient.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
+    prisma.businessTemplate.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
+    prisma.clientLinkEmail.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
+    prisma.business.deleteMany({ where: theGuests }),
+  ]);
+}
+
+/** EVERYTHING A PERSON MADE, gone (account/actions.ts, deleteAccount): their
+ *  journals (pages and modules cascade), saved pages and modules, calendars
+ *  and events, settings - and their business, with its clients, templates
+ *  and emailed-link count (2026-10-27: it was left behind, a guest's beyond
+ *  anyone's reach, its clients' names and addresses kept for as long as any
+ *  client kept opening their page). A coach's payouts account is theirs at
+ *  Stripe and stays there; refunds of their clients' books read the account
+ *  off each order, not the business. Printed-book records stay, with
+ *  auto-renew off: they are the record of a sale. */
+export async function deleteOwnerWork(ownerId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.printOrder.updateMany({ where: { ownerId, autoRenew: true }, data: { autoRenew: false } }),
+    prisma.planner.deleteMany({ where: { ownerId, isTemplate: false } }),
+    prisma.savedPage.deleteMany({ where: { ownerId } }),
+    prisma.savedModule.deleteMany({ where: { ownerId } }),
+    prisma.calendarEvent.deleteMany({ where: { ownerId } }),
+    prisma.calendar.deleteMany({ where: { ownerId } }),
+    prisma.ownerSettings.deleteMany({ where: { ownerId } }),
+    prisma.business.deleteMany({ where: { ownerId } }),
+  ]);
 }
 
 /** Our own sign-in page, returning to `returnTo` afterwards - it is also

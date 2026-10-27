@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of use" updated="15 October 2026">
+    <LegalPage title="Terms of use" updated="27 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Your planners are yours. Use the app for anything
@@ -48,9 +48,11 @@ export default function TermsPage() {
 
       <P>
         <strong>Guest journals are deleted after 30 days without being opened</strong>, and saved
-        pages and modules go once a guest has no journals left. A guest&rsquo;s work is tied to one
-        browser: clear your cookies, or switch device, and it is gone. Signing in keeps it &mdash;
-        work made as a guest moves to your account when you sign in from the same browser.
+        pages and modules go once a guest has no journals left. A business&rsquo;s journals are kept
+        while the business is in use, and a guest who has ordered a book keeps their journals. A
+        guest&rsquo;s work is tied to one browser: clear your cookies, or switch device, and it is
+        gone. Signing in keeps it &mdash; work made as a guest moves to your account when you sign
+        in from the same browser.
       </P>
 
       <H2>Your work is yours</H2>

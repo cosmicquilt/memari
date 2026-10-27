@@ -27,7 +27,28 @@
 //     agrees, once however often it is pressed; a book the printer has begun,
 //     or someone else's, is refused before the printer is asked; a refund
 //     that fails still leaves the book stopped and tells us; and a late
-//     webhook cannot bring a cancelled book back.
+//     webhook cannot bring a cancelled book back;
+//   - the printer cancelling a paid book itself leaves a refund due and
+//     tells us, once; the admin can refund it, and an order whose refund
+//     failed, with a new Stripe key each try; a stop we asked for is not
+//     taken for the printer's own even when its word lands first; and two
+//     deliveries of the same payment send the book to the printer once
+//     (review, 2026-10-27).
+//
+// SABOTAGES THAT TURN IT RED (2026-10-27):
+//   * drop the CANCELED branch from applyJobStatus
+//     -> "THE PRINTER CANCELLING A PAID BOOK ITSELF LEAVES A REFUND DUE"
+//   * refuse every CANCELED order in refundOrder again -> "THE ADMIN CAN REFUND IT"
+//   * drop cancelAskedAt from cancelByCustomer -> "A STOP WE ASKED FOR IS NOT TAKEN..."
+//   * one key for every refund -> "A REFUND TRIED AGAIN AFTER ONE FAILED..."
+//   * drop the claim from fulfilPaidOrder -> "TWO DELIVERIES AT ONCE..."
+//   * drop cancelAskedAt from refundOrder -> "THE ADMIN'S OWN STOP IS NOT..."
+//   * drop the charge_already_refunded case -> "A REFUND MADE IN STRIPE..."
+//   * record a failed refund only when it was due
+//     -> "A REFUND THAT FAILS AFTER THE BOOK WAS STOPPED LEAVES IT DUE"
+//   * leave auto-renew on when a refund fails on a book that came
+//     -> "a shipped book whose refund fails stays SHIPPED..."
+//   * drop the clearing guard -> "A BANK PAYMENT STILL CLEARING IS NOT REFUNDED"
 //
 //   npm run check:renewals
 import { readFileSync } from "node:fs";
@@ -476,12 +497,15 @@ try {
   {
     const { retryOrder, refundOrder, isAdmin } = await import("../src/lib/print/admin.js");
     const unpaid = await order(null, { title: "Never paid", status: "FAILED", autoRenew: false, renewsAt: null, stripePaymentIntentId: null });
-    const cancelled = await order(null, { title: "Cancelled", status: "CANCELED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_cancelled" });
+    // refunded already: a CANCELED order with no reason is a refund still due (refundDue.ts)
+    const cancelled = await order(null, { title: "Cancelled", status: "CANCELED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_cancelled", failureReason: "Refunded 2026-10-01: test" });
+    const byCustomer = await order(null, { title: "Cancelled by them", status: "CANCELED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_by_customer", failureReason: "Cancelled by the customer 2026-10-01." });
     const shipped = await order(null, { title: "Shipped", status: "SHIPPED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_shipped" });
     const refused = async (run: () => Promise<unknown>) => run().then(() => false, () => true);
     check(await refused(() => retryOrder(unpaid.id, "http://localhost")), "an order never paid for is not sent to print");
     check(await refused(() => refundOrder(unpaid.id, "test")), "nor refunded");
     check(await refused(() => refundOrder(cancelled.id, "test")), "a cancelled order is not refunded twice");
+    check(await refused(() => refundOrder(byCustomer.id, "test")), "nor one the customer cancelled and was refunded for");
     check(await refused(() => retryOrder(shipped.id, "http://localhost")), "a shipped order is not sent again");
     const saved = process.env.ADMIN_OWNER_IDS;
     process.env.ADMIN_OWNER_IDS = "user_a, user_b";
@@ -571,6 +595,215 @@ try {
       check(!!error && /stopped/.test(error) && /by hand/.test(error), `the customer is told it is stopped and the refund is coming (${error})`);
       check(after.status === "CANCELED" && /by hand/.test(after.failureReason ?? ""), `the order says so (${after.failureReason})`);
       check(calls.emails.some((e) => e.to === "admin@example.com" && /refund failed/.test(e.text)), "and the admin is alerted");
+    }
+    if (savedAdmin === undefined) delete process.env.ADMIN_EMAIL;
+    else process.env.ADMIN_EMAIL = savedAdmin;
+  }
+
+  // --- the printer's own cancel, refunds owed, a book sent once (review, 2026-10-27) ---
+  {
+    const { applyJobStatus, cancelByCustomer, SENDING } = await import("../src/lib/print/orders.js");
+    const { refundOrder } = await import("../src/lib/print/admin.js");
+    const { refundDue, PRINTER_CANCELLED, REFUND_BY_HAND } = await import("../src/lib/print/refundDue.js");
+    type CancelDeps = import("../src/lib/print/orders.js").CancelDeps;
+    type RefundDeps = import("../src/lib/print/admin.js").RefundDeps;
+    type Sender = import("../src/lib/email.js").EmailSender;
+    const savedAdmin = process.env.ADMIN_EMAIL;
+    process.env.ADMIN_EMAIL = "admin@example.com";
+    const mail = () => {
+      const sent: Array<{ to: string; text: string }> = [];
+      const send: Sender = async (email) => {
+        sent.push({ to: email.to, text: email.text });
+        return { sent: true };
+      };
+      return { sent, send };
+    };
+    const waiting = { status: "SUBMITTED", autoRenew: true, renewsAt: new Date(Date.now() + 20 * DAY), luluStatus: "PRODUCTION_DELAYED" };
+    const cancelled = { name: "CANCELED", status: "CANCELED" as const, tracking: [] as string[] };
+    const said = (run: () => Promise<unknown>) => run().then(() => null, (error: Error) => error.message);
+
+    // The printer stops a paid book unasked: we are told, the refund is due.
+    {
+      const own = await order(null, { ...waiting, title: "Printer's own cancel", luluPrintJobId: "job_printer_own", stripePaymentIntentId: "pi_printer_own" });
+      const { sent, send } = mail();
+      await applyJobStatus("job_printer_own", { ...cancelled, message: "file rejected (test)" }, send);
+      const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: own.id } });
+      check(after.status === "CANCELED" && (after.failureReason ?? "").startsWith(PRINTER_CANCELLED) && refundDue(after), `THE PRINTER CANCELLING A PAID BOOK ITSELF LEAVES A REFUND DUE (${after.failureReason})`);
+      check(!after.autoRenew && after.renewsAt === null, "and auto-renew off");
+      check(sent.length === 1 && sent[0].to === "admin@example.com" && /has not been refunded/.test(sent[0].text), `and we are told (${sent.length} email(s))`);
+      await applyJobStatus("job_printer_own", cancelled, send);
+      check(sent.length === 1, "once, however often the printer says so");
+
+      // the admin refunds it: Stripe asked once, the printer not at all
+      const calls = { stopped: [] as string[], keys: [] as string[] };
+      const deps: RefundDeps = {
+        stopAtPrinter: async (_printer, job) => {
+          calls.stopped.push(job);
+        },
+        refund: async (_params, key) => {
+          calls.keys.push(key);
+        },
+      };
+      const error = await said(() => refundOrder(own.id, "the printer cancelled it", deps));
+      const refunded = await prisma.printOrder.findUniqueOrThrow({ where: { id: own.id } });
+      check(error === null && calls.keys.length === 1 && calls.keys[0].startsWith(`refund-${own.id}-due-`) && calls.stopped.length === 0, `THE ADMIN CAN REFUND IT, the printer not asked again (${error ?? calls.keys.join()})`);
+      check(refunded.status === "CANCELED" && /^Refunded /.test(refunded.failureReason ?? "") && !refundDue(refunded), `and then it is refunded, and no longer due (${refunded.failureReason})`);
+      const again = await said(() => refundOrder(own.id, "again", deps));
+      check(!!again && /already cancelled/.test(again) && calls.keys.length === 1, "and not twice");
+    }
+
+    // A stop we asked for, the printer's word landing before our own write:
+    // no alert, and the cancel finishes as the customer's.
+    {
+      const mine = await order(null, { ...waiting, title: "Race", luluPrintJobId: "job_race", stripePaymentIntentId: "pi_race" });
+      const { sent, send } = mail();
+      const refunds: string[] = [];
+      const told: string[] = [];
+      const deps: CancelDeps = {
+        stopAtPrinter: async (_printer, job) => applyJobStatus(job, cancelled, send),
+        refund: async (paymentIntentId) => {
+          refunds.push(paymentIntentId);
+        },
+        email: async (email) => {
+          told.push(email.to);
+          return { sent: true };
+        },
+      };
+      const error = await said(() => cancelByCustomer(OWNER, mine.id, deps));
+      const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: mine.id } });
+      check(error === null && sent.length === 0, `A STOP WE ASKED FOR IS NOT TAKEN FOR THE PRINTER'S OWN, even when its word lands first (${error ?? ""}; ${sent.length} alert(s))`);
+      check(/^Cancelled by the customer/.test(after.failureReason ?? "") && !refundDue(after) && refunds.join() === "pi_race" && told.length === 1, `and the customer's cancel finishes: refunded, its reason written, the customer told (${after.failureReason}; ${told.length})`);
+    }
+
+    // A stop asked for hours ago: nothing of ours is under way now.
+    {
+      const stale = await order(null, { ...waiting, title: "Stale ask", luluPrintJobId: "job_stale_ask", stripePaymentIntentId: "pi_stale", cancelAskedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) });
+      const { sent, send } = mail();
+      await applyJobStatus("job_stale_ask", cancelled, send);
+      const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: stale.id } });
+      check(refundDue(after) && sent.length === 1, "a stop asked for hours ago does not hide the printer's own");
+    }
+
+    // A refund that failed: the admin makes it, with a new key each try.
+    {
+      const failed = await order(null, { title: "Refund failed", status: "CANCELED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_failed_before", failureReason: `Cancelled by the customer 2026-10-01; ${REFUND_BY_HAND}: Stripe is down (test)` });
+      const keys: string[] = [];
+      const failing: RefundDeps = {
+        stopAtPrinter: async () => {},
+        refund: async (_params, key) => {
+          keys.push(key);
+          throw new Error("still down (test)");
+        },
+      };
+      const first = await said(() => refundOrder(failed.id, "by hand", failing));
+      const between = await prisma.printOrder.findUniqueOrThrow({ where: { id: failed.id } });
+      check(!!first && refundDue(between) && (between.failureReason ?? "").split(REFUND_BY_HAND).length === 2 && /still down/.test(between.failureReason ?? ""), `a refund failing again stays due, saying the latest why once (${between.failureReason})`);
+      const working: RefundDeps = {
+        stopAtPrinter: async () => {},
+        refund: async (_params, key) => {
+          keys.push(key);
+        },
+      };
+      await refundOrder(failed.id, "by hand", working);
+      const done = await prisma.printOrder.findUniqueOrThrow({ where: { id: failed.id } });
+      check(keys.length === 2 && keys[0] !== keys[1] && !refundDue(done), `A REFUND TRIED AGAIN AFTER ONE FAILED GOES TO STRIPE WITH A NEW KEY (${keys.join(" | ")})`);
+    }
+
+    // The admin's Refund on a book with the printer: its own stop, the
+    // printer's word landing during the refund, is no "cancelled itself".
+    {
+      const mine = await order(null, { ...waiting, title: "Admin race", luluPrintJobId: "job_admin_race", stripePaymentIntentId: "pi_admin_race" });
+      const { sent, send } = mail();
+      const deps: RefundDeps = {
+        stopAtPrinter: async (_printer, job) => applyJobStatus(job, cancelled, send),
+        refund: async () => {},
+      };
+      const error = await said(() => refundOrder(mine.id, "asked by the customer", deps));
+      const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: mine.id } });
+      check(error === null && sent.length === 0 && /^Refunded /.test(after.failureReason ?? "") && !refundDue(after), `THE ADMIN'S OWN STOP IS NOT TAKEN FOR THE PRINTER'S (${error ?? ""}; ${sent.length} alert(s); ${after.failureReason})`);
+    }
+
+    // Refunded already in Stripe's dashboard: the next press clears it.
+    {
+      const handled = await order(null, { title: "Refunded by hand", status: "CANCELED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_by_hand", failureReason: `Cancelled by the customer 2026-10-01; ${REFUND_BY_HAND}: Stripe is down (test)` });
+      const deps: RefundDeps = {
+        stopAtPrinter: async () => {},
+        refund: async () => {
+          throw Object.assign(new Error("Charge ch_test has already been refunded."), { code: "charge_already_refunded" });
+        },
+      };
+      const error = await said(() => refundOrder(handled.id, "made in Stripe", deps));
+      const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: handled.id } });
+      check(error === null && !refundDue(after) && /already/.test(after.failureReason ?? ""), `A REFUND MADE IN STRIPE'S DASHBOARD CLEARS AT THE NEXT PRESS (${error ?? ""}; ${after.failureReason})`);
+    }
+
+    // Stopped at the printer, then Stripe fails: no book is coming, so the
+    // order is CANCELED with the refund due, and the next press has a new key.
+    {
+      const stopped = await order(null, { ...waiting, title: "Stopped, then failed", luluPrintJobId: "job_stop_then_fail", stripePaymentIntentId: "pi_stop_then_fail" });
+      const keys: string[] = [];
+      const failing: RefundDeps = {
+        stopAtPrinter: async () => {},
+        refund: async (_params, key) => {
+          keys.push(key);
+          throw new Error("reverse transfer failed (test)");
+        },
+      };
+      await said(() => refundOrder(stopped.id, "asked", failing));
+      const between = await prisma.printOrder.findUniqueOrThrow({ where: { id: stopped.id } });
+      check(between.status === "CANCELED" && refundDue(between) && !between.autoRenew, `A REFUND THAT FAILS AFTER THE BOOK WAS STOPPED LEAVES IT DUE (${between.status}: ${between.failureReason})`);
+      const working: RefundDeps = {
+        stopAtPrinter: async () => {},
+        refund: async (_params, key) => {
+          keys.push(key);
+        },
+      };
+      await refundOrder(stopped.id, "asked", working);
+      const done = await prisma.printOrder.findUniqueOrThrow({ where: { id: stopped.id } });
+      check(keys.length === 2 && keys[0] !== keys[1] && !refundDue(done), `and the next press makes it, with a new key (${keys.join(" | ")})`);
+      // a book that has shipped keeps its status, and the refund is due all the same
+      const shipped = await order(null, { title: "Shipped, refund fails", status: "SHIPPED", autoRenew: true, renewsAt: new Date(Date.now() + 20 * DAY), luluPrintJobId: "job_shipped_refund", stripePaymentIntentId: "pi_shipped_refund" });
+      await said(() => refundOrder(shipped.id, "damaged", failing));
+      const left = await prisma.printOrder.findUniqueOrThrow({ where: { id: shipped.id } });
+      check(left.status === "SHIPPED" && refundDue(left) && !left.autoRenew && left.renewsAt === null, `a shipped book whose refund fails stays SHIPPED, the refund due, and renews no more (${left.status}: ${left.failureReason}; autoRenew ${left.autoRenew})`);
+      // a bank payment still clearing: refused before Stripe is asked
+      const clearing = await order(null, { title: "Clearing", status: "QUOTED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_clearing_refund" });
+      const asked: string[] = [];
+      const refusal = await said(() => refundOrder(clearing.id, "asked", { stopAtPrinter: async () => {}, refund: async (_params, key) => { asked.push(key); } }));
+      const still = await prisma.printOrder.findUniqueOrThrow({ where: { id: clearing.id } });
+      check(!!refusal && /not cleared/.test(refusal) && asked.length === 0 && still.status === "QUOTED" && still.failureReason === null, `A BANK PAYMENT STILL CLEARING IS NOT REFUNDED, nor marked owed (${refusal})`);
+    }
+
+    // Sent once: two deliveries of one payment at once, one print job.
+    {
+      const { LULU } = await import("../src/lib/print/printer.js");
+      const real = LULU.submit;
+      let jobs = 0;
+      LULU.submit = async () => {
+        jobs += 1;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return { jobId: `job_claim_${jobs}`, status: "CREATED" };
+      };
+      try {
+        const paying = await order(null, { title: "Sent once", status: "QUOTED", autoRenew: false, renewsAt: null, stripePaymentIntentId: null, luluStatus: null });
+        await Promise.all([fulfilPaidOrder(paying.id, { paymentIntentId: "pi_once" }, "https://example.com"), fulfilPaidOrder(paying.id, { paymentIntentId: "pi_once" }, "https://example.com")]);
+        const after = await prisma.printOrder.findUniqueOrThrow({ where: { id: paying.id } });
+        check(jobs === 1 && after.status === "SUBMITTED" && after.luluPrintJobId === "job_claim_1", `TWO DELIVERIES AT ONCE SEND THE BOOK TO THE PRINTER ONCE (${jobs} job(s), ${after.status})`);
+        // a run that ended part way: claimed, and not sent again by a late delivery
+        const stuck = await order(null, { title: "Interrupted", status: "PAID", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_stuck", luluStatus: SENDING });
+        await fulfilPaidOrder(stuck.id, { paymentIntentId: "pi_stuck" }, "https://example.com");
+        check(jobs === 1, "an order already being sent is not sent again");
+        // the printer refusing: FAILED, and unclaimed for Retry
+        LULU.submit = async () => {
+          throw new Error("Lulu said no (test)");
+        };
+        const refusing = await order(null, { title: "Refused", status: "QUOTED", autoRenew: false, renewsAt: null, stripePaymentIntentId: null, luluStatus: null });
+        await fulfilPaidOrder(refusing.id, { paymentIntentId: "pi_refused" }, "https://example.com").catch(() => {});
+        const refused = await prisma.printOrder.findUniqueOrThrow({ where: { id: refusing.id } });
+        check(refused.status === "FAILED" && refused.luluStatus === null, `a refusal leaves it FAILED and unclaimed, for Retry (${refused.status}, ${refused.luluStatus})`);
+      } finally {
+        LULU.submit = real;
+      }
     }
     if (savedAdmin === undefined) delete process.env.ADMIN_EMAIL;
     else process.env.ADMIN_EMAIL = savedAdmin;

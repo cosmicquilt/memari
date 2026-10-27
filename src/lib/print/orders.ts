@@ -16,7 +16,8 @@
 //                    back only if it agrees
 //
 // Every step is safe to repeat: a webhook delivered twice finds the order
-// already past the step and does nothing.
+// already past the step and does nothing - and one delivered twice AT ONCE
+// finds it claimed (fulfilPaidOrder, SENDING; review, 2026-10-27).
 
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
@@ -34,6 +35,7 @@ import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
 import { adminAlertEmail, bankPaymentFailedEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
+import { PRINTER_CANCELLED, REFUND_BY_HAND } from "./refundDue";
 
 export { OrderError };
 
@@ -383,8 +385,14 @@ export async function failClearingPayment(orderId: string, send: EmailSender = s
   return true;
 }
 
+/** What luluStatus says while fulfilPaidOrder has an order claimed and is
+ *  handing it to the printer: no printer's own word, so it cannot be
+ *  mistaken for one. Left there, the run that claimed it ended part way -
+ *  the admin page says to look at the printer before sending it again. */
+export const SENDING = "MEMARI_SENDING";
+
 /** Paid: send it to print. Safe to call again - an order past QUOTED/PAID
- *  is left alone. */
+ *  is left alone, and one already being sent is too. */
 export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentId?: string; paymentMethodId?: string }, origin: string): Promise<void> {
   // QUOTED -> PAID, once: the update only matches an order still QUOTED.
   await prisma.printOrder.updateMany({
@@ -399,8 +407,21 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
     await prisma.printOrder.updateMany({ where: { plannerId: order.plannerId, id: { not: order.id }, autoRenew: true }, data: { autoRenew: false, renewsAt: null } });
   }
   if (!order || order.status !== "PAID" || order.luluPrintJobId) return;
+  // SENT ONCE (review, 2026-10-27). Stripe can deliver the same event twice
+  // at once, and both deliveries found the order PAID with no job and both
+  // sent it: two books printed, one paid for. Now the order is claimed
+  // first, and only the run whose update matched sends it.
+  const claimed = await prisma.printOrder.updateMany({
+    where: { id: order.id, status: "PAID", luluPrintJobId: null, luluStatus: null },
+    data: { luluStatus: SENDING },
+  });
+  if (claimed.count !== 1) return;
+  // Only the printer's answer is inside the try: a job the printer took
+  // is never recorded as refused because something after it failed - the
+  // order stays claimed instead, for the admin to look at.
+  let job: { jobId: string; status: string | null; attention?: string };
   try {
-    const job = await printerFor(order.printer).submit({
+    job = await printerFor(order.printer).submit({
       externalId: order.id,
       title: order.title,
       sku: order.podPackageId,
@@ -411,30 +432,30 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
       level: order.shippingLevel as ShippingLevel,
       contactEmail: order.contactEmail ?? (order.shippingAddress as unknown as ShippingAddress).email ?? "",
     });
-    const range = { start: order.startDate, end: order.endDate, days: order.days };
-    const address = order.shippingAddress as unknown as ShippingAddress;
-    const submitted = await prisma.printOrder.update({
-      where: { id: order.id },
-      data: {
-        status: "SUBMITTED",
-        // The column says Lulu for history; it holds the job's id at
-        // whichever printer the order went to (`printer`).
-        luluPrintJobId: job.jobId,
-        luluStatus: job.status,
-        renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, shippedAbroad(bindingFromEnum(order.binding), address.countryCode), new Date()) : null,
-      },
-    });
-    await notify(placedEmail(submitted));
-    // Placed, but something of ours stands in its way (BookVault waiting
-    // for payment): ours to see to, so the alert, and the order stays with
-    // the printer.
-    if (job.attention) await notify(adminAlertEmail(submitted, job.attention));
   } catch (error) {
     const reason = `Paid, but the printer refused the job: ${error instanceof Error ? error.message : String(error)}`;
-    await prisma.printOrder.update({ where: { id: order.id }, data: { status: "FAILED", failureReason: reason } });
+    await prisma.printOrder.update({ where: { id: order.id }, data: { status: "FAILED", failureReason: reason, luluStatus: null } });
     await notify(adminAlertEmail(order, reason));
     throw error;
   }
+  const range = { start: order.startDate, end: order.endDate, days: order.days };
+  const address = order.shippingAddress as unknown as ShippingAddress;
+  const submitted = await prisma.printOrder.update({
+    where: { id: order.id },
+    data: {
+      status: "SUBMITTED",
+      // The column says Lulu for history; it holds the job's id at
+      // whichever printer the order went to (`printer`).
+      luluPrintJobId: job.jobId,
+      luluStatus: job.status,
+      renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, shippedAbroad(bindingFromEnum(order.binding), address.countryCode), new Date()) : null,
+    },
+  });
+  await notify(placedEmail(submitted));
+  // Placed, but something of ours stands in its way (BookVault waiting
+  // for payment): ours to see to, so the alert, and the order stays with
+  // the printer.
+  if (job.attention) await notify(adminAlertEmail(submitted, job.attention));
 }
 
 const LULU_TO_STATUS: Record<string, "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" | "DELIVERED" | "CANCELED" | "FAILED"> = {
@@ -497,13 +518,41 @@ export async function refreshBookVaultOrders(limit = 20): Promise<number> {
   return read;
 }
 
+/** How long a stop Memari asked for is taken as ours when the printer's
+ *  word that it is cancelled arrives: the cancel takes seconds, a printer's
+ *  news can be minutes late. Past it, nothing of ours is still under way -
+ *  and a stopped book nobody recorded a reason for is a refund due anyway. */
+const ASKED_TO_STOP_MS = 15 * 60 * 1000;
+
 /** A printer's report on a job, onto its order - and the email when it
  *  ships (or the alert when the printer gives up on it), sent on the CHANGE
  *  only: a printer may report the same status twice, and the conditional
  *  update below lets just one delivery through. */
-export async function applyJobStatus(jobId: string, report: JobReport): Promise<void> {
+export async function applyJobStatus(jobId: string, report: JobReport, send: EmailSender = sendEmail): Promise<void> {
   const { status, tracking } = report;
   const said = `${report.name ?? "a problem"}${report.message ? `: ${report.message}` : ""}`;
+  // THE PRINTER CANCELLED IT ITSELF (review, 2026-10-27): a paid book is
+  // stopped and Memari did not ask. The money is still taken and no book is
+  // coming, so it is told to us like a failure, auto-renew goes off, and the
+  // order says the refund is due (refundDue.ts) - the admin page lists it and
+  // refunds it. A stop Memari asked for in the last quarter hour is not this
+  // (cancelAskedAt): the printer's word on it can land before the cancel
+  // that asked has written its own reason, and is taken as plain news below.
+  if (status === "CANCELED") {
+    const before = await prisma.printOrder.findFirst({ where: { luluPrintJobId: jobId } });
+    const stopped = await prisma.printOrder.updateMany({
+      where: {
+        luluPrintJobId: jobId,
+        status: { notIn: ["CANCELED", "DELIVERED"] },
+        stripePaymentIntentId: { not: null },
+        OR: [{ cancelAskedAt: null }, { cancelAskedAt: { lt: new Date(Date.now() - ASKED_TO_STOP_MS) } }],
+      },
+      data: { status: "CANCELED", autoRenew: false, renewsAt: null, failureReason: `${PRINTER_CANCELLED} It said ${said}.` },
+    });
+    if (before && stopped.count > 0) {
+      await notify(adminAlertEmail(before, `The printer cancelled this book itself (it said ${said}). The payment has not been refunded: refund it from the admin page.`), send);
+    }
+  }
   if (status === "SHIPPED" || status === "FAILED") {
     const before = await prisma.printOrder.findFirst({ where: { luluPrintJobId: jobId } });
     const moved = await prisma.printOrder.updateMany({
@@ -512,8 +561,8 @@ export async function applyJobStatus(jobId: string, report: JobReport): Promise<
       data: { status, ...(status === "SHIPPED" ? { shippedAt: new Date() } : {}), ...(tracking.length > 0 ? { trackingUrls: tracking } : {}) },
     });
     if (before && moved.count > 0) {
-      if (status === "SHIPPED") await notify(shippedEmail(before, tracking));
-      else await notify(adminAlertEmail(before, `The printer reported ${said}.`));
+      if (status === "SHIPPED") await notify(shippedEmail(before, tracking), send);
+      else await notify(adminAlertEmail(before, `The printer reported ${said}.`), send);
     }
   }
   await prisma.printOrder.updateMany({
@@ -605,6 +654,13 @@ export async function cancelByCustomer(ownerId: string, orderId: string, deps: C
   if (!order) throw new OrderError("That order could not be found.");
   if (order.status === "CANCELED") throw new OrderError("This order is already cancelled.");
   if (!customerCanCancel(order)) throw new OrderError(STARTED);
+  // Asked, written down first: the printer's word that it stopped can land
+  // before this does (applyJobStatus), and must not read as the printer
+  // stopping it of its own accord. Not cleared when the printer refuses: a
+  // second press may be under way, and the cost of leaving it is small - a
+  // printer stopping the book itself in the next quarter hour shows as a
+  // refund due on the admin page without the email.
+  await prisma.printOrder.update({ where: { id: order.id }, data: { cancelAskedAt: new Date() } });
   try {
     await deps.stopAtPrinter(order.printer, order.luluPrintJobId!);
   } catch (error) {
@@ -613,17 +669,18 @@ export async function cancelByCustomer(ownerId: string, orderId: string, deps: C
   }
   const day = new Date().toISOString().slice(0, 10);
   // Cancelled once, however many times it is pressed: only the press that
-  // moves the order sends the email.
+  // moves the order sends the email. An order the printer's own word has
+  // already made CANCELED, with no reason yet, is this press's to finish.
   const moved = await prisma.printOrder.updateMany({
-    where: { id: order.id, status: { not: "CANCELED" } },
+    where: { id: order.id, OR: [{ status: { not: "CANCELED" } }, { failureReason: null }] },
     data: { status: "CANCELED", luluStatus: "CANCELED", autoRenew: false, renewsAt: null, failureReason: `Cancelled by the customer ${day}.` },
   });
   try {
     await deps.refund(order.stripePaymentIntentId!, order.id);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
-    await prisma.printOrder.update({ where: { id: order.id }, data: { failureReason: `Cancelled by the customer ${day}; the refund failed and must be made by hand: ${why}` } });
-    await notify(adminAlertEmail(order, `The customer cancelled and the printer stopped it, but the refund failed: ${why}. Refund it from Stripe.`), deps.email);
+    await prisma.printOrder.update({ where: { id: order.id }, data: { failureReason: `Cancelled by the customer ${day}; ${REFUND_BY_HAND}: ${why}` } });
+    await notify(adminAlertEmail(order, `The customer cancelled and the printer stopped it, but the refund failed: ${why}. Refund it from the admin page.`), deps.email);
     throw new OrderError("Your book is stopped. The refund did not go through straight away - we have been told, and will make it by hand within two business days.");
   }
   if (moved.count > 0) await notify(cancelledEmail(order), deps.email);

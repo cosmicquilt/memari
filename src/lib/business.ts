@@ -24,8 +24,16 @@ export async function currentBusiness(): Promise<BusinessContext | null> {
   const owner = await currentOwner();
   if (!owner) return null;
   const business = await prisma.business.findUnique({ where: { ownerId: owner.id } });
+  // A guest's business is swept once nobody has used it for GUEST_IDLE_DAYS
+  // (guestSweep.ts), and looking at it is using it - nothing else marks a
+  // coach who only reads their clients' pages. Touched here, at most daily.
+  if (business && owner.guest && Date.now() - business.updatedAt.getTime() > TOUCH_EVERY_MS) {
+    await prisma.business.update({ where: { id: business.id }, data: { updatedAt: new Date() } });
+  }
   return { owner, business };
 }
+
+const TOUCH_EVERY_MS = 24 * 60 * 60 * 1000;
 
 /** Is this journal a client's? Their journal shows none of the coach's own
  *  calendars - a client's book must not carry the coach's appointments

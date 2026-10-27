@@ -14,6 +14,7 @@ import { coachReceives } from "@/lib/print/clientPays";
 import { ChartCard, Columns, StageBar, WarnIcon } from "../charts";
 import css from "../business.module.css";
 import { LISTED } from "@/lib/print/holdsDays";
+import { refundDue } from "@/lib/print/refundDue";
 
 const RANGES = [
   { key: "6", label: "6 months" },
@@ -104,8 +105,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           </div>
           {orders.map((o) => {
             const who = o.plannerId && clientOf.get(o.plannerId);
-            const word = ORDER_WORDS[o.status] ?? o.status;
-            const tone = o.status === "FAILED" ? css.tagWarn : o.status === "DELIVERED" || o.status === "SHIPPED" ? css.tagOk : "";
+            // cancelled with the money still taken: the printer stopped
+            // it, or a refund failed (refundDue.ts) - ours to refund
+            const owed = o.status === "CANCELED" && refundDue(o);
+            const word = owed ? "Cancelled, refund due" : (ORDER_WORDS[o.status] ?? o.status);
+            const tone = o.status === "FAILED" || owed ? css.tagWarn : o.status === "DELIVERED" || o.status === "SHIPPED" ? css.tagOk : "";
             return (
               <div key={o.id} className={css.row}>
                 <span className={`${css.cell} ${css.strong}`}>{who ?? <span className={css.dim}>Sample for you</span>}</span>
@@ -126,7 +130,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   {o.paidByClient && (
                     <span className={css.dim} style={{ display: "block", fontSize: 12 }}>
                       {o.status === "CANCELED"
-                        ? "Paid by them, refunded"
+                        ? owed
+                          ? "Paid by them, not refunded yet"
+                          : "Paid by them, refunded"
                         : o.status === "QUOTED"
                           ? "Paid by them from a bank account, still clearing"
                           : `Paid by them${o.markupCents ? `, you receive ${money(coachReceives(o.markupCents), o.currency)}` : ""}`}

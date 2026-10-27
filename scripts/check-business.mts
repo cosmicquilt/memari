@@ -627,6 +627,15 @@ try {
   await small.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
   await shoot(small, "biz-phone-home");
   await phone.close();
+
+  // LOOKING IS USING (review, 2026-10-27): a guest's business is swept once
+  // unused for a month (guestSweep.ts), and a coach who only reads their
+  // clients' pages changes nothing - so opening it marks it used.
+  const idleSince = new Date(Date.now() - 40 * 86_400_000);
+  await prisma.$executeRaw`UPDATE "Business" SET "updatedAt" = ${idleSince} WHERE "ownerId" = ${guest.ownerId}`;
+  await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
+  const looked = await prisma.business.findUnique({ where: { ownerId: guest.ownerId }, select: { updatedAt: true } });
+  say(!!looked && Date.now() - looked.updatedAt.getTime() < 10 * 60_000, `A GUEST COACH OPENING THEIR BUSINESS MARKS IT USED (${looked?.updatedAt.toISOString()})`);
   await context.close();
 
   // Signing in brings the guest's business with their journals (owner.ts,

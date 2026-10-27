@@ -63,6 +63,7 @@ export function DeleteAccount({ guest }: { guest: boolean }) {
     plural(summary.savedPages, "saved page"),
     plural(summary.savedModules, "saved module"),
     plural(summary.calendars, "calendar"),
+    ...(summary.business ? [`your business ${summary.business.name} with ${plural(summary.business.clients, "client")}`] : []),
   ];
   const armed = typed.trim().toLowerCase() === "delete";
   return (

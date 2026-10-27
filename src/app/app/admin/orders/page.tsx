@@ -1,6 +1,7 @@
 // memari.studio/app/admin/orders - every order, the ones that need a person
-// first: paid but not printing (FAILED, or stuck at PAID for over an hour),
-// then shipped books that may not have arrived (src/lib/print/delivery.ts).
+// first: paid but not printing (FAILED, stuck at PAID for over an hour, or
+// cancelled with the money still taken - refundDue.ts), then shipped books
+// that may not have arrived (src/lib/print/delivery.ts).
 // Only for the accounts in ADMIN_OWNER_IDS; anyone else gets a 404, so the
 // page does not say it exists.
 
@@ -13,7 +14,9 @@ import { rangeLabel } from "@/lib/print/orderBook";
 import { BINDING_SPECS, bindingFromEnum } from "@/lib/print/products";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { OrderActions } from "./OrderActions";
-import { LISTED } from "@/lib/print/holdsDays";
+import { LISTED, isClearing } from "@/lib/print/holdsDays";
+import { REFUND_DUE, refundDue } from "@/lib/print/refundDue";
+import { SENDING } from "@/lib/print/orders";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +29,7 @@ export default async function AdminOrdersPage() {
     prisma.printOrder.findMany({
       where: {
         stripePaymentIntentId: { not: null },
-        OR: [{ status: "FAILED" }, { status: "PAID", updatedAt: { lt: hourAgo } }],
+        OR: [{ status: "FAILED" }, { status: "PAID", updatedAt: { lt: hourAgo } }, REFUND_DUE],
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -37,12 +40,13 @@ export default async function AdminOrdersPage() {
 
   const row = (order: (typeof recent)[number]) => {
     const paid = !!order.stripePaymentIntentId;
+    const owed = refundDue(order);
     return (
       <article key={order.id} style={{ padding: 12, background: "#1c1c1e", border: `1px solid ${needing.has(order.id) ? "#8a2a22" : cream(0.1)}`, borderRadius: 8, display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
           <strong style={{ flex: 1, minWidth: 0, color: CREAM, fontSize: 13 }}>{order.title}</strong>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatCents(order.totalCents)}</span>
-          <span style={{ color: order.status === "FAILED" ? "#ff8a80" : CREAM }}>{order.status}</span>
+          <span style={{ color: order.status === "FAILED" || owed ? "#ff8a80" : CREAM }}>{owed ? `${order.status}, REFUND DUE` : order.status}</span>
         </div>
         <div style={{ color: cream(0.6), lineHeight: 1.5 }}>
           {rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })} · {BINDING_SPECS[bindingFromEnum(order.binding)].label} · {order.pageCount} pages · {order.shippingLevel} ·{" "}
@@ -53,11 +57,19 @@ export default async function AdminOrdersPage() {
           {order.renewedFromId ? ` · renewal of ${order.renewedFromId}` : ""}
         </div>
         {order.failureReason && <div style={{ color: cream(0.75), lineHeight: 1.5 }}>{order.failureReason}</div>}
+        {owed && order.status === "CANCELED" && !order.failureReason && (
+          <div style={{ color: cream(0.75), lineHeight: 1.5 }}>Cancelled at the printer with no reason recorded, and no refund recorded: check Stripe, then refund it here.</div>
+        )}
+        {order.status === "PAID" && order.luluStatus === SENDING && (
+          <div style={{ color: "#ffb4a8", lineHeight: 1.5 }}>
+            Sending was interrupted: it may already be at the printer, under this order&rsquo;s id as its external id. Look there before Retry or Refund: sent again it may print twice, and refunded it may still print.
+          </div>
+        )}
         {(order.shippedAt || order.trackingCode) && <Delivery order={order} />}
         <OrderActions
           orderId={order.id}
           canRetry={paid && (order.status === "FAILED" || order.status === "PAID")}
-          canRefund={paid && order.status !== "CANCELED"}
+          canRefund={paid && !isClearing(order) && (order.status !== "CANCELED" || owed)}
           canMarkArrived={!!order.deliveryProblem || order.status === "SHIPPED"}
         />
       </article>

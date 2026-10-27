@@ -19,6 +19,15 @@
 // settings - the Stripe customer among them - stay for as long as the
 // cookie does, idle or not, so "order the next one" still finds them. The
 // orders themselves are never deleted here: they are the record of a sale.
+//
+// A GUEST'S BUSINESS (memari. for businesses; review, 2026-10-27). A coach's
+// journals are one set - their templates and every client's journal - and
+// are in use whenever the coach works on the business or a client opens
+// their page, neither of which touches a journal. Swept one journal at a
+// time, an active coach lost each client's journal a month after its last
+// edit. Now none of a guest coach's journals go while the business is in
+// use; and once it is not, the business goes after them, with its clients'
+// names, emails and addresses - before, those were kept for ever.
 
 import { LISTED } from "@/lib/print/holdsDays";
 import { prisma } from "@/lib/prisma";
@@ -30,6 +39,7 @@ export type SweepResult = {
   savedModules: number;
   calendars: number;
   settings: number;
+  businesses: number;
 };
 
 export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResult> {
@@ -44,7 +54,24 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
       distinct: ["ownerId"],
     })
   ).map((row) => row.ownerId);
-  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX, notIn: customers }, updatedAt: { lt: cutoff } };
+  // Guest coaches whose business is in use: touched by the coach (business.ts,
+  // currentBusiness), a client changed, a client's page opened, or any of
+  // their journals edited.
+  const coaches = (await prisma.business.findMany({ where: { ownerId: { startsWith: GUEST_OWNER_PREFIX } }, select: { ownerId: true } })).map((row) => row.ownerId);
+  const working =
+    coaches.length === 0
+      ? []
+      : [
+          ...(await prisma.business.findMany({
+            where: {
+              ownerId: { in: coaches },
+              OR: [{ updatedAt: { gte: cutoff } }, { clients: { some: { OR: [{ updatedAt: { gte: cutoff } }, { accessSeenAt: { gte: cutoff } }] } } }],
+            },
+            select: { ownerId: true },
+          })),
+          ...(await prisma.planner.findMany({ where: { ownerId: { in: coaches }, updatedAt: { gte: cutoff } }, select: { ownerId: true }, distinct: ["ownerId"] })),
+        ].map((row) => row.ownerId);
+  const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX, notIn: [...customers, ...working] }, updatedAt: { lt: cutoff } };
 
   const journals = await prisma.planner.deleteMany({ where: idleGuest });
 
@@ -61,9 +88,12 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
       // had to be told about, one day after calendars. check:guest-sweep
       // names each kind for exactly this reason.
       ...(await prisma.ownerSettings.findMany({ where: idleGuest, select: { ownerId: true }, distinct: ["ownerId"] })),
+      // A business, the third (2026-10-27). Its clients, templates and
+      // emailed-link counts cascade with it.
+      ...(await prisma.business.findMany({ where: idleGuest, select: { ownerId: true } })),
     ].map((row) => row.ownerId)
   );
-  const nothing = { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0, settings: 0 };
+  const nothing = { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0, settings: 0, businesses: 0 };
   if (owners.size === 0) return nothing;
 
   const active = await prisma.planner.findMany({
@@ -76,11 +106,12 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
 
   const gone = { ...idleGuest, ownerId: { in: [...owners] } };
   // The events cascade with their calendar, so nothing of the feed is left.
-  const [savedPages, savedModules, calendars, settings] = await prisma.$transaction([
+  const [savedPages, savedModules, calendars, settings, businesses] = await prisma.$transaction([
     prisma.savedPage.deleteMany({ where: gone }),
     prisma.savedModule.deleteMany({ where: gone }),
     prisma.calendar.deleteMany({ where: gone }),
     prisma.ownerSettings.deleteMany({ where: gone }),
+    prisma.business.deleteMany({ where: gone }),
   ]);
 
   return {
@@ -89,5 +120,6 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
     savedModules: savedModules.count,
     calendars: calendars.count,
     settings: settings.count,
+    businesses: businesses.count,
   };
 }

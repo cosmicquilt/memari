@@ -15,6 +15,7 @@
 //   npm run check:guest-sweep
 
 import "./appUnderTest.mjs";
+import { readFileSync } from "node:fs";
 
 let failures = 0;
 const check = (ok: boolean, what: string) => {
@@ -42,6 +43,27 @@ async function main() {
   const signer = `guest:${tag}ffff`;
   const signedIn = `user_${tag}claim`;
   const account = `user_${tag}`;
+  // Coaches trying memari. for businesses as guests (2026-10-27): one using
+  // it, one whose client opens their page, one gone; and one who signs in
+  // to an account that has a business of its own.
+  const coachWorking = `guest:${tag}gggg`;
+  const coachSeen = `guest:${tag}hhhh`;
+  const coachGone = `guest:${tag}iiii`;
+  const coachSigner = `guest:${tag}jjjj`;
+  const coachAccount = `user_${tag}coach`;
+  // From the review of the fixes (2026-10-27): one coach who has edited
+  // just one journal lately; a sign-in whose second claim lags behind the
+  // first; two claims at once; and a guest coach deleting everything.
+  const coachEditing = `guest:${tag}kkkk`;
+  const coachLagging = `guest:${tag}llll`;
+  const lagAccount = `user_${tag}lag`;
+  const coachTwice = `guest:${tag}mmmm`;
+  const twiceAccount = `user_${tag}twice`;
+  const coachLeaving = `guest:${tag}nnnn`;
+  // and a guest coach who has had a book ordered, idle a month (the privacy
+  // page says such a guest's journals and business are kept with the order)
+  const coachCustomer = `guest:${tag}oooo`;
+  const coaches = [coachWorking, coachSeen, coachGone, coachSigner, coachAccount, coachEditing, coachLagging, lagAccount, coachTwice, twiceAccount, coachLeaving, coachCustomer];
 
   const old = new Date(Date.now() - (GUEST_IDLE_DAYS + 5) * DAY_MS);
   /** A saved page's stored size. A Planner carries none - its pages do. */
@@ -105,6 +127,28 @@ async function main() {
         status,
       },
     });
+  /** A coach's business: a template and one client with their journal,
+   *  the journals idle since `journals`, the business last changed `when`,
+   *  its client `clientWhen`, the client's page last opened `seen`. */
+  const business = async (ownerId: string, name: string, when: Date, journals: Date, seen: Date | null = null, clientWhen: Date = when) => {
+    const template = await planner(ownerId, journals);
+    const theirs = await planner(ownerId, journals);
+    const row = await prisma.business.create({
+      data: {
+        ownerId,
+        name,
+        templates: { create: { plannerId: template.id } },
+        linkEmails: { create: {} },
+      },
+      include: { templates: true },
+    });
+    const client = await prisma.businessClient.create({
+      data: { businessId: row.id, name: `Client of ${name}`, email: "client@example.com", shippingAddress: { name: "Client", street1: "2 Elm St" }, templateId: row.templates[0].id, plannerId: theirs.id, accessSeenAt: seen },
+    });
+    await prisma.$executeRaw`UPDATE "Business" SET "updatedAt" = ${when} WHERE id = ${row.id}`;
+    await prisma.$executeRaw`UPDATE "BusinessClient" SET "updatedAt" = ${clientWhen} WHERE id = ${client.id}`;
+    return { id: row.id, clientId: client.id, journals: [template.id, theirs.id] };
+  };
   const savedPage = async (ownerId: string, when: Date) => {
     const row = await prisma.savedPage.create({
       data: { ownerId, name: "Sweep test", content: [], ...page },
@@ -148,6 +192,20 @@ async function main() {
     // order row stays - it is not the sweep's to delete.
     const browserJournal = await planner(browser, old);
     const abandonedCheckout = await order(browser, browserJournal.id, "QUOTED");
+
+    // COACHES. Working: every journal and client idle a month, only the
+    // business looked at today (currentBusiness's touch). Seen: nothing
+    // touched by the coach, but their client opened their page yesterday.
+    // Editing: all idle but one journal of theirs edited today - the shape
+    // of the original bug, which swept the idle ones one at a time. Gone:
+    // nothing of theirs used in a month.
+    const working = await business(coachWorking, "Working Coaching", new Date(), old, null, old);
+    const seen = await business(coachSeen, "Seen Coaching", old, old, new Date(Date.now() - DAY_MS));
+    const editing = await business(coachEditing, "Editing Coaching", old, old);
+    await planner(coachEditing, new Date());
+    const gone = await business(coachGone, "Gone Coaching", old, old);
+    const ordered = await business(coachCustomer, "Ordered Coaching", old, old);
+    await order(coachCustomer, ordered.journals[1], "SUBMITTED");
 
     const result = await sweepIdleGuests();
     console.log(`  swept: ${JSON.stringify(result)}`);
@@ -200,6 +258,23 @@ async function main() {
     check(!(await exists("planner", browserJournal.id)), "a guest who only opened a payment page is swept like any other");
     check((await prisma.printOrder.findUnique({ where: { id: abandonedCheckout.id } })) !== null, "though their unpaid order row stays");
 
+    const journalsLeft = async (ids: string[]) => prisma.planner.count({ where: { id: { in: ids } } });
+    check((await journalsLeft(working.journals)) === 2, "A GUEST COACH STILL USING THEIR BUSINESS KEEPS EVERY JOURNAL, each untouched a month");
+    check((await journalsLeft(seen.journals)) === 2, "and so does one whose client opened their page this month");
+    check((await journalsLeft(editing.journals)) === 2, "AND ONE WHO EDITED ANY ONE JOURNAL THIS MONTH KEEPS THE IDLE ONES TOO");
+    check((await prisma.business.count({ where: { id: { in: [working.id, seen.id, editing.id] } } })) === 3, "and all keep their business");
+    check((await journalsLeft(gone.journals)) === 0, "a guest coach gone a month loses their journals like any guest");
+    check((await prisma.business.count({ where: { id: gone.id } })) === 0, "AND THEIR BUSINESS GOES");
+    check(
+      (await prisma.businessClient.count({ where: { id: gone.clientId } })) + (await prisma.clientLinkEmail.count({ where: { businessId: gone.id } })) + (await prisma.businessTemplate.count({ where: { businessId: gone.id } })) === 0,
+      "with its clients' names, emails and addresses, its templates and its emailed-link count"
+    );
+    check(result.businesses >= 1, `the sweep counts the business it took (${result.businesses})`);
+    check(
+      (await journalsLeft(ordered.journals)) === 2 && (await prisma.business.count({ where: { id: ordered.id } })) === 1,
+      "A GUEST COACH WHO HAS HAD A BOOK ORDERED KEEPS THEIR JOURNALS AND BUSINESS, however idle (as the privacy page says)"
+    );
+
     // SIGNING IN brings everything along, the orders included (2026-10-15):
     // a book bought as a guest is the account's from then on.
     const { moveGuestWork } = await import("../src/lib/owner.js");
@@ -214,6 +289,63 @@ async function main() {
     check((await prisma.ownerSettings.findUnique({ where: { ownerId: signedIn } })) !== null, "and their settings, where the account had none");
     check((await prisma.printOrder.count({ where: { ownerId: signer } })) + (await prisma.planner.count({ where: { ownerId: signer } })) === 0, "leaving the guest owning nothing");
 
+    // SIGNING IN TO AN ACCOUNT WITH A BUSINESS (review, 2026-10-27): the
+    // guest's clients, templates and link count join the account's, and the
+    // guest's business is gone - before, it stayed the cookie's, and the next
+    // guest on that browser had its clients.
+    const theirs = await business(coachSigner, "Guest Coaching", new Date(), new Date());
+    const accountBusiness = await prisma.business.create({ data: { ownerId: coachAccount, name: "Account Coaching" } });
+    await moveGuestWork(coachSigner, coachAccount);
+    const merged = await prisma.business.findUnique({ where: { ownerId: coachAccount }, include: { _count: { select: { clients: true, templates: true, linkEmails: true } } } });
+    check((await prisma.business.count({ where: { ownerId: coachSigner } })) === 0, "SIGNING IN TO AN ACCOUNT WITH A BUSINESS LEAVES THE GUEST NONE");
+    check(
+      merged?.id === accountBusiness.id && merged.name === "Account Coaching" && merged._count.clients === 1 && merged._count.templates === 1 && merged._count.linkEmails === 1,
+      `the account's business takes the guest's client, template and link count, and keeps its own name (${JSON.stringify(merged?._count)}, ${merged?.name})`
+    );
+    check((await prisma.businessClient.findUnique({ where: { id: theirs.clientId } }))?.plannerId === theirs.journals[1], "and the client keeps their journal, now the account's");
+
+    // A CLAIM THAT LAGS BEHIND ANOTHER (review, 2026-10-27). Claims run on
+    // every page that claims, so two can overlap; the second may have read
+    // the guest's business just before the first moved it to the account.
+    // Driven here with that stale read: it must leave the business alone -
+    // before, it took the account's new business for the guest's, merged it
+    // into itself and deleted it, every client with it.
+    const { moveGuestBusiness, deleteOwnerWork } = await import("../src/lib/owner.js");
+    const lagging = await business(coachLagging, "Lagging Coaching", new Date(), new Date());
+    await moveGuestWork(coachLagging, lagAccount);
+    await moveGuestBusiness(lagging.id, coachLagging, lagAccount);
+    const kept = await prisma.business.findUnique({ where: { id: lagging.id }, include: { _count: { select: { clients: true, templates: true } } } });
+    check(kept?.ownerId === lagAccount && kept._count.clients === 1 && kept._count.templates === 1, `A SIGN-IN CLAIM THAT LAGS BEHIND ANOTHER LEAVES THE MOVED BUSINESS WHOLE (${kept ? `${kept.ownerId === lagAccount ? "the account's" : kept.ownerId}, ${JSON.stringify(kept._count)}` : "deleted"})`);
+    // and two claims at once into an account with a business: one merge, no error
+    await business(coachTwice, "Twice Coaching", new Date(), new Date());
+    await prisma.business.create({ data: { ownerId: twiceAccount, name: "Twice Account Coaching" } });
+    const both = await Promise.allSettled([moveGuestWork(coachTwice, twiceAccount), moveGuestWork(coachTwice, twiceAccount)]);
+    const twice = await prisma.business.findUnique({ where: { ownerId: twiceAccount }, include: { _count: { select: { clients: true } } } });
+    check(both.every((r) => r.status === "fulfilled") && twice?._count.clients === 1 && (await prisma.business.count({ where: { ownerId: coachTwice } })) === 0, `two claims at once merge once and neither fails (${both.map((r) => r.status).join(", ")}; ${twice?._count.clients} client(s))`);
+
+    // DELETING EVERYTHING takes the business too (account/actions.ts,
+    // deleteAccount): before, a guest's stayed, out of anyone's reach, kept
+    // for as long as any client opened their page.
+    const leaving = await business(coachLeaving, "Leaving Coaching", new Date(), new Date());
+    await deleteOwnerWork(coachLeaving);
+    check(
+      (await prisma.business.count({ where: { ownerId: coachLeaving } })) + (await prisma.businessClient.count({ where: { id: leaving.clientId } })) + (await prisma.planner.count({ where: { ownerId: coachLeaving } })) === 0,
+      "DELETING EVERYTHING DELETES THE BUSINESS, its clients and its journals with it"
+    );
+
+    // EVERY KIND OF ROW HANGING OFF A BUSINESS is named in the merge above
+    // (owner.ts). A new one added to the schema and not to the merge would
+    // stay pointing at a business that is deleted - or block the delete.
+    // Any field typed Business, optional or not, in any model.
+    const schema = readFileSync("prisma/schema.prisma", "utf8");
+    const hanging = schema
+      .split(/^model /m)
+      .slice(1)
+      .filter((block) => /^\s+\w+\s+Business\??\s+@relation/m.test(block))
+      .map((block) => block.slice(0, block.indexOf(" ")))
+      .sort();
+    check(hanging.join() === "BusinessClient,BusinessTemplate,ClientLinkEmail", `the rows that hang off a business are the three the merge moves (${hanging.join(", ")})`);
+
     // EVERY KIND OF ROW A GUEST CAN OWN is named above. If a new one is added
     // to the schema and not to the sweep, this is where it should have been.
     check(
@@ -221,7 +353,9 @@ async function main() {
       `the sweep reports what it took: ${JSON.stringify(result)}`
     );
   } finally {
-    await prisma.printOrder.deleteMany({ where: { ownerId: { in: [customer, browser, signer, signedIn] } } });
+    await prisma.business.deleteMany({ where: { ownerId: { in: coaches } } });
+    await prisma.planner.deleteMany({ where: { ownerId: { in: coaches } } });
+    await prisma.printOrder.deleteMany({ where: { ownerId: { in: [customer, browser, signer, signedIn, coachCustomer] } } });
     for (const ownerId of [abandoned, active, fresh, account, customer, browser, signer, signedIn]) {
       await prisma.calendar.deleteMany({ where: { ownerId } });
       await prisma.savedPage.deleteMany({ where: { ownerId } });
@@ -252,6 +386,19 @@ try {
 //   * drop printOrder from moveGuestWork (owner.ts) -> "AND THEIR ORDERS"
 //   * drop the `notIn: customers` exclusion (2026-10-15)
 //     -> "A GUEST WHO BOUGHT A BOOK KEEPS THEIR JOURNAL"
+//   * drop `working` from the exclusion (2026-10-27)
+//     -> "A GUEST COACH STILL USING THEIR BUSINESS KEEPS EVERY JOURNAL"
+//   * drop the business from the sweep -> "AND THEIR BUSINESS GOES"
+//   * go back to moving the business only when the account has none
+//     -> "SIGNING IN TO AN ACCOUNT WITH A BUSINESS LEAVES THE GUEST NONE"
+//   * drop the business's own updatedAt from `working`
+//     -> "A GUEST COACH STILL USING THEIR BUSINESS KEEPS EVERY JOURNAL"
+//   * drop the recent-journal arm of `working`
+//     -> "AND ONE WHO EDITED ANY ONE JOURNAL THIS MONTH KEEPS THE IDLE ONES TOO"
+//   * drop both moveGuestBusiness guards (the same-id return and the
+//     owner scope) -> "A SIGN-IN CLAIM THAT LAGS BEHIND ANOTHER..."
+//   * drop the business from deleteOwnerWork
+//     -> "DELETING EVERYTHING DELETES THE BUSINESS"
 
 console.log(
   failures === 0

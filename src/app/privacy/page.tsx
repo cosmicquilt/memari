@@ -11,7 +11,11 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     lives in Clerk and our rows key on Clerk's id string alone
 //   - four first-party cookies, all named memari-*, in src/lib
 //   - guest journals are deleted after GUEST_IDLE_DAYS idle, in
-//     src/app/guest/route.ts, and their saved items follow
+//     src/app/guest/route.ts, and their saved items follow - except a guest
+//     business's, kept while the business is in use; an unused guest
+//     business goes once its journals have (src/lib/guestSweep.ts,
+//     2026-10-27). A guest who has ordered a book is never swept
+//     (guestSweep.ts `customers`, since 2026-10-15)
 //   - the PDF is built on the server (src/app/app/export/route.ts) and
 //     handed back; it is not stored and not sent anywhere
 //   - ORDERS (src/lib/print, 2026-10-04): an order stores the delivery
@@ -32,7 +36,9 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     typed is used for one answer and not stored, and nothing is sent to
 //     a third party - the libraries and ZIP codes are files in the app
 //   - DELETING AN ACCOUNT (2026-10-08, app/account/actions.ts,
-//     deleteAccount): everything the person made and their Clerk user go;
+//     deleteAccount; owner.ts deleteOwnerWork): everything the person made,
+//     their business and its clients included (2026-10-27), and their Clerk
+//     user go;
 //     PrintOrder rows stay, as "Orders are kept" below says, with
 //     auto-renew off so nothing more is charged
 //   - DELIVERY (2026-10-19, src/lib/print/delivery.ts): a shipped book's
@@ -50,7 +56,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="19 October 2026">
+    <LegalPage title="Privacy" updated="27 October 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
@@ -233,6 +239,11 @@ export default function PrivacyPage() {
         <LI>
           <strong>Guest journals are deleted after 30 days without being opened.</strong> Saved
           pages and saved modules belonging to a guest go when that guest has no journals left.
+          A business started as a guest keeps its journals while it is in use &mdash; opened by
+          you, or a client&rsquo;s page opened by them &mdash; and once it has gone 30 days unused,
+          it is deleted with its journals, and its clients&rsquo; names, emails and addresses go
+          with it. None of this applies once a guest has ordered a book, for themselves or a
+          client: their journals, and any business they started, are then kept with the order.
           This is not a threat to get you to sign up &mdash; it is how we avoid keeping work nobody
           is coming back for. If you want a journal to last, sign in and it comes with you.
         </LI>

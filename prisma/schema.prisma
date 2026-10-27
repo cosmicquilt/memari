@@ -571,11 +571,17 @@ model PrintOrder {
   /// refunds go back to the same one.
   printer        String  @default("lulu")
   luluPrintJobId String?
-  /// Lulu's own status name, as last reported.
+  /// Lulu's own status name, as last reported - or MEMARI_SENDING while
+  /// fulfilPaidOrder has it claimed and is handing it over (orders.ts).
   luluStatus     String?
   trackingUrls   Json?
   /// Why it FAILED, in words someone can act on.
   failureReason  String?
+  /// When Memari last asked the printer to stop it (the customer's cancel,
+  /// the admin's refund), so the printer's word that it is cancelled is
+  /// known for our own and not taken for the printer stopping it unasked
+  /// (review, 2026-10-27; refundDue.ts).
+  cancelAskedAt  DateTime?
 
   /// DID IT ARRIVE (2026-10-19) - src/lib/print/delivery.ts. Neither printer
   /// says when a book is delivered, so a carrier tracker and the customer do.

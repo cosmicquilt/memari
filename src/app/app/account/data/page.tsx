@@ -85,7 +85,7 @@ export default async function DataPage() {
       <div className="acct-card" style={{ borderColor: "rgba(255, 143, 122, 0.28)" }}>
         <h2>{owner.guest ? "Delete your guest work" : "Delete your account"}</h2>
         <p className="acct-dim">
-          Deletes every journal, saved page and module, and calendar{owner.guest ? "" : ", and your account"}. It cannot be undone, so download anything you want to keep first.
+          Deletes every journal, saved page and module, and calendar, and your business with its clients if you have one{owner.guest ? "" : ", and your account"}. It cannot be undone, so download anything you want to keep first.
         </p>
         <DeleteAccount guest={owner.guest} />
       </div>
