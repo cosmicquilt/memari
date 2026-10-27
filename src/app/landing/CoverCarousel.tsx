@@ -20,7 +20,9 @@
 // still and scrolls by hand.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import covers from "./coverCarousel.json";
+import { coverById } from "@/app/covers/catalogue";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
 import styles from "./coverCarousel.module.css";
 
@@ -151,16 +153,23 @@ export function CoverCarousel() {
             <ul key={copy} className={styles.collage} aria-hidden={copy === 1 || undefined}>
               {order.map((c, i) => (
                 <li key={c.id} className={size[i] === "big" ? styles.big : styles.small} data-photo={c.photo}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/landing/covers/${c.id}.webp`}
-                    alt={copy === 1 ? "" : `A notebook bound in a ${c.name} cover`}
-                    width={640}
-                    height={640}
-                    loading="lazy"
-                    decoding="async"
-                    draggable={false}
-                  />
+                  {/* Each opens its cover on the covers page (2026-10-26), named
+                      by its own cover ("Onyx 4"). Out of the Tab order, both
+                      copies: the strip never stops moving, so a focused tile
+                      drifts out of sight, and every cover is a click away
+                      under Covers in the header (review, 2026-10-26). */}
+                  <Link href={`/covers/${coverById(c.id)?.slug ?? ""}`} tabIndex={-1} draggable={false}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/landing/covers/${c.id}.webp`}
+                      alt={copy === 1 ? "" : `A notebook with the ${coverById(c.id)?.name ?? c.name} cover`}
+                      width={640}
+                      height={640}
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
+                  </Link>
                 </li>
               ))}
             </ul>

@@ -108,6 +108,13 @@
     backdrop-filter 240ms ease-out;
 }
 
+/* A menu open: the bar is the panel's own cream, one sheet with it - over
+   the hero the faint bar would show the photo through it, muddy under dark
+   type (2026-10-26). */
+.navOpen {
+  background: var(--cream);
+}
+
 /* Over the hero: no bar at all, cream type (SiteHeader). */
 .navClear {
   background: transparent;
@@ -124,17 +131,17 @@
 
 .navClear .brand,
 .navClear .quiet,
-.navClear .links a:hover,
-.navClear .links a:focus-visible {
+.navClear .links > a:hover,
+.navClear .links > a:focus-visible {
   color: var(--cream);
 }
 
-.navClear .links a {
+.navClear .links > a {
   color: rgba(var(--cream-rgb), 0.78);
 }
 
 .navClear .brand,
-.navClear .links a,
+.navClear .links > a,
 .navClear .quiet {
   text-shadow: 0 1px 10px rgba(20, 12, 6, 0.4);
 }
@@ -177,16 +184,16 @@
   gap: 28px;
 }
 
-.links a {
+.links > a {
   color: var(--muted);
   text-decoration: none;
   font-size: 14px;
   transition: color 160ms ease-out;
 }
 
-.links a:hover,
-.links a:focus-visible,
-.links a[aria-current="page"] {
+.links > a:hover,
+.links > a:focus-visible,
+.links > a[aria-current="page"] {
   color: var(--ink);
 }
 
@@ -236,7 +243,7 @@
   transform: scale(0.97);
 }
 
-.links a:focus-visible,
+.links > a:focus-visible,
 .quiet:focus-visible,
 .primary:focus-visible,
 .primaryLarge:focus-visible,
@@ -270,6 +277,11 @@
   left: 0;
   right: 0;
   display: grid;
+  /* scrolls within the screen: on a landscape phone or at 200% zoom the
+     panel is taller than the room under the bar (review, 2026-10-26) */
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px 16px 16px;
   background: var(--cream);
   border-bottom: 1px solid var(--line);
@@ -296,6 +308,225 @@
   border-radius: 6px;
 }
 
+/* The Layouts menu's button (SiteHeader): a link's type, a caret, opened
+   by a click (2026-10-26). */
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms ease-out;
+}
+
+.linkButton:hover,
+.linkButton:focus-visible,
+.linkButton[aria-expanded="true"],
+.linkButton[aria-current="page"] {
+  color: var(--ink);
+}
+
+.linkButton:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.navClear .linkButton {
+  color: rgba(var(--cream-rgb), 0.78);
+  text-shadow: 0 1px 10px rgba(20, 12, 6, 0.4);
+}
+
+.navClear .linkButton:hover,
+.navClear .linkButton:focus-visible {
+  color: var(--cream);
+}
+
+.caret {
+  width: 9px;
+  height: 9px;
+  transition: transform 160ms ease-out;
+}
+
+[aria-expanded="true"] > .caret {
+  transform: rotate(180deg);
+}
+
+/* "For coaches": where the bar has room for it beside Sign in. */
+@media (max-width: 1000px) {
+  .quietWide {
+    display: none;
+  }
+}
+
+.mega {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1.15fr);
+  padding: 0 max(16px, calc((100vw - 1120px) / 2));
+  background: var(--cream);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 18px 36px rgba(40, 30, 20, 0.12);
+}
+
+.megaColumn {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 22px 26px 26px;
+  border-right: 1px solid var(--line);
+}
+
+.megaColumn:first-child {
+  padding-left: 0;
+}
+
+.megaColumn:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
+.megaHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.megaHead small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.megaList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+}
+
+.megaShelves {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.megaList a,
+.megaAll {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+/* The accent darkened for text on the cream: #4a5cff is 4.13:1 there, this
+   is 5.67:1 (review, 2026-10-26). */
+.megaList a:hover,
+.megaList a:focus-visible,
+.megaHead:hover,
+.megaAll:hover {
+  color: #3a49d6;
+}
+
+.megaAll {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.megaCard {
+  display: grid;
+  gap: 2px;
+  margin: 0 -12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.megaCard:hover,
+.megaCard:focus-visible {
+  background: rgba(74, 92, 255, 0.07);
+}
+
+.megaCard strong {
+  font-size: 14px;
+}
+
+.megaCard span {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.mega a:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* The phone Menu's Layouts group and the quieter links under the rest. */
+.menuGroup {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 4px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuGroup:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.menuSub {
+  display: grid;
+  padding: 2px 0 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.menuPanel .menuSub a {
+  padding: 9px 4px;
+  font-size: 16px;
+  font-weight: 500;
+  border-bottom: none;
+}
+
+.menuSmall {
+  display: grid;
+  padding-top: 6px;
+}
+
+.menuPanel .menuSmall a {
+  padding: 9px 4px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: none;
+}
+
 @media (max-width: 760px) {
   .nav {
     grid-template-columns: 1fr auto;
@@ -313,6 +544,12 @@
 
 @media (min-width: 761px) {
   .menuPanel {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .mega {
     display: none;
   }
 }

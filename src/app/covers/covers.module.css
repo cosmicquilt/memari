@@ -1,0 +1,180 @@
+/* The covers page (CoversGallery): filters, a grid of covers and the chosen
+   one large beside it - under it on a phone. In the site's cream and ink,
+   the pen's blue for what is chosen. */
+
+.gallery {
+  display: grid;
+  gap: 22px;
+}
+
+.filters {
+  display: grid;
+  gap: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips button {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chips button span {
+  margin-left: 4px;
+  color: var(--muted);
+}
+
+.chips button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--cream);
+}
+
+.chips button[aria-pressed="true"] span {
+  color: rgba(var(--cream-rgb), 0.7);
+}
+
+.chips button:focus-visible,
+.tile:focus-visible {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 32px;
+  align-items: start;
+}
+
+.gridSide {
+  min-width: 0;
+}
+
+.count {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 16px 14px;
+}
+
+.tile {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
+.tile img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.tile[aria-pressed="true"] img {
+  outline: 2px solid #4a5cff;
+  outline-offset: 3px;
+}
+
+.tile span {
+  font-size: 13px;
+}
+
+.detail {
+  position: sticky;
+  top: 80px;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  scroll-margin-top: 72px;
+}
+
+.detail img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 14px;
+}
+
+.preview {
+  margin: 0;
+  font-size: 12px;
+}
+
+.detail h2 {
+  margin: 4px 0 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.soon {
+  margin: 6px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .detail {
+    position: static;
+    order: -1;
+    max-width: 420px;
+  }
+}
+
+@media (max-width: 420px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -124,6 +124,15 @@ async function main() {
     { path: "/layouts", expect: [200], as: "nobody", what: "the layouts gallery" },
     { path: "/layouts/irregular-income", expect: [200], as: "nobody", what: "a whole planner's page" },
     { path: "/layouts/week-irregular-income", expect: [200], as: "nobody", what: "one part of a planner, on its own" },
+    // The site map's own pages (siteMap.ts, 2026-10-26): the covers gallery,
+    // a cover's address (the carousel's tiles open these), the quiz's
+    // address, and the pages the footer now links that no row had.
+    { path: "/covers", expect: [200], as: "nobody", what: "the covers gallery" },
+    { path: "/covers/onyx-1", expect: [200], as: "nobody", what: "one cover's own page" },
+    { path: "/covers/not-a-cover", expect: [404], as: "nobody", what: "an unknown cover is 404, not 500" },
+    { path: "/quiz", expect: [307, 308], as: "nobody", what: "the quiz's address sends people to the otter" },
+    { path: "/help", expect: [200], as: "nobody", what: "help, whose answers the footer opens by address" },
+    { path: "/modules", expect: [200], as: "nobody", what: "the modules, now in the Layouts menu" },
     { path: "/guest", expect: [303], as: "nobody", what: "GET /guest redirects rather than minting a guest" },
     { path: "/app", expect: [307, 302, 303], as: "nobody", what: "/app with no cookie is sent to sign-in" },
     { path: "/app", expect: [200], as: "guest", what: "the start dialog" },

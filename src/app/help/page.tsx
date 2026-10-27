@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { SitePage } from "@/app/landing/SitePage";
+import { OpenAnswer } from "./OpenAnswer";
 import { GUEST_IDLE_DAYS, GUEST_JOURNAL_LIMIT } from "@/lib/guest";
 import { LEGAL_CONTACT } from "@/app/legal/LegalPage";
 import styles from "@/app/landing/landing.module.css";
@@ -18,7 +19,9 @@ export const metadata: Metadata = {
   description: "How Memari works: accounts and guests, designing pages, printing at home, ordering a bound book, renewals, and your data.",
 };
 
-type QA = { q: string; a: ReactNode };
+// `id`: an address of its own (/help#shipping), linked from the footer
+// (siteMap.ts, 2026-10-26); OpenAnswer opens it on arrival.
+type QA = { q: string; a: ReactNode; id?: string };
 
 const GROUPS: Array<[heading: string, items: QA[]]> = [
   [
@@ -119,6 +122,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       {
+        id: "shipping",
         q: "How long does a book take to arrive?",
         a: <p>
           Printing takes three to five business days, then the post: from a few days by express to around three weeks by
@@ -128,6 +132,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       {
+        id: "cancel",
         q: "Can I cancel an order?",
         a: <p>
           Yes, under Account → Orders, until the printer starts it, about an hour after you pay. The whole payment is
@@ -135,6 +140,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       {
+        id: "returns",
         q: "What if it arrives damaged or wrong?",
         a: <p>
           Tell us within 30 days at <a href={`mailto:${LEGAL_CONTACT}`}>{LEGAL_CONTACT}</a>, with a photo where there is
@@ -142,6 +148,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       {
+        id: "auto-renew",
         q: "How does auto-renew work?",
         a: <p>
           It is off unless you turn it on. When it is on, the next book, the same number of days starting the day after, is
@@ -183,6 +190,7 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
 export default function HelpPage() {
   return (
     <SitePage>
+      <OpenAnswer />
       <header className={site.head}>
         <p className={styles.eyebrow}>Help</p>
         <h1 className={styles.headline}>Questions, answered.</h1>
@@ -199,8 +207,8 @@ export default function HelpPage() {
                 {heading}
               </h2>
               <div className={site.faq}>
-                {items.map(({ q, a }) => (
-                  <details key={q}>
+                {items.map(({ q, a, id }) => (
+                  <details key={q} id={id}>
                     <summary>{q}</summary>
                     <div>{a}</div>
                   </details>

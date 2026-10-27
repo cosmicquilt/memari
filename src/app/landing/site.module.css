@@ -41,6 +41,13 @@
   letter-spacing: -0.02em;
 }
 
+/* A section an address opens (/layouts#week, #planners - the Layouts menu): its
+   heading clear of the fixed bar at every width; the section's own top
+   padding does it on a desktop but not on a phone (review, 2026-10-26). */
+.block[id] {
+  scroll-margin-top: 32px;
+}
+
 /* A shelf of planners: Planning, Growth... under the Planners heading. */
 .shelf {
   margin-top: 48px;
@@ -496,6 +503,8 @@
 
 .faq details {
   border-bottom: 1px solid var(--line);
+  /* clear of the fixed bar when an address opens one (/help#shipping) */
+  scroll-margin-top: 88px;
 }
 
 .faq summary {
@@ -650,7 +659,18 @@
 
 .footerSmall {
   margin: 36px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
   font-size: 13px;
+}
+
+.footerLegal {
+  display: flex;
+  gap: 18px;
 }
 
 @media (max-width: 900px) {

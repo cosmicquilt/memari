@@ -9,12 +9,21 @@
 //
 // The site's other pages (2026-10-08: Layouts, Pricing, About, Help) have
 // no hero, so they ask for it `solid`: the bar from the first frame.
+//
+// What it links to is the site map (siteMap.ts, 2026-10-26): a Layouts
+// menu, Covers, How it works and Help, "For coaches" beside Sign in. The
+// Layouts menu opens on a CLICK, never a hover - hover is unreliable on
+// Andrew's touchscreen laptop (memari-pointer-not-media) and NN/g's 2024
+// menu checklist says the same - and closes on Escape, a click outside,
+// a link in it, or a new page. While a menu is open the bar is solid, so
+// the cream panel never hangs under a clear bar over the hero.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import styles from "./landing.module.css";
 import { AccountButton } from "@/app/app/account/AccountButton";
+import { FOR_COACHES, HEADER_LINKS, LAYOUTS_MENU, headerSection } from "./siteMap";
 
 /** Whether the hero - the first section - is still under the nav. */
 let overHero = true;
@@ -42,47 +51,213 @@ function onScroll(cb: () => void) {
   return () => window.removeEventListener("scroll", cb);
 }
 
-/** The site's pages, in the nav. "How it works" is the landing page's own
- *  section; the rest are pages of their own. */
-const PAGES: Array<[href: string, label: string]> = [
-  ["/#how", "How it works"],
-  ["/layouts", "Layouts"],
-  ["/pricing", "Pricing"],
-  ["/help", "Help"],
-];
-
 const never = () => () => {};
+
+function Caret() {
+  return (
+    <svg className={styles.caret} viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M1.5 3.5 5 7l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export function SiteHeader({ signedIn, guest = false, solid = false }: { signedIn: boolean; guest?: boolean; solid?: boolean }) {
   const clear = useSyncExternalStore(solid ? never : onOverHero, () => !solid && overHero, () => !solid);
   const moved = useSyncExternalStore(solid ? never : onScroll, () => !solid && window.scrollY > 0, () => false);
   const path = usePathname();
-  // On a phone the links do not fit beside the buttons: a Menu button
-  // opens them under the bar. Open on the page it was opened on, so any
-  // navigation closes it.
+  const section = headerSection(path);
+  // Each menu is open on the page it was opened on, so any navigation
+  // closes it. Menu = the phone's; layouts = the desktop Layouts menu and,
+  // on the phone, its group in the Menu.
   const [menuOn, setMenuOn] = useState<string | null>(null);
+  const [layoutsOn, setLayoutsOn] = useState<string | null>(null);
   const menu = menuOn === path;
-  const setMenu = (open: boolean | ((was: boolean) => boolean)) => setMenuOn((typeof open === "function" ? open(menu) : open) ? path : null);
+  const layouts = layoutsOn === path;
+  const setMenu = (open: boolean) => setMenuOn(open ? path : null);
+  const setLayouts = (open: boolean) => setLayoutsOn(open ? path : null);
+  const header = useRef<HTMLElement>(null);
+  const layoutsButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+
+  // Escape closes the open menu and gives focus back to the button that
+  // opened it (the phone's Menu, or Layouts); a press outside the header,
+  // or focus tabbing out of it, closes it - an open panel must not hang
+  // over the control focus has moved on to (review, 2026-10-26).
+  useEffect(() => {
+    if (!layouts && !menu) return;
+    const outside = (target: EventTarget | null) => !!header.current && !header.current.contains(target as Node);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      (menu ? menuButton : layoutsButton).current?.focus();
+      setLayoutsOn(null);
+      setMenuOn(null);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (outside(e.target)) {
+        setLayoutsOn(null);
+        setMenuOn(null);
+      }
+    };
+    const onFocus = (e: FocusEvent) => {
+      if (outside(e.target)) {
+        setLayoutsOn(null);
+        setMenuOn(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("focusin", onFocus);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("focusin", onFocus);
+    };
+  }, [layouts, menu]);
+
+  const close = () => {
+    setLayoutsOn(null);
+    setMenuOn(null);
+  };
+  const bare = clear && !layouts && !menu;
+  // The Layouts menu comes straight after its button, and the phone's panel
+  // straight after Menu, in the page's order: Tab goes into a menu as soon
+  // as it opens, and it sits in the Site navigation landmark (review,
+  // 2026-10-26). Both are still placed under the bar by the fixed header.
+  const layoutsMenu = (
+    <div id="layouts-menu" className={styles.mega}>
+      <div className={styles.megaColumn}>
+        <Link href={LAYOUTS_MENU.planners.href} className={styles.megaHead} onClick={close}>
+          {LAYOUTS_MENU.planners.label} <small>{LAYOUTS_MENU.planners.note}</small>
+        </Link>
+        <ul className={`${styles.megaList} ${styles.megaShelves}`}>
+          {LAYOUTS_MENU.shelves.map(([label, id]) => (
+            <li key={id}>
+              <Link href={`/layouts#${id}`} onClick={close}>
+                {label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className={styles.megaColumn}>
+        <Link href={LAYOUTS_MENU.spreads.href} className={styles.megaHead} onClick={close}>
+          {LAYOUTS_MENU.spreads.label} <small>{LAYOUTS_MENU.spreads.note}</small>
+        </Link>
+        <ul className={styles.megaList}>
+          {LAYOUTS_MENU.kinds.map(([label, id]) => (
+            <li key={id}>
+              <Link href={`/layouts#${id}`} onClick={close}>
+                {label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Link href="/layouts" className={styles.megaAll} onClick={close}>
+          All layouts →
+        </Link>
+      </div>
+      <div className={styles.megaColumn}>
+        <span className={styles.megaHead}>Start from</span>
+        {LAYOUTS_MENU.start.map(({ href, label, note }) => (
+          <Link key={href} href={href} className={styles.megaCard} onClick={close}>
+            <strong>{label}</strong>
+            <span>{note}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+  const phoneMenu = (
+    <nav id="site-menu" className={styles.menuPanel} aria-label="Site">
+      <button type="button" className={styles.menuGroup} aria-expanded={layouts} aria-controls="site-menu-layouts" onClick={() => setLayouts(!layouts)}>
+        Layouts <Caret />
+      </button>
+      {layouts && (
+        <div id="site-menu-layouts" className={styles.menuSub}>
+          <Link href={LAYOUTS_MENU.planners.href} onClick={close}>
+            Planners
+          </Link>
+          <Link href={LAYOUTS_MENU.spreads.href} onClick={close}>
+            Weeks, months &amp; days
+          </Link>
+          {LAYOUTS_MENU.start.slice(0, 2).map(({ href, label }) => (
+            <Link key={href} href={href} onClick={close}>
+              {label}
+            </Link>
+          ))}
+        </div>
+      )}
+      {HEADER_LINKS.map(({ href, label }) => (
+        <Link key={href} href={href} onClick={close}>
+          {label}
+        </Link>
+      ))}
+      <div className={styles.menuSmall}>
+        <Link href={FOR_COACHES.href} onClick={close}>
+          {FOR_COACHES.label}
+        </Link>
+        <Link href="/about" onClick={close}>
+          About
+        </Link>
+        {!signedIn && (
+          <Link href="/sign-in?redirect_url=%2Fapp" onClick={close}>
+            Sign in
+          </Link>
+        )}
+      </div>
+    </nav>
+  );
   return (
-    <header className={`${styles.nav} ${clear ? styles.navClear : ""} ${clear && moved ? styles.navMoved : ""}`} data-off-paper="">
-      {/* The mark: "m." (2026-09-25). */}
-      <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home">
+    <header ref={header} className={`${styles.nav} ${bare ? styles.navClear : ""} ${bare && moved ? styles.navMoved : ""} ${layouts || menu ? styles.navOpen : ""}`} data-off-paper="">
+      {/* The mark: "m." (2026-09-25). On the home page itself it changes no
+          address, so it closes an open menu by hand. */}
+      <Link href="/" className={`${styles.brand} ${styles.brandMark}`} aria-label="Memari Studio, home" onClick={close}>
         m.
       </Link>
       <nav className={styles.links} aria-label="Site">
-        {PAGES.map(([href, label]) => {
-          const here = path === href || path.startsWith(`${href}/`);
-          return (
-            <Link key={href} href={href} aria-current={here ? "page" : undefined}>
-              {label}
-            </Link>
-          );
-        })}
+        <button
+          ref={layoutsButton}
+          type="button"
+          className={styles.linkButton}
+          aria-expanded={layouts && !menu}
+          aria-controls="layouts-menu"
+          aria-current={section === "layouts" ? "page" : undefined}
+          onClick={() => {
+            // Opens whatever aria-expanded says is shut - also after the
+            // phone Menu's Layouts group was left open and the screen
+            // widened (review, 2026-10-26).
+            const opening = !(layouts && !menu);
+            setMenu(false);
+            setLayouts(opening);
+          }}
+        >
+          Layouts <Caret />
+        </button>
+        {layouts && !menu && layoutsMenu}
+        {HEADER_LINKS.map(({ href, label }) => (
+          <Link key={href} href={href} aria-current={section === href ? "page" : undefined} onClick={close}>
+            {label}
+          </Link>
+        ))}
       </nav>
       <div className={styles.actions}>
-        <button type="button" className={styles.menuButton} aria-expanded={menu} aria-controls="site-menu" onClick={() => setMenu((m) => !m)}>
+        <button
+          ref={menuButton}
+          type="button"
+          className={styles.menuButton}
+          aria-expanded={menu}
+          aria-controls="site-menu"
+          onClick={() => {
+            setLayouts(false);
+            setMenu(!menu);
+          }}
+        >
           {menu ? "Close" : "Menu"}
         </button>
+        {menu && phoneMenu}
+        <Link href={FOR_COACHES.href} className={`${styles.quiet} ${styles.quietWide}`}>
+          {FOR_COACHES.label}
+        </Link>
         {signedIn ? (
           <>
             <Link href="/app" className={styles.primary}>
@@ -102,23 +277,6 @@ export function SiteHeader({ signedIn, guest = false, solid = false }: { signedI
           </>
         )}
       </div>
-      {menu && (
-        <nav id="site-menu" className={styles.menuPanel} aria-label="Site">
-          {PAGES.map(([href, label]) => (
-            <Link key={href} href={href} onClick={() => setMenu(false)}>
-              {label}
-            </Link>
-          ))}
-          <Link href="/about" onClick={() => setMenu(false)}>
-            About
-          </Link>
-          {!signedIn && (
-            <Link href="/sign-in?redirect_url=%2Fapp" onClick={() => setMenu(false)}>
-              Sign in
-            </Link>
-          )}
-        </nav>
-      )}
     </header>
   );
 }
