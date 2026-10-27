@@ -19,7 +19,8 @@
 // The finishes are described as what they are in print: the book's cover is
 // printed on matte stock with no foil (Lulu's SKU, products.ts), so "gold" is
 // gold-coloured ink and "imprint" a printed shadow. The pictures draw them on
-// photographs of other notebooks: previews, labelled so on the page.
+// photographs of other notebooks (the page's "A preview" line came off,
+// 2026-10-26: his call).
 //
 // Client-safe: the gallery imports it.
 

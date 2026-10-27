@@ -99,7 +99,6 @@ export function CoversGallery() {
         <aside ref={detail} className={css.detail} aria-label={`${chosen.name} cover`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={chosen.image} alt={`A notebook with the ${chosen.name} cover`} width={640} height={640} />
-          <p className={css.preview}>A preview: the cover drawn on a photo of a notebook.</p>
           <h2>{chosen.name}</h2>
           <dl className={css.facts}>
             <dt>Material</dt>

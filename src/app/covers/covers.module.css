@@ -126,11 +126,6 @@
   border-radius: 14px;
 }
 
-.preview {
-  margin: 0;
-  font-size: 12px;
-}
-
 .detail h2 {
   margin: 4px 0 0;
   font-size: 26px;
@@ -178,3 +173,33 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* The line under the headline, with the AI-free seal beside it (AiFreeSeal):
+   inked like the modules' postmark - dark ink, multiplied into the paper,
+   a little crooked. Below the words on a phone. */
+.ledeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 44px;
+}
+
+.seal {
+  flex: none;
+  width: 132px;
+  height: 132px;
+  margin-top: 22px;
+  color: #24201d;
+  opacity: 0.8;
+  mix-blend-mode: multiply;
+  transform: rotate(-8deg);
+}
+
+@media (max-width: 860px) {
+  .seal {
+    width: 104px;
+    height: 104px;
+    margin-top: 4px;
+  }
+}
+
