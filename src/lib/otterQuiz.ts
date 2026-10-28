@@ -477,7 +477,7 @@ export const REACTIONS: Record<string, string> = {
   "rhythm:owl": "A night owl! Otters are up at dusk too.",
   "rhythm:early": "An early bird. I'll start your hours at five.",
   "rhythm:nights": "Nights. Your day runs from 7 in the evening to 7 the next morning, the hours after midnight marked +1.",
-  "pages:day": "Daily pages! A nice thick book, then.",
+  "pages:day": "Daily pages! A whole page for every day.",
   "hourly:lists": "Lists it is. Your days will be open dots to write on.",
   "dated:undated": "Undated, so you can start any day you like.",
   "track:water": "Water. Otters approve.",
