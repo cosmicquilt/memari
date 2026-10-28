@@ -5,17 +5,17 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
-import { currentBusiness } from "@/lib/business";
+import { requireBusiness } from "@/lib/business";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { clientsBehind } from "@/lib/businessJournals";
 import { AddTemplateForm, RemoveTemplateButton, UpdateClientsButton } from "../forms";
 import css from "../business.module.css";
 
 export default async function TemplatesPage() {
-  const { owner, business } = (await currentBusiness())!;
+  const { owner, business } = await requireBusiness();
   const [templates, journals] = await Promise.all([
     prisma.businessTemplate.findMany({
-      where: { businessId: business!.id },
+      where: { businessId: business.id },
       orderBy: { createdAt: "asc" },
       include: {
         planner: { select: { id: true, title: true, slug: true } },
@@ -93,7 +93,7 @@ export default async function TemplatesPage() {
       )}
       <div className={css.card}>
         <h2>{templates.length ? "Add a template" : "Make your first template"}</h2>
-        <AddTemplateForm journals={journals} />
+        <AddTemplateForm journals={journals} hasTemplates={templates.length > 0} />
       </div>
     </>
   );

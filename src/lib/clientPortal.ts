@@ -42,19 +42,37 @@ export async function makeClientLink(ownerId: string, clientId: string): Promise
   return token;
 }
 
-/** Turn a client's link off. */
-export async function turnOffClientLink(ownerId: string, clientId: string): Promise<void> {
-  await prisma.businessClient.updateMany({ where: { id: clientId, business: { ownerId } }, data: { accessTokenHash: null, accessMadeAt: null, accessSeenAt: null } });
+/** TURN A CLIENT'S LINK OFF: their page closes at once - with an undo
+ *  (review, 2026-10-26: it sat beside "Make a new link" and could not be
+ *  taken back, so a mis-click left the client's emailed link dead). The
+ *  link's hash is kept and only the day it was made is cleared: a link with
+ *  no day opens nothing (clientForToken). The Undo puts the day back, and so
+ *  the same link, without the hash ever leaving the server. A new link
+ *  replaces it for good. Returns the day, for the undo; null if there was
+ *  no link on. */
+export async function turnOffClientLink(ownerId: string, clientId: string): Promise<Date | null> {
+  const client = await prisma.businessClient.findFirst({ where: { id: clientId, business: { ownerId } }, select: { id: true, accessMadeAt: true } });
+  if (!client?.accessMadeAt) return null;
+  const off = await prisma.businessClient.updateMany({ where: { id: client.id, accessMadeAt: client.accessMadeAt }, data: { accessMadeAt: null } });
+  return off.count === 1 ? client.accessMadeAt : null;
 }
 
-/** The client a link is for: open, and not archived. */
+/** The undo: the link turned off back on - only while it is still the one
+ *  kept (no new link since) and still off. */
+export async function restoreClientLink(ownerId: string, clientId: string, madeAt: Date): Promise<boolean> {
+  const on = await prisma.businessClient.updateMany({ where: { id: clientId, business: { ownerId }, accessMadeAt: null, accessTokenHash: { not: null } }, data: { accessMadeAt: madeAt } });
+  return on.count === 1;
+}
+
+/** The client a link is for: open, not turned off, and not archived. */
 export async function clientForToken(token: string) {
   if (!TOKEN.test(token)) return null;
   const client = await prisma.businessClient.findUnique({
     where: { accessTokenHash: hashOf(token) },
     include: { business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, payoutsReady: true, stripeAccountId: true } } },
   });
-  return client && !client.archivedAt ? client : null;
+  // a link turned off keeps its hash for the undo, and has no day
+  return client && !client.archivedAt && client.accessMadeAt ? client : null;
 }
 
 const LEVELS: Array<{ level: string; label: string }> = [

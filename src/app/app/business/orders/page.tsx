@@ -8,7 +8,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
-import { ORDER_WORDS, businessJournalIds, currentBusiness } from "@/lib/business";
+import { ORDER_WORDS, businessJournalIds, requireBusiness } from "@/lib/business";
 import { businessStats } from "@/lib/businessStats";
 import { coachReceives } from "@/lib/print/clientPays";
 import { ChartCard, Columns, StageBar, WarnIcon } from "../charts";
@@ -26,7 +26,7 @@ const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month:
 const money = (cents: number, currency: string) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
-  const business = (await currentBusiness())!.business!;
+  const { business } = await requireBusiness();
   const asked = (await searchParams).range;
   const range = RANGES.find((r) => r.key === asked)?.key ?? "12";
   const [journals, stats] = await Promise.all([businessJournalIds(business.id), businessStats(business.id, range === "all" ? "all" : Number(range))]);

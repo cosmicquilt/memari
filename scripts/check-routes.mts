@@ -57,6 +57,8 @@ type Expectation = {
   as: "guest" | "nobody";
   method?: "GET";
   what: string;
+  /** Where a redirect must send them (the path of its Location). */
+  to?: string;
 };
 
 /** React can recover from a throw inside a client component by finishing the
@@ -157,6 +159,13 @@ async function main() {
     { path: `/app/print-preview?journal=${stranger.journalId}&start=2027-01-04&days=90&binding=paperback&part=interior`, expect: [404], as: "guest", what: "ANOTHER PERSON'S journal cannot be previewed" },
     { path: `/app/print-preview?journal=${journal.id}&days=90&binding=paperback`, expect: [400], as: "guest", what: "a preview without its days is refused, plainly" },
     { path: `/app/print-preview?journal=${journal.id}&start=2027-01-04&days=90&binding=paperback`, expect: [401], as: "nobody", what: "nobody signed in previews nothing" },
+    // A BUSINESS'S PAGES FOR SOMEONE WITH NO BUSINESS (review, 2026-10-26):
+    // a bookmark or an invitation to one of them was a server error; now
+    // each sends them to the Start page. This guest has no business.
+    { path: "/app/business", expect: [200], as: "guest", what: "the Start page, for someone with no business" },
+    ...["/clients", "/clients/new", "/clients/not-a-client", "/templates", "/orders", "/settings"].map(
+      (sub): Expectation => ({ path: `/app/business${sub}`, expect: [307, 302, 303], as: "guest", to: "/app/business", what: "WITH NO BUSINESS YET, SENT TO THE START PAGE, not a server error" })
+    ),
   ];
 
   try {
@@ -164,9 +173,11 @@ async function main() {
       const headers: Record<string, string> = route.as === "guest" ? { cookie } : {};
       let status = 0;
       let body = "";
+      let location = "";
       try {
         const response = await fetch(`${BASE}${route.path}`, { headers, redirect: "manual" });
         status = response.status;
+        location = response.headers.get("location") ?? "";
         // A PDF is not worth reading into memory to grep for words.
         const type = response.headers.get("content-type") ?? "";
         body = type.includes("html") ? await response.text() : "";
@@ -180,6 +191,11 @@ async function main() {
         route.expect.includes(status),
         `${label}: ${status}${route.expect.includes(status) ? "" : ` (wanted ${route.expect.join(" or ")})`}`
       );
+
+      if (route.to) {
+        const went = location ? new URL(location, BASE).pathname : "(nowhere)";
+        check(went === route.to, `${label}: sent to ${went}${went === route.to ? "" : ` (wanted ${route.to})`}`);
+      }
 
       if (status === 200) {
         const marker = ERROR_MARKERS.find((m) => body.includes(m));

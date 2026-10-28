@@ -2,7 +2,7 @@
 // pays for clients' books (2026-10-22). Back from Stripe's payouts pages
 // (?payouts=back or again), it asks Stripe how the account stands.
 
-import { currentBusiness } from "@/lib/business";
+import { requireBusiness } from "@/lib/business";
 import { refreshPayouts } from "@/lib/payouts";
 import { orderingConfigured } from "@/lib/print/orders";
 import { PAYOUT_COUNTRIES } from "@/lib/print/clientPays";
@@ -12,8 +12,8 @@ import { BusinessMark } from "../WorkspaceSwitcher";
 import css from "../business.module.css";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ payouts?: string }> }) {
-  const ctx = (await currentBusiness())!;
-  const business = ctx.business!;
+  const ctx = await requireBusiness();
+  const business = ctx.business;
   // asked of Stripe whenever there is an account: Stripe can clear one some
   // time after the coach comes back, or restrict it later (review,
   // 2026-10-23); ?payouts= is where Stripe's pages return to

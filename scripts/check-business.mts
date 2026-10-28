@@ -346,9 +346,22 @@ try {
   await tab.waitForTimeout(300);
   const newLink = await linkBox.inputValue();
   say(newLink !== link && (await her.goto(link))?.status() === 404 && (await her.goto(newLink))?.status() === 200, "a new link: the old one stops working, the new one opens");
+  // TURN IT OFF, WITH AN UNDO (review, 2026-10-26: it could not be taken
+  // back, so a mis-click left her emailed link dead): closed at once, and
+  // Undo opens the same link again; turned off for good, it stays closed.
   await tab.getByRole("button", { name: "Turn it off" }).click();
+  const undo = tab.getByRole("status").getByRole("button", { name: "Undo" });
+  await undo.waitFor();
+  say((await her.goto(newLink))?.status() === 404, "turned off: her page is closed at once");
+  await shoot(tab, "biz-link-off-undo");
+  await undo.click();
   await tab.waitForTimeout(800);
-  say((await her.goto(newLink))?.status() === 404 && !(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessTokenHash, "turned off: her page is closed");
+  say((await her.goto(newLink))?.status() === 200 && (await linkBox.count()) === 1, "TURN IT OFF HAS AN UNDO: the same link opens her page again, and is shown to copy again");
+  await tab.getByRole("button", { name: "Turn it off" }).click();
+  await undo.waitFor();
+  await tab.waitForTimeout(800);
+  say((await her.goto(newLink))?.status() === 404 && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessMadeAt === null, "turned off again and left: her page stays closed");
+  say((await tab.getByRole("button", { name: "Make a link to copy" }).count()) === 1, "and the card offers a new link, not the old one");
   say((await her.goto(`${server.base}/c/not-a-real-token`))?.status() === 404, "a made-up link opens nothing");
 
   // EMAILED (2026-10-22; the words are clientLinkEmail.test). The steps the
@@ -637,6 +650,25 @@ try {
   const looked = await prisma.business.findUnique({ where: { ownerId: guest.ownerId }, select: { updatedAt: true } });
   say(!!looked && Date.now() - looked.updatedAt.getTime() < 10 * 60_000, `A GUEST COACH OPENING THEIR BUSINESS MARKS IT USED (${looked?.updatedAt.toISOString()})`);
   await context.close();
+
+  // A NEW COACH WITH NO JOURNALS AT ALL, on Home's "Make a template" step
+  // (review, 2026-10-26): told to make one, not that every journal of theirs
+  // is a template already.
+  const newcomer = await makeGuestJournal("Newcomer's journal");
+  try {
+    await prisma.planner.delete({ where: { id: newcomer.journalId } });
+    await prisma.business.create({ data: { ownerId: newcomer.ownerId, name: "Fresh Coaching" } });
+    const fresh = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await fresh.addCookies([{ name: newcomer.cookieName, value: newcomer.cookieValue, domain: new URL(server.base).hostname, path: "/" }]);
+    const page = await fresh.newPage();
+    await page.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+    const words = await page.evaluate(() => document.body.innerText);
+    say(/You have no journals yet/.test(words) && !/template already/.test(words), "A NEW COACH WITH NO JOURNALS IS TOLD TO MAKE ONE, not that every journal is a template already");
+    await fresh.close();
+  } finally {
+    await prisma.business.deleteMany({ where: { ownerId: newcomer.ownerId } });
+    await newcomer.remove();
+  }
 
   // Signing in brings the guest's business with their journals (owner.ts,
   // moveGuestWork) - the same function the sign-in path runs.

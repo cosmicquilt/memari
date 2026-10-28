@@ -409,6 +409,14 @@
   color: var(--dim);
 }
 
+/* A link inside running text: the accent, underlined, so it reads as one
+   on a dim line (the empty Templates card's "Make a journal"). */
+.textLink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .card {
   background: var(--card);
   border-radius: var(--radius-card);

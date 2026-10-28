@@ -169,14 +169,19 @@ export async function quoteForClient(token: string, binding: Binding, paper?: Pa
 
 const STRIPE_CALL = { timeout: 8000, maxNetworkRetries: 1 };
 /** Their open payment pages of the last day. */
-const openPages = (plannerId: string, olderThan?: Date) =>
+export const openPages = (plannerId: string) =>
   prisma.printOrder.findMany({
     where: {
       plannerId,
       paidByClient: true,
       status: "QUOTED",
       stripeCheckoutSessionId: { not: null },
-      createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000), ...(olderThan ? { lt: olderThan } : {}) },
+      // not one replaced, or whose bank payment was refused, or one whose
+      // bank payment is clearing: each session reads "complete" at Stripe,
+      // with nothing more to come (review, 2026-10-27)
+      failureReason: null,
+      stripePaymentIntentId: null,
+      createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     },
     select: { id: true, stripeCheckoutSessionId: true },
   });
@@ -191,28 +196,6 @@ async function refuseWhilePaying(plannerId: string) {
   }
 }
 
-/** After the new page exists: the pages older than it closed, so only the
- *  newest can be paid. A replaced page stays an unpaid checkout with its
- *  link to Stripe cut - pruned in a month like any other. A page that
- *  cannot be closed (paid in this very moment) is left: its payment lands
- *  as usual. */
-async function closeOlderPages(plannerId: string, newOrderId: string) {
-  const mine = await prisma.printOrder.findUnique({ where: { id: newOrderId }, select: { createdAt: true } });
-  if (!mine) return;
-  for (const page of await openPages(plannerId, mine.createdAt)) {
-    if (stripeConfigured()) {
-      try {
-        const session = await stripe().checkout.sessions.expire(page.stripeCheckoutSessionId!, {}, STRIPE_CALL);
-        if (session.status !== "expired") continue;
-      } catch (error) {
-        console.error(`[portal] could not close payment page ${page.id}:`, error);
-        continue;
-      }
-    }
-    await prisma.printOrder.updateMany({ where: { id: page.id, status: "QUOTED" }, data: { stripeCheckoutSessionId: null, failureReason: "A newer payment page replaced this one." } });
-  }
-}
-
 /** Stripe's payment page for their book, at the total and dates the page
  *  showed. */
 export async function checkoutForClient(
@@ -223,17 +206,20 @@ export async function checkoutForClient(
   if (tooMany(token, "pay", 6, 60_000)) throw new OrderError("That's a lot of tries in a minute. Wait a moment and try again.");
   const email = sendableEmail(o.email);
   if (!email) throw new OrderError("Give an email address for your receipt.");
+  // before the dates are worked out from the books already held
+  const startedAt = new Date();
   const { client, input, share } = await orderInput(token, o.binding, o.paper);
   if (input.startISO !== o.expectStartISO || input.days !== o.expectDays) throw new PriceMovedError("The dates of your book have changed since you saw them. See prices again.");
   // every page opened this hour counts, whatever became of it
   const recent = await prisma.printOrder.count({ where: { plannerId: client.plannerId!, paidByClient: true, createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) } } });
   if (recent >= CHECKOUTS_PER_HOUR) throw new OrderError("That's a lot of payment pages for one hour. Try again in a little while.");
   await refuseWhilePaying(client.plannerId!);
-  const { url, orderId } = await startCheckout(client.business.ownerId, { ...input, level: o.level, autoRenew: false }, origin, {
+  const { url } = await startCheckout(client.business.ownerId, { ...input, level: o.level, autoRenew: false }, origin, {
     email,
     markupCents: share.markupCents,
     destination: share.destination,
     expectTotalCents: o.expectTotalCents,
+    startedAt,
     // The link's token goes to Stripe in these two addresses, so the client
     // comes back to their own page - the one place the raw token is kept
     // outside their email. Accepted (review, 2026-10-23): whoever can read
@@ -242,6 +228,7 @@ export async function checkoutForClient(
     successUrl: `${origin}/c/${token}?placed=1`,
     cancelUrl: `${origin}/c/${token}`,
   });
-  await closeOlderPages(client.plannerId!, orderId);
+  // the older pages for these days - theirs or the coach's - were closed by
+  // startCheckout (closeOverlappingPages)
   return url;
 }

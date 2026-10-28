@@ -10,8 +10,9 @@
 // SERVER-ONLY.
 
 import type { Business } from "@/generated/prisma/client";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { currentOwner, type Owner } from "@/lib/owner";
+import { currentOwner, signInPath, type Owner } from "@/lib/owner";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import { nextRange } from "@/lib/print/orderRange";
 import { HOLDS_DAYS } from "@/lib/print/holdsDays";
@@ -34,6 +35,19 @@ export async function currentBusiness(): Promise<BusinessContext | null> {
 }
 
 const TOUCH_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/** For the business's own pages - Clients, Templates, Orders, Settings and
+ *  the rest: the person and their business, or off to where one is started.
+ *  A direct link to one of them (a bookmark, an invitation) from someone with
+ *  no business yet was a server error (review, 2026-10-26); now it is the
+ *  Start page. The layout cannot do this: it is not told which page it
+ *  wraps, and Home itself is the Start page. */
+export async function requireBusiness(): Promise<{ owner: Owner; business: Business }> {
+  const ctx = await currentBusiness();
+  if (!ctx) redirect(signInPath("/app/business"));
+  if (!ctx.business) redirect("/app/business");
+  return { owner: ctx.owner, business: ctx.business };
+}
 
 /** Is this journal a client's? Their journal shows none of the coach's own
  *  calendars - a client's book must not carry the coach's appointments

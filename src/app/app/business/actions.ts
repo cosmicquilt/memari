@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
-import { makeClientLink, turnOffClientLink } from "@/lib/clientPortal";
+import { makeClientLink, restoreClientLink, turnOffClientLink } from "@/lib/clientPortal";
 import { emailClientLink, type EmailLinkResult } from "@/lib/clientLinkSend";
 import { PayoutsError, discardUnfinishedPayouts, payoutsDashboardUrl, payoutsSetupUrl } from "@/lib/payouts";
 import { MAX_SHARE_CENTS, MIN_SHARE_CENTS } from "@/lib/print/clientPays";
@@ -268,11 +268,26 @@ export async function emailLinkTo(clientId: string): Promise<EmailLinkResult> {
   return result;
 }
 
-/** Turn a client's link off: their page closes. */
-export async function turnOffLinkFor(clientId: string): Promise<void> {
+/** Turn a client's link off: their page closes at once. The day it was
+ *  made comes back for the undo (clientPortal.ts). */
+export async function turnOffLinkFor(clientId: string): Promise<{ madeAt: string | null }> {
   const { owner } = await myBusiness();
-  await turnOffClientLink(owner.id, clientId);
+  const madeAt = await turnOffClientLink(owner.id, clientId);
   revalidatePath(`/app/business/clients/${clientId}`);
+  return { madeAt: madeAt?.toISOString() ?? null };
+}
+
+/** The undo of Turn it off: the same link on again, unless a new one was
+ *  made since. The day is only what the card shows, so one from the future
+ *  is taken as now. */
+export async function restoreLinkFor(clientId: string, madeAt: string): Promise<{ restored: boolean }> {
+  const { owner } = await myBusiness();
+  const day = new Date(madeAt);
+  if (Number.isNaN(day.getTime())) return { restored: false };
+  const now = new Date();
+  const restored = await restoreClientLink(owner.id, clientId, day > now ? now : day);
+  revalidatePath(`/app/business/clients/${clientId}`);
+  return { restored };
 }
 
 /** Archive a client, or bring one back (the undo). Their journal and books

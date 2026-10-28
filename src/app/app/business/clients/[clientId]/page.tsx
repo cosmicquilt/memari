@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { BOOK_MONTHS, ORDER_WORDS, currentBusiness, shippableAddress } from "@/lib/business";
+import { BOOK_MONTHS, ORDER_WORDS, requireBusiness, shippableAddress } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { BuildJournalButton, ClientForm, ClientLink, type ClientValues } from "../../forms";
@@ -14,8 +14,8 @@ import { LISTED } from "@/lib/print/holdsDays";
 const date = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 export default async function ClientPage({ params }: { params: Promise<{ clientId: string }> }) {
-  const current = (await currentBusiness())!;
-  const business = current.business!;
+  const current = await requireBusiness();
+  const business = current.business;
   const { clientId } = await params;
   const [client, templates] = await Promise.all([
     prisma.businessClient.findFirst({

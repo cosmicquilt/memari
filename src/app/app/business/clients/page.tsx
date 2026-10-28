@@ -6,7 +6,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
-import { currentBusiness, shippableAddress } from "@/lib/business";
+import { requireBusiness, shippableAddress } from "@/lib/business";
 import { businessStats } from "@/lib/businessStats";
 import { BarList, ChartCard } from "../charts";
 import { RestoreClientButton } from "../forms";
@@ -16,8 +16,7 @@ const date = (d: Date | null) => (d ? d.toLocaleDateString("en-GB", { day: "nume
 const length = (m: number) => (m === 1 ? "1 month" : m === 12 ? "A year" : `${m} months`);
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
-  const ctx = await currentBusiness();
-  const business = ctx!.business!;
+  const { business } = await requireBusiness();
   const archived = (await searchParams).show === "archived";
   const clients = await prisma.businessClient.findMany({
     where: { businessId: business.id, archivedAt: archived ? { not: null } : null },

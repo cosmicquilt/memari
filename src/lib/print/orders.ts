@@ -36,6 +36,7 @@ import { stripe, stripeConfigured } from "./stripe";
 import { adminAlertEmail, bankPaymentFailedEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
 import { PRINTER_CANCELLED, REFUND_BY_HAND } from "./refundDue";
+import { HOLDS_DAYS } from "./holdsDays";
 
 export { OrderError };
 
@@ -237,6 +238,10 @@ export async function startCheckout(
   origin: string,
   payer?: ClientPayer
 ): Promise<{ url: string; orderId: string }> {
+  // a book paid for these days from now on, while this one is built, stops
+  // this page being handed out (closeOverlappingPages); a client's dates were
+  // worked out a moment earlier, and count from then
+  const startedAt = payer?.startedAt ?? new Date();
   if (payer) {
     const problem = payerProblem(payer);
     if (problem) throw new OrderError(problem);
@@ -305,6 +310,8 @@ export async function startCheckout(
     );
     await prisma.printOrder.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: session.id } });
     if (!session.url) throw new OrderError("Stripe did not open a payment page. Try again.");
+    // only this page can be paid for these days (throws if another just was)
+    await closeOverlappingPages(order.id, startedAt);
     // The client's page is open for these days: the owner's own renewals of
     // this journal end now, not only once the payment lands (second review)
     // - but only once the page really exists, so a Stripe failure leaves
@@ -345,7 +352,135 @@ export async function startCheckout(
   });
   await prisma.printOrder.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: session.id } });
   if (!session.url) throw new OrderError("Stripe did not open a payment page. Try again.");
+  await closeOverlappingPages(order.id, startedAt);
   return { url: session.url, orderId: order.id };
+}
+
+/** Stripe's payment pages, as closeOverlappingPages needs them: close one,
+ *  or read whether it was paid. check:renewals fakes them. */
+export type PageDeps = {
+  /** Close it; Stripe's status for it after. */
+  expire: (sessionId: string) => Promise<string | null>;
+  /** Its status: "open", "complete" or "expired". */
+  status: (sessionId: string) => Promise<string | null>;
+};
+
+const PAGE_CALL = { timeout: 8000, maxNetworkRetries: 1 };
+
+export function livePageDeps(): PageDeps {
+  return {
+    expire: async (id) => (await stripe().checkout.sessions.expire(id, {}, PAGE_CALL)).status ?? null,
+    status: async (id) => (await stripe().checkout.sessions.retrieve(id, {}, PAGE_CALL)).status ?? null,
+  };
+}
+
+/** What a page replaced by a newer one for its days says. */
+export const PAGE_REPLACED = "A newer payment page replaced this one.";
+
+/**
+ * ONE PAYABLE PAGE FOR ANY DAYS OF A JOURNAL (review, 2026-10-26). A payment
+ * page just made closes every older one still open for the same journal and
+ * any of the same days - the coach's or the client's, either way round, or
+ * one person's in two tabs - so one period cannot be paid for twice and
+ * printed twice. Before, only a client's own older pages were closed: a
+ * coach's order and a client's open page for the same days could both be
+ * paid. A replaced page stays an unpaid checkout with its link to Stripe cut,
+ * pruned in a month like any other.
+ *
+ * An older page that will not close, and that Stripe says is complete, was
+ * paid in this very moment. Then it is the NEW page that closes, and the
+ * payer is told the first payment is going through - before, the new page
+ * was left open for 23 hours and could be paid as well. So too when one
+ * was paid a little earlier, while this page was being built (`since`), and
+ * Stripe's word on it has already made it a book or a clearing payment
+ * (review, 2026-10-27): it is no longer an open page, so it is looked for
+ * among the books. And an older page that will not close and is not known
+ * to be closed is not left open beside the new one: the new one closes, and
+ * the payer is asked to try again. Of two pages opened together, the older
+ * gives way.
+ */
+export async function closeOverlappingPages(orderId: string, since: Date, deps: PageDeps = livePageDeps()): Promise<void> {
+  const mine = await prisma.printOrder.findUnique({ where: { id: orderId }, select: { plannerId: true, startDate: true, endDate: true, createdAt: true, stripeCheckoutSessionId: true, paidByClient: true } });
+  if (!mine?.plannerId) return;
+  const sameDays = { plannerId: mine.plannerId, id: { not: orderId }, startDate: { lte: mine.endDate }, endDate: { gte: mine.startDate } };
+  /** This page goes instead, and the payer is told why. */
+  const closeMine = async (reason: string, told: string): Promise<never> => {
+    if (mine.stripeCheckoutSessionId) {
+      try {
+        await deps.expire(mine.stripeCheckoutSessionId);
+      } catch (error) {
+        console.error(`[print] could not close the new payment page ${orderId}:`, error);
+      }
+    }
+    await prisma.printOrder.updateMany({ where: { id: orderId, status: "QUOTED" }, data: { stripeCheckoutSessionId: null, failureReason: reason } });
+    throw new OrderError(told);
+  };
+  const GOING_THROUGH = "A payment for these days is going through already. Refresh in a minute to see it.";
+  const older = await prisma.printOrder.findMany({
+    where: {
+      ...sameDays,
+      status: "QUOTED",
+      stripePaymentIntentId: null,
+      stripeCheckoutSessionId: { not: null },
+      // not one replaced, or whose bank payment was refused: its session
+      // reads "complete" at Stripe for ever
+      failureReason: null,
+      // a page is open a day at most
+      createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000), lte: mine.createdAt },
+    },
+    select: { id: true, stripeCheckoutSessionId: true },
+  });
+  for (const page of older) {
+    let closed = false;
+    try {
+      closed = (await deps.expire(page.stripeCheckoutSessionId!)) === "expired";
+    } catch (error) {
+      console.error(`[print] could not close payment page ${page.id}:`, error);
+    }
+    let status: string | null = closed ? "expired" : null;
+    if (!closed) {
+      try {
+        status = await deps.status(page.stripeCheckoutSessionId!);
+      } catch (error) {
+        console.error(`[print] could not read payment page ${page.id}:`, error);
+      }
+    }
+    if (status === "expired") {
+      await prisma.printOrder.updateMany({ where: { id: page.id, status: "QUOTED" }, data: { stripeCheckoutSessionId: null, failureReason: PAGE_REPLACED } });
+      continue;
+    }
+    if (status === "complete") await closeMine("A payment for these days went through on another page first.", GOING_THROUGH);
+    // open still, or not known: not left payable beside this one
+    await closeMine("Another payment page for these days could not be closed.", "Another payment page for these days could not be closed just now. Try again in a moment.");
+  }
+  // Paid a little earlier, while this page was being built: already a book,
+  // or a bank payment clearing, by the time we look. A CLIENT'S dates were
+  // worked out to start after every book held (clientOrders.ts), so any book
+  // for them now - the coach's, a renewal, their own - is one paid since. An
+  // owner may order days a book already has (a second copy), so for them only
+  // a client's payment during the build counts (review, 2026-10-27: a printer
+  // status on their own book, landing in those seconds, refused it).
+  const paidSince = await prisma.printOrder.findFirst({
+    where: { ...sameDays, OR: HOLDS_DAYS, ...(mine.paidByClient ? {} : { paidByClient: true, updatedAt: { gte: since } }) },
+    select: { id: true },
+  });
+  if (paidSince) await closeMine("A payment for these days went through on another page first.", GOING_THROUGH);
+  // Two pages opened together: each looks only at older ones, and an older
+  // page's link to Stripe can be saved after the newer one has looked, so
+  // neither saw the other and both stayed payable. Each saves its link before
+  // it looks, so the older one always sees the newer, and gives way to it.
+  const newer = await prisma.printOrder.findFirst({
+    where: {
+      ...sameDays,
+      status: "QUOTED",
+      stripePaymentIntentId: null,
+      stripeCheckoutSessionId: { not: null },
+      failureReason: null,
+      OR: [{ createdAt: { gt: mine.createdAt } }, { createdAt: mine.createdAt, id: { gt: orderId } }],
+    },
+    select: { id: true },
+  });
+  if (newer) await closeMine(PAGE_REPLACED, "Another payment page for these days was opened a moment ago, so this one was closed. Refresh to see where things stand.");
 }
 
 /**

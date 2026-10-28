@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, openPayouts, removeTemplate, resetPayouts, restoreTemplate, saveBookPayer, saveBusinessSettings, saveClient, setClientArchived, startBusiness, startPayouts, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
+import { addTemplate, buildJournalFor, emailLinkTo, makeLinkFor, openPayouts, removeTemplate, resetPayouts, restoreLinkFor, restoreTemplate, saveBookPayer, saveBusinessSettings, saveClient, setClientArchived, startBusiness, startPayouts, turnOffLinkFor, updateTemplateClients, type FormState } from "./actions";
 import { coachReceives } from "@/lib/print/clientPays";
 import { useToast } from "./Toast";
 import css from "./business.module.css";
@@ -393,12 +393,19 @@ export function RestoreClientButton({ id }: { id: string }) {
   );
 }
 
-export function AddTemplateForm({ journals }: { journals: Array<{ id: string; title: string }> }) {
+export function AddTemplateForm({ journals, hasTemplates }: { journals: Array<{ id: string; title: string }>; hasTemplates: boolean }) {
   const [state, action, pending] = useActionState(addTemplate, null);
+  // A coach with no journals at all is on the first-run path (Home's "Make a
+  // template"), and "every journal is a template already" was untrue there
+  // (review, 2026-10-26).
   if (!journals.length)
-    return (
+    return hasTemplates ? (
       <p className={css.dim}>
-        Every journal of yours is a template already. <Link href="/app">Make a new journal</Link> to use as another.
+        Every journal of yours is a template already. <Link href="/app" className={css.textLink}>Make a new journal</Link> to use as another.
+      </p>
+    ) : (
+      <p className={css.dim}>
+        You have no journals yet. <Link href="/app" className={css.textLink}>Make a journal</Link> the way you want your clients&rsquo; to look, then come back here to make it a template.
       </p>
     );
   return (
@@ -525,6 +532,8 @@ export function ClientLink({ clientId, name, email, made, seen, guest = false }:
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const toast = useToast();
+  const first = name.split(" ")[0];
   const make = () =>
     start(async () => {
       const result = await makeLinkFor(clientId);
@@ -560,8 +569,26 @@ export function ClientLink({ clientId, name, email, made, seen, guest = false }:
       setCopied(false);
     }
   };
-  const first = name.split(" ")[0];
   const hasLink = !!(url || made || sentTo);
+  // At once, with an undo (Toast.tsx): the same link back on, and the one
+  // just shown to copy shown again.
+  const turnOff = () =>
+    start(async () => {
+      const shown = url;
+      const { madeAt } = await turnOffLinkFor(clientId);
+      setUrl(null);
+      setSentTo(null);
+      toast({
+        message: `${first}'s link is off: their page is closed`,
+        undo: madeAt
+          ? async () => {
+              const { restored } = await restoreLinkFor(clientId, madeAt);
+              if (restored && shown) setUrl(shown);
+              if (!restored) setError("That link could not be turned back on: a new one was made since.");
+            }
+          : undefined,
+      });
+    });
   return (
     <div className={css.card}>
       <h2>Their page</h2>
@@ -600,18 +627,7 @@ export function ClientLink({ clientId, name, email, made, seen, guest = false }:
           {hasLink ? "Make a new link to copy" : "Make a link to copy"}
         </button>
         {hasLink && (
-          <button
-            type="button"
-            className={css.btn}
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                await turnOffLinkFor(clientId);
-                setUrl(null);
-                setSentTo(null);
-              })
-            }
-          >
+          <button type="button" className={css.btn} disabled={pending} onClick={turnOff}>
             Turn it off
           </button>
         )}

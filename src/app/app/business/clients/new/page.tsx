@@ -1,12 +1,12 @@
 // memari. for businesses - add a client.
 
 import { prisma } from "@/lib/prisma";
-import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
+import { BOOK_MONTHS, requireBusiness } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { ClientForm } from "../../forms";
 
 export default async function NewClientPage() {
-  const business = (await currentBusiness())!.business!;
+  const { business } = await requireBusiness();
   const templates = await prisma.businessTemplate.findMany({
     where: { businessId: business.id },
     include: { planner: { select: { title: true } } },

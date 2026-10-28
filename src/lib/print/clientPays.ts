@@ -88,6 +88,10 @@ export type ClientPayer = {
   /** The total the client was shown; the order is refused if the price
    *  has moved since (startCheckout). */
   expectTotalCents?: number;
+  /** When the client's dates were worked out from the books already held:
+   *  a book paid for those days after this refuses the page
+   *  (closeOverlappingPages). */
+  startedAt?: Date;
 };
 
 /** A share needs somewhere to go: refused before anything is made. */

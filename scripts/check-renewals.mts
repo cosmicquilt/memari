@@ -49,6 +49,16 @@
 //   * leave auto-renew on when a refund fails on a book that came
 //     -> "a shipped book whose refund fails stays SHIPPED..."
 //   * drop the clearing guard -> "A BANK PAYMENT STILL CLEARING IS NOT REFUNDED"
+//   * closeOverlappingPages: drop the closing of older pages
+//     -> "A NEW PAYMENT PAGE CLOSES THE OLDER ONE FOR THE SAME DAYS"; drop the
+//     overlap test -> "one for other days stays open"; drop the paid-just-now
+//     branch -> "AN OLDER PAGE PAID THIS MOMENT CLOSES THE NEW ONE"; drop the
+//     books-paid-since look -> "AN OLDER PAGE ALREADY A BOOK..."; drop the
+//     failureReason filter -> "a page whose bank payment was refused..."; let
+//     an unclosable open page stay -> "AN OLDER PAGE THAT WILL NOT CLOSE..."; drop
+//     the newer look -> "OF TWO PAGES OPENED TOGETHER..."; count an owner's own
+//     books -> "AN OWNER'S SECOND COPY IS NOT REFUSED..."; drop the intent
+//     filter from openPages -> "A CLIENT'S CLEARING BANK PAYMENT..."
 //
 //   npm run check:renewals
 import { readFileSync } from "node:fs";
@@ -772,6 +782,118 @@ try {
       const refusal = await said(() => refundOrder(clearing.id, "asked", { stopAtPrinter: async () => {}, refund: async (_params, key) => { asked.push(key); } }));
       const still = await prisma.printOrder.findUniqueOrThrow({ where: { id: clearing.id } });
       check(!!refusal && /not cleared/.test(refusal) && asked.length === 0 && still.status === "QUOTED" && still.failureReason === null, `A BANK PAYMENT STILL CLEARING IS NOT REFUNDED, nor marked owed (${refusal})`);
+    }
+
+    // ONE PAYABLE PAGE FOR ANY DAYS (review, 2026-10-26): the coach's open
+    // page and a client's, for the same days, could both be paid; and an
+    // older page paid at the moment a new one opened left the new one open.
+    {
+      const { closeOverlappingPages, PAGE_REPLACED } = await import("../src/lib/print/orders.js");
+      type PageDeps = import("../src/lib/print/orders.js").PageDeps;
+      const planner = await prisma.planner.create({ data: { ownerId: OWNER, title: "Overlap check" } });
+      const page = (title: string, session: string, start: string, end: string, minutesAgo: number, extra: Record<string, unknown> = {}) =>
+        order(planner.id, { title, status: "QUOTED", autoRenew: false, renewsAt: null, stripePaymentIntentId: null, stripeCheckoutSessionId: session, startDate: new Date(start), endDate: new Date(end), createdAt: new Date(Date.now() - minutesAgo * 60_000), ...extra });
+      const pages = (sessions: Record<string, string>) => {
+        const calls = { expired: [] as string[], read: [] as string[] };
+        const deps: PageDeps = {
+          expire: async (id) => {
+            calls.expired.push(id);
+            if (sessions[id] === "complete") throw new Error("This Checkout Session is complete and cannot be expired (test).");
+            return "expired";
+          },
+          status: async (id) => {
+            calls.read.push(id);
+            return sessions[id] ?? "open";
+          },
+        };
+        return { deps, calls };
+      };
+
+      // the coach's page, then the client's for the same days, and one for other days
+      const coachs = await page("Coach's page", "cs_overlap_coach", "2027-01-01T00:00:00Z", "2027-03-31T00:00:00Z", 30);
+      const otherDays = await page("Other days", "cs_overlap_other", "2027-04-01T00:00:00Z", "2027-06-29T00:00:00Z", 20);
+      const clients = await page("Client's page", "cs_overlap_client", "2027-02-01T00:00:00Z", "2027-04-30T00:00:00Z", 1, { paidByClient: true });
+      // "other days" (Apr 1 - Jun 29) overlaps the client's (Feb 1 - Apr 30) too; a page for days apart:
+      const apart = await page("Days apart", "cs_overlap_apart", "2027-07-01T00:00:00Z", "2027-09-28T00:00:00Z", 10);
+      const one = pages({});
+      await closeOverlappingPages(clients.id, new Date(Date.now() - 60_000), one.deps);
+      const after = async (id: string) => prisma.printOrder.findUniqueOrThrow({ where: { id } });
+      const [c, o, a, mine] = await Promise.all([after(coachs.id), after(otherDays.id), after(apart.id), after(clients.id)]);
+      check(c.stripeCheckoutSessionId === null && c.failureReason === PAGE_REPLACED && o.failureReason === PAGE_REPLACED, `A NEW PAYMENT PAGE CLOSES THE OLDER ONE FOR THE SAME DAYS - the coach's, and any overlapping (${one.calls.expired.join(", ")})`);
+      check(a.stripeCheckoutSessionId === "cs_overlap_apart" && !one.calls.expired.includes("cs_overlap_apart"), "one for other days stays open, not even asked");
+      check(mine.stripeCheckoutSessionId === "cs_overlap_client" && mine.failureReason === null, "and the new page stays open");
+
+      // an older page paid this very moment: the NEW one closes instead
+      const paidNow = await page("Paid this moment", "cs_overlap_paid", "2027-10-01T00:00:00Z", "2027-12-29T00:00:00Z", 5);
+      const late = await page("Opened a moment later", "cs_overlap_late", "2027-10-01T00:00:00Z", "2027-12-29T00:00:00Z", 0, { paidByClient: true });
+      const two = pages({ cs_overlap_paid: "complete" });
+      const refused = await closeOverlappingPages(late.id, new Date(Date.now() - 60_000), two.deps).then(() => null, (error: Error) => error.message);
+      const [p, l] = await Promise.all([after(paidNow.id), after(late.id)]);
+      check(!!refused && /going through/.test(refused) && two.calls.expired.includes("cs_overlap_late") && l.stripeCheckoutSessionId === null, `AN OLDER PAGE PAID THIS MOMENT CLOSES THE NEW ONE, and the payer is told (${refused})`);
+      check(p.stripeCheckoutSessionId === "cs_overlap_paid" && p.failureReason === null, "the paid page is left to land as usual");
+
+      // (review, 2026-10-27) paid a little earlier, while the new page was
+      // being built: Stripe's word has made it a book already, or a bank
+      // payment clearing - no longer an open page, so looked for among books
+      const building = new Date(Date.now() - 30_000);
+      const fresh = (title: string, session: string, start: string, end: string) => page(title, session, start, end, 0, { paidByClient: true });
+      const after2 = async (id: string) => prisma.printOrder.findUniqueOrThrow({ where: { id } });
+      await page("Paid, a book now", "cs_overlap_book", "2028-01-01T00:00:00Z", "2028-03-30T00:00:00Z", 3, { status: "SUBMITTED", stripePaymentIntentId: "pi_overlap_book", luluPrintJobId: "job_overlap_book" });
+      const behindBook = await fresh("Opened while it was paid", "cs_overlap_behind_book", "2028-01-01T00:00:00Z", "2028-03-30T00:00:00Z");
+      const three = pages({});
+      const toldBook = await closeOverlappingPages(behindBook.id, building, three.deps).then(() => null, (error: Error) => error.message);
+      check(!!toldBook && /going through/.test(toldBook) && (await after2(behindBook.id)).stripeCheckoutSessionId === null, `AN OLDER PAGE ALREADY A BOOK BY THE TIME WE LOOK CLOSES THE NEW ONE (${toldBook})`);
+      await page("Bank payment clearing", "cs_overlap_clearing", "2028-04-01T00:00:00Z", "2028-06-29T00:00:00Z", 3, { stripePaymentIntentId: "pi_overlap_clearing" });
+      const behindClearing = await fresh("Opened while it cleared", "cs_overlap_behind_clearing", "2028-04-01T00:00:00Z", "2028-06-29T00:00:00Z");
+      const toldClearing = await closeOverlappingPages(behindClearing.id, building, pages({}).deps).then(() => null, (error: Error) => error.message);
+      check(!!toldClearing && /going through/.test(toldClearing), `and so does one whose bank payment is now clearing (${toldClearing})`);
+      // An OWNER may order a second copy of days a book has: their own book,
+      // even one the printer has just written to (updated now), refuses nothing
+      await page("Their own book", "cs_overlap_own_book", "2028-07-01T00:00:00Z", "2028-09-28T00:00:00Z", 600, { status: "SUBMITTED", stripePaymentIntentId: "pi_overlap_own_book", luluStatus: "PRODUCTION_DELAYED" });
+      const secondCopy = await page("A second copy", "cs_overlap_second_copy", "2028-07-01T00:00:00Z", "2028-09-28T00:00:00Z", 0);
+      const toldCopy = await closeOverlappingPages(secondCopy.id, building, pages({}).deps).then(() => null, (error: Error) => error.message);
+      check(toldCopy === null && (await after2(secondCopy.id)).stripeCheckoutSessionId === "cs_overlap_second_copy", `AN OWNER'S SECOND COPY IS NOT REFUSED by their own book, even one just written to (${toldCopy})`);
+      // but a CLIENT paying for those days while the coach's page was built does refuse it
+      await page("The client paid", "cs_overlap_client_paid", "2029-04-01T00:00:00Z", "2029-06-29T00:00:00Z", 2, { status: "PAID", stripePaymentIntentId: "pi_overlap_client_paid", paidByClient: true });
+      const coachLate = await page("The coach's page", "cs_overlap_coach_late", "2029-04-01T00:00:00Z", "2029-06-29T00:00:00Z", 0);
+      const toldCoach = await closeOverlappingPages(coachLate.id, building, pages({}).deps).then(() => null, (error: Error) => error.message);
+      check(!!toldCoach && /going through/.test(toldCoach), `a client's payment for those days during the coach's build refuses the coach's page (${toldCoach})`);
+      // and on a CLIENT's page any book for their days is new - a renewal too, which has no page
+      await order(planner.id, { title: "A renewal", status: "SUBMITTED", autoRenew: false, renewsAt: null, stripePaymentIntentId: "pi_overlap_renewal", stripeCheckoutSessionId: null, startDate: new Date("2029-07-01T00:00:00Z"), endDate: new Date("2029-09-28T00:00:00Z"), createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) });
+      const behindRenewal = await fresh("Opened as it renewed", "cs_overlap_behind_renewal", "2029-07-01T00:00:00Z", "2029-09-28T00:00:00Z");
+      const toldRenewal = await closeOverlappingPages(behindRenewal.id, building, pages({}).deps).then(() => null, (error: Error) => error.message);
+      check(!!toldRenewal && /going through/.test(toldRenewal), `a client's page for days a renewal has just bought is refused (${toldRenewal})`);
+      // two pages opened together, the older's link saved after the newer looked: the older gives way
+      const first = await page("Opened first", "cs_overlap_first", "2029-10-01T00:00:00Z", "2029-12-29T00:00:00Z", 1);
+      const second = await fresh("Opened a moment later", "cs_overlap_second", "2029-10-01T00:00:00Z", "2029-12-29T00:00:00Z");
+      const six = pages({});
+      const toldFirst = await closeOverlappingPages(first.id, building, six.deps).then(() => null, (error: Error) => error.message);
+      check(!!toldFirst && (await after2(first.id)).stripeCheckoutSessionId === null && (await after2(second.id)).stripeCheckoutSessionId === "cs_overlap_second", `OF TWO PAGES OPENED TOGETHER THE OLDER GIVES WAY, the newer stays (${toldFirst})`);
+      // a client's clearing bank payment is not a page still being paid
+      const { openPages } = await import("../src/lib/clientOrders.js");
+      await page("Clearing, theirs", "cs_overlap_theirs_clearing", "2030-01-01T00:00:00Z", "2030-03-31T00:00:00Z", 30, { paidByClient: true, stripePaymentIntentId: "pi_overlap_theirs_clearing" });
+      const listed = (await openPages(planner.id)).map((p) => p.stripeCheckoutSessionId);
+      check(!listed.includes("cs_overlap_theirs_clearing"), `A CLIENT'S CLEARING BANK PAYMENT DOES NOT STOP THEIR NEXT PAGE (${listed.length} open)`);
+      // a page whose bank payment was refused keeps a session that reads "complete"
+      await page("Bank refused", "cs_overlap_refused", "2028-10-01T00:00:00Z", "2028-12-29T00:00:00Z", 60, { failureReason: "The bank payment did not go through, so this book was not ordered and nothing was taken." });
+      const afterRefusal = await fresh("Ordered again", "cs_overlap_again", "2028-10-01T00:00:00Z", "2028-12-29T00:00:00Z");
+      const four = pages({ cs_overlap_refused: "complete" });
+      const toldAgain = await closeOverlappingPages(afterRefusal.id, building, four.deps).then(() => null, (error: Error) => error.message);
+      check(toldAgain === null && !four.calls.expired.includes("cs_overlap_refused"), `a page whose bank payment was refused does not block ordering again (${toldAgain})`);
+      // an older page that will not close and still reads "open"
+      await page("Will not close", "cs_overlap_stuck", "2029-01-01T00:00:00Z", "2029-03-31T00:00:00Z", 4);
+      const besideStuck = await fresh("Beside it", "cs_overlap_beside", "2029-01-01T00:00:00Z", "2029-03-31T00:00:00Z");
+      const five: { deps: PageDeps } = {
+        deps: {
+          expire: async (id) => {
+            if (id === "cs_overlap_stuck") throw new Error("Stripe timed out (test).");
+            return "expired";
+          },
+          status: async () => "open",
+        },
+      };
+      const toldStuck = await closeOverlappingPages(besideStuck.id, building, five.deps).then(() => null, (error: Error) => error.message);
+      check(!!toldStuck && /could not be closed/.test(toldStuck) && (await after2(besideStuck.id)).stripeCheckoutSessionId === null, `AN OLDER PAGE THAT WILL NOT CLOSE IS NOT LEFT PAYABLE BESIDE THE NEW ONE (${toldStuck})`);
     }
 
     // Sent once: two deliveries of one payment at once, one print job.
