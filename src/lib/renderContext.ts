@@ -192,7 +192,7 @@ export function renderContextForPage(
   const index = page.variantKey ? (list ?? []).findIndex((o) => o.key === page.variantKey) : 0;
   const occurrence: OccurrenceContext | null =
     list && list.length > 0 && index >= 0
-      ? { ...list[index], level: page.level, index, total: list.length }
+      ? { ...list[index], level: page.level, index, total: list.length, end: book.endDate ?? null }
       : null;
 
   // The spread this page is one side of: same level, same layout, in

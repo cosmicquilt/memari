@@ -37,7 +37,7 @@ import { prisma } from "@/lib/prisma";
 import { PageLevel } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { HERO_BY_KEY, type HeroSpread } from "@/app/landing/heroSpreads";
-import { partsOf, type PlannerPart, type PlannerTemplate } from "@/app/landing/plannerTemplates";
+import { PLANNER_BY_KEY, PLANNER_OF_SPREAD, partsOf, type PlannerPart, type PlannerTemplate } from "@/app/landing/plannerTemplates";
 import { spreadPlacements, type Placed } from "@/app/landing/spreads";
 import { createBookFor, type BookWithPages, type NewJournal } from "./bookSeeding";
 
@@ -64,12 +64,15 @@ function shapeOf(spread: HeroSpread): { target: PageLevel; levels: PageLevel[] }
   }
 }
 
-/** The journal a spread starts, at the hero's trim. */
+/** The journal a spread starts, at the hero's trim: this quarter, or the
+ *  season's own dates for a spread from a season's planner (a Ramadan day
+ *  used alone is still thirty days of Ramadan, see journalForPlanner). */
 export function journalFor(spread: HeroSpread, title: string, browserTimeZone: string | null, today = new Date()): NewJournal {
+  const season = PLANNER_BY_KEY[PLANNER_OF_SPREAD[spread.key] ?? ""]?.dates?.(today);
   return {
     title,
     trim: "bound7x10",
-    ...nextQuarter(today),
+    ...(season ?? nextQuarter(today)),
     levels: shapeOf(spread).levels,
     dated: true,
     weekStartDay: spread.layout.weekStartsMonday ? 1 : 0,
@@ -82,6 +85,8 @@ export function journalFor(spread: HeroSpread, title: string, browserTimeZone: s
  *  what a layout saved to Saved keeps (templateSaving.ts). */
 export function spineSettings(placed: Placed): Record<string, unknown> {
   if (placed.slug === "month-grid-core") return { inside: placed.props.inside };
+  // The week title: whether it counts its weeks, never its dates.
+  if (placed.slug === "week-title") return placed.props.showWeekCount === false ? { showWeekCount: false } : {};
   // The hours: everything but the days they are drawn for and what is on them.
   const dated = new Set(["dayCount", "dayLabels", "events"]);
   return Object.fromEntries(Object.entries(placed.props).filter(([key]) => !dated.has(key)));
@@ -95,10 +100,13 @@ export function spineSettings(placed: Placed): Record<string, unknown> {
 export class WeekUnavailable extends Error {}
 
 /** What a spread places: its modules, and the settings for the spines. A
- *  day spread is one daily template shown twice: its left page is it. */
+ *  day spread is one daily template shown twice: its left page is it. The
+ *  week title is a spine only where it has a setting to pass on (the
+ *  grief week's uncounted weeks): otherwise it is all dates. */
 function placementsOf(spread: HeroSpread): { modules: Placed[]; spines: Placed[] } {
   const placed = spreadPlacements(spread).filter((p) => spread.layout.kind !== "day" || p.page === 0);
-  return { modules: placed.filter((p) => !p.locked), spines: placed.filter((p) => p.locked && p.slug.endsWith("-core")) };
+  const spine = (p: Placed) => p.locked && (p.slug.endsWith("-core") || (p.slug === "week-title" && p.props.showWeekCount === false));
+  return { modules: placed.filter((p) => !p.locked), spines: placed.filter(spine) };
 }
 
 type ModuleTypeRow = Awaited<ReturnType<typeof prisma.moduleType.findMany>>[number];
@@ -164,7 +172,9 @@ async function layOutLevel(book: BookWithPages, spread: HeroSpread, target: Page
     const own = pages[spine.page].moduleInstances.find((mi) => mi.locked && mi.moduleType.slug === spine.slug);
     if (!own) return [];
     const propValues = { ...((own.propValues as Record<string, unknown>) ?? {}), ...spineSettings(spine) };
-    return [prisma.moduleInstance.update({ where: { id: own.id }, data: { rowSpan: spine.rowSpan, propValues: propValues as Prisma.InputJsonValue } })];
+    // The title keeps its own height: the journal's, not the landing grid's.
+    const rowSpan = spine.slug === "week-title" ? {} : { rowSpan: spine.rowSpan };
+    return [prisma.moduleInstance.update({ where: { id: own.id }, data: { ...rowSpan, propValues: propValues as Prisma.InputJsonValue } })];
   });
   return [
     prisma.moduleInstance.deleteMany({ where: { pageId: { in: pages.slice(0, needed).map((page) => page.id) }, locked: false } }),
@@ -190,17 +200,20 @@ const PART_LEVEL: Record<PlannerPart, PageLevel> = {
 };
 
 /** The journal a planner starts: its parts' levels between the Beginning
- *  and the End, at the hero's trim, this quarter. Its spreads agree on the
- *  week's first day and the font (spreads.test.mts checks), so the first
- *  part's are the book's. */
+ *  and the End, at the hero's trim, this quarter; or, for a planner kept for
+ *  a season (Lent, Ramadan), the season's own dates (plannerTemplates'
+ *  `dates`). Its spreads agree on the week's first day and the font
+ *  (spreads.test.mts checks), so the first part's are the book's. */
 export function journalForPlanner(planner: PlannerTemplate, title: string, browserTimeZone: string | null, today = new Date()): NewJournal {
   const parts = partsOf(planner);
   const first = HERO_BY_KEY[parts[0].key].layout;
   const inner = parts.filter(({ part }) => part !== "front").map(({ part }) => PART_LEVEL[part]);
+  const { startISO, endISO } = planner.dates?.(today) ?? nextQuarter(today);
   return {
     title,
     trim: "bound7x10",
-    ...nextQuarter(today),
+    startISO,
+    endISO,
     levels: [PageLevel.FRONT_MATTER, ...inner, PageLevel.BACK_MATTER],
     dated: true,
     weekStartDay: first.weekStartsMonday ? 1 : 0,

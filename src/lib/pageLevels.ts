@@ -283,6 +283,9 @@ export type OccurrenceContext = Occurrence & {
   /** 0-based, and how many there are in the term. "Week 7/13" is these. */
   index: number;
   total: number;
+  /** The book's last day, where it has one: what a page printed once can
+   *  fit itself to (a year's grid printing only the book's months). */
+  end?: Date | null;
 };
 
 /** Weekday names as the day-bearing modules spell them, indexed the way
@@ -452,7 +455,7 @@ export function bookPageCount(
     if (pages === 0) continue;
     const list = occurrences(level, start, end, weekStartDay);
     if (list === null) return null;
-    list.forEach((occurrence, index) => slots.push({ at: { ...occurrence, level, index, total: list.length }, rank, pages }));
+    list.forEach((occurrence, index) => slots.push({ at: { ...occurrence, level, index, total: list.length, end }, rank, pages }));
   }
   const runs = bindingOrder(slots, start).map((slot) => ({ level: slot.at.level, pages: slot.pages }));
   const pads = facingPads(runs).filter(Boolean).length;

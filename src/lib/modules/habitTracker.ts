@@ -68,7 +68,16 @@ export type HabitTrackerConfig = {
    *  stays derived; typing it out into Columns to add one stops it
    *  following the journal. Wide layout only: a sidebar has no room. */
   totalColumn?: boolean;
+  /** Row names printed as typed instead of in capitals. Off by default; on
+   *  for a challenge's plan, whose rows are sentences ("Walk 5 min. Then
+   *  run 1 min, walk 2, six times"), which read heavily in capitals
+   *  (2026-10-30, his call). Not in the editor. */
+  rowsAsTyped?: boolean;
 };
+
+/** A row name as it prints: capitals, the tracker house style, unless the
+ *  tracker asks for its rows as typed. */
+const rowText = (name: string, config: HabitTrackerConfig) => (config.rowsAsTyped ? name : name.toUpperCase());
 
 /** A habit cell's circle or dot, centred in its cell. */
 function cellMark(
@@ -561,7 +570,7 @@ rowY + rowHeight;
       // Shrunk and, in the last resort, cut - nothing in the renderer
       // clips a text node, so a long row name in a narrow name column
       // prints out of the module and over its neighbour.
-      const fitted = fitLabel(habitName.toUpperCase(), nameColumnWidth - 12, [
+      const fitted = fitLabel(rowText(habitName, config), nameColumnWidth - 12, [
         ptToPx(7),
         ptToPx(6),
         ptToPx(5),
@@ -721,7 +730,7 @@ function renderHabitTrackerCompact(
     const named = (config.habits ?? []).some((name) => (name ?? "").trim().length > 0);
     const habitName = config.habits?.[i] ?? (named ? "" : undefined);
     const rowName = fitLabel(
-      (habitName ?? "HABIT").toUpperCase(),
+      habitName === undefined ? "HABIT" : rowText(habitName, config),
       geometry.width - 12,
       [nameFontSize, ptToPx(6), ptToPx(5)]
     );

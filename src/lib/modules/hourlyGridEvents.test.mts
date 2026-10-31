@@ -1,5 +1,5 @@
 // Calendar events on the hour grid: the all-day band, and what it must not
-// disturb.
+// disturb; and with increments off, the list that takes their place.
 //
 // Andrew, 2026-09-26: all-day events and holidays go "between day of week at
 // top and hourly section". They fit inside the 22.3pt gap that was already
@@ -496,11 +496,131 @@ const allDay = (day: number, label: string, colour?: string): HourlyGridEvent =>
   check(Number(tiny?.height) > 0, `an absurd margin left a block of ${Number(tiny?.height).toFixed(1)}px`);
 }
 
+// --- with increments off, a day LISTS its events --------------------------
+//
+// Audit 2026-10-29: with increments off there are no hours to draw an event
+// against, and the renderer dropped them all, the all-day band too. The ADHD
+// day, the rapid log and the mindful, language and Tao weeks are all off, and
+// month pages print no events, so in those planners the person's calendar
+// never reached the book. Now each day lists its own at the top of its
+// column, one line to a dot row, and its dots start under the list.
+//
+// On a real lattice, because that is the only place the list and the dots
+// can collide: allocation 187.5 on a 75px pitch, inset 6, 20 dots tall.
+{
+  const LATTICE = { pitchPx: 75, originX: 187.5, originY: 187.5, insetPx: 6 };
+  const OFF_GEOMETRY = { x: 193.5, y: 193.5, width: 1788, height: 1488 };
+  const OFF = { ...BASE, intervalMode: "off", offModeRule: "dotted" };
+  const renderOff = (events: HourlyGridEvent[], extra: Record<string, unknown> = {}, geometry = OFF_GEOMETRY) =>
+    flat(renderHourlyGridCore(geometry, { ...OFF, ...extra, events } as never, "t", FONT_SERIF, LATTICE) as unknown as El[]);
+  const linesOf = (marks: El[], day: number) =>
+    marks.filter((e) => e.type === "text" && new RegExp(`^t-d${day}-(allday-line|ev.+-line|events-more)`).test(e.id)).sort((a, b) => Number(a.y) - Number(b.y));
+  const dots = (marks: El[]) => marks.filter((e) => e.id.startsWith("t-dot-"));
+
+  const week: HourlyGridEvent[] = [
+    { day: 1, startTime: "14:30", endTime: "15:30", label: "Gym", source: "manual", id: "gym1" },
+    { day: 1, startTime: "09:00", endTime: "10:00", label: "Dentist", source: "manual", id: "dent1" },
+    allDay(1, "Bin day"),
+    // Past this column's midnight: it belongs to the next morning's column.
+    { day: 1, startTime: "25:30", endTime: "26:00", label: "Late train", source: "manual", id: "late1" },
+  ];
+
+  // An empty week is the dot field it always was, and nothing else.
+  const empty = renderOff([]);
+  check(linesOf(empty, 0).length + linesOf(empty, 1).length + linesOf(empty, 2).length === 0, "an empty week with increments off drew event lines");
+
+  const marks = renderOff(week);
+  const lines = linesOf(marks, 1);
+  const texts = lines.map((e) => String(e.text));
+  check(
+    texts.join(" | ") === "Bin day | 9am Dentist | 2:30pm Gym",
+    `a day with increments off should list "Bin day | 9am Dentist | 2:30pm Gym", top to bottom, got "${texts.join(" | ")}"`
+  );
+  check(!texts.some((t) => t.includes("Late train")), "an event past the column's midnight was listed in the evening before as well");
+  check(linesOf(marks, 0).length === 0 && linesOf(marks, 2).length === 0, "another day's events were listed in the wrong column");
+  check(
+    lines.some((e) => e.id === "t-d1-evdent1-line"),
+    `a listed event should be drawn under its key (t-d1-evdent1-line) so the editor can find it, got ${lines.map((e) => e.id).join(", ")}`
+  );
+  // The 24-hour clock writes its own five characters.
+  const h24 = linesOf(renderOff(week, { timeFormat: "24" }), 1).map((e) => String(e.text));
+  check(h24.includes("09:00 Dentist") && h24.includes("14:30 Gym"), `the 24-hour clock should list "09:00 Dentist", got ${h24.join(", ")}`);
+
+  // Legible, grey, inside the day's own column.
+  const header = marks.find((e) => e.id === "t-d1-header-box")!;
+  for (const line of lines) {
+    check(Number(line.fontSize) >= ptToPx(5) - 0.01, `"${line.text}" is set at ${(Number(line.fontSize) / ptToPx(1)).toFixed(2)}pt, under the 5pt floor`);
+    check(String(line.fill) !== "#000000" && line.fill !== undefined, `"${line.text}" should be grey, like a time label, not ${line.fill}`);
+    check(
+      Number(line.x) >= Number(header.x) && Number(line.x) + Number(line.width) <= Number(header.x) + Number(header.width) + 0.01,
+      `"${line.text}" runs outside its day's column`
+    );
+  }
+  // The first line sits under the day tab, in the gap the band takes with
+  // increments on, and every line in order one dot row apart.
+  const tabBottom = Number(header.y) + Number(header.height);
+  check(Number(lines[0]?.y) > tabBottom, `the first line starts at ${Number(lines[0]?.y).toFixed(1)}, on the day tab ending ${tabBottom.toFixed(1)}`);
+  const steps = lines.slice(1).map((e, i) => Number(e.y) - Number(lines[i].y));
+  check(steps.every((s) => Math.abs(s - LATTICE.pitchPx) < 0.01), `the lines should be one dot row apart, are ${steps.map((s) => s.toFixed(1)).join(", ")}`);
+
+  // NO DOT UNDER A LINE. The dots in that column start below the list; the
+  // other columns keep their whole field.
+  const field = dots(marks);
+  const struck = field.filter((dot) =>
+    lines.some(
+      (line) =>
+        Number(dot.x) + Number(dot.width) > Number(line.x) &&
+        Number(dot.x) < Number(line.x) + Number(line.width) &&
+        Number(dot.y) + Number(dot.height) > Number(line.y) &&
+        Number(dot.y) < Number(line.y) + Number(line.height)
+    )
+  );
+  check(struck.length === 0, `${struck.length} dot(s) drawn through the listed events: ${struck.map((d) => d.id).join(", ")}`);
+  const inColumn = (dot: El, day: number) => {
+    const tab = marks.find((e) => e.id === `t-d${day}-header-box`)!;
+    const cx = Number(dot.x) + Number(dot.width) / 2;
+    return cx > Number(tab.x) && cx < Number(tab.x) + Number(tab.width);
+  };
+  check(
+    dots(empty).filter((d) => inColumn(d, 0)).length === field.filter((d) => inColumn(d, 0)).length,
+    "a day with nothing listed lost dots to its neighbour's list"
+  );
+  check(
+    field.filter((d) => inColumn(d, 1)).length === dots(empty).filter((d) => inColumn(d, 1)).length - 2 * 7,
+    `three lines should take two dot rows (seven dots each) from the day's field: ` +
+      `${dots(empty).filter((d) => inColumn(d, 1)).length} became ${field.filter((d) => inColumn(d, 1)).length}`
+  );
+
+  // More than fit are counted, inside the block. Four dots tall holds three
+  // lines (one in the tab's gap, two below), so five events show two and count three.
+  const short = { ...OFF_GEOMETRY, height: 4 * 75 - 12 };
+  const many = ["A", "B", "C", "D", "E"].map((label, k) => ({
+    day: 0, startTime: `0${k + 1}:00`, endTime: `0${k + 1}:30`, label, source: "manual" as const, id: `m${k}`,
+  }));
+  const crowded = linesOf(renderOff(many, {}, short), 0);
+  check(
+    crowded.map((e) => String(e.text)).join(" | ") === "1am A | 2am B | +3 more",
+    `five events in three rows should read "1am A | 2am B | +3 more", got "${crowded.map((e) => String(e.text)).join(" | ")}"`
+  );
+  const last = crowded[crowded.length - 1];
+  check(
+    Number(last?.y) + Number(last?.height) <= short.y + short.height + LATTICE.insetPx,
+    "the last listed line runs past the foot of the block"
+  );
+  // At its two-dot minimum the block still says something rather than nothing.
+  const tiny = linesOf(renderOff(many, {}, { ...OFF_GEOMETRY, height: 2 * 75 - 12 }), 0);
+  check(tiny.length === 1 && String(tiny[0].text) === "5 events", `a two-dot block should say "5 events", got "${tiny.map((e) => e.text).join(" | ")}"`);
+
+  // With increments ON nothing is listed: the hours and the band carry them.
+  const on = flat(renderHourlyGridCore(OFF_GEOMETRY, { ...BASE, events: week } as never, "t", FONT_SERIF, LATTICE) as unknown as El[]);
+  check(linesOf(on, 1).length === 0, "with increments on, events were listed as well as drawn on the hours");
+}
+
 if (failures > 0) {
   console.error(`\nHourly grid events: ${failures} problem(s).`);
   process.exit(1);
 }
 console.log(
   "All hourly grid event checks passed (an empty week is untouched; the band is 14pt, centred in the " +
-    "22.3pt gap, rounded, and counts what it cannot fit)."
+    "22.3pt gap, rounded, and counts what it cannot fit; with increments off each day lists its own events above its dots)."
 );

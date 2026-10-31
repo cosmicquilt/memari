@@ -191,13 +191,17 @@ export const CATALOGUE: CatalogueEntry[] = [
     // shift nurse (2026-10-15): a row per patient for the shift, in the
     // shorthand nurses write it in - room, diagnosis and history, meds due,
     // labs, what is left to do.
+    //
+    // "Initials", not "Patient" (audit 2026-10-29): a hospital's brain sheet
+    // is shredded at the end of the shift, and this one is bound into a book
+    // that goes home. A column asking for the patient invites a name.
     slug: "nurse-brain-sheet",
     primitive: "column-table",
     name: "Nurse Brain Sheet",
     category: "Planning",
     cadence: "day",
     paletteName: "Brain Sheet",
-    props: { heading: "Brain Sheet", ...table(["Rm", "Patient", "Dx / Hx", "Meds due", "Labs", "To do"], [0.6, 1.5, 1.6, 1.4, 1.1, 1.6]) },
+    props: { heading: "Brain Sheet", ...table(["Rm", "Initials", "Dx / Hx", "Meds due", "Labs", "To do"], [0.6, 1.5, 1.6, 1.4, 1.1, 1.6]) },
   },
   {
     // What got done, written as it gets done - the ADHD week's sidebar.
@@ -228,8 +232,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     name: "Lesson Planner",
     category: "Planning",
     cadence: "week",
-    paletteName: "Lessons",
-    props: { heading: "Lesson Plan", ...table(["Period", "Topic", "Materials"], [0.9, 2.6, 2]) },
+    // Not "Lessons": that is Lessons Learned's card.
+    paletteName: "Lesson Plan",
+    // A Day column: a week of "Period 2: fractions" did not say which day
+    // (audit 2026-10-29). The teacher weeks draw classes by days instead.
+    props: { heading: "Lesson Plan", ...table(["Day", "Period", "Topic", "Materials"], [0.7, 0.8, 2.4, 1.8]) },
   },
   {
     // The other half of a teacher's week: what is waiting to be graded.
@@ -273,14 +280,22 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: { heading: "PTO", total: 20, milestoneEvery: 5, numbers: "milestones" },
   },
   {
-    // Thirty days up to an exam, crossed off one a day.
+    // Thirty days up to ONE exam, crossed off one a day. A term's exams are
+    // a table, not this: the quiz's school fronts and the semester pages
+    // print "Exam Dates" (class, exam, date), each date a calendar event.
+    //
+    // No numbers (audit 2026-10-29). A meter numbers its milestones counting
+    // UP - 10, 20, 30 - and a countdown is read DOWN, so the cell printed
+    // "10" was twenty days out, and the numbers read as labels every ten.
+    // The two ends say which way it runs instead; the rules after the 10th
+    // and 20th cells still mark twenty and ten days to go.
     slug: "exam-countdown",
     primitive: "progress-meter",
     name: "Exam Countdown",
     category: "Planning",
     cadence: "journal",
     paletteName: "Exam",
-    props: { heading: "Exam", total: 30, milestoneEvery: 10, numbers: "milestones", endLabel: "Exam day" },
+    props: { heading: "Exam Countdown", total: 30, milestoneEvery: 10, numbers: "none", startLabel: "30 days to go", endLabel: "Exam day" },
   },
   {
     slug: "ivy-lee-six",
@@ -295,6 +310,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     columnSpan: 6,
   },
   {
+    // Urgent on the LEFT and Do top left, as Covey drew it (Andrew,
+    // 2026-10-30, with the Gemini report; it was mirrored, Do top right).
+    // The hero's handwriting writes its tasks by quadrant in this reading
+    // order (plan.ts EISENHOWER, archetypes.ts eisenhower): they moved
+    // together.
     slug: "eisenhower-matrix",
     primitive: "axis-matrix",
     name: "Eisenhower Matrix",
@@ -303,11 +323,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Eisenhower",
     props: {
       heading: "Eisenhower",
-      xLeft: "Not urgent",
-      xRight: "Urgent",
+      xLeft: "Urgent",
+      xRight: "Not urgent",
       yTop: "Vital",
       yBottom: "Minor",
-      quadrants: ["Schedule", "Do", "Delete", "Delegate"],
+      quadrants: ["Do", "Schedule", "Delegate", "Delete"],
       // Each box's name large and faint behind it, and the boxes blank to
       // write in - "edit the default eisenhower to be not ruled and have the
       // quadrant labels in the back ground center of each quandrant big
@@ -327,7 +347,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Planning",
     cadence: "week",
     props: {
-      heading: "Time Blocks",
+      // Its name, not "Time Blocks": a tick a day part is not a time block.
+      heading: "Day Parts",
       habits: ["Morning", "Midday", "Afternoon", "Evening"],
       columns: [],
     },
@@ -342,7 +363,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "month",
     props: {
       heading: "Monthly Review",
-      prompts: ["What worked?", "What did not?", "What changes next month?"],
+      // "What did not?" and "What changes next month?" were stiff, and the
+      // second read two ways (audit 2026-10-29). Printed twelve times a book.
+      prompts: ["What worked?", "What didn't?", "What will I change next month?"],
       linesPerPrompt: 2,
     },
   },
@@ -425,7 +448,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "day",
     paletteName: "ABC List",
     // A narrow code column beside the task - Franklin Covey's method.
-    props: { heading: "Priorities", ...table(["", "Task", "Done"], [0.5, 5, 0.7]) },
+    // "ABC Priorities": Weekly Priorities is headed "Priorities", and the
+    // two can share a page.
+    props: { heading: "ABC Priorities", ...table(["", "Task", "Done"], [0.5, 5, 0.7]) },
   },
   {
     slug: "index",
@@ -686,8 +711,10 @@ export const CATALOGUE: CatalogueEntry[] = [
       heading: "Self-Care",
       // Six kinds of looking after yourself, short enough to read in the
       // name column and general enough to be worth printing: moving,
-      // daylight, eating, sleep, other people, rest.
-      habits: ["Moved", "Outside", "Ate well", "Slept 7h", "Reached out", "Rest"],
+      // daylight, eating, sleep, other people, rest. "Slept well", not a
+      // number of hours: a target a new parent or a night nurse misses most
+      // days is a box to fail (audit 2026-10-29).
+      habits: ["Moved", "Outside", "Ate well", "Slept well", "Reached out", "Rest"],
       columns: [],
     },
     rowSpan: 8,
@@ -698,9 +725,12 @@ export const CATALOGUE: CatalogueEntry[] = [
     name: "Energy & Pain Scale",
     category: "Mood & health",
     cadence: "day",
-    paletteName: "Energy",
+    // Not "Energy": that is the Energy Chart's card.
+    paletteName: "Energy & Pain",
     props: {
-      heading: "Today",
+      // Not "Today": it is placed on week pages too, where "Today" is wrong
+      // every week (audit 2026-10-29).
+      heading: "How I Feel",
       items: ["Energy", "Pain", "Mood", "Sleep"],
       scaleMin: 1,
       scaleMax: 10,
@@ -709,18 +739,38 @@ export const CATALOGUE: CatalogueEntry[] = [
       scaleHead: "inside",
     },
     rowSpan: 6,
+    // Half a page. At the primitive's 6 columns ten numbered circles came
+    // out with their numbers at 2.4pt, under the print floor; at 12 they
+    // are 4.5pt.
+    columnSpan: 12,
   },
 
   // ───────────────────────────────────────────────────────────────────── Food
   {
     slug: "meal-planner",
     primitive: "habit-tracker",
+    name: "Meals Eaten",
+    category: "Food",
+    cadence: "week",
+    paletteName: "Meals Eaten",
+    // A tick a meal, so it records eating, not a plan (Andrew, 2026-10-30,
+    // with the Gemini report: a meal planner is for writing meals in). Kept
+    // under its slug for the weeks where eating at all is the point, a
+    // night nurse's, a new parent's; Meal Planner, below, is the plan.
+    props: { heading: "Meals Eaten", habits: ["Breakfast", "Lunch", "Dinner", "Snack"], columns: [] },
+    rowSpan: 6,
+  },
+  {
+    // The week's meals written in, a day a row, for the shopping list and
+    // the cupboard: what people mean by a meal planner.
+    slug: "weekly-meal-plan",
+    primitive: "column-table",
     name: "Meal Planner",
     category: "Food",
     cadence: "week",
-    paletteName: "Meals",
-    props: { heading: "Meals", habits: ["Breakfast", "Lunch", "Dinner", "Snack"], columns: [] },
-    rowSpan: 6,
+    paletteName: "Meal Plan",
+    props: { heading: "Meals", ...table(["Day", "Breakfast", "Lunch", "Dinner"], [0.7, 1.6, 1.6, 1.8]) },
+    rowSpan: 9,
   },
   {
     slug: "grocery-list",
@@ -831,7 +881,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Fitness",
     cadence: "week",
     paletteName: "Training",
-    props: { heading: "Training", habits: ["Push", "Pull", "Legs", "Cardio", "Rest"], columns: [] },
+    // Kinds of training, not a gym's push/pull/legs split: it is dropped on
+    // runners' and walkers' weeks too. The lifter's split is the quiz's,
+    // for lifters (otterPlanner.ts).
+    props: { heading: "Training", habits: ["Strength", "Cardio", "Mobility", "Sport", "Rest"], columns: [] },
     rowSpan: 7,
   },
   {
@@ -842,7 +895,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "month",
     paletteName: "Steps",
     // `numbers`, not the old `numbered` - see the note on Savings.
-    props: { heading: "Steps", total: 31, milestoneEvery: 7, numbers: "every" },
+    // A rule after every tenth day, not seventh: a month's 1st is any day
+    // of the week, so rules after the 7th, 14th and 21st drew weeks the
+    // month does not have (audit 2026-10-29). The 10th and 20th are true
+    // of every month.
+    props: { heading: "Steps", total: 31, milestoneEvery: 10, numbers: "every" },
   },
   {
     slug: "run-log",
@@ -883,7 +940,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Fitness",
     cadence: "week",
     paletteName: "Rest",
-    props: { heading: "Rest", habits: ["Rest day", "Active rest", "Slept 8h"], columns: [] },
+    // "Slept well", as Self-Care says it, not a number of hours.
+    props: { heading: "Rest", habits: ["Rest day", "Active rest", "Slept well"], columns: [] },
     rowSpan: 5,
   },
   {
@@ -951,7 +1009,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     // `numbers` replaced `numbered` (2026-09-30), and a preset has to say the
     // new one: the schema defaults it, and a default wins over an old key -
     // the trap that left Gratitude lined on its card and blank when dropped.
-    props: { heading: "Savings", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "$0", endLabel: "Goal" },
+    //
+    // "0%", not "$0" (audit 2026-10-29): after "$0" the tenths' 10 to 100
+    // read as dollars, so a $5,000 goal had ticks at $10. And a currency is
+    // what Zero-Based Budget's heading was rid of. The Sales Goal does this.
+    props: { heading: "Savings", total: 100, milestoneEvery: 10, numbers: "milestones", segments: "bar", startLabel: "0%", endLabel: "Goal" },
     // At its floor once the end labels' line counts (2026-10-01) - the
     // meter's own 4 rows are one short for a bar with words under it.
     rowSpan: 5,
@@ -978,7 +1040,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     props: {
       heading: "Bills",
       habits: ["Rent", "Power", "Water", "Phone", "Internet"],
-      columns: ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"],
+      // Three letters, not one: "J F M A M J J A S O N D" has three Js, two
+      // Ms and two As. They fit at the full head size across the page.
+      columns: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     },
     rowSpan: 8,
   },
@@ -1060,15 +1124,17 @@ export const CATALOGUE: CatalogueEntry[] = [
 
   // ─────────────────────────────────────────────────────────── Home & family
   {
+    // American words, as the descriptions are: "Schedule" not "Rota",
+    // "Trash" not "Bins". The slug keeps "rota": it is a database key.
     slug: "cleaning-rota",
     primitive: "habit-tracker",
-    name: "Cleaning Rota",
+    name: "Cleaning Schedule",
     category: "Home & family",
     cadence: "week",
     paletteName: "Cleaning",
     props: {
       heading: "Cleaning",
-      habits: ["Kitchen", "Bathroom", "Floors", "Laundry", "Bins"],
+      habits: ["Kitchen", "Bathroom", "Floors", "Laundry", "Trash"],
       columns: [],
     },
     rowSpan: 8,
@@ -1084,8 +1150,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     // columns became configurable at all.
     props: {
       heading: "Chores",
-      habits: ["Dishes", "Rubbish", "Tidy", "Pets", "Shopping"],
-      columns: ["Me", "You", "Kid 1", "Kid 2"],
+      habits: ["Dishes", "Trash", "Tidy", "Pets", "Shopping"],
+      // Me, and three heads to write names on: "Kid 1" and "Kid 2" told a
+      // family nothing, and printed for people with no kids (audit
+      // 2026-10-29). The quiz sizes the columns to the household.
+      columns: ["Me", "", "", ""],
     },
     rowSpan: 8,
   },
@@ -1116,7 +1185,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Home & family",
     cadence: "week",
     paletteName: "Plants",
-    props: { heading: "Plants", habits: ["Monstera", "Fern", "Succulents", "Herbs"], columns: [] },
+    // Four blank rows for the person's own plants (audit 2026-10-29). Named
+    // ones - Monstera, Fern - printed in every book that dropped it, true of
+    // few of them. The hero's hand writes plant names into blank rows.
+    props: { heading: "Plants", habits: ["", "", "", ""], columns: [] },
     rowSpan: 7,
   },
   {
@@ -1237,7 +1309,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     cadence: "week",
     paletteName: "Premeditatio",
     props: {
-      heading: "Premeditatio",
+      // The whole phrase: "premeditatio" alone is half of it.
+      heading: "Premeditatio Malorum",
       prompts: ["What might I lose?", "How would I meet it?"],
       linesPerPrompt: 3,
     },
@@ -1251,7 +1324,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Tao",
     props: {
       heading: "Tao",
-      prompts: ["The passage", "What it says plainly", "What it says underneath"],
+      // "Chapter", not "The passage": two lines cannot hold a chapter of
+      // five to fifteen. Its number and the line that stays, then the
+      // planner's own questions (audit 2026-10-29).
+      prompts: ["Chapter", "What it says plainly", "What it says underneath"],
       linesPerPrompt: 2,
     },
   },
@@ -1357,7 +1433,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     primitive: "habit-tracker",
     name: "Ramadan Log",
     category: "Philosophy & faith",
-    cadence: "month",
+    // Once a book, not "month": Ramadan is once a year, and a thirty-day log
+    // on a repeating month page is wrong eleven months in twelve. Journal
+    // also lets the browser offer it for the front pages, where it goes.
+    cadence: "journal",
     paletteName: "Ramadan",
     props: {
       heading: "Ramadan",
@@ -1393,11 +1472,13 @@ export const CATALOGUE: CatalogueEntry[] = [
   {
     slug: "meditation-minutes",
     primitive: "progress-meter",
-    name: "Meditation Minutes",
+    // A day a cell, so days, not minutes: the slug keeps "minutes" (a key).
+    name: "Meditation Days",
     category: "Philosophy & faith",
     cadence: "month",
     paletteName: "Sitting",
-    props: { heading: "Sitting", total: 31, milestoneEvery: 7, numbers: "every" },
+    // Every tenth day, as Steps: see there.
+    props: { heading: "Sitting", total: 31, milestoneEvery: 10, numbers: "every" },
   },
   {
     slug: "mussar-trait",
@@ -1416,10 +1497,11 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Philosophy & faith",
     cadence: "day",
     paletteName: "Lectio",
-    // Four movements, fixed by tradition.
+    // Four movements, fixed by tradition, by their Latin names with the
+    // English beside them - in brackets, not after a spaced dash.
     props: {
       heading: "Lectio Divina",
-      prompts: ["Lectio - read", "Meditatio - reflect", "Oratio - respond", "Contemplatio - rest"],
+      prompts: ["Lectio (read)", "Meditatio (reflect)", "Oratio (respond)", "Contemplatio (rest)"],
       linesPerPrompt: 2,
       numbered: true,
     },
@@ -1480,7 +1562,25 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Growth",
     cadence: "day",
     paletteName: "Affirmation",
-    props: { heading: "Today", prompts: ["Today I am"], linesPerPrompt: 2 },
+    // Headed "Affirmation", not "Today" over "Today I am".
+    props: { heading: "Affirmation", prompts: ["Today I am"], linesPerPrompt: 2 },
+  },
+  {
+    // A challenge's page: where it is in the plan and that page's step,
+    // "Day 7 of 30" over "Run 3 min, walk 2, five times", then the page's
+    // own questions. One template prints thirty different days: the
+    // heading and the first prompt are filled in for each page from
+    // `steps` (moduleRegistry.ts, under the catalogue). Placed by the
+    // challenges (challenges.ts), not offered alone: with no steps it is a
+    // box headed "Day 1 of 30" on every page.
+    slug: "challenge-step",
+    primitive: "prompted-lines",
+    name: "Challenge Step",
+    category: "Growth",
+    cadence: "day",
+    paletteName: "Step",
+    props: { heading: "Day 1 of 30", prompts: ["Today's step"], linesPerPrompt: 3, steps: [], stepUnit: "Day" },
+    inPalette: false,
   },
   {
     slug: "thirty-day-challenge",
@@ -1565,7 +1665,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Reflection",
     props: {
       heading: "Reflection",
-      prompts: ["What went well?", "What did not?", "What next week?"],
+      // Whole questions, as Monthly Review's are: "What next week?" was a
+      // fragment, printed every week.
+      prompts: ["What went well?", "What didn't?", "What will I change next week?"],
       linesPerPrompt: 2,
     },
   },
@@ -1600,7 +1702,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Hobbies & learning",
     cadence: "journal",
     paletteName: "Books",
-    props: { heading: "Books", ...table(["Title", "Author", "Rating", "Done"], [3, 2, 1, 0.9]), rowNumbers: true },
+    // "Finished", the date the description promises, not "Done".
+    props: { heading: "Books", ...table(["Title", "Author", "Rating", "Finished"], [3, 2, 1, 1.1]), rowNumbers: true },
   },
   {
     slug: "reading-progress",
@@ -1609,7 +1712,9 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Hobbies & learning",
     cadence: "journal",
     paletteName: "Reading",
-    props: { heading: "Books This Year", total: 24, milestoneEvery: 6, numbers: "milestones" },
+    // "Reading Goal", not "Books This Year": most books cover a quarter, not
+    // a year. Every spread and the quiz already said so by hand.
+    props: { heading: "Reading Goal", total: 24, milestoneEvery: 6, numbers: "milestones" },
   },
   {
     slug: "watchlist",
@@ -1742,7 +1847,8 @@ export const CATALOGUE: CatalogueEntry[] = [
   {
     slug: "step-four-inventory",
     primitive: "column-table",
-    name: "Step 4 Inventory",
+    // Spelled out, as Step Ten Inventory is.
+    name: "Step Four Inventory",
     category: "Recovery",
     cadence: "journal",
     paletteName: "Step 4",
@@ -1768,7 +1874,8 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Recovery",
     cadence: "week",
     paletteName: "Sponsor",
-    props: { heading: "Contact", ...table(["Date", "Called", "Spoke", "Note"], [1.2, 0.9, 0.9, 2.6]) },
+    // "Sponsor Contact": "Contact" alone reads as a phone list.
+    props: { heading: "Sponsor Contact", ...table(["Date", "Called", "Spoke", "Note"], [1.2, 0.9, 0.9, 2.6]) },
   },
   {
     slug: "meeting-log",
@@ -1803,7 +1910,10 @@ export const CATALOGUE: CatalogueEntry[] = [
     category: "Recovery",
     cadence: "day",
     paletteName: "HALT",
-    props: { heading: "HALT", items: ["Hungry", "Angry", "Lonely", "Tired"], scaleMin: 1, scaleMax: 5, shape: "circle" },
+    // Words at the ends, as the recovery pages have them: with bare numbers
+    // it was not clear whether 5 meant very hungry or fine, and someone
+    // checking in during a hard moment should not have to decode it.
+    props: { heading: "HALT", items: ["Hungry", "Angry", "Lonely", "Tired"], scaleMin: 1, scaleMax: 5, shape: "circle", scaleHead: "words", lowLabel: "no", highLabel: "very" },
   },
 
   // ─────────────────────────────────────────────────────────────────── Travel
@@ -1883,7 +1993,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     paletteName: "Focus",
     // groups: 1 is the sidebar case - one run of marks for something that
     // is not a day. See IconStripConfig.groups.
-    props: { heading: "Focus blocks", icon: "flame", count: 10 },
+    props: { heading: "Focus Blocks", icon: "flame", count: 10 },
     columnSpan: 6,
   },
   {
@@ -1896,7 +2006,7 @@ export const CATALOGUE: CatalogueEntry[] = [
     // Four a day, not eight: a potted plant is six strokes converging in a
     // small square, and at eight a day across a week they merge. See the
     // catalogue proof, where the 1-column column is the one that tells.
-    props: { heading: "Water plants", icon: "plant", count: 4 },
+    props: { heading: "Water Plants", icon: "plant", count: 4 },
   },
   {
     // Feeding a sourdough starter, twice a day.

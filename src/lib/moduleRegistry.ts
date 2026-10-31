@@ -907,6 +907,10 @@ const PRIMITIVES = {
           "dateRangeLabel": {
             "type": "string",
             "default": ""
+          },
+          "showWeekCount": {
+            "type": "boolean",
+            "default": true
           }
         }
       },
@@ -927,6 +931,10 @@ const PRIMITIVES = {
     // occurrence's own first day, which is not necessarily a Sunday - see
     // occurrences(), where a book beginning on a Wednesday has its first
     // week begin that Wednesday.
+    // showWeekCount false prints "WEEK" and the range with no count (the
+    // grief week, audit 2026-10-29: "1/52" counts toward an end in a book
+    // that promises nothing to finish). Both hooks keep it: they set only
+    // the date's values.
     dated: (props, at) => ({
       ...props,
       weekNumber: at.index + 1,
@@ -953,7 +961,7 @@ const PRIMITIVES = {
           },
           "heading": {
             "type": "string",
-            "default": "To - Do"
+            "default": "To Do"
           },
           "lineStyle": {
             "type": "string",
@@ -987,7 +995,11 @@ const PRIMITIVES = {
     label: "To-do checklist",
     inPalette: true,
     category: "Basics",
-    paletteName: "To-Do",
+    // "To Do", not "To - Do": the spaced hyphen was the most printed
+    // heading in the product (Andrew, 2026-10-30, with the Gemini report:
+    // planner makers print "To Do" or "To-Do"). A list stored with its own
+    // heading keeps it; one left at the default changes with it.
+    paletteName: "To Do",
     previewProps: { dayCount: 1 },
     fields: [
       { kind: "text", key: "heading", label: "Heading", canvas: { element: "-heading", placeholder: "Heading" } },
@@ -1063,6 +1075,10 @@ const PRIMITIVES = {
             "default": "grid"
           },
           "totalColumn": {
+            "type": "boolean",
+            "default": false
+          },
+          "rowsAsTyped": {
             "type": "boolean",
             "default": false
           }
@@ -2511,16 +2527,108 @@ for (const entry of CATALOGUE) {
 // A book with no term has nothing to start from (its matter is dated at the
 // epoch, see occurrences) and keeps them; so do months someone has retyped.
 // Here rather than in the catalogue entry: an entry is words, not behaviour.
+// monthOffset is for a year split over two logs (the teacher's and the
+// homeschool year pages): the second log says 6 and starts six months after
+// the book does, so the two never print the same months (audit 2026-10-29:
+// both printed September to February in a September book).
 {
   const futureLog = MODULE_REGISTRY["future-log-months"];
   if (futureLog) {
+    const schema = futureLog.db.configSchema as { properties?: Record<string, unknown> };
     MODULE_REGISTRY["future-log-months"] = {
       ...futureLog,
+      db: {
+        ...futureLog.db,
+        configSchema: {
+          ...schema,
+          properties: { ...(schema.properties ?? {}), monthOffset: { type: "integer", default: 0 } },
+        },
+      },
       dated: (props, at) => {
         if (at.start.getTime() === 0) return props;
-        const months = monthPromptsFrom(props.prompts, at.start, MONTH_NAMES);
+        const offset = Math.trunc(Number(props.monthOffset) || 0);
+        const from = new Date(Date.UTC(at.start.getUTCFullYear(), at.start.getUTCMonth() + offset, 1));
+        const months = monthPromptsFrom(props.prompts, from, MONTH_NAMES);
         return months ? { ...props, prompts: months } : props;
       },
+    };
+  }
+}
+
+// A YEAR'S GRID PRINTS THE BOOK'S MONTHS (2026-10-30). Year in Pixels and
+// the Bill Tracker are a column a month, January to December, printed once
+// at the front of a book that most often runs three months: nine columns
+// blank in every book, and four books a year each with the whole year
+// (Andrew, with the Gemini report: quarterly planners print quarters).
+// Dated on the front or back pages, the columns are the book's own months,
+// its first to its last, twelve at most. Months someone has retyped are
+// theirs and kept, as the future log's are; so is a book with no term.
+{
+  const ABBR = MONTH_NAMES.map((name) => name.slice(0, 3));
+  const yearly = (props: Record<string, unknown>, at: OccurrenceContext): Record<string, unknown> => {
+    const columns = props.columns;
+    const isYear = Array.isArray(columns) && columns.length === 12 && columns.every((c, i) => c === ABBR[i]);
+    if (!isYear || !at.end || at.start.getTime() === 0) return props;
+    if (at.level !== "FRONT_MATTER" && at.level !== "BACK_MATTER") return props;
+    const first = at.start.getUTCFullYear() * 12 + at.start.getUTCMonth();
+    const last = at.end.getUTCFullYear() * 12 + at.end.getUTCMonth();
+    const count = Math.max(1, Math.min(12, last - first + 1));
+    return { ...props, columns: Array.from({ length: count }, (_, i) => ABBR[(first + i) % 12]) };
+  };
+  for (const slug of ["year-in-pixels", "bill-tracker"]) {
+    const entry = MODULE_REGISTRY[slug];
+    if (!entry) continue;
+    const before = entry.dated;
+    MODULE_REGISTRY[slug] = { ...entry, dated: (props, at) => yearly(before ? before(props, at) : props, at) };
+  }
+}
+
+// A CHALLENGE COUNTS ITS OWN DAYS (2026-10-30). challenge-step prints once
+// a day (or a week) of a challenge's book from one template. Dated, its
+// heading is the page's place in the plan, "Day 7 of 30", and its first
+// prompt that page's step from `steps`; the prompts after it are the page's
+// own questions, the same every day. Day one prints the template's own
+// first prompt, so what is typed on the page in the editor is what day one
+// prints. Past the plan's end (a book longer than the plan) the count goes
+// on, "Day 31", with a line for a step of the person's own. Undated there is
+// no day to count: "Day" and "Today's step", the plan being listed in full
+// on the front pages (challenges.ts).
+{
+  const step = MODULE_REGISTRY["challenge-step"];
+  if (step) {
+    const schema = step.db.configSchema as { properties?: Record<string, unknown> };
+    const unitOf = (props: Record<string, unknown>) => (props.stepUnit === "Week" ? "Week" : "Day");
+    const restOf = (props: Record<string, unknown>) => (Array.isArray(props.prompts) ? props.prompts.slice(1) : []);
+    MODULE_REGISTRY["challenge-step"] = {
+      ...step,
+      db: {
+        ...step.db,
+        configSchema: {
+          ...schema,
+          properties: {
+            ...(schema.properties ?? {}),
+            steps: { type: "array", items: { type: "string" }, default: [] },
+            stepUnit: { type: "string", enum: ["Day", "Week"], default: "Day" },
+          },
+        },
+      },
+      dated: (props, at) => {
+        const steps = Array.isArray(props.steps) ? props.steps.map((s) => String(s)) : [];
+        if (steps.length === 0) return props;
+        const own = Array.isArray(props.prompts) && typeof props.prompts[0] === "string" ? props.prompts[0] : steps[0];
+        const n = at.index + 1;
+        const inPlan = at.index < steps.length;
+        return {
+          ...props,
+          heading: inPlan ? `${unitOf(props)} ${n} of ${steps.length}` : `${unitOf(props)} ${n}`,
+          prompts: [inPlan ? (at.index === 0 ? own : steps[at.index]) : "A step of my own", ...restOf(props)],
+        };
+      },
+      undated: (props) => ({
+        ...props,
+        heading: unitOf(props),
+        prompts: [unitOf(props) === "Week" ? "This week's step" : "Today's step", ...restOf(props)],
+      }),
     };
   }
 }

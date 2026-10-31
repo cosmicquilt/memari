@@ -188,7 +188,7 @@ const PRACTICES: Record<string, Option[]> = {
   ],
   buddhist: [
     { id: "metta-practice", label: "Metta Practice" },
-    { id: "meditation-minutes", label: "Meditation Minutes" },
+    { id: "meditation-minutes", label: "Meditation Days" },
   ],
   stoic: [
     { id: "stoic-morning-page", label: "Stoic Morning Page" },
@@ -431,8 +431,14 @@ export function routedAnswers(answers: Answers): Answers {
   const out: Answers = { details: answers.details };
   for (const q of QUESTIONS) {
     if (q.when && !q.when(out)) continue;
-    const offered = new Set(q.options(out).map((o) => o.id));
-    const picked = (answers[q.id] ?? []).filter((id) => offered.has(id));
+    const options = q.options(out);
+    const offered = new Set(options.map((o) => o.id));
+    const alone = new Set(options.filter((o) => o.only).map((o) => o.id));
+    let picked = (answers[q.id] ?? []).filter((id) => offered.has(id));
+    // "Nothing, keep it clean" and "None" stand alone: the quiz clears them
+    // when something else is picked (OtterQuiz.tsx). So beside other picks
+    // the other picks count, as they would have on screen.
+    if (picked.some((id) => !alone.has(id))) picked = picked.filter((id) => !alone.has(id));
     if (picked.length > 0) out[q.id] = q.multi?.max ? picked.slice(0, q.multi.max) : q.multi ? picked : picked.slice(0, 1);
   }
   return out;
@@ -442,7 +448,7 @@ export function routedAnswers(answers: Answers): Answers {
 
 const NOUNS: Record<string, Record<string, string> & { _: string }> = {
   school: { _: "student", "high-school": "high school student", college: "college student", grad: "grad student", self: "self-taught learner" },
-  office: { _: "desk worker", meetings: "meeting-filled desk worker", deep: "deep worker", tasks: "list-ticking desk worker", people: "manager" },
+  office: { _: "desk worker", meetings: "desk worker with a lot of meetings", deep: "deep worker", tasks: "desk worker with lots of small tasks", people: "manager" },
   shifts: { _: "shift worker" },
   teaching: { _: "teacher", college: "professor" },
   business: { _: "small business owner", things: "maker", service: "freelancer", content: "creator" },
@@ -460,8 +466,12 @@ export function guessLine(input: Answers): string {
   const fills = one(answers, "fills");
   if (!fills) return "Here's your planner!";
   const nouns = NOUNS[fills] ?? NOUNS.everything;
-  const noun = nouns[one(answers, "follow") ?? ""] ?? nouns._;
-  const rhythm = RHYTHM[one(answers, "rhythm") ?? ""];
+  // Night shifts are the noun, not "a night-shift shift worker"; and a noun
+  // that starts with a word like it already ("self-taught learner") takes
+  // no second one.
+  const nights = fills === "shifts" && one(answers, "rhythm") === "nights";
+  const noun = nights ? "night-shift worker" : (nouns[one(answers, "follow") ?? ""] ?? nouns._);
+  const rhythm = nights || /^\S+-\S+ /.test(noun) ? undefined : RHYTHM[one(answers, "rhythm") ?? ""];
   const words = rhythm ? `${rhythm} ${noun}` : noun;
   const article = /^[aeiou]/i.test(words) ? "an" : "a";
   const tracked = (answers.track ?? []).map((t) => TRACKED[t]).filter(Boolean).slice(0, 2);

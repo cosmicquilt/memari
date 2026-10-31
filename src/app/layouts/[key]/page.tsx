@@ -36,6 +36,13 @@ export function generateStaticParams() {
 
 export const dynamicParams = false;
 
+// Built ahead, but rebuilt at most hourly when asked for, not kept until a
+// deploy: a season's planner (Lent, Ramadan) says when its book runs, and
+// that moves on to the next year's season once a printed book can no longer
+// reach this one (plannerTemplates' `dates` and `when`). Kept a build long,
+// the page would promise last season while "Use this planner" makes the next.
+export const revalidate = 3600;
+
 const KIND_NAME = {
   week: "weekly spread",
   month: "monthly spread",
@@ -122,7 +129,7 @@ export default async function LayoutPage({
                 className={site.note}
                 style={{ marginTop: 12, lineHeight: 1.5 }}
               >
-                {makesWhat(starter.kind)} Change anything. No account needed to
+                {makesWhat(starter.kind, starter.key)} Change anything. No account needed to
                 try it.
               </p>
               {starter.hours && (

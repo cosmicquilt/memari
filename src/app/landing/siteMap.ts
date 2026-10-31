@@ -25,6 +25,7 @@ export const LAYOUTS_MENU = {
     ["Planning", "planning"],
     ["Growth", "growth"],
     ["Philosophy", "philosophy"],
+    ["Challenges", "challenges"],
     ["School & work", "school-work"],
     ["Family & life", "family-life"],
     ["Health", "health"],

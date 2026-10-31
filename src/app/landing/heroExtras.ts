@@ -125,13 +125,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       kind: "week",
       font: "sans",
       weekStartsMonday: true,
+      // Six rows of priorities print five, not ten; the gratitude list
+      // bulleted, not numbered one to ten.
       sidebar: [
-        ["weekly-priorities", 11],
+        ["weekly-priorities", 6],
         ["mood-tracker", 10],
-        ["gratitude-three", 12],
+        ["gratitude-three", 17, { lineStart: "bullets" }],
       ],
       belowLeft: [at("habit-tracker", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("meal-planner", 0, BELOW_ROW, 24, 6), at("plant-care", 0, BELOW_ROW + 6, 16, 9), at("labeled-box", 16, BELOW_ROW + 6, 8, 9, box("Notes", "lined"))],
+      belowRight: [at("meal-planner", 0, BELOW_ROW, 24, 6), at("self-care-checklist", 0, BELOW_ROW + 6, 16, 9), at("labeled-box", 16, BELOW_ROW + 6, 8, 9, box("What Helped", "lined"))],
     },
     hand: HANDS.wellness,
     doodles: { style: "retro", big: ["houseplant", "sunflower", "tea", "meditating"], small: ["heart", "sun", "sparkle", "daisy"] },
@@ -159,7 +161,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     lists: {
       priorities: ["sleep by 10:30", "therapy homework", "walk every day", "call Mo back"],
       "grateful for": ["sun on the balcony", "Mo's voicemail", "the good pillow"],
-      notes: ["magnesium?", "try 4-7-8", "Mo: sat?"],
+      "what helped": ["the long walk", "4-7-8 breaths", "telling Mo"],
     },
     trackers: { habits: ["water", "stretch", "8h sleep", "walk", "vitamins", "no phone in bed"] },
     ratings: { mood: [4, 3, 3, 5, 4] },
@@ -173,10 +175,12 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       font: "serif",
       weekStartsMonday: true,
       hours: { startTime: "06:00", endTime: "24:00", intervalMinutes: 60, timeFormat: "24" },
+      // Big Three at four rows prints exactly three; what the week waits on
+      // rather than a someday list, which would be rewritten every week.
       sidebar: [
-        ["daily-big-three", 5],
-        ["brain-dump", 12],
-        ["someday-maybe", 16],
+        ["daily-big-three", 4],
+        ["brain-dump", 13],
+        ["waiting-on", 16],
       ],
       belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
       belowRight: [at("eisenhower-matrix", 0, BELOW_ROW, 12, 15), at("labeled-box", 12, BELOW_ROW, 12, 15, box("Wins This Week"))],
@@ -210,6 +214,13 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       "wins this week": ["shipped v2!", "inbox zero x2", "said no to a mtg"],
       "todo-checklist": ["review Sam's PR", "update the docs", "book 1:1 w/ Ana", "file expenses", "clear the backlog", "test on safari", "launch post draft", "thank-you to design"],
     },
+    tables: {
+      "waiting on": [
+        ["Ana", "promo", "mon"],
+        ["design", "v2 icons", "tue"],
+        ["legal", "launch ok", "wed"],
+      ],
+    },
   },
   {
     key: "training",
@@ -219,12 +230,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       weekStartsMonday: true,
       sidebar: [
         ["stretch-routine", 13],
-        // One to five: ten circles do not fit a sidebar and overlap.
-        ["energy-pain-scale", 8, { scaleMax: 5 }],
-        ["labeled-box", 12, box("Meals")],
+        // One to five: ten circles do not fit a sidebar and overlap. Rated
+        // once for the week, so not headed "Today".
+        ["energy-pain-scale", 8, { scaleMax: 5, heading: "This Week" }],
+        ["labeled-box", 12, box("Meals", "lined")],
       ],
-      belowLeft: [at("workout-log", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("weekly-workout-plan", 0, BELOW_ROW, 24, 7), at("run-log", 0, BELOW_ROW + 7, 12, 8), at("sleep-log", 12, BELOW_ROW + 7, 12, 8)],
+      // A day column, or a week of sessions cannot be told apart.
+      belowLeft: [at("workout-log", 6, BELOW_ROW, 18, 15, { columns: ["Day", "Exercise", "Sets", "Reps", "Weight"], weights: [0.8, 3, 0.8, 0.8, 1.2] })],
+      // Nine rows: a table prints two fewer, so seven, a row a night.
+      belowRight: [at("weekly-workout-plan", 0, BELOW_ROW, 24, 6, { habits: ["Strength", "Cardio", "Mobility", "Rest"] }), at("run-log", 0, BELOW_ROW + 6, 12, 9), at("sleep-log", 12, BELOW_ROW + 6, 12, 9)],
     },
     hand: HANDS.training,
     doodles: { style: "crayon", big: ["mountains", "sun", "running", "cycling"], small: ["lightning", "star", "sun"] },
@@ -251,7 +265,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     ],
     banner: { text: "race wknd", from: 2, to: 3 },
     lists: { meals: ["oats + PB", "chicken + rice", "pasta (carbs!)", "eggs on toast"] },
-    ratings: { today: [4, 2, 4, 3] },
+    tables: {
+      workout: [
+        ["tue", "squat", "3", "8", "135"],
+        ["tue", "lunges", "3", "10", "30"],
+        ["wed", "bench", "3", "10", "95"],
+        ["wed", "rows", "3", "12", "70"],
+      ],
+    },
+    ratings: { "this week": [4, 2, 4, 3] },
   },
   {
     key: "money",
@@ -259,18 +281,25 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       kind: "week",
       font: "serif",
       weekStartsMonday: false,
+      // No no-spend calendar here: a whole month on a week page printed
+      // that month four or five times over. The week's no-spend days are a
+      // coin a day along the bottom, across both pages.
       sidebar: [
-        ["no-spend-challenge", 8],
+        ["labeled-box", 8, box("Money Goals", "lined")],
         ["grocery-list", 13],
-        ["labeled-box", 12, box("Bills Due")],
+        // A list to tick, and only this week's.
+        ["todo-checklist", 12, { heading: "Bills This Week" }],
       ],
-      belowLeft: [at("spending-log", 6, BELOW_ROW, 18, 15)],
+      belowLeft: [at("spending-log", 6, BELOW_ROW, 18, 14), at("icon-strip", 6, BELOW_ROW + 14, 18, 1, { heading: "No Spend", icon: "coins", count: 1 })],
       belowRight: [
-        at("budget", 0, BELOW_ROW, 12, 15),
-        // Five rows each: a bar with words under it.
-        at("savings-goal", 12, BELOW_ROW, 12, 5),
-        at("debt-payoff", 12, BELOW_ROW + 5, 12, 5),
-        at("labeled-box", 12, BELOW_ROW + 10, 12, 5, box("Notes")),
+        at("budget", 0, BELOW_ROW, 12, 14),
+        // What went to savings and debt this week, not the savings and
+        // payoff bars: a running total re-shaded on every week of the book
+        // (the bars are on the money month).
+        at("labeled-box", 12, BELOW_ROW, 12, 5, box("Saved This Week", "lined")),
+        at("labeled-box", 12, BELOW_ROW + 5, 12, 5, box("Paid Off This Week", "lined")),
+        at("labeled-box", 12, BELOW_ROW + 10, 12, 4, box("Money Wins", "lined")),
+        at("icon-strip", 0, BELOW_ROW + 14, 24, 1, { heading: "No Spend", icon: "coins", count: 1 }),
       ],
     },
     hand: HANDS.money,
@@ -295,10 +324,18 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     ],
     banner: { text: "no-spend week", from: 0, to: 3 },
     lists: {
+      "money goals": ["$500 saved", "sell the bike", "no takeout"],
       "grocery-list": ["rice", "beans", "eggs", "oats", "frozen peas", "bananas", "coffee (cheap)"],
-      "bills due": ["rent - 1st", "phone - 12th", "car ins - 20th", "internet - 22nd"],
-      notes: ["bike: $180 firm", "switch phone plan?"],
+      "bills this week": ["phone bill", "car insurance", "card minimum"],
+      "saved this week": ["$25 to savings", "bike money, $180"],
+      "paid off this week": ["$60 on the card"],
+      "money wins": ["bike sold! +$180", "two $0 days"],
     },
+    // A coin coloured on each no-spend day, to Friday: Sunday and payday.
+    // Only a page's first day: the hand takes a coin a day, evenly spaced,
+    // for one group per page (plan.ts groupsOf), so a later day's 1 would
+    // not draw.
+    strips: { "no spend": [1, 0, 0, 1, 0, 0, 0] },
   },
   {
     key: "creative",
@@ -307,9 +344,11 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       kind: "week",
       font: "sans",
       weekStartsMonday: false,
+      // A week's affirmation, not a day's; and what got made, which a
+      // creative week is for, rather than a watchlist written out weekly.
       sidebar: [
-        ["daily-affirmation", 5],
-        ["watchlist", 13],
+        ["daily-affirmation", 5, { heading: "This Week", prompts: ["This week I am"] }],
+        ["done-list", 13, { heading: "Made This Week" }],
         ["writing-prompt", 15],
       ],
       belowLeft: [at("sketch-box", 6, BELOW_ROW, 18, 15)],
@@ -340,7 +379,8 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     ],
     banner: { text: "art fair", from: 2, to: 3 },
     lists: {
-      today: ["brave about the open mic"],
+      "this week": ["brave about the open mic"],
+      "made this week": ["zine, 40 copies!", "2 new songs", "1000 words", "life drawings"],
       "todo-checklist": ["order canvas", "restring guitar", "print zine x40", "email the gallery", "clean brushes", "scan sketches", "buy glaze", "return library dvd"],
     },
   },
@@ -394,13 +434,16 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       hours: { intervalMode: "off", offModeRule: "none" },
+      // Every week of the book, so what works week to week on the road: no
+      // packing list or whole-trip budget (the Trip pages carry those, once),
+      // but the week's highlights and what it cost, day by day.
       sidebar: [
-        ["packing-list", 13],
+        ["labeled-box", 13, box("Highlights", "lined")],
         ["labeled-box", 10, box("To Eat", "lined")],
         ["labeled-box", 10, box("To See", "lined")],
       ],
       belowLeft: [at("trip-itinerary", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("travel-budget", 0, BELOW_ROW, 12, 15), at("sketch-box", 12, BELOW_ROW, 12, 15)],
+      belowRight: [at("spending-log", 0, BELOW_ROW, 12, 15, { columns: ["Day", "What", "Cost"], weights: [1, 2.6, 1.2] }), at("sketch-box", 12, BELOW_ROW, 12, 15)],
     },
     hand: LISBON_HAND,
     doodles: LISBON_DOODLES,
@@ -417,7 +460,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       ["- home. laundry mountain", "• print photos", "• frame the tiles"],
     ],
     lists: {
-      packing: ["sunscreen!!", "comfy shoes", "adapter"],
+      highlights: ["Pena in fog", "fado night!!", "Belém tarts", "the miradouro"],
       "to eat": ["~pastéis de nata", "~bifana", "~grilled sardines", "ginjinha", "more tarts"],
       "to see": ["~Belém tower", "~Sintra", "~tile museum", "flea market", "LX Factory"],
     },
@@ -430,7 +473,14 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["fri", "Cascais", "beach!", ""],
         ["sat", "Graça", "flea market", ""],
       ],
-      ...LISBON_TABLES,
+      spending: [
+        ["mon", "tram + nata", "9"],
+        ["tue", "Belém tarts", "7"],
+        ["wed", "Sintra train", "5"],
+        ["thu", "2 tiles (oops)", "45"],
+        ["thu", "fado", "30"],
+        ["fri", "beach lunch", "18"],
+      ],
     },
   },
   // By the hour, and short: the hours in ten rows, so a household week gets
@@ -448,11 +498,18 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["grocery-list", 13],
         ["labeled-box", 12, box("Dinner Ideas", "lined")],
       ],
-      belowLeft: [at("meal-planner", 6, 11, 18, 7), at("cleaning-rota", 6, 18, 18, 9), at("pet-care", 6, 27, 18, 9)],
+      // The week's meals written in, not ticked: a home plans its meals
+      // for the shopping (2026-10-30).
+      belowLeft: [at("weekly-meal-plan", 6, 11, 18, 9), at("cleaning-rota", 6, 20, 18, 7), at("pet-care", 6, 27, 18, 9)],
+      // Props print on every week of the book, so no one's own names on the
+      // chore chart and no one's own houseplants: the defaults, and blank
+      // rows to write the plants in. The chores are none of the cleaning's
+      // or the pets' rows beside them: the chart's own Trash and Pets were
+      // asked twice on one page (audit 2026-10-30).
       belowRight: [
-        at("chore-chart", 0, 11, 24, 8, { columns: ["Me", "Sam", "Leo", "Bea"] }),
+        at("chore-chart", 0, 11, 24, 8, { habits: ["Dishes", "Tidy", "Set table", "Make beds", "Shopping"] }),
         at("todo-checklist", 0, 19, 24, 9, { dayCount: 4 }),
-        at("plant-care", 0, 28, 12, 8),
+        at("plant-care", 0, 28, 12, 8, { habits: ["", "", "", ""] }),
         at("labeled-box", 12, 28, 12, 8, box("Fix It List", "lined")),
       ],
     },
@@ -508,8 +565,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["labeled-box", 9, box("Birthdays", "lined")],
         ["kids-said", 16],
       ],
-      belowLeft: [at("chore-chart", 6, 17, 18, 9, { columns: ["Me", "Sam", "Milo", "Ada"], habits: ["Dishes", "Bins", "Tidy toys", "Feed cat", "Set table"] }), at("labeled-box", 6, 26, 18, 10, box("Rainy Day Ideas", "lined"))],
-      belowRight: [at("gift-log", 0, 17, 12, 10), at("labeled-box", 12, 17, 12, 10, box("Next Month", "lined")), at("yoga-log", 0, 27, 24, 9)],
+      // The chart's default people (Me and three to name), not this
+      // family's: props print on every month of the book.
+      belowLeft: [at("chore-chart", 6, 17, 18, 9, { habits: ["Dishes", "Trash", "Tidy toys", "Pets", "Set table"] }), at("labeled-box", 6, 26, 18, 10, box("Rainy Day Ideas", "lined"))],
+      // The forms, money and sign-ups a family's month turns on.
+      belowRight: [
+        at("gift-log", 0, 17, 12, 10),
+        at("labeled-box", 12, 17, 12, 10, box("Next Month", "lined")),
+        at("column-table", 0, 27, 24, 9, { heading: "School & Activities", columns: ["Who", "What", "Due", "Done"], weights: [1, 3, 1, 0.8] }),
+      ],
     },
     ...theirs("parent"),
     calendar: [],
@@ -548,10 +612,10 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["Noa", "lego set", "$25", "✓"],
         ["Uncle Jo", "a book?", "$20", ""],
       ],
-      yoga: [
-        ["thu, 6am", "Mara", "creaky"],
-        ["thu, 6am", "Mara", "calm!"],
-        ["thu, 6am", "sub - Ben", "too fast"],
+      "school & activities": [
+        ["Ada", "swim sign-up", "10th", "✓"],
+        ["Milo", "field trip $", "25th", ""],
+        ["Milo", "library books", "28th", ""],
       ],
     },
   },
@@ -573,8 +637,11 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["no-spend-challenge", 13],
       ],
       belowLeft: [at("budget", 6, 17, 18, 11), at("subscription-audit", 6, 28, 18, 8)],
+      // One budget for the month (beside it), and what came in to pay it:
+      // a second, zero-based budget had the categories written twice.
       belowRight: [
-        at("zero-based-budget", 0, 17, 12, 19, { heading: "Every Dollar" }),
+        at("income-log", 0, 17, 12, 10),
+        at("labeled-box", 0, 27, 12, 9, box("Next Month", "lined")),
         at("savings-goal", 12, 17, 12, 5),
         at("debt-payoff", 12, 22, 12, 5),
         at("labeled-box", 12, 27, 12, 9, box("Money Wins", "lined")),
@@ -605,6 +672,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       "money goals": ["$500 to savings", "no takeout 2 wks", "sell the bike"],
       "bills due": ["rent - 1st", "phone - 15th", "car ins - 20th", "card - 28th"],
       "money wins": ["sold the bike +$180", "four $0 days", "cancelled meal kit"],
+      "next month": ["car service $$", "Ana's wedding gift", "raise savings to $350"],
     },
     tables: {
       budget: [
@@ -619,22 +687,20 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["gym", "40", "1st", "yes"],
         ["meal kit", "60", "20th", "NO"],
       ],
-      "every dollar": [
-        ["rent", "1200"],
-        ["food", "400"],
-        ["savings", "300"],
-        ["debt", "200"],
-        ["fun", "150"],
-        ["transport", "90"],
-        ["left over", "0 !!"],
+      income: [
+        ["5th", "payroll", "1,640", "0"],
+        ["9th", "bike sale", "180", ""],
+        ["19th", "payroll", "1,640", "0"],
       ],
     },
   },
   // Maya's month (their week is "student"): deadlines, a V4, the quiz.
   {
     key: "month-student",
-    // Exam days counted down in quick dashed strokes.
-    marks: { meter: "dashes" },
+    // What is true of every month of a term: the work due and the grades
+    // back. No exam countdown (it counted toward nothing most months, and
+    // an exam on a date is a calendar event), and none of Maya's hobbies
+    // printed for every student.
     layout: {
       kind: "month",
       font: "sans",
@@ -642,11 +708,12 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       inside: "dotted",
       sidebar: [
         ["labeled-box", 10, box("Goals", "lined")],
-        ["labeled-box", 12, box("Deadlines", "lined")],
+        // Not "Deadlines": the assignments table has them, with a Due column.
+        ["labeled-box", 12, box("Next Month", "lined")],
         ["labeled-box", 12, box("Read for Fun", "lined")],
       ],
-      belowLeft: [at("climbing-log", 6, 17, 18, 10), at("mood-chart-month", 6, 27, 18, 9)],
-      belowRight: [at("exam-countdown", 0, 17, 24, 4, { heading: "Finals" }), at("listening-log", 0, 21, 12, 15), at("lessons-learned", 12, 21, 12, 15)],
+      belowLeft: [at("assignment-tracker", 6, 17, 18, 10), at("mood-chart-month", 6, 27, 18, 9)],
+      belowRight: [at("column-table", 0, 17, 12, 19, { heading: "Grades", columns: ["Class", "Work", "Score"], weights: [1, 1.6, 0.8] }), at("lessons-learned", 12, 17, 12, 19)],
     },
     ...theirs("student"),
     calendar: [],
@@ -668,25 +735,25 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     },
     lists: {
       goals: ["B+ in orgo", "climb 2x a week", "call home sundays", "7h sleep (lol)"],
-      deadlines: ["lab report - 2nd", "pset 8 - 9th", "essay draft - 20th", "lab report - 27th"],
+      "next month": ["register for spring", "book the bus home", "new climbing shoes"],
       "read for fun": ["Piranesi", "Tomorrow x3", "the climbing zine"],
       lessons: ["start psets on MON", "flashcards > rereading", "eat before lab", "office hours help"],
     },
     tables: {
-      climbing: [
-        ["3rd", "the gym", "blue crimps", "V3", "✓"],
-        ["4th", "the gym", "the roof", "V4", "✓!!"],
-        ["10th", "boulders", "slab", "V2", ""],
-        ["13th", "the gym", "pink dyno", "V4", ""],
+      assignments: [
+        ["orgo", "lab report", "2nd", "✓"],
+        ["calc", "pset 8", "9th", "✓"],
+        ["lit", "essay draft", "20th", ""],
+        ["orgo", "lab report", "27th", ""],
       ],
-      listening: [
-        ["Blue", "Joni Mitchell", "5"],
-        ["Grace", "Jeff Buckley", "5"],
-        ["Rumours", "Fleetwood Mac", "4"],
+      grades: [
+        ["orgo", "quiz 4", "A-"],
+        ["calc", "pset 7", "18/20"],
+        ["lit", "response 3", "B+"],
+        ["orgo", "lab 3", "88"],
       ],
     },
     charts: { mood: [1, 0, 1, 2, 0, 1, 1, 3, 2, 1, 0, 0, 1, 0, 1] },
-    fills: { finals: 16 },
   },
 
   // ================================================================== days
@@ -701,12 +768,16 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       firstDay: 1,
       hours: { startTime: "07:00", endTime: "22:00" },
       hoursRows: 17,
+      // Four rows: the heading and exactly three (at six, Big Three printed
+      // five numbered lines).
       sidebar: [
-        ["daily-big-three", 6],
-        ["brain-dump", 14],
+        ["daily-big-three", 4],
+        ["brain-dump", 16],
         ["done-list", 16],
       ],
-      below: [at("focus-blocks", 6, 18, 18, 1, { groups: 1 }), at("todo-checklist", 6, 19, 18, 9, { dayCount: 1 }), at("dopamine-menu", 6, 28, 18, 8)],
+      // Tomorrow, not a dopamine menu: that is a standing list, written
+      // once at the front, not a fresh empty one every day.
+      below: [at("focus-blocks", 6, 18, 18, 1, { groups: 1 }), at("todo-checklist", 6, 19, 18, 9, { dayCount: 1 }), at("labeled-box", 6, 28, 18, 8, box("Tomorrow", "lined"))],
     },
     ...theirs("adhd"),
     calendar: [
@@ -734,7 +805,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       "brain dump": ["WHERE ARE MY KEYS", "cancel the free trial", "card for Jo", "is the stove off", "fix skate bearing", "new pens (no.)", "laundry is still in the machine", "dentist?? (2 yrs)", "text Sol thank you"],
       "done!": ["meds", "thumbnails sent!!", "lunch at lunch", "replied to Mira", "therapy", "revisions started", "groceries!!", "watered the plant"],
       "todo-checklist": ["send thumbnails", "invoice Bram", "reply to Jo", "laundry", "book haircut", "call bank", "order ink", "renew passport"],
-      "dopamine menu": ["boba", "skate sesh", "one episode (ONE)", "new playlist", "draw for fun", "call Sol"],
+      tomorrow: ["invoice Bram (for real)", "water the plant", "start revisions", "Jo kickoff notes", "laundry OUT of machine", "call the dentist"],
     },
     strips: { "focus blocks": [4] },
   },
@@ -742,8 +813,6 @@ export const EXTRA_SPREADS: HeroSpread[] = [
   // shop, the evening review after it, the hours by the hour between.
   {
     key: "day-stoic",
-    // A highlighter's one stroke over each week lived.
-    marks: { circles: "swipe" },
     fillFamily: "strokes",
     layout: {
       kind: "day",
@@ -753,11 +822,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       hours: { startTime: "06:00", endTime: "22:00", intervalMinutes: 60, compactHourRows: true },
       hoursRows: 10,
       sidebar: [
-        ["stoic-morning-page", 13],
+        // Shorter questions: the module's own shrink to 5.5pt in a column
+        // six wide.
+        ["stoic-morning-page", 13, { prompts: ["In my control today", "Obstacles to expect", "The virtue I'll need"] }],
         ["dichotomy-of-control", 10],
         ["labeled-box", 13, box("Reading", "lined")],
       ],
-      below: [at("memento-mori", 6, 11, 18, 4), at("stoic-evening-review", 6, 15, 18, 11), at("commonplace-book", 6, 26, 18, 10)],
+      // The day's three things, not a memento mori: a year of weeks to
+      // shade belongs at the front of the book, not on every day.
+      below: [at("labeled-box", 6, 11, 18, 5, { ...box("Big Three", "lined"), lineStart: "numbers" }), at("stoic-evening-review", 6, 16, 18, 10), at("commonplace-book", 6, 26, 18, 10)],
     },
     ...theirs("philosophy"),
     calendar: [{ day: 1, start: 7, end: 17, title: "Shop", calendar: "work" }],
@@ -774,6 +847,7 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       { day: 1, at: 20, text: "Meditations bk 5" },
     ],
     lists: {
+      "big three": ["June: the highway", "fix the gate hinge", "sharpen chisels", "Henley drawings", "call Eli", "Meditations bk 5"],
       "stoic-morning-page": ["how I teach June", "the highway merge", "patience", "my tone w/ Eli", "the Henley deadline", "justice - be fair to Eli"],
       "stoic-evening-review": ["rushed the hinge", "stayed calm on the merge", "didn't call Eli", "said sorry to Eli", "measured twice", "the Henley quote"],
       reading: ["Meditations bk 5", "Letters 21-25", "the joinery book"],
@@ -787,7 +861,6 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["the joints", "the Henleys' taste"],
       ],
     },
-    fills: { weeks: 41 },
   },
 
   // ================================================================= pages
@@ -800,9 +873,18 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       pages: [
-        // The packing list a column wide: wider, it prints its list twice.
-        [at("trip-itinerary", 0, 0, 24, 16), at("packing-list", 0, 16, 6, 20), at("travel-budget", 6, 16, 18, 10), at("labeled-box", 6, 26, 18, 10, box("Souvenirs", "lined"))],
-        [at("restaurant-log", 0, 0, 24, 12), at("places-been", 0, 12, 12, 24), at("trip-journal", 12, 12, 12, 10, { heading: "Best Day" }), at("sketch-box", 12, 22, 12, 14)],
+        [
+          at("trip-itinerary", 0, 0, 24, 16),
+          // The packing list a column wide: wider, it prints its list twice.
+          at("packing-list", 0, 16, 6, 20),
+          at("travel-budget", 6, 16, 18, 10),
+          // The booking references, what a trip's pages are most looked up
+          // for.
+          at("column-table", 6, 26, 18, 10, { heading: "Bookings", columns: ["What", "Confirmation", "Date"], weights: [2, 1.6, 0.9] }),
+        ],
+        // This trip's sights: "Places" beside Eating Out did not say been
+        // or to go.
+        [at("restaurant-log", 0, 0, 24, 12), at("places-been", 0, 12, 12, 24, { heading: "To See" }), at("trip-journal", 12, 12, 12, 10, { heading: "Best Day" }), at("sketch-box", 12, 22, 12, 14)],
       ],
     },
     hand: LISBON_HAND,
@@ -811,10 +893,9 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     events: [],
     lists: {
       packing: ["sunscreen!!", "comfy shoes", "adapter", "phrasebook", "tote bag"],
-      places: ["~Lisbon", "~Porto", "the Azores", "Kyoto", "Oaxaca", "Iceland", "Marrakech", "Edinburgh"],
+      "to see": ["~the castle", "~Belém tower", "~Pena palace", "~tile museum", "LX Factory", "Cascais", "flea market", "the Gulbenkian"],
       // A blank entry moves on to the next prompt.
       "trip-journal": ["Sintra, early train", "the palace in fog", "", "the cloud lifting", "", "bring a jumper. always."],
-      souvenirs: ["2 tiles (oops)", "a tiny teapot", "sardine tin (art?)", "cork coasters for Mum"],
     },
     tables: {
       itinerary: [
@@ -833,10 +914,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["a kiosk", "bifana", "5 stars"],
         ["the beer hall", "prawns", "worth it"],
       ],
+      bookings: [
+        ["flights", "TPX4K9", "sat"],
+        ["room, Alfama", "88213", "sat"],
+        ["Pena palace", "PN-0412", "tue"],
+      ],
       ...LISBON_TABLES,
     },
   },
-  // A reader's pages: the year's books, what's on, what's next.
+  // A reader's pages: the books read, the passages kept, what's next.
   {
     key: "pages-reading",
     // Each book finished drawn in - a Talavera tile, a step fret, a
@@ -847,9 +933,16 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       kind: "pages",
       font: "serif",
       weekStartsMonday: false,
+      // Front pages print once a book, and a book is often a quarter: a
+      // reading goal, not "this year". A passage a row, not one passage for
+      // the whole book; To Read ticked off, as the watchlist beside it is.
       pages: [
-        [at("books-read", 0, 0, 24, 20), at("reading-progress", 0, 20, 24, 4), at("listening-log", 0, 24, 24, 12)],
-        [at("commonplace-book", 0, 0, 24, 14), at("watchlist", 0, 14, 12, 22), at("labeled-box", 12, 14, 12, 22, box("To Read", "lined"))],
+        [at("books-read", 0, 0, 24, 20), at("reading-progress", 0, 20, 24, 4, { heading: "Reading Goal" }), at("labeled-box", 0, 24, 24, 12, box("Didn't Finish", "lined"))],
+        [
+          at("column-table", 0, 0, 24, 14, { heading: "Commonplace", columns: ["Passage", "Book", "Page"], weights: [4, 2, 0.8] }),
+          at("watchlist", 0, 14, 12, 22),
+          at("todo-checklist", 12, 14, 12, 22, { heading: "To Read" }),
+        ],
       ],
     },
     hand: { words: { font: "nanum", caps: false, scale: 1.55 }, banner: { font: "homemade", caps: false, scale: 0.8 }, pen: ink("#3d2b5a", 3.4), accent: ink("#b5651d", 3.6), highlight: highlighter("#ffe45c") },
@@ -857,11 +950,12 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     calendar: [],
     events: [],
     lists: {
-      // Austen, 1813: public domain, as everything quoted in the hero is.
-      commonplace: ["'there is no enjoyment like reading!'", "", "Pride + Prejudice, ch. 11", "", "said by someone not reading. still true."],
+      "didn't finish": ["Ulysses (p. 80, maybe later)", "a thriller I've already forgotten"],
       "to read": ["Middlemarch (finally)", "Babel", "The Overstory", "anything by Le Guin", "Pachinko", "~Station Eleven"],
     },
     tables: {
+      // Austen, 1813: public domain, as everything quoted in the hero is.
+      commonplace: [["'there is no enjoyment like reading!'", "Pride + Prejudice", "ch. 11"]],
       books: [
         ["Piranesi", "S. Clarke", "5", "jan"],
         ["Circe", "M. Miller", "4", "feb"],
@@ -873,16 +967,12 @@ export const EXTRA_SPREADS: HeroSpread[] = [
         ["Normal People", "S. Rooney", "3", "aug"],
         ["Station Eleven", "E. St. John Mandel", "5", "sep"],
       ],
-      listening: [
-        ["Blue", "Joni Mitchell", "5"],
-        ["Grace", "Jeff Buckley", "5"],
-        ["Rumours", "Fleetwood Mac", "4"],
-        ["Ys", "Joanna Newsom", "4"],
-      ],
     },
-    fills: { "books this year": 17 },
+    fills: { "reading goal": 17 },
   },
-  // A kitchen's pages: the week's meals, the shop, the bread.
+  // A kitchen's pages: the meals you come back to, the staples, a recipe.
+  // Front pages, printed once a book, so standing lists: no week's meal
+  // plan, shop or starter feedings, which would cover the first week only.
   {
     key: "pages-kitchen",
     layout: {
@@ -890,13 +980,13 @@ export const EXTRA_SPREADS: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: false,
       pages: [
-        [at("meal-planner", 0, 0, 24, 8), at("grocery-list", 0, 8, 12, 28), at("recipes-to-try", 12, 8, 12, 14), at("labeled-box", 12, 22, 12, 14, box("Batch Cook", "lined"))],
         [
-          at("recipe-card", 0, 0, 24, 22, { heading: "Sourdough" }),
-          at("starter-feedings", 0, 22, 24, 1, { groups: 7, groupLabels: "days" }),
-          at("labeled-box", 0, 23, 12, 13, box("Pantry", "lined")),
-          at("labeled-box", 12, 23, 12, 13, box("Freezer", "lined")),
+          at("labeled-box", 0, 0, 24, 8, box("Go-To Meals", "lined")),
+          at("todo-checklist", 0, 8, 12, 28, { heading: "Staples" }),
+          at("recipes-to-try", 12, 8, 12, 14),
+          at("labeled-box", 12, 22, 12, 14, box("Batch Cook Ideas", "lined")),
         ],
+        [at("recipe-card", 0, 0, 24, 23), at("labeled-box", 0, 23, 12, 13, box("Pantry", "lined")), at("labeled-box", 12, 23, 12, 13, box("Freezer", "lined"))],
       ],
     },
     hand: { words: { font: "grace", caps: false, scale: 1.2 }, banner: { font: "marker", caps: true, scale: 1 }, pen: ink("#5a3e1b", 3.6), accent: marker("#d35400", 4.6), highlight: highlighter("#ffe45c") },
@@ -904,14 +994,15 @@ export const EXTRA_SPREADS: HeroSpread[] = [
     calendar: [],
     events: [],
     lists: {
-      groceries: ["eggs", "spinach", "lemons", "feta", "chickpeas", "tortillas", "coriander", "flour (bread!)", "butter", "yogurt", "apples", "coffee"],
+      "go-to meals": ["sheet-pan gnocchi", "dal + rice", "fish tacos", "shakshuka", "soup + toasties"],
+      staples: ["eggs", "spinach", "lemons", "feta", "chickpeas", "tortillas", "coriander", "flour (bread!)", "butter", "yogurt", "apples", "coffee"],
       "to cook": ["~shakshuka", "dal makhani", "~focaccia", "pho from scratch", "lemon tart", "kimchi fried rice"],
-      sourdough: ["500g flour", "350g water", "10g salt", "100g starter (bubbly!)", "", "mix, rest 1 hr", "4 folds, 30 min apart", "shape, fridge overnight", "250°C, lid on 20 min", "lid off, 20 more", "WAIT before cutting"],
+      // The sourdough, under the card's Ingredients and Method.
+      recipe: ["500g flour", "350g water", "10g salt", "100g starter (bubbly!)", "", "mix, rest 1 hr", "4 folds, 30 min apart", "shape, fridge overnight", "250°C, lid on 20 min", "lid off, 20 more", "WAIT before cutting"],
       pantry: ["rice - low", "lentils x2", "flour (bread!)", "tinned tomatoes x4", "oats"],
       freezer: ["soup x3", "peas", "dumplings", "one lasagna"],
-      "batch cook": ["big pot of dal", "roast veg tray", "rice x2", "cookie dough (freeze!)"],
+      "batch cook ideas": ["big pot of dal", "roast veg tray", "rice x2", "cookie dough (freeze!)"],
     },
-    strips: { starter: [2, 2, 1, 2, 2, 0, 0] },
   },
 ];
 

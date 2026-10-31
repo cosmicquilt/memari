@@ -4,8 +4,14 @@
 // slots at their times, a dotted day's rows, a month's squares.
 //
 // Run as part of: npm test
-import { LANDING_PAGE_GRID, SPREAD_DEFS, baseSheetSpread, landingSpreads, layoutPreview, spreadProblems } from "./spreads";
-import { PEOPLE, SIDEBAR_FROM_ROW } from "./archetypes";
+import { LANDING_PAGE_GRID, SPREAD_DEFS, baseSheetSpread, landingSpreads, layoutPreview, spreadPlacements, spreadProblems, type Placed } from "./spreads";
+import { PEOPLE, SIDEBAR_FROM_ROW, type Slot } from "./archetypes";
+import { MODULE_REGISTRY, moduleSchemaDefaults } from "@/lib/moduleRegistry";
+import { promptLineCounts } from "@/lib/modules/promptedLines";
+import { todoItems } from "@/lib/modules/todoChecklist";
+import { renderHabitTracker } from "@/lib/modules/habitTracker";
+import { columnSpanToDayCount, gridCellToPixels } from "@/lib/grid";
+import { PageLevel } from "@/generated/prisma/enums";
 import { BASE_SPREAD, HERO_BY_KEY, HERO_SPREADS, type HeroSpread } from "./heroSpreads";
 import { WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
 import { PLANNER_SPREADS } from "./plannerSpreads";
@@ -38,7 +44,9 @@ for (const person of PEOPLE) {
 check("every spread has its own key", new Set(HERO_SPREADS.map((s) => s.key)).size === HERO_SPREADS.length);
 check("every person's week is in the hero", PEOPLE.every((p) => HERO_BY_KEY[p.key]));
 
-/** Whether the spread's spine draws calendar events: hours with times. */
+/** Whether the hero draws the spread's calendar: hours with times. With
+ *  increments off the grid can list a day's events (hourlyGridCore's
+ *  offModeEventLines), but the hero passes it none (spreads.ts). */
 const drawsEvents = (s: HeroSpread) => (s.layout.kind === "week" || s.layout.kind === "day") && s.layout.hours?.intervalMode !== "off";
 const dayCount = (s: HeroSpread) => (s.layout.kind === "week" ? 7 : s.layout.kind === "day" ? 2 : 0);
 
@@ -78,9 +86,10 @@ for (const spread of [...HERO_SPREADS, BASE_SPREAD, ...PLANNER_SPREADS]) {
 // strictly as the journal's spreads, and not among them.
 check("the base week is not in the journal's turn", !HERO_SPREADS.includes(BASE_SPREAD));
 for (const spread of [...HERO_SPREADS, BASE_SPREAD]) {
-  // Nothing scheduled where nothing would draw it: a month's calendar and a
-  // week with increments off draw no events, and scheduled things are never
-  // written by hand instead (2026-10-06).
+  // Nothing scheduled where nothing would draw it: a month's calendar draws
+  // no events, the hero gives a week with increments off none (its days are
+  // the person's own list), and scheduled things are never written by hand
+  // instead (2026-10-06).
   if (!drawsEvents(spread)) {
     check(`${spread.key}: no calendar, where none is drawn`, spread.calendar.length === 0 && spread.events.length === 0);
   }
@@ -164,6 +173,227 @@ for (const planner of ALL_PLANNERS) {
   const layouts = parts.map(({ key }) => HERO_BY_KEY[key]?.layout).filter(Boolean);
   check(`${planner.key}: one week start`, new Set(layouts.map((l) => l.weekStartsMonday)).size === 1);
   check(`${planner.key}: one font`, new Set(layouts.map((l) => l.font)).size === 1);
+}
+
+// WHAT A MODULE WAS GIVEN, IT PRINTS (audit 2026-10-29). A prompted-lines
+// module draws only the prompts whose block fits whole, and drops the rest
+// without a word: four monthly reviews printed "What worked?" and "What did
+// not?" and never "What changes next month?", every month. A to-do works
+// out its day columns from its width, so a list 12 wide off the hours
+// printed every item twice side by side (the night nurse's Shift Bag).
+// Neither broke a check above: both fit, and both fill their box.
+//
+// Each guard is a function so it can be shown to catch the defect it is
+// for: a copy of a spread with the defect put back must be reported (the
+// controls below), or the guard passes by checking nothing.
+const PRINT_DATE = new Date(Date.UTC(2026, 0, 5));
+/** The words printed inside a placement's box. */
+function textIn(preview: ReturnType<typeof layoutPreview>, p: Placed): string[] {
+  const r = gridCellToPixels(LANDING_PAGE_GRID, p);
+  return preview.pages[p.page].marks.flatMap((m) =>
+    m.k === "t" && m.x >= r.x - 1 && m.x < r.x + r.width && m.y >= r.y - 1 && m.y < r.y + r.height ? [m.t.trim()] : [],
+  );
+}
+const where = (def: HeroSpread, p: Placed) => `${def.key} ${p.page ? "R" : "L"} ${p.slug} at c${p.columnStart} r${p.rowStart} ${p.columnSpan}x${p.rowSpan}`;
+
+/** Every prompt of a prompted-lines module gets its block: its words and
+ *  its lines. promptLineCounts is what the renderer draws by; the words
+ *  are read off the page, so a prompt cut short is caught too. */
+function droppedPrompts(def: HeroSpread): string[] {
+  const preview = layoutPreview(def, PRINT_DATE);
+  return spreadPlacements(def).flatMap((p) => {
+    if (p.locked || MODULE_REGISTRY[p.slug]?.primitive !== "prompted-lines" || !Array.isArray(p.props.prompts)) return [];
+    const prompts = (p.props.prompts as unknown[]).map((q) => String(q ?? "").trim());
+    const fits = promptLineCounts(p.props, p.rowSpan - 1).length;
+    const printed = new Set(textIn(preview, p).map((t) => t.toLowerCase()));
+    const missing = prompts.filter((q, i) => i >= fits || (q !== "" && !printed.has(q.toLowerCase())));
+    return missing.length > 0 ? [`${where(def, p)}: ${fits} of ${prompts.length} prompts fit, missing "${missing.join('", "')}"`] : [];
+  });
+}
+
+/** A to-do prints each of its items once - or once a day, where it sits
+ *  under a week's days and each day column is meant to carry the list. */
+function doubledItems(def: HeroSpread): string[] {
+  const preview = layoutPreview(def, PRINT_DATE);
+  return spreadPlacements(def).flatMap((p) => {
+    const items = p.slug === "todo-checklist" ? todoItems(p.props) : [];
+    if (p.locked || items.length === 0) return [];
+    const underDays = def.layout.kind === "week" && !(p.page === 0 && p.columnStart < 6);
+    const want = underDays ? columnSpanToDayCount(LANDING_PAGE_GRID, p.columnSpan) : 1;
+    const text = textIn(preview, p);
+    const wrong = items.flatMap((item) => {
+      const n = text.filter((t) => t === item).length;
+      return n === want ? [] : [`"${item}" ${n}x`];
+    });
+    return wrong.length > 0 ? [`${where(def, p)}: each item should print ${want === 1 ? "once" : `${want} times, a day each`}, got ${wrong.join(", ")}`] : [];
+  });
+}
+
+/** Two future logs on one spread are one year split in two (the teacher's
+ *  and the homeschool year pages): dated, the second starts where the first
+ *  stops, so no month prints twice (monthOffset, moduleRegistry.ts). Both
+ *  printed September to February in a September book until 2026-10-29. */
+function repeatedMonths(def: HeroSpread): string[] {
+  const logs = spreadPlacements(def).filter((p) => p.slug === "future-log-months");
+  if (logs.length < 2) return [];
+  const dated = MODULE_REGISTRY["future-log-months"].dated!;
+  const at = { key: null, label: "", start: new Date(Date.UTC(2026, 8, 1)), level: PageLevel.FRONT_MATTER, index: 0, total: 1 };
+  const months = logs.flatMap((p) => (dated(p.props, at).prompts as string[]).map((m) => m.toLowerCase()));
+  const twice = months.filter((m, i) => months.indexOf(m) !== i);
+  return twice.length > 0 ? [`${def.key}: its future logs both print ${[...new Set(twice)].join(", ")} in a September book`] : [];
+}
+
+// Known and not yet fixed: the hero weeks are archetypes.ts's, outside
+// this audit's changes. Each entry must still be reported, so the list
+// cannot outlive its fix: once the week is mended, take its line out.
+//   adhd: Dopamine Menu 12x8 has room for two of its three prompts at two
+//     lines each; { linesPerPrompt: 1 } prints all three.
+//   faith-christian (held): SOAP 18x15 with promptLines [2, 3, 4, 3] needs
+//     16 rows of body and has 14, so Prayer never prints; its handwriting
+//     writes a fourth line for it.
+const KNOWN_DROPPED = new Set(["adhd R dopamine-menu at c12 r28 12x8", "faith-christian L soap-study at c6 r21 18x15"]);
+const everySpread = [...new Map([...HERO_SPREADS, BASE_SPREAD, ...PLANNER_SPREADS].map((s) => [s.key, s])).values()];
+const stillDropped = new Set<string>();
+for (const def of everySpread) {
+  for (const problem of droppedPrompts(def)) {
+    const known = [...KNOWN_DROPPED].find((k) => problem.startsWith(`${k}:`));
+    if (known) stillDropped.add(known);
+    else check(`${def.key}: every prompt prints with its lines`, false, problem);
+  }
+  for (const problem of doubledItems(def)) check(`${def.key}: no checklist item prints twice`, false, problem);
+  for (const problem of repeatedMonths(def)) check(`${def.key}: no month in two future logs`, false, problem);
+}
+for (const known of KNOWN_DROPPED) check(`known dropped prompt "${known}" is fixed: take it out of KNOWN_DROPPED`, stillDropped.has(known));
+check("the future-log check has spreads to check", everySpread.filter((d) => spreadPlacements(d).filter((p) => p.slug === "future-log-months").length > 1).length >= 2);
+
+// The controls: each defect put back on a copy, and caught.
+const withSlot = (key: string, slug: string, change: (s: Slot) => Slot): HeroSpread => {
+  const def = HERO_BY_KEY[key];
+  if (def.layout.kind !== "pages") throw new Error(`${key} is not a pages spread`);
+  const pages = def.layout.pages.map((slots) => slots.map((s) => (s.slug === slug ? change(s) : s))) as [Slot[], Slot[]];
+  return { ...def, layout: { ...def.layout, pages } };
+};
+{
+  // The flare log's review at its default two lines a prompt: 12x9 holds two.
+  const flare = HERO_BY_KEY["month-flare-log"];
+  if (flare.layout.kind !== "month") throw new Error("month-flare-log is not a month spread");
+  const twoLines = (s: Slot) => (s.slug === "monthly-review" ? { ...s, props: { ...s.props, linesPerPrompt: 2 } } : s);
+  const layout = { ...flare.layout, belowLeft: flare.layout.belowLeft.map(twoLines), belowRight: flare.layout.belowRight.map(twoLines) };
+  check("control: a review with no room for its third prompt is reported", droppedPrompts({ ...flare, layout }).length > 0);
+}
+check(
+  "control: a to-do list 12 wide off the hours is reported printing its items twice",
+  doubledItems(withSlot("pages-night-nurse", "todo-checklist", (s) => ({ ...s, columnSpan: 12 }))).length > 0,
+);
+check(
+  "control: a second future log with no month offset is reported",
+  repeatedMonths(withSlot("pages-teacher-year", "future-log-months", (s) => ({ ...s, props: { ...s.props, monthOffset: 0 } }))).length > 0,
+);
+
+// THE WEEK'S COUNT CAN BE LEFT OFF (lib-a2-22): a layout's showWeekCount
+// false prints "WEEK" over the dates, with no "n/52" - the grief week,
+// where a count toward an end reads wrong. The default still counts. Kept
+// through the registry's dated and undated hooks, which is how a journal's
+// pages keep it.
+{
+  const grief = HERO_BY_KEY["week-grief"];
+  const title = (def: HeroSpread) => layoutPreview(def, PRINT_DATE).pages[0].marks.flatMap((m) => (m.k === "t" && /^WEEK\b/.test(m.t) ? [m.t] : []));
+  const dates = (def: HeroSpread) => layoutPreview(def, PRINT_DATE).pages[0].marks.some((m) => m.k === "t" && m.t === "JAN 5 - JAN 11");
+  const student = HERO_BY_KEY["student"];
+  check("a week title counts its weeks by default", /^WEEK \d+\/52$/.test(title(student)[0] ?? ""), title(student).join(", "));
+  if (grief.layout.kind !== "week") throw new Error("week-grief is not a week spread");
+  // The grief week's own layout sets it (plannerLibrary2.ts), and "Use this
+  // week" carries it to the journal's title (archetypeWeek.ts spines).
+  check("the grief week leaves the count off", grief.layout.showWeekCount === false);
+  check("showWeekCount false prints WEEK alone", title(grief).join() === "WEEK", title(grief).join(", "));
+  check("showWeekCount false keeps the dates", dates(grief) && dates(student));
+  const titleHooks = MODULE_REGISTRY["week-title"];
+  const at = { key: "w", label: "", start: new Date(Date.UTC(2026, 0, 5)), level: PageLevel.WEEKLY, index: 2, total: 13 };
+  check("the dated hook keeps showWeekCount", titleHooks.dated!({ showWeekCount: false }, at).showWeekCount === false);
+  check("the undated hook keeps showWeekCount", titleHooks.undated!({ showWeekCount: false }).showWeekCount === false);
+  check("week-title's schema has showWeekCount, default true", moduleSchemaDefaults("week-title").showWeekCount === true);
+}
+
+// ANDREW'S FOUR CALLS (2026-10-30, with the Gemini report), held.
+{
+  // A year's grid prints the book's months: three for a quarter, twelve at
+  // most from the book's first, and never on a month page or retyped.
+  const pixels = moduleSchemaDefaults("year-in-pixels");
+  const front = (start: string, end: string, level: PageLevel = PageLevel.FRONT_MATTER) => ({ key: null, label: "", start: new Date(`${start}T00:00:00Z`), end: new Date(`${end}T00:00:00Z`), level, index: 0, total: 1 });
+  for (const slug of ["year-in-pixels", "bill-tracker"]) {
+    const props = moduleSchemaDefaults(slug);
+    const cols = (at: ReturnType<typeof front>, p = props) => MODULE_REGISTRY[slug].dated!(p, at).columns as string[];
+    check(`${slug}: a quarter's book prints its three months`, cols(front("2026-11-01", "2027-01-31")).join() === "Nov,Dec,Jan", cols(front("2026-11-01", "2027-01-31")).join());
+    check(`${slug}: a long book prints twelve, from its first`, cols(front("2026-09-01", "2027-12-31")).join() === "Sep,Oct,Nov,Dec,Jan,Feb,Mar,Apr,May,Jun,Jul,Aug");
+    check(`${slug}: not on a month page`, cols(front("2026-11-01", "2027-01-31", PageLevel.MONTHLY)).length === 12);
+    check(`${slug}: retyped months are kept`, cols(front("2026-11-01", "2027-01-31"), { ...props, columns: ["Q1", "Q2"] }).join() === "Q1,Q2");
+  }
+  check("year in pixels still has twelve months undated", (pixels.columns as string[]).length === 12);
+  // Do top left, as Covey drew it; the hand writes its tasks to match.
+  const matrix = moduleSchemaDefaults("eisenhower-matrix");
+  check("the Eisenhower reads Do, Schedule, Delegate, Delete", JSON.stringify(matrix.quadrants) === JSON.stringify(["Do", "Schedule", "Delegate", "Delete"]) && matrix.xLeft === "Urgent", JSON.stringify(matrix));
+  check("the to-do list is headed To Do", moduleSchemaDefaults("todo-checklist").heading === "To Do");
+  // Meals are written in on a home week; ticks are "Meals Eaten".
+  check("the home week writes its meals in", spreadPlacements(HERO_BY_KEY.home).some((p) => p.slug === "weekly-meal-plan"));
+  check("the tick module says what it records", moduleSchemaDefaults("meal-planner").heading === "Meals Eaten");
+  // A tracker's rows print in capitals unless it asks for them as typed -
+  // the setting offered for a challenge's plan, off everywhere (2026-10-30).
+  const rowName = (extra: Record<string, unknown>) =>
+    renderHabitTracker({ x: 0, y: 0, width: 1560, height: 964 }, { ...moduleSchemaDefaults("habit-tracker"), habits: ["Walk 30 minutes, easy"], ...extra }, "t", "Inter")
+      .find((e) => e.id === "t-row0-name")?.text;
+  check("tracker rows print in capitals by default", rowName({}) === "WALK 30 MINUTES, EASY", String(rowName({})));
+  check("a tracker asked for its rows as typed prints them so", rowName({ rowsAsTyped: true }) === "Walk 30 minutes, easy", String(rowName({ rowsAsTyped: true })));
+  check("the setting is off by default", moduleSchemaDefaults("habit-tracker").rowsAsTyped === false);
+}
+
+// EVERY DAY OF A CHALLENGE PRINTS (2026-10-30). The gallery draws a
+// challenge's page as its first day; the book prints thirty, each with its
+// own step through challenge-step's dated hook. So each step is printed
+// here, in its own page's cell, and held to the 4pt floor and to fitting
+// whole: a long step on day twelve would otherwise reach print unseen. And
+// the front's plan is the pages' plan, step for step.
+{
+  const hook = MODULE_REGISTRY["challenge-step"];
+  /** The spread with its step module given these props, in the sidebar
+   *  (a [slug, rows, props] entry) or in a cell under the hours. */
+  const withStep = (def: HeroSpread, props: Record<string, unknown>): HeroSpread => {
+    const l = def.layout as unknown as Record<string, unknown>;
+    const cell = (s: Slot) => (s.slug === "challenge-step" ? { ...s, props } : s);
+    const side = (e: unknown) => (Array.isArray(e) && e[0] === "challenge-step" ? [e[0], e[1], props] : e);
+    const zones = Object.fromEntries(["below", "belowLeft", "belowRight"].filter((k) => Array.isArray(l[k])).map((k) => [k, (l[k] as Slot[]).map(cell)]));
+    return { ...def, layout: { ...l, ...(Array.isArray(l.sidebar) ? { sidebar: (l.sidebar as unknown[]).map(side) } : {}), ...zones } } as unknown as HeroSpread;
+  };
+  let printed = 0;
+  for (const def of PLANNER_SPREADS) {
+    for (const p of spreadPlacements(def)) {
+      if (p.slug !== "challenge-step") continue;
+      const list = p.props.steps as string[];
+      check(`${def.key}: its step module has its steps`, Array.isArray(list) && list.length > 0);
+      for (let index = 0; index < list.length; index++) {
+        const at = { key: "c", label: "", start: new Date(Date.UTC(2026, 0, 5 + index)), level: def.layout.kind === "day" ? PageLevel.DAILY : PageLevel.WEEKLY, index, total: list.length };
+        const props = hook.dated!(p.props, at);
+        const day = withStep(def, props);
+        const words = textIn(layoutPreview(day, PRINT_DATE), p);
+        const small = layoutPreview(day, PRINT_DATE).pages[p.page].marks.filter((m) => m.k === "t" && m.t.trim() && m.z < 4 * PT);
+        // Headings print in capitals: compared without case.
+        const said = words.map((w) => w.toLowerCase());
+        const whole = said.includes(list[index].toLowerCase()) && said.includes(`${p.props.stepUnit} ${index + 1} of ${list.length}`.toLowerCase());
+        check(`${def.key}: ${p.props.stepUnit} ${index + 1}'s step prints whole and at 4pt or more`, whole && small.length === 0, `${list[index]} -> ${words.join(" | ")}${small.length ? ` (under 4pt: ${small.length})` : ""}`);
+        printed++;
+      }
+      const planner = ALL_PLANNERS.find((pl) => pl.day === def.key || pl.week === def.key);
+      const front = planner?.front ? spreadPlacements(HERO_BY_KEY[planner.front]).find((x) => x.slug === "habit-tracker" && x.props.heading === "The Plan") : undefined;
+      const rows = ((front?.props.habits as string[] | undefined) ?? []).map((h) => h.replace(/^(Week )?\d+\. /, ""));
+      check(`${def.key}: the front's plan is its steps`, JSON.stringify(rows) === JSON.stringify(list), `${rows.length} rows, ${list.length} steps`);
+      // Sentences, so as typed - not the tracker's capitals (his call).
+      if (planner?.front && front) {
+        const first = (front.props.habits as string[])[0];
+        const marks = layoutPreview(HERO_BY_KEY[planner.front], PRINT_DATE).pages[front.page].marks.filter((m) => m.k === "t" && m.t === first);
+        check(`${planner.front}: the plan prints as typed`, marks.length === 1, first);
+      }
+    }
+  }
+  check("the challenges' steps were printed", printed >= 200, `${printed}`);
 }
 
 // Everything, held weeks included (production: false) - checked as strictly

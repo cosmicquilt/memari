@@ -24,6 +24,14 @@ export type WeekTitleConfig = {
   weekTotal?: number | null;
   /** e.g. "DEC 31 - JAN 6". Empty on an undated planner. */
   dateRangeLabel: string;
+  /**
+   * False prints "WEEK" over the dates with no "n/52" (the grief week,
+   * audit 2026-10-29: a count toward an end, in a book that promises
+   * nothing to finish). A setting of the page, not a date, so it is kept
+   * on an undated planner too, where the label is "WEEK" anyway. Absent is
+   * true: every title stored before it counts its weeks.
+   */
+  showWeekCount?: boolean;
 };
 
 export type RenderedElement = {
@@ -102,7 +110,7 @@ export function renderWeekTitle(
     height: smallLineHeight,
     // The word stays either way. It is what tells a reader the page is a
     // week rather than anything else, and it is not a date.
-    text: dated ? `WEEK ${config.weekNumber}/${config.weekTotal}` : "WEEK",
+    text: dated && config.showWeekCount !== false ? `WEEK ${config.weekNumber}/${config.weekTotal}` : "WEEK",
     fontSize: ptToPx(8),
     fontFamily: FONT_FAMILY,
     fill: "#555555",

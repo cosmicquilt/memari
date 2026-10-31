@@ -1,0 +1,19 @@
+// Quiz answer profiles for the editorial proof (2026-10-28): what the otter
+// builds for twelve kinds of people. Development only, with /dev/spread.
+
+import type { Answers } from "@/lib/otterQuiz";
+
+export const PROOF_PROFILES: Record<string, Answers> = {
+  "college student, night owl": { fills: ["school"], follow: ["organized"], pages: ["week"], hourly: ["hour"], rhythm: ["owl"], weekStart: ["monday"], dated: ["dated"], start: ["next-week"], track: ["sleep", "mood"], todo: ["list"], room: ["notes"], practice: ["no"], marks: ["none"] },
+  "office worker, early": { fills: ["office"], follow: ["organized"], pages: ["month", "week"], hourly: ["half"], rhythm: ["early"], weekStart: ["monday"], dated: ["dated"], start: ["next-month"], track: ["habits", "workouts"], habitCount: ["some"], todo: ["three"], room: ["goals"], practice: ["no"], marks: ["payday"] },
+  "shift nurse": { fills: ["shifts", "health"], follow: ["calmer"], pages: ["week", "day"], hourly: ["hour"], rhythm: ["owl"], weekStart: ["sunday"], dated: ["dated"], start: ["next-week"], track: ["sleep", "water"], todo: ["list"], room: ["reflection"], practice: ["no"], marks: ["none"] },
+  teacher: { fills: ["teaching"], follow: ["organized"], pages: ["week"], hourly: ["hour"], rhythm: ["early"], weekStart: ["monday"], dated: ["dated"], start: ["next-month"], track: ["reading"], todo: ["list"], room: ["reflection"], practice: ["no"], marks: ["payday"] },
+  "small business owner, variable income": { fills: ["business"], follow: ["money"], pages: ["month", "week"], hourly: ["half"], rhythm: ["day"], weekStart: ["monday"], dated: ["dated"], start: ["next-month"], track: ["money"], money: ["varies"], todo: ["three"], room: ["goals"], practice: ["no"], marks: ["bills", "payday"] },
+  "parent at home": { fills: ["home"], follow: ["calmer"], pages: ["week"], hourly: ["lists"], rhythm: ["early"], weekStart: ["sunday"], dated: ["dated"], start: ["this-week"], track: ["meals"], todo: ["list"], room: ["gratitude"], practice: ["no"], marks: ["trash", "recycling", "payday"] },
+  "athlete in training": { fills: ["training"], follow: ["habits"], pages: ["week", "day"], hourly: ["hour"], rhythm: ["early"], weekStart: ["monday"], dated: ["dated"], start: ["next-week"], track: ["workouts", "sleep", "meals"], todo: ["three"], room: ["goals"], practice: ["no"], marks: ["none"] },
+  "ADHD, everything": { fills: ["everything"], follow: ["organized"], pages: ["day"], hourly: ["lists"], rhythm: ["day"], weekStart: ["monday"], dated: ["dated"], start: ["this-week"], track: ["habits", "water"], habitCount: ["few"], todo: ["adhd"], room: ["doodles"], practice: ["no"], marks: ["none"] },
+  "Christian, daily": { fills: ["home"], follow: ["calmer"], pages: ["day"], hourly: ["lists"], rhythm: ["early"], weekStart: ["sunday"], dated: ["dated"], start: ["next-month"], track: ["reading"], todo: ["list"], room: ["gratitude"], practice: ["christian"], marks: ["none"] },
+  "recovery, one day at a time": { fills: ["everything"], follow: ["calmer"], pages: ["day"], hourly: ["lists"], rhythm: ["day"], weekStart: ["sunday"], dated: ["dated"], start: ["this-week"], track: ["mood", "sleep"], todo: ["three"], room: ["reflection"], practice: ["recovery"], marks: ["none"] },
+  "stoic, weekly": { fills: ["office"], follow: ["calmer"], pages: ["week"], hourly: ["half"], rhythm: ["early"], weekStart: ["monday"], dated: ["dated"], start: ["next-week"], track: ["habits"], habitCount: ["few"], todo: ["three"], room: ["reflection"], practice: ["stoic"], marks: ["none"] },
+  "minimal, undated month": { fills: ["home"], follow: ["calmer"], pages: ["month"], hourly: ["lists"], rhythm: ["day"], weekStart: ["sunday"], dated: ["undated"], start: ["pick"], track: ["period"], todo: ["list"], room: ["nothing"], practice: ["no"], marks: ["none"] },
+} as unknown as Record<string, Answers>;

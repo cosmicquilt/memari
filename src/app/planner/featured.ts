@@ -58,11 +58,17 @@ export type Featured = {
   guides: string[];
 };
 
-let built: Featured | null = null;
+let built: { day: string; items: Featured } | null = null;
 
-/** Built once per server: it is the same for everyone until a deploy. */
-export function featuredItems(): Featured {
-  built ??= {
+/** Built once a day per server: the same for everyone, but not until a
+ *  deploy, since a season's planner (Lent, Ramadan) says when its book runs,
+ *  and that moves on to the next year's season once a printed book can no
+ *  longer reach this one (plannerTemplates' `dates` and `when`, which count
+ *  in whole UTC days, as the day kept here does). */
+export function featuredItems(today = new Date()): Featured {
+  const day = today.toISOString().slice(0, 10);
+  if (built?.day === day) return built.items;
+  const items: Featured = {
     planners: plannerShelves(PLANNERS).flatMap((shelf) => shelf.planners).map((planner) => ({
       key: planner.key,
       group: planner.group,
@@ -71,7 +77,7 @@ export function featuredItems(): Featured {
       line: planner.line,
       cover: coverSpreadOf(planner),
       parts: partsOf(planner).map(({ part, key }) => ({ part, name: PART_NAMES[part], key })),
-      makes: plannerMakes(planner),
+      makes: plannerMakes(planner, today),
     })),
     layouts: LISTED_STARTERS.map((starter) => ({
       key: starter.key,
@@ -80,12 +86,13 @@ export function featuredItems(): Featured {
       line: starter.line,
       hours: starter.hours ?? null,
       action: actionLabel(starter.kind),
-      makes: makesWhat(starter.kind),
+      makes: makesWhat(starter.kind, starter.key, today),
       modules: modulesOf(starter.key).map((m) => m.name),
     })),
     kinds: KIND_SECTIONS.map(([kind, heading]) => ({ kind, heading })),
     moduleCount: PALETTE_INFO.length,
     guides: MODULE_GUIDES.map((guide) => guide.slug),
   };
-  return built;
+  built = { day, items };
+  return items;
 }

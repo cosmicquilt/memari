@@ -27,11 +27,22 @@ export default async function OrderPage({ params }: { params: Promise<{ journalI
   if (!owner.guest) await claimGuestWork(owner.id);
 
   const id = isJournalSlug(address) ? await journalIdForSlug(owner.id, address) : address;
-  const journal = id ? await prisma.planner.findFirst({ where: { id, ownerId: owner.id, isTemplate: false }, select: { id: true, title: true, theme: true } }) : null;
+  const journal = id ? await prisma.planner.findFirst({ where: { id, ownerId: owner.id, isTemplate: false }, select: { id: true, title: true, theme: true, startDate: true, endDate: true } }) : null;
   if (!journal) notFound();
   const slug = await journalSlugOf(journal.id);
   if (address !== slug) redirect(`/app/j/${slug}/order`);
   const theme = (journal.theme as PlannerTheme | null) ?? {};
 
-  return <StandaloneOrder journalId={journal.id} title={journal.title} slug={slug} weekStartDay={theme.weekStartDay ?? 0} />;
+  // The journal's term, so a Lent or Ramadan book opens on its season.
+  const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  return (
+    <StandaloneOrder
+      journalId={journal.id}
+      title={journal.title}
+      slug={slug}
+      weekStartDay={theme.weekStartDay ?? 0}
+      journalStartISO={iso(journal.startDate)}
+      journalEndISO={iso(journal.endDate)}
+    />
+  );
 }

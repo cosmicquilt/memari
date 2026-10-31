@@ -251,14 +251,14 @@ export function renderTodoChecklist(
     strokeWidth: ptToPx(HEADER_BORDER_WIDTH_PT),
   });
 
-  // "TO - DO" header, centered across the full width. Manually centered
+  // "TO DO" header, centered across the full width. Manually centered
   // vertically rather than relying on verticalAlign, which hasn't
   // reliably centered text elsewhere in this codebase.
   // Inside the same 8pt side padding as every other module's heading, which
   // is also the width fitHeading - and so the editor's letter limit - uses.
   const headingPadding = ptToPx(8);
   const headingWidth = geometry.width - headingPadding * 2;
-  const headingText = (config.heading ?? "TO - DO").toUpperCase();
+  const headingText = (config.heading ?? "To Do").toUpperCase();
   const { fontSizePx: headerFontSize, fits: headingFits } = fitHeading(headingText, headingWidth, FONT_FAMILY);
   const headerTextHeight = headerFontSize * 1.2;
   elements.push({

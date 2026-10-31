@@ -47,14 +47,18 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       pages: [
         [
-          at("index", 0, 0, 12, 36),
+          // Topic and the date it is on: the book prints no page numbers,
+          // and every page is dated.
+          at("index", 0, 0, 12, 36, { columns: ["Topic", "Date"], weights: [5, 1.2] }),
           at("labeled-box", 12, 0, 12, 10, box("My Key")),
           at("someday-maybe", 12, 10, 12, 13),
           at("labeled-box", 12, 23, 12, 13, box("Lists I Keep")),
         ],
         [
-          at("future-log-months", 0, 0, 24, 18),
-          at("future-log-months", 0, 18, 24, 18, { heading: "Future Log", prompts: ["July", "August", "September", "October", "November", "December"] }),
+          // One box for the twelve months: the dated hook renames a run of
+          // month names from the book's first month, so two boxes of six
+          // printed the same months twice, and at 24x18 each dropped two.
+          at("future-log-months", 0, 0, 24, 36, { prompts: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"], linesPerPrompt: 1 }),
         ],
       ],
     },
@@ -73,7 +77,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["done-list", 12],
       ],
       belowLeft: [at("column-table", 6, 17, 18, 19, table("Tasks This Month", ["Task", "Priority", "Status"], [3, 0.9, 1.1]))],
-      belowRight: [at("monthly-review", 0, 17, 12, 19), at("labeled-box", 12, 17, 12, 19, box("Notes", "dotted"))],
+      belowRight: [at("monthly-review", 0, 17, 12, 19), at("labeled-box", 12, 17, 12, 19, box("Next Month", "dotted"))],
     },
     ...UNWRITTEN,
   },
@@ -87,10 +91,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       hours: OFF,
       hoursRows: 24,
       sidebar: [
-        ["daily-big-three", 6],
-        ["labeled-box", 10, box("Events")],
-        ["labeled-box", 10, box("Notes")],
-        ["done-list", 10],
+        ["daily-big-three", 4],
+        ["labeled-box", 12, box("Happened Today")],
+        ["done-list", 20],
       ],
       below: [at("labeled-box", 6, 25, 18, 11, box("Tomorrow"))],
     },
@@ -115,7 +118,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
           at("labeled-box", 12, 26, 12, 10, box("What Could Get in the Way")),
         ],
         [
-          at("column-table", 0, 0, 24, 22, table("Weekly Check-ins", ["Week", "How sure, 1 to 10", "What moved it", "What's in the way"], [0.7, 1.3, 2, 2])),
+          // The quarter's numbers week by week; the words are on each week.
+          at("column-table", 0, 0, 24, 22, table("Weekly Check-ins", ["Week", "How sure", "Leading measure", "Lagging measure"], [0.7, 1, 1.6, 1.6])),
           at("prompted-lines", 0, 22, 24, 14, prompts("End of the Quarter", ["Where I landed", "What I learned", "Next quarter's objective"])),
         ],
       ],
@@ -129,13 +133,14 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       sidebar: [
-        ["prompted-lines", 10, prompts("This Week", ["The one thing that moves it", "My leading measure"])],
-        ["weekly-priorities", 7],
-        ["done-list", 16],
+        ["prompted-lines", 10, prompts("This Week", ["What moves it most", "My leading measure"])],
+        // Four rows print 1 to 3: the three priorities the gallery promises.
+        ["weekly-priorities", 4],
+        ["done-list", 19],
       ],
       belowLeft: [
         at("todo-checklist", 6, BELOW_ROW, 18, 9, { heading: "Moves the Objective", dayCount: 3 }),
-        at("rating-strip", 6, 30, 18, 6, { heading: "How Sure I Am", items: ["We'll hit it this quarter"], scaleMin: 1, scaleMax: 10 }),
+        at("rating-strip", 6, 30, 18, 6, { heading: "How Sure I Am", items: ["I'll hit the objective", "I'll keep my leading measure"], scaleMin: 1, scaleMax: 10 }),
       ],
       belowRight: [
         at("todo-checklist", 0, BELOW_ROW, 24, 9, { heading: "Moves the Objective", dayCount: 4 }),
@@ -180,12 +185,14 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       inside: "lined",
       sidebar: [
-        ["prompted-lines", 14, prompts("This Month", ["Words to learn", "Grammar to master", "Something to watch or read"])],
+        ["prompted-lines", 14, prompts("This Month", ["Words to learn", "Grammar to master", "To watch or read"])],
         ["labeled-box", 10, box("Wins")],
         ["labeled-box", 10, box("Struggled With")],
       ],
       belowLeft: [at("listening-log", 6, 17, 18, 19, { heading: "Watched, Read, Listened", columns: ["Title", "Kind", "Understood"], weights: [2.6, 1, 1.2] })],
-      belowRight: [at("language-study", 0, 17, 12, 19, { heading: "New Words" }), at("monthly-review", 12, 17, 12, 19)],
+      // Words are kept at the front and each week; the month logs the
+      // speaking, the practice learners most often skip.
+      belowRight: [at("column-table", 0, 17, 12, 19, table("Conversations", ["Who", "About", "How it went"], [1, 1.4, 1.2])), at("monthly-review", 12, 17, 12, 19)],
     },
     ...UNWRITTEN,
   },
@@ -198,7 +205,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       hours: OFF,
       sidebar: [
         ["prompted-lines", 12, prompts("This Week", ["Grammar point", "Words to learn", "Speaking practice"])],
-        ["language-study", 14, { heading: "Words" }],
+        ["language-study", 14, { heading: "Words", columns: ["Word", "Meaning"], weights: [1, 1.2] }],
         ["labeled-box", 7, box("Phrases I Needed")],
       ],
       belowLeft: [
@@ -230,8 +237,10 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ],
         [
           at("column-table", 0, 0, 24, 14, table("Characters", ["Name", "Wants", "Fears", "Changes how"], [1.2, 1.6, 1.6, 1.8])),
-          at("todo-checklist", 0, 14, 12, 12, steps("Revision Passes", ["Structure and plot", "Characters and arcs", "Scene by scene", "Line edit", "Read aloud", "Proofread"])),
-          at("labeled-box", 12, 14, 12, 12, box("Research to Do")),
+          // Six wide: a wider list draws two day columns and prints every
+          // pass twice.
+          at("todo-checklist", 0, 14, 6, 12, steps("Revision Passes", ["Structure and plot", "Characters and arcs", "Scene by scene", "Line edit", "Read aloud", "Proofread"])),
+          at("labeled-box", 6, 14, 18, 12, box("Research to Do")),
           at("column-table", 0, 26, 24, 10, table("Submissions", ["Agent or press", "Sent", "Heard back"], [2.4, 1, 1.2])),
         ],
       ],
@@ -246,7 +255,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       inside: "lined",
       sidebar: [
-        ["prompted-lines", 15, prompts("This Month", ["Chapters to draft or revise", "Arcs to move forward", "Holes to fix"])],
+        ["prompted-lines", 15, prompts("This Month", ["Chapters to work on", "Arcs to move forward", "Holes to fix"])],
         ["labeled-box", 10, box("Ideas")],
         ["labeled-box", 9, box("Wins")],
       ],
@@ -254,7 +263,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       belowRight: [
         at("todo-checklist", 0, 17, 12, 10, { heading: "Research", dayCount: 1 }),
         at("labeled-box", 12, 17, 12, 10, box("Questions for My Readers")),
-        at("monthly-review", 0, 27, 24, 9),
+        // One line under each question, so all three print in 9 rows.
+        at("monthly-review", 0, 27, 24, 9, { linesPerPrompt: 1 }),
       ],
     },
     ...UNWRITTEN,
@@ -266,12 +276,13 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "serif",
       weekStartsMonday: true,
       sidebar: [
-        ["prompted-lines", 10, prompts("This Week", ["Scenes or pass to work on", "When I'll write"])],
-        ["weekly-priorities", 7],
-        ["labeled-box", 16, box("Ideas & Lines")],
+        // When to write is an event on the hours, not a line written here.
+        ["prompted-lines", 10, prompts("This Week", ["Scenes or pass to work on", "Done looks like"])],
+        ["weekly-priorities", 4],
+        ["labeled-box", 19, box("Ideas & Lines")],
       ],
       belowLeft: [at("column-table", 6, BELOW_ROW, 18, 15, table("Sessions", ["Day", "Scene or pass", "Words", "Felt"], [0.8, 2.4, 0.8, 0.8]))],
-      belowRight: [at("labeled-box", 0, BELOW_ROW, 12, 15, box("Scene Ideas")), at("labeled-box", 12, BELOW_ROW, 12, 15, box("Dialogue Snippets"))],
+      belowRight: [at("labeled-box", 0, BELOW_ROW, 12, 15, box("Where I Stopped")), at("labeled-box", 12, BELOW_ROW, 12, 15, box("Dialogue Snippets"))],
     },
     ...UNWRITTEN,
   },
@@ -293,7 +304,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
           at("prompted-lines", 0, 12, 24, 24, prompts("Meaning in Small Things", ["Start small: one thing I'll do well", "Let go: what I can put down", "Harmony: who and what I live alongside", "Small joys: what I already love", "Here and now: where I want to be present"])),
         ],
         [
-          at("prompted-lines", 0, 0, 24, 18, prompts("The Year in Review", ["Best moments", "What drained me", "What to keep", "What to change"])),
+          // Not "The Year in Review": front pages print once a book, and a
+          // book is often a quarter.
+          at("prompted-lines", 0, 0, 24, 18, prompts("Looking Back", ["Best moments", "What drained me", "What to keep", "What to change"])),
           at("labeled-box", 0, 18, 24, 18, box("A Letter to Myself, a Year From Now")),
         ],
       ],
@@ -312,10 +325,12 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 11, box("Enough, This Month")],
         ["labeled-box", 11, box("Put Down")],
       ],
-      belowLeft: [at("column-table", 6, 17, 18, 19, table("Life Areas", ["Area", "How it is", "One small shift"], [1, 2, 2]))],
+      // The eight areas printed, not rewritten by hand each month; how each
+      // one is goes on the wheel beside it.
+      belowLeft: [at("prompted-lines", 6, 17, 18, 19, prompts("One Small Shift", ["Health", "Work", "Money", "Home", "Family", "Friends", "Fun", "Growth"], 1))],
       belowRight: [
         at("rating-strip", 0, 17, 24, 10, { heading: "Wheel of Life", items: ["Health", "Work", "Money", "Home", "Family", "Friends", "Fun", "Growth"], scaleMin: 1, scaleMax: 10 }),
-        at("monthly-review", 0, 27, 24, 9),
+        at("monthly-review", 0, 27, 24, 9, { linesPerPrompt: 1 }),
       ],
     },
     ...UNWRITTEN,
@@ -327,9 +342,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "serif",
       weekStartsMonday: true,
       sidebar: [
-        ["weekly-priorities", 7],
+        ["weekly-priorities", 4],
         ["gratitude-three", 12, { heading: "Small Joys" }],
-        ["labeled-box", 14, box("Moments of Flow")],
+        ["labeled-box", 17, box("Moments of Flow")],
       ],
       belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { heading: "Small Things I'll Do", dayCount: 3 })],
       belowRight: [
@@ -355,7 +370,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       pages: [
         [
           at("progress-meter", 0, 0, 24, 9, { heading: "81 Chapters", total: 81, milestoneEvery: 9, numbers: "every" }),
-          at("prompted-lines", 0, 9, 24, 15, prompts("The Uncarved Block", ["Where am I forcing things?", "What would yielding look like?", "What can I leave undone?"])),
+          // Pu: simplicity and the nature things start with. Forcing and
+          // yielding are the week's Wu Wei box.
+          at("prompted-lines", 0, 9, 24, 15, prompts("The Uncarved Block", ["What can I simplify?", "What am I adding that isn't needed?", "Where can I be plain?"])),
           at("column-table", 0, 24, 24, 12, table("Translations I Read", ["Translator", "Year", "What I notice"], [1.6, 0.7, 2.4])),
         ],
         [
@@ -381,7 +398,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       ],
       belowLeft: [at("wu-wei-reflection", 6, BELOW_ROW, 18, 15)],
       belowRight: [
-        at("rating-strip", 0, BELOW_ROW, 24, 9, { heading: "Forcing or Flowing", items: DAYS, scaleMin: 1, scaleMax: 5, lowLabel: "Forcing", highLabel: "Flowing" }),
+        at("rating-strip", 0, BELOW_ROW, 24, 9, { heading: "Forcing or Flowing", items: DAYS, scaleMin: 1, scaleMax: 5, scaleHead: "words", lowLabel: "Forcing", highLabel: "Flowing" }),
         at("labeled-box", 0, 30, 24, 6, box("Stillness")),
       ],
     },
@@ -413,7 +430,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
             "Moderation: avoid extremes; forbear resenting injuries so much as you think they deserve.",
             "Cleanliness: tolerate no uncleanliness in body, cloaths, or habitation.",
             "Tranquillity: be not disturbed at trifles, or at accidents common or unavoidable.",
-            "Chastity: never to dulness, weakness, or the injury of your own or another's peace or reputation.",
+            // Cut with an honest ellipsis: the whole precept sets all thirteen
+            // at 5.5pt.
+            "Chastity: rarely use venery but for health or offspring, never to dulness, weakness …",
             "Humility: imitate Jesus and Socrates.",
           ], 1)),
         ],
@@ -439,7 +458,12 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 10, box("Slipped")],
       ],
       belowLeft: [at("franklin-virtues", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("labeled-box", 0, BELOW_ROW, 12, 15, box("What Good I Did")), at("weekly-reflection", 12, BELOW_ROW, 12, 15, { heading: "The Week Reviewed" })],
+      // His morning and evening questions are daily ones: a line each day.
+      // The day names are printed, so they stay Sunday first, as he kept it.
+      belowRight: [
+        at("prompted-lines", 0, BELOW_ROW, 12, 15, prompts("What Good Shall I Do?", ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], 1)),
+        at("prompted-lines", 12, BELOW_ROW, 12, 15, prompts("What Good Have I Done?", ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], 1)),
+      ],
     },
     ...UNWRITTEN,
   },
@@ -456,12 +480,14 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       pages: [
         [
-          at("prompted-lines", 0, 0, 24, 16, prompts("Radical Responsibility", ["What am I pretending I can't change?", "Where am I blaming circumstances?", "What do I choose, knowing I could choose otherwise?"])),
-          at("values-list", 0, 16, 12, 20, { heading: "Values I Choose" }),
+          at("prompted-lines", 0, 0, 24, 16, prompts("Radical Responsibility", ["What am I pretending I can't change?", "Where am I blaming circumstances?", "What do I choose, knowing I could choose otherwise?", "Whose freedom do my choices touch?"])),
+          at("values-list", 0, 16, 12, 20, { heading: "Values I Choose", lineStart: "bullets" }),
           at("prompted-lines", 12, 16, 12, 20, prompts("If This Were All", ["What would I stop doing?", "What would I start?"], 4)),
         ],
         [
-          at("column-table", 0, 0, 24, 20, table("Absurd Moments", ["What happened", "My first reaction", "The meaning I choose"], [2, 1.6, 2])),
+          // Absurd moments are the week's; the front holds the projects a
+          // life is chosen through.
+          at("column-table", 0, 0, 24, 20, table("Projects I Choose", ["Project", "Why I choose it", "What it asks of me"], [1.6, 2, 2])),
           at("labeled-box", 0, 20, 24, 16, box("Questions I'm Living With")),
         ],
       ],
@@ -475,9 +501,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "serif",
       weekStartsMonday: true,
       sidebar: [
-        ["prompted-lines", 12, prompts("This Week", ["A choice I'm facing", "What I'd do if no one were watching"])],
-        ["weekly-priorities", 7],
-        ["labeled-box", 14, box("Norms I Followed Without Thinking")],
+        ["prompted-lines", 12, prompts("This Week", ["A choice I'm facing", "If no one were watching"])],
+        ["weekly-priorities", 4],
+        ["labeled-box", 17, box("On Autopilot")],
       ],
       belowLeft: [at("prompted-lines", 6, BELOW_ROW, 18, 15, prompts("Bad Faith Check", ["Where did I say \"I had no choice\"?", "What was the choice?", "What will I own next time?"]))],
       belowRight: [at("column-table", 0, BELOW_ROW, 24, 15, table("Absurd Moments", ["Day", "What happened", "The meaning I choose"], [0.7, 2, 2]))],
@@ -501,7 +527,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         [
           at("column-table", 0, 0, 24, 16, table("Budget", ["Item", "Budget", "Actual", "Paid"], [2.4, 1, 1, 0.8], { totalsRow: true })),
           at("column-table", 0, 16, 24, 12, table("Vendors", ["Vendor", "Contact", "Deposit", "Balance due"], [1.8, 2, 1, 1.1])),
-          at("prompted-lines", 0, 28, 12, 8, prompts("The Day", ["Date and time", "Where"], 1)),
+          // The date and time are the book's main calendar event.
+          at("prompted-lines", 0, 28, 12, 8, prompts("The Day", ["Ceremony venue", "Reception venue", "Officiant"], 1)),
           at("labeled-box", 12, 28, 12, 8, box("Must-Have Photos")),
         ],
       ],
@@ -521,10 +548,12 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 11, box("Ideas")],
       ],
       belowLeft: [at("column-table", 6, 17, 18, 19, table("Payments Due", ["Vendor", "Amount", "Due", "Paid"], [2, 1, 1, 0.8]))],
+      // RSVPs come in the last weeks only, onto the front's guest list; what
+      // got done is true of every month of an engagement.
       belowRight: [
-        at("column-table", 0, 17, 24, 10, table("RSVPs In", ["Name", "Coming", "Meal"], [2.4, 0.9, 1])),
+        at("done-list", 0, 17, 24, 10, { heading: "Done This Month" }),
         at("labeled-box", 0, 27, 12, 9, box("Questions for Vendors")),
-        at("labeled-box", 12, 27, 12, 9, box("Notes")),
+        at("labeled-box", 12, 27, 12, 9, box("To Buy")),
       ],
     },
     ...UNWRITTEN,
@@ -536,24 +565,28 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "serif",
       weekStartsMonday: false,
       sidebar: [
-        ["weekly-priorities", 7],
-        ["waiting-on", 13, { heading: "Waiting to Hear From" }],
+        ["weekly-priorities", 4],
+        ["waiting-on", 16, { heading: "Waiting to Hear From" }],
         ["labeled-box", 13, box("Ideas & Inspiration")],
       ],
-      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
+      // The to-do runs the same depth under all seven days, so the days'
+      // lines meet across the spread.
+      belowLeft: [
+        at("todo-checklist", 6, BELOW_ROW, 18, 9, { dayCount: 3 }),
+        at("labeled-box", 6, 30, 18, 6, box("Calls to Make")),
+      ],
       belowRight: [
         at("todo-checklist", 0, BELOW_ROW, 24, 9, { dayCount: 4 }),
-        at("labeled-box", 0, 30, 12, 6, box("Calls to Make")),
-        at("labeled-box", 12, 30, 12, 6, box("Time for Us")),
+        at("labeled-box", 0, 30, 24, 6, box("Time for Us")),
       ],
     },
     ...UNWRITTEN,
   },
 
   // ------------------------------------------------ new baby
-  // The first months: a day page of feeds, sleep and changes for the
-  // round-the-clock days, notes for the doctor, and the parent looked after
-  // too; a week of firsts; who to call, help offered and growth at the front.
+  // The first months: a day page of feeds, sleep, changes and medicines for
+  // the round-the-clock days, and the parent looked after too; a week of
+  // firsts; who to call, help offered and growth at the front.
   {
     key: "pages-new-baby",
     layout: {
@@ -565,7 +598,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
           at("column-table", 0, 0, 24, 12, table("Who to Call", ["Who", "Name", "Number"], [1.3, 1.6, 1.6])),
           at("column-table", 0, 12, 24, 12, table("Help Offered", ["Who", "What", "When"], [1.4, 2.4, 1])),
           at("column-table", 0, 24, 12, 12, table("Growth", ["Date", "Weight", "Length", "Head"], [1.1, 1, 1, 1])),
-          at("labeled-box", 12, 24, 12, 12, box("Firsts")),
+          // Firsts are the week's.
+          at("prompted-lines", 12, 24, 12, 12, prompts("When You Arrived", ["Date and time", "Weight and length", "Where", "Who was there"], 1)),
         ],
         [
           at("column-table", 0, 0, 24, 14, table("Checkups & Shots", ["Date", "What", "Notes"], [0.9, 1.8, 2.4])),
@@ -583,13 +617,15 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       sidebar: [
-        ["weekly-priorities", 7, { heading: "Just Three Things" }],
-        ["labeled-box", 12, box("Firsts")],
-        ["labeled-box", 14, box("Questions for the Doctor")],
+        ["weekly-priorities", 4, { heading: "Just Three Things" }],
+        ["labeled-box", 15, box("Firsts")],
+        ["labeled-box", 14, box("Ask the Doctor")],
       ],
       belowLeft: [at("labeled-box", 6, BELOW_ROW, 18, 15, box("This Week With You"))],
       belowRight: [
-        at("self-care-checklist", 0, BELOW_ROW, 24, 9, { heading: "Looking After Me" }),
+        // Ticks a parent in the round-the-clock weeks can make: no hours of
+        // sleep to miss, nothing to push a body that is healing.
+        at("self-care-checklist", 0, BELOW_ROW, 24, 9, { heading: "Looking After Me", habits: ["Ate a meal", "Drank water", "Rested", "Got outside", "Talked to someone", "Asked for help"] }),
         at("labeled-box", 0, 30, 24, 6, box("Help I Can Ask For")),
       ],
     },
@@ -607,11 +643,15 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       sidebar: [
         ["column-table", 12, table("Sleep", ["Down", "Up", "Hrs"], [1, 1, 0.8])],
         ["column-table", 12, table("Changes", ["Time", "Wet", "Dirty"], [1.2, 0.8, 0.8])],
-        ["labeled-box", 12, box("Notes for the Doctor")],
+        // Vitamin drops, and a parent's pain relief on the clock; questions
+        // for the doctor are the week's.
+        ["column-table", 12, table("Medicines", ["Time", "What", "Who"], [1, 1.6, 0.8])],
       ],
       below: [
         at("column-table", 6, 11, 18, 17, table("Feeds", ["Time", "Side or bottle", "How much", "How long"], [0.9, 1.4, 1, 1])),
-        at("rating-strip", 6, 28, 18, 8, { heading: "Me Today", items: ["Rest", "Mood", "Ate well"], scaleMin: 1, scaleMax: 5 }),
+        at("rating-strip", 6, 28, 12, 8, { heading: "Me Today", items: ["Rest", "Mood", "Ate well"], scaleMin: 1, scaleMax: 5 }),
+        // A line about the baby each day; the week's firsts are the week's.
+        at("labeled-box", 18, 28, 6, 8, box("Today With You")),
       ],
     },
     ...UNWRITTEN,
@@ -619,9 +659,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
 
   // ------------------------------------------------ caregiver
   // Caring for someone: everything a stand-in or a doctor would need at the
-  // front, the week's medicines and symptoms, the month's refills, bills and
-  // claims; and room for the carer, since burnout is the report's first word
-  // on this niche.
+  // front, the week's medicines and what to watch for, the month's refills,
+  // bills and claims; and room for the carer, since burnout is the report's
+  // first word on this niche.
   {
     key: "pages-caregiver",
     layout: {
@@ -637,7 +677,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         [
           at("column-table", 0, 0, 24, 12, table("Help I Can Ask For", ["Who", "What they can do", "Phone"], [1.4, 2.4, 1.2])),
           at("prompted-lines", 0, 12, 24, 12, prompts("When I Need a Break", ["Who can step in", "What recharges me", "One thing I'll stop doing"])),
-          at("labeled-box", 0, 24, 24, 12, box("Important Papers: Where They Are")),
+          // A stand-in's first question is how the day runs.
+          at("labeled-box", 0, 24, 12, 12, box("Important Papers: Where They Are")),
+          at("prompted-lines", 12, 24, 12, 12, prompts("A Normal Day for Them", ["Morning", "Meals and drinks", "Bedtime", "What calms them"], 1)),
         ],
       ],
     },
@@ -656,7 +698,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 11, box("For Me")],
       ],
       belowLeft: [at("column-table", 6, 17, 18, 19, table("Bills & Claims", ["What", "Amount", "Sent", "Status"], [2.2, 1, 0.9, 1]))],
-      belowRight: [at("column-table", 0, 17, 24, 10, table("Refills", ["Medicine", "Pharmacy", "Due", "Done"], [2, 1.6, 1, 0.8])), at("monthly-review", 0, 27, 24, 9)],
+      belowRight: [at("column-table", 0, 17, 24, 10, table("Refills", ["Medicine", "Pharmacy", "Due", "Done"], [2, 1.6, 1, 0.8])), at("monthly-review", 0, 27, 24, 9, { linesPerPrompt: 1 })],
     },
     ...UNWRITTEN,
   },
@@ -667,12 +709,17 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       sidebar: [
-        ["weekly-priorities", 7],
-        ["labeled-box", 13, box("Questions for the Doctor")],
+        ["weekly-priorities", 4],
+        ["labeled-box", 16, box("Ask the Doctor")],
         ["labeled-box", 13, box("For Me")],
       ],
-      belowLeft: [at("medication-log", 6, BELOW_ROW, 18, 8), at("symptom-tracker", 6, 29, 18, 7)],
-      belowRight: [at("todo-checklist", 0, BELOW_ROW, 24, 9, { dayCount: 4 }), at("labeled-box", 0, 30, 24, 6, box("How They Were This Week"))],
+      // A to-do under every day; the medicines and what to watch for are
+      // whole-week grids, one on each page.
+      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 7, { dayCount: 3 }), at("medication-log", 6, 28, 18, 8)],
+      belowRight: [
+        at("todo-checklist", 0, BELOW_ROW, 24, 7, { dayCount: 4 }),
+        at("symptom-tracker", 0, 28, 24, 8, { heading: "Watch For", habits: ["Pain", "Poor sleep", "Not eating", "Low mood", "Fall or injury"] }),
+      ],
     },
     ...UNWRITTEN,
   },
@@ -707,13 +754,18 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       kind: "week",
       font: "serif",
       weekStartsMonday: true,
+      // "WEEK" and the dates, not "WEEK 3/13": a count toward an end, in a
+      // book that promises nothing to finish (audit 2026-10-29).
+      showWeekCount: false,
       sidebar: [
-        ["weekly-priorities", 7, { heading: "Only What Matters" }],
-        ["labeled-box", 13, box("A Memory")],
+        // Three plain lines, not a numbered task list.
+        ["weekly-priorities", 4, { heading: "Only What Matters", numbered: false }],
+        ["labeled-box", 16, box("A Memory")],
         ["labeled-box", 13, box("People Who Helped")],
       ],
       belowLeft: [at("labeled-box", 6, BELOW_ROW, 18, 15, box("This Week"))],
-      belowRight: [at("mood-tracker", 0, BELOW_ROW, 24, 9, { heading: "How I Was" }), at("labeled-box", 0, 30, 24, 6, box("Small Things That Helped"))],
+      // Heavy to lighter, not a low to high score that reads as recovery.
+      belowRight: [at("mood-tracker", 0, BELOW_ROW, 24, 9, { heading: "How I Was", lowLabel: "heavy", highLabel: "lighter" }), at("labeled-box", 0, 30, 24, 6, box("Small Things That Helped"))],
     },
     ...UNWRITTEN,
   },
@@ -721,8 +773,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
   // ------------------------------------------------ homeschool
   // Subjects and the year at the front, field trips; hours by subject each
   // month for the states that ask for a record, work samples kept; a week of
-  // lessons over a school-day's hours, what got done by subject, and the
-  // books read together.
+  // lessons over a school-day's hours, each day's list, hours by subject,
+  // and the books read together.
   {
     key: "pages-homeschool",
     layout: {
@@ -732,10 +784,12 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       pages: [
         [
           at("column-table", 0, 0, 24, 14, table("Subjects", ["Subject", "Curriculum", "Days a week", "Child"], [1.4, 2.2, 1, 1])),
-          at("future-log-months", 0, 14, 24, 22, { heading: "The Year", prompts: ["August", "September", "October", "November", "December", "January"] }),
+          // Two lines a month, so all six print in 22 rows (at three, the
+          // sixth fell off); the second log starts six months on when dated.
+          at("future-log-months", 0, 14, 24, 22, { heading: "The Year", prompts: ["August", "September", "October", "November", "December", "January"], linesPerPrompt: 2 }),
         ],
         [
-          at("future-log-months", 0, 0, 24, 22, { heading: "The Year", prompts: ["February", "March", "April", "May", "June", "July"] }),
+          at("future-log-months", 0, 0, 24, 22, { heading: "The Year", prompts: ["February", "March", "April", "May", "June", "July"], linesPerPrompt: 2, monthOffset: 6 }),
           at("column-table", 0, 22, 12, 14, table("Field Trips", ["Where", "When", "What we learned"], [1.4, 0.9, 1.8])),
           at("labeled-box", 12, 22, 12, 14, box("Ideas to Try")),
         ],
@@ -752,11 +806,14 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       inside: "lined",
       sidebar: [
         ["labeled-box", 12, box("Themes & Units")],
-        ["labeled-box", 11, box("Read Together")],
-        ["kids-said", 11],
+        // What was read and said is the week's; the month keeps what an
+        // evaluation or portfolio asks for.
+        ["labeled-box", 11, box("Books to Borrow")],
+        ["labeled-box", 11, box("Progress Notes")],
       ],
-      belowLeft: [at("column-table", 6, 17, 18, 19, table("Hours by Subject", ["Subject", "Wk 1", "Wk 2", "Wk 3", "Wk 4", "Total"], [1.6, 0.8, 0.8, 0.8, 0.8, 0.8]))],
-      belowRight: [at("column-table", 0, 17, 24, 10, table("Work Samples & Tests", ["Date", "Subject", "What"], [0.9, 1.2, 2.6])), at("monthly-review", 0, 27, 24, 9)],
+      // A month touches five weeks more often than not.
+      belowLeft: [at("column-table", 6, 17, 18, 19, table("Hours by Subject", ["Subject", "Wk 1", "Wk 2", "Wk 3", "Wk 4", "Wk 5", "Total"], [1.6, 0.7, 0.7, 0.7, 0.7, 0.7, 0.8]))],
+      belowRight: [at("column-table", 0, 17, 24, 10, table("Work Samples & Tests", ["Date", "Subject", "What"], [0.9, 1.2, 2.6])), at("monthly-review", 0, 27, 24, 9, { linesPerPrompt: 1 })],
     },
     ...UNWRITTEN,
   },
@@ -769,17 +826,20 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       hours: { startTime: "08:00", endTime: "15:00", intervalMinutes: 30 },
       hoursRows: 9,
       sidebar: [
-        ["weekly-priorities", 7],
-        ["labeled-box", 12, box("Supplies to Gather")],
+        ["weekly-priorities", 4],
+        ["labeled-box", 15, box("Supplies to Gather")],
         ["kids-said", 14],
       ],
+      // Each day's lessons under all seven days; the hours written in each
+      // square add up to the month's Hours by Subject.
       belowLeft: [
-        at("lesson-planner", 6, 10, 18, 14),
-        at("habit-tracker", 6, 24, 18, 12, { heading: "Done Today", habits: ["Reading", "Writing", "Math", "Science", "History", "Art & music", "Outside"] }),
+        at("todo-checklist", 6, 10, 18, 12, { heading: "Each Day", dayCount: 3 }),
+        at("habit-tracker", 6, 22, 18, 14, { heading: "Hours Each Day", habits: ["Reading", "Writing", "Math", "Science", "History", "Art & music", "Outside"], totalColumn: true }),
       ],
       belowRight: [
         at("todo-checklist", 0, 10, 24, 12, { heading: "Each Day", dayCount: 4 }),
-        at("books-read", 0, 22, 12, 14, { heading: "Read Together" }),
+        // Unnumbered: the same chapter book carries on from week to week.
+        at("books-read", 0, 22, 12, 14, { heading: "Read Together", rowNumbers: false }),
         at("labeled-box", 12, 22, 12, 14, box("What They Loved")),
       ],
     },
@@ -805,9 +865,13 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         [at("ramadan-log", 0, 0, 24, 36)],
         [
           at("quran-reading-plan", 0, 0, 24, 8),
-          at("prompted-lines", 0, 8, 24, 13, prompts("Intentions for Ramadan", ["What I hope to grow in", "What I want to leave behind", "Who I want to be by Eid"])),
+          at("prompted-lines", 0, 8, 24, 13, prompts("Intentions for Ramadan", ["What I hope to grow in", "What I want to leave behind", "Who I want to be by Eid", "The last ten nights"], 2, { promptLines: [2, 2, 2, 1] })),
           at("labeled-box", 0, 21, 12, 15, box("Duas")),
-          at("column-table", 12, 21, 12, 8, table("Preparing for Eid", ["What", "For whom", "Done"], [1.8, 1.4, 0.8])),
+          // Zakat al-Fitr is due before the Eid prayer. Six wide: a wider
+          // list draws two day columns and prints every item twice.
+          at("todo-checklist", 12, 21, 6, 8, steps("Before Eid", ["Zakat al-Fitr", "Gifts", "Clothes", "Food", "Visits"])),
+          // Fasts missed for illness, travel or a period are made up later.
+          at("column-table", 18, 21, 6, 8, table("Fasts to Make Up", ["Day", "Made up on"], [1, 1.4])),
           at("labeled-box", 12, 29, 12, 7, box("To Keep After Ramadan")),
         ],
       ],
@@ -825,7 +889,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       hoursRows: 12,
       sidebar: [
         ["todo-checklist", 9, steps("Prayers", ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha", "Taraweeh"])],
-        ["column-table", 8, table("Suhoor & Iftar", ["Meal", "What"], [1, 1.8])],
+        ["prompted-lines", 8, prompts("Suhoor & Iftar", ["Suhoor", "Iftar"], 2)],
         ["dhikr-counter", 6],
         ["labeled-box", 13, box("Dua Today")],
       ],
@@ -851,7 +915,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       pages: [
         [
           at("prompted-lines", 0, 0, 24, 15, prompts("My Lenten Promises", ["Prayer: how I'll pray", "Fasting: what I'll give up", "Almsgiving: what I'll give"])),
-          at("progress-meter", 0, 15, 24, 7, { heading: "Forty Days", total: 40, milestoneEvery: 10, numbers: "milestones" }),
+          at("progress-meter", 0, 15, 24, 7, { heading: "Forty Days", total: 40, milestoneEvery: 10, numbers: "milestones", startLabel: "Ash Wednesday", endLabel: "Easter" }),
           at("prompted-lines", 0, 22, 24, 14, prompts("Holy Week", ["Palm Sunday", "Holy Thursday", "Good Friday", "Holy Saturday", "Easter Sunday"], 1)),
         ],
         [
@@ -875,19 +939,22 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 11, box("Grace I Noticed")],
       ],
       belowLeft: [
-        at("habit-tracker", 6, BELOW_ROW, 18, 7, { heading: "Prayer, Fasting, Giving", habits: ["Prayed", "Fasted", "Gave"] }),
+        // The fast kept is the one chosen for Lent, not a fast every day.
+        at("habit-tracker", 6, BELOW_ROW, 18, 7, { heading: "Prayer, Fasting, Giving", habits: ["Prayed", "Kept my fast", "Gave"] }),
         at("labeled-box", 6, 28, 18, 8, box("Sunday's Homily")),
       ],
-      belowRight: [at("examen", 0, BELOW_ROW, 24, 15)],
+      // The examen turned to the week it is printed on, a line under each
+      // movement so all five print.
+      belowRight: [at("examen", 0, BELOW_ROW, 24, 15, { prompts: ["Gratitude", "Ask for light", "Review the week", "Ask forgiveness", "Resolve for the week ahead"], numbered: true, linesPerPrompt: 1 })],
     },
     ...UNWRITTEN,
   },
 
   // ======================================================== HEALTH
   // ------------------------------------------------ perimenopause
-  // The report's "doctor visit prep sheets": symptoms by the day across the
-  // month, cycles kept at the front, triggers and what helps, and the
-  // questions written down before the appointment.
+  // The report's "doctor visit prep sheets": symptoms by the day each week,
+  // bleeding on the month's calendar, cycles kept at the front, triggers and
+  // what helps, and the questions written down before the appointment.
   {
     key: "pages-perimenopause",
     layout: {
@@ -901,7 +968,9 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
           at("prompted-lines", 0, 22, 24, 14, prompts("Questions for My Doctor", ["What I've noticed", "What I want to ask", "What I'd like to try"])),
         ],
         [
-          at("column-table", 0, 0, 12, 36, table("Cycles", ["Started", "Days", "Notes"], [1, 0.6, 2])),
+          // A book holds a few cycles; the doctor also asks since when.
+          at("column-table", 0, 0, 12, 18, table("Cycles", ["Started", "Days", "Notes"], [1, 0.6, 2])),
+          at("column-table", 0, 18, 12, 18, table("When It Started", ["Symptom", "Since", "Notes"], [1.6, 0.9, 2])),
           at("labeled-box", 12, 0, 12, 18, box("What Helps")),
           at("labeled-box", 12, 18, 12, 18, box("Triggers I've Noticed")),
         ],
@@ -919,12 +988,18 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       sidebar: [
         ["labeled-box", 12, box("Patterns")],
         ["labeled-box", 11, box("Wins")],
-        ["labeled-box", 11, box("For My Doctor")],
+        // Questions and refills are the month's job, not every week's.
+        ["labeled-box", 11, box("Doctor & Refills")],
       ],
       // The month's summary for the doctor; the days themselves are noted in
       // the calendar's lines (a 31-day grid needs 33 rows, the zone has 19).
       belowLeft: [at("column-table", 6, 17, 18, 19, table("Symptoms This Month", ["Symptom", "How often", "How bad", "Notes"], [1.6, 1, 1, 2]))],
-      belowRight: [at("mood-chart-month", 0, 17, 24, 9), at("monthly-review", 0, 26, 24, 10)],
+      // Irregular bleeding is the record perimenopause is known by.
+      belowRight: [
+        at("mood-chart-month", 0, 17, 24, 9),
+        at("period-tracker", 0, 26, 12, 10, { heading: "Bleeding", mark: "ring" }),
+        at("monthly-review", 12, 26, 12, 10),
+      ],
     },
     ...UNWRITTEN,
   },
@@ -935,14 +1010,17 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       sidebar: [
-        ["weekly-priorities", 7],
-        ["labeled-box", 12, box("Triggers")],
+        ["weekly-priorities", 4],
+        ["labeled-box", 15, box("Triggers")],
         ["labeled-box", 14, box("What Helped")],
       ],
-      belowLeft: [at("symptom-severity", 6, BELOW_ROW, 18, 15, { items: ["Hot flashes", "Night sweats", "Sleep", "Mood", "Brain fog", "Aches"] })],
+      // A square a day, so the swings show, not one score for the week.
+      // Sleep is the sleep log's, mood the month's chart, bleeding the
+      // month's calendar.
+      belowLeft: [at("symptom-tracker", 6, BELOW_ROW, 18, 15, { heading: "Symptoms, 0 to 3", habits: ["Hot flashes", "Night sweats", "Brain fog", "Joint aches", "Headache", "Anxiety", "Irritability"] })],
       belowRight: [
         at("sleep-log", 0, BELOW_ROW, 12, 15),
-        at("prompted-lines", 12, BELOW_ROW, 12, 15, prompts("Doctor Prep", ["Questions to ask", "Refills needed"], 3)),
+        at("prompted-lines", 12, BELOW_ROW, 12, 15, prompts("This Week", ["What changed", "What I'd try next"], 4)),
       ],
     },
     ...UNWRITTEN,
@@ -951,7 +1029,7 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
   // ------------------------------------------------ low-FODMAP diary
   // For an elimination diet done with a dietitian: the reintroduction tested
   // a group at a time over three days, safe and trigger foods kept; a week
-  // of meals planned and what was eaten beside how it felt.
+  // of what was eaten and how it felt, with times, day by day.
   {
     key: "pages-low-fodmap",
     layout: {
@@ -983,10 +1061,14 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       sidebar: [
         ["grocery-list", 12],
         ["labeled-box", 10, box("Triggers Noticed")],
-        ["labeled-box", 11, box("Wins")],
+        // A diary is read by the phase and the food being tested.
+        ["prompted-lines", 11, prompts("This Week", ["Phase", "Testing", "Serving each day"], 1)],
       ],
-      belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("column-table", 0, BELOW_ROW, 24, 15, table("Food & Symptoms", ["Day", "Ate", "Symptoms", "How bad, 0 to 3"], [0.7, 2.4, 2, 1]))],
+      // A food diary under each day, in order, as a dietitian reads one: the
+      // time, what was eaten and how it felt, 0 to 3. Symptoms come hours
+      // after a meal. Meals planned ahead go on the hours.
+      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { heading: "Food & Symptoms, with Times", dayCount: 3 })],
+      belowRight: [at("todo-checklist", 0, BELOW_ROW, 24, 15, { heading: "Food & Symptoms, with Times", dayCount: 4 })],
     },
     ...UNWRITTEN,
   },
@@ -994,8 +1076,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
   // ======================================================== MONEY
   // ------------------------------------------------ financial independence
   // The number, how it was worked out and why it matters; accounts, net
-  // worth and the savings rate by month; a month's budget, what came in,
-  // went out and was saved. Your own sums: no formula printed for you.
+  // worth and the savings rate by month; a month's budget, the accounts'
+  // balances and the renewals due. Your own sums: no formula printed for you.
   {
     key: "pages-fire",
     layout: {
@@ -1030,9 +1112,11 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
         ["labeled-box", 11, box("Ideas to Save or Earn")],
       ],
       belowLeft: [at("budget", 6, 17, 18, 19)],
+      // The month's balances feed the front's net worth; the savings rate is
+      // the front's too. Only the renewals due are this month's to decide.
       belowRight: [
-        at("column-table", 0, 17, 24, 9, table("This Month", ["Income", "Spent", "Saved", "Rate"], [1, 1, 1, 1])),
-        at("subscription-audit", 0, 26, 12, 10),
+        at("column-table", 0, 17, 24, 9, table("Balances", ["Account", "Last month", "This month", "Change"], [2, 1.1, 1.1, 1])),
+        at("subscription-audit", 0, 26, 12, 10, { heading: "Renewing This Month" }),
         at("monthly-review", 12, 26, 12, 10),
       ],
     },
@@ -1092,20 +1176,23 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       sidebar: [
         ["weekly-priorities", 7, { heading: "This Week in the Garden" }],
-        ["labeled-box", 13, box("Harvested")],
+        // Harvests go in the month's log; the week keeps the rain, frost
+        // and heat.
+        ["labeled-box", 13, box("Weather")],
         ["labeled-box", 13, box("Noticed")],
       ],
-      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 14, { heading: "Garden Jobs", dayCount: 3 }), at("water-plants", 6, LAST, 18, 1)],
-      belowRight: [at("todo-checklist", 0, BELOW_ROW, 24, 14, { heading: "Garden Jobs", dayCount: 4 }), at("water-plants", 0, LAST, 24, 1)],
+      // One watering can a day, ticked when the garden was watered.
+      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 14, { heading: "Garden Jobs", dayCount: 3 }), at("water-plants", 6, LAST, 18, 1, { heading: "Watered", icon: "watering-can", count: 1 })],
+      belowRight: [at("todo-checklist", 0, BELOW_ROW, 24, 14, { heading: "Garden Jobs", dayCount: 4 }), at("water-plants", 0, LAST, 24, 1, { heading: "Watered", icon: "watering-can", count: 1 })],
     },
     ...UNWRITTEN,
   },
 
   // ------------------------------------------------ travel
   // A trip or a month somewhere: itinerary, budget, packing, bookings and the
-  // list before leaving at the front; a slow-travel month of where you live,
-  // places to work, spending and days left on the stay; a day page that is
-  // the trip diary.
+  // list before leaving and the days on a visa at the front; a slow-travel
+  // month of where you live, places to work, spending and what to see; a
+  // day page that is the trip diary.
   {
     key: "pages-travel",
     layout: {
@@ -1113,12 +1200,16 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       font: "sans",
       weekStartsMonday: true,
       pages: [
-        [at("trip-itinerary", 0, 0, 24, 20), at("travel-budget", 0, 20, 12, 16), at("packing-list", 12, 20, 12, 16)],
+        // The printed lists are six wide: a wider one draws two day columns
+        // and prints every item twice.
+        [at("trip-itinerary", 0, 0, 24, 20), at("travel-budget", 0, 20, 18, 16), at("packing-list", 18, 20, 6, 16)],
         [
           at("column-table", 0, 0, 24, 12, table("Bookings", ["What", "Confirmation", "Date"], [2, 1.6, 0.9])),
-          at("todo-checklist", 0, 12, 12, 12, steps("Before I Go", ["Passport and visa", "Travel insurance", "Tell the bank", "Phone plan", "Copies of documents", "Home sorted"])),
-          at("places-been", 12, 12, 12, 12, { heading: "Want to Go" }),
-          at("labeled-box", 0, 24, 24, 12, box("Emergency Contacts")),
+          at("todo-checklist", 0, 12, 6, 12, steps("Before I Go", ["Passport and visa", "Travel insurance", "Tell the bank", "Phone plan", "Copies of documents", "Home sorted"])),
+          at("places-been", 6, 12, 18, 12, { heading: "Want to Go" }),
+          at("labeled-box", 0, 24, 24, 6, box("Emergency Contacts")),
+          // A stay is counted once, across the months it crosses.
+          at("progress-meter", 0, 30, 24, 6, { heading: "Days on My Visa", total: 90, milestoneEvery: 30, numbers: "milestones" }),
         ],
       ],
     },
@@ -1138,9 +1229,8 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       ],
       belowLeft: [at("spending-log", 6, 17, 18, 19)],
       belowRight: [
-        at("progress-meter", 0, 17, 24, 6, { heading: "Days Here", total: 90, milestoneEvery: 30, numbers: "milestones" }),
-        at("todo-checklist", 0, 23, 12, 13, { heading: "Want to See", dayCount: 1 }),
-        at("trip-journal", 12, 23, 12, 13, { heading: "The Month", prompts: ["Best moment", "Worth remembering"] }),
+        at("todo-checklist", 0, 17, 12, 19, { heading: "Want to See", dayCount: 1 }),
+        at("trip-journal", 12, 17, 12, 19, { heading: "The Month", prompts: ["Best moment", "Worth remembering"] }),
       ],
     },
     ...UNWRITTEN,
@@ -1156,10 +1246,10 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       hoursRows: 10,
       sidebar: [
         ["trip-journal", 14],
-        ["column-table", 10, table("Spent", ["What", "Cost"], [1.6, 0.9])],
+        ["column-table", 10, table("Spent", ["What", "Cost"], [1.6, 0.9], { totalsRow: true, totalsLabel: "Total" })],
         ["labeled-box", 12, box("Eat Here")],
       ],
-      below: [at("labeled-box", 6, 11, 18, 13, box("Today")), at("sketch-box", 6, 24, 18, 12, { heading: "Tickets & Sketches" })],
+      below: [at("labeled-box", 6, 11, 18, 13, box("Diary")), at("sketch-box", 6, 24, 18, 12, { heading: "Tickets & Sketches" })],
     },
     ...UNWRITTEN,
   },
@@ -1198,13 +1288,15 @@ export const LIBRARY_SPREADS_2: HeroSpread[] = [
       weekStartsMonday: true,
       hours: OFF,
       sidebar: [
-        ["prompted-lines", 15, prompts("Session Prep", ["Strong start", "Scenes", "Secrets and clues"])],
+        ["prompted-lines", 15, prompts("Session Prep", ["Strong start", "Scenes", "Locations"])],
         ["labeled-box", 9, box("NPCs to Bring In")],
         ["labeled-box", 9, box("Loot")],
       ],
       belowLeft: [at("sketch-box", 6, BELOW_ROW, 18, 15, { heading: "Map" })],
+      // Secrets and clues want a numbered list of about ten, not a few
+      // lines in the sidebar; what happened is After the Session's.
       belowRight: [
-        at("labeled-box", 0, BELOW_ROW, 12, 15, box("Session Notes")),
+        at("labeled-box", 0, BELOW_ROW, 12, 15, { ...box("Secrets & Clues"), lineStart: "numbers" }),
         at("prompted-lines", 12, BELOW_ROW, 12, 15, prompts("After the Session", ["What the players did", "Threads to pick up", "Next time"])),
       ],
     },

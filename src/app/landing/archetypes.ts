@@ -224,9 +224,11 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // What is coming up, not "Exams": most weeks of a term have none, and
+      // the ones there are sit on the calendar already (2026-10-29).
       sidebar: [
         ["weekly-priorities", 8],
-        ["labeled-box", 7, box("Exams", true)],
+        ["labeled-box", 7, box("Coming Up", true)],
         ["sleep-chart", 8],
         ["brain-dump", 10],
       ],
@@ -240,9 +242,12 @@ export const PEOPLE: Person[] = [
         at("focus-blocks", 6, BELOW_ROW + 13, 18, 1),
         at("water-week", 6, BELOW_ROW + 14, 18, 1),
       ],
+      // A done list where "After Midterms" was: true on every week of a
+      // term, where midterms come when they come (Andrew, 2026-10-29: "it
+      // would be difficult to know when a specific students midterms are").
       belowRight: [
         at("habit-tracker", 0, BELOW_ROW, 12, 13, { heading: "This Week" }),
-        at("labeled-box", 12, BELOW_ROW, 12, 13, box("After Midterms", true)),
+        at("done-list", 12, BELOW_ROW, 12, 13),
         at("focus-blocks", 0, BELOW_ROW + 13, 24, 1),
         at("water-week", 0, BELOW_ROW + 14, 24, 1),
       ],
@@ -277,9 +282,10 @@ export const PEOPLE: Person[] = [
     banner: { text: "midterms", from: 0, to: 1 },
     lists: {
       "weekly-priorities": ["orgo ch 9-14", "lab report!!", "call Lola back", "pay phone bill"],
-      exams: ["ORGO thu 9am rm 204", "BIO prac fri 2pm", "stats quiz mon?"],
+      // Past this week: what the calendar does not show yet.
+      "coming up": ["stats quiz mon", "eng essay due 12th", "orgo ps 8 next thu", "register for spring!!"],
       "brain-dump": ["why did I take orgo", "return library book ($$$)", "email prof re: curve??", "new climbing shoes?", "mom's bday the 14th"],
-      "after midterms": ["KARAOKE fri", "sleep 12 hours", "dye hair??", "visit Lola", "buy the boots", "clean room (lol)"],
+      "done!": ["ORGO midterm. survived.", "BIO practical!!", "lab report in", "called Lola back", "climbed (1h, honest)", "flashcards ch 12"],
     },
     tables: {
       assignments: [
@@ -297,10 +303,6 @@ export const PEOPLE: Person[] = [
   },
   {
     key: "nine-to-five",
-    // Desert patterns - terraces, dunes, a stepped diamond - for each day of
-    // leave, run on across the days taken together.
-    fillFamily: "southwest",
-    marks: { meter: "pattern" },
     archetype: "9-to-5",
     name: "Marcus",
     age: 33,
@@ -314,11 +316,15 @@ export const PEOPLE: Person[] = [
         ["waiting-on", 10],
         ["labeled-box", 14, box("Weekend", true)],
       ],
-      belowLeft: [at("time-blocking-column", 6, BELOW_ROW, 18, 6), at("todo-checklist", 6, BELOW_ROW + 6, 18, 9, { dayCount: 3 })],
+      // A to-do list under the days, not day parts: the hours above already
+      // block the day out. And next week, not the PTO meter: a year's leave
+      // cannot be counted on a page that starts again every week (the
+      // night-nurse front pages carry it).
+      belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
       belowRight: [
         at("eisenhower-matrix", 0, BELOW_ROW, 12, 15),
         at("one-on-one-agenda", 12, BELOW_ROW, 12, 10),
-        at("pto-meter", 12, BELOW_ROW + 10, 12, 5),
+        at("labeled-box", 12, BELOW_ROW + 10, 12, 5, box("Next Week", true)),
       ],
     },
     // The reference photo's: felt-tip capitals throughout.
@@ -354,6 +360,7 @@ export const PEOPLE: Person[] = [
       weekend: ["skate park sat early", "laundry (finally)", "call dad", "fix headphones", "new grip tape"],
       "todo-checklist": ["expense report", "reply to Hal (be nice)", "book Q4 offsite", "update CRM", "send Henley contract", "new badge", "1:1 notes", "renew parking", "clean desk"],
       "1:1 agenda": ["won Henley acct!", "IT laptop - 3 wks", "ask re: team lead role", "Q4 targets?"],
+      "next week": ["Q4 kickoff mon", "Henley onboarding", "Theo's bday fri"],
     },
     tables: {
       "waiting-on": [
@@ -363,13 +370,13 @@ export const PEOPLE: Person[] = [
       ],
     },
     // Kept word for word from the first hero: "doomscroll" in Delete.
+    // In the catalogue's reading order: do, schedule, delegate, delete.
     eisenhower: [
-      ["dentist", "plan Q4"],
       ["Q3 deck!!", "reply to Ana"],
-      ["doomscroll", "re-sort inbox"],
+      ["dentist", "plan Q4"],
       ["book venue", "order snacks"],
+      ["doomscroll", "re-sort inbox"],
     ],
-    fills: { pto: 9 },
   },
   {
     key: "nurse",
@@ -381,17 +388,25 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // A sleep plan, not the bedtime chart: its 9pm to 2am scale has no
+      // room for bed at 8am after a night. Sleep is logged once, in the
+      // sleep log, so neither the rest days nor self-care ask after it
+      // again (self-care's default "Slept 7h" is dropped here). Rest is the
+      // Rest box's on the right page, so self-care's "Rest" goes too and
+      // its rows left blank are hers to name. The shift bag is the same
+      // every shift, so it is printed to tick, with lines left for the
+      // extras.
       sidebar: [
-        ["sleep-chart", 8],
-        ["self-care-checklist", 11],
-        ["labeled-box", 14, box("Shift Bag", true)],
+        ["labeled-box", 8, box("Sleep Plan", true)],
+        ["self-care-checklist", 11, { habits: ["Moved", "Outside", "Ate well", "Reached out"] }],
+        ["todo-checklist", 14, { heading: "Shift Bag", items: ["Badge", "Stethoscope", "Pens and tape", "Snacks and water", "Phone charger", "Spare scrubs"], dayCount: 1 }],
       ],
       // Water a day at a time, under every day: in the sidebar it was one
       // run of drops under no day at all (2026-10-19).
       belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 6), at("sleep-log", 6, BELOW_ROW + 6, 18, 8), at("water-week", 6, BELOW_ROW + 14, 18, 1)],
       belowRight: [
         at("labeled-box", 0, BELOW_ROW, 12, 14, box("After Shift", true)),
-        at("rest-day-marker", 12, BELOW_ROW, 12, 5),
+        at("rest-day-marker", 12, BELOW_ROW, 12, 5, { habits: ["Rest day", "Active rest"] }),
         at("todo-checklist", 12, BELOW_ROW + 5, 12, 9, { dayCount: 2 }),
         at("water-week", 0, BELOW_ROW + 14, 24, 1),
       ],
@@ -424,14 +439,14 @@ export const PEOPLE: Person[] = [
     ],
     banner: { text: "days off", from: 2, to: 3 },
     lists: {
-      "shift bag": ["badge + lanyard", "snacks x3", "compression socks", "charger!!", "lip balm", "spare scrubs"],
+      // Under the printed list: this week's extras.
+      "shift bag": ["lip balm", "compression socks", "hand cream"],
+      "sleep plan": ["nap 1-4 before night 1", "anchor sleep 9a-2p", "flip back sun"],
       // "survive night 3 of 3": from the Gemini archetypes report (2026-10-06).
       "after shift": ["survive night 3 of 3", "shower > food > bed", "blackout curtains", "text mom I'm alive", "1 episode max"],
       "todo-checklist": ["renew BLS cert", "pay rent", "return Asha's dish", "book dentist", "vet for Mochi", "new shoes"],
     },
     strips: { water: [6, 5, 7, 4] },
-    // Monday, the one night home: 11pm. Then bed at 8am - off the chart.
-    charts: { bedtime: [3] },
     tables: {
       "sleep-log": [
         ["mon", "11:30p", "7:00a", "7.5", "ok"],
@@ -456,11 +471,15 @@ export const PEOPLE: Person[] = [
         ["labeled-box", 10, box("Copies to Make", true)],
         ["labeled-box", 15, box("Parent Emails", true)],
       ],
-      belowLeft: [at("lesson-planner", 6, BELOW_ROW, 18, 15)],
+      // Classes down and days across, as a plan book is, not a row a period
+      // for one day's topics. After school and something for themselves,
+      // not Dayo's robotics club and Saturday gig, which print for every
+      // teacher who starts from this week.
+      belowLeft: [at("lesson-planner", 6, BELOW_ROW, 18, 15, { columns: ["Class", "Mon", "Tue", "Wed", "Thu", "Fri"], weights: [0.8, 1, 1, 1, 1, 1] })],
       belowRight: [
         at("grading-tracker", 0, BELOW_ROW, 12, 15),
-        at("labeled-box", 12, BELOW_ROW, 12, 8, box("Robotics", true)),
-        at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Setlist Sat", true)),
+        at("labeled-box", 12, BELOW_ROW, 12, 8, box("After School", true)),
+        at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("For Me", true)),
       ],
     },
     hand: {
@@ -495,16 +514,15 @@ export const PEOPLE: Person[] = [
       "weekly-priorities": ["report cards!!", "grade 120 labs", "fix robot motor", "sub plans for 14th"],
       "copies to make": ["7A quiz x32", "lab sheet x96", "permission slips", "seating chart"],
       "parent emails": ["Ms. Ortiz - re: Leo", "Mr. Kim - late work", "the Bakers - thank you!", "Ms. Hale (call back)"],
-      robotics: ["fix left motor", "order zip ties", "practice run thu", "permission slips"],
-      "setlist sat": ["Valerie", "Superstition", "Use Somebody", "encore: Sweet Disposition"],
+      "after school": ["robotics: fix left motor", "order zip ties", "practice run thu", "permission slips"],
+      "for me": ["setlist:", "Valerie", "Superstition", "Use Somebody", "encore: Sweet Disposition"],
     },
     tables: {
       "lesson plan": [
-        ["1", "cell structure", "slides + scopes"],
-        ["2", "cell structure", "same"],
-        ["4", "lab: onion cells", "slides, iodine"],
-        ["5", "review", "quiz game"],
-        ["6", "quiz", "copies!"],
+        ["7A", "cells", "scopes", "onion lab", "review", "quiz"],
+        ["7B", "cells", "scopes", "onion lab", "review", "quiz"],
+        ["7C", "cells", "onion lab", "lab", "review", "quiz"],
+        ["7D", "cells", "scopes", "onion lab", "quiz game", "quiz"],
       ],
       grading: [
         ["7A", "lab report", "fri", "✓"],
@@ -524,10 +542,12 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: false,
+      // What to make and what to buy for it, which every maker has every
+      // week: a kiln and a market each week are Ines's.
       sidebar: [
         ["weekly-priorities", 8],
-        ["labeled-box", 10, box("Kiln Schedule", true)],
-        ["labeled-box", 15, box("Market Packing", true)],
+        ["labeled-box", 10, box("To Make", true)],
+        ["labeled-box", 15, box("Supplies", true)],
       ],
       belowLeft: [at("order-tracker", 6, BELOW_ROW, 18, 15)],
       belowRight: [
@@ -566,8 +586,8 @@ export const PEOPLE: Person[] = [
     banner: { text: "market!", from: 3, to: 3 },
     lists: {
       "weekly-priorities": ["restock mugs (20)", "ship 4 orders", "market float $$", "reply to wholesale lady"],
-      "kiln schedule": ["wed - bisque", "thu - glaze ^6", "fri - unload + sort", "slow cool!!"],
-      "market packing": ["tent + weights!!", "card reader charged", "bubble wrap", "price tags", "float: $150", "snacks + water"],
+      "to make": ["20 mugs (restock)", "bud vases x4", "custom mug #1045", "glaze test tiles"],
+      supplies: ["clay 50lb", "speckle glaze", "bubble wrap", "small boxes x10", "price tags", "kiln cones ^6"],
     },
     tables: {
       orders: [
@@ -608,11 +628,19 @@ export const PEOPLE: Person[] = [
         ["grocery-list", 13],
         ["labeled-box", 12, box("School Stuff", true)],
       ],
-      belowLeft: [at("meal-planner", 6, BELOW_ROW, 18, 6), at("chore-chart", 6, BELOW_ROW + 6, 18, 9)],
+      // Meals in a table a day a row, to write what is for dinner in: the
+      // meal planner's cells are tick boxes. Ten rows, so all seven days
+      // have one (at nine, Saturday had none); so three chores, the most
+      // five rows hold. Something for her, not the gift
+      // log, whose year of ideas belongs at the front (month-family has it).
+      belowLeft: [
+        at("column-table", 6, BELOW_ROW, 18, 10, { heading: "Meals", columns: ["Day", "Breakfast", "Lunch", "Dinner"], weights: [0.6, 1, 1, 1.2] }),
+        at("chore-chart", 6, BELOW_ROW + 10, 18, 5, { habits: ["Dishes", "Tidy", "Laundry"] }),
+      ],
       belowRight: [
         at("todo-checklist", 0, BELOW_ROW, 24, 9, { dayCount: 4 }),
         at("kids-said", 0, BELOW_ROW + 9, 12, 6),
-        at("gift-log", 12, BELOW_ROW + 9, 12, 6),
+        at("labeled-box", 12, BELOW_ROW + 9, 12, 6, box("For Me", true)),
       ],
     },
     hand: {
@@ -648,11 +676,17 @@ export const PEOPLE: Person[] = [
       "school stuff": ["picture day mon", "library bag tue", "field trip $ by thu", "Ada: show + tell fri"],
       "kids said": ["Ada: 'my legs are bored'", "Milo: 'is lava a soup?'"],
       "todo-checklist": ["call pediatrician", "wrap Noa's gift", "library books back", "book car service", "sign field trip form", "school shoes", "RSVP Sam's bday"],
+      "for me": ["finish my book", "bath, door locked", "call Jess back"],
     },
     tables: {
-      "gift-log": [
-        ["Noa", "lego set", "$25", "✓"],
-        ["Mom", "scarf?", "$40", ""],
+      meals: [
+        ["sun", "pancakes!", "picnic", "roast chicken"],
+        ["mon", "toast", "leftovers", "chicken wraps"],
+        ["tue", "oats", "work", "pasta bake"],
+        ["wed", "eggs", "soup", "tacos"],
+        ["thu", "oats", "work", "fish fingers"],
+        ["fri", "toast", "leftovers", "PIZZA"],
+        ["sat", "waffles", "party", "whatever's left"],
       ],
     },
   },
@@ -666,17 +700,22 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // A runner's week every week, not race week: a race comes a few times
+      // a year, and its kit list is the training-block pages' race-day
+      // checklist. The plan's rows are a runner's, not a gym split; the
+      // lifts go last week, this week, next, since one page cannot hold
+      // weeks 1 to 4.
       sidebar: [
         ["stretch-routine", 10],
         ["energy-chart", 8],
         ["sleep-chart", 8],
-        ["labeled-box", 7, box("Race Kit", true)],
+        ["labeled-box", 7, box("How My Body Feels", true)],
       ],
       belowLeft: [at("run-log", 6, BELOW_ROW, 18, 7), at("workout-log", 6, BELOW_ROW + 7, 18, 8)],
       belowRight: [
-        at("weekly-workout-plan", 0, BELOW_ROW, 24, 7),
-        at("progressive-overload", 0, BELOW_ROW + 7, 12, 8),
-        at("labeled-box", 12, BELOW_ROW + 7, 12, 8, box("Race Morning", true)),
+        at("weekly-workout-plan", 0, BELOW_ROW, 24, 7, { habits: ["Easy run", "Speed", "Long run", "Strength", "Rest"] }),
+        at("progressive-overload", 0, BELOW_ROW + 7, 12, 8, { columns: ["Lift", "Last wk", "This wk", "Next wk"], weights: [2.2, 1, 1, 1] }),
+        at("labeled-box", 12, BELOW_ROW + 7, 12, 8, box("Next Week", true)),
       ],
     },
     hand: {
@@ -706,8 +745,8 @@ export const PEOPLE: Person[] = [
     ],
     banner: { text: "taper", from: 0, to: 2 },
     lists: {
-      "race kit": ["bib #1147 + pins", "gels x3", "the GOOD socks", "watch charged"],
-      "race morning": ["5:30 oats + banana", "coffee (small)", "leave 6:40", "DON'T start fast", "smile at mile 10"],
+      "how my body feels": ["L calf tight after 400s", "foam roll nightly", "legs fresh by thu!"],
+      "next week": ["rest mon (earned it)", "recovery jog tue", "lift again thu", "boulder w/ Kat!!"],
     },
     tables: {
       "run-log": [
@@ -721,9 +760,10 @@ export const PEOPLE: Person[] = [
         ["split squat", "2", "8", "20s"],
         ["plank", "3", "45s", "-"],
       ],
+      // Last week, this (taper: light), next.
       "progressive-overload": [
-        ["squat", "115", "120", "125", "95"],
-        ["deadlift", "155", "160", "165", "--"],
+        ["squat", "115", "95", "120"],
+        ["deadlift", "155", "--", "160"],
       ],
     },
     // High, high, flat after Tuesday's intervals, coming back; early nights.
@@ -744,10 +784,12 @@ export const PEOPLE: Person[] = [
         ["brain-dump", 16],
         ["done-list", 12],
       ],
-      // Focus blocks over every day, on both pages (2026-10-19).
-      belowLeft: [at("focus-blocks", 6, BELOW_ROW, 18, 1), at("todo-checklist", 6, BELOW_ROW + 1, 18, 14, { dayCount: 3 })],
+      // Focus blocks over every day, on both pages (2026-10-19). Five a day,
+      // not ten: a row of empty marks reads as failing (the research in
+      // moduleCatalogue.ts's star-count note).
+      belowLeft: [at("focus-blocks", 6, BELOW_ROW, 18, 1, { count: 5 }), at("todo-checklist", 6, BELOW_ROW + 1, 18, 14, { dayCount: 3 })],
       belowRight: [
-        at("focus-blocks", 0, BELOW_ROW, 24, 1),
+        at("focus-blocks", 0, BELOW_ROW, 24, 1, { count: 5 }),
         at("project-tracker", 0, BELOW_ROW + 1, 24, 6),
         at("waiting-on", 0, BELOW_ROW + 7, 12, 8),
         at("dopamine-menu", 12, BELOW_ROW + 7, 12, 8),
@@ -799,7 +841,7 @@ export const PEOPLE: Person[] = [
         ["landlord", "fix sink", "tue"],
       ],
     },
-    strips: { "focus blocks": [2, 7, 0, 3] },
+    strips: { "focus blocks": [2, 5, 0, 3] },
   },
   {
     key: "philosophy",
@@ -811,17 +853,23 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "serif",
       weekStartsMonday: false,
+      // The week ahead and the week reviewed: the morning and evening pages
+      // are a day's practice, and this is a week (day-stoic has them a day
+      // at a time). A theme for the week, not a printed quotation, which
+      // would be the same Seneca on every week of the book.
       sidebar: [
-        ["stoic-morning-page", 12],
+        [
+          "stoic-morning-page",
+          12,
+          { heading: "Week Ahead", prompts: ["What is up to me this week?", "What obstacle should I expect?", "Which virtue will I need?"] },
+        ],
         ["dichotomy-of-control", 9],
-        // Seneca, Letters 13, in Richard Gummere's translation (Loeb,
-        // 1917): public domain, and these are its words.
-        ["quote-block", 5, { heading: "", body: "We suffer more often in imagination than in reality.", attribution: "Seneca, Letters 13 (tr. Gummere)" }],
+        ["labeled-box", 5, box("Theme", true)],
         ["labeled-box", 7, box("Reading", true)],
       ],
       // Franklin's virtue chart: his thirteen, from his Autobiography.
       belowLeft: [at("franklin-virtues", 6, BELOW_ROW, 18, 15)],
-      belowRight: [at("stoic-evening-review", 0, BELOW_ROW, 12, 15), at("commonplace-book", 12, BELOW_ROW, 12, 15)],
+      belowRight: [at("stoic-evening-review", 0, BELOW_ROW, 12, 15, { heading: "Week Review" }), at("commonplace-book", 12, BELOW_ROW, 12, 15)],
     },
     hand: {
       words: { font: "homemade", caps: false, scale: 0.8 },
@@ -854,9 +902,12 @@ export const PEOPLE: Person[] = [
     ],
     banner: { text: "install", from: 0, to: 1 },
     lists: {
-      "stoic-morning-page": ["my temper w/ June in the car", "the Henley install", "patience", "measure twice"],
+      // A blank moves on to the next prompt: each answer under its question.
+      "stoic-morning-page": ["my temper w/ June in the car", "", "the Henley install", "", "patience", "measure twice"],
+      // Seneca, Letters 13: in his own hand, the week's theme.
+      theme: ["imagination > reality", "(Letters 13)"],
       reading: ["Letters 13-20", "Meditations bk 4"],
-      "stoic-evening-review": ["snapped at Eli re: dovetails", "kept my word to Ruth", "tomorrow: say sorry first"],
+      "stoic-evening-review": ["snapped at Eli re: dovetails", "", "kept my word to Ruth", "", "mon: say sorry first"],
       commonplace: ["Ench. 1 - what is up to me", "Grandad: 'the wood tells you'", "Letters 13 - imagination > reality"],
     },
     tables: {
@@ -877,8 +928,11 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // The scale rates the week, not "Today": it is printed once on a week.
+      // Questions for the doctor, not appointments, which the calendar
+      // prints on their days.
       sidebar: [
-        ["energy-pain-scale", 8, { scaleMax: 5 }],
+        ["energy-pain-scale", 8, { scaleMax: 5, heading: "Overall This Week" }],
         ["labeled-box", 12, box("Pacing Plan", true)],
         ["labeled-box", 13, box("Small Wins", true)],
       ],
@@ -891,7 +945,7 @@ export const PEOPLE: Person[] = [
       ],
       belowRight: [
         at("energy-chart", 0, BELOW_ROW, 12, 8),
-        at("labeled-box", 0, BELOW_ROW + 8, 12, 5, box("Appointments", true)),
+        at("labeled-box", 0, BELOW_ROW + 8, 12, 5, box("Questions for the Doctor", true)),
         at("labeled-box", 12, BELOW_ROW, 12, 13, box("Rest Menu", true)),
         at("spoon-count", 0, BELOW_ROW + 13, 24, 2),
       ],
@@ -927,11 +981,11 @@ export const PEOPLE: Person[] = [
       "pacing plan": ["shower = sit on stool", "one big thing a day", "rest BEFORE tired", "no to Sat brunch"],
       // The spoons line is after one in the Gemini archetypes report.
       "small wins": ["crash day - did nothing, that counts", "4 spoons. shower took 3.", "walked to the corner", "sent the email"],
-      appointments: ["GP tue 11", "physio thu 9", "bloods - book!!"],
+      "questions for the doctor": ["GP: sleep meds?", "physio: stairs ok?", "book bloods!!"],
       "rest menu": ["crochet the blanket", "audiobook - ch 7", "window birds", "warm bath", "call Amira"],
     },
     // Energy, pain, mood, sleep, out of five.
-    ratings: { today: [2, 4, 2, 3] },
+    ratings: { "overall this week": [2, 4, 2, 3] },
     charts: { energy: [3, 2, 4, 2] },
     strips: { spoons: [9, 7, 10, 8] },
   },
@@ -949,13 +1003,15 @@ export const PEOPLE: Person[] = [
       sidebar: [
         ["prayer-list", 12],
         ["gratitude-three", 6],
-        ["labeled-box", 15, box("Study Group Wed", true)],
+        // No weekday in a printed heading, and no choir assumed: her group
+        // meets on Wednesdays and she sings, which the next person may not.
+        ["labeled-box", 15, box("Small Group", true)],
       ],
       belowLeft: [at("soap-study", 6, BELOW_ROW, 18, 15)],
       belowRight: [
         at("sermon-notes", 0, BELOW_ROW, 12, 15),
         at("habit-tracker", 12, BELOW_ROW, 12, 8, { heading: "This Week" }),
-        at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Choir", true)),
+        at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Serving", true)),
       ],
     },
     hand: {
@@ -988,20 +1044,16 @@ export const PEOPLE: Person[] = [
     lists: {
       "prayer-list": ["Mrs. Pell - hip", "Dad's tests", "Zoe's new school", "the Okafors", "patience (me)"],
       "gratitude-three": ["the sourdough rose!", "Zoe's laugh", "a quiet morning"],
-      "study group wed": ["ch. 4 - read ahead", "bring tea + cups", "questions 1-6", "ask Dana to pray"],
+      "small group": ["ch. 4 - read ahead", "bring tea + cups", "questions 1-6", "ask Dana to pray"],
       // Psalm 46:10, King James Version: public domain.
       "soap-study": ["Ps 46:10 - Be still, and know that I am God", "God is in charge - not me", "stop checking email 40x", "help me rest in You"],
       "sermon-notes": ["Pastor Mike - Matt 6:25-34", "worry adds nothing", "seek first", "1 worry -> 1 prayer"],
-      choir: ["alto pt 2, bars 30-44", "learn the descant?"],
+      serving: ["choir: alto pt 2, bars 30-44", "learn the descant?", "bread for the potluck"],
     },
     trackers: { "this week": ["read a chapter", "pray", "walk", "water", "call Mom"] },
   },
   {
     key: "faith-muslim",
-    // Scales, waves and triangles in the Juz boxes, often run on across
-    // two or three parts.
-    fillFamily: "tiles",
-    marks: { meter: "pattern" },
     archetype: "Faith (Muslim)",
     name: "Yusuf",
     age: 24,
@@ -1011,17 +1063,20 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // A box for the week's Quran, not the thirty-juz plan, whose 1 to 30
+      // would start again on every week (the Ramadan pages carry it). Work
+      // and family, not Yusuf's thesis and this week's nikah.
       sidebar: [
         ["weekly-priorities", 8],
-        ["quran-reading-plan", 6],
+        ["labeled-box", 6, box("Quran", true)],
         ["gratitude-three", 6],
         ["labeled-box", 13, box("Halaqa Notes", true)],
       ],
       belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
       belowRight: [
         at("salah-tracker", 0, BELOW_ROW, 24, 9),
-        at("labeled-box", 0, BELOW_ROW + 9, 12, 6, box("Thesis", true)),
-        at("labeled-box", 12, BELOW_ROW + 9, 12, 6, box("Nikah Gifts", true)),
+        at("labeled-box", 0, BELOW_ROW + 9, 12, 6, box("Work", true)),
+        at("labeled-box", 12, BELOW_ROW + 9, 12, 6, box("Family", true)),
       ],
     },
     hand: {
@@ -1056,10 +1111,10 @@ export const PEOPLE: Person[] = [
       "gratitude-three": ["Mama's soup", "the sim finally ran", "Amira, happy"],
       "halaqa notes": ["sabr - patience", "small deeds, consistently", "bring dates Wed"],
       "todo-checklist": ["fix plot axes", "lit review x3", "email Prof. Haddad", "renew lab key", "gift for Amira", "iron shirt", "book barber"],
-      thesis: ["ch.3 - 2,100 / 6,000 words", "fig 4 redo", "ask about the conf"],
-      "nikah gifts": ["Amira - frame?", "flowers for Khala", "card!!"],
+      work: ["ch.3 - 2,100 / 6,000 words", "fig 4 redo", "ask about the conf"],
+      family: ["Amira - frame?", "flowers for Khala", "card!!"],
+      quran: ["al-Kahf on Friday", "a page after Fajr"],
     },
-    fills: { "quran-reading-plan": 12 },
   },
   {
     key: "faith-jewish",
@@ -1072,15 +1127,18 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "serif",
       weekStartsMonday: false,
+      // The middah under its own heading, not "Patience": a trait is worked
+      // on for a week or more and then the next, and a printed heading is
+      // the same on every week. Family, not Miriam's grandkids.
       sidebar: [
         ["parashah-study", 11],
-        ["mussar-trait", 6, { heading: "Patience" }],
+        ["mussar-trait", 6],
         ["labeled-box", 16, box("Shabbat", true)],
       ],
       belowLeft: [at("todo-checklist", 6, BELOW_ROW, 18, 15, { dayCount: 3 })],
       belowRight: [
         at("grocery-list", 0, BELOW_ROW, 12, 15),
-        at("labeled-box", 12, BELOW_ROW, 12, 8, box("Grandkids", true)),
+        at("labeled-box", 12, BELOW_ROW, 12, 8, box("Family", true)),
         at("labeled-box", 12, BELOW_ROW + 8, 12, 7, box("Reading", true)),
       ],
     },
@@ -1114,17 +1172,13 @@ export const PEOPLE: Person[] = [
       "parashah-study": ["read Sun + Thu", "the words 'very good'", "ask Rabbi R. about v.12"],
       shabbat: ["challah x2", "soup Thu night", "table for 6", "flowers", "invite the Levins"],
       "grocery-list": ["flour 5lb", "eggs", "chicken", "carrots", "dill", "wine", "flowers"],
-      grandkids: ["zoo sun - snacks!", "Eli's recital 23rd", "puzzle for Noam"],
+      family: ["zoo sun - snacks!", "Eli's recital 23rd", "puzzle for Noam"],
       reading: ["Middlemarch ch 20-30", "the new Ferrante?"],
       "todo-checklist": ["library: return x3", "call Debbie", "doctor - bloods", "fix the hinge", "card for Avi", "host book club?"],
     },
   },
   {
     key: "recovery",
-    // A small kolam-like loop round the dots for each meeting, the way a
-    // kolam is drawn each morning; the odd day missed.
-    fillFamily: "kolam",
-    marks: { meter: "pattern" },
     archetype: "Recovery",
     name: "Jen",
     age: 34,
@@ -1134,15 +1188,16 @@ export const PEOPLE: Person[] = [
     layout: {
       font: "sans",
       weekStartsMonday: true,
+      // Headings for a week, not "Grateful Today" and "Daily Inventory" once
+      // on it; numbers picked up this week, as the standing phone list is on
+      // the one-day pages. The meeting log, not 90 in 90: its 90 cells would
+      // start again every week, and mean nothing after day 90.
       sidebar: [
-        ["recovery-gratitude-list", 10],
-        ["step-ten-inventory", 14],
-        ["labeled-box", 9, box("Phone List", true)],
+        ["recovery-gratitude-list", 10, { heading: "Grateful For" }],
+        ["step-ten-inventory", 14, { heading: "Inventory" }],
+        ["labeled-box", 9, box("New Numbers", true)],
       ],
-      belowLeft: [
-        at("meeting-log", 6, BELOW_ROW, 18, 9),
-        at("ninety-in-ninety", 6, BELOW_ROW + 9, 18, 6),
-      ],
+      belowLeft: [at("meeting-log", 6, BELOW_ROW, 18, 15)],
       belowRight: [
         at("sponsor-contact-log", 0, BELOW_ROW, 12, 8),
         at("mood-chart-week", 0, BELOW_ROW + 8, 12, 7),
@@ -1179,7 +1234,7 @@ export const PEOPLE: Person[] = [
     lists: {
       "recovery-gratitude-list": ["Dana picking up at 6am", "my own bed", "the new hot sauce", "Mom texted back", "87 days"],
       "step-ten-inventory": ["the new line cook - talk to him", "the 90 feels big", "honest w/ Dana re: Tues", "kind to myself today"],
-      "phone list": ["Dana (sponsor)", "Mo", "Kit", "home group line"],
+      "new numbers": ["Mo (home group)", "Kit, sat mtg", "Sam from noon mtg"],
     },
     tables: {
       "meeting-log": [
@@ -1196,7 +1251,6 @@ export const PEOPLE: Person[] = [
     trackers: { "every day": ["meeting", "call Dana", "quiet time", "run", "read 10 pgs", "bed by 1"] },
     // A dip on Tuesday, then steady.
     charts: { mood: [1, 3, 1, 1] },
-    fills: { "90 in 90": 87 },
   },
 ];
 

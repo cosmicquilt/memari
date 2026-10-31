@@ -185,6 +185,7 @@ const ALTERNATIVES: Record<string, string[]> = {
   "dopamine-menu": ["self-care-checklist"],
   // Food
   "meal-planner": ["food-diary"],
+  "weekly-meal-plan": ["grocery-list"],
   "grocery-list": ["recipes-to-try"],
   "recipes-to-try": ["recipe-card", "grocery-list"],
   "recipe-card": ["recipes-to-try"],

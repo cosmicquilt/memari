@@ -142,7 +142,7 @@ export function generateBook(planner: BookSource, fontFamily: string): Generated
     }
     list.forEach((occurrence, index) => {
       slots.push({
-        at: { ...occurrence, level, index, total: list.length },
+        at: { ...occurrence, level, index, total: list.length, end: planner.endDate ?? null },
         rank: levelRank,
       });
     });

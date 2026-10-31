@@ -10,7 +10,23 @@ import { OrderDialog } from "@/app/planner/OrderDialog";
 
 const ACCENT = "#4a5cff";
 
-export function StandaloneOrder({ journalId, title, slug, weekStartDay }: { journalId: string; title: string; slug: string; weekStartDay: number }) {
+export function StandaloneOrder({
+  journalId,
+  title,
+  slug,
+  weekStartDay,
+  journalStartISO,
+  journalEndISO,
+}: {
+  journalId: string;
+  title: string;
+  slug: string;
+  weekStartDay: number;
+  /** The journal's term, so a Lent or Ramadan book opens on its season
+   *  (OrderDialog's openingRange). */
+  journalStartISO?: string | null;
+  journalEndISO?: string | null;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <main style={{ minHeight: "100vh", background: "#141414", color: onCream(0xdd), boxSizing: "border-box", paddingBlock: "28px 64px", paddingInline: 16 }}>
@@ -44,7 +60,9 @@ export function StandaloneOrder({ journalId, title, slug, weekStartDay }: { jour
           </div>
         </section>
       </div>
-      {open && <OrderDialog journalId={journalId} weekStartDay={weekStartDay} onClose={() => setOpen(false)} />}
+      {open && (
+        <OrderDialog journalId={journalId} weekStartDay={weekStartDay} journalStartISO={journalStartISO} journalEndISO={journalEndISO} onClose={() => setOpen(false)} />
+      )}
     </main>
   );
 }

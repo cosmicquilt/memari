@@ -10,15 +10,17 @@
 // The spreads are layouts in their own right too: the gallery lists them
 // under their planner, and each can still be used alone.
 //
-// Data only.
+// Data only, but for the seasons' dates (Lent and Ramadan, below).
 
 import { HERO_BY_KEY } from "./heroSpreads";
+import { leadDays } from "@/lib/print/orderRange";
 
 /** Where a planner is shelved in the library, in the order shown: the
- *  three he named first (2026-10-21), then school and work, family and the
+ *  three he named first (2026-10-21), the challenges (2026-10-30), then
+ *  school and work, family and the
  *  events of a life, health, money and hobbies, then faith and recovery,
  *  which ask most of a reader. */
-export const PLANNER_GROUPS = ["Planning", "Growth", "Philosophy", "School & work", "Family & life", "Health", "Money", "Hobbies & home", "Faith", "Recovery"] as const;
+export const PLANNER_GROUPS = ["Planning", "Growth", "Philosophy", "Challenges", "School & work", "Family & life", "Health", "Money", "Hobbies & home", "Faith", "Recovery"] as const;
 export type PlannerGroup = (typeof PLANNER_GROUPS)[number];
 
 export type PlannerTemplate = {
@@ -35,7 +37,115 @@ export type PlannerTemplate = {
   month?: string;
   week?: string;
   day?: string;
+  /** The book's own dates, for a planner kept for a season rather than from
+   *  next month: Lent and Ramadan (audit 2026-10-29: a Ramadan book made in
+   *  October was three months of Ramadan day pages, none in Ramadan).
+   *  Absent, the book is the next quarter (archetypeWeek.ts). */
+  dates?: (today: Date) => { startISO: string; endISO: string };
+  /** With `dates`: when the book runs, said for "Use this planner". */
+  when?: (today: Date) => string;
+  /** Said after what "Use this planner" makes: what to choose when ordering. */
+  orderNote?: string;
 };
+
+// ── Seasons ─────────────────────────────────────────────────────────────
+// A season's book starts on the season's first day, the next one a printed
+// book can still reach in time: the order form's own first offer (ground,
+// from the UK printer, orderRange.ts suggestedStart) is up to a week past
+// leadDays, so a season sooner than that waits for the year after.
+
+const DAY_MS = 86_400_000;
+const SEASON_NOTICE_DAYS = leadDays("GROUND", true) + 7;
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const isoOf = (date: Date) => date.toISOString().slice(0, 10);
+const utcDate = (iso: string) => new Date(`${iso}T00:00:00Z`);
+const saidDate = (date: Date) => `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+const earliestSeasonStart = (today: Date) => Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) + SEASON_NOTICE_DAYS * DAY_MS;
+
+// ── Challenges ──────────────────────────────────────────────────────────
+// A challenge starts on the first Monday a printed book can reach (the
+// seasons' notice, above) and runs its own length, 30 days or 90, the order
+// form's two short lengths. A new year's starts on 1 January, the next one a
+// book can reach. The spreads and every day's step are in challenges.ts.
+
+/** The first Monday a book ordered today can reach. */
+export function challengeStart(today: Date): Date {
+  const earliest = new Date(earliestSeasonStart(today));
+  return new Date(earliest.getTime() + ((8 - earliest.getUTCDay()) % 7) * DAY_MS);
+}
+
+/** A challenge's dates and when it runs: `days` from the first Monday. */
+function challengeTerm(days: number): Pick<PlannerTemplate, "dates" | "when"> {
+  return {
+    dates: (today) => {
+      const start = challengeStart(today);
+      return { startISO: isoOf(start), endISO: isoOf(new Date(start.getTime() + (days - 1) * DAY_MS)) };
+    },
+    when: (today) => `for ${days} days from Monday, ${saidDate(challengeStart(today))}`,
+  };
+}
+
+/** The next 1 January a book can reach. */
+export function nextNewYear(today: Date): Date {
+  const year = today.getUTCFullYear() + 1;
+  return new Date(Date.UTC(year, 0, 1) >= earliestSeasonStart(today) ? Date.UTC(year, 0, 1) : Date.UTC(year + 1, 0, 1));
+}
+
+/** A new year's challenge: from 1 January to the 30th, or to 31 March. */
+function newYearTerm(lastMonth: 0 | 2, lastDay: number): Pick<PlannerTemplate, "dates" | "when"> {
+  const end = (today: Date) => new Date(Date.UTC(nextNewYear(today).getUTCFullYear(), lastMonth, lastDay));
+  return {
+    dates: (today) => ({ startISO: isoOf(nextNewYear(today)), endISO: isoOf(end(today)) }),
+    when: (today) => `from 1 January to ${saidDate(end(today))}`,
+  };
+}
+
+/** Easter Sunday in `year`: the Gregorian computus (Meeus/Jones/Butcher). */
+export function easterSunday(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+/** The next Lent a book can reach: Ash Wednesday (Easter less 46 days) to
+ *  Easter Sunday. */
+export function nextLent(today: Date): { ashWednesday: Date; easter: Date } {
+  for (let year = today.getUTCFullYear(); ; year++) {
+    const easter = easterSunday(year);
+    const ashWednesday = new Date(easter.getTime() - 46 * DAY_MS);
+    if (ashWednesday.getTime() >= earliestSeasonStart(today)) return { ashWednesday, easter };
+  }
+}
+
+/** The first of Ramadan as expected ahead of time, by Gregorian date. The
+ *  sighting of the moon can move each a day either way. */
+const RAMADAN_STARTS = ["2027-02-08", "2028-01-28", "2029-01-16", "2030-01-05", "2030-12-26", "2031-12-15"];
+const LUNAR_YEAR_DAYS = 354.36707;
+
+/** The next Ramadan a book can reach, and its thirty days. Past the table,
+ *  a lunar year on from its last entry. */
+export function nextRamadan(today: Date): { start: Date; end: Date } {
+  const earliest = earliestSeasonStart(today);
+  let start = RAMADAN_STARTS.map(utcDate).find((date) => date.getTime() >= earliest);
+  if (!start) {
+    const last = utcDate(RAMADAN_STARTS[RAMADAN_STARTS.length - 1]).getTime();
+    const years = Math.ceil((earliest - last) / (LUNAR_YEAR_DAYS * DAY_MS));
+    start = new Date(last + Math.round(years * LUNAR_YEAR_DAYS) * DAY_MS);
+  }
+  return { start, end: new Date(start.getTime() + 29 * DAY_MS) };
+}
 
 /** Every planner, as written - PLANNERS below is the ones that can be made. */
 export const ALL_PLANNERS: PlannerTemplate[] = [
@@ -44,7 +154,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Money",
     title: "Irregular income budget",
     forWhom: "Freelance, gig and tipped work, or any pay that changes month to month.",
-    line: "A baseline month you can always cover, a rule for when there's extra, irregular bills ninety days ahead, tax set aside by the quarter, every payment logged, and each paycheck budgeted on its own.",
+    line: "A baseline month you can always cover, a rule for when there's extra and one for a slow month, irregular bills ninety days ahead, tax set aside by the quarter, every payment logged, and each half of the month budgeted on its own.",
     front: "pages-irregular-income",
     month: "month-irregular-income",
     week: "week-irregular-income",
@@ -104,7 +214,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Growth",
     title: "Reading journal & book club",
     forWhom: "Readers who want a record of every book, and book clubs that meet monthly.",
-    line: "Books read, a reading goal, a to-be-read list with who recommended each, a guilt-free didn't-finish list and full review pages; each month what you're reading, what's next, book club notes and a wrap-up.",
+    line: "Books read, a reading goal, a to-be-read list with who recommended each, a guilt-free didn't-finish list and full review pages; each month what you're reading, what's next, a book review, book club notes and a wrap-up.",
     front: "pages-reading-journal",
     month: "month-reading-journal",
   },
@@ -133,7 +243,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Philosophy",
     title: "Mindful practice",
     forWhom: "Meditators in the Buddhist and Taoist traditions, or anyone practising attention.",
-    line: "Why you practise and a passage read slowly at the front; an open, dotted day of loving-kindness, three good things, the day's verse and an evening reflection; each month's minutes of practice and what was let go.",
+    line: "Why you practise and a passage read slowly at the front; an open, dotted day of loving-kindness, three good things, the day's passage and an evening reflection; each month's sittings counted and what was let go.",
     front: "pages-mindful",
     month: "month-mindful",
     day: "day-mindful",
@@ -143,7 +253,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Faith",
     title: "Bible study & prayer",
     forWhom: "Christians who want scripture, prayer and Sunday's sermon in one book.",
-    line: "A reading plan through the year, prayer requests with the answers written in and verses to memorise; each week's sermon notes, SOAP study, verse mapping and prayer list; each month's theme and small group notes.",
+    line: "A reading plan and the books read, prayer requests with the answers written in and verses to memorise; each week's sermon notes, SOAP study, verse mapping and prayer list; each month's theme and small group meetings.",
     front: "pages-bible-study",
     month: "month-bible-study",
     week: "week-bible-study",
@@ -153,7 +263,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Recovery",
     title: "One day at a time",
     forWhom: "People in early recovery, in a twelve-step program or not.",
-    line: "Your reasons and the people to call, with a plan for when a craving comes; a day that starts with just for today and ends with an honest inventory, a HALT check and gratitude between; each month's days counted up, never reset.",
+    line: "Your reasons and the people to call, with a plan for when a craving comes and the warning signs to watch for; a day that starts with just for today and ends with an honest inventory, a HALT check and gratitude between; each month's days counted up, never reset.",
     front: "pages-one-day",
     month: "month-one-day",
     day: "day-one-day",
@@ -173,7 +283,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "School & work",
     title: "Teacher's school year",
     forWhom: "Middle and high school teachers with several classes to prepare.",
-    line: "Your classes and the whole school year from August at the front, each month's dates, duties and parent contacts, and each week's lessons, grading, copies and notes.",
+    line: "Your classes and the twelve months ahead, month by month, at the front, each month's preparation, units and parent contacts, and each week's lessons by class and day, grading, copies, make-up work and students to check on.",
     front: "pages-teacher-year",
     month: "month-teacher-year",
     week: "week-teacher-year",
@@ -183,7 +293,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "School & work",
     title: "Small online shop",
     forWhom: "Makers and sellers running a shop online or at markets.",
-    line: "Products with their cost, price and margin, suppliers, launches, tools and fees and a sales goal at the front; each month's sales and costs; each week's orders, things to make and to ship, content and spending.",
+    line: "Products with their cost, price and margin, suppliers, launches, content ideas, tools and fees and a sales goal at the front; each month's sales, costs and best sellers; each week's orders, things to make and messages to answer, content and spending.",
     front: "pages-small-shop",
     month: "month-small-shop",
     week: "week-small-shop",
@@ -202,7 +312,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Health",
     title: "GLP-1 meal planner",
     forWhom: "People on a weekly GLP-1 medication tracking meals, protein and how they feel.",
-    line: "Meals planned around protein; protein, water and fibre counted each day; every injection logged with its site so they rotate; side effects scored 0 to 3; non-scale victories; and questions gathered for the doctor.",
+    line: "Meals written under each day; protein, water and fibre counted against your own daily targets; each week's dose and its site, so they rotate; side effects scored 0 to 3; non-scale victories; and questions gathered for the doctor.",
     front: "pages-glp1",
     month: "month-glp1",
     week: "week-glp1",
@@ -212,7 +322,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Health",
     title: "Chronic illness flare log",
     forWhom: "People with a chronic illness who need a record their doctors can read.",
-    line: "A one-minute daily check-in of energy, pain, symptoms and spoons, every dose taken or skipped and what helped; a month that rolls the days into patterns; the care team, medicines and a flare plan at the front.",
+    line: "A one-minute daily check-in of energy, pain, symptoms and spoons, every dose taken or skipped and what helped; a month that rolls the days into patterns; the care team, medicines, conditions and allergies and a flare plan at the front.",
     front: "pages-flare-log",
     month: "month-flare-log",
     day: "day-flare-log",
@@ -263,7 +373,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Growth",
     title: "Life design & small joys",
     forWhom: "Anyone taking stock of their life who wants meaning in small things, not a hustle plan.",
-    line: "A wheel of life, five small pillars of ikigai (start small, let go, harmony, small joys, the here and now), the year reviewed and a letter to yourself; a month of one small shift in each area; a week of small joys and moments of flow.",
+    line: "A wheel of life, five small pillars of ikigai (start small, let go, harmony, small joys, the here and now), a look back and a letter to yourself; a month of one small shift in each area; a week of small joys and moments of flow.",
     front: "pages-life-design",
     month: "month-life-design",
     week: "week-life-design",
@@ -291,7 +401,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Philosophy",
     title: "Existentialist journal",
     forWhom: "Readers of Sartre, Camus and de Beauvoir who want to bring it into their week.",
-    line: "Radical responsibility, values you choose and what you'd do if this were all; absurd moments and the meaning you choose; a week of the choices you face, bad faith noticed and norms followed without thinking.",
+    line: "Radical responsibility, values and projects you choose, and what you'd do if this were all; a week of the choices you face, bad faith noticed, what you did on autopilot, and absurd moments with the meaning you choose.",
     front: "pages-existential",
     week: "week-existential",
   },
@@ -300,7 +410,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Family & life",
     title: "Wedding planner",
     forWhom: "Couples planning a wedding, from the guest list to the thank-you notes.",
-    line: "The guest list as a whole page with RSVPs, meals, gifts and thank-yous, the budget, vendors and the day itself; a month of payments due, RSVPs and decisions; a week of calls, who you're waiting to hear from, and time for the two of you.",
+    line: "The guest list as a whole page with RSVPs, meals, gifts and thank-yous, the budget, vendors and the day itself; a month of payments due, decisions and what got done; a week of calls, who you're waiting to hear from, and time for the two of you.",
     front: "pages-wedding",
     month: "month-wedding",
     week: "week-wedding",
@@ -310,7 +420,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Family & life",
     title: "New baby, the first months",
     forWhom: "New parents in the round-the-clock early months.",
-    line: "A page a day for feeds, sleep and changes, notes for the doctor and how you are doing; a week of firsts and looking after yourself; who to call, help offered, growth, checkups and thank-yous at the front.",
+    line: "A page a day for feeds, sleep and changes, medicines given and how you are doing; a week of firsts and looking after yourself; who to call, help offered, growth, checkups and thank-yous at the front.",
     front: "pages-new-baby",
     week: "week-new-baby",
     day: "day-new-baby",
@@ -320,7 +430,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Family & life",
     title: "Caregiver",
     forWhom: "People caring for a parent, partner or child, who need it all in one place.",
-    line: "Everything a stand-in or a doctor needs at the front (care team, medicines, where the papers are), help you can ask for and a plan for breaks; a month of refills, bills and claims; a week of medicines, symptoms and questions, with room for you.",
+    line: "Everything a stand-in or a doctor needs at the front (care team, medicines, where the papers are), help you can ask for and a plan for breaks; a month of refills, bills and claims; a week of medicines, what to watch for and questions, with room for you.",
     front: "pages-caregiver",
     month: "month-caregiver",
     week: "week-caregiver",
@@ -339,7 +449,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Family & life",
     title: "Homeschool year",
     forWhom: "Homeschooling parents keeping lessons, records and the year in one place.",
-    line: "Subjects and curriculum, the year from August to July and field trips; a month of hours by subject and work samples for your records; a week of lessons over the school day, what got done by subject and books read together.",
+    line: "Subjects and curriculum, the twelve months ahead, month by month, and field trips; a month of hours by subject and work samples for your records; a week of lessons over the school day, hours by subject and books read together.",
     front: "pages-homeschool",
     month: "month-homeschool",
     week: "week-homeschool",
@@ -349,7 +459,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Health",
     title: "Perimenopause tracker",
     forWhom: "Women in perimenopause who want the patterns and their questions ready for the doctor.",
-    line: "Medicines, care team, cycles, triggers, what helps and questions for your doctor; a month of patterns and a symptom summary; a week of symptoms rated, sleep and doctor prep. A log to bring along, not medical advice.",
+    line: "Medicines, care team, cycles, triggers, what helps and questions for your doctor; a month of patterns and a symptom summary; a week of symptoms day by day, sleep and what changed. A log to bring along, not medical advice.",
     front: "pages-perimenopause",
     month: "month-perimenopause",
     week: "week-perimenopause",
@@ -359,7 +469,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Health",
     title: "Low-FODMAP food diary",
     forWhom: "People on an elimination diet with a dietitian, finding which foods suit them.",
-    line: "Reintroduction one group at a time over three days, safe and trigger foods, staples and notes for your dietitian; a week of meals planned and what you ate beside how you felt.",
+    line: "Reintroduction one group at a time over three days, safe and trigger foods, staples and notes for your dietitian; a week of what you ate and how you felt, with times, day by day.",
     front: "pages-low-fodmap",
     week: "week-low-fodmap",
   },
@@ -368,7 +478,7 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Money",
     title: "Financial independence",
     forWhom: "Savers working toward the day work becomes optional.",
-    line: "Your number and how you worked it out, a bar toward it, accounts, net worth and savings rate by month; a month's budget, what came in, went out and was saved, subscriptions and wins.",
+    line: "Your number and how you worked it out, a bar toward it, accounts, net worth and savings rate by month; a month's budget, account balances, renewals due and wins.",
     front: "pages-fire",
     month: "month-fire",
   },
@@ -387,17 +497,18 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Hobbies & home",
     title: "Travel & slow travel",
     forWhom: "Travellers planning a trip, and people living a month at a time somewhere new.",
-    line: "Itinerary, budget, packing, bookings and what to do before you go; a month somewhere with places to work, locals' tips, spending and days left on your stay; a page a day as the trip diary.",
+    line: "Itinerary, budget, packing, bookings, what to do before you go and days on your visa; a month somewhere with places to work, locals' tips, spending and things to see; a page a day as the trip diary.",
     front: "pages-travel",
     month: "month-travel",
     day: "day-travel",
+    orderNote: "Choose the day you leave and how many days to print when you order.",
   },
   {
     key: "game-master",
     group: "Hobbies & home",
     title: "Tabletop campaign",
     forWhom: "Game masters running a tabletop roleplaying campaign.",
-    line: "The campaign's premise, tone and lines and veils, player characters, factions, NPCs and places; a week of session prep (a strong start, scenes, secrets and clues), a map on a grid and notes from the session.",
+    line: "The campaign's premise, tone and lines and veils, player characters, factions, NPCs and places; a week of session prep (a strong start, scenes and locations), secrets and clues, a map on a grid and notes after the session.",
     front: "pages-game-master",
     week: "week-game-master",
   },
@@ -406,9 +517,14 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     group: "Faith",
     title: "Ramadan",
     forWhom: "Muslims keeping the month of Ramadan, for reflection and return.",
-    line: "Thirty days of the fast, night prayer, Quran, sadaqah and dhikr, the juz read, intentions, duas and Eid prepared for; a page a day from before suhoor to taraweeh with the prayers, the day's reading and a dua.",
+    line: "Thirty days of the fast, night prayer, Quran, sadaqah and dhikr, the juz read, intentions, duas, Eid prepared for and fasts to make up; a page a day from before suhoor to taraweeh with the prayers, the day's reading and a dua.",
     front: "pages-ramadan",
     day: "day-ramadan",
+    dates: (today) => {
+      const { start, end } = nextRamadan(today);
+      return { startISO: isoOf(start), endISO: isoOf(end) };
+    },
+    when: (today) => `for the thirty days of the next Ramadan, expected to begin on ${saidDate(nextRamadan(today).start)} (it can move a day with the moon)`,
   },
   {
     key: "lent",
@@ -418,6 +534,213 @@ export const ALL_PLANNERS: PlannerTemplate[] = [
     line: "Your promises for prayer, fasting and almsgiving, forty days and Holy Week, who you're praying for and Easter; a week with the three marked each day, Sunday's readings and homily, and the examen.",
     front: "pages-lent",
     week: "week-lent",
+    dates: (today) => {
+      const { ashWednesday, easter } = nextLent(today);
+      return { startISO: isoOf(ashWednesday), endISO: isoOf(easter) };
+    },
+    when: (today) => {
+      const { ashWednesday, easter } = nextLent(today);
+      return `from Ash Wednesday, ${saidDate(ashWednesday)}, to Easter Sunday, ${saidDate(easter)}`;
+    },
+  },
+
+  // ── Challenges (challenges.ts) ──
+  // Running in three, the 90-day 5K first: the pace the NHS plan keeps, and
+  // the default (Andrew, 2026-10-30: "have them as options with the
+  // recommended as default"). The 30-day 5K climbs twice as fast, so it is
+  // for people who already jog.
+  {
+    key: "challenge-5k-90",
+    group: "Challenges",
+    title: "A 5K in 90 days",
+    forWhom: "New runners who can walk briskly for half an hour.",
+    line: "Thirteen weeks from a minute of running to a 5K, three sessions a week with easier weeks between, the sessions ticked each day, energy, runs, stretches, rest and sleep; the plan and race day at the front.",
+    front: "pages-challenge-5k-90",
+    week: "week-challenge-5k-90",
+    ...challengeTerm(90),
+    orderNote: "If a run hurts, do that week again: a week done twice is not a week lost.",
+  },
+  {
+    key: "challenge-start-running",
+    group: "Challenges",
+    title: "Start running in 30 days",
+    forWhom: "People who have never run and want to start gently.",
+    line: "A first month of running and walking every other day, ending at ten minutes without stopping, a page a day with that day's session, today's run and how your body feels.",
+    front: "pages-challenge-start-running",
+    day: "day-challenge-start-running",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-5k",
+    group: "Challenges",
+    title: "A 5K in 30 days",
+    forWhom: "People who already jog a little and want a 5K soon.",
+    line: "A faster climb than most plans: a page a day with that day's run, walk or rest and how it went, today's run, how your body feels and tomorrow; the whole plan, days done and a race day plan at the front.",
+    front: "pages-challenge-5k",
+    day: "day-challenge-5k",
+    ...challengeTerm(30),
+    orderNote: "If a run hurts, do that day again: a day done twice is not a day lost.",
+  },
+  {
+    key: "challenge-half-marathon",
+    group: "Challenges",
+    title: "A half marathon in 90 days",
+    forWhom: "Runners who can already run a 5K and want 13.1 miles.",
+    line: "Thirteen weeks to race day, the week's plan at the top of every week with the sessions, energy, runs, strength, rest and sleep; the plan, long runs and a race day checklist at the front.",
+    front: "pages-challenge-half-marathon",
+    week: "week-challenge-half-marathon",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-walking-30",
+    group: "Challenges",
+    title: "30 days of walking",
+    forWhom: "Anyone who wants to move more without running.",
+    line: "Ten minutes a day rising to an hour, a gentle day each week, a page a day with that day's walk, minutes, steps and where, and how your body feels.",
+    front: "pages-challenge-walking-30",
+    day: "day-challenge-walking",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-walking-90",
+    group: "Challenges",
+    title: "90 days of walking",
+    forWhom: "People who want walking to last past the first month.",
+    line: "A focus a week for thirteen weeks, longer walks, a new route, hills, the walks ticked each day, energy, a log of walks, stretches, rest and sleep; routes you like at the front.",
+    front: "pages-challenge-walking-90",
+    week: "week-challenge-walking",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-organize-30",
+    group: "Challenges",
+    title: "Organize your life in 30 days",
+    forWhom: "Anyone whose home and paperwork have got ahead of them.",
+    line: "A drawer, a room or a pile of paper a day, what you kept, gave away and tossed, a rest day each week to see the change, and where things go now.",
+    front: "pages-challenge-organize-30",
+    day: "day-challenge-organize",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-organize-90",
+    group: "Challenges",
+    title: "Organize your life in 90 days",
+    forWhom: "Anyone who wants a whole household sorted, one area at a time.",
+    line: "An area of life a week for thirteen weeks: the week's jobs, a daily reset, keep, give or toss, what got done and the week reviewed; where things go now and what to pass on at the front.",
+    front: "pages-challenge-organize-90",
+    week: "week-challenge-organize",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-stoic-30",
+    group: "Challenges",
+    title: "30 days of Stoic practice",
+    forWhom: "Anyone curious about Stoicism who would rather practise it than read about it.",
+    line: "A practice a day in plain words, the morning's preparation, what is in your control, the evening review and a commonplace book, with a look back every seventh day.",
+    front: "pages-challenge-stoic-30",
+    day: "day-challenge-stoic",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-stoic-90",
+    group: "Challenges",
+    title: "90 days of Stoic practice",
+    forWhom: "People who want Stoicism to become a habit of mind, a theme a week.",
+    line: "A theme a week for thirteen weeks and how you'll practise it, a commonplace book, the hard thing rehearsed, the week reviewed and what's in your control; your own rules for living at the front.",
+    front: "pages-challenge-stoic-90",
+    week: "week-challenge-stoic",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-dao-30",
+    group: "Challenges",
+    title: "The Tao Te Ching in 30 days",
+    forWhom: "Readers who want to read the whole book once, slowly enough to keep something.",
+    line: "Three chapters a day in the translation you choose, the line that stayed and what it asks of you, nature noticed and stillness, then three days to go back.",
+    front: "pages-challenge-dao-30",
+    day: "day-challenge-dao",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-dao-90",
+    group: "Challenges",
+    title: "The Tao Te Ching in 90 days",
+    forWhom: "Readers who want a chapter a day for a season.",
+    line: "A chapter a day, seven a week, the line that stayed, wu wei reflected on, forcing or flowing each day and stillness; the chapters that stayed at the front.",
+    front: "pages-challenge-dao-90",
+    week: "week-challenge-dao",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-new-year-30",
+    group: "Challenges",
+    title: "A new year in 30 days",
+    forWhom: "Anyone who wants January to set up the year, not just start it.",
+    line: "A step a day all January: a week looking back, a week choosing, a week setting things up and the rest beginning, with three things for today and what you're grateful for.",
+    front: "pages-challenge-new-year-30",
+    day: "day-challenge-new-year",
+    ...newYearTerm(0, 30),
+  },
+  {
+    key: "challenge-new-year-90",
+    group: "Challenges",
+    title: "A new year in 90 days",
+    forWhom: "People who'd rather give the year's first quarter to one goal than make resolutions.",
+    line: "A step a week from January to March: last year looked back on, one goal and its first step, routines set up, a check at halfway and the quarter reviewed; your word for the year at the front.",
+    front: "pages-challenge-new-year-90",
+    week: "week-challenge-new-year",
+    ...newYearTerm(2, 31),
+  },
+  {
+    key: "challenge-reading-30",
+    group: "Challenges",
+    title: "30 days of reading",
+    forWhom: "Anyone who wants to read every day again, instead of scrolling.",
+    line: "A reading step a day, minutes and pages that grow, what you read, books and pages, a commonplace book, words to look up and what to read next; books you finished at the front.",
+    front: "pages-challenge-reading-30",
+    day: "day-challenge-reading",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-reading-90",
+    group: "Challenges",
+    title: "90 days of reading",
+    forWhom: "Readers who want a season of books, and to remember them.",
+    line: "A focus a week for thirteen weeks, a reading log by day, a commonplace book, what stayed with you, words to look up and what to read next; books read and books to read at the front.",
+    front: "pages-challenge-reading-90",
+    week: "week-challenge-reading",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-no-spend-30",
+    group: "Challenges",
+    title: "30 days of no spending",
+    forWhom: "Anyone who wants to break the habit of buying without thinking.",
+    line: "A money step a day, what you spent and whether it was needed, things you wanted and didn't buy, free things to do; your rules and the plan at the front.",
+    front: "pages-challenge-no-spend-30",
+    day: "day-challenge-no-spend",
+    ...challengeTerm(30),
+  },
+  {
+    key: "challenge-no-spend-90",
+    group: "Challenges",
+    title: "90 days of money habits",
+    forWhom: "People who want a quarter to spend less and save more.",
+    line: "A money habit a week for thirteen weeks, a spending log, no-spend days ticked, things wanted and not bought, free things to do and the week reviewed; your rules and subscriptions at the front.",
+    front: "pages-challenge-no-spend-90",
+    week: "week-challenge-no-spend",
+    ...challengeTerm(90),
+  },
+  {
+    key: "challenge-alcohol-free",
+    group: "Challenges",
+    title: "30 days alcohol-free",
+    forWhom: "The sober-curious, taking a month off drinking.",
+    line: "A step a day for a month off, noticing sleep, energy and mood, how you feel and tomorrow; dry days counted, never days in a row, and the money not spent at the front.",
+    front: "pages-challenge-alcohol-free",
+    day: "day-challenge-alcohol-free",
+    ...challengeTerm(30),
+    orderNote: "This is a month off, not a treatment: if you drink every day, see a doctor before you stop.",
   },
 ];
 
@@ -467,10 +790,11 @@ export function coverSpreadOf(planner: PlannerTemplate): string {
 }
 
 /** What "Use this planner" makes, said plainly. */
-export function plannerMakes(planner: PlannerTemplate): string {
+export function plannerMakes(planner: PlannerTemplate, today = new Date()): string {
   const parts = partsOf(planner).map(({ part }) =>
     part === "front" ? "the front pages" : `a ${part === "day" ? "page" : `${part} spread`} for every ${part}`
   );
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
-  return `Opens a journal of your own with all of it: ${list}, from next month for three months.`;
+  const when = planner.when?.(today) ?? "from next month for three months";
+  return `Opens a journal of your own with all of it: ${list}, ${when}.${planner.orderNote ? ` ${planner.orderNote}` : ""}`;
 }

@@ -12,7 +12,7 @@
 
 import { ptToPx } from "@/lib/print-spec";
 import { INNER_RULE_OPACITY, RULE_WIDTH_PT } from "@/lib/modules/moduleFrame";
-import { capCentredTextY, textWidthPx } from "@/lib/modules/textFit";
+import { capCentredTextY, fitFontSizePx, textWidthPx, truncateToWidth } from "@/lib/modules/textFit";
 import { glyphElement } from "@/lib/modules/glyphs";
 import type { DayIconMark } from "@/lib/dayIcons";
 
@@ -312,6 +312,63 @@ export const EVENT_PRINT_GREY = "#e9e9e9";
 export function eventKey(event: Pick<HourlyGridEvent, "id" | "occurrence" | "startTime">): string {
   if (!event.id) return event.startTime;
   return event.occurrence ? `${event.id}@${event.occurrence}` : event.id;
+}
+
+/**
+ * EVENTS WITH INCREMENTS OFF ARE LISTED (audit 2026-10-29). With no hours
+ * there is no time to draw an event against, and they were dropped: the
+ * all-day band and every timed block alike, so a planner whose days are
+ * open dots (the ADHD day, the rapid log, the mindful, language and Tao
+ * weeks) printed none of the person's calendar anywhere in the book.
+ *
+ * Now each day lists its own at the top of its column, one line to a dot
+ * row, in grey: the all-day ones first, as they come, then the timed ones
+ * that START that day, by their start - "9am Dentist". Not the ones the
+ * overnight hours pull in from the next morning: with no hours drawn they
+ * belong to the morning's own column, and listing them in both would print
+ * one event twice.
+ */
+const LIST_ROW_PT = 18;
+const LIST_SIZES_PT = [6, 5.5, 5];
+const LIST_INK = "#666666";
+
+/** A start time as a list line writes it. A list has no place in the day to
+ *  say morning or evening, which is what lets the times down the side of the
+ *  hours leave am and pm out, so the 12-hour clock says it here: "9am",
+ *  "2:30pm". The 24-hour clock is its five characters, "14:30". */
+function listTime(minutes: number, timeFormat: HourlyGridCoreConfig["timeFormat"]): string {
+  if (timeFormat === "24") return formatHour24(minutes);
+  const total = ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+  const h24 = Math.floor(total / 60);
+  const m = total % 60;
+  const h12 = ((h24 + 11) % 12) + 1;
+  return `${h12}${m === 0 ? "" : `:${String(m).padStart(2, "0")}`}${h24 < 12 ? "am" : "pm"}`;
+}
+
+/** One day's lines with increments off, each with the id it is drawn under:
+ *  `allday-line<k>`, or `ev<eventKey>-line` so the editor finds an event's
+ *  marks by its key the way it finds a block's. */
+export function offModeEventLines(
+  events: HourlyGridEvent[] | undefined,
+  day: number,
+  timeFormat: HourlyGridCoreConfig["timeFormat"]
+): Array<{ key: string; text: string }> {
+  const today = (events ?? []).filter((e) => e.day === day);
+  const lines = today.filter((e) => e.allDay).map((e, k) => ({ key: `allday-line${k}`, text: e.label.trim() }));
+  const used = new Set<string>();
+  const timed = today
+    .filter((e) => !e.allDay)
+    .map((e) => ({ e, from: eventSpan(e).from }))
+    .filter(({ from }) => from < DAY_MINUTES)
+    .sort((a, b) => a.from - b.from);
+  for (const { e, from } of timed) {
+    // Two stored-less events at one minute (a proof, a test) share a key.
+    let key = `ev${eventKey(e)}-line`;
+    for (let n = 2; used.has(key); n++) key = `ev${eventKey(e)}-line${n}`;
+    used.add(key);
+    lines.push({ key, text: `${listTime(from, timeFormat)} ${e.label}`.trim() });
+  }
+  return lines;
 }
 
 // One half-hour slot. The reference measures 11.3pt across 24+ consecutive
@@ -946,6 +1003,47 @@ export function renderHourlyGridCore(
   const lineOpacity =
     config.hourLineStyle === "full" ? INNER_RULE_OPACITY : config.hourLineStyle === "low-transparency" ? 0.25 : 0;
 
+  // The events listed with increments off - see offModeEventLines. The first
+  // line takes the dot row above the first row of dots, in the gap under the
+  // tab where the all-day band goes with increments on; each line after it
+  // takes the next row down, and a day's dots start under its last line.
+  // More than fit: the last line that fits counts the rest. Rows are counted
+  // to the ALLOCATION's foot, the frame the rows are laid in (see
+  // hourlyGridGeometry), so a block at its two-dot minimum still has the one.
+  const listPitch = lattice?.pitchPx ?? ptToPx(LIST_ROW_PT);
+  const firstDotRow = lattice ? Math.ceil((gridTop - lattice.originY) / lattice.pitchPx) : 0;
+  const listTop = (lattice ? lattice.originY + firstDotRow * lattice.pitchPx : gridTop) - listPitch;
+  const listFoot = geometry.y + geometry.height + (lattice?.insetPx ?? 0);
+  const listRoom = Math.max(0, Math.floor((listFoot - listTop) / listPitch + 1e-6));
+  const listed = Array.from({ length: config.dayCount }, (_, d) => {
+    if (config.intervalMode !== "off") return [];
+    const lines = offModeEventLines(config.events, d, config.timeFormat);
+    if (lines.length <= listRoom) return lines;
+    if (listRoom === 0) return [];
+    const kept = listRoom - 1;
+    const rest = lines.length - kept;
+    return [...lines.slice(0, kept), { key: "events-more", text: kept === 0 ? `${rest} events` : `+${rest} more` }];
+  });
+  // Every line in the block at ONE size, the largest of the ladder at which
+  // they all fit (see textFit's fitLabelSet: lines fitted one by one set a
+  // long title a point under its neighbours, which reads as a mistake). Not
+  // below the ladder, though: a title too long even at 5pt is cut, rather
+  // than taking the whole week's list down with it.
+  const listInset = ptToPx(DAY_NAME_LEFT_INSET_PT);
+  const listWidth = dayColumnWidth - listInset * 2;
+  const listSizes = LIST_SIZES_PT.map(ptToPx);
+  const listFontSize = Math.min(listSizes[0], ...listed.flat().map((line) => fitFontSizePx(line.text, listWidth, listSizes)));
+  // Inside a listed day's column, above its last line's foot.
+  const underList = (cx: number, cy: number) =>
+    listed.some(
+      (lines, c) =>
+        lines.length > 1 &&
+        cx > columnX[c] &&
+        cx < columnX[c] + dayColumnWidth &&
+        cy > listTop + 1 &&
+        cy < listTop + lines.length * listPitch - 1
+    );
+
   for (let d = 0; d < config.dayCount; d++) {
     const dayX = columnX[d];
     const label = config.dayLabels[d];
@@ -1059,6 +1157,7 @@ export function renderHourlyGridCore(
         const firstRow = Math.ceil((top - lattice.originY) / lattice.pitchPx);
         for (let cx = lattice.originX + firstCol * lattice.pitchPx; cx <= geometry.x + geometry.width; cx += lattice.pitchPx) {
           for (let cy = lattice.originY + firstRow * lattice.pitchPx; cy <= bottom; cy += lattice.pitchPx) {
+            if (underList(cx, cy)) continue;
             elements.push({
               // Named by lattice position, so the field keeps its identity
               // when the block is resized and the loop bounds shift.
@@ -1097,6 +1196,24 @@ export function renderHourlyGridCore(
           stroke: "none",
         });
       }
+
+      // This day's events, listed - see offModeEventLines.
+      listed[d].forEach((line, i) => {
+        const fontSize = listFontSize;
+        elements.push({
+          id: id(`d${d}-${line.key}`),
+          type: "text",
+          x: dayX + listInset,
+          y: capCentredTextY(listTop + i * listPitch, listPitch, fontSize, FONT_FAMILY),
+          width: listWidth,
+          height: fontSize * 1.2,
+          text: truncateToWidth(line.text, listWidth, fontSize),
+          fontSize,
+          fontFamily: FONT_FAMILY,
+          fill: LIST_INK,
+          align: "left",
+        });
+      });
     } else {
       // Ruled rows + time labels. The main row line is a single line at
       // the row's bottom edge, not a bordered box — a box-per-row would
@@ -1295,9 +1412,8 @@ export function renderHourlyGridCore(
 
     // Synced/manual events for this day, positioned by time — has no
     // well-defined position without a ruled grid to place it against, so
-    // skipped entirely in "off" mode. Low-risk today (see
-    // src/lib/weekDays.ts's identical note): events is always seeded
-    // empty, nothing writes into it yet.
+    // not drawn here in "off" mode: listed at the top of the day instead
+    // (offModeEventLines, above). So is the all-day band's.
     const timedToday =
       config.intervalMode === "off" ? [] : config.events.filter((e) => e.day === d && !e.allDay);
     const stacking = concurrencyColumns(timedToday);

@@ -58,7 +58,9 @@ export type HoursSettings = {
 /** A week, as archetypes.ts lays one out, with its hours set its own way.
  *  `hoursRows` is the hours' height in rows (20 for the template's); the
  *  zones under them are placed by their own rows, a row below. */
-export type WeekSpread = WeekLayout & { kind: "week"; hours?: HoursSettings; hoursRows?: number };
+/** `showWeekCount` false prints "WEEK" over the dates with no "n/52": the
+ *  grief week, whose book counts toward no end (weekTitle.ts). */
+export type WeekSpread = WeekLayout & { kind: "week"; hours?: HoursSettings; hoursRows?: number; showWeekCount?: boolean };
 
 /** A month: its title over a six-column sidebar (rows 2 to 35), the
  *  calendar across both pages (rows 0 to 15) and a zone under it (rows 17

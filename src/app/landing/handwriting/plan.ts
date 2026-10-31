@@ -184,12 +184,12 @@ const TABLE_ROWS: Record<string, string[][]> = {
 };
 
 /** Tasks for an Eisenhower matrix whose person gave none, by quadrant in
- *  reading order: schedule, do, delete, delegate (the catalogue's). */
+ *  reading order: do, schedule, delegate, delete (the catalogue's). */
 const EISENHOWER: string[][] = [
-  ["dentist", "plan Q4"],
   ["taxes!", "reply to Ana"],
-  ["doomscroll", "re-sort inbox"],
+  ["dentist", "plan Q4"],
   ["book venue", "order snacks"],
+  ["doomscroll", "re-sort inbox"],
 ];
 
 /** Modules whose marks are dots, circles or icons, or a set passage - never

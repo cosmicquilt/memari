@@ -21,8 +21,9 @@
 
 import { BELOW_ROW, type Hand, type Slot } from "./archetypes";
 import type { HeroSpread } from "./heroSpreads";
-import { LIBRARY_SPREADS } from "./plannerLibrary";
+import { LIBRARY_SPREADS, prompts } from "./plannerLibrary";
 import { LIBRARY_SPREADS_2 } from "./plannerLibrary2";
+import { CHALLENGE_SPREADS } from "./challenges";
 
 const at = (slug: string, columnStart: number, rowStart: number, columnSpan: number, rowSpan: number, props?: Record<string, unknown>): Slot => ({
   slug,
@@ -34,6 +35,11 @@ const at = (slug: string, columnStart: number, rowStart: number, columnSpan: num
 });
 /** A box with a heading: plain, lined or dotted. */
 const box = (heading: string, rule: "none" | "lined" | "dotted" = "none") => ({ heading, rule, ruled: rule === "lined", templateHeading: heading });
+
+/** The irregular income planner's buffer, counted in weeks of the Baseline
+ *  Month covered: the savings bar's 10, 20 ... 100 between "$0" and "One
+ *  month" said ten of nothing. */
+const BUFFER = { heading: "Buffer, Weeks Covered", total: 4, milestoneEvery: 1, segments: "boxes", numbers: "every", startLabel: "", endLabel: "One month" };
 
 /** Never seen - the gallery draws these empty - but every spread has one. */
 const UNWRITTEN: Pick<HeroSpread, "hand" | "doodles" | "events" | "calendar"> = {
@@ -65,8 +71,16 @@ const FIRST_PLANNERS: HeroSpread[] = [
       pages: [
         [
           at("dopamine-menu", 0, 0, 12, 16),
-          // What gets you moving, written on a good day for a bad one.
-          at("labeled-box", 12, 0, 12, 16, box("When I'm Stuck", "lined")),
+          // What gets you moving, written on a good day for a bad one: the
+          // known ways to start, asked, since a bad day can't invent them.
+          at(
+            "prompted-lines",
+            12,
+            0,
+            12,
+            16,
+            prompts("When I'm Stuck", ["Make it tiny: the first two minutes", "Change where I am", "Who I can work beside", "What I'm really avoiding"], 2),
+          ),
           at("someday-maybe", 0, 16, 12, 20),
           at("labeled-box", 12, 16, 12, 20, box("Don't Forget", "lined")),
         ],
@@ -88,7 +102,9 @@ const FIRST_PLANNERS: HeroSpread[] = [
         ["labeled-box", 11, box("Wins", "lined")],
       ],
       belowLeft: [at("star-count", 6, 17, 18, 5), at("brain-dump", 6, 22, 18, 14, { rule: "dotted" })],
-      belowRight: [at("project-tracker", 0, 17, 24, 10), at("labeled-box", 0, 27, 12, 9, box("Month Review", "lined")), at("done-list", 12, 27, 12, 9)],
+      // Wins and a done list were one look back twice; what was let go
+      // instead, in a planner of less of everything.
+      belowRight: [at("project-tracker", 0, 17, 24, 10), at("labeled-box", 0, 27, 12, 9, box("Month Review", "lined")), at("labeled-box", 12, 27, 12, 9, box("Dropped, and That's Fine", "lined"))],
     },
     ...UNWRITTEN,
   },
@@ -111,7 +127,9 @@ const FIRST_PLANNERS: HeroSpread[] = [
         ["done-list", 20],
         ["labeled-box", 12, box("Tomorrow", "lined")],
       ],
-      below: [at("focus-blocks", 6, 25, 18, 1, { groups: 1 }), at("todo-checklist", 6, 26, 18, 10, { dayCount: 1 })],
+      // Headed for what it is beside Big Three: the rest, only if there's
+      // time.
+      below: [at("focus-blocks", 6, 25, 18, 1, { groups: 1 }), at("todo-checklist", 6, 26, 18, 10, { dayCount: 1, heading: "If There's Time" })],
     },
     ...UNWRITTEN,
   },
@@ -132,7 +150,7 @@ const FIRST_PLANNERS: HeroSpread[] = [
           // The rule for a good month, written before one comes.
           at("labeled-box", 12, 0, 12, 16, box("When There's Extra", "lined")),
           at("sinking-funds", 0, 16, 24, 10),
-          at("savings-goal", 0, 26, 12, 5, { heading: "Buffer", endLabel: "One month" }),
+          at("savings-goal", 0, 26, 12, 5, BUFFER),
           at("debt-payoff", 12, 26, 12, 5),
           at("labeled-box", 0, 31, 24, 5, box("Money Goals", "lined")),
         ],
@@ -144,16 +162,19 @@ const FIRST_PLANNERS: HeroSpread[] = [
           // Self-employed: tax is nobody else's job. By the quarter, as
           // US estimated tax is paid.
           at("column-table", 12, 18, 12, 9, { heading: "Tax Set-Aside", columns: ["Quarter", "Set aside", "Paid"], weights: [1.2, 1.3, 1] }),
-          at("labeled-box", 12, 27, 12, 9, box("Money Notes", "lined")),
+          // The other half of When There's Extra: what to cut or draw on in
+          // a lean month, planned before one comes.
+          at("labeled-box", 12, 27, 12, 9, box("When It's a Slow Month", "lined")),
         ],
       ],
     },
     ...UNWRITTEN,
   },
   {
-    // The month: paydays and bills on the calendar, every payment in the
-    // income log, and the month's pay split into the two paychecks most
-    // people budget by.
+    // The month: paydays and bills on the calendar, the weeks' income added
+    // up against the baseline, and the bills split by the halves of the
+    // month, which works however the pay lands (two numbered paychecks a
+    // month is the salary this planner's readers don't have).
     key: "month-irregular-income",
     layout: {
       kind: "month",
@@ -161,40 +182,47 @@ const FIRST_PLANNERS: HeroSpread[] = [
       weekStartsMonday: false,
       inside: "lined",
       sidebar: [
-        ["labeled-box", 13, box("Bills Due", "lined")],
+        // The bills are in the two half-month tables; here, the month
+        // against the Baseline Month on the front. "Came in" is the total
+        // of Came In, by Week.
+        ["prompted-lines", 13, prompts("Against the Baseline", ["Baseline", "Came in", "Over or under", "Extra went to"], 1)],
         ["labeled-box", 11, box("Set Aside", "lined")],
         ["labeled-box", 10, box("Month Wins", "lined")],
       ],
-      belowLeft: [at("income-log", 6, 17, 18, 19)],
+      // Every payment is logged on the week, where it lands (paid daily, a
+      // month's log overflows); the month adds the weeks up, and keeps
+      // what is owed.
+      belowLeft: [
+        at("column-table", 6, 17, 18, 9, { heading: "Came In, by Week", columns: ["Week", "Came in", "Set aside", "Spent"], weights: [0.8, 1.2, 1.2, 1.2], totalsRow: true, totalsLabel: "Month" }),
+        at("column-table", 6, 26, 18, 10, { heading: "Owed to Me", columns: ["Who", "For", "Amount", "Paid"], weights: [1.4, 1.6, 1.1, 0.8] }),
+      ],
       belowRight: [
-        at("paycheck-budget", 0, 17, 12, 10, { heading: "Paycheck 1" }),
-        at("paycheck-budget", 12, 17, 12, 10, { heading: "Paycheck 2" }),
+        at("paycheck-budget", 0, 17, 12, 10, { heading: "1st to 15th" }),
+        at("paycheck-budget", 12, 17, 12, 10, { heading: "16th to End" }),
         at("labeled-box", 0, 27, 12, 9, box("Month Review", "lined")),
-        at("savings-goal", 12, 27, 12, 5, { heading: "Buffer", endLabel: "One month" }),
+        at("savings-goal", 12, 27, 12, 5, BUFFER),
         at("labeled-box", 12, 32, 12, 4, box("Next Month", "lined")),
       ],
     },
     ...UNWRITTEN,
   },
   {
-    // The week: what is safe to spend, where it went, and what came in.
+    // The week: what is safe to spend, where it went, what came in, and
+    // what is coming. The Buffer bar is on the front and the month, Payoff
+    // on the front: neither re-shaded every week.
     key: "week-irregular-income",
     layout: {
       kind: "week",
       font: "serif",
       weekStartsMonday: false,
       sidebar: [
-        ["labeled-box", 9, box("Safe to Spend", "lined")],
+        // The sum laid out, not a blank box.
+        ["prompted-lines", 9, prompts("Safe to Spend", ["In the bank", "Bills before next pay", "Set aside", "Safe to spend"], 1)],
         ["labeled-box", 12, box("Bills Due", "lined")],
         ["grocery-list", 12],
       ],
       belowLeft: [at("spending-log", 6, BELOW_ROW, 18, 15)],
-      belowRight: [
-        at("income-log", 0, BELOW_ROW, 12, 15),
-        at("savings-goal", 12, BELOW_ROW, 12, 5, { heading: "Buffer", endLabel: "One month" }),
-        at("debt-payoff", 12, BELOW_ROW + 5, 12, 5),
-        at("labeled-box", 12, BELOW_ROW + 10, 12, 5, box("Notes", "lined")),
-      ],
+      belowRight: [at("income-log", 0, BELOW_ROW, 12, 15), at("prompted-lines", 12, BELOW_ROW, 12, 15, prompts("Week Ahead", ["Pay I expect", "One money job"], 5))],
     },
     ...UNWRITTEN,
   },
@@ -202,4 +230,4 @@ const FIRST_PLANNERS: HeroSpread[] = [
 
 /** Every planner's spreads: the first two, and the library (2026-10-21,
  *  plannerLibrary.ts). */
-export const PLANNER_SPREADS: HeroSpread[] = [...FIRST_PLANNERS, ...LIBRARY_SPREADS, ...LIBRARY_SPREADS_2];
+export const PLANNER_SPREADS: HeroSpread[] = [...FIRST_PLANNERS, ...LIBRARY_SPREADS, ...LIBRARY_SPREADS_2, ...CHALLENGE_SPREADS];

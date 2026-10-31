@@ -22,7 +22,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
   Basics: 14,
   Planning: 25, // + nurse brain sheet (2026-10-15)
   "Mood & health": 19, // + medication doses, symptom severity (2026-10-15)
-  Food: 9,
+  Food: 10, // + Meal Planner, written in (2026-10-30)
   Fitness: 9,
   Money: 11, // + income log, sinking funds, paycheck budget (2026-10-15)
   "Home & family": 9,

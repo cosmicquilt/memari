@@ -1656,19 +1656,19 @@ export const MODULE_GUIDES: ModuleGuide[] = [
       landscape: true,
     },
     kicker: "A planning method",
-    lede: "The Bullet Journal's index: topics and the pages they are on, so you can find things again.",
+    lede: "The Bullet Journal's index: topics and where they are in the book, so you can find things again.",
     sections: [
       {
         heading: "Finding things again",
         paragraphs: [
-          "A notebook fills up in the order things happen, not the order you will want them back. The Bullet Journal, Ryder Carroll's method from 2013, solves that the way books always have: number the pages, and keep an index at the front.",
-          "Whenever you start a collection, such as a reading list, the notes for a project or a plan for a trip, write its name in the index with the page it starts on.",
+          "A notebook fills up in the order things happen, not the order you will want them back. The Bullet Journal, Ryder Carroll's method from 2013, solves that the way books always have, with an index at the front. Carroll numbers the pages by hand. In a dated book every day, week and month page has its date at the top, so the date does the same job.",
+          "Whenever you start a collection, such as a reading list, the notes for a project or a plan for a trip, write its name in the index with the date of the page it starts on.",
         ],
       },
       {
         heading: "How the module works",
         paragraphs: [
-          "A two-column table, Topic and Page, once at the front of the book. Add to it as you go rather than all at once. A topic that turns up in several places can list them all: 12, 40, 57.",
+          "A two-column table, the topic and where to find it, once at the front of the book. Add to it as you go rather than all at once. A topic that turns up in several places can list them all: Mar 3, Apr 19, May 2.",
           "The sketch above is a note-taker's summary of Carroll's method from October 2013, the year he shared it.",
         ],
       },

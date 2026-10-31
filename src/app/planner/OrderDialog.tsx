@@ -100,9 +100,55 @@ function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+const DAY_MS = 86_400_000;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * What the form opens on before an earlier book or a client's details fill
+ * it: the first day of the person's week after a book posted today could
+ * arrive (from the first binding's printer, to a US address: a wire-o book
+ * comes from the UK, so further ahead), for 90 days. A journal that starts
+ * on that day or later opens on its own dates instead, its first day to
+ * its last, both included (a challenge starts on just that day): a Lent or Ramadan book (plannerTemplates' `dates`)
+ * is ordered for its season, not for 90 days from about three weeks out
+ * (audit season-1, 2026-10-30).
+ */
+export function openingRange(
+  today: Date,
+  weekStartDay: number,
+  journalStartISO?: string | null,
+  journalEndISO?: string | null
+): { startISO: string; days: number; fromJournal: boolean } {
+  const suggested = isoDay(suggestedStart(today, "GROUND", shippedAbroad(BINDINGS[0], "US"), weekStartDay));
+  if (!journalStartISO || !ISO_DAY.test(journalStartISO) || journalStartISO < suggested) return { startISO: suggested, days: 90, fromJournal: false };
+  const span =
+    journalEndISO && ISO_DAY.test(journalEndISO)
+      ? Math.round((Date.parse(`${journalEndISO}T00:00:00Z`) - Date.parse(`${journalStartISO}T00:00:00Z`)) / DAY_MS) + 1
+      : 0;
+  return { startISO: journalStartISO, days: span >= 1 ? Math.min(MAX_ORDER_DAYS, span) : 90, fromJournal: true };
+}
+
+/** The days box holds a length the buttons do not offer. */
+const typedDays = (days: number) => (ORDER_LENGTH_PRESETS.some((preset) => preset.days === days) ? "" : String(days));
+
 const EMPTY_ADDRESS: ShippingAddress = { name: "", street1: "", street2: "", city: "", stateCode: "", countryCode: "US", postcode: "", phoneNumber: "" };
 
-export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { journalId: string; weekStartDay: number; reorderId?: string; onClose: () => void }) {
+export function OrderDialog({
+  journalId,
+  weekStartDay,
+  journalStartISO,
+  journalEndISO,
+  reorderId,
+  onClose,
+}: {
+  journalId: string;
+  weekStartDay: number;
+  /** The journal's own first and last days (its term), when it has them. */
+  journalStartISO?: string | null;
+  journalEndISO?: string | null;
+  reorderId?: string;
+  onClose: () => void;
+}) {
   const [status, setStatus] = useState<OrderingStatus | null>(null);
   // Filled in from an earlier book: true once its choices are on screen, so
   // the hint under Starting says where the date came from.
@@ -114,11 +160,12 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
   // Said when a book too long for its binding's paper was moved to another
   // paper of the same binding.
   const [moved, setMoved] = useState<string | null>(null);
-  const [days, setDays] = useState(90);
-  const [customDays, setCustomDays] = useState("");
-  // From the first binding's printer, to a US address: a wire-o book comes
-  // from the UK, so further ahead.
-  const [startISO, setStartISO] = useState(() => isoDay(suggestedStart(new Date(), "GROUND", shippedAbroad(BINDINGS[0], "US"), weekStartDay)));
+  // The suggested start for 90 days, or the journal's own dates when it
+  // starts later than that (openingRange).
+  const [opening] = useState(() => openingRange(new Date(), weekStartDay, journalStartISO, journalEndISO));
+  const [days, setDays] = useState(opening.days);
+  const [customDays, setCustomDays] = useState(() => typedDays(opening.days));
+  const [startISO, setStartISO] = useState(opening.startISO);
   const [binding, setBinding] = useState<Binding>(BINDINGS[0]);
   // Cream unless white is chosen; only paperback and hardcover offer both.
   const [paper, setPaper] = useState<PaperColour>(DEFAULT_PAPER);
@@ -146,14 +193,14 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
       if (!live) return;
       if (client) {
         setDays(client.days);
-        setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === client.days) ? "" : String(client.days));
+        setCustomDays(typedDays(client.days));
         if (client.startISO && client.startISO >= isoDay(new Date())) setStartISO(client.startISO);
         if (client.address) setAddress({ ...EMPTY_ADDRESS, ...client.address });
         setForClient(client.client);
       }
       if (earlier) {
         setDays(earlier.days);
-        setCustomDays(ORDER_LENGTH_PRESETS.some((preset) => preset.days === earlier.days) ? "" : String(earlier.days));
+        setCustomDays(typedDays(earlier.days));
         setStartISO(earlier.startISO);
         // An earlier book's binding, if it can still be had (plastic coil
         // cannot, since 2026-10-08).
@@ -340,7 +387,9 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
                     ? "The day after your last book ends: the same length, binding and address, all yours to change."
                     : forClient
                       ? `From ${forClient}'s details: their address, their book's length, and when it starts. All yours to change.`
-                      : "Suggested: the first day of your week after a book posted today would arrive."}
+                      : opening.fromJournal
+                        ? "Your journal's own dates, from its first day to its last. All yours to change."
+                        : "Suggested: the first day of your week after a book posted today would arrive."}
                 </span>
               </Section>
 
@@ -513,7 +562,18 @@ export function OrderDialog({ journalId, weekStartDay, reorderId, onClose }: { j
  *  and the book printed for you. A soft wash of the accent rather than its
  *  solid fill, which stays Export PDF's alone, and no border: none of the
  *  header's buttons has one (Andrew's pick, 2026-10-01; check:browser). */
-export function OrderPrintButton({ journalId, weekStartDay }: { journalId: string; weekStartDay: number }) {
+export function OrderPrintButton({
+  journalId,
+  weekStartDay,
+  journalStartISO,
+  journalEndISO,
+}: {
+  journalId: string;
+  weekStartDay: number;
+  /** The journal's term, so a season's book opens on its season. */
+  journalStartISO?: string | null;
+  journalEndISO?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const [reorderId, setReorderId] = useState<string | undefined>(undefined);
   // Arriving from "Order the next" on the Orders page: open, filled in from
@@ -553,6 +613,8 @@ export function OrderPrintButton({ journalId, weekStartDay }: { journalId: strin
         <OrderDialog
           journalId={journalId}
           weekStartDay={weekStartDay}
+          journalStartISO={journalStartISO}
+          journalEndISO={journalEndISO}
           reorderId={reorderId}
           onClose={() => {
             setOpen(false);

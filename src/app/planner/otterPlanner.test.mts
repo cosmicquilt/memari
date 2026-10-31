@@ -7,7 +7,9 @@
 // Run as part of: npm test
 import { planFromAnswers } from "./otterPlanner";
 import { slotsOf, valid } from "@/app/landing/similarLayouts";
-import { spreadPlacements } from "@/app/landing/spreads";
+import { layoutPreview, spreadPlacements } from "@/app/landing/spreads";
+import type { HeroSpread } from "@/app/landing/heroSpreads";
+import { moduleSchemaDefaults } from "@/lib/moduleRegistry";
 import { QUESTIONS, questionsFor, routedAnswers, guessLine, type Answers } from "@/lib/otterQuiz";
 
 let failures = 0;
@@ -58,6 +60,14 @@ function randomAnswers(rand: () => number): Answers {
 
 const TODAY = new Date(Date.UTC(2026, 9, 20));
 
+/** What a placement prints as its heading: its own, else its module's. */
+const headOf = (p: { slug: string; props?: Record<string, unknown> }) => String(p.props?.heading ?? moduleSchemaDefaults(p.slug).heading ?? "");
+const headingsOf = (spread: HeroSpread) => spreadPlacements(spread).filter((p) => !p.locked).map(headOf);
+const PT = 300 / 72; // the landing page's pixels: 75 to the quarter inch
+/** A row that is a date, not a thing to do: a year grid's days and months,
+ *  a week's days. Two of those on a page are two grids, not one ask twice. */
+const DATE_ROW = /^(\d+|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i;
+
 // ---------------------------------------------------------------- at random
 const rand = rng(20261020);
 let plans = 0;
@@ -73,6 +83,27 @@ for (let i = 0; i < 1500; i++) {
     spreads++;
     check(`every ${part} spread passes the hero's test`, valid(spread), `${JSON.stringify(answers)} -> ${slotsOf(spread).map((s) => s.slug).join(",")}`);
     for (const p of spreadPlacements(spread)) placedSlugs.add(p.slug);
+    // The front is printed once: each of its modules is a different thing,
+    // and no page of it is "Notes" and "More Notes" filler (2026-10-29).
+    const heads = headingsOf(spread).filter(Boolean);
+    if (part === "front") check("no two front modules share a heading", new Set(heads).size === heads.length, `${JSON.stringify(answers)} -> ${heads.join(", ")}`);
+    check("no 'More Notes' filler", !heads.includes("More Notes"), `${part}: ${JSON.stringify(answers)}`);
+    // What prints is readable: nothing under 4pt (the "+1" after midnight
+    // is the hours' own mark), as spreads.test.mts asks of every spread.
+    const small = layoutPreview(spread, new Date(Date.UTC(2026, 0, 5))).pages.flatMap((pg) => pg.marks.flatMap((m) => (m.k === "t" && m.t.trim() && m.t.trim() !== "+1" && m.z < 4 * PT ? [`"${m.t.trim()}" at ${(m.z / PT).toFixed(1)}pt`] : [])));
+    check("nothing prints under 4pt", small.length === 0, `${part}: ${small.slice(0, 4).join(", ")} <- ${JSON.stringify(answers)}`);
+    // No row asked twice on one spread: Trash on the cleaning and the
+    // chores, Pets on the chores beside the pets' own (2026-10-30). A
+    // strip's two halves and a facing day's twin are one module.
+    const rowsBy = new Map<string, Set<string>>();
+    for (const p of spreadPlacements(spread)) {
+      const habits = (p.props?.habits ?? moduleSchemaDefaults(p.slug).habits) as unknown;
+      if (!Array.isArray(habits)) continue;
+      const id = `${p.slug} ${headOf(p)}`;
+      for (const h of habits) if (typeof h === "string" && h.trim() && !DATE_ROW.test(h.trim())) (rowsBy.get(h.trim().toLowerCase()) ?? rowsBy.set(h.trim().toLowerCase(), new Set()).get(h.trim().toLowerCase())!).add(id);
+    }
+    const twice = [...rowsBy].filter(([, ids]) => ids.size > 1).map(([h, ids]) => `${h}: ${[...ids].join(" / ")}`);
+    check("no row asked twice on one spread", twice.length === 0, `${part}: ${twice.join("; ")} <- ${JSON.stringify(answers)}`);
   }
   check("the same answers, the same planner", JSON.stringify(planFromAnswers(answers, undefined, TODAY)) === JSON.stringify(plan));
   for (const note of [plan.guess, ...plan.notes]) check("no spaced dashes in what the otter says", !/ [-–—] /.test(note), note);
@@ -83,8 +114,23 @@ const base: Answers = { fills: ["school"], follow: ["college"], pages: ["week"],
 const week = (a: Answers) => planFromAnswers(a, undefined, TODAY).parts.find((p) => p.part === "week")!.spread;
 const slugs = (a: Answers, part: string) => slotsOf(planFromAnswers(a, undefined, TODAY).parts.find((p) => p.part === part)?.spread ?? week(a)).map((s) => s.slug);
 
+const frontSlots = (a: Answers) => {
+  const front = planFromAnswers(a, undefined, TODAY).parts.find((p) => p.part === "front")?.spread;
+  return front ? slotsOf(front) : [];
+};
 check("a college student's week keeps the assignment tracker", slugs(base, "week").includes("assignment-tracker"));
-check("and the exam countdown waits at the front", slugs(base, "front").includes("exam-countdown"));
+check("and the exam dates wait at the front", frontSlots(base).some((s) => s.slug === "column-table" && s.props?.heading === "Exam Dates"));
+// Andrew, 2026-10-29: the college front is "Exam Dates", not a countdown
+// numbered every ten, and no boxes of notes to fill its pages.
+check(
+  "and no countdown or notes filler beside them",
+  !frontSlots(base).some((s) => s.slug === "exam-countdown" || (s.slug === "labeled-box" && /Notes/.test(headOf(s)))),
+  frontSlots(base).map((s) => `${s.slug} ${headOf(s)}`).join(", "),
+);
+// The money path's sidebar box is the bills, not "Money" beside a log of
+// it (2026-10-30).
+const moneyWeek = slotsOf(week({ fills: ["everything"], follow: ["money"], pages: ["week"] }));
+check("a money week has a spending log and no box for money beside it", moneyWeek.some((s) => s.slug === "spending-log") && !moneyWeek.some((s) => s.slug === "labeled-box" && headOf(s) === "Money"), moneyWeek.map((s) => `${s.slug} ${headOf(s)}`).join(", "));
 const hoursOf = (a: Answers) => (week(a).layout as { hours?: { startTime?: string; endTime?: string; intervalMode?: string; intervalMinutes?: number } }).hours ?? {};
 check("lists, not hours: the days go dotted", hoursOf({ ...base, hourly: ["lists"] }).intervalMode === "off");
 check("an early bird's hours start at 5", hoursOf({ ...base, rhythm: ["early"] }).startTime === "05:00");

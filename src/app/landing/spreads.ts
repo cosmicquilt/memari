@@ -427,11 +427,17 @@ function placementsOf(def: HeroSpread, when: When): Placed[] {
   if (layout.kind === "week") {
     const hours = hoursFor(layout.hours);
     const rowSpan = layout.hoursRows ?? HOURS_ROW_SPAN;
-    // With increments off the hours draw no events: nothing to place them by.
+    // With increments off the hours list a day's events at the top of its
+    // column (hourlyGridCore's offModeEventLines), but the hero gives them
+    // none: its dotted weeks carry no calendar (spreads.test.mts), since
+    // what they show is the person's own list, written in.
     const events = hours.intervalMode === "off" ? [[], []] : calendarEvents(def.calendar, [3, 4], hours);
     // Undated (the base week, a free printable): no numbers, no dates -
-    // the absence of the values, as everywhere in the app.
-    const title = def.undated ? { dateRangeLabel: "" } : when.title;
+    // the absence of the values, as everywhere in the app. A layout that
+    // sets showWeekCount false (the grief week) prints WEEK and the dates
+    // with no count: a setting of the title, so it is kept either way.
+    const count = layout.showWeekCount === false ? { showWeekCount: false } : {};
+    const title = { ...(def.undated ? { dateRangeLabel: "" } : when.title), ...count };
     const dayLabels = def.undated ? when.dayLabels.map(({ name }) => ({ name })) : when.dayLabels;
     spine({ slug: "week-title", page: 0, columnStart: 0, rowStart: 0, columnSpan: 6, rowSpan: WEEK_TITLE_ROW_SPAN, props: title });
     spine({ slug: "hourly-grid-core", page: 0, columnStart: 6, rowStart: 0, columnSpan: 18, rowSpan, props: { dayCount: 3, dayLabels: dayLabels.slice(0, 3), ...hours, events: events[0] } });

@@ -122,16 +122,16 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
   const number = ids(both, /-row0-number$/)[0];
   const item = ids(both, /-row0-item$/)[0];
   check(!!number && !!item && (item.x ?? 0) > (number.x ?? 0), "a numbered item sets after its number");
-  check(ids(draw("todo-checklist", { heading: "To - Do", dayCount: 1 }, 6, 8), /-(item|number)$/).length === 0, "the default prints neither");
+  check(ids(draw("todo-checklist", { heading: "To Do", dayCount: 1 }, 6, 8), /-(item|number)$/).length === 0, "the default prints neither");
   // Dashed rows print their items and numbers too - they skipped them.
   const dashed = draw("todo-checklist", { heading: "Packing", dayCount: 1, lineStyle: "crosses", items, numbered: true }, 6, 8);
   check(texts(dashed, /-row\d+-item$/).join(",") === items.join(",") && ids(dashed, /-row\d+-number$/).length > 0, "dashed rows print items and numbers");
 
   // The tick mark: the column by default; a square or a circle in its place.
-  const column = draw("todo-checklist", { heading: "To - Do", dayCount: 1 }, 6, 6);
+  const column = draw("todo-checklist", { heading: "To Do", dayCount: 1 }, 6, 6);
   check(ids(column, /-checkbox-right$/).length === 1 && ids(column, /-tick$/).length === 0, "a ruled tick column by default");
   for (const shape of ["square", "circle"]) {
-    const marked = draw("todo-checklist", { heading: "To - Do", dayCount: 1, tickMark: shape }, 6, 6);
+    const marked = draw("todo-checklist", { heading: "To Do", dayCount: 1, tickMark: shape }, 6, 6);
     const ticks = ids(marked, /-row\d+-tick$/);
     const rows = ids(column, /-row\d+$/).length;
     check(ids(marked, /-checkbox-right$/).length === 0 && ticks.length >= rows, `a ${shape} on every row instead (${ticks.length})`);
@@ -140,7 +140,7 @@ const onColumn = (x: number) => Math.abs(((x - PAGE.marginPx) / PITCH) % 1) < 1e
     const centre = (ticks[0].x ?? 0) + (ticks[0].width ?? 0) / 2;
     check(Math.abs(centre - ((border.x ?? 0) + (cellRight.x ?? 0)) / 2) < 1.5, `centred in the cell it replaces (${centre.toFixed(1)})`);
   }
-  check(ids(draw("todo-checklist", { heading: "To - Do", dayCount: 1, lineStyle: "crosses", tickMark: "circle" }, 6, 6), /-checkbox-right-/).length === 0, "dashed marks no tick column either");
+  check(ids(draw("todo-checklist", { heading: "To Do", dayCount: 1, lineStyle: "crosses", tickMark: "circle" }, 6, 6), /-checkbox-right-/).length === 0, "dashed marks no tick column either");
   const floor = (props: Record<string, unknown>) => getMinRowSpanForSlug("todo-checklist", PAGE, 6, props);
   check(floor({ items: ["a", "b", "c", "d", "e", "f"] }) > floor({}), "six printed items need more rows than a blank list");
   check(floor({ items: ["a", " ", ""] }) === floor({ items: ["a"] }), "blank items do not count");
