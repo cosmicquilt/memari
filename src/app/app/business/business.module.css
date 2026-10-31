@@ -149,6 +149,19 @@
   --tag-bg: rgba(244, 239, 230, 0.08);
 }
 
+/* THE DOODLE WALL (2026-10-31): the start dialog's blue pens behind the
+   coach's workspace, fainter - baked onto --bg itself, so it changes no
+   colour as it arrives (doodleWall.ts studio / night; the layout picks one
+   of six). Cards stay solid in front of it. Not on a client's page (.biz
+   alone). */
+.wall {
+  background-image: var(--wall-studio);
+  background-size: var(--wall-size);
+}
+.wall[data-mode="dark"] {
+  background-image: var(--wall-night);
+}
+
 /* past the page's ends - an overscroll, a short page - the same ground */
 :global(html):has(.biz[data-mode="dark"]) {
   background: #12100e;

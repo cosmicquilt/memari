@@ -30,6 +30,13 @@ export const WALL_TILE = { w: 1400, h: 1000, scale: 2 };
 export const WALL_THEMES = {
   light: { paper: "#f5ead5", ink: { color: "#3448ce", alpha: 0.42 } },
   dark: { paper: "#0c0c0c", ink: { color: "#8b96ff", alpha: 0.32 } },
+  // memari. for businesses (2026-10-31: "add the doodle wall that's behind
+  // the /app ... but even lower opacity"): the same pens on the workspace's
+  // own grounds, Studio and Studio Night (business.module.css --bg), about a
+  // third as strong - here the wall sits behind text and buttons, not
+  // behind a dialog.
+  studio: { paper: "#f7f4ee", ink: { color: "#3448ce", alpha: 0.14 } },
+  night: { paper: "#12100e", ink: { color: "#8b96ff", alpha: 0.12 } },
 } as const;
 export type WallTheme = keyof typeof WALL_THEMES;
 

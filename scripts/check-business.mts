@@ -51,6 +51,19 @@ try {
   const business = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
   say(!!business && business.name === "Northwind Coaching", "the business is made, the guest's");
   say((await tab.getByText("0 of 4").count()) === 1, "Home: the checklist, nothing done");
+  // THE DOODLE WALL (2026-10-31): the start dialog's pens, fainter, behind
+  // the coach's workspace - Studio's wall in light, Night's in dark - and
+  // the picture really there, not a 404 behind a plain ground.
+  const wallOf = () => tab.evaluate(() => getComputedStyle(document.querySelector("[data-biz-root]")!).backgroundImage);
+  const studio = await wallOf();
+  const studioUrl = /url\("?([^")]+)"?\)/.exec(studio)?.[1] ?? "";
+  const served = studioUrl ? (await fetch(studioUrl)).status : 0;
+  say(/doodle-walls\/studio-\d\.webp/.test(studio) && served === 200, `THE WORKSPACE HAS ITS FAINT DOODLE WALL, and it loads (${studioUrl.split("/").pop()} ${served})`);
+  await tab.evaluate(() => document.querySelector("[data-biz-root]")!.setAttribute("data-mode", "dark"));
+  say(/doodle-walls\/night-\d\.webp/.test(await wallOf()), "in dark, Night's wall");
+  await tab.evaluate(() => document.querySelector("[data-biz-root]")!.setAttribute("data-mode", "light"));
+  await tab.reload({ waitUntil: "networkidle" });
+  say((await wallOf()) === studio, "the same wall after the page is drawn again (one a coach a day: it doesn't jump after a save)");
   await shoot(tab, "biz-home-new");
 
   // A template: the guest's own journal.
@@ -358,6 +371,8 @@ try {
     robots: document.querySelector('meta[name="robots"]')?.getAttribute("content") ?? "",
   }));
   say(privacy.referrer === "no-referrer" && privacy.robots.includes("noindex"), `it is private: no referrer, not indexed (${JSON.stringify(privacy)})`);
+  const herWall = await her.evaluate(() => getComputedStyle(document.querySelector("[data-biz-root]")!).backgroundImage);
+  say(herWall === "none", `her page has no doodle wall: it carries her coach's brand, not ours (${herWall.slice(0, 60)})`);
   await her.screenshot({ path: shots ? `${shots}/biz-portal.png` : "/dev/null", fullPage: true }).catch(() => {});
   // she corrects her address
   await her.locator('input[name="street1"]').fill("121 Elm Street");
