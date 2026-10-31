@@ -199,11 +199,18 @@ const where = (def: HeroSpread, p: Placed) => `${def.key} ${p.page ? "R" : "L"} 
 /** Every prompt of a prompted-lines module gets its block: its words and
  *  its lines. promptLineCounts is what the renderer draws by; the words
  *  are read off the page, so a prompt cut short is caught too. */
+/** A placement's props as drawn: on a facing-days spread the right page of
+ *  a challenge is its next day (spreads.ts, COUNTS_DAYS). */
+const drawnProps = (def: HeroSpread, p: { slug: string; page: 0 | 1; props: Record<string, unknown> }) =>
+  def.layout.kind === "day" && p.page === 1 && p.slug === "challenge-step"
+    ? MODULE_REGISTRY["challenge-step"].dated!(p.props, { key: "c", label: "", start: new Date(Date.UTC(2026, 0, 6)), level: PageLevel.DAILY, index: 1, total: 2 })
+    : p.props;
+
 function droppedPrompts(def: HeroSpread): string[] {
   const preview = layoutPreview(def, PRINT_DATE);
   return spreadPlacements(def).flatMap((p) => {
     if (p.locked || MODULE_REGISTRY[p.slug]?.primitive !== "prompted-lines" || !Array.isArray(p.props.prompts)) return [];
-    const prompts = (p.props.prompts as unknown[]).map((q) => String(q ?? "").trim());
+    const prompts = (drawnProps(def, p).prompts as unknown[]).map((q) => String(q ?? "").trim());
     const fits = promptLineCounts(p.props, p.rowSpan - 1).length;
     const printed = new Set(textIn(preview, p).map((t) => t.toLowerCase()));
     const missing = prompts.filter((q, i) => i >= fits || (q !== "" && !printed.has(q.toLowerCase())));
@@ -366,7 +373,9 @@ check(
   let printed = 0;
   for (const def of PLANNER_SPREADS) {
     for (const p of spreadPlacements(def)) {
-      if (p.slug !== "challenge-step") continue;
+      // a facing-days spread draws its right page as the next day (below):
+      // the left page's cell is the one every day's step is tried in
+      if (p.slug !== "challenge-step" || p.page !== 0) continue;
       const list = p.props.steps as string[];
       check(`${def.key}: its step module has its steps`, Array.isArray(list) && list.length > 0);
       for (let index = 0; index < list.length; index++) {
@@ -394,6 +403,28 @@ check(
     }
   }
   check("the challenges' steps were printed", printed >= 200, `${printed}`);
+  // FACING DAYS ARE TWO DAYS (2026-10-31, his "both pages show day 1 for all
+  // the challenges"): the left page day 1, the right page day 2, each with
+  // its own step - and a journal made of the spread keeps day 1's words.
+  let facing = 0;
+  for (const def of PLANNER_SPREADS) {
+    if (def.layout.kind !== "day") continue;
+    const placed = spreadPlacements(def).filter((p) => p.slug === "challenge-step");
+    if (placed.length === 0) continue;
+    const list = placed[0].props.steps as string[];
+    const drawn = layoutPreview(def, PRINT_DATE);
+    const said = (page: 0 | 1) => textIn(drawn, placed.find((p) => p.page === page)!).map((w) => w.toLowerCase());
+    const left = said(0);
+    const right = said(1);
+    check(
+      `${def.key}: the left page is day 1 and the right day 2, each with its step`,
+      left.includes(`day 1 of ${list.length}`) && left.includes(list[0].toLowerCase()) && right.includes(`day 2 of ${list.length}`) && right.includes(list[1].toLowerCase()),
+      `${left.join(" | ")} || ${right.join(" | ")}`
+    );
+    check(`${def.key}: a journal made of it keeps day 1's words on both pages`, placed.every((p) => p.props.heading === `Day 1 of ${list.length}` && (p.props.prompts as string[])[0] === list[0]));
+    facing++;
+  }
+  check("every 30-day challenge was looked at", facing >= 9, `${facing}`);
 }
 
 // Everything, held weeks included (production: false) - checked as strictly

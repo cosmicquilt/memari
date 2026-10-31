@@ -28,7 +28,7 @@ import { MODULE_REGISTRY, getMinRowSpanForSlug, moduleDefinition, moduleSchemaDe
 import { PLANNER_TRIMS } from "@/lib/planner-trims";
 import { resolveFontFamily } from "@/lib/theme";
 import { MONTH_GRID_ROW_SPAN, MONTH_TITLE_ROW_SPAN, WEEK_TITLE_ROW_SPAN } from "@/lib/pageLayouts";
-import { dateRangeLabel } from "@/lib/pageLevels";
+import { dateRangeLabel, type OccurrenceContext } from "@/lib/pageLevels";
 import { computeMonthCalendar, type MonthCalendarCell } from "@/lib/monthCalendar";
 import { layoutPlacements, type CalendarBlock, type Slot } from "./archetypes";
 import { BASE_SPREAD, HERO_SPREADS, heroSpreads, type HeroSpread, type HoursSettings } from "./heroSpreads";
@@ -417,7 +417,11 @@ function stack(sidebar: Array<[slug: string, rowSpan: number, props?: Record<str
  * month's calendar, locked where the app locks them - then the modules
  * around it.
  */
-function placementsOf(def: HeroSpread, when: When): Placed[] {
+/** Modules whose dated hook reads only the page's place in the term: a
+ *  challenge's step, "Day 2 of 30" and that day's step. */
+const COUNTS_DAYS = new Set(["challenge-step"]);
+
+function placementsOf(def: HeroSpread, when: When, { drawn = false }: { drawn?: boolean } = {}): Placed[] {
   const { layout } = def;
   const weekStartDay = layout.weekStartsMonday ? 1 : 0;
   const placed: Placed[] = [];
@@ -509,7 +513,16 @@ function placementsOf(def: HeroSpread, when: When): Placed[] {
   for (const p of modules) {
     const props = { ...moduleSchemaDefaults(p.slug), ...(p.props ?? {}) };
     const rotate = moduleDefinition(p.slug)?.weekStart;
-    const turned = rotate ? rotate(props, weekStartDay) : props;
+    const rotated = rotate ? rotate(props, weekStartDay) : props;
+    // FACING DAYS ARE TWO DAYS (2026-10-31, his "both pages show day 1 for
+    // all the challenges"): drawn, a module that counts its days counts the
+    // right page as the next, as the book does (its dated hook,
+    // generateBook); the left page is the day the spread sets. Only the
+    // count - a spread has no term to date the rest against. Only drawn: a
+    // journal made of the spread (spreadPlacements) keeps the template's
+    // own words, or its first day would print the second's step.
+    const counted = drawn && layout.kind === "day" && p.page === 1 && COUNTS_DAYS.has(p.slug) ? moduleDefinition(p.slug)?.dated : undefined;
+    const turned = counted ? counted(rotated, { index: 1, total: 2 } as unknown as OccurrenceContext) : rotated;
     placed.push({ ...p, locked: false, props: layout.kind === "week" ? (withDaysUnder(p.slug, turned, daysUnder(p)) as Record<string, unknown>) : turned });
   }
   return placed;
@@ -580,7 +593,7 @@ function buildSpread(def: HeroSpread, when: When): LandingSpread {
     { marks: [], regions: [] },
     { marks: [], regions: [] },
   ];
-  for (const p of placementsOf(def, when)) {
+  for (const p of placementsOf(def, when, { drawn: true })) {
     const elements = flatten(
       renderModuleInstance(
         {
