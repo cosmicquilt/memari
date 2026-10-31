@@ -27,6 +27,11 @@ import {
   pickService,
   textStockFor,
   webhookReferences,
+  realOrdersAllowed,
+  placeBookVaultOrder,
+  cancelBookVaultOrder,
+  getBookVaultOrder,
+  listBookVaultWebhooks,
 } from "./bookvault";
 
 /** With every printer's keys "set" - nothing here calls one - so a binding's
@@ -452,4 +457,45 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   check(edges.every((e) => e > 8 && e < 9.5), `3mm of bleed on every edge of both pages (${edges.map((e) => e.toFixed(2)).join(", ")} pt)`);
   const wrap = buildCoverPdf({ widthPt: 1046, heightPt: 738, trimWidthIn: 7, trimHeightIn: 10, title: "My Journal", dates: "" });
   check(wrap.pages === 1, "a wrap is still one sheet");
+}
+
+// REAL ORDERS ONLY FOR REAL PAYMENTS (2026-10-31, his open call: "the
+// BookVault key on your laptop"). BookVault has no test mode, so an order is
+// placed or cancelled only beside a live Stripe key; with a test key - a
+// laptop, a check - BookVault is never asked, while prices, reading an order
+// back and webhook setup go on as before. The network is stubbed: nothing
+// here reaches BookVault.
+{
+  check(!realOrdersAllowed({}), "no Stripe key: no real BookVault orders");
+  check(!realOrdersAllowed({ STRIPE_SECRET_KEY: "sk_test_51abc" }) && !realOrdersAllowed({ STRIPE_SECRET_KEY: "rk_test_51abc" }), "a test key, secret or restricted: no real BookVault orders");
+  check(realOrdersAllowed({ STRIPE_SECRET_KEY: "sk_live_51abc" }) && realOrdersAllowed({ STRIPE_SECRET_KEY: "rk_live_51abc" }), "a live key, secret or restricted: real orders");
+  check(!realOrdersAllowed({ STRIPE_SECRET_KEY: "x_sk_live_" }), "only a key that starts live");
+  const saved = { stripe: process.env.STRIPE_SECRET_KEY, key: process.env.BOOKVAULT_API_KEY, fetch: globalThis.fetch };
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push(`${init?.method ?? "GET"} ${String(url)}`);
+    return new Response(JSON.stringify({ podRef: 4242, success: true, webhooks: [] }), { status: 200 });
+  }) as typeof fetch;
+  process.env.BOOKVAULT_API_KEY = "test-key";
+  const order = { externalId: "ord_guard", title: "My Journal", sku: "170UWMWB254H178W", pages: 128, interiorUrl: "https://x/i.pdf", coverUrl: "https://x/c.pdf", contactEmail: "sam@example.com", level: "MAIL" as const, address: { name: "Sam Rivera", street1: "1 Main St", city: "Springfield", stateCode: "IL", countryCode: "US", postcode: "62701", phoneNumber: "555 0100" } };
+  try {
+    process.env.STRIPE_SECRET_KEY = "sk_test_51guard";
+    const placed = await placeBookVaultOrder(order).then(() => "placed", (error: Error) => error.message);
+    const cancelled = await cancelBookVaultOrder("4242").then(() => "cancelled", (error: Error) => error.message);
+    check(/only the live site/.test(placed) && /only the live site/.test(cancelled) && asked.length === 0, `A TEST KEY: NO BOOKVAULT ORDER PLACED OR CANCELLED, AND BOOKVAULT NEVER ASKED (${placed} / ${asked.join(", ")})`);
+    await getBookVaultOrder("4242");
+    await listBookVaultWebhooks();
+    check(asked.length === 2 && asked.every((a) => a.startsWith("GET")), `and reading an order back, and the webhooks, still work (${asked.join(", ")})`);
+    process.env.STRIPE_SECRET_KEY = "rk_live_51guard";
+    asked.length = 0;
+    const live = await placeBookVaultOrder(order);
+    await cancelBookVaultOrder("4242");
+    check(live.podRef === "4242" && asked.length === 2 && asked[0].startsWith("POST") && asked[1].startsWith("DELETE"), `a live key: the order placed and cancelled (${asked.join(", ")})`);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.stripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.stripe;
+    if (saved.key === undefined) delete process.env.BOOKVAULT_API_KEY;
+    else process.env.BOOKVAULT_API_KEY = saved.key;
+  }
 }

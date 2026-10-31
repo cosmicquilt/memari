@@ -29,7 +29,8 @@
 //
 // Authenticated by the x-bookvault-api-key header. The key is Andrew's to
 // enter (BOOKVAULT_API_KEY in .env, or where the site runs), never written
-// here. There is no sandbox: every placed order is real.
+// here. There is no sandbox: every placed order is real - so one is placed
+// or cancelled only beside a live Stripe key (realOrdersAllowed).
 
 import type { ShippingLevel } from "./orderRange";
 import type { PrintCost, ShippingAddress } from "./lulu";
@@ -60,9 +61,34 @@ export class BookVaultError extends Error {
   }
 }
 
+/**
+ * REAL ORDERS ONLY FOR REAL PAYMENTS (2026-10-31, his open call of 26
+ * October, "the BookVault key on your laptop"). BookVault has no test mode:
+ * every order placed is printed and billed to us. Where Stripe takes only
+ * pretend payments - a test key on a laptop, a check, a preview, or no key
+ * at all - a book paid for in test would otherwise become a real order. So
+ * an order is placed or cancelled only beside a LIVE Stripe key (sk_live_,
+ * or a restricted rk_live_), which is the live site and nowhere else. The
+ * rule is the money itself rather than which server this is: no setting has
+ * to be right for it to hold. Prices, reading orders back and webhook setup
+ * still work everywhere; they cost nothing.
+ */
+export function realOrdersAllowed(env: Record<string, string | undefined> = process.env): boolean {
+  return /^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY ?? "");
+}
+
+/** What changes an order at BookVault: anything but reading one. */
+const changesAnOrder = (method: string, path: string) => method !== "GET" && /^\/v4\/orders?(\/|$)/.test(path);
+
 async function call<T>(method: "GET" | "POST" | "DELETE", path: string, options: { query?: Record<string, string>; body?: unknown } = {}): Promise<T> {
   const { key, base } = config();
   if (!key) throw new BookVaultError("BookVault's API key is not set (BOOKVAULT_API_KEY).", 0, "");
+  if (changesAnOrder(method, path) && !realOrdersAllowed())
+    throw new BookVaultError(
+      "BookVault orders are real and billed, so only the live site, taking real payments, places or cancels one: Stripe's key here is not a live one.",
+      0,
+      ""
+    );
   const query = options.query ? `?${new URLSearchParams(options.query)}` : "";
   const response = await fetch(`${base}${path}${query}`, {
     method,
