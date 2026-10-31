@@ -611,6 +611,10 @@ model PrintOrder {
 
   files PrintFile[]
 
+  /// Taken off at Stripe's page by a promotion code (a pilot price,
+  /// 2026-10-31): totalCents less this is what was charged.
+  discountCents Int @default(0)
+
   /// Paid for with other books in one payment - a group's (PrintBatch).
   batchId String?
   batch   PrintBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
@@ -696,6 +700,18 @@ model Business {
   /// old, and clearing it turns the address off.
   intakeTokenHash String?            @unique
   intakeMadeAt    DateTime?
+  /// THE FIRST COACHES (2026-10-31, src/lib/businessClaim.ts): a business we
+  /// prepare for a coach (scripts/build-coach-kit.mts) under a holding guest,
+  /// with their own framework as its template, claimed by one link. Which kit
+  /// made it, and when; the link's SHA-256 (the link itself is shown once)
+  /// and when it stops; and when an account claimed it, after which the link
+  /// is dead. The pilot page on admin lists every prepared business.
+  preparedAt      DateTime?
+  preparedKey     String?
+  claimTokenHash  String?            @unique
+  claimExpiresAt  DateTime?
+  claimedAt       DateTime?
+  feedback        BusinessFeedback[]
   clients         BusinessClient[]
   templates       BusinessTemplate[]
   groups          BusinessGroup[]
@@ -703,6 +719,20 @@ model Business {
   linkEmails      ClientLinkEmail[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+}
+
+/// "Tell us" (2026-10-31): what a coach wrote from their workspace, and the
+/// page they were on. Kept for the pilot page, and emailed to the admin.
+model BusinessFeedback {
+  id         String    @id @default(cuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  ownerId    String
+  page       String
+  message    String
+  createdAt  DateTime  @default(now())
+
+  @@index([businessId, createdAt])
 }
 
 /// One of the coach's journals, as a template: what a client's journal is

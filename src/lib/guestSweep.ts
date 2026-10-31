@@ -65,7 +65,13 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
           ...(await prisma.business.findMany({
             where: {
               ownerId: { in: coaches },
-              OR: [{ updatedAt: { gte: cutoff } }, { clients: { some: { OR: [{ updatedAt: { gte: cutoff } }, { accessSeenAt: { gte: cutoff } }] } } }],
+              OR: [
+                { updatedAt: { gte: cutoff } },
+                { clients: { some: { OR: [{ updatedAt: { gte: cutoff } }, { accessSeenAt: { gte: cutoff } }] } } },
+                // a workspace prepared for a coach (businessClaim.ts) waits for
+                // them while its link works, and as long again after
+                { preparedAt: { not: null }, claimedAt: null, claimExpiresAt: { gte: cutoff } },
+              ],
             },
             select: { ownerId: true },
           })),

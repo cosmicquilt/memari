@@ -11,6 +11,7 @@ import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { GUEST_COOKIE, GUEST_OWNER_PREFIX, guestIdFromCookie } from "@/lib/guest";
+import { markClaimed } from "@/lib/businessClaim";
 
 export type Owner = { id: string; guest: boolean };
 
@@ -107,19 +108,41 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
  *  itself and deleted it, every client with it (review, 2026-10-27). Scoped,
  *  a claim that lags does nothing. */
 export async function moveGuestBusiness(guestBusinessId: string, guestOwner: string, userId: string): Promise<void> {
-  const own = await prisma.business.findUnique({ where: { ownerId: userId }, select: { id: true } });
+  const own = await prisma.business.findUnique({ where: { ownerId: userId }, select: { id: true, preparedAt: true } });
   if (own?.id === guestBusinessId) return;
   const theGuests = { id: guestBusinessId, ownerId: guestOwner };
+  // A WORKSPACE WE PREPARED (businessClaim.ts) is claimed once an account has
+  // it: its link dies, and the pilot page says when. Moving to another guest
+  // (a claim link opened where they were a guest already) is not that.
+  const toAccount = !userId.startsWith(GUEST_OWNER_PREFIX);
   if (!own) {
     await prisma.business.updateMany({ where: theGuests, data: { ownerId: userId } });
+    if (toAccount) await markClaimed(guestBusinessId);
     return;
   }
+  const prepared = await prisma.business.findUnique({ where: { id: guestBusinessId }, select: { preparedAt: true, preparedKey: true, claimTokenHash: true, claimExpiresAt: true } });
   await prisma.$transaction([
     prisma.businessClient.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
     prisma.businessTemplate.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
+    // its groups too (review, 2026-10-31): left on the guest's business they
+    // went with it, deleted, and their clients fell out of them
+    prisma.businessGroup.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
+    prisma.businessFeedback.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
     prisma.clientLinkEmail.updateMany({ where: { business: theGuests }, data: { businessId: own.id } }),
     prisma.business.deleteMany({ where: theGuests }),
+    // a prepared workspace merged into theirs: theirs is the one the pilot
+    // page follows now, and its link goes on working on their other devices
+    // while it is a guest's (after the delete: the link's hash is unique)
+    ...(prepared?.preparedAt && !own.preparedAt
+      ? [
+          prisma.business.update({
+            where: { id: own.id },
+            data: { preparedAt: prepared.preparedAt, preparedKey: prepared.preparedKey, claimTokenHash: prepared.claimTokenHash, claimExpiresAt: prepared.claimExpiresAt },
+          }),
+        ]
+      : []),
   ]);
+  if (toAccount) await markClaimed(own.id);
 }
 
 /** EVERYTHING A PERSON MADE, gone (account/actions.ts, deleteAccount): their

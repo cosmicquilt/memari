@@ -12,6 +12,7 @@ import { emailClientLink, type EmailLinkResult } from "@/lib/clientLinkSend";
 import { PayoutsError, discardUnfinishedPayouts, payoutsDashboardUrl, payoutsSetupUrl } from "@/lib/payouts";
 import { MAX_SHARE_CENTS, MIN_SHARE_CENTS } from "@/lib/print/clientPays";
 import { appUrl } from "@/lib/print/fileUrls";
+import { escapeHtml, sendEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
 import { buildClientJournal, formerTemplateOf, updateClientJournal, updateClientsOf } from "@/lib/businessJournals";
@@ -441,4 +442,31 @@ export async function saveAnswersFor(clientId: string, answers: Record<string, u
   const saved = await saveClientAnswers(client.id, answers);
   revalidatePath(`/app/business/clients/${client.id}`);
   return { saved };
+}
+
+// ---- "TELL US" (2026-10-31, the first coaches) ------------------------------
+
+/** At most this many messages a day from one person: a button anyone in a
+ *  workspace can press, which sends us an email. */
+const FEEDBACK_PER_DAY = 20;
+
+/** What a coach wrote from their workspace, with the page they were on:
+ *  kept (the pilot page shows it) and emailed to the admin. */
+export async function sendFeedback(page: string, message: string): Promise<{ sent?: boolean; error?: string }> {
+  const { owner, business } = await myBusiness();
+  const said = String(message ?? "").trim().slice(0, 2000);
+  if (!said) return { error: "Write something first." };
+  const where = String(page ?? "").slice(0, 200);
+  const today = await prisma.businessFeedback.count({ where: { ownerId: owner.id, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } });
+  if (today >= FEEDBACK_PER_DAY) return { error: "That's a lot of messages for one day. Try again tomorrow, or email us." };
+  await prisma.businessFeedback.create({ data: { businessId: business.id, ownerId: owner.id, page: where.startsWith("/") ? where : "", message: said } });
+  const to = process.env.ADMIN_EMAIL;
+  if (to) {
+    const who = `${business.name}${owner.guest ? " (a guest)" : ""}`;
+    const text = `${who} wrote, on ${where || "a page"}:\n\n${said}\n\nEvery message is on the pilot page: ${appUrl()}/app/admin/coaches`;
+    const html = `<p>${escapeHtml(who)} wrote, on ${escapeHtml(where || "a page")}:</p><blockquote>${escapeHtml(said).replace(/\n/g, "<br>")}</blockquote>`;
+    await sendEmail({ to, subject: `Tell us: ${business.name}`, text, html }).catch((error) => console.error("[feedback] email failed:", error));
+  }
+  revalidatePath("/app/admin/coaches");
+  return { sent: true };
 }

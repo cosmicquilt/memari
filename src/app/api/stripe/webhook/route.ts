@@ -52,6 +52,9 @@ export async function POST(request: Request) {
     const orderId = session.metadata?.orderId;
     const batchId = session.metadata?.batchId;
     const intentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+    // a pilot price's promotion code: what was taken off, kept on the order
+    const discount = session.total_details?.amount_discount ?? 0;
+    if (orderId && discount > 0) await prisma.printOrder.updateMany({ where: { id: orderId, discountCents: 0 }, data: { discountCents: discount } });
     if (batchId) {
       if (event.type === "checkout.session.completed" && session.payment_status === "unpaid" && intentId) {
         await recordClearingBatch(batchId, session.id, intentId, session.customer_details?.email);

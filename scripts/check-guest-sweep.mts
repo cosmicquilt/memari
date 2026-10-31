@@ -344,7 +344,14 @@ async function main() {
       .filter((block) => /^\s+\w+\s+Business\??\s+@relation/m.test(block))
       .map((block) => block.slice(0, block.indexOf(" ")))
       .sort();
-    check(hanging.join() === "BusinessClient,BusinessTemplate,ClientLinkEmail", `the rows that hang off a business are the three the merge moves (${hanging.join(", ")})`);
+    // what the merge moves, read from the merge itself: one line per kind of
+    // row, prisma.<kind>.updateMany({ where: { business: theGuests } ... }).
+    // A list kept here by hand let groups (2026-10-31) go unmoved: deleted
+    // with the guest's business, their people falling out of them.
+    const owner = readFileSync("src/lib/owner.ts", "utf8");
+    const merge = owner.slice(owner.indexOf("export async function moveGuestBusiness"), owner.indexOf("export async function deleteOwnerWork"));
+    const moved = [...merge.matchAll(/prisma\.(\w+)\.updateMany\(\{ where: \{ business: theGuests \}/g)].map((m) => m[1].charAt(0).toUpperCase() + m[1].slice(1)).sort();
+    check(hanging.length >= 5 && hanging.join() === moved.join(), `every kind of row hanging off a business is moved by the merge (hanging: ${hanging.join(", ")}; moved: ${moved.join(", ")})`);
 
     // EVERY KIND OF ROW A GUEST CAN OWN is named above. If a new one is added
     // to the schema and not to the sweep, this is where it should have been.

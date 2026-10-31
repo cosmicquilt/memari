@@ -338,6 +338,11 @@ export async function startCheckout(ownerId: string, input: CheckoutInput, origi
   const session = await stripe().checkout.sessions.create({
     mode: "payment",
     customer,
+    // PILOT PRICES (2026-10-31, the first coaches): a promotion code made in
+    // Stripe takes money off one book's page. Not a client's page (the
+    // coach's share is a fixed fee on it) nor a group's (each book refunds
+    // by its own total). What was taken off is kept (api/stripe/webhook).
+    allow_promotion_codes: true,
     client_reference_id: order.id,
     metadata: { orderId: order.id },
     line_items: [

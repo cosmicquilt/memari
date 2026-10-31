@@ -13,6 +13,7 @@
 
 import Link from "next/link";
 import { businessHome, currentBusiness } from "@/lib/business";
+import { signInPath } from "@/lib/owner";
 import { businessStats } from "@/lib/businessStats";
 import { ChartCard, StatTiles, Timeline, type StatTileData } from "./charts";
 import { shortDate, stateWords } from "./chartWords";
@@ -110,6 +111,25 @@ export default async function BusinessHome() {
           Add client
         </Link>
       </div>
+      {ctx.owner.guest && business.preparedAt && (
+        // a workspace prepared for them (businessClaim.ts), opened from its
+        // link: theirs, until this browser forgets it - so, sign in
+        <div className={css.card} data-prepared="">
+          <h2>Set up for you</h2>
+          <p>
+            Your framework is the template here, and you&rsquo;re its first client, so your own copy is one order away. It&rsquo;s yours: sign in or make an
+            account to keep it, and to order books.
+          </p>
+          <div className={css.actions}>
+            <Link href={signInPath("/app/business")} className={`${css.btn} ${css.primary}`}>
+              Sign in to keep it
+            </Link>
+            <Link href="/app/business/templates" className={css.btn}>
+              See your template
+            </Link>
+          </div>
+        </div>
+      )}
       {done < steps.length && (
         <div className={css.card}>
           <div className={css.head}>

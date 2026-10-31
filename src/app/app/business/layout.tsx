@@ -10,12 +10,13 @@ import type { Metadata } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { signInPath } from "@/lib/owner";
+import { claimGuestWork, signInPath } from "@/lib/owner";
 import { currentBusiness } from "@/lib/business";
 import { APPEARANCE_SCRIPT, AppearanceSwitch } from "./Appearance";
 import { BusinessNav } from "./BusinessNav";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { ToastHost } from "./Toast";
+import { TellUs } from "./TellUs";
 import { WALL_TILE, WALL_VARIANTS, wallPath } from "@/app/landing/doodleWall";
 import css from "./business.module.css";
 
@@ -23,8 +24,12 @@ export const metadata: Metadata = { title: "memari. for businesses", robots: { i
 export const dynamic = "force-dynamic";
 
 export default async function BusinessLayout({ children }: { children: ReactNode }) {
-  const ctx = await currentBusiness();
+  let ctx = await currentBusiness();
   if (!ctx) redirect(signInPath("/app/business"));
+  // SIGNED IN FROM HERE (2026-10-31): a guest's work - a workspace prepared
+  // for them (businessClaim.ts) above all - comes with them, as it does on
+  // /app. Signing in from a business page came back here, which never asked.
+  if (!ctx.owner.guest && (await claimGuestWork(ctx.owner.id)) > 0) ctx = (await currentBusiness())!;
   const { business } = ctx;
   // THE DOODLE WALL (2026-10-31: "add the doodle wall that's behind the /app
   // ... but even lower opacity"): the start dialog's blue-pen wall, baked
@@ -55,6 +60,7 @@ export default async function BusinessLayout({ children }: { children: ReactNode
             </strong>
           )}
           <span className={css.spacer} />
+          {business && <TellUs />}
           <AppearanceSwitch />
           <Link href="/app" className={css.back}>
             Your journals

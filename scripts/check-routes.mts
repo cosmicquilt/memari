@@ -120,6 +120,10 @@ async function main() {
     // The renewal reminder's skip and pause links work signed out; a link
     // copied in part says so, rather than failing.
     { path: "/renewal/not-an-order?do=skip&sig=0000", expect: [200], as: "nobody", what: "a broken skip link is a page saying so, not an error" },
+    // the first coaches (2026-10-31): a claim link that isn't one is a page
+    // saying so; the pilot page says nothing to anyone but an admin
+    { path: "/claim/not-a-real-claim-token", expect: [200], as: "nobody", what: "a claim link that isn't one is a page saying so, not an error" },
+    { path: "/app/admin/coaches", expect: [404], as: "guest", what: "the pilot page is a 404 to anyone but an admin" },
     // And "has it arrived?" (src/lib/print/delivery.ts), the same way.
     { path: "/arrival/not-an-order?a=no&sig=0000", expect: [200], as: "nobody", what: "a broken arrival link is a page saying so, not an error" },
     // The gallery, and a prebuilt planner's own page (plannerTemplates.ts).

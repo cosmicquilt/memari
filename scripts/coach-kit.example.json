@@ -1,0 +1,45 @@
+{
+  "key": "example-steady-ground",
+  "coach": { "name": "Jordan Example", "coverName": "Jordan", "email": "jordan@example.com" },
+  "business": { "name": "Steady Ground Coaching" },
+  "journal": {
+    "title": "The Steady Ground Journal",
+    "months": 3,
+    "parts": {
+      "front": {
+        "kind": "pages",
+        "font": "serif",
+        "weekStartsMonday": true,
+        "pages": [
+          [
+            { "slug": "habit-tracker", "columnStart": 0, "rowStart": 0, "columnSpan": 24, "rowSpan": 20, "props": { "heading": "The Plan", "habits": ["1. Notice what drains you", "2. Name what fills you", "3. Make one deposit a day", "4. Close one leak a week", "5. Review on Sunday", "6. Tell someone what changed"], "columns": ["Done"], "rowsAsTyped": true } },
+            { "slug": "text-block", "columnStart": 0, "rowStart": 20, "columnSpan": 24, "rowSpan": 6, "props": { "heading": "My Why", "body": "" } },
+            { "slug": "todo-checklist", "columnStart": 0, "rowStart": 26, "columnSpan": 24, "rowSpan": 10, "props": { "heading": "Three Goals" } }
+          ],
+          [
+            { "slug": "prompted-lines", "columnStart": 0, "rowStart": 0, "columnSpan": 24, "rowSpan": 18, "props": { "heading": "Where I Start", "prompts": ["What drains me most right now", "What fills me up", "What I want to feel in 90 days"], "linesPerPrompt": 3 } },
+            { "slug": "labeled-box", "columnStart": 0, "rowStart": 18, "columnSpan": 24, "rowSpan": 18, "props": { "heading": "Notes" } }
+          ]
+        ]
+      },
+      "week": {
+        "kind": "week",
+        "font": "serif",
+        "weekStartsMonday": true,
+        "sidebar": [
+          ["habit-tracker", 12, { "heading": "My Practices", "habits": ["Morning check-in", "One deposit", "Evening review"] }],
+          ["prompted-lines", 12, { "heading": "Weekly Check-in", "prompts": ["Where did I leak energy?", "What filled me up?"], "linesPerPrompt": 2 }],
+          ["labeled-box", 9, { "heading": "Notes" }]
+        ],
+        "belowLeft": [{ "slug": "todo-checklist", "columnStart": 6, "rowStart": 21, "columnSpan": 18, "rowSpan": 15, "props": { "heading": "This Week" } }],
+        "belowRight": [{ "slug": "labeled-box", "columnStart": 0, "rowStart": 21, "columnSpan": 24, "rowSpan": 15, "props": { "heading": "Wins" } }]
+      }
+    }
+  },
+  "questions": [
+    { "part": "front", "slug": "text-block", "heading": "My Why", "prompt": "Why does this work matter to you now?" },
+    { "part": "front", "slug": "todo-checklist", "heading": "Three Goals", "prompt": "What three goals do you want from our work together?", "max": 3 },
+    { "part": "week", "slug": "habit-tracker", "heading": "My Practices", "prompt": "Which practices will you keep each week?", "max": 4 }
+  ],
+  "firstClient": { "startDate": "2027-01-04" }
+}
