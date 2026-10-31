@@ -6,7 +6,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
-import { requireBusiness, shippableAddress } from "@/lib/business";
+import { bookAddressOf, requireBusiness } from "@/lib/business";
 import { businessStats } from "@/lib/businessStats";
 import { BarList, ChartCard } from "../charts";
 import { RestoreClientButton } from "../forms";
@@ -21,7 +21,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const clients = await prisma.businessClient.findMany({
     where: { businessId: business.id, archivedAt: archived ? { not: null } : null },
     orderBy: [{ name: "asc" }],
-    include: { template: { include: { planner: { select: { title: true } } } } },
+    include: { template: { include: { planner: { select: { title: true } } } }, group: { select: { name: true, shipToVenue: true, venueAddress: true } } },
   });
   const setup = archived || !clients.length ? null : (await businessStats(business.id, 1)).setup;
   const cols = { "--cols": archived ? "minmax(0, 2fr) minmax(0, 1.4fr) auto" : "minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr)" } as CSSProperties;
@@ -29,6 +29,15 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     <>
       <div className={css.head}>
         <h1>Clients</h1>
+        {clients.length > 0 && (
+          // a plain link: the browser downloads the file (clients/export)
+          <a href="/app/business/clients/export" className={css.btn} download>
+            Download all
+          </a>
+        )}
+        <Link href="/app/business/clients/import" className={css.btn}>
+          Import
+        </Link>
         <Link href="/app/business/clients/new" className={`${css.btn} ${css.primary}`}>
           Add client
         </Link>
@@ -81,7 +90,8 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </div>
           {clients.map((c) => {
             const needs = [
-              !shippableAddress(c.shippingAddress) && "Address",
+              // their group's place counts, while it sends every book there
+              !bookAddressOf(c) && (c.group?.shipToVenue ? "Group's place" : "Address"),
               !c.templateId && "Template",
               !c.startDate && "Start date",
               c.templateId && !c.plannerId && "Journal",
@@ -91,6 +101,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                 <span className={`${css.cell} ${css.strong}`}>
                   {c.name}
                   {c.coverName && <span className={css.dim} style={{ fontWeight: 400 }}> · cover: {c.coverName}</span>}
+                  {c.group && <span className={css.dim} style={{ fontWeight: 400 }}> · {c.group.name}</span>}
                 </span>
                 <span className={css.cell}>
                   <span className={css.label}>Template</span>

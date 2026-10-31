@@ -31,13 +31,14 @@ import { nextRange, type ShippingLevel } from "./orderRange";
 import type { PrintCost, ShippingAddress } from "./lulu";
 import { priceFromCost } from "./pricing";
 import { buildCoverPdf } from "./cover";
+import { coverBrandFor } from "@/lib/print/coverBrand";
 import { buildInterior, loadJournal, rangeLabel, trimInches } from "./orderBook";
 import { fulfilPaidOrder } from "./orders";
 import { stripe } from "./stripe";
 import { notify, renewalFailedEmail } from "./emails";
 import { sendEmail, type EmailSender } from "@/lib/email";
 import { RENEWABLE_STATUSES } from "./renewalControls";
-import { shippableAddress } from "@/lib/business";
+import { GROUP_PLACE, bookAddressOf } from "@/lib/business";
 import { HOLDS_DAYS } from "./holdsDays";
 
 export type ChargeResult = { ok: true; paymentIntentId: string } | { ok: false; reason: string };
@@ -82,7 +83,7 @@ export function liveDeps(origin: string): RenewalDeps {
         return { ok: false, reason: `your card was declined (${message})` };
       }
     },
-    fulfil: (orderId, payment) => fulfilPaidOrder(orderId, payment, origin),
+    fulfil: async (orderId, payment) => void (await fulfilPaidOrder(orderId, payment, origin)),
     email: sendEmail,
   };
 }
@@ -197,7 +198,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   // client says now - on their own page ("Saved. Your next book comes
   // here.") or in the coach's form - not where the last one went; and a
   // client the coach has archived gets no more books, with nothing charged.
-  const client = await prisma.businessClient.findUnique({ where: { plannerId: order.plannerId }, select: { archivedAt: true, shippingAddress: true } });
+  const client = await prisma.businessClient.findUnique({ where: { plannerId: order.plannerId }, select: { archivedAt: true, shippingAddress: true, group: GROUP_PLACE } });
   if (client?.archivedAt) {
     await prisma.printOrder.update({ where: { id: order.id }, data: { autoRenew: false, renewsAt: null } });
     return { orderId: order.id, outcome: "skipped", detail: "its client was archived" };
@@ -220,7 +221,8 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
 
   // On the same paper as the book it renews.
   const sku = printer.sku(binding, interior.trim, paperOfSku(order.podPackageId))!;
-  const address = shippableAddress(client?.shippingAddress) ?? (order.shippingAddress as unknown as ShippingAddress);
+  // where their books go now - their group's place, while it has one
+  const address = (client ? bookAddressOf(client) : null) ?? (order.shippingAddress as unknown as ShippingAddress);
   const level = order.shippingLevel as ShippingLevel;
   let cost: PrintCost;
   try {
@@ -239,6 +241,7 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
     trimHeightIn: trim.heightIn,
     title: journal.title,
     dates: journal.dated ? rangeLabel(range) : "",
+    brand: await coverBrandFor(journal.id),
   });
 
   const renewal = await prisma.printOrder.create({

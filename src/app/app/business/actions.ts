@@ -16,6 +16,9 @@ import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
 import { buildClientJournal, formerTemplateOf, updateClientJournal, updateClientsOf } from "@/lib/businessJournals";
 import { COUNTRY_CODES } from "@/lib/print/countries";
+import { addClients, clientsFromCsv, makeIntakeToken, turnOffIntake } from "@/lib/clientIntake";
+import { saveClientAnswers } from "@/lib/clientAnswers";
+import { askQuestion, stopAsking } from "@/lib/templateQuestions";
 
 export type FormState = { error?: string; saved?: boolean } | null;
 
@@ -343,4 +346,99 @@ export async function restoreTemplate(plannerId: string, clientIds: string[]): P
   revalidatePath("/app/business", "layout");
   revalidatePath("/app");
   return {};
+}
+
+// ---- CLIENTS WITHOUT TYPING (2026-10-30, src/lib/clientIntake.ts) ----------
+
+/** What a spreadsheet would add, before anything is added. */
+export type ImportPreview = {
+  clients: Array<{ name: string; email: string | null; address: boolean; template: string | null; already: boolean }>;
+  problems: Array<{ row: number; error: string }>;
+  unknownColumns: string[];
+};
+
+const IMPORT_MAX_CHARS = 1_000_000;
+
+export async function previewImport(text: string): Promise<ImportPreview | { error: string }> {
+  const { business } = await myBusiness();
+  if (typeof text !== "string" || text.length > IMPORT_MAX_CHARS) return { error: "That file is too big: up to 1 MB, 500 clients at a time." };
+  const read = clientsFromCsv(text);
+  const existing = await prisma.businessClient.findMany({ where: { businessId: business.id, archivedAt: null }, select: { name: true, email: true } });
+  const emails = new Set(existing.map((c) => c.email?.toLowerCase()).filter(Boolean));
+  const names = new Set(existing.filter((c) => !c.email).map((c) => c.name.toLowerCase().replace(/\s+/g, " ")));
+  return {
+    clients: read.clients.map((c) => ({
+      name: c.name,
+      email: c.email,
+      address: !!c.shippingAddress?.street1 && !!c.shippingAddress.city && !!c.shippingAddress.postcode,
+      template: c.template,
+      already: c.email ? emails.has(c.email.toLowerCase()) : names.has(c.name.toLowerCase().replace(/\s+/g, " ")),
+    })),
+    problems: read.problems,
+    unknownColumns: read.unknownColumns,
+  };
+}
+
+/** Adds a spreadsheet's clients - read again here, never trusted from the
+ *  page - on the template chosen, unless a row names one of the coach's. */
+export async function importClients(text: string, templateId: string | null): Promise<{ added: number; skipped: number } | { error: string }> {
+  const { business } = await myBusiness();
+  if (typeof text !== "string" || text.length > IMPORT_MAX_CHARS) return { error: "That file is too big: up to 1 MB, 500 clients at a time." };
+  const read = clientsFromCsv(text);
+  if (read.clients.length === 0) return { error: read.problems[0]?.error ?? "No clients in that file." };
+  const { added, skipped } = await addClients(business.id, read.clients, templateId || null);
+  revalidatePath("/app/business", "layout");
+  return { added: added.length, skipped: skipped.length };
+}
+
+/** A new web address for other tools to add clients through, shown once;
+ *  the old one stops. An account's, not a guest's: it outlives a cookie. */
+export async function makeIntakeAddress(): Promise<{ url?: string; error?: string }> {
+  const { owner, business } = await myBusiness();
+  if (owner.guest) return { error: "Sign in to add clients from other tools: the address belongs to your account." };
+  const token = await makeIntakeToken(business.id);
+  revalidatePath("/app/business/settings");
+  const list = await headers();
+  const host = list.get("x-forwarded-host") ?? list.get("host");
+  const proto = list.get("x-forwarded-proto") ?? "https";
+  return { url: `${appUrl(host ? `${proto}://${host}` : undefined)}/api/business/clients/${token}` };
+}
+
+export async function turnOffIntakeAddress(): Promise<{ error?: string }> {
+  const { business } = await myBusiness();
+  await turnOffIntake(business.id);
+  revalidatePath("/app/business/settings");
+  return {};
+}
+
+// ---- INTAKE THAT FILLS THE BOOK (2026-10-31, src/lib/clientAnswers.ts) -----
+
+/** Ask clients about one of a template's modules, or change the question. */
+export async function askAbout(templateId: string, moduleId: string, prompt: string, max: number): Promise<{ error?: string }> {
+  const { owner } = await myBusiness();
+  try {
+    const result = await askQuestion(owner.id, String(templateId), String(moduleId), { prompt: String(prompt ?? ""), max: Number(max) });
+    revalidatePath("/app/business", "layout");
+    return result;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "That question could not be saved." };
+  }
+}
+
+/** Stop asking about it: clients' journals go back to the template's text. */
+export async function stopAskingAbout(templateId: string, moduleId: string): Promise<void> {
+  const { owner } = await myBusiness();
+  await stopAsking(owner.id, String(templateId), String(moduleId));
+  revalidatePath("/app/business", "layout");
+}
+
+/** The coach correcting a client's answers, from the client's screen. */
+export async function saveAnswersFor(clientId: string, answers: Record<string, unknown>): Promise<{ error?: string; saved?: number }> {
+  const { business } = await myBusiness();
+  const client = await prisma.businessClient.findFirst({ where: { id: String(clientId), businessId: business.id }, select: { id: true } });
+  if (!client) return { error: "That client is not one of yours." };
+  if (!answers || typeof answers !== "object" || Array.isArray(answers) || JSON.stringify(answers).length > 20_000) return { error: "Those answers could not be read." };
+  const saved = await saveClientAnswers(client.id, answers);
+  revalidatePath(`/app/business/clients/${client.id}`);
+  return { saved };
 }

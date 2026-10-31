@@ -26,6 +26,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { savePagesAs } from "@/app/planner/savedItems";
 import { BOOK_DAYS } from "@/lib/business";
+import { applyClientAnswers } from "@/lib/clientAnswers";
 
 type Tx = Prisma.TransactionClient;
 const DAY = 24 * 60 * 60 * 1000;
@@ -142,6 +143,8 @@ export async function buildClientJournal(ownerId: string, clientId: string): Pro
       });
       for (const page of pages) await copyPage(tx, planner.id, page);
       await tx.businessClient.update({ where: { id: client.id }, data: { plannerId: planner.id } });
+      // answers they gave before, on another journal (clientAnswers.ts)
+      await applyClientAnswers(tx, planner.id);
       return planner.id;
     },
     { timeout: 30_000 }
@@ -238,6 +241,8 @@ export async function updateClientJournal(ownerId: string, clientId: string, { r
     },
     { timeout: 60_000 }
   );
+  // the template's pages copied again: their answers back in (clientAnswers.ts)
+  await applyClientAnswers(prisma, plannerId);
   return plannerId;
 }
 

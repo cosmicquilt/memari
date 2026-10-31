@@ -535,10 +535,10 @@ model PrintOrder {
   contactEmail    String?
 
   /// What the customer pays, in cents of `currency`.
-  bookCents     Int
-  shippingCents Int
-  totalCents    Int
-  currency      String @default("USD")
+  bookCents       Int
+  shippingCents   Int
+  totalCents      Int
+  currency        String  @default("USD")
   /// Paid by a coach's client from their own page, not by the owner
   /// (memari. for businesses, 2026-10-22).
   paidByClient    Boolean @default(false)
@@ -548,7 +548,7 @@ model PrintOrder {
   /// a refund takes the share back from it.
   payoutAccountId String?
   /// What Lulu quoted to charge us, tax included.
-  costCents     Int
+  costCents       Int
 
   /// Off unless turned on. When on, the next book - the same number of days
   /// straight after this one - is charged and ordered on `renewsAt`.
@@ -562,14 +562,16 @@ model PrintOrder {
   renewedFrom           PrintOrder?  @relation("Renewals", fields: [renewedFromId], references: [id], onDelete: SetNull)
   renewals              PrintOrder[] @relation("Renewals")
 
-  stripeCheckoutSessionId String? @unique
+  /// Stripe's payment page. Not unique: the books of one group payment
+  /// share theirs (PrintBatch), so the one-payable-page checks see each.
+  stripeCheckoutSessionId String?
   stripePaymentIntentId   String?
   /// The card saved for renewals - only when auto-renew was on at payment.
   stripePaymentMethodId   String?
 
   /// Which printer it went to - src/lib/print/printer.ts. Renewals and
   /// refunds go back to the same one.
-  printer        String  @default("lulu")
+  printer        String    @default("lulu")
   luluPrintJobId String?
   /// Lulu's own status name, as last reported - or MEMARI_SENDING while
   /// fulfilPaidOrder has it claimed and is handing it over (orders.ts).
@@ -609,12 +611,38 @@ model PrintOrder {
 
   files PrintFile[]
 
+  /// Paid for with other books in one payment - a group's (PrintBatch).
+  batchId String?
+  batch   PrintBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([ownerId])
   @@index([status, renewsAt])
   @@index([status, shippedAt])
+  @@index([stripeCheckoutSessionId])
+  @@index([batchId])
+}
+
+/// SEVERAL BOOKS IN ONE PAYMENT (groups, 2026-10-31): a coach paying for a
+/// group's books at once. Each book is still its own PrintOrder - its own
+/// print job, status, cancel and refund, a refund being that book's part
+/// of the payment (clientPays.ts refundParams) - and they share one Stripe
+/// page, whose id each carries. See src/lib/print/groupOrders.ts.
+model PrintBatch {
+  id                      String         @id @default(cuid())
+  ownerId                 String
+  groupId                 String?
+  group                   BusinessGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  orders                  PrintOrder[]
+  stripeCheckoutSessionId String?        @unique
+  /// When the one "ordered" email for all its books went: sent once.
+  placedEmailedAt         DateTime?
+  createdAt               DateTime       @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([groupId])
 }
 
 /// A print-ready PDF of an order: its interior or its cover, kept with the
@@ -644,29 +672,37 @@ model PrintFile {
 // work on it unchanged. Staff accounts (v2) would move the business's rows
 // to a business owner id in one migration.
 model Business {
-  id        String             @id @default(cuid())
+  id              String             @id @default(cuid())
   /// The coach: a Clerk user id. One business each, for now.
-  ownerId   String             @unique
-  name      String
+  ownerId         String             @unique
+  name            String
   /// The business's logo, an https URL - on its screens and, later, its
   /// books.
-  logoUrl   String?
+  logoUrl         String?
   /// Who pays for clients' books (2026-10-22): the coach (false, the
   /// default - they order each one) or the client, from their own page.
-  clientsPay     Boolean @default(false)
+  clientsPay      Boolean            @default(false)
   /// What a client pays on top of Memari's price, the coach's share; 0 is
   /// Memari's price. More than 0 only with payouts ready.
-  markupCents    Int     @default(0)
+  markupCents     Int                @default(0)
   /// The coach's Stripe Connect account (Express), for their share.
-  stripeAccountId String? @unique
+  stripeAccountId String?            @unique
   /// Stripe has said it can take payments and pay out to it.
-  payoutsReady   Boolean @default(false)
-  clients   BusinessClient[]
-  templates BusinessTemplate[]
+  payoutsReady    Boolean            @default(false)
+  /// CLIENTS FROM OTHER TOOLS (2026-10-30): a private web address that
+  /// Zapier and the like post new clients to - /api/business/clients/<token>
+  /// (src/lib/clientIntake.ts). Only the token's SHA-256 is kept, so the
+  /// database alone cannot add anyone's clients; a new address replaces the
+  /// old, and clearing it turns the address off.
+  intakeTokenHash String?            @unique
+  intakeMadeAt    DateTime?
+  clients         BusinessClient[]
+  templates       BusinessTemplate[]
+  groups          BusinessGroup[]
   /// emailed client links, counted per day (clientLinkSend.ts)
-  linkEmails ClientLinkEmail[]
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  linkEmails      ClientLinkEmail[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 }
 
 /// One of the coach's journals, as a template: what a client's journal is
@@ -678,6 +714,13 @@ model BusinessTemplate {
   plannerId  String           @unique
   planner    Planner          @relation("BusinessTemplateJournal", fields: [plannerId], references: [id], onDelete: Cascade)
   clients    BusinessClient[]
+  groups     BusinessGroup[]
+  /// INTAKE THAT FILLS THE BOOK (v2, 2026-10-31; src/lib/clientAnswers.ts):
+  /// the questions its clients answer on their own page, in order -
+  /// [{ id, prompt, max }]. Each id is carried by one of its modules
+  /// (propValues.askId), and so by every client's copy of it; the answer
+  /// is printed in that module.
+  questions  Json?
   createdAt  DateTime         @default(now())
 
   @@index([businessId])
@@ -715,9 +758,46 @@ model BusinessClient {
   /// When the link was made, and when it was last opened.
   accessMadeAt    DateTime?
   accessSeenAt    DateTime?
+  /// Their answers to their template's questions, by question id - a text
+  /// or a list - and when they last gave them. The answers are the truth:
+  /// written into their journal's modules when given, and again whenever
+  /// the template rewrites one of their pages (clientAnswers.ts).
+  answers         Json?
+  answersAt       DateTime?
+  /// The group they start with (BusinessGroup), if any: one at most.
+  groupId         String?
+  group           BusinessGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
   archivedAt      DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+
+  @@index([businessId])
+  @@index([groupId])
+}
+
+/// GROUPS THAT START TOGETHER (memari. for businesses v2, 2026-10-31): a
+/// cohort, a workshop, a retreat. Its clients are made in one go, on one
+/// template, starting the same day for the same length - written onto each
+/// of them, so every client screen reads as before - and their books are
+/// ordered together in one payment, sent each to their own address or all
+/// to one place. See src/lib/businessGroups.ts.
+model BusinessGroup {
+  id           String            @id @default(cuid())
+  businessId   String
+  business     Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name         String
+  startDate    DateTime?
+  bookMonths   Int               @default(3)
+  templateId   String?
+  template     BusinessTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  /// All its books to one place (venueAddress, a ShippingAddress), not each
+  /// to its client's own. The place is kept when this is turned off.
+  shipToVenue  Boolean           @default(false)
+  venueAddress Json?
+  clients      BusinessClient[]
+  batches      PrintBatch[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   @@index([businessId])
 }

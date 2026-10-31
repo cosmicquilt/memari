@@ -67,6 +67,7 @@ function placedOthers<M extends { id: string; locked: boolean; columnStart: numb
 import {
   canCrossZones, isSpineSlug, findSpine, moduleDefinition } from "@/lib/moduleRegistry";
 import { PLANNER_TRIMS, type PlannerTrimKey } from "@/lib/planner-trims";
+import { answerFromJournalEdit, withAsk } from "@/lib/clientAnswers";
 import {
   WITH_PAGES,
   ensureLevel,
@@ -1962,10 +1963,14 @@ export async function updateJournalModuleSettings(
   });
   await prisma.$transaction(
     instances.map((instance) => {
-      const merged = sanitizePropValues(instance.moduleType.configSchema, {
-        ...((instance.propValues ?? {}) as Record<string, unknown>),
-        ...offered,
-      });
+      // a client's question stays on its module (clientAnswers.ts)
+      const merged = withAsk(
+        instance.propValues,
+        sanitizePropValues(instance.moduleType.configSchema, {
+          ...((instance.propValues ?? {}) as Record<string, unknown>),
+          ...offered,
+        })
+      );
       return prisma.moduleInstance.update({ where: { id: instance.id }, data: { propValues: merged as Prisma.InputJsonValue } });
     })
   );
@@ -1996,12 +2001,16 @@ export async function updateModuleConfig(
     throw new Error("Module isn't grid-placed");
   }
 
-  const sanitized = sanitizePropValues(instance.moduleType.configSchema, propValues);
+  // A question for a coach's client stays on its module whatever the editor
+  // sends (clientAnswers.ts): only the business screens set or clear it.
+  const sanitized = withAsk(instance.propValues, sanitizePropValues(instance.moduleType.configSchema, propValues));
 
   const updated = await prisma.moduleInstance.update({
     where: { id: instanceId },
     data: { propValues: sanitized as Prisma.InputJsonValue },
   });
+  // typed into an asked module of a client's journal: their answer now
+  await answerFromJournalEdit(instance.page.plannerId, instance.moduleType.slug, instance.propValues, sanitized);
   // A SAVED module's settings are every use's: the saved module and each of
   // its instances take them, and every page holding one is synced. The
   // editor is told whether any use besides this one is in this journal, so

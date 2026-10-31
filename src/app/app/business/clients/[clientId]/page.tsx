@@ -4,10 +4,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { BOOK_MONTHS, ORDER_WORDS, requireBusiness, shippableAddress } from "@/lib/business";
+import { BOOK_MONTHS, ORDER_WORDS, bookAddressOf, requireBusiness, shippableAddress } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { BuildJournalButton, ClientForm, ClientLink, type ClientValues } from "../../forms";
+import { AnswersForm } from "../../Answers";
+import { saveAnswersFor } from "../../actions";
+import { questionsForClient } from "@/lib/clientAnswers";
 import css from "../../business.module.css";
 import { LISTED } from "@/lib/print/holdsDays";
 
@@ -20,12 +23,17 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
   const [client, templates] = await Promise.all([
     prisma.businessClient.findFirst({
       where: { id: clientId, businessId: business.id },
-      include: { template: { include: { planner: { select: { title: true } } } }, planner: { select: { id: true, title: true } } },
+      include: {
+        template: { include: { planner: { select: { title: true } } } },
+        planner: { select: { id: true, title: true } },
+        group: { select: { id: true, name: true, shipToVenue: true, venueAddress: true } },
+      },
     }),
     prisma.businessTemplate.findMany({ where: { businessId: business.id }, include: { planner: { select: { title: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
   if (!client) notFound();
   const slug = client.planner ? await journalSlugOf(client.planner.id) : null;
+  const questions = await questionsForClient(client.id);
   const orders = client.planner
     ? await prisma.printOrder.findMany({ where: { plannerId: client.planner.id, OR: LISTED }, orderBy: { startDate: "desc" } })
     : [];
@@ -40,10 +48,22 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
     note: client.note,
     address: (client.shippingAddress as ClientValues["address"]) ?? undefined,
   };
-  const canOrder = !!shippableAddress(client.shippingAddress);
+  const canOrder = !!bookAddressOf(client);
+  const place = client.group?.shipToVenue ? shippableAddress(client.group.venueAddress) : null;
   return (
     <>
       <h1>{client.name}</h1>
+      {client.group && (
+        <p className={css.dim}>
+          In <Link href={`/app/business/groups/${client.group.id}`} className={css.textLink}>{client.group.name}</Link>
+          {client.group.shipToVenue
+            ? place
+              ? `: their books go to ${place.name}, ${place.city}, with the group's. Their own address below is kept for later.`
+              : ": their books go to the group's place, which needs its whole address."
+            : "."}{" "}
+          The group sets their template, start and length.
+        </p>
+      )}
       <div className={css.card}>
         <h2>Their journal</h2>
         {client.planner && slug ? (
@@ -67,8 +87,12 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
               <Link href={`/app/j/${slug}`} className={css.btn}>
                 Open their journal
               </Link>
+              {/* the whole book as a PDF: their journal is the coach's to keep */}
+              <a href={`/app/export?journal=${encodeURIComponent(client.planner.id)}`} className={css.btn} download>
+                Download as PDF
+              </a>
             </div>
-            {!canOrder && <p className={css.dim}>Add where their books go, below, and the order screen fills it in.</p>}
+            {!canOrder && <p className={css.dim}>{client.group?.shipToVenue ? "Give the group's place its whole address, and the order screen fills it in." : "Add where their books go, below, and the order screen fills it in."}</p>}
             {orders.length > 0 && (
               <div className={css.steps}>
                 {orders.map((o) => (
@@ -102,6 +126,17 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
           <p className={css.dim}>Choose a template for them, below, then build their journal from it.</p>
         )}
       </div>
+      {questions.length > 0 && (
+        <div className={css.card}>
+          <h2>Their answers</h2>
+          <p className={css.dim}>
+            {client.answersAt
+              ? `${client.name.split(" ")[0]} last answered on ${date(client.answersAt)}. Correct anything here; it prints in their next book.`
+              : `${client.name.split(" ")[0]} hasn't answered yet: they answer on their own page. You can fill these in for them.`}
+          </p>
+          <AnswersForm questions={questions} save={saveAnswersFor.bind(null, client.id)} done="Saved. It prints in their next book." />
+        </div>
+      )}
       <ClientLink
         clientId={client.id}
         name={client.name}

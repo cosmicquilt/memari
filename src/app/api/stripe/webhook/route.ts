@@ -12,10 +12,15 @@
 // .async_payment_succeeded comes, and .async_payment_failed ends the order
 // with nothing taken and tells the payer. The production endpoint must be
 // subscribed to all three checkout.session events (scripts/setup-webhooks.mts).
+//
+// A GROUP'S BOOKS IN ONE PAYMENT (2026-10-31): the page names its batch, not
+// an order, and each of the batch's books takes the same steps
+// (src/lib/print/groupOrders.ts).
 
 import type Stripe from "stripe";
 import { stripe } from "@/lib/print/stripe";
 import { failClearingPayment, fulfilPaidOrder, recordClearingPayment } from "@/lib/print/orders";
+import { failClearingBatch, fulfilPaidBatch, recordClearingBatch } from "@/lib/print/groupOrders";
 import { appUrl } from "@/lib/print/fileUrls";
 import { prisma } from "@/lib/prisma";
 
@@ -39,12 +44,24 @@ export async function POST(request: Request) {
     const session = event.data.object as Stripe.Checkout.Session;
     const orderId = session.metadata?.orderId;
     if (orderId) await failClearingPayment(orderId);
+    if (session.metadata?.batchId) await failClearingBatch(session.metadata.batchId, session.id);
   }
 
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const session = event.data.object as Stripe.Checkout.Session;
     const orderId = session.metadata?.orderId;
+    const batchId = session.metadata?.batchId;
     const intentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
+    if (batchId) {
+      if (event.type === "checkout.session.completed" && session.payment_status === "unpaid" && intentId) {
+        await recordClearingBatch(batchId, session.id, intentId, session.customer_details?.email);
+      }
+      if (session.payment_status === "paid") {
+        // each book's failure is recorded on it (FAILED, the admin told), and
+        // the rest still go: answered 200 all the same
+        await fulfilPaidBatch(batchId, session.id, { paymentIntentId: intentId }, appUrl(new URL(request.url).origin), session.customer_details?.email);
+      }
+    }
     // Finished, but the money is still on its way: hold the days, print later.
     if (event.type === "checkout.session.completed" && session.payment_status === "unpaid" && orderId && intentId) {
       await recordClearingPayment(orderId, intentId, session.customer_details?.email);

@@ -22,7 +22,7 @@
 // Stripe (clientPays.test.mts); orders.ts uses them. Server-only.
 
 import type Stripe from "stripe";
-import { CARD_FEE_SHARE, type Price } from "./pricing";
+import { CARD_FEE_SHARE, shareWords, type Price } from "./pricing";
 import { SHIPPING_LEVELS, leadDays, suggestedStart } from "./orderRange";
 
 /** What Memari keeps of each share towards Stripe's cost of paying coaches
@@ -83,6 +83,8 @@ export type ClientPayer = {
   markupCents: number;
   /** The coach's Connect account; needed for a share. */
   destination: string | null;
+  /** Who the share goes to, named on Stripe's page beside the book. */
+  shareTo?: string;
   successUrl: string;
   cancelUrl: string;
   /** The total the client was shown; the order is refused if the price
@@ -117,6 +119,10 @@ export function clientSessionParams(o: {
   expiresAt: number;
 }): Stripe.Checkout.SessionCreateParams {
   const split = o.payer.markupCents > 0 && o.payer.destination ? destinationSplit(o.price.totalCents, o.payer.markupCents) : null;
+  // A share is said where it is paid: the ICF code asks coaches to tell
+  // clients about money they receive for a referral (Standard 12), and
+  // saying it here covers every coach (his call, 2026-10-30).
+  const description = split ? `${o.description}. Includes ${shareWords(o.payer.markupCents, o.payer.shareTo)}.` : o.description;
   return {
     mode: "payment",
     expires_at: o.expiresAt,
@@ -124,7 +130,7 @@ export function clientSessionParams(o: {
     client_reference_id: o.orderId,
     metadata: { orderId: o.orderId, paidByClient: "true" },
     line_items: [
-      { quantity: 1, price_data: { currency: "usd", unit_amount: o.price.bookCents, product_data: { name: `${o.title} - printed journal`, description: o.description } } },
+      { quantity: 1, price_data: { currency: "usd", unit_amount: o.price.bookCents, product_data: { name: `${o.title} - printed journal`, description } } },
       { quantity: 1, price_data: { currency: "usd", unit_amount: o.price.shippingCents, product_data: { name: `Shipping - ${o.shippingName}` } } },
     ],
     payment_intent_data: {
@@ -137,10 +143,15 @@ export function clientSessionParams(o: {
 }
 
 /** A refund: with a share, the coach's comes back and so does Memari's
- *  fee; otherwise a plain refund. The idempotency key is the caller's. */
-export function refundParams(order: { stripePaymentIntentId: string; markupCents: number; payoutAccountId: string | null }): Stripe.RefundCreateParams {
+ *  fee; otherwise a plain refund. A book paid for with others in one
+ *  payment (a group's, groupOrders.ts) gets back its own part only - the
+ *  whole payment would refund every book in it. The idempotency key is the
+ *  caller's. */
+export function refundParams(order: { stripePaymentIntentId: string; markupCents: number; payoutAccountId: string | null; batchId?: string | null; totalCents?: number }): Stripe.RefundCreateParams {
+  if (order.batchId && !(Number.isInteger(order.totalCents) && order.totalCents! > 0)) throw new Error("A book of a group's payment is refunded by its own amount, and none was given.");
   return {
     payment_intent: order.stripePaymentIntentId,
+    ...(order.batchId ? { amount: order.totalCents } : {}),
     ...(order.markupCents > 0 && order.payoutAccountId ? { reverse_transfer: true, refund_application_fee: true } : {}),
   };
 }

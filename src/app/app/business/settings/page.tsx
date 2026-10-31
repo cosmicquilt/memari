@@ -8,6 +8,7 @@ import { orderingConfigured } from "@/lib/print/orders";
 import { PAYOUT_COUNTRIES } from "@/lib/print/clientPays";
 import { countryOptions } from "@/lib/print/countries";
 import { BookPayerForm, SettingsForm } from "../forms";
+import { IntakeAddress } from "../IntakeAddress";
 import { BusinessMark } from "../WorkspaceSwitcher";
 import css from "../business.module.css";
 
@@ -28,6 +29,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <h2 style={{ flex: 1 }}>{business.name}</h2>
         </div>
         <SettingsForm name={business.name} logoUrl={business.logoUrl} />
+      </div>
+      <IntakeAddress madeOn={business.intakeMadeAt ? business.intakeMadeAt.toISOString().slice(0, 10) : null} guest={ctx.owner.guest} />
+      <div className={css.card}>
+        <h2>Your data</h2>
+        <p className={css.dim}>
+          Everything you put in can come out. Download your clients as a spreadsheet, with their addresses, notes and books. Each client&rsquo;s journal downloads as a PDF
+          from their page, and any journal from the editor.
+        </p>
+        <div className={css.actions}>
+          <a href="/app/business/clients/export" className={css.btn} download>
+            Download your clients
+          </a>
+        </div>
       </div>
       <BookPayerForm clientsPay={business.clientsPay} markupCents={business.markupCents} payouts={ready ? (bank === false ? "noBank" : "ready") : business.stripeAccountId ? "pending" : "none"} paymentsOn={orderingConfigured().ok} guest={ctx.owner.guest} countries={countryOptions().filter((c) => PAYOUT_COUNTRIES.includes(c.code))} />
     </>

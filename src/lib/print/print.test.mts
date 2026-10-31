@@ -54,7 +54,10 @@ import { priceFromCost, BOOK_MARGIN, MIN_BOOK_PRICE_CENTS } from "./pricing";
 import { printFileUrl, signPrintFile, verifyPrintFile } from "./fileUrls";
 import { toCents, verifyLuluWebhook, withArrivals } from "./lulu";
 import { arrivesLabel } from "./arrives";
-import { buildCoverPdf, coverLayout } from "./cover";
+import { COVER_STYLES, buildCoverPdf, coverLayout, logoBox } from "./cover";
+import { logoAddressOk, logoFormat } from "./coverBrand";
+import { readDrawingOps } from "../pdfContentStream";
+import { deflateSync } from "node:zlib";
 import { rangeLabel } from "./orderBook";
 
 let failures = 0;
@@ -186,6 +189,63 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
   const head = new TextDecoder().decode(new Uint8Array(built.bytes).slice(0, 5));
   check(head === "%PDF-", "the cover is a PDF");
   check(built.fontEmbedded, "set in the planner's own face");
+}
+
+// --- the coach on the cover (coverBrand.ts, 2026-10-30) ----------------------------
+{
+  // A real PNG, made here: a grey square of w x h pixels.
+  const png = (w: number, h: number) => {
+    const table = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+    const crc = (bytes: Buffer) => {
+      let c = 0xffffffff;
+      for (const b of bytes) c = table[(c ^ b) & 0xff] ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type: string, data: Buffer) => {
+      const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+      const out = Buffer.alloc(8 + data.length + 4);
+      out.writeUInt32BE(data.length, 0);
+      body.copy(out, 4);
+      out.writeUInt32BE(crc(body), 8 + data.length);
+      return out;
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(h, 4);
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 2; // RGB
+    const rows = Buffer.alloc((w * 3 + 1) * h, 0x80);
+    for (let y = 0; y < h; y++) rows[y * (w * 3 + 1)] = 0; // filter: none
+    return new Uint8Array(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]));
+  };
+  const base = { widthPt: 1046, heightPt: 738, trimWidthIn: 7, trimHeightIn: 10, title: "Maya Okafor", dates: "4 Jan – 3 Apr 2027" };
+  const plain = readDrawingOps(buildCoverPdf(base).bytes);
+  const named = readDrawingOps(buildCoverPdf({ ...base, brand: { name: "Northwind Coaching" } }).bytes);
+  check(named.text === plain.text + 2, `a coach's book names them twice, the front's foot and the back (${plain.text} -> ${named.text} text runs)`);
+  const imageIn = (bytes: ArrayBuffer) => /\/Subtype\s*\/Image/.test(new TextDecoder("latin1").decode(new Uint8Array(bytes)));
+  check(!imageIn(buildCoverPdf({ ...base, brand: { name: "Northwind Coaching" } }).bytes), "no logo, no image");
+  check(imageIn(buildCoverPdf({ ...base, brand: { name: "Northwind Coaching", logo: { data: png(600, 300), format: "PNG" } } }).bytes), "a sharp logo prints on the front");
+  check(!imageIn(buildCoverPdf({ ...base, brand: { name: "Northwind Coaching", logo: { data: png(30, 30), format: "PNG" } } }).bytes), "a logo too small to print sharply is left off; the name still prints");
+  for (const style of COVER_STYLES) {
+    const ops = readDrawingOps(buildCoverPdf({ ...base, style, brand: { name: "Northwind Coaching", logo: { data: png(600, 300), format: "PNG" } } }).bytes);
+    check(ops.text >= plain.text + 2, `${style}: the coach is named (${ops.text} text runs)`);
+  }
+  // never under 300 pixels to the inch, and never too small to read
+  for (const [w, h] of [[600, 600], [1800, 200], [60, 60], [4000, 4000], [200, 1800]]) {
+    const box = logoBox({ width: w, height: h });
+    check(!!box && w / (box.w / 72) >= 299.9 && h / (box.h / 72) >= 299.9 && box.h <= 0.55 * 72 + 1e-9 && box.w <= 1.8 * 72 + 1e-9, `a ${w}x${h} logo prints at 300 ppi or finer, in its box (${box ? `${(box.w / 72).toFixed(2)} x ${(box.h / 72).toFixed(2)} in` : "left off"})`);
+  }
+  check(logoBox({ width: 30, height: 30 }) === null && logoBox({ width: 0, height: 10 }) === null, "a 30-pixel logo, or none, is left off");
+  // the server only fetches a logo from a named https host
+  check(!!logoAddressOk("https://northwind.example/logo.png"), "an https logo address is fetched");
+  for (const bad of ["http://northwind.example/logo.png", "https://127.0.0.1/logo.png", "https://localhost/logo.png", "https://[::1]/logo.png", "https://user:pw@northwind.example/l.png", "https://metadata.internal/x", "file:///etc/passwd", "not a url"]) {
+    check(!logoAddressOk(bad), `never fetched: ${bad}`);
+  }
+  check(logoFormat(png(4, 4)) === "PNG" && logoFormat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])) === "JPEG" && logoFormat(new TextEncoder().encode("<svg")) === null, "a logo is a PNG or a JPEG by its bytes; anything else is left off");
 }
 
 // --- the dates on the cover -------------------------------------------------------

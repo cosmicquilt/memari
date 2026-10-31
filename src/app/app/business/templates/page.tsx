@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { clientsBehind } from "@/lib/businessJournals";
+import { questionsOf } from "@/lib/clientAnswers";
 import { AddTemplateForm, RemoveTemplateButton, UpdateClientsButton } from "../forms";
 import css from "../business.module.css";
 
@@ -81,6 +82,9 @@ export default async function TemplatesPage() {
               <span className={css.actions}>
                 <Link href={`/app/j/${t.planner.slug ?? t.planner.id}`} className={css.btn}>
                   Edit
+                </Link>
+                <Link href={`/app/business/templates/${t.id}/questions`} className={css.btn}>
+                  {questionsOf(t.questions).length ? `Questions (${questionsOf(t.questions).length})` : "Questions"}
                 </Link>
                 <Link href={`/app/j/${t.planner.slug ?? t.planner.id}/order`} className={css.btn}>
                   Order a sample

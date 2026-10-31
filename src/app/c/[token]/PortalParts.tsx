@@ -11,7 +11,7 @@ import type { PortalOrdering } from "@/lib/clientOrders";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import { BINDING_SPECS, type Binding } from "@/lib/print/products";
 import { arrivesLabel } from "@/lib/print/arrives";
-import { formatCents } from "@/lib/print/pricing";
+import { formatCents, shareWords } from "@/lib/print/pricing";
 import { payForMyBook, quoteMyBook, saveMyAddress, type AddressState, type MyQuote } from "./actions";
 import css from "@/app/app/business/business.module.css";
 
@@ -179,7 +179,9 @@ export function OrderBook({ token, ordering, businessName }: { token: string; or
   return (
     <div className={css.form}>
       <p>
-        Your next book covers <strong>{ordering.next.label}</strong>, {ordering.next.days} days. {ordering.withShare ? `The price is set by ${businessName}.` : ""}
+        Your next book covers <strong>{ordering.next.label}</strong>, {ordering.next.days} days.{" "}
+        {/* said before they pay, as the ICF code asks of coaches (Standard 12) */}
+        {ordering.shareCents > 0 ? `The price includes ${shareWords(ordering.shareCents, businessName)}.` : ""}
       </p>
       <fieldset className={css.choices}>
         <legend className={css.choicesLegend}>Binding</legend>

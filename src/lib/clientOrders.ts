@@ -4,7 +4,8 @@
 // them: their journal (the coach's, built from the template), their next
 // dates (the day after their last book, or their first start, for as long
 // as each of their books runs - clientOrderDefaultsFor), to the address on
-// their page. They choose the binding and the post; the price is Memari's,
+// their page - or their group's place, while it has one (groups, 2026-10-31).
+// They choose the binding and the post; the price is Memari's,
 // with the coach's share on top while the coach's payouts can take it
 // (payouts.ts shareInForce), and Stripe takes the payment (clientPays.ts).
 //
@@ -45,7 +46,7 @@
 //
 // SERVER-ONLY.
 
-import { clientOrderDefaultsFor, shippableAddress } from "@/lib/business";
+import { bookAddressOf, clientOrderDefaultsFor } from "@/lib/business";
 import { clientForToken, tokenShapeOk } from "@/lib/clientPortal";
 import { sendableEmail } from "@/lib/clientLinkEmail";
 import { prisma } from "@/lib/prisma";
@@ -60,7 +61,7 @@ import type { Binding, PaperColour } from "@/lib/print/products";
 
 /** What the page shows: the order form, or why there is none. */
 export type PortalOrdering =
-  | { open: true; next: { startISO: string; days: number; label: string }; bindings: Binding[]; email: string | null; withShare: boolean }
+  | { open: true; next: { startISO: string; days: number; label: string }; bindings: Binding[]; email: string | null; shareCents: number }
   | { open: false; why: string | null };
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -126,8 +127,9 @@ export async function portalOrdering(token: string): Promise<PortalOrdering> {
   if (!client) return { open: false, why: null };
   if (!client.plannerId) return { open: false, why: "Your journal is still being made. You can order it here once it is ready." };
   if (!orderingConfigured().ok) return { open: false, why: "Ordering is not open yet. Your coach can tell you when it is." };
-  const address = shippableAddress(client.shippingAddress);
-  if (!address) return { open: false, why: "Fill in where your books go, below, and you can order here." };
+  const address = bookAddressOf(client);
+  if (!address)
+    return { open: false, why: client.group?.shipToVenue ? "Your coach is still setting where your group's books go." : "Fill in where your books go, below, and you can order here." };
   const bindings = orderableBindings();
   const next = await nextStart(client);
   if (!next) return { open: false, why: "Your coach has not said when your book starts yet." };
@@ -138,7 +140,7 @@ export async function portalOrdering(token: string): Promise<PortalOrdering> {
     next: { startISO: next.startISO, days: next.days, label: rangeLabel({ start, end, days: next.days }) },
     bindings,
     email: sendableEmail(client.email),
-    withShare: shareInForce(client.business).markupCents > 0,
+    shareCents: shareInForce(client.business).markupCents,
   };
 }
 
@@ -146,7 +148,7 @@ async function orderInput(token: string, binding: Binding, paper?: PaperColour) 
   const client = await context(token);
   if (!client) throw new OrderError("This page cannot order books. Your coach orders them for you.");
   if (!client.plannerId) throw new OrderError("Your journal is still being made.");
-  const address = shippableAddress(client.shippingAddress);
+  const address = bookAddressOf(client);
   if (!address) throw new OrderError("Fill in where your books go first.");
   const next = await nextStart(client);
   if (!next) throw new OrderError("Your coach has not said when your book starts yet.");
@@ -218,6 +220,7 @@ export async function checkoutForClient(
     email,
     markupCents: share.markupCents,
     destination: share.destination,
+    shareTo: client.business.name,
     expectTotalCents: o.expectTotalCents,
     startedAt,
     // The link's token goes to Stripe in these two addresses, so the client

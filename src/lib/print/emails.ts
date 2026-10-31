@@ -15,6 +15,11 @@
 //                   back
 //   bankFailed      a bank (ACH) payment did not clear: nothing taken, the
 //                   book not ordered, order it again (2026-10-26)
+//   groupPlaced     a group's books, paid for in one payment, are with the
+//                   printer: one email listing them all, not one each
+//                   (groupOrders.ts, 2026-10-31); each still emails when it
+//                   ships, with its own tracking
+//   groupBankFailed the same group payment's bank debit did not clear
 //   adminAlert      to ADMIN_EMAIL: a paid order is not printing
 //   arrival         "Has your book arrived?" about 12 days after it shipped
 //                   (18 from the UK) - two signed links, yes and not yet
@@ -195,6 +200,49 @@ export function bankPaymentFailedEmail(order: OrderLike): Email {
       order.paidByClient ? "You can order it again from your page, by card or from another account." : "You can order it again from your journal whenever you like.",
     ],
     linkFor(order)
+  );
+}
+
+/** "Maya Okafor - 4 Jan – 3 Apr 2027, coil" for a group email's list. */
+const groupLine = (order: OrderLike) =>
+  `${order.title} - ${rangeLabel({ start: order.startDate, end: order.endDate, days: order.days })}, ${bindingDescription(bindingFromEnum(order.binding), order.podPackageId ?? "").toLowerCase()}`;
+
+/** A group's books are with the printer: all of them in one email. Those
+ *  the printer would not take yet are said apart - we have been told, and
+ *  they are ours to put right or refund. */
+export function groupPlacedEmail(group: string, orders: Array<OrderLike & { status: string }>): Email {
+  const placed = orders.filter((o) => o.status !== "FAILED");
+  const stuck = orders.filter((o) => o.status === "FAILED");
+  const total = orders.reduce((sum, o) => sum + o.totalCents, 0);
+  const books = (n: number) => `${n} ${n === 1 ? "book" : "books"}`;
+  return compose(
+    orders[0]?.contactEmail ?? "",
+    `${group}: ${books(placed.length)} with the printer`,
+    `${group}'s books are with the printer`,
+    [
+      `Thank you - ${books(orders.length)} ordered for ${group}, ${formatCents(total)} in all:`,
+      ...placed.map(groupLine),
+      ...(stuck.length
+        ? [`${stuck.length === 1 ? "One of them" : `${stuck.length} of them`} the printer would not take yet: ${stuck.map((o) => o.title).join(", ")}. We have been told, and will put it right or refund it.`]
+        : []),
+      "Printing takes 3-5 business days, then the post. Each book is posted on its own; we'll email as each one ships, with its tracking.",
+    ],
+    ordersLink()
+  );
+}
+
+/** The bank did not clear a group's payment: none of its books was ordered. */
+export function groupBankFailedEmail(group: string, orders: OrderLike[]): Email {
+  const total = orders.reduce((sum, o) => sum + o.totalCents, 0);
+  return compose(
+    orders[0]?.contactEmail ?? "",
+    "Your bank payment didn't go through",
+    "Your bank payment didn't go through",
+    [
+      `Your bank didn't clear the ${formatCents(total)} payment for ${group}'s ${orders.length === 1 ? "book" : `${orders.length} books`}, so they weren't ordered and nothing was taken.`,
+      "You can order them again from the group's page, by card or from another account.",
+    ],
+    ordersLink()
   );
 }
 

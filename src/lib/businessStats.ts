@@ -20,7 +20,7 @@
 // SERVER-ONLY.
 
 import { prisma } from "@/lib/prisma";
-import { shippableAddress } from "@/lib/business";
+import { GROUP_PLACE, bookAddressOf } from "@/lib/business";
 import type { PrintOrderStatus } from "@/generated/prisma/enums";
 import { coachReceives } from "@/lib/print/clientPays";
 import { PAYMENT_CLEARING } from "@/lib/print/holdsDays";
@@ -46,7 +46,7 @@ const STAGE_OF: Record<string, Stage | null> = {
 async function businessBooks(businessId: string) {
   const clients = await prisma.businessClient.findMany({
     where: { businessId },
-    select: { id: true, name: true, plannerId: true, startDate: true, bookMonths: true, archivedAt: true, shippingAddress: true, accessSeenAt: true, templateId: true },
+    select: { id: true, name: true, plannerId: true, startDate: true, bookMonths: true, archivedAt: true, shippingAddress: true, group: GROUP_PLACE, accessSeenAt: true, templateId: true },
   });
   const templates = await prisma.businessTemplate.findMany({ where: { businessId }, select: { plannerId: true } });
   const ids = [...clients.flatMap((c) => (c.plannerId ? [c.plannerId] : [])), ...templates.map((t) => t.plannerId)];
@@ -188,7 +188,7 @@ export async function businessStats(businessId: string, range: number | "all" = 
   const ordered = new Set(orders.flatMap((o) => (o.plannerId && clientOf.has(o.plannerId) ? [o.plannerId] : [])));
   const setup: SetupStep[] = [
     { label: "Added", count: active.length },
-    { label: "Address given", count: active.filter((c) => shippableAddress(c.shippingAddress)).length },
+    { label: "Address given", count: active.filter((c) => bookAddressOf(c)).length },
     { label: "Journal built", count: active.filter((c) => c.plannerId).length },
     { label: "Opened their page", count: active.filter((c) => c.accessSeenAt).length },
     { label: "First book ordered", count: active.filter((c) => c.plannerId && ordered.has(c.plannerId)).length },

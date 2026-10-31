@@ -6,7 +6,8 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { saveAddressFromPortal } from "@/lib/clientPortal";
+import { clientForToken, saveAddressFromPortal } from "@/lib/clientPortal";
+import { saveClientAnswers } from "@/lib/clientAnswers";
 import { checkoutForClient, quoteForClient } from "@/lib/clientOrders";
 import { COUNTRY_CODES } from "@/lib/print/countries";
 import { appUrl } from "@/lib/print/fileUrls";
@@ -35,6 +36,18 @@ export async function saveMyAddress(token: string, _: AddressState, form: FormDa
   if (!(await saveAddressFromPortal(token, address))) return { error: "This link no longer works. Ask for a new one." };
   revalidatePath(`/c/${token}`);
   return { saved: true };
+}
+
+/** Their answers to their coach's questions (intake, 2026-10-31;
+ *  clientAnswers.ts): kept, and written into their journal so they print.
+ *  Only the questions their journal asks are read. */
+export async function saveMyAnswers(token: string, answers: Record<string, unknown>): Promise<{ error?: string; saved?: number }> {
+  const client = await clientForToken(String(token));
+  if (!client) return { error: "This link no longer works. Ask for a new one." };
+  if (!answers || typeof answers !== "object" || Array.isArray(answers) || JSON.stringify(answers).length > 20_000) return { error: "Those answers could not be read." };
+  const saved = await saveClientAnswers(client.id, answers);
+  revalidatePath(`/c/${token}`);
+  return { saved };
 }
 
 /** Their book's prices, in a binding, to their address. */

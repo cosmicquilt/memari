@@ -30,6 +30,7 @@ import type { PlannerTrimKey } from "@/lib/planner-trims";
 import { priceFromCost, type Price } from "./pricing";
 import { clientSessionParams, payerProblem, refundParams, withMarkup, type ClientPayer } from "./clientPays";
 import { buildCoverPdf } from "./cover";
+import { coverBrandFor } from "@/lib/print/coverBrand";
 import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
@@ -78,7 +79,7 @@ export function orderingConfigured(): { ok: boolean; missing: string[] } {
   return { ok: missing.length === 0, missing };
 }
 
-function parseStart(startISO: string): Date {
+export function parseStart(startISO: string): Date {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startISO);
   if (!match) throw new OrderError("Choose the day the book starts.");
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
@@ -112,7 +113,7 @@ export function cleanAddress(raw: ShippingAddress): ShippingAddress {
 
 /** A printer's refusal to make a book is the customer's to hear, as for any
  *  other reason it cannot be ordered; anything else is a fault. */
-function asOrderError(error: unknown): unknown {
+export function asOrderError(error: unknown): unknown {
   return error instanceof BookVaultError && error.refusal ? new OrderError(error.message) : error;
 }
 
@@ -207,7 +208,7 @@ export async function quoteOrder(ownerId: string, input: OrderInput): Promise<Qu
 }
 
 /** The person's customer at Stripe, made the first time they order. */
-async function stripeCustomer(ownerId: string, email: string | undefined, name: string): Promise<string> {
+export async function stripeCustomer(ownerId: string, email: string | undefined, name: string): Promise<string> {
   const settings = await prisma.ownerSettings.findUnique({ where: { ownerId } });
   if (settings?.stripeCustomerId) return settings.stripeCustomerId;
   const customer = await stripe().customers.create({ email, name, metadata: { ownerId } });
@@ -223,37 +224,27 @@ async function stripeCustomer(ownerId: string, email: string | undefined, name: 
  *  would be charged: nothing is made, and their page asks for prices again. */
 export class PriceMovedError extends OrderError {}
 
+/** What an order is made with: its days, binding, address and post, and
+ *  whether it renews. */
+export type CheckoutInput = OrderInput & { level: ShippingLevel; autoRenew: boolean; email?: string };
+
 /**
- * Price the order again, keep its files with a QUOTED order, and open
- * Stripe's payment page for it. Returns the page's address.
- *
- * `payer`: a coach's client paying from their own page (clientPays.ts) -
- * the order stays the owner's (the journal is theirs), the price carries
- * the coach's share, the receipt goes to the client, nothing renews, and
- * with a share the payment is a destination charge to the coach.
+ * One book priced again, its two files built and kept with a QUOTED order:
+ * what a payment page is opened for - one book's (startCheckout) or a
+ * group's, opened once each of its books is made (groupOrders.ts, `batchId`).
+ * Nothing is made when the price is not `expectTotalCents` (or the payer's).
  */
-export async function startCheckout(
-  ownerId: string,
-  input: OrderInput & { level: ShippingLevel; autoRenew: boolean; email?: string },
-  origin: string,
-  payer?: ClientPayer
-): Promise<{ url: string; orderId: string }> {
-  // a book paid for these days from now on, while this one is built, stops
-  // this page being handed out (closeOverlappingPages); a client's dates were
-  // worked out a moment earlier, and count from then
-  const startedAt = payer?.startedAt ?? new Date();
-  if (payer) {
-    const problem = payerProblem(payer);
-    if (problem) throw new OrderError(problem);
-  }
+export async function makeQuotedOrder(ownerId: string, input: CheckoutInput, opts: { payer?: ClientPayer; batchId?: string; expectTotalCents?: number } = {}) {
+  const { payer } = opts;
   const { journal, range, interior, availability, sku, address, quotes, printer } = await priced(input, ownerId);
   const fit = availability.find((a) => a.binding === input.binding);
   if (!fit?.ok) throw new OrderError(fit && !fit.ok ? fit.reason : "Choose a binding.");
   const chosen = quotes.find((q) => q.level === input.level);
   if (!chosen) throw new OrderError("That shipping option is not available to this address. Choose another.");
   const price = payer ? withMarkup(priceFromCost(chosen.cost), payer.markupCents) : priceFromCost(chosen.cost);
-  // what the client was shown is what they pay, or nothing is made
-  if (payer?.expectTotalCents !== undefined && payer.expectTotalCents !== price.totalCents) throw new PriceMovedError("The price has changed since you saw it. See prices again.");
+  // what the payer was shown is what they pay, or nothing is made
+  const expect = opts.expectTotalCents ?? payer?.expectTotalCents;
+  if (expect !== undefined && expect !== price.totalCents) throw new PriceMovedError("The price has changed since you saw it. See prices again.");
   const share = payer && payer.markupCents > 0 ? payer.markupCents : 0;
   const shippingName = chosen.label ?? printer.levelLabel(input.level);
 
@@ -267,6 +258,7 @@ export async function startCheckout(
     trimHeightIn: trim.heightIn,
     title: journal.title,
     dates: journal.dated ? rangeLabel(range) : "",
+    brand: await coverBrandFor(journal.id),
   });
 
   const contactEmail = payer ? payer.email : input.email || address.email;
@@ -290,10 +282,11 @@ export async function startCheckout(
       totalCents: price.totalCents,
       currency: price.currency,
       costCents: price.costCents,
-      autoRenew: payer ? false : input.autoRenew,
+      autoRenew: payer || opts.batchId ? false : input.autoRenew,
       paidByClient: !!payer,
       markupCents: share,
       payoutAccountId: share ? payer!.destination : null,
+      batchId: opts.batchId ?? null,
       files: {
         create: [
           { kind: "interior", bytes: new Uint8Array(interior.bytes) },
@@ -302,8 +295,30 @@ export async function startCheckout(
       },
     },
   });
-
   const description = `${bindingDescription(input.binding, sku)}, ${rangeLabel(range)}, ${interior.pageCount} pages`;
+  return { order, journal, range, price, description, shippingName, contactEmail, address };
+}
+
+/**
+ * Price the order again, keep its files with a QUOTED order, and open
+ * Stripe's payment page for it. Returns the page's address.
+ *
+ * `payer`: a coach's client paying from their own page (clientPays.ts) -
+ * the order stays the owner's (the journal is theirs), the price carries
+ * the coach's share, the receipt goes to the client, nothing renews, and
+ * with a share the payment is a destination charge to the coach.
+ */
+export async function startCheckout(ownerId: string, input: CheckoutInput, origin: string, payer?: ClientPayer): Promise<{ url: string; orderId: string }> {
+  // a book paid for these days from now on, while this one is built, stops
+  // this page being handed out (closeOverlappingPages); a client's dates were
+  // worked out a moment earlier, and count from then
+  const startedAt = payer?.startedAt ?? new Date();
+  if (payer) {
+    const problem = payerProblem(payer);
+    if (problem) throw new OrderError(problem);
+  }
+  const { order, journal, price, description, shippingName, contactEmail, address } = await makeQuotedOrder(ownerId, input, { payer });
+
   if (payer) {
     const session = await stripe().checkout.sessions.create(
       clientSessionParams({ orderId: order.id, title: journal.title, description, shippingName, price, payer, expiresAt: Math.floor(Date.now() / 1000) + 23 * 60 * 60 })
@@ -331,7 +346,7 @@ export async function startCheckout(
         price_data: {
           currency: "usd",
           unit_amount: price.bookCents,
-          product_data: { name: `${journal.title} - printed journal`, description: `${bindingDescription(input.binding, sku)}, ${rangeLabel(range)}, ${interior.pageCount} pages` },
+          product_data: { name: `${journal.title} - printed journal`, description },
         },
       },
       {
@@ -446,7 +461,9 @@ export async function closeOverlappingPages(orderId: string, since: Date, deps: 
       }
     }
     if (status === "expired") {
-      await prisma.printOrder.updateMany({ where: { id: page.id, status: "QUOTED" }, data: { stripeCheckoutSessionId: null, failureReason: PAGE_REPLACED } });
+      // every book the page was for: a group's books share one (groupOrders.ts),
+      // and the page is closed for all of them - else each was closed again
+      await prisma.printOrder.updateMany({ where: { stripeCheckoutSessionId: page.stripeCheckoutSessionId, status: "QUOTED" }, data: { stripeCheckoutSessionId: null, failureReason: PAGE_REPLACED } });
       continue;
     }
     if (status === "complete") await closeMine("A payment for these days went through on another page first.", GOING_THROUGH);
@@ -527,8 +544,10 @@ export async function failClearingPayment(orderId: string, send: EmailSender = s
 export const SENDING = "MEMARI_SENDING";
 
 /** Paid: send it to print. Safe to call again - an order past QUOTED/PAID
- *  is left alone, and one already being sent is too. */
-export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentId?: string; paymentMethodId?: string }, origin: string): Promise<void> {
+ *  is left alone, and one already being sent is too. True when this call
+ *  sent it. A book of a group's payment sends no email of its own: the
+ *  group's one email lists them all (groupOrders.ts). */
+export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentId?: string; paymentMethodId?: string }, origin: string): Promise<boolean> {
   // QUOTED -> PAID, once: the update only matches an order still QUOTED.
   await prisma.printOrder.updateMany({
     where: { id: orderId, status: "QUOTED" },
@@ -541,7 +560,7 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
   if (order?.paidByClient && order.plannerId) {
     await prisma.printOrder.updateMany({ where: { plannerId: order.plannerId, id: { not: order.id }, autoRenew: true }, data: { autoRenew: false, renewsAt: null } });
   }
-  if (!order || order.status !== "PAID" || order.luluPrintJobId) return;
+  if (!order || order.status !== "PAID" || order.luluPrintJobId) return false;
   // SENT ONCE (review, 2026-10-27). Stripe can deliver the same event twice
   // at once, and both deliveries found the order PAID with no job and both
   // sent it: two books printed, one paid for. Now the order is claimed
@@ -550,7 +569,7 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
     where: { id: order.id, status: "PAID", luluPrintJobId: null, luluStatus: null },
     data: { luluStatus: SENDING },
   });
-  if (claimed.count !== 1) return;
+  if (claimed.count !== 1) return false;
   // Only the printer's answer is inside the try: a job the printer took
   // is never recorded as refused because something after it failed - the
   // order stays claimed instead, for the admin to look at.
@@ -586,11 +605,12 @@ export async function fulfilPaidOrder(orderId: string, payment: { paymentIntentI
       renewsAt: order.autoRenew ? renewalDate(range, order.shippingLevel as ShippingLevel, shippedAbroad(bindingFromEnum(order.binding), address.countryCode), new Date()) : null,
     },
   });
-  await notify(placedEmail(submitted));
+  if (!submitted.batchId) await notify(placedEmail(submitted));
   // Placed, but something of ours stands in its way (BookVault waiting
   // for payment): ours to see to, so the alert, and the order stays with
   // the printer.
   if (job.attention) await notify(adminAlertEmail(submitted, job.attention));
+  return true;
 }
 
 const LULU_TO_STATUS: Record<string, "SUBMITTED" | "IN_PRODUCTION" | "SHIPPED" | "DELIVERED" | "CANCELED" | "FAILED"> = {
@@ -762,8 +782,12 @@ export function liveCancelDeps(): CancelDeps {
     // the payment is refunded once.
     refund: async (paymentIntentId, orderId) => {
       // a coach's share comes back from them (clientPays.ts)
-      const paid = await prisma.printOrder.findUnique({ where: { id: orderId }, select: { markupCents: true, payoutAccountId: true } });
-      await stripe().refunds.create(refundParams({ stripePaymentIntentId: paymentIntentId, markupCents: paid?.markupCents ?? 0, payoutAccountId: paid?.payoutAccountId ?? null }), { idempotencyKey: `refund-${orderId}` });
+      // and a group's book only its own part of the payment
+      const paid = await prisma.printOrder.findUnique({ where: { id: orderId }, select: { markupCents: true, payoutAccountId: true, batchId: true, totalCents: true } });
+      await stripe().refunds.create(
+        refundParams({ stripePaymentIntentId: paymentIntentId, markupCents: paid?.markupCents ?? 0, payoutAccountId: paid?.payoutAccountId ?? null, batchId: paid?.batchId, totalCents: paid?.totalCents }),
+        { idempotencyKey: `refund-${orderId}` }
+      );
     },
     email: sendEmail,
   };

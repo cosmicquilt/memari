@@ -98,6 +98,16 @@ export function shippableAddress(raw: unknown): ShippingAddress | null {
   };
 }
 
+/** Where a client's books go: their group's place while their group sends
+ *  every book to one (groups, 2026-10-31; businessGroups.ts), else their own
+ *  address - either only when it has everything a printer needs. */
+export function bookAddressOf(client: { shippingAddress: unknown; group?: { shipToVenue: boolean; venueAddress: unknown } | null }): ShippingAddress | null {
+  return shippableAddress(client.group?.shipToVenue ? client.group.venueAddress : client.shippingAddress);
+}
+
+/** The group fields bookAddressOf reads, for a query's include. */
+export const GROUP_PLACE = { select: { shipToVenue: true, venueAddress: true } } as const;
+
 /** The four steps a new business is walked through, and whether each is
  *  done: a logo, a template, a client, a sample book. */
 export type ChecklistStep = { key: "logo" | "template" | "client" | "sample"; label: string; detail: string; href: string; done: boolean };
@@ -119,7 +129,7 @@ export async function businessJournalIds(businessId: string): Promise<{ template
 export async function businessHome(business: Business): Promise<{ steps: ChecklistStep[]; tasks: HomeTask[] }> {
   const [templateCount, clients, journals] = await Promise.all([
     prisma.businessTemplate.count({ where: { businessId: business.id } }),
-    prisma.businessClient.findMany({ where: { businessId: business.id, archivedAt: null }, select: { id: true, name: true, shippingAddress: true, templateId: true, plannerId: true } }),
+    prisma.businessClient.findMany({ where: { businessId: business.id, archivedAt: null }, select: { id: true, name: true, shippingAddress: true, group: GROUP_PLACE, templateId: true, plannerId: true } }),
     businessJournalIds(business.id),
   ]);
   const ids = [...journals.templates, ...journals.clients];
@@ -136,7 +146,7 @@ export async function businessHome(business: Business): Promise<{ steps: Checkli
   const tasks: HomeTask[] = [
     ...failed.map((o) => ({ key: `failed-${o.id}`, label: "A book needs attention", detail: o.title, href: "/app/business/orders" })),
     ...clients
-      .filter((c) => !shippableAddress(c.shippingAddress))
+      .filter((c) => !bookAddressOf(c))
       .map((c) => ({ key: `address-${c.id}`, label: "No address to send to", detail: c.name, href: `/app/business/clients/${c.id}` })),
     ...(templateCount > 0
       ? clients.filter((c) => !c.templateId).map((c) => ({ key: `template-${c.id}`, label: "No template chosen", detail: c.name, href: `/app/business/clients/${c.id}` }))
@@ -155,7 +165,7 @@ export async function businessHome(business: Business): Promise<{ steps: Checkli
 export type ClientOrderDefaults = { client: string; startISO: string | null; days: number; address: Partial<ShippingAddress> | null };
 
 export async function clientOrderDefaultsFor(ownerId: string, journalId: string): Promise<ClientOrderDefaults | null> {
-  const client = await prisma.businessClient.findFirst({ where: { plannerId: journalId, business: { ownerId } } });
+  const client = await prisma.businessClient.findFirst({ where: { plannerId: journalId, business: { ownerId } }, include: { group: GROUP_PLACE } });
   if (!client) return null;
   const days = BOOK_DAYS[client.bookMonths] ?? client.bookMonths * 30;
   const last = await prisma.printOrder.findFirst({
@@ -173,7 +183,8 @@ export async function clientOrderDefaultsFor(ownerId: string, journalId: string)
     client: client.name,
     startISO: start ? start.toISOString().slice(0, 10) : null,
     days,
-    address: (client.shippingAddress as Partial<ShippingAddress> | null) ?? null,
+    // their group's place, while their group sends every book there
+    address: ((client.group?.shipToVenue ? client.group.venueAddress : client.shippingAddress) as Partial<ShippingAddress> | null) ?? null,
   };
 }
 

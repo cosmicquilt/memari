@@ -38,6 +38,32 @@ const INK: Rgb = [0x23, 0x1f, 0x20];
 export type CoverStyle = "plain" | "lattice" | "framed" | "ink" | "quarter";
 export const COVER_STYLES: readonly CoverStyle[] = ["plain", "lattice", "framed", "ink", "quarter"];
 
+/** A coach's book carries their business (coverBrand.ts): the name at the
+ *  foot of the front and above the studio's address on the back, and their
+ *  logo over the name on the front where there is one. */
+export type CoverBrand = { name: string; logo?: { data: Uint8Array; format: "PNG" | "JPEG" } };
+
+/** The logo's box on the front, and the print rule it keeps: never under
+ *  300 pixels to the inch (memari-print-requirements), so it is drawn no
+ *  larger than its pixels allow, and left off when that is too small to
+ *  read. */
+const LOGO_MAX_H_PT = 0.55 * PT_PER_IN;
+const LOGO_MAX_W_PT = 1.8 * PT_PER_IN;
+const LOGO_MIN_H_PT = 0.15 * PT_PER_IN;
+const LOGO_PPI = 300;
+
+/** The logo's printed size, or null where it would be too small to read. */
+export function logoBox(pixels: { width: number; height: number }): { w: number; h: number } | null {
+  if (!(pixels.width > 0 && pixels.height > 0)) return null;
+  let h = Math.min(LOGO_MAX_H_PT, (pixels.height / LOGO_PPI) * PT_PER_IN);
+  let w = (h * pixels.width) / pixels.height;
+  if (w > LOGO_MAX_W_PT) {
+    w = LOGO_MAX_W_PT;
+    h = (w * pixels.height) / pixels.width;
+  }
+  return h >= LOGO_MIN_H_PT ? { w, h } : null;
+}
+
 export type CoverInput = {
   widthPt: number;
   heightPt: number;
@@ -54,6 +80,8 @@ export type CoverInput = {
   /** How far inside the trim the type keeps, inches: the binding's
    *  (BINDING_SPECS coverSafeIn). 0.5 if not given. */
   safeIn?: number;
+  /** The coach whose book it is, for a client's journal or a template. */
+  brand?: CoverBrand | null;
 };
 
 export type CoverLayout = {
@@ -200,6 +228,49 @@ function drawCover(doc: jsPDF, input: CoverInput, layout: CoverLayout, spineText
     }
   }
 
+  // THE COACH, at the foot of the front: their logo over their name in
+  // small spaced capitals, inside the frame on the framed style.
+  const brand = input.brand?.name.trim() ? input.brand : null;
+  if (brand) {
+    const frameFoot = trimTop + trimH - safe - 0.3 * PT_PER_IN - (input.dates ? 16 : 0);
+    const nameY = style === "framed" ? frameFoot : trimTop + trimH - safe - 4;
+    const name = brand.name.toUpperCase();
+    const space = 1.2;
+    let size = 9;
+    doc.setFontSize(size);
+    const width = () => doc.getTextWidth(name) + space * Math.max(0, name.length - 1);
+    while (size > 6 && width() > room) doc.setFontSize(--size);
+    // placed from its own start, measured BEFORE the spacing is set: once it
+    // is, jsPDF's own width counts it too, and the name sat 10pt off centre
+    const nameX = centreX - width() / 2;
+    doc.setCharSpace(space);
+    doc.text(name, nameX, nameY, { baseline: "alphabetic" });
+    doc.setCharSpace(0);
+    if (brand.logo) {
+      let box: { w: number; h: number } | null = null;
+      try {
+        box = logoBox(doc.getImageProperties(brand.logo.data));
+      } catch {
+        box = null;
+      }
+      if (box) {
+        const x = centreX - box.w / 2;
+        // the card on the dark cover reaches 6pt below the logo: as much more room
+        const y = nameY - size - 8 - (style === "ink" ? 6 : 0) - box.h;
+        // on the dark cover a logo sits on a cream card, so a dark logo shows
+        if (style === "ink") {
+          doc.setFillColor(...CREAM);
+          doc.roundedRect(x - 6, y - 6, box.w + 12, box.h + 12, 4, 4, "F");
+        }
+        try {
+          doc.addImage(brand.logo.data, brand.logo.format, x, y, box.w, box.h, undefined, "SLOW");
+        } catch {
+          // a logo jsPDF cannot read is left off; the name has printed
+        }
+      }
+    }
+  }
+
   // SPINE: the name, reading top to bottom, where the spine is wide enough.
   if (spineText && layout.spinePt >= SPINE_TEXT_MIN_PT) {
     const size = Math.min(11, layout.spinePt * 0.5);
@@ -217,9 +288,16 @@ function drawCover(doc: jsPDF, input: CoverInput, layout: CoverLayout, spineText
     doc.setTextColor(...type);
   }
 
-  // BACK: the studio, small, near the foot.
+  // BACK: the coach's name, then the studio, small, near the foot.
+  const backX = style === "quarter" ? layout.backCentreX - 0.375 * PT_PER_IN : layout.backCentreX;
+  if (brand) {
+    doc.setFontSize(10);
+    let backName = brand.name;
+    while (backName.length > 1 && doc.getTextWidth(backName) > trimW - safe * 2.4) backName = backName.slice(0, -1);
+    doc.text(backName, backX, trimTop + trimH - safe - 4 - 16, { align: "center", baseline: "alphabetic" });
+  }
   doc.setFontSize(8);
-  doc.text("memari.studio", style === "quarter" ? layout.backCentreX - 0.375 * PT_PER_IN : layout.backCentreX, trimTop + trimH - safe - 4, {
+  doc.text("memari.studio", backX, trimTop + trimH - safe - 4, {
     align: "center",
     baseline: "alphabetic",
   });

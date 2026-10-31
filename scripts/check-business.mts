@@ -10,6 +10,8 @@ import "./appUnderTest.mjs";
 import { chromium, type Page } from "playwright-core";
 import { ensureServer, makeGuestJournal, disconnect } from "./appUnderTest.mjs";
 import { prisma } from "../src/lib/prisma";
+import { coverBrandFor } from "../src/lib/print/coverBrand";
+import { makeIntakeToken, turnOffIntake } from "../src/lib/clientIntake";
 
 const shots = process.argv[2];
 const server = await ensureServer(process.env.BASE);
@@ -180,6 +182,27 @@ try {
   await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
   say((await tab.getByText("Ready", { exact: true }).count()) === 1, "with her journal built: Ready");
 
+  // EXPORT (2026-10-30): the coach's clients as a spreadsheet, and her
+  // journal as a PDF - their work is theirs to take (businessExport.ts).
+  {
+    const sheet = await tab.request.get(`${server.base}/app/business/clients/export`);
+    const text = await sheet.text();
+    say(
+      sheet.status() === 200 && (sheet.headers()["content-type"] ?? "").includes("text/csv") && (sheet.headers()["content-disposition"] ?? "").includes("northwind-coaching-clients-") && text.includes("Maya Okafor") && text.includes("120 Elm Street"),
+      `Download all: a spreadsheet of her, with her address (${sheet.status()}, ${text.split("\r\n")[1]?.slice(0, 60)})`
+    );
+    say((await tab.getByRole("link", { name: "Download all" }).count()) === 1, "Clients offers Download all");
+    const stranger = await browser.newContext();
+    const theirs = await stranger.request.get(`${server.base}/app/business/clients/export`);
+    say(theirs.status() === 404 && !(await theirs.text()).includes("Maya"), `someone else asking gets no spreadsheet (${theirs.status()})`);
+    await stranger.close();
+    const herPage = `${server.base}/app/business/clients/${client!.id}`;
+    await tab.goto(herPage, { waitUntil: "networkidle" });
+    const pdfLink = await tab.getByRole("link", { name: "Download as PDF" }).getAttribute("href");
+    const pdf = pdfLink ? await tab.request.get(`${server.base}${pdfLink}`, { timeout: 180_000 }) : null;
+    say(!!pdf && pdf.status() === 200 && (pdf.headers()["content-type"] ?? "").includes("pdf") && (await pdf.body()).subarray(0, 5).toString() === "%PDF-", `her page: Download as PDF gives her whole book (${pdf?.status()})`);
+  }
+
   // Settings: a logo; and a bad one is refused.
   await tab.getByRole("link", { name: "Settings" }).click();
   await tab.getByRole("heading", { name: "Settings" }).waitFor();
@@ -192,6 +215,18 @@ try {
   await tab.getByRole("button", { name: "Save" }).first().click();
   await tab.getByText("Saved").waitFor();
   say(!!(await prisma.business.findUnique({ where: { id: business!.id } }))?.logoUrl, "an https logo is saved");
+  // THE COACH ON THE COVER (2026-10-30, coverBrand.ts): her book and a
+  // sample of the template both carry the business; the logo is asked for
+  // (a stand-in here, so the check never reaches the network).
+  {
+    let asked = "";
+    const hers = await coverBrandFor(journalId!, async (url) => {
+      asked = url;
+      return undefined;
+    });
+    const sample = await coverBrandFor(guest.journalId, async () => undefined);
+    say(hers?.name === "Northwind Coaching" && sample?.name === "Northwind Coaching" && asked.endsWith("otter-1.webp"), `her book and the template's sample name the coach, and ask for the logo (${hers?.name}, ${sample?.name}, ${asked})`);
+  }
 
   // Home now: three of four done (no sample ordered).
   await tab.getByRole("link", { name: "Home" }).click();
@@ -618,6 +653,52 @@ try {
     await prisma.planner.delete({ where: { id: second.id } });
   }
   await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+
+  // CLIENTS WITHOUT TYPING (2026-10-30, clientIntake.ts): a spreadsheet, and
+  // the web address other tools post to. The clients made here are taken
+  // away again at the end, so what follows still counts one client.
+  {
+    const before = new Set((await prisma.businessClient.findMany({ where: { businessId: business!.id }, select: { id: true } })).map((c) => c.id));
+    const csv = "Name,Email,Street,City,State,Zip,Months\nMaya Okafor,maya@example.com,120 Elm Street,Jersey City,NJ,07302,3\nSam Lee,sam@example.com,5 Oak Ave,Hoboken,NJ,07030,6\nAna Ruiz,,,,,,12\nBad Email,nope,,,,,3\n";
+    const file = { name: "clients.csv", mimeType: "text/csv", buffer: Buffer.from(csv) };
+    await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
+    await tab.getByRole("link", { name: "Import" }).click();
+    await tab.getByRole("heading", { name: "Import clients" }).waitFor();
+    await tab.locator('input[type="file"]').setInputFiles(file);
+    await tab.getByRole("button", { name: "Add 2 clients" }).waitFor({ timeout: 30_000 });
+    say(
+      (await tab.getByText("Already here", { exact: true }).count()) === 1 && (await tab.getByText(/Row 5: Bad Email/).count()) === 1,
+      "Import: Maya is already here, row 5's email is refused, two to add"
+    );
+    await shoot(tab, "biz-import-preview");
+    await tab.getByRole("button", { name: "Add 2 clients" }).click();
+    await tab.getByText(/Added 2 clients/).waitFor({ timeout: 30_000 });
+    const sam = await prisma.businessClient.findFirst({ where: { businessId: business!.id, email: "sam@example.com" } });
+    say(!!sam && sam.bookMonths === 6 && (sam.shippingAddress as { city?: string } | null)?.city === "Hoboken" && sam.templateId === template!.id, "Sam is added: six months, his address, on the template");
+    await tab.locator('input[type="file"]').setInputFiles(file);
+    await tab.getByText(/0 clients to add/).waitFor({ timeout: 30_000 });
+    say((await tab.getByRole("button", { name: "Add 0 clients" }).isDisabled()) === true, "the same file again adds nobody twice");
+
+    // the web address: a guest is told to sign in; the address itself works
+    await tab.goto(`${server.base}/app/business/settings`, { waitUntil: "networkidle" });
+    say((await tab.getByText("Sign in to add clients from other tools: the address belongs to your account.").count()) === 1, "Settings: a guest is told the address needs an account");
+    const token = await makeIntakeToken(business!.id);
+    const url = `${server.base}/api/business/clients/${token}`;
+    const lee = { name: "Lee Park", email: "lee@example.com", street: "1 Main St", city: "Jersey City", state: "NJ", zip: "07302", start_date: "2027-01-04", months: 3, template: "Clarity Quarterly" };
+    const first = await tab.request.post(url, { data: lee });
+    const again = await tab.request.post(url, { data: lee });
+    const asForm = await tab.request.post(url, { form: { name: "Kim Cho", email: "kim@example.com" } });
+    const bad = await tab.request.post(url, { data: { name: "Bo", email: "not-an-email" } });
+    const wrong = await tab.request.post(`${server.base}/api/business/clients/${"x".repeat(43)}`, { data: lee });
+    const leeRow = await prisma.businessClient.findFirst({ where: { businessId: business!.id, email: "lee@example.com" } });
+    say(first.status() === 201 && again.status() === 200 && (await again.json()).already === true, `a tool posts Lee: added, and posted again, already here (${first.status()}, ${again.status()})`);
+    say(!!leeRow && leeRow.startDate?.toISOString().startsWith("2027-01-04") === true && (leeRow.shippingAddress as { postcode?: string } | null)?.postcode === "07302" && leeRow.templateId === template!.id, "Lee's start, address and template are kept");
+    say(asForm.status() === 201 && bad.status() === 400 && wrong.status() === 404, `a form is read too; a bad email is refused; an address that isn't one adds nobody (${asForm.status()}, ${bad.status()}, ${wrong.status()})`);
+    await turnOffIntake(business!.id);
+    const off = await tab.request.post(url, { data: { name: "After Off" } });
+    say(off.status() === 404 && !(await prisma.businessClient.findFirst({ where: { businessId: business!.id, name: "After Off" } })), "turned off, the address adds nobody");
+    await prisma.businessClient.deleteMany({ where: { businessId: business!.id, id: { notIn: [...before] } } });
+  }
 
   // The switcher, and the template gone from the guest's own journals.
   await tab.getByRole("button", { name: /Northwind Coaching/ }).click();

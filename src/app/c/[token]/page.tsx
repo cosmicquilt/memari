@@ -12,6 +12,8 @@ import { ORDER_WORDS } from "@/lib/business";
 import { countryOptions } from "@/lib/print/countries";
 import { BusinessMark } from "@/app/app/business/WorkspaceSwitcher";
 import { AddressForm, JournalPages, OrderBook } from "./PortalParts";
+import { AnswersForm } from "@/app/app/business/Answers";
+import { saveMyAnswers } from "./actions";
 import css from "@/app/app/business/business.module.css";
 
 // private: never in a search engine, and the link is not passed on to any
@@ -42,10 +44,21 @@ export default async function ClientPortal({ params, searchParams }: { params: P
         <section style={{ display: "grid", gap: 10 }} className={css.page}>
           <h1 style={{ fontSize: "calc(var(--h1-size) * 1.25)" }}>{first}, your journal</h1>
           <p className={css.dim} style={{ fontSize: "1.15em", maxWidth: 620 }}>
-            From {business.name}. Printed as you see it here, and posted to you
+            From {business.name}. Printed as you see it here, and {data.venue ? "sent with your group's" : "posted to you"}
             {client.startDate ? `, starting ${date(client.startDate)}` : ""}.
           </p>
         </section>
+
+        {data.questions.length > 0 && (
+          // intake that fills the book (2026-10-31, clientAnswers.ts)
+          <section className={css.page} id="questions">
+            <h2>A few questions from {business.name}</h2>
+            <div className={css.card}>
+              <p className={css.dim}>Your answers print in your book, where each one says. Change them whenever you like; a book already printed stays as it was.</p>
+              <AnswersForm questions={data.questions} save={saveMyAnswers.bind(null, token)} done="Saved. Your answers print in your next book." />
+            </div>
+          </section>
+        )}
 
         <section className={css.page}>
           <h2>Inside</h2>
@@ -110,6 +123,13 @@ export default async function ClientPortal({ params, searchParams }: { params: P
         <section className={css.page}>
           <h2>Where your books go</h2>
           <div className={css.card}>
+            {data.venue && (
+              // their group's books all go to one place: theirs is kept for later
+              <p data-venue="">
+                With <strong>{data.venue.group}</strong>, your books are sent to <strong>{data.venue.place}</strong>, with the rest of your group&rsquo;s. Your own
+                address, below, is kept for any book sent to you later.
+              </p>
+            )}
             <AddressForm token={token} address={client.address} countries={countryOptions()} />
           </div>
         </section>

@@ -163,7 +163,7 @@ async function main() {
     // a bookmark or an invitation to one of them was a server error; now
     // each sends them to the Start page. This guest has no business.
     { path: "/app/business", expect: [200], as: "guest", what: "the Start page, for someone with no business" },
-    ...["/clients", "/clients/new", "/clients/not-a-client", "/templates", "/orders", "/settings"].map(
+    ...["/clients", "/clients/new", "/clients/not-a-client", "/clients/import", "/groups", "/groups/new", "/groups/not-a-group", "/templates", "/templates/not-a-template/questions", "/orders", "/settings"].map(
       (sub): Expectation => ({ path: `/app/business${sub}`, expect: [307, 302, 303], as: "guest", to: "/app/business", what: "WITH NO BUSINESS YET, SENT TO THE START PAGE, not a server error" })
     ),
   ];

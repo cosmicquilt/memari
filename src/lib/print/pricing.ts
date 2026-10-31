@@ -63,3 +63,9 @@ export function priceFromCost(cost: PrintCost): Price {
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
+
+/** A coach's share as their client is told it, on their page and on
+ *  Stripe's: "$10.00 for Dana Lee Coaching" (clientPays.ts). */
+export function shareWords(markupCents: number, shareTo?: string): string {
+  return `${formatCents(markupCents)} for ${shareTo?.trim() || "your coach"}`;
+}

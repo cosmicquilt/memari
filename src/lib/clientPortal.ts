@@ -22,6 +22,8 @@ import { pageThumbnail } from "@/app/planner/loadPlannerPages";
 import type { PreviewMark } from "@/lib/previewMarks";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import { HOLDS_DAYS } from "@/lib/print/holdsDays";
+import { shippableAddress } from "@/lib/business";
+import { questionsForClient, type AskedQuestion } from "@/lib/clientAnswers";
 
 const hashOf = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -69,7 +71,11 @@ export async function clientForToken(token: string) {
   if (!TOKEN.test(token)) return null;
   const client = await prisma.businessClient.findUnique({
     where: { accessTokenHash: hashOf(token) },
-    include: { business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, payoutsReady: true, stripeAccountId: true } } },
+    include: {
+      business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, payoutsReady: true, stripeAccountId: true } },
+      // where their books go while their group sends every book to one place
+      group: { select: { name: true, shipToVenue: true, venueAddress: true } },
+    },
   });
   // a link turned off keeps its hash for the undo, and has no day
   return client && !client.archivedAt && client.accessMadeAt ? client : null;
@@ -87,6 +93,11 @@ export type PortalPage = { marks: PreviewMark[]; widthPx: number; heightPx: numb
 export type PortalData = {
   business: { name: string; logoUrl: string | null };
   client: { name: string; coverName: string | null; address: Partial<ShippingAddress> | null; startDate: Date | null; bookMonths: number };
+  /** Their group's place, while it sends every book there: what their page
+   *  says instead of asking where to post them (groups, 2026-10-31). */
+  venue: { group: string; place: string } | null;
+  /** Their coach's questions, with their answers (clientAnswers.ts). */
+  questions: AskedQuestion[];
   journal: Array<{ label: string; pages: PortalPage[] }> | null;
   books: Array<{ id: string; startDate: Date; endDate: Date; status: string; tracking: string | null }>;
 };
@@ -151,7 +162,15 @@ export async function portalFor(token: string): Promise<PortalData | null> {
     },
     journal,
     books,
+    venue: venueOf(client.group),
+    questions: await questionsForClient(client.id),
   };
+}
+
+/** "Hotel Lumen, 120 Congress Ave, Austin": a group's place, in a line. */
+function venueOf(group: { name: string; shipToVenue: boolean; venueAddress: unknown } | null): PortalData["venue"] {
+  const place = group?.shipToVenue ? shippableAddress(group.venueAddress) : null;
+  return place ? { group: group!.name, place: [place.name, place.street1, place.city].join(", ") } : null;
 }
 
 /** The client corrects where their books go, from their page. */

@@ -46,6 +46,12 @@ check(params.success_url === payer.successUrl && params.cancel_url === payer.can
 const plain = clientSessionParams({ orderId: "o2", title: "t", description: "d", shippingName: "s", price: base, payer: { ...payer, markupCents: 0, destination: null }, expiresAt: 1_800_000_000 });
 check(!plain.payment_intent_data?.application_fee_amount && !plain.payment_intent_data?.transfer_data, "at Memari's price: no transfer, an ordinary payment");
 
+// the share is said where it is paid (ICF Standard 12; his call, 2026-10-30)
+const named = clientSessionParams({ orderId: "o3", title: "Maya's journal", description: "Coil, Jan to Mar", shippingName: "Standard", price: marked, payer: { ...payer, shareTo: "Dana Lee Coaching" }, expiresAt: 1_800_000_000 });
+check(named.line_items?.[0]?.price_data?.product_data?.description === "Coil, Jan to Mar. Includes $10.00 for Dana Lee Coaching.", `Stripe's page names the share and who it goes to (${named.line_items?.[0]?.price_data?.product_data?.description})`);
+check(params.line_items?.[0]?.price_data?.product_data?.description === "Coil, Jan to Mar. Includes $10.00 for your coach.", "with no name, it still says a share is included");
+check(plain.line_items?.[0]?.price_data?.product_data?.description === "d", "at Memari's price: nothing to disclose");
+
 // refused before anything is made
 check(payerProblem({ ...payer, destination: null }) !== null, "a share with no payouts account is refused");
 check(payerProblem({ ...payer, markupCents: 0, destination: null }) === null, "Memari's price needs no account");
@@ -56,6 +62,17 @@ const r = refundParams({ stripePaymentIntentId: "pi_1", markupCents: 1000, payou
 check(r.payment_intent === "pi_1" && r.reverse_transfer === true && r.refund_application_fee === true, "a refund with a share takes the coach's back and returns Memari's fee");
 const r2 = refundParams({ stripePaymentIntentId: "pi_2", markupCents: 0, payoutAccountId: null });
 check(r2.payment_intent === "pi_2" && !("reverse_transfer" in r2) && !("refund_application_fee" in r2), "a plain refund otherwise (Stripe refuses reverse_transfer with no transfer)");
+check(!("amount" in r) && !("amount" in r2), "one book's payment is refunded whole: no amount");
+// a group's book (groupOrders.ts): its own part of the payment, never all of it
+const r3 = refundParams({ stripePaymentIntentId: "pi_group", markupCents: 0, payoutAccountId: null, batchId: "batch_1", totalCents: 4199 });
+check(r3.payment_intent === "pi_group" && r3.amount === 4199, `a group's book gets back its own total only (${r3.amount})`);
+let refused = "";
+try {
+  refundParams({ stripePaymentIntentId: "pi_group", markupCents: 0, payoutAccountId: null, batchId: "batch_1" });
+} catch (error) {
+  refused = String(error);
+}
+check(refused.includes("own amount"), "a group's book with no amount is refused, never refunded whole");
 
 // a share is charged only while the coach's payouts can take it
 check(shareInForce({ markupCents: 1000, payoutsReady: true, stripeAccountId: "acct_coach" }).markupCents === 1000, "payouts ready: the share is charged, to the coach's account");

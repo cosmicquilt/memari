@@ -48,7 +48,10 @@ export function SettingsForm({ name, logoUrl }: { name: string; logoUrl: string 
         <label className={css.field}>
           <span>Logo</span>
           <input type="url" name="logoUrl" defaultValue={logoUrl ?? ""} placeholder="https://…/logo.png" />
-          <small>The address of your logo picture, a square one if you have it.</small>
+          <small>
+            The address of your logo picture. It shows on your clients&rsquo; pages, and on the cover of their books if it&rsquo;s a PNG or JPEG at least 300 pixels
+            tall. Your name prints on every cover either way.
+          </small>
         </label>
       </div>
       <Status state={state} />

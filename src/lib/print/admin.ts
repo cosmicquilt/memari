@@ -85,9 +85,11 @@ export async function refundOrder(orderId: string, why: string, deps: RefundDeps
   // one failed takes a key of its own, new each time the order changes:
   // Stripe answers a key it has seen with the same answer for a day, so the
   // old key would only fail again. Two at once still share a key, and as
-  // every refund is the whole payment Stripe refuses a second in any case.
+  // every refund is the whole payment Stripe refuses a second in any case -
+  // but a group's book (groupOrders.ts) is refunded by its own part, which
+  // the key alone keeps to once.
   const key = due ? `refund-${order.id}-due-${order.updatedAt.getTime()}` : `refund-${order.id}`;
-  const params = refundParams({ stripePaymentIntentId: order.stripePaymentIntentId, markupCents: order.markupCents, payoutAccountId: order.payoutAccountId });
+  const params = refundParams({ stripePaymentIntentId: order.stripePaymentIntentId, markupCents: order.markupCents, payoutAccountId: order.payoutAccountId, batchId: order.batchId, totalCents: order.totalCents });
   const day = new Date().toISOString().slice(0, 10);
   let already = false;
   try {

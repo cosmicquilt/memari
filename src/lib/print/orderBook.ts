@@ -51,11 +51,7 @@ export type Interior = {
  *  the printer's own rule for the binding (printer.ts). Without it the
  *  pages are as designed; the page count is the same either way. */
 export function buildInterior(journal: PrintJournal, range: OrderRange, gutterFor?: (printedPages: number) => number): Interior {
-  const theme = journal.theme as PlannerTheme | null;
-  const book = generateBook({ ...journal, startDate: range.start, endDate: range.end }, resolveFontFamily(theme?.fontFamily));
-  if (book.pages.length === 0) {
-    throw new OrderError("This journal has no pages to print yet - add some pages to it first.");
-  }
+  const book = bookPages(journal, range);
   const pageCount = printedPageCount(book.pages.length);
   const last = book.pages[book.pages.length - 1].pageGrid;
   const built = buildPlannerPdf(
@@ -72,6 +68,26 @@ export function buildInterior(journal: PrintJournal, range: OrderRange, gutterFo
     trim: trimKeyForWidth(book.pages[0].pageGrid.widthPx),
     problems: printReadinessProblems(built),
   };
+}
+
+/** The journal's pages for the order's days, laid out but not drawn. */
+function bookPages(journal: PrintJournal, range: OrderRange) {
+  const theme = journal.theme as PlannerTheme | null;
+  const book = generateBook({ ...journal, startDate: range.start, endDate: range.end }, resolveFontFamily(theme?.fontFamily));
+  if (book.pages.length === 0) {
+    throw new OrderError("This journal has no pages to print yet - add some pages to it first.");
+  }
+  return book;
+}
+
+/** The book counted, not drawn: what a price needs. A group's books are
+ *  priced together (groupOrders.ts), and drawing one 90-day book takes
+ *  seconds where laying it out takes a tenth of one (measured 2026-10-31:
+ *  2.6s against 0.06-0.1s). The same pages as buildInterior's, so the same
+ *  counts. */
+export function countInterior(journal: PrintJournal, range: OrderRange): Pick<Interior, "pageCount" | "bookPages" | "trim"> {
+  const book = bookPages(journal, range);
+  return { pageCount: printedPageCount(book.pages.length), bookPages: book.pages.length, trim: trimKeyForWidth(book.pages[0].pageGrid.widthPx) };
 }
 
 /** The trim's finished size in inches - the sheet less its bleed. */

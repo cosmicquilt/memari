@@ -40,6 +40,7 @@ import { moduleDefinition } from "@/lib/moduleRegistry";
 import { fontFamilyFromTheme, resolveFontFamily } from "@/lib/theme";
 import type { PreviewMark } from "@/lib/previewMarks";
 import { pageThumbnail } from "./loadPlannerPages";
+import { ASK_KEY, applyClientAnswers, askIdOf, withAsk } from "@/lib/clientAnswers";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -258,6 +259,9 @@ export async function syncLinkedPages(pageIds: Iterable<string | null | undefine
         const client = other.planner.businessClient;
         if (client && !(client.template && followed.has(client.template.plannerId))) continue;
         await writeSlots(tx, other.id, saved.ownerId, slots);
+        // a client's answers back into the page just rewritten from the
+        // template (clientAnswers.ts): the coach's edit never takes them away
+        if (client) await applyClientAnswers(tx, other.plannerId, [other.id]);
         rewritten.push(other.id);
       }
     });
@@ -482,7 +486,7 @@ export async function spreadSavedModuleProps(
   const saved = await ownedSavedModule(prisma, ownerId, savedModuleId);
   const all = await prisma.moduleInstance.findMany({
     where: { savedModuleId: saved.id, page: { planner: { ownerId } } },
-    select: { id: true, pageId: true, page: { select: { plannerId: true, planner: { select: { businessClient: { select: { template: { select: { plannerId: true } } } } } } } } },
+    select: { id: true, pageId: true, propValues: true, page: { select: { plannerId: true, planner: { select: { businessClient: { select: { template: { select: { plannerId: true } } } } } } } } },
   });
   // A client's journal takes it only when its template does (as a page's
   // edit, syncLinkedPages; review 2026-10-26).
@@ -491,10 +495,18 @@ export async function spreadSavedModuleProps(
     const client = use.page.planner.businessClient;
     return !client || (!!client.template && followed.has(client.template.plannerId));
   });
+  // A QUESTION FOR A CLIENT IS ONE USE'S, not the saved module's
+  // (clientAnswers.ts): each use keeps its own, and the saved module none.
+  const plain = { ...(propValues as Record<string, unknown>) };
+  delete plain[ASK_KEY];
+  const asked = uses.filter((use) => askIdOf(use.propValues));
   await prisma.$transaction([
-    prisma.savedModule.update({ where: { id: saved.id }, data: { propValues } }),
-    prisma.moduleInstance.updateMany({ where: { id: { in: uses.map((use) => use.id) } }, data: { propValues } }),
+    prisma.savedModule.update({ where: { id: saved.id }, data: { propValues: plain as Prisma.InputJsonValue } }),
+    prisma.moduleInstance.updateMany({ where: { id: { in: uses.filter((use) => !askIdOf(use.propValues)).map((use) => use.id) } }, data: { propValues: plain as Prisma.InputJsonValue } }),
+    ...asked.map((use) => prisma.moduleInstance.update({ where: { id: use.id }, data: { propValues: withAsk(use.propValues, plain) as Prisma.InputJsonValue } })),
   ]);
+  // and a client's answers back into what the edit reached
+  for (const plannerId of new Set(uses.filter((use) => use.page.planner.businessClient).map((use) => use.page.plannerId))) await applyClientAnswers(prisma, plannerId);
   return [...new Set(uses.map((use) => use.pageId))];
 }
 

@@ -17,6 +17,7 @@ import { orderRange } from "@/lib/print/orderRange";
 import { BINDING_SPECS, BINDINGS, type Binding } from "@/lib/print/products";
 import { printerForBinding } from "@/lib/print/printer";
 import { buildCoverPdf, COVER_STYLES, type CoverStyle } from "@/lib/print/cover";
+import { coverBrandFor } from "@/lib/print/coverBrand";
 import { pdfFilename } from "@/lib/plannerPdf";
 
 export const runtime = "nodejs";
@@ -76,6 +77,7 @@ export async function GET(request: Request) {
     title: journal.title,
     dates: journal.dated ? rangeLabel(range) : "",
     style,
+    brand: await coverBrandFor(journal.id),
   });
   return new Response(new Uint8Array(cover.bytes), { headers });
 }
