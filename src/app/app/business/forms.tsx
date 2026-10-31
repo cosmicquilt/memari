@@ -75,8 +75,10 @@ export function BookPayerForm({
 }: {
   clientsPay: boolean;
   markupCents: number;
-  /** none: no Stripe account; pending: made, Stripe wants more; ready. */
-  payouts: "none" | "pending" | "ready";
+  /** none: no Stripe account; pending: made, Stripe wants more; noBank: the
+   *  share is on and collects in Stripe until they add a bank (payouts.ts
+   *  standingOf); ready: paid out to their bank too. */
+  payouts: "none" | "pending" | "noBank" | "ready";
   /** Payments switched on on this site (Stripe and the printer). */
   paymentsOn: boolean;
   /** Trying it as a guest: payouts need an account (actions.ts startPayouts). */
@@ -146,7 +148,7 @@ export function BookPayerForm({
               <input type="radio" name="price" value="share" checked={price === "share"} onChange={() => setPrice("share")} />
               <span>
                 <strong>Memari&rsquo;s price, plus your share</strong>
-                <small>Paid to you through Stripe, to your bank.</small>
+                <small>Collected for you in Stripe. Add your bank whenever you like.</small>
               </span>
             </label>
             {price === "share" && (
@@ -167,19 +169,27 @@ export function BookPayerForm({
       </form>
       {who === "client" && price === "share" && (
         <div className={css.payouts}>
-          {payouts === "ready" ? (
+          {payouts === "ready" || payouts === "noBank" ? (
             <>
-              <p>
-                <span className={`${css.tag} ${css.tagOk}`}>Payouts ready</span> Your share is added to what your clients pay.
-              </p>
+              {payouts === "ready" ? (
+                <p>
+                  <span className={`${css.tag} ${css.tagOk}`}>Payouts ready</span> Your share is added to what your clients pay.
+                </p>
+              ) : (
+                <p>
+                  <span className={`${css.tag} ${css.tagOk}`}>Share on</span> Your share is added to what your clients pay. It collects in your Stripe balance until you add a bank account there, whenever you&rsquo;re ready.
+                </p>
+              )}
               <button type="button" className={css.btn} disabled={going} onClick={() => viaStripe(openPayouts)}>
-                Open your Stripe
+                {payouts === "noBank" ? "Add your bank in Stripe" : "Open your Stripe"}
               </button>
             </>
           ) : (
             <>
               <p>
-                {payouts === "pending" ? "Stripe needs a few more details before it can pay you." : "To be paid your share, connect a Stripe account: Stripe asks for your details and your bank."}{" "}
+                {payouts === "pending"
+                  ? "Stripe needs a few more details before your share can start."
+                  : "To add your share, connect a Stripe account. Stripe asks who you are; your bank can wait until you want to be paid."}{" "}
                 Until then, clients pay Memari&rsquo;s price.
               </p>
               {guest && <p className={css.dim}>Sign in to set up payouts: they belong to your account.</p>}

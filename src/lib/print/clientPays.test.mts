@@ -7,7 +7,7 @@
 import { PAYOUT_COUNTRIES, clientBookStart, clientSessionParams, coachReceives, destinationSplit, payerProblem, refundParams, withMarkup, type ClientPayer } from "./clientPays";
 import type { Price } from "./pricing";
 import { arrivalEmail, cancelledEmail, placedEmail, shippedEmail } from "./emails";
-import { coachAccountParams, shareInForce } from "../payouts";
+import { coachAccountParams, shareInForce, standingOf } from "../payouts";
 
 let failures = 0;
 const check = (ok: boolean, what: string) => {
@@ -63,6 +63,18 @@ check(shareInForce({ markupCents: 1000, payoutsReady: true, stripeAccountId: "ac
 const paused = shareInForce({ markupCents: 1000, payoutsReady: false, stripeAccountId: "acct_coach" });
 check(paused.markupCents === 0 && paused.destination === null, "payouts not ready (Stripe wants more): Memari's price, so the client can still order");
 check(shareInForce({ markupCents: 1000, payoutsReady: true, stripeAccountId: null }).markupCents === 0, "no account: Memari's price");
+
+// the share starts before the bank (his call, 2026-10-30): ready is Stripe
+// taking transfers; the bank is only for paying them out
+const account = (transfers: string, payouts: string, closed = false) =>
+  ({ closed, configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { status: transfers }, payouts: { status: payouts } } } } } }) as unknown as Parameters<typeof standingOf>[0];
+const noBank = standingOf(account("active", "restricted"));
+check(noBank.ready && noBank.bank === false, "transfers on, no bank yet: the share is charged and collects in their Stripe balance");
+const banked = standingOf(account("active", "active"));
+check(banked.ready && banked.bank === true, "transfers and payouts on: ready, paid to their bank");
+check(!standingOf(account("restricted", "restricted")).ready, "Stripe still wants who they are: no share yet");
+check(!standingOf(account("pending", "active")).ready, "transfers pending: no share yet");
+check(!standingOf(account("active", "active", true)).ready, "a closed account: no share");
 
 // the emails: a client has no account, so no link to one
 const order = { id: "o1", title: "Maya's journal", startDate: new Date("2027-01-04T00:00:00Z"), endDate: new Date("2027-04-03T00:00:00Z"), days: 90, binding: "COIL", pageCount: 120, totalCents: 4598, contactEmail: "maya@example.com" };

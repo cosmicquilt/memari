@@ -3,9 +3,10 @@
 //
 // The coach connects once, on Stripe's own pages: the app makes their
 // connected account (or reuses it) and sends them to Stripe's onboarding;
-// coming back, it asks Stripe whether the account can receive their share
-// and pay it out, and remembers the answer (Business.payoutsReady). Their
-// Express dashboard - payouts, their bank - is a link away. Memari pays
+// coming back, it asks Stripe whether the account can receive their share,
+// and remembers the answer (Business.payoutsReady). A bank account is not
+// needed for that, only for the payout (standingOf). Their Express
+// dashboard - payouts, their bank - is a link away. Memari pays
 // Stripe's fees and covers losses on every coach's account.
 //
 // ACCOUNTS v2 (2026-10-25). The first run against Andrew's sandbox was
@@ -118,27 +119,53 @@ export async function payoutsSetupUrl(businessId: string, ownerEmail: string | n
   return link.url;
 }
 
-/** Ask Stripe whether the account can receive a share and pay it out, and
- *  keep the answer. Without an account, or Stripe, what is known stands -
- *  and so it does if Stripe takes longer than a few seconds, so a page
- *  that asks never hangs on it (second review, 2026-10-23). */
-export async function refreshPayouts(businessId: string): Promise<boolean> {
+/** How a coach's account stands. `ready`: it can receive their share, so
+ *  the share is added to what clients pay. `bank`: it can also pay it out,
+ *  which needs a bank account; null when Stripe was not asked.
+ *
+ *  THE SHARE STARTS BEFORE THE BANK (2026-10-30, his call): "I want people
+ *  to make money and make me money before they put in their bank details
+ *  as they may be suspicious initially but less so once they see money
+ *  start piling in." It collects in their Stripe balance until they add
+ *  one. Stripe's own requirements agree: in the sandbox the bank
+ *  (external_account) restricted only stripe_balance.payouts, while
+ *  stripe_transfers waited on the terms and who they are, which only
+ *  Stripe's pages may take ("You cannot accept the Terms of Service on
+ *  behalf of accounts where requirement collection is owned by Stripe"). */
+export type PayoutStanding = { ready: boolean; bank: boolean | null };
+
+export function standingOf(account: Pick<Stripe.V2.Core.Account, "closed" | "configuration">): PayoutStanding {
+  const balance = account.configuration?.recipient?.capabilities?.stripe_balance;
+  const ready = !account.closed && balance?.stripe_transfers?.status === "active";
+  return { ready, bank: ready && balance?.payouts?.status === "active" };
+}
+
+/** Ask Stripe how the account stands, and keep whether it is ready.
+ *  Without an account, or Stripe, what is known stands - and so it does if
+ *  Stripe takes longer than a few seconds, so a page that asks never hangs
+ *  on it (second review, 2026-10-23). */
+export async function refreshPayoutStanding(businessId: string): Promise<PayoutStanding> {
   const business = await prisma.business.findUniqueOrThrow({ where: { id: businessId }, select: { stripeAccountId: true, payoutsReady: true } });
-  if (!business.stripeAccountId || !stripeConfigured()) return business.payoutsReady;
+  const known = { ready: business.payoutsReady, bank: null };
+  if (!business.stripeAccountId || !stripeConfigured()) return known;
   try {
     const account = await stripe().v2.core.accounts.retrieve(business.stripeAccountId, { include: ["configuration.recipient"] }, { timeout: 4000, maxNetworkRetries: 0 });
-    const balance = account.configuration?.recipient?.capabilities?.stripe_balance;
-    const ready = !account.closed && balance?.stripe_transfers?.status === "active" && balance?.payouts?.status === "active";
-    if (ready !== business.payoutsReady) {
-      await prisma.business.update({ where: { id: businessId }, data: { payoutsReady: ready } });
+    const standing = standingOf(account);
+    if (standing.ready !== business.payoutsReady) {
+      await prisma.business.update({ where: { id: businessId }, data: { payoutsReady: standing.ready } });
       // again on turning ready, in case it was refused at the start
-      if (ready) await payMonthly(business.stripeAccountId);
+      if (standing.ready) await payMonthly(business.stripeAccountId);
     }
-    return ready;
+    return standing;
   } catch (error) {
     console.error("[payouts] Stripe would not say how the account stands:", error);
-    return business.payoutsReady;
+    return known;
   }
+}
+
+/** Whether the coach's share is added to what clients pay, asked of Stripe. */
+export async function refreshPayouts(businessId: string): Promise<boolean> {
+  return (await refreshPayoutStanding(businessId)).ready;
 }
 
 /** Forget an account Stripe has not been given details for yet - made in
