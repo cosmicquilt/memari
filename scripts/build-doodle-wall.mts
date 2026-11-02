@@ -4,7 +4,9 @@
 // (The hero's two loose sheets were small walls too, until the base week
 // took their place - scripts/build-hero-sheets.mts.)
 //
-//   npm run build:doodle-wall
+//   npm run build:doodle-wall                  every theme's walls
+//   npm run build:doodle-wall -- studio night  only these (the rest stay
+//                                              byte for byte as they are)
 //
 // Asked for 2026-09-27: the cream paper behind the start dialog "sketched in
 // blue pen in the background cute characters and animals", crowded like a
@@ -53,15 +55,17 @@ await page.evaluate("window.__name = (f) => f");
 mkdirSync(path.join(PUBLIC, "landing/doodle-walls"), { recursive: true });
 // The one wall there was before the themes.
 rmSync(path.join(PUBLIC, "landing/doodle-wall.webp"), { force: true });
-for (const theme of Object.keys(WALL_THEMES) as WallTheme[]) {
+const asked = process.argv.slice(2);
+const unknown = asked.filter((name) => !(name in WALL_THEMES));
+if (unknown.length) throw new Error(`No wall theme called ${unknown.join(", ")}.`);
+for (const theme of (asked.length ? asked : Object.keys(WALL_THEMES)) as WallTheme[]) {
   const sizes: number[] = [];
   for (let variant = 0; variant < WALL_VARIANTS; variant++) {
     const result = await page.evaluate(packWall, {
       drawings,
       classes: WALL_CLASSES,
       tile: WALL_TILE,
-      ink: WALL_THEMES[theme].ink,
-      paper: WALL_THEMES[theme].paper,
+      ...WALL_THEMES[theme],
       seed: wallSeed(variant),
     });
     const bytes = Buffer.from(result.url.split(",")[1], "base64");

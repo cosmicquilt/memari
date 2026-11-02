@@ -56,9 +56,10 @@ try {
   // the picture really there, not a 404 behind a plain ground.
   const wallOf = () => tab.evaluate(() => getComputedStyle(document.querySelector("[data-biz-root]")!).backgroundImage);
   const studio = await wallOf();
-  const studioUrl = /url\("?([^")]+)"?\)/.exec(studio)?.[1] ?? "";
+  const studioUrl = /url\("?([^")]*doodle-walls[^")]+)"?\)/.exec(studio)?.[1] ?? "";
   const served = studioUrl ? (await fetch(studioUrl)).status : 0;
-  say(/doodle-walls\/studio-\d\.webp/.test(studio) && served === 200, `THE WORKSPACE HAS ITS FAINT DOODLE WALL, and it loads (${studioUrl.split("/").pop()} ${served})`);
+  say(/doodle-walls\/studio-\d\.webp/.test(studio) && served === 200, `THE WORKSPACE HAS ITS DOODLE WALL, and it loads (${studioUrl.split("/").pop()} ${served})`);
+  say(studio.includes("paper.jpg") && studio.indexOf("paper.jpg") < studio.indexOf("doodle-walls"), "the paper's fibre lies over it, as behind the start dialog");
   await tab.evaluate(() => document.querySelector("[data-biz-root]")!.setAttribute("data-mode", "dark"));
   say(/doodle-walls\/night-\d\.webp/.test(await wallOf()), "in dark, Night's wall");
   await tab.evaluate(() => document.querySelector("[data-biz-root]")!.setAttribute("data-mode", "light"));

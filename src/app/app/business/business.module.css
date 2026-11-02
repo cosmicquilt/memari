@@ -150,16 +150,22 @@
 }
 
 /* THE DOODLE WALL (2026-10-31): the start dialog's blue pens behind the
-   coach's workspace, fainter - baked onto --bg itself, so it changes no
+   coach's workspace, under their strength there - baked onto --bg itself, so it changes no
    colour as it arrives (doodleWall.ts studio / night; the layout picks one
    of six). Cards stay solid in front of it. Not on a client's page (.biz
-   alone). */
+   alone). The paper's fibre lies over the wall, ink and all, as behind the
+   start dialog (StartDialog.tsx backdropStyle; 2026-11-01, "a bit more like
+   /app"): one layer on the light ground; an overlay scales with what is
+   under it, so three on the near-black one. */
 .wall {
-  background-image: var(--wall-studio);
-  background-size: var(--wall-size);
+  background-image: url(/landing/paper.jpg), var(--wall-studio);
+  background-size: 256px 256px, var(--wall-size);
+  background-blend-mode: overlay, normal;
 }
 .wall[data-mode="dark"] {
-  background-image: var(--wall-night);
+  background-image: url(/landing/paper.jpg), url(/landing/paper.jpg), url(/landing/paper.jpg), var(--wall-night);
+  background-size: 256px 256px, 256px 256px, 256px 256px, var(--wall-size);
+  background-blend-mode: overlay, overlay, overlay, normal;
 }
 
 /* past the page's ends - an overscroll, a short page - the same ground */

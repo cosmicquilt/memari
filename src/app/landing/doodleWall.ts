@@ -32,11 +32,14 @@ export const WALL_THEMES = {
   dark: { paper: "#0c0c0c", ink: { color: "#8b96ff", alpha: 0.32 } },
   // memari. for businesses (2026-10-31: "add the doodle wall that's behind
   // the /app ... but even lower opacity"): the same pens on the workspace's
-  // own grounds, Studio and Studio Night (business.module.css --bg), about a
-  // third as strong - here the wall sits behind text and buttons, not
-  // behind a dialog.
-  studio: { paper: "#f7f4ee", ink: { color: "#3448ce", alpha: 0.14 } },
-  night: { paper: "#12100e", ink: { color: "#8b96ff", alpha: 0.12 } },
+  // own grounds, Studio and Studio Night (business.module.css --bg). Here the
+  // wall sits behind text and buttons, not behind a dialog, so it stays under
+  // /app's strength - but a third of it was too far (2026-11-01: "look low
+  // quality and too faint"): at 0.14 the wall had 45 shades of grey to /app's
+  // 96, and quality 0.82 smeared those. So: stronger ink, and a higher
+  // quality for the pencil grain to survive on so little contrast.
+  studio: { paper: "#f7f4ee", ink: { color: "#3448ce", alpha: 0.3 }, quality: 0.88 },
+  night: { paper: "#12100e", ink: { color: "#8b96ff", alpha: 0.24 }, quality: 0.88 },
 } as const;
 export type WallTheme = keyof typeof WALL_THEMES;
 
@@ -89,6 +92,8 @@ export type WallInput = {
   /** Whether the tile wraps (a wall that repeats) - or every drawing stays
    *  whole inside it (a sheet of paper). Wraps unless false. */
   wrap?: boolean;
+  /** The WebP's quality, 0.82 unless given. */
+  quality?: number;
 };
 
 export type WallOutput = { url: string; counts: number[]; covered: number };
@@ -286,5 +291,5 @@ export async function packWall(input: WallInput): Promise<WallOutput> {
   }
   let covered = 0;
   for (const c of occ) covered += c;
-  return { url: out.toDataURL("image/webp", 0.82), counts, covered: covered / occ.length };
+  return { url: out.toDataURL("image/webp", input.quality ?? 0.82), counts, covered: covered / occ.length };
 }

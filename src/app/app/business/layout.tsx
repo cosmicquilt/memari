@@ -32,8 +32,9 @@ export default async function BusinessLayout({ children }: { children: ReactNode
   if (!ctx.owner.guest && (await claimGuestWork(ctx.owner.id)) > 0) ctx = (await currentBusiness())!;
   const { business } = ctx;
   // THE DOODLE WALL (2026-10-31: "add the doodle wall that's behind the /app
-  // ... but even lower opacity"): the start dialog's blue-pen wall, baked
-  // fainter on Studio's and Studio Night's own grounds (doodleWall.ts). One of
+  // ... but even lower opacity"; stronger 2026-11-01: "too faint"): the start
+  // dialog's blue-pen wall, baked under its strength there on Studio's and
+  // Studio Night's own grounds (doodleWall.ts). One of
   // its walls for each coach each day - not a new one each load, as /app has:
   // this layout is drawn again after nearly every save (revalidatePath), and
   // the doodles would jump while the coach works. The coach's workspace only:
