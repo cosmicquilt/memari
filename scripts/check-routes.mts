@@ -59,6 +59,8 @@ type Expectation = {
   what: string;
   /** Where a redirect must send them (the path of its Location). */
   to?: string;
+  /** And where sign-in must bring them back to (its redirect_url). */
+  back?: string;
 };
 
 /** React can recover from a throw inside a client component by finishing the
@@ -170,6 +172,13 @@ async function main() {
     ...["/clients", "/clients/new", "/clients/not-a-client", "/clients/import", "/groups", "/groups/new", "/groups/not-a-group", "/templates", "/templates/not-a-template/questions", "/orders", "/settings"].map(
       (sub): Expectation => ({ path: `/app/business${sub}`, expect: [307, 302, 303], as: "guest", to: "/app/business", what: "WITH NO BUSINESS YET, SENT TO THE START PAGE, not a server error" })
     ),
+    // THE ACCOUNT'S PAGES SIGNED OUT (2026-11-01): each sends the person to
+    // sign in and back to itself - the footer's "Your orders" came back to
+    // Profile, the layout's fixed return. As a guest, each draws.
+    ...["/orders", "/preferences", "/data", "/profile"].flatMap((sub): Expectation[] => [
+      { path: `/app/account${sub}`, expect: [307, 302, 303], as: "nobody", to: "/sign-in", back: `/app/account${sub}`, what: "SIGNED OUT, SENT TO SIGN IN AND BACK TO THIS PAGE" },
+      { path: `/app/account${sub}`, expect: [200], as: "guest", what: "the account page, for a guest" },
+    ]),
   ];
 
   try {
@@ -199,6 +208,10 @@ async function main() {
       if (route.to) {
         const went = location ? new URL(location, BASE).pathname : "(nowhere)";
         check(went === route.to, `${label}: sent to ${went}${went === route.to ? "" : ` (wanted ${route.to})`}`);
+      }
+      if (route.back) {
+        const back = location ? new URL(location, BASE).searchParams.get("redirect_url") : null;
+        check(back === route.back, `${label}: back to ${back}${back === route.back ? "" : ` (wanted ${route.back})`}`);
       }
 
       if (status === 200) {

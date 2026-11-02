@@ -5,13 +5,13 @@
 
 import Link from "next/link";
 import { UserProfile } from "@clerk/nextjs";
-import { currentOwner } from "@/lib/owner";
+import { requireAccountOwner } from "../../requireOwner";
 import { GUEST_IDLE_DAYS } from "@/lib/guest";
 import { DARK_CLERK } from "@/lib/clerkAppearance";
 
 export default async function ProfilePage() {
-  const owner = await currentOwner();
-  if (owner?.guest) {
+  const owner = await requireAccountOwner("/app/account/profile");
+  if (owner.guest) {
     return (
       <>
         <h1>Profile</h1>

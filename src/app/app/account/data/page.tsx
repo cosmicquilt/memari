@@ -2,7 +2,7 @@
 // sign out, or delete everything.
 
 import Link from "next/link";
-import { currentOwner } from "@/lib/owner";
+import { requireAccountOwner } from "../requireOwner";
 import { prisma } from "@/lib/prisma";
 import { GUEST_IDLE_DAYS } from "@/lib/guest";
 import { cream } from "@/lib/cream";
@@ -11,7 +11,7 @@ import { DeleteAccount, SignOut } from "./DataActions";
 const dateOnly = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
 export default async function DataPage() {
-  const owner = (await currentOwner())!;
+  const owner = await requireAccountOwner("/app/account/data");
   const journals = await prisma.planner.findMany({
     where: { ownerId: owner.id, isTemplate: false },
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],

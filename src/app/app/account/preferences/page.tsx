@@ -3,14 +3,14 @@
 // start screen's theme.
 
 import { cookies } from "next/headers";
-import { currentOwner } from "@/lib/owner";
+import { requireAccountOwner } from "../requireOwner";
 import { ownerDefaultZone, ownerPreferences } from "@/app/planner/ownerSettings";
 import { BACKDROP_COOKIE, parseBackdropCookie } from "@/lib/backdropCookie";
 import { effectiveZone } from "@/lib/timeZone";
 import { PreferencesForm } from "./PreferencesForm";
 
 export default async function PreferencesPage() {
-  const owner = (await currentOwner())!;
+  const owner = await requireAccountOwner("/app/account/preferences");
   const [preferences, zone] = await Promise.all([ownerPreferences(owner.id), ownerDefaultZone(owner.id)]);
   const theme = parseBackdropCookie((await cookies()).get(BACKDROP_COOKIE)?.value);
   // The zone books follow now (with none chosen, the default), and the list

@@ -12,17 +12,21 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { currentOwner, signInPath } from "@/lib/owner";
+import { currentOwner } from "@/lib/owner";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { AccountNav } from "./AccountNav";
 
 export const metadata: Metadata = { title: "Account - memari. STUDIO", robots: { index: false } };
 export const dynamic = "force-dynamic";
 
+// SIGNED OUT, each page sends the person to sign in and back to ITSELF
+// (2026-11-01): a layout doesn't know the address it is drawn for, so its
+// own redirect sent the footer's "Your orders" to sign in and back to the
+// account's first page, Profile. Here nobody signed in gets only the page,
+// which redirects; requireAccountOwner is what every page calls.
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const owner = await currentOwner();
-  if (!owner) redirect(signInPath("/app/account"));
+  if (!owner) return <>{children}</>;
   return (
     <main style={{ minHeight: "100vh", background: "#141414", color: onCream(0xdd), boxSizing: "border-box", paddingBlock: "28px 64px", paddingInline: 16 }}>
       <div className="acct" style={{ maxWidth: 920, margin: "0 auto", display: "grid", gap: 28 }}>
