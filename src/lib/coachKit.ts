@@ -17,6 +17,10 @@ import { UNWRITTEN } from "@/app/landing/plannerLibrary";
 import { spreadPlacements, spreadProblems } from "@/app/landing/spreads";
 import { BOOK_MONTHS } from "@/lib/business";
 import { fillTargetOf, LIST_MAX } from "@/lib/clientAnswers";
+import { coverById, coverBySlug } from "@/app/covers/catalogue";
+import scans from "@/lib/print/coverScans.json";
+
+const SCANS: Record<string, unknown> = scans;
 
 export const KIT_PARTS = ["front", "month", "week", "day"] as const;
 export type KitPart = (typeof KIT_PARTS)[number];
@@ -32,6 +36,9 @@ export type CoachKit = {
     months?: number;
     /** Each part of the book as a spread: at least the front or a week. */
     parts: Partial<Record<KitPart, HeroLayout>>;
+    /** Its cover from /covers, by its address there ("onyx-9") or its
+     *  scan's name ("Onyx010"); the plain drawn cover if left out. */
+    cover?: string;
   };
   /** Modules their clients fill in, found by part, kind and heading. */
   questions?: Array<{ part: KitPart; slug: string; heading?: string; prompt: string; max?: number }>;
@@ -46,6 +53,15 @@ const PART_KINDS: Record<KitPart, ReadonlyArray<HeroLayout["kind"]>> = { front: 
 
 const KEY = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const text = (v: unknown, max = 120) => typeof v === "string" && v.trim().length > 0 && v.trim().length <= max;
+
+/** The kit's cover as a scan's name, or null for the drawn cover (or one
+ *  that isn't on /covers, which kitProblems names). */
+export function kitCoverId(kit: CoachKit): string | null {
+  const asked = kit.journal?.cover?.trim();
+  if (!asked) return null;
+  const cover = coverBySlug(asked.toLowerCase()) ?? coverById(asked);
+  return cover && SCANS[cover.id] ? cover.id : null;
+}
 
 /** The kit's spreads, as the planners' are: each part's layout, unwritten. */
 export function kitSpreads(kit: CoachKit): Array<{ part: KitPart; spread: HeroSpread }> {
@@ -69,6 +85,7 @@ export function kitProblems(raw: unknown): string[] {
   if (!text(kit.journal?.title, 120)) problems.push('"journal.title" is needed.');
   const months = kit.journal?.months ?? 3;
   if (!(BOOK_MONTHS as readonly number[]).includes(months)) problems.push('"journal.months" is 1, 3, 6 or 12.');
+  if (kit.journal?.cover !== undefined && !kitCoverId(kit)) problems.push(`"journal.cover" is a cover on /covers, by its address ("onyx-9"); "${kit.journal.cover}" isn't one.`);
   const start = kit.firstClient?.startDate;
   if (start !== undefined && !(/^\d{4}-\d{2}-\d{2}$/.test(start) && !Number.isNaN(Date.parse(`${start}T00:00:00Z`)))) problems.push('"firstClient.startDate" is a date like 2027-01-04.');
 

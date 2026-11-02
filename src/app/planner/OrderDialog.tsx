@@ -24,6 +24,9 @@
 // (2026-10-15), with auto-renew held off: renewing needs an account
 // (printActions.ts), so the switch says so and links to sign in.
 //
+// THE COVER (2026-11-01): the plain drawn one, or one of the 85 photographed
+// covers on /covers (CoverChoice), chosen for the journal and kept on it.
+//
 // ORDER THE NEXT ONE: the Orders page links to the journal with
 // ?reorder=<order>, and the screen opens filled in from that book - the
 // days straight after it, its binding, address and shipping (printActions,
@@ -33,7 +36,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
-import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, type OrderingStatus } from "./printActions";
+import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, journalCoverId, type OrderingStatus } from "./printActions";
+import { CoverChoice } from "./CoverChoice";
 import { arrivesLabel } from "@/lib/print/arrives";
 import type { Quote } from "@/lib/print/orders";
 import { BINDINGS, BINDING_SPECS, DEFAULT_PAPER, PAPER_LABELS, paperChoices, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
@@ -173,6 +177,8 @@ export function OrderDialog({
   const [quote, setQuote] = useState<Quote | null>(null);
   const [level, setLevel] = useState<ShippingLevel | null>(null);
   const [autoRenew, setAutoRenew] = useState(false);
+  // The journal's photographed cover (CoverChoice), or null for the drawn one.
+  const [coverId, setCoverId] = useState<string | null>(null);
   const [busy, setBusy] = useState<"quote" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Only the latest pricing lands: choosing bindings quickly asks twice.
@@ -182,15 +188,17 @@ export function OrderDialog({
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [value, earlier, client] = await Promise.all([
+      const [value, earlier, client, cover] = await Promise.all([
         orderingStatus(),
         reorderId ? reorderDefaults(reorderId, journalId) : null,
         // A client's journal: their details, on a reorder too - the address
         // they give now, not the one the last book went to (review,
         // 2026-10-26).
         clientOrderDefaults(journalId),
+        journalCoverId(journalId),
       ]);
       if (!live) return;
+      setCoverId(cover);
       if (client) {
         setDays(client.days);
         setCustomDays(typedDays(client.days));
@@ -431,8 +439,23 @@ export function OrderDialog({
                     ))}
                   </div>
                 )}
-                {/* What prints, for these days and this binding - the very
-                    file the printer gets (app/print-preview). */}
+              </Section>
+
+              {/* The cover, chosen for the journal: the same price whichever,
+                  but a hardcover's wider boards can rule a scan out, so the
+                  prices on screen are asked again. */}
+              <Section title="Cover">
+                <CoverChoice
+                  journalId={journalId}
+                  coverId={coverId}
+                  offered={status.covers}
+                  onChange={(id) => {
+                    setCoverId(id);
+                    if (quote) void seePrices();
+                  }}
+                />
+                {/* What prints, for these days, this binding and this cover -
+                    the very file the printer gets (app/print-preview). */}
                 <span style={{ fontSize: 12, color: cream(0.6) }}>
                   See exactly what prints:{" "}
                   <a href={previewUrl("interior")} target="_blank" rel="noreferrer" style={{ color: "#8a97ff" }}>

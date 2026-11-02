@@ -1,0 +1,512 @@
+{
+ "Asphalt024A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4463221,
+  "sha256": "b4b74bbc6f8e32a1195c2b24716fb83f0a8e06c3b7e03979cacf3979fd5a9099"
+ },
+ "Asphalt031": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4889498,
+  "sha256": "b02329b92dc0192ccecbfb76a909c7486e48837d6a58f8ec46159bcc91798b99"
+ },
+ "Bark014": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4165209,
+  "sha256": "3ad81e6ba186b7bde47a4c0f8f34580063b092d5e9fd5f65c88defa1b4c81f11"
+ },
+ "Bricks075A": {
+  "w": 2048,
+  "h": 4096,
+  "bytes": 3284560,
+  "sha256": "f7cf7c0abec284050f14dd4632826ea40de8b9c2c3cb1d9ebef7000d06dd06ca"
+ },
+ "Cardboard001": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3546961,
+  "sha256": "2d6042f3899e33e01e0ea772dc637cab3f1f9d60e7668679a148fabd070118ba"
+ },
+ "Cardboard002": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3345080,
+  "sha256": "8cde93fe3e34382578329483ff71432c08787a912d7c604418103cac395fafc0"
+ },
+ "Cardboard004": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3076978,
+  "sha256": "154c7203c2ddcaf56894db7049dd6adacc1e9e30629b022db7a8cfa82a332880"
+ },
+ "Carpet012": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4429308,
+  "sha256": "6731320eaffac410cb5c411a34134f692d6935589d14c12909b4c09d30ab0495"
+ },
+ "Concrete032": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4017820,
+  "sha256": "af513d9eaa67bf7026280bf2473f2291011a2f3bead3be7135977fe1d8ce2f01"
+ },
+ "Concrete034": {
+  "w": 2048,
+  "h": 4096,
+  "bytes": 2556909,
+  "sha256": "6c8cb1a8245aa0ff687a37586edf065b47c4b9c50abc6280e166df1667abefd1"
+ },
+ "Concrete036": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2961956,
+  "sha256": "1f71bc5b3709cbabda1d23738ac1bbfbf6315ae4a8092de43cea72e6f3b587a5"
+ },
+ "Concrete047A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5021021,
+  "sha256": "ef00c66da9df3780eb690fce003e3771a1f7b8a5a06293090e05ea1ef07457a7"
+ },
+ "Concrete048": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4076619,
+  "sha256": "c92a1ae7028e6638012ada4a0c0d7195654c7f242bfb105e1c7bfa36aefed8a2"
+ },
+ "Fabric030": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4588325,
+  "sha256": "890ca86ea7d79cb7ccd4c1e6b4a80e1671a604d41a455ce27eb02ce32ceeadaa"
+ },
+ "Fabric036": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5133840,
+  "sha256": "78d562ffc53486b5543d56d7d622637ddf1a30a154bf9159e7e70a64b634ce14"
+ },
+ "Fabric039": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5041761,
+  "sha256": "25741e490126417cb923678e7a556e8e85637369d2096a5d4e30fc58467e4cf0"
+ },
+ "Fabric066": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5803806,
+  "sha256": "36800831547d67d57e48c591ed1d59bfdb6157ee47cde277dc8cb6110941e3c0"
+ },
+ "Fabric077": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4996521,
+  "sha256": "32dde724fcd84fb0d7f524b2b48374f87c7da3f7cc3f83900db639727219431b"
+ },
+ "Fabric079": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3820859,
+  "sha256": "245c3b2241ceaafc84b4c5401d817c17c7aecd1b1854880ebfd033b08e7a846a"
+ },
+ "Fabric083": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3363874,
+  "sha256": "70f69692f2077eaca3e4335f6f5b38ce0e05697e23b4f01f279255f767a6cf6f"
+ },
+ "Grass005": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 6799945,
+  "sha256": "1b81c6b8ea7e393e6cdbf7feed7594579ed95e7e4cec4c76425b9a3ff99da238"
+ },
+ "Grass006": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5742419,
+  "sha256": "41ba714f74b87b8080da2e3d483383d2a6e885073885ee71d0a7b41e2e178551"
+ },
+ "Grass008": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 7285605,
+  "sha256": "76633574522cfcbb295dba847b544fc7ae6698ca1dee5cbe80081a7d9f555748"
+ },
+ "Ground054": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5736934,
+  "sha256": "3acc60c420c6828b241fd2fabc3b58702f75469f4a52ee59f6e9c5f8e4555a19"
+ },
+ "Ground093C": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2240440,
+  "sha256": "ea3742bfb5a088c1eab3e26534de0edfa418eb740d71869f7ea089a2c5d3e64f"
+ },
+ "Ground096A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2880962,
+  "sha256": "9802605acc3ca151f0669559b0cf39f2bc5c762d804fbe111957904ef8c2f154"
+ },
+ "Leather033C": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3582510,
+  "sha256": "9bd9482358e585e163f9f59d82a26a3f2a0972132bea3d786e7f0331e1f28884"
+ },
+ "Leather034C": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2953574,
+  "sha256": "ff96b0554f8e696bd1092d8fdd5839c07ebcbd288eddb24808c868f72e621be3"
+ },
+ "Marble006": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3448841,
+  "sha256": "393f80933bc43e989f53ea56be045389f4982c4c31d7495241e712d36be321d7"
+ },
+ "Marble012": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4448829,
+  "sha256": "6ba29ebd99e62c34d00a334163098ee159e05a4d71b348955b143914773af9cc"
+ },
+ "Marble014": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4213695,
+  "sha256": "d48591e926ebf245ce636f48540d69852d3ba467adfcf2e6462d6d93d9f54356"
+ },
+ "Marble016": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2274015,
+  "sha256": "55cf6941346de9765d46a703402ed2624557341c6ae69bfafabc3f1e18f6acb7"
+ },
+ "Marble019": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2616698,
+  "sha256": "7d082f528b7c90422877929466b626f50e6ac4e4ea2fbdc76191bb4fc6cbb9dc"
+ },
+ "Marble020": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2372249,
+  "sha256": "5932bc7dd20f09d42297e20526a0c4195a27dc15508f5060bd016d73b6a2f12a"
+ },
+ "Marble021": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2562695,
+  "sha256": "50a5f1a2b817709484fd2e537c17f1554d5c8f20051fd00ce8547df49f6c7e73"
+ },
+ "Marble023": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2778307,
+  "sha256": "1ae6d16c8680ed997107f2dbec00be36f55330990d5f027703631af232c7a091"
+ },
+ "Metal027": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2997299,
+  "sha256": "ae6828ece9613988416835765f17a0196f76f2ca3107c916c5adac859b0f8078"
+ },
+ "Moss002": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 7157282,
+  "sha256": "db7ed648bf837bae2e451de7b6fea205d8cd796837861102770f61a386b78d16"
+ },
+ "Moss003": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5705106,
+  "sha256": "8d48f6f7b3bb90e5ce2260ecfd9cf182de55166d00fe74e25085d58e640424ba"
+ },
+ "Moss004": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 6573049,
+  "sha256": "4fcc815d01e88f9c9bd0805c2d5c6df130a277fa4563fd38482099cadf606874"
+ },
+ "NightSkyHDRI008": {
+  "w": 2240,
+  "h": 3200,
+  "bytes": 1230961,
+  "sha256": "5ffc0eb884ae96211f81bbb994f42dea42eb3cc7ab8ec7eb5b13f4ec0cc20fa3"
+ },
+ "NightSkyHDRI008-stars": {
+  "w": 2240,
+  "h": 3200,
+  "bytes": 884232,
+  "sha256": "ad4a6dc51872502a92d54e8ab3293b4befe6866d4cbb249f354fdbfc9ff4e93b"
+ },
+ "Onyx001": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3324547,
+  "sha256": "1e62d5de6c1e6a4bf4f024ca045d7f7451ab6e54e50d53a31cdc217b4d00ef62"
+ },
+ "Onyx002": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3346874,
+  "sha256": "fbe40ec015b9bc176db7951834324a24d0b6d78e7baa40f3db42f4b8300572c7"
+ },
+ "Onyx003": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3518812,
+  "sha256": "2e7e1873c08b65b53e8215e0f4b473fb16d52b76607815f446a7eea2ab63445a"
+ },
+ "Onyx004": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3676224,
+  "sha256": "818acae3c42e83dd23cc3fd1397fe88ac5fd7768cc239927c443cf8e24e5bd1e"
+ },
+ "Onyx005": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3745700,
+  "sha256": "9f2b04c88a55ca26e3c4a9c0cedf9cfc2dd67c86ad46d24a5f7444fadd0026ef"
+ },
+ "Onyx007": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3191825,
+  "sha256": "5c2218ed653a0232cd21835718542f7e5a8d9084bc4a07f2a2184e5e2d2de885"
+ },
+ "Onyx008": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3328414,
+  "sha256": "a18bf3baf72a6aab0447e63e2c3c9090993a30377be0519d081a97c8dd88273d"
+ },
+ "Onyx009": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3374670,
+  "sha256": "9a689d4ae8c00aa229907adf0cf7487a3e2a4a5fee0b2fa133b1d14b37bf625c"
+ },
+ "Onyx010": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3289584,
+  "sha256": "06964926c058067850b186da60a04086f4950dbe89f70c4cb8c3614b9ad10bf8"
+ },
+ "Onyx012": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3746443,
+  "sha256": "2a71907523413052826faeef38ad92b74a59dd57b621c1ded787413e7a67d396"
+ },
+ "Onyx013": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3385949,
+  "sha256": "cdda5009c67aaacc4b039f682d4d373a3d054f8f6cbbeb149ef711ab734120d6"
+ },
+ "Onyx014": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3477815,
+  "sha256": "a17647467a2b9f1267bbe08b98892554af760475e2acfa4187b07c9e38ced742"
+ },
+ "Onyx015": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3734724,
+  "sha256": "534976f204d432bb8be18ae080ca2f2be25ea2d559d2aadfa4a7444a46ba21b9"
+ },
+ "Planks037A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2462812,
+  "sha256": "89a8065ba7e48837b265451d98001c3c1ae60950c5ae5aa08f4105ff196e3c6a"
+ },
+ "Plaster001": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5383894,
+  "sha256": "6cffc47778ebcf3fe9d0d3d9cd335e8d6d576f5fdc60bb2d01eb3df20d1d7e37"
+ },
+ "Plaster002": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4949677,
+  "sha256": "6359fd7da2d03bc7c72af7e7cc7493f5d14f6b829b85e6d42b1902f6902890dd"
+ },
+ "Plaster003": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5782391,
+  "sha256": "a2e804a745b1863076cdec2574292d6ac210669dc645cc1ee142fb11c81c68c0"
+ },
+ "Plastic013A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3984103,
+  "sha256": "ce814ab096a48bf3fc903baf4a34f622869013190fead42148e07358b3a96c52"
+ },
+ "Road012A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4695915,
+  "sha256": "fdcc1cfeba4d25592d45b99abe62d66f987171c5f67b33a28b44620e65c24417"
+ },
+ "Road014A": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4592019,
+  "sha256": "cad4d205a0c2b3bc76a6e016df679cefeddaa74060df69a0c765d5a954eae4f8"
+ },
+ "Rubber004": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3815305,
+  "sha256": "4b682e2214eff0c03b98eb05cd906281dec07b822982276ddb0e9826063fc486"
+ },
+ "Snow007B": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 3046602,
+  "sha256": "9adb9805a87b87de1de488788b6dfadb1ad61a68bc34a9d6e8a0afc808b1a949"
+ },
+ "Snow015": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5280359,
+  "sha256": "b4fa1be5bfa145a3a72942970870ef3c225d97168e24b176560444af8ae9b763"
+ },
+ "Tiles074": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2505566,
+  "sha256": "a09207a9974a68b8ea7a3b51d1bd929f941e5a5110826cff4b81aee18ca1714d"
+ },
+ "Tiles076": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2628532,
+  "sha256": "51d575e11de258482e968d78b00e31fda9cfee3f0f1ecf8a2102f744c17a6367"
+ },
+ "Tiles077": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2825886,
+  "sha256": "a2c3272db438d0762ff3a6f0ebb55d070ed1eeefe6337ad05268730facdb85e6"
+ },
+ "Tiles079": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2433488,
+  "sha256": "a6c837b6f8c664fd2e6a7d6a3227375cc5377c6aab2ee822af5637dc5c026060"
+ },
+ "Tiles081": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2969439,
+  "sha256": "9739ed401b124c32ac3208f9cc4a844f4e1fff62a8741e57526bc77c401b6ac8"
+ },
+ "Travertine002": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 1534031,
+  "sha256": "26fcc74f7dc42f68955a93e3c9f5a49837967f23a56162989df9690e2d0883c7"
+ },
+ "Travertine004": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2459028,
+  "sha256": "27e62edb058b642c2d07a9c2ff88bcc8caf12abd09770f6d1462e17b1e4e914d"
+ },
+ "Travertine005": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 1827295,
+  "sha256": "9c68da5b63634d538efb9608f5ba26c3bc02aca90038ff34c5f41f14b5bf6886"
+ },
+ "Travertine007": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 1894287,
+  "sha256": "5e3b66d64f776c79c5d3afc0246f109327665dce91b3d1465b06bda1e5963f85"
+ },
+ "Travertine009": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 1892081,
+  "sha256": "6afbee0164c7d94d8f8a8106f627604fb012bc53252761b2d01d49add822852b"
+ },
+ "Wood006": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2068913,
+  "sha256": "000a1c5f1a8fe9c55fd9a6f66f0a7a71b58078652e34f9b7c312e1307f4ba437"
+ },
+ "Wood027": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2514597,
+  "sha256": "21140b7c6f1659002759d150cafefafe163e81c3f99cb489a30065ac42793116"
+ },
+ "Wood028": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2531207,
+  "sha256": "2dcdb756b138178154fb28328c36a9a77aa8040a7f66af65396271457328d761"
+ },
+ "Wood035": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 4428680,
+  "sha256": "1b4349316e2f9621ada5c8f33aa6071383fe062061b4dd9d9546b00c0f62d33a"
+ },
+ "Wood047": {
+  "w": 2048,
+  "h": 4096,
+  "bytes": 3771609,
+  "sha256": "36c95245e95c4ad642487b3d8da2d5a119769f67e4a82d3c4e4c837e5bc60853"
+ },
+ "Wood051": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2151746,
+  "sha256": "95fa53e6d37ba8f9b66505bc34fa0978931d0611ad9fd1c8c0334c4f438ada8c"
+ },
+ "Wood052": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 2924914,
+  "sha256": "ecaa4dd5a1b970bea87a3adfe4a451653daf402b1d884e6c0d165bc077d55526"
+ },
+ "Wood060": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5258405,
+  "sha256": "fd63b59d600843f5c6eab4cc1ca65466dea872913a09d58b0bd1087a7b17e873"
+ },
+ "Wood061": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5660604,
+  "sha256": "3ff0ce5ec6b0fa39ee1040b618d70cbf8ea38b8025a8a08674711e27ccba4171"
+ },
+ "Wood062": {
+  "w": 3600,
+  "h": 3600,
+  "bytes": 5050434,
+  "sha256": "65b93235d2be68df1600fb6ff0906f25627e66674cb11273d772ee29281db5a5"
+ }
+}

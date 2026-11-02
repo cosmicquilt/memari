@@ -26,7 +26,9 @@ const FINISH_WORDS: Record<CoverFinish, string> = {
   gold: "printed in gold ink",
 };
 
-export function CoversGallery() {
+/** `orderable`: the covers can be printed here (their scans' host is
+ *  set), so the page says where they are chosen. */
+export function CoversGallery({ orderable }: { orderable: boolean }) {
   const [group, setGroup] = useState<CoverGroup | null>(null);
   const [finish, setFinish] = useState<CoverFinish | null>(null);
   const slug = usePathname().split("/")[2] ?? "";
@@ -114,7 +116,11 @@ export function CoversGallery() {
             <dt>Dates</dt>
             <dd>{chosen.dated ? "On the front, bottom right" : "None"}</dd>
           </dl>
-          <p className={css.soon}>Books with these covers are coming. Until then, printed books have a plain cover.</p>
+          <p className={css.soon}>
+            {orderable
+              ? "Choose it for your journal when you order a printed book, under Cover. Every book after prints it too."
+              : "Books with these covers are coming. Until then, printed books have a plain cover."}
+          </p>
         </aside>
       </div>
     </div>

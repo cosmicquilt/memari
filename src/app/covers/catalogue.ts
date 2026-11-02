@@ -63,6 +63,15 @@ const MATERIALS = Object.keys(MATERIAL_GROUP);
 
 export type CoverFinish = "imprint" | "gold";
 
+/** Where the mark sits: "m." a third of the way down the middle, "m." in
+ *  the bottom corner, or "memari." in full a third of the way down. */
+export type CoverMarkKind = "m-centre" | "m-corner" | "wordmark";
+
+/** The ink a gold mark is printed in: gold, a deeper gold where bright gold
+ *  faded into a light cover, and a dark leaf where gold matched the cover
+ *  (kraft). Null for an imprint. */
+export type CoverGoldTone = "gold" | "deep" | "dark";
+
 export type Cover = {
   /** the scan's id, and the picture's file name */
   id: string;
@@ -79,6 +88,10 @@ export type Cover = {
   finish: CoverFinish;
   /** in words, as printed: "Imprint", "Gold", "Deep gold", "Dark gold" */
   finishName: string;
+  /** what the printed cover draws (lib/print/coverTexture.ts) */
+  kind: CoverMarkKind;
+  face: "sans" | "serif";
+  tone: CoverGoldTone | null;
   photo: string;
   image: string;
 };
@@ -88,20 +101,31 @@ type Raw = { id: string; name: string; photo: string; brand?: string };
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The carousel's "brand" ("m-centre+dates blind", "wordmark serif foil
- *  deep") in the page's words. */
-export function describeBrand(brand: string): { mark: string; dated: boolean; finish: CoverFinish; finishName: string } {
-  const [kind = "", ...rest] = brand.split(/\s+/);
-  const dated = kind.includes("+dates");
-  const mark = kind.startsWith("m-corner")
-    ? "m. in the corner"
-    : kind.startsWith("wordmark")
-      ? `"memari." in ${rest.includes("sans") ? "sans" : "serif"}`
-      : "m. in the centre";
+ *  deep") in the page's words, and what the printed cover draws.
+ *
+ *  The "m." is always the sans (Inter Bold): the brand string names a face
+ *  only for the wordmark, and every m. on the 73 carousel pictures, read
+ *  off them one by one (2026-11-01), is the sans. */
+export function describeBrand(brand: string): {
+  mark: string;
+  dated: boolean;
+  finish: CoverFinish;
+  finishName: string;
+  kind: CoverMarkKind;
+  face: "sans" | "serif";
+  tone: CoverGoldTone | null;
+} {
+  const [head = "", ...rest] = brand.split(/\s+/);
+  const dated = head.includes("+dates");
+  const kind: CoverMarkKind = head.startsWith("m-corner") ? "m-corner" : head.startsWith("wordmark") ? "wordmark" : "m-centre";
+  const face = kind === "wordmark" && !rest.includes("sans") ? "serif" : "sans";
+  const mark = kind === "m-corner" ? "m. in the corner" : kind === "wordmark" ? `"memari." in ${face}` : "m. in the centre";
   if (rest.includes("foil")) {
-    const finishName = rest.includes("deep") ? "Deep gold" : rest.includes("dark") ? "Dark gold" : "Gold";
-    return { mark, dated, finish: "gold", finishName };
+    const tone: CoverGoldTone = rest.includes("deep") ? "deep" : rest.includes("dark") ? "dark" : "gold";
+    const finishName = tone === "deep" ? "Deep gold" : tone === "dark" ? "Dark gold" : "Gold";
+    return { mark, dated, finish: "gold", finishName, kind, face, tone };
   }
-  return { mark, dated, finish: "imprint", finishName: "Imprint" };
+  return { mark, dated, finish: "imprint", finishName: "Imprint", kind, face, tone: null };
 }
 
 /** The published addresses, scan id -> "onyx-4". */

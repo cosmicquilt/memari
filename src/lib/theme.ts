@@ -25,6 +25,10 @@ export type PlannerTheme = {
   /** Icons on the days something happens - see dayIcons.ts. Read through
    *  dayIconsOf, which drops anything malformed. */
   dayIcons?: DayIcon[];
+  /** The photographed cover the journal prints with, a scan id from
+   *  /covers ("Onyx004"); none for the drawn cover. Read through
+   *  print/coverScans.ts journalCover, which drops one it doesn't know. */
+  cover?: string;
 };
 
 // Cast + resolve in one step — every server action that loads a planner

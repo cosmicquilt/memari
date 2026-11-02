@@ -29,10 +29,16 @@ import { bindingFromEnum, paperOfSku, type Binding, type PaperColour } from "@/l
 import { orderableBindings } from "@/lib/print/printer";
 import type { ShippingAddress } from "@/lib/print/lulu";
 import type { ClientOrderDefaults } from "@/lib/business";
+import { choosableCover, journalCover, photographedCoversOffered } from "@/lib/print/coverScans";
+import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
+import type { PlannerTheme } from "@/lib/theme";
 
 /** Ready, with the bindings that can be ordered here (each one's printer has
- *  its keys), in the screen's order - the first is chosen to start with. */
-export type OrderingStatus = { ready: true; bindings: Binding[]; guest: boolean } | { ready: false; reason: "not-configured" | "signed-out"; message: string };
+ *  its keys), in the screen's order - the first is chosen to start with -
+ *  and whether the photographed covers can be printed here (their scans'
+ *  host is set: coverScans.ts). */
+export type OrderingStatus = { ready: true; bindings: Binding[]; guest: boolean; covers: boolean } | { ready: false; reason: "not-configured" | "signed-out"; message: string };
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -67,7 +73,32 @@ export async function orderingStatus(): Promise<OrderingStatus> {
   if (!configured.ok) {
     return { ready: false, reason: "not-configured", message: `Ordering is not switched on yet (${configured.missing.join(" and ")} keys are not set).` };
   }
-  return { ready: true, bindings: orderableBindings(), guest: owner.guest };
+  return { ready: true, bindings: orderableBindings(), guest: owner.guest, covers: photographedCoversOffered() };
+}
+
+/** The journal's photographed cover (a scan id from /covers), or null for
+ *  the drawn one. */
+export async function journalCoverId(journalId: string): Promise<string | null> {
+  const owner = await currentOwner();
+  if (!owner) return null;
+  const journal = await prisma.planner.findFirst({ where: { id: journalId, ownerId: owner.id }, select: { theme: true } });
+  return journal ? (journalCover(journal.theme)?.id ?? null) : null;
+}
+
+/** The journal's cover, chosen on the order screen: one of /covers by its
+ *  scan id, or null for the drawn cover. Kept on the journal (its theme),
+ *  so the next book and a renewal print it too. */
+export async function chooseJournalCover(journalId: string, coverId: string | null): Promise<Result<{ coverId: string | null }>> {
+  const owner = await currentOwner();
+  if (!owner) return { ok: false, error: "Sign in, or continue as a guest, to choose a cover." };
+  if (coverId !== null && (typeof coverId !== "string" || !choosableCover(coverId))) return { ok: false, error: "That cover isn't one we print." };
+  const journal = await prisma.planner.findFirst({ where: { id: String(journalId), ownerId: owner.id }, select: { id: true, theme: true } });
+  if (!journal) return { ok: false, error: "That journal could not be found." };
+  const theme: PlannerTheme = { ...((journal.theme as PlannerTheme | null) ?? {}) };
+  if (coverId) theme.cover = coverId;
+  else delete theme.cover;
+  await prisma.planner.update({ where: { id: journal.id }, data: { theme: theme as Prisma.InputJsonValue } });
+  return { ok: true, value: { coverId } };
 }
 
 /** Errors a person can act on are said; anything else is logged and said

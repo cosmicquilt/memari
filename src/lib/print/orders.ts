@@ -31,7 +31,9 @@ import { priceFromCost, type Price } from "./pricing";
 import { clientSessionParams, payerProblem, refundParams, withMarkup, type ClientPayer } from "./clientPays";
 import { buildCoverPdf } from "./cover";
 import { coverBrandFor } from "@/lib/print/coverBrand";
-import { buildInterior, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
+import { coverMisfit, coverTextureFor } from "./coverScans";
+import { CoverTooSoftError } from "./coverTexture";
+import { buildInterior, coverDatesWords, loadJournal, OrderError, rangeLabel, trimInches } from "./orderBook";
 import { printFileUrl } from "./fileUrls";
 import { stripe, stripeConfigured } from "./stripe";
 import { adminAlertEmail, bankPaymentFailedEmail, cancelledEmail, notify, placedEmail, shippedEmail } from "./emails";
@@ -131,7 +133,11 @@ async function priced(input: OrderInput, ownerId: string) {
     throw new OrderError("This journal is laid out at US Letter, the print-at-home size. Switch it to 7 × 10 in Page Settings to order it printed.");
   }
   if (interior.problems.length > 0) throw new OrderError(`This book is not ready to print: ${interior.problems.join("; ")}.`);
-  const bindings = availability(interior.bookPages);
+  // a photographed cover too small for a binding's sheet rules that one out
+  const bindings = availability(interior.bookPages).map((fit): BindingAvailability => {
+    const misfit = fit.ok ? coverMisfit(journal.theme, fit.binding, printerForBinding(fit.binding).coverForm, trimInches(interior.trim), interior.pageCount) : null;
+    return misfit ? { binding: fit.binding, ok: false, reason: misfit } : fit;
+  });
   const fits = bindings.find((a) => a.binding === input.binding)?.ok ?? false;
   const paper = paperFor(input.binding, input.paper);
   const sku = fits ? printer.sku(input.binding, interior.trim, paper) : null;
@@ -250,16 +256,25 @@ export async function makeQuotedOrder(ownerId: string, input: CheckoutInput, opt
 
   const trim = trimInches(interior.trim);
   const dims = await printer.coverSize(sku, interior.pageCount);
-  const cover = buildCoverPdf({
-    ...dims,
-    form: printer.coverForm,
-    safeIn: BINDING_SPECS[input.binding].coverSafeIn,
-    trimWidthIn: trim.widthIn,
-    trimHeightIn: trim.heightIn,
-    title: journal.title,
-    dates: journal.dated ? rangeLabel(range) : "",
-    brand: await coverBrandFor(journal.id),
-  });
+  const texture = await coverTextureFor(journal.theme);
+  let cover: ReturnType<typeof buildCoverPdf>;
+  try {
+    cover = buildCoverPdf({
+      ...dims,
+      form: printer.coverForm,
+      safeIn: BINDING_SPECS[input.binding].coverSafeIn,
+      trimWidthIn: trim.widthIn,
+      trimHeightIn: trim.heightIn,
+      title: journal.title,
+      dates: journal.dated ? rangeLabel(range) : "",
+      datesWords: journal.dated ? coverDatesWords(range) : "",
+      brand: await coverBrandFor(journal.id),
+      texture,
+    });
+  } catch (error) {
+    if (error instanceof CoverTooSoftError) throw new OrderError(`This cover's scan isn't large enough for a ${BINDING_SPECS[input.binding].short.toLowerCase()}. Choose another cover or binding.`);
+    throw error;
+  }
 
   const contactEmail = payer ? payer.email : input.email || address.email;
   const order = await prisma.printOrder.create({

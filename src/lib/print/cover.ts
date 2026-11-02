@@ -25,10 +25,14 @@
 //   quarter  cream, an ink band round the spine like a cloth-spined book
 // The name runs up the spine where the spine is wide enough to read; the
 // studio's address is small on the back.
+//
+// A PHOTOGRAPHED COVER (2026-11-01) - one of the 85 on /covers, chosen for
+// the journal - is drawn instead by coverTexture.ts, on the same sheet.
 
 import { jsPDF } from "jspdf";
 import { installFont } from "@/lib/pdfDocument";
 import { FONT_FAMILY, plannerFontBase64 } from "@/lib/plannerPdf";
+import { drawTexturedCover, type CoverScan, type TextureCover } from "./coverTexture";
 
 const PT_PER_IN = 72;
 type Rgb = [number, number, number];
@@ -82,6 +86,11 @@ export type CoverInput = {
   safeIn?: number;
   /** The coach whose book it is, for a client's journal or a template. */
   brand?: CoverBrand | null;
+  /** A photographed cover from /covers, and its scan (coverTexture.ts): it
+   *  replaces the drawn style. */
+  texture?: { cover: TextureCover; scan: CoverScan } | null;
+  /** The dates in words, as a photographed cover prints them. */
+  datesWords?: string;
 };
 
 export type CoverLayout = {
@@ -111,7 +120,7 @@ export function coverLayout(input: Pick<CoverInput, "widthPt" | "heightPt" | "tr
  *  quarter of an inch, about 70 pages of 60# paper. */
 const SPINE_TEXT_MIN_PT = 0.25 * PT_PER_IN;
 
-export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: CoverLayout; fontEmbedded: boolean; pages: number } {
+export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: CoverLayout; fontEmbedded: boolean; pages: number; ppi: number | null } {
   const panels = input.form === "panels";
   // Panels: the sheet is the two pages side by side.
   const sheet = panels ? { ...input, widthPt: input.widthPt * 2 } : input;
@@ -121,18 +130,24 @@ export function buildCoverPdf(input: CoverInput): { bytes: ArrayBuffer; layout: 
   const font = installFont(doc, FONT_FAMILY, plannerFontBase64());
   doc.setFont(font.name, font.style);
 
-  if (!panels) drawCover(doc, sheet, layout, true);
+  let ppi: number | null = null;
+  const draw = (spineText: boolean) => {
+    if (!input.texture) return drawCover(doc, sheet, layout, spineText);
+    const texture = { ...sheet, datesWords: input.datesWords ?? input.dates };
+    ppi = drawTexturedCover(doc, texture, layout, panels ? "panels" : "wrap", spineText, input.texture.cover, input.texture.scan).ppi;
+  };
+  if (!panels) draw(true);
   else {
     // The front first - the sheet moved left by a page - then the back.
     [-input.widthPt, 0].forEach((shift, index) => {
       if (index > 0) doc.addPage([input.widthPt, input.heightPt], orientation);
       doc.saveGraphicsState();
       doc.setCurrentTransformationMatrix(doc.Matrix(1, 0, 0, 1, shift, 0));
-      drawCover(doc, sheet, layout, false);
+      draw(false);
       doc.restoreGraphicsState();
     });
   }
-  return { bytes: doc.output("arraybuffer"), layout, fontEmbedded: font.embedded, pages: panels ? 2 : 1 };
+  return { bytes: doc.output("arraybuffer"), layout, fontEmbedded: font.embedded, pages: panels ? 2 : 1, ppi };
 }
 
 /** The whole sheet, drawn at its own size; `spineText` off where there is

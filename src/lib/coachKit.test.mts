@@ -5,7 +5,7 @@
 // Run as part of: npm test
 
 import { readFileSync } from "node:fs";
-import { kitProblems, kitSpreads, type CoachKit } from "./coachKit";
+import { kitCoverId, kitProblems, kitSpreads, type CoachKit } from "./coachKit";
 
 let failures = 0;
 const check = (ok: boolean, what: string) => {
@@ -46,6 +46,14 @@ check(/same module as one before/.test(wrong((k) => k.questions!.push({ ...k.que
 check(/"prompt"/.test(wrong((k) => (k.questions![0].prompt = ""))), "a question needs its words");
 check(/the day, which the book doesn't have/.test(wrong((k) => k.questions!.push({ part: "day", slug: "text-block", prompt: "x" }))), "a question on a part the book doesn't have is refused");
 check(kitProblems(null)[0] === "The kit is not a JSON object.", "nothing at all is said to be nothing");
+check(/"journal.cover"/.test(wrong((k) => (k.journal.cover = "granite-1"))), "a cover that isn't on /covers is refused");
+{
+  const k = JSON.parse(JSON.stringify(example)) as CoachKit;
+  k.journal.cover = "onyx-9";
+  const byScan = { ...k, journal: { ...k.journal, cover: "Onyx010" } };
+  check(kitProblems(k).length === 0 && kitCoverId(k) === "Onyx010" && kitCoverId(byScan) === "Onyx010", "a cover named by its address or its scan's name is the same cover");
+  check(kitCoverId({ ...k, journal: { ...k.journal, cover: undefined } }) === null, "no cover named, the plain one");
+}
 
 if (failures > 0) {
   console.error(`\n${failures} coach kit check(s) failed.`);

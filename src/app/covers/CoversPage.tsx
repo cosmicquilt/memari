@@ -5,6 +5,7 @@
 import { SitePage } from "@/app/landing/SitePage";
 import { COVERS, MATERIAL_COUNT } from "./catalogue";
 import { CoversGallery } from "./CoversGallery";
+import { photographedCoversOffered } from "@/lib/print/coverSource";
 import { AiFreeSeal } from "./AiFreeSeal";
 import css from "./covers.module.css";
 import styles from "@/app/landing/landing.module.css";
@@ -28,7 +29,7 @@ export function CoversPage() {
         </div>
       </header>
       <section className={`${site.block} ${site.blockWide}`} aria-label="Covers">
-        <CoversGallery />
+        <CoversGallery orderable={photographedCoversOffered()} />
       </section>
     </SitePage>
   );

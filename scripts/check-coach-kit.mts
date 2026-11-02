@@ -73,6 +73,8 @@ try {
   say(business.clients.length === 1 && coach?.name === example.coach.name && !!coach.planner && coach.templateId === template.id, "the coach is their own first client, their journal built");
   const pagesOf = (plannerId: string) => prisma.page.count({ where: { plannerId } });
   say((await pagesOf(template.planner.id)) > 0 && (await pagesOf(template.planner.id)) === (await pagesOf(coach.planner!.id)), "their journal has the template's pages");
+  const coverOf = async (id: string) => ((await prisma.planner.findUniqueOrThrow({ where: { id }, select: { theme: true } })).theme as { cover?: string } | null)?.cover;
+  say((await coverOf(template.planner.id)) === "Travertine002" && (await coverOf(coach.planner!.id)) === "Travertine002", `the kit's cover ("travertine-1") is the template's, and the coach's own book's (${await coverOf(coach.planner!.id)})`);
   const again = await buildCoachKit(example, server.base);
   const rebuilt = await prisma.business.findMany({ where: { preparedKey: example.key } });
   say(again.rebuilt && again.ownerId === built.ownerId && rebuilt.length === 1 && rebuilt[0].id !== built.businessId, "building it again rebuilds it, one workspace, the same holding guest");

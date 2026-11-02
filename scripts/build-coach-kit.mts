@@ -22,7 +22,7 @@
 import "./appUnderTest.mjs";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/prisma";
-import { kitProblems, kitSpreads, type CoachKit, type KitPart } from "../src/lib/coachKit";
+import { kitCoverId, kitProblems, kitSpreads, type CoachKit, type KitPart } from "../src/lib/coachKit";
 import { createJournalFromParts } from "../src/app/planner/archetypeWeek";
 import { buildClientJournal } from "../src/lib/businessJournals";
 import { askQuestion } from "../src/lib/templateQuestions";
@@ -79,6 +79,14 @@ export async function buildCoachKit(kit: CoachKit, siteBase: string): Promise<{ 
     },
     `coach:${kit.key}`
   );
+
+  // its cover, from /covers: the template's, so the coach's own book and
+  // every client's print on it (client journals take the template's theme)
+  const cover = kitCoverId(kit);
+  if (cover) {
+    const made = await prisma.planner.findUniqueOrThrow({ where: { id: journal.id }, select: { theme: true } });
+    await prisma.planner.update({ where: { id: journal.id }, data: { theme: { ...((made.theme as object | null) ?? {}), cover } } });
+  }
 
   const business = await prisma.business.create({
     data: { ownerId, name: kit.business.name.trim(), logoUrl: kit.business.logoUrl ?? null, preparedAt: new Date(), preparedKey: kit.key },

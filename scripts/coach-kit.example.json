@@ -4,6 +4,7 @@
   "business": { "name": "Steady Ground Coaching" },
   "journal": {
     "title": "The Steady Ground Journal",
+    "cover": "travertine-1",
     "months": 3,
     "parts": {
       "front": {

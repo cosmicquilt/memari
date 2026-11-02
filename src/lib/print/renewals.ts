@@ -32,7 +32,9 @@ import type { PrintCost, ShippingAddress } from "./lulu";
 import { priceFromCost } from "./pricing";
 import { buildCoverPdf } from "./cover";
 import { coverBrandFor } from "@/lib/print/coverBrand";
-import { buildInterior, loadJournal, rangeLabel, trimInches } from "./orderBook";
+import { coverTextureFor } from "./coverScans";
+import { CoverTooSoftError } from "./coverTexture";
+import { buildInterior, coverDatesWords, loadJournal, rangeLabel, trimInches } from "./orderBook";
 import { fulfilPaidOrder } from "./orders";
 import { stripe } from "./stripe";
 import { notify, renewalFailedEmail } from "./emails";
@@ -233,16 +235,33 @@ async function renewOne(order: Order, deps: RenewalDeps): Promise<RenewalOutcome
   const price = priceFromCost(cost);
   const trim = trimInches(interior.trim);
   const dims = await deps.coverDimensions(order.printer, sku, interior.pageCount);
-  const cover = buildCoverPdf({
-    ...dims,
-    form: printer.coverForm,
-    safeIn: BINDING_SPECS[binding].coverSafeIn,
-    trimWidthIn: trim.widthIn,
-    trimHeightIn: trim.heightIn,
-    title: journal.title,
-    dates: journal.dated ? rangeLabel(range) : "",
-    brand: await coverBrandFor(journal.id),
-  });
+  // the journal's photographed cover, as chosen now: a scan that can't be
+  // had ends the renewal before anything is charged, as a printer that
+  // can't post it does
+  let texture: Awaited<ReturnType<typeof coverTextureFor>>;
+  try {
+    texture = await coverTextureFor(journal.theme);
+  } catch {
+    return fail("its cover couldn't be fetched to print");
+  }
+  let cover: ReturnType<typeof buildCoverPdf>;
+  try {
+    cover = buildCoverPdf({
+      ...dims,
+      form: printer.coverForm,
+      safeIn: BINDING_SPECS[binding].coverSafeIn,
+      trimWidthIn: trim.widthIn,
+      trimHeightIn: trim.heightIn,
+      title: journal.title,
+      dates: journal.dated ? rangeLabel(range) : "",
+      datesWords: journal.dated ? coverDatesWords(range) : "",
+      brand: await coverBrandFor(journal.id),
+      texture,
+    });
+  } catch (error) {
+    if (error instanceof CoverTooSoftError) return fail(`its cover's scan isn't large enough for a ${BINDING_SPECS[binding].short.toLowerCase()}`);
+    throw error;
+  }
 
   const renewal = await prisma.printOrder.create({
     data: {

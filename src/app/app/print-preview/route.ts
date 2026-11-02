@@ -12,7 +12,9 @@
 // signed in or a guest - can preview it.
 
 import { currentOwnerId } from "@/lib/owner";
-import { buildInterior, loadJournal, rangeLabel, trimInches, OrderError } from "@/lib/print/orderBook";
+import { buildInterior, coverDatesWords, loadJournal, rangeLabel, trimInches, OrderError } from "@/lib/print/orderBook";
+import { choosableCover, coverTextureFor } from "@/lib/print/coverScans";
+import { CoverTooSoftError } from "@/lib/print/coverTexture";
 import { orderRange } from "@/lib/print/orderRange";
 import { BINDING_SPECS, BINDINGS, type Binding } from "@/lib/print/products";
 import { printerForBinding } from "@/lib/print/printer";
@@ -68,16 +70,33 @@ export async function GET(request: Request) {
     size = { widthPt: 2 * (trim.widthIn * 72 + bleed) + spine, heightPt: trim.heightIn * 72 + bleed * 2 };
   }
   const style = COVER_STYLES.includes(params.get("style") as CoverStyle) ? (params.get("style") as CoverStyle) : "plain";
-  const cover = buildCoverPdf({
-    ...size,
-    form: printer.coverForm,
-    safeIn: BINDING_SPECS[binding].coverSafeIn,
-    trimWidthIn: trim.widthIn,
-    trimHeightIn: trim.heightIn,
-    title: journal.title,
-    dates: journal.dated ? rangeLabel(range) : "",
-    style,
-    brand: await coverBrandFor(journal.id),
-  });
-  return new Response(new Uint8Array(cover.bytes), { headers });
+  // the journal's photographed cover, where it chose one; ?cover=<id> shows
+  // another without choosing it, for the proofs
+  let texture;
+  try {
+    const asked = params.get("cover");
+    texture = await coverTextureFor(asked && choosableCover(asked) ? { cover: asked } : journal.theme);
+  } catch (error) {
+    if (error instanceof OrderError) return say(409, error.message);
+    throw error;
+  }
+  try {
+    const cover = buildCoverPdf({
+      ...size,
+      form: printer.coverForm,
+      safeIn: BINDING_SPECS[binding].coverSafeIn,
+      trimWidthIn: trim.widthIn,
+      trimHeightIn: trim.heightIn,
+      title: journal.title,
+      dates: journal.dated ? rangeLabel(range) : "",
+      datesWords: journal.dated ? coverDatesWords(range) : "",
+      style,
+      brand: await coverBrandFor(journal.id),
+      texture,
+    });
+    return new Response(new Uint8Array(cover.bytes), { headers });
+  } catch (error) {
+    if (error instanceof CoverTooSoftError) return say(409, `This cover's scan isn't large enough for a ${BINDING_SPECS[binding].short.toLowerCase()}. Choose another cover or binding.`);
+    throw error;
+  }
 }
