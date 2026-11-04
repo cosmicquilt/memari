@@ -71,14 +71,34 @@ export class PageWarp {
   private program: WebGLProgram;
   private meshes: Mesh[];
   private mipmaps: boolean;
+  /** The browser has taken the context back (until it is restored). */
+  private lost = false;
+  private readonly onLost = (e: Event) => {
+    // asks for it back: without this it is gone for good
+    e.preventDefault();
+    this.lost = true;
+    this.events.lost?.();
+  };
+  private readonly onRestored = () => {
+    // everything made in the old context is gone: made again, and the
+    // pages' pictures uploaded again by whoever holds them
+    this.lost = false;
+    this.program = this.link();
+    this.meshes = this.outlines.map((outline) => this.mesh(outline, this.frame));
+    this.events.restored?.();
+  };
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    outlines: readonly [PageOutline, PageOutline],
-    frame: { width: number; height: number },
+    private readonly outlines: readonly [PageOutline, PageOutline],
+    private readonly frame: { width: number; height: number },
     /** The canvas's own size in pixels - the outlines stay in the frame's.
      *  A 4K frame need not mean a 4K canvas on a phone. */
-    pixels: { width: number; height: number } = frame
+    pixels: { width: number; height: number } = frame,
+    /** Told when the browser takes the context away (a phone short of
+     *  memory, the app sent to the background) and when it gives it back,
+     *  empty - the pages then need uploading again (2026-11-04). */
+    private readonly events: { lost?: () => void; restored?: () => void } = {},
   ) {
     canvas.width = pixels.width;
     canvas.height = pixels.height;
@@ -95,6 +115,8 @@ export class PageWarp {
     this.mipmaps = gl2 !== null;
     this.program = this.link();
     this.meshes = outlines.map((outline) => this.mesh(outline, frame));
+    canvas.addEventListener("webglcontextlost", this.onLost);
+    canvas.addEventListener("webglcontextrestored", this.onRestored);
   }
 
   private link() {
@@ -145,6 +167,7 @@ export class PageWarp {
 
   /** Take a page's picture as it is now (0 left, 1 right). */
   upload(page: 0 | 1, picture: HTMLCanvasElement) {
+    if (this.lost) return;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.meshes[page].texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, picture);
@@ -152,6 +175,7 @@ export class PageWarp {
   }
 
   draw() {
+    if (this.lost) return;
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(1, 1, 1, 1);
@@ -171,6 +195,10 @@ export class PageWarp {
   }
 
   dispose() {
+    // its own losing of the context below is not one to answer
+    this.canvas.removeEventListener("webglcontextlost", this.onLost);
+    this.canvas.removeEventListener("webglcontextrestored", this.onRestored);
+    if (this.lost) return;
     const gl = this.gl;
     for (const mesh of this.meshes) {
       gl.deleteBuffer(mesh.buffer);

@@ -23,6 +23,7 @@ import choices from "./doodleChoices.json";
 import { wallClassOf } from "./doodleWall";
 import { BODY_INK_RGB, PHONE_WIDTH, bodyWallSettings, onBodyWallSettings, packAround, type Keep, type Placed } from "./bodyWall";
 import { WALL_PAPER_TILE, bakeWallPaper, wallPaperKey } from "./wallPaper";
+import { hasArrived, holdArrival } from "./arrival";
 import styles from "./landing.module.css";
 
 /** What the page shows, to keep clear of: text by its lines (a paragraph's
@@ -101,10 +102,17 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   // then the page's paper and the drawings show, together.
   const [packedOnce, setPackedOnce] = useState(false);
   const [bakedOnce, setBakedOnce] = useState(false);
+  // The page's curtain waits for it too (arrival.ts, SiteArrival.tsx), so
+  // the drawings are there when it lifts, with everything else.
+  const wallDone = useRef<() => void>(() => {});
+  useEffect(() => {
+    holdArrival(new Promise<void>((resolve) => (wallDone.current = resolve)));
+  }, []);
   useEffect(() => {
     if (!packedOnce || !bakedOnce) return;
     const page = layer.current?.closest(`.${styles.page}`);
     page?.setAttribute("data-wall-ready", "");
+    wallDone.current();
   }, [packedOnce, bakedOnce]);
   const [placed, setPlaced] = useState<Placed[]>([]);
   // What is on the page now, for a pack that keeps what still fits.
@@ -241,7 +249,11 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       if (started) return;
       started = true;
       const go = () => void pack();
-      if ("requestIdleCallback" in window) window.requestIdleCallback(go, { timeout: 500 });
+      // Under the page's curtain (arrival.ts) nothing can be seen to stutter,
+      // and the curtain is waiting for this: at once. After it, in a quiet
+      // moment, as ever.
+      if (!hasArrived()) setTimeout(go, 0);
+      else if ("requestIdleCallback" in window) window.requestIdleCallback(go, { timeout: 500 });
       else setTimeout(go, 100);
     };
     void (document.fonts?.ready ?? Promise.resolve()).then(start);

@@ -82,6 +82,61 @@
   transition: opacity 500ms ease-out;
 }
 
+/* THE PAGE ARRIVES WHOLE (2026-11-04: "things load in at different times
+   like doodles, paper texture, hero, etc."): the curtain over the content
+   (SiteArrival.tsx, arrival.ts) until the first screen's pictures, paper,
+   type and doodle wall are in, then lifted once. Under the nav (z 20), over
+   everything else on the page. The landing page's is the hero's own dark
+   over the hero (the stage's colour, what shows before its photo) and the
+   cream below; a site page's is all cream. Only as tall as can be seen at
+   load and a screen more, not the whole page: on a phone a page-high
+   layer would be tens of megabytes for nothing.
+
+   Without script it lifts anyway at 3.5 s, as SiteArrival does at the
+   latest. */
+.curtain {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  height: min(100%, 220svh);
+  pointer-events: none;
+  background: var(--paper);
+  animation: curtainAnyway 450ms ease-out 3.5s forwards;
+}
+
+.curtain[data-ground="hero"] {
+  height: min(100%, calc(var(--hero-h) + 120svh));
+  background: linear-gradient(to bottom, #24160d 0, #24160d var(--hero-h), var(--paper) var(--hero-h));
+}
+
+.curtain[data-lifted] {
+  opacity: 0;
+  transition: opacity 450ms ease-out;
+  animation: none;
+}
+
+@keyframes curtainAnyway {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* What arrives under the curtain is simply there when it lifts: the paper
+   and the doodles, which fade in together on their own (above), do so at
+   once while it is down - else they would still be fading as it lifted. */
+.page:has(> .curtain:not([data-lifted])) :is(.bodyDoodles, .paperLayer) {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curtain[data-lifted] {
+    transition: none;
+  }
+}
+
 /* --- nav ----------------------------------------------------------------- */
 
 .nav {
@@ -891,12 +946,20 @@
   pointer-events: none;
 }
 
-/* Upright phones cannot cover with a wide film and keep the spread whole:
-   the film is sized so the spread fills the width (it is 920 of the frame's
-   1920 px) and sits below the title, over a blurred, dimmed copy of its
-   first frame, its top and bottom edges faded into it. */
-.videoBackdrop {
-  display: none;
+/* The resting frames as pictures (VideoHero, plainStills: a phone, iOS; and
+   everywhere until their canvases are drawn). On a wide screen their edges
+   fade into the desk beyond the frame, as the canvases' do (the same
+   hero-video-mask.png, drawn into them there); upright, the frame's edges
+   are far off the screen. */
+@media (min-aspect-ratio: 1/1) {
+  .videoStillPicture {
+    -webkit-mask-image: url(/landing/hero-video-mask.png);
+    mask-image: url(/landing/hero-video-mask.png);
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+  }
 }
 
 /* Higher than over the desk: the film's book starts a third of the way down
@@ -1021,30 +1084,74 @@
   --toward-edge: to right;
 }
 
-/* Portrait: the spread fills the width. From heroVideo.ts, in the 4K frame:
-   SPREAD_WIDTH 1840 of 3840 across, SPREAD_CENTRE at 1933 x 1248 (50.34%,
-   57.78%). */
+/* UPRIGHT (a phone; 2026-11-04: "i dont like how when on mobile the hero
+   fades out top and bottom, if mobile reaches where it cant crop any more on
+   the side because its getting close to book just decrease height and let
+   thing below hero start more up"). The film covers the hero, cropped from
+   its sides - never further in than the book, cover to cover with a sliver
+   of desk (SPREAD_WIDTH 1840 of the 4K frame's 3840, heroVideo.ts), centred
+   on the spread (SPREAD_CENTRE x 1933, 50.34%). Where the screen's share of
+   height would need more than that, the hero is only as tall as the film
+   there (--book-fit-h): on a 390px phone 458px, not 584, and the section
+   below starts that much higher. It was a band of film across the middle,
+   faded at its top and bottom into a blurred, darkened copy of itself. No
+   extended desk, no side blur. */
 @media (max-aspect-ratio: 1/1) {
-  /* Upright: the frame is narrower than the screen's height allows anyway,
-     its sides cropped; no extended desk. */
+  .page {
+    /* the film's height with the book filling the width */
+    --book-fit-h: calc(100vw * 2160 / 1840);
+    --film-h: min(max(320px, calc(100svh * (1 - var(--peek, 0) / 100))), var(--book-fit-h));
+    --hero-h: var(--film-h);
+  }
+  .hero {
+    min-height: 0;
+  }
   .videoExtend,
   .sideBlur {
     display: none;
   }
   .videoStage {
-    width: calc(100vw * 3840 / 1840);
-    top: 57%;
-    transform: translate(-50.34%, -57.78%);
-    mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
+    /* as tall as the hero (a hair more, so no rounding leaves a line of the
+       page under it), as wide as that makes it - wider than the screen */
+    width: max(100vw, calc((var(--hero-h) + 2px) * 16 / 9));
+    top: 50%;
+    transform: translate(-50.34%, -50%);
   }
-  .videoBackdrop {
-    display: block;
-    position: absolute;
-    inset: -60px;
-    z-index: -2;
-    background-size: cover;
-    background-position: center;
-    filter: blur(28px) brightness(0.55);
+  /* The title over the desk above the book, its tagline ending 8px above
+     the book's top edge (0.3 of the film's height down it). The nav is 56px:
+     the title starts as close under it as the room needs, and where even
+     that is too little - a 360px phone - the tagline gives way first, down
+     to 12px, then the title, as over a short desktop hero. */
+  .titleOverFilm {
+    --at: clamp(58px, calc(0.3 * var(--hero-h) - 76px), 68px);
+    --room: calc(0.3 * var(--hero-h) - var(--at) - 8px);
+    --wm: min(clamp(40px, 6.3vw, 88px), calc((100vw - 32px) / 7.6));
+    --tag: max(12px, min(clamp(17px, 1.9vw, 24px), calc((var(--room) - 1.1 * var(--wm)) / 1.5)));
+    top: var(--at);
+  }
+  .titleOverFilm .wordmark {
+    font-size: max(30px, min(var(--wm), calc((var(--room) - 1.5 * var(--tag)) / 1.1)));
+  }
+  .titleOverFilm .tagline {
+    font-size: var(--tag);
+  }
+  /* The grain as fine against the photo as on a desktop's (there the frame
+     is shown about 1.7 times larger): 160px tiles there, 96 here. */
+  .grain {
+    background-size: auto, 96px 96px;
+  }
+}
+
+@media (max-aspect-ratio: 1/1) and (max-width: 760px) {
+  .page {
+    --film-h: min(max(320px, calc(100svh * (1 - var(--peek-phone, 0) / 100))), var(--book-fit-h));
+  }
+  /* The post-it on the desk below the book, not over its foot: its lifted
+     part covers 0.68 of its side of the hero's bottom, and the desk below
+     the book is 0.157 of the film's height. 96px on a 390px phone. (Over
+     .body's own --note, further down.) */
+  .page .body {
+    --note: clamp(92px, calc(var(--hero-h) * 0.21), 124px);
   }
 }
 
@@ -1864,7 +1971,9 @@
   mix-blend-mode: multiply;
 }
 
-@media (max-width: 760px) {
+/* A narrow screen on its side; upright, the post-it follows the hero's
+   height (above). */
+@media (max-width: 760px) and (min-aspect-ratio: 1/1) {
   .body {
     --note: 124px;
   }
@@ -1882,6 +1991,31 @@
 .postitZoomed .postitStuck,
 .postitZoomed .postitFree {
   visibility: hidden;
+}
+
+/* iOS: the post-it as its flat pictures, always, in place of its 3D layers
+   (PostIt.tsx). -webkit-touch-callout is supported there alone. */
+.postitPhotos {
+  display: none;
+}
+
+.postitPhotos img {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .postitPhotos {
+    display: block;
+    position: absolute;
+    inset: 0;
+  }
+  .postitShadow,
+  .postitStuck,
+  .postitFree {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

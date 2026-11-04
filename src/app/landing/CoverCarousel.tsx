@@ -24,6 +24,7 @@ import Link from "next/link";
 import covers from "./coverCarousel.json";
 import { coverById } from "@/app/covers/catalogue";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
+import { whenArrived } from "./arrival";
 import styles from "./coverCarousel.module.css";
 
 type Cover = { id: string; name: string; photo: string };
@@ -75,15 +76,31 @@ function sizes(n: number): ("big" | "small")[] {
   return units.flatMap((u) => ["big", ...Array(u - 1).fill("small")] as ("big" | "small")[]);
 }
 
-export function CoverCarousel() {
-  // The server's order is a fixed deal (so the first paint matches); the
-  // visit's own deal replaces it once the page is live.
-  const fixed = useMemo(() => deal(covers as Cover[], seeded(20261009)), []);
-  const [order, setOrder] = useState(fixed);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- dealt once on arrival (random, so not on the server)
-    setOrder(deal(covers as Cover[], Math.random));
-  }, []);
+/** Every cover in `track` fetched and decoded, once the page is idle; the
+ *  returned function calls it off. */
+function warmWhenIdle(track: HTMLElement | null) {
+  const warm = () => {
+    for (const img of track?.querySelectorAll("img") ?? []) {
+      img.loading = "eager";
+      img.decode?.().catch(() => {});
+    }
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(warm, { timeout: 3000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const t = setTimeout(warm, 1500);
+  return () => clearTimeout(t);
+}
+
+/** `seed`: the visit's deal, drawn by the server for each visit (Landing),
+ *  so the order the page opens with is the one it keeps. It was a fixed deal
+ *  replaced by the visit's own once the page was live (2026-11-04): every
+ *  cover on screen swapped for another just after load, each fetched twice
+ *  over - the first ones while the rest of the first screen was still
+ *  coming. */
+export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
+  const order = useMemo(() => deal(covers as Cover[], seeded(seed)), [seed]);
   const size = useMemo(() => sizes(covers.length), []);
 
   // One copy's width sets the loop's length, so the speed is the same at any
@@ -107,24 +124,34 @@ export function CoverCarousel() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const duration = width && speed > 0 ? width / speed : 0;
+  // Still until the page has arrived (arrival.ts): drifting under the
+  // curtain it brought covers into view that the curtain had not waited
+  // for, and the page opened on them still coming (found by check:arrival).
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void whenArrived().then(() => live && setArrived(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const duration = arrived && width && speed > 0 ? width / speed : 0;
 
   // Every picture fetched and decoded once the page is idle, not as it
   // drifts into view: decoding on arrival dropped frames ("carousel frame
-  // drop. try to omptimize").
+  // drop. try to omptimize"). And not before the page has arrived (the
+  // curtain, arrival.ts): 58 of them were coming down on a phone with the
+  // first screen's doodles, and held them up by seconds (2026-11-04).
   useEffect(() => {
-    const warm = () => {
-      for (const img of track.current?.querySelectorAll("img") ?? []) {
-        img.loading = "eager";
-        img.decode?.().catch(() => {});
-      }
+    let live = true;
+    let cancel = () => {};
+    void whenArrived().then(() => {
+      if (live) cancel = warmWhenIdle(track.current);
+    });
+    return () => {
+      live = false;
+      cancel();
     };
-    if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(warm, { timeout: 3000 });
-      return () => window.cancelIdleCallback(id);
-    }
-    const t = setTimeout(warm, 1500);
-    return () => clearTimeout(t);
   }, [order]);
 
   return (

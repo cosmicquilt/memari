@@ -98,7 +98,8 @@ export function PostIt() {
   const timer = useRef(0);
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
+    // iOS shows its pictures always (.postitPhotos): nothing to swap.
+    if (!vv || CSS.supports("-webkit-touch-callout", "none")) return;
     const update = () => {
       const z = vv.scale > 1.001;
       setZoomed(z);
@@ -182,6 +183,33 @@ export function PostIt() {
           </svg>
           <Band k={0} />
         </span>
+      </span>
+      {/* ON iOS, THE POST-IT IS ITS PICTURES (2026-11-04: on Andrew's
+          iPhone, "postit note glitched appearance black lines on left or
+          right"). WebKit - every browser there - draws the curl's chain of
+          3D bands with the hero showing through where their sides meet; the
+          pictures are the same note in each pose it can take, drawn whole at
+          5x (see the zoom above). Shown by the stylesheet only there; lazy,
+          so where they are never shown they are never fetched. */}
+      <span className={styles.postitPhotos} aria-hidden="true">
+        {flat.states.map((s) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={s}
+            src={`/landing/postit/flat-${s}.webp`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            style={{
+              left: `calc(var(--note) * ${flat.x})`,
+              top: `calc(var(--note) * ${flat.y})`,
+              width: `calc(var(--note) * ${flat.w})`,
+              height: `calc(var(--note) * ${flat.h})`,
+              visibility: s === pose ? "visible" : "hidden",
+            }}
+          />
+        ))}
       </span>
       {flatWanted && (
         <canvas

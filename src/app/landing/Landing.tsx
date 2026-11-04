@@ -35,6 +35,7 @@ import { SiteGround } from "./SiteGround";
 import { BodyWallTuner } from "./BodyWallTuner";
 import { PostIt } from "./PostIt";
 import { CoverCarousel } from "./CoverCarousel";
+import { SiteArrival } from "./SiteArrival";
 import { BODY_WALL_DEFAULTS, pageVars } from "./bodyWall";
 import { Arrow, Circled, Doodle, Hand, Underlined } from "./ink/marks";
 import { Ink } from "./ink/Ink";
@@ -46,10 +47,13 @@ export function Landing({
   signedIn,
   guest = false,
   hero = "video",
+  coverSeed,
 }: {
   signedIn: boolean;
   guest?: boolean;
   hero?: "desk" | "video";
+  /** The covers' order for this visit (CoverCarousel), drawn per request. */
+  coverSeed?: number;
 }) {
   return (
     <div
@@ -63,6 +67,11 @@ export function Landing({
       data-doodle-paper={(BODY_WALL_DEFAULTS.doodlePaper ?? 0) > 0 || undefined}
     >
       <SiteGround />
+      {/* First in the page's HTML, so it is painted before what it covers
+          (arrival.ts). The pictures are the backgrounds it cannot find on
+          the page: the hero's grain, the post-it's paper, the frame's
+          edges. */}
+      <SiteArrival ground="hero" pictures={["/landing/grain.webp", "/landing/paper.jpg", "/landing/hero-video-mask.png"]} />
       <InkPaperFilter />
       <SiteHeader signedIn={signedIn} guest={guest} />
 
@@ -78,8 +87,9 @@ export function Landing({
           <TornEdge />
           <PostIt />
 
-          {/* The covers, as polaroids on real notebooks (2026-10-09). */}
-          <CoverCarousel />
+          {/* The covers, as polaroids on real notebooks (2026-10-09), in
+              this visit's order. */}
+          <CoverCarousel seed={coverSeed} />
 
           <section id="how" className={styles.section}>
             <Doodle

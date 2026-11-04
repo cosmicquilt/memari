@@ -6,6 +6,7 @@
 // simply there (.inkLine in the stylesheet). The colour is the element's
 // `color`.
 
+import { whenArrived } from "../arrival";
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import type { Drawing } from "./pen";
 import styles from "../landing.module.css";
@@ -45,8 +46,14 @@ export function Ink({
       },
       { rootMargin: "0px 0px -12% 0px" }
     );
-    io.observe(el);
-    return () => io.disconnect();
+    // Not while the page's curtain is down (arrival.ts): a mark on the
+    // first screen would be written where nobody could see it.
+    let live = true;
+    void whenArrived().then(() => live && io.observe(el));
+    return () => {
+      live = false;
+      io.disconnect();
+    };
   }, []);
 
   const [x, y, w, h] = drawing.box;

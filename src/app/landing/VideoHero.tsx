@@ -33,6 +33,7 @@ import { loadPicture, paintPicture } from "./video/canvasPicture";
 import { bakeHero, heroInStage } from "./video/heroBake";
 import EXTEND from "./video/heroExtend.json";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
+import { whenArrived } from "./arrival";
 import styles from "./landing.module.css";
 
 /** Seconds the first layout takes to fade onto the pages, and the dots off
@@ -82,9 +83,38 @@ function preloadHero() {
   const high = { as: "image", fetchPriority: "high" } as const;
   preload(HERO_VIDEO.dots, high);
   preload(HERO_VIDEO.dots4k, { ...high, media: HERO_VIDEO.media4k });
-  for (const side of ["left", "right"] as const) preload(`/landing/hero-extend-${side}.webp`, high);
+  // the desk beyond the frame shows only on a screen wider than tall: a
+  // phone held upright fetched 330 KB of it for nothing (2026-11-04)
+  for (const side of ["left", "right"] as const) preload(`/landing/hero-extend-${side}.webp`, { ...high, media: WIDE });
   for (const id of SHEET_IDS) preload(sheetPath(id), high);
 }
+
+/** A screen wider than tall: the hero with the desk beyond the frame's sides
+ *  (landing.module.css). */
+const WIDE = "(min-aspect-ratio: 1/1)";
+
+/** THE HERO'S STILLS AS PLAIN PICTURES (2026-11-04: on Andrew's iPhone 13,
+ *  in Safari and in Chrome, "hero disappears leaving just brown with grainy
+ *  texture"). They were drawn into canvases for one reason - a pinch zoom on
+ *  a laptop's touchpad left the edges of pictures undrawn (canvasPicture.ts)
+ *  - and flattened into one more (heroBake.ts) for a laptop GPU's scrolling.
+ *  On an iPhone every browser is WebKit, which can drop a canvas's pixels
+ *  when memory runs short, and the stage holding them was masked as well:
+ *  what was left was the dark under the stage and the grain over it. So
+ *  where none of that was needed - a phone upright, which shows neither the
+ *  desk beyond the frame nor the flattened picture - and anywhere on iOS,
+ *  the frame, the sheets and the desk stay the <img>s they are from the
+ *  first paint, and nothing is drawn into a canvas but the layouts. Decided
+ *  once, as the hero first mounts. (-webkit-touch-callout is iOS's alone.) */
+let plainMemo: boolean | null = null;
+function plainStills() {
+  plainMemo ??= !window.matchMedia(WIDE).matches || CSS.supports("-webkit-touch-callout", "none");
+  return plainMemo;
+}
+
+/** Seconds after the page has arrived (arrival.ts) before the first layout
+ *  begins to fade onto the pages: the book is seen open on its dots first. */
+const LAYOUT_AFTER_ARRIVAL = 0.6;
 
 export function VideoHero() {
   preloadHero();
@@ -99,6 +129,10 @@ export function VideoHero() {
   const baked = useRef<HTMLDivElement>(null);
   const bakedDots = useRef<HTMLCanvasElement>(null);
   const bakedClean = useRef<HTMLCanvasElement>(null);
+  /** The clean frame as a picture (plainStills). */
+  const cleanPicture = useRef<HTMLImageElement>(null);
+  /** The layouts' canvas lost by the browser, until it is given back. */
+  const [glLost, setGlLost] = useState(false);
   /** The resting frames are drawn into their canvases: the dotted one, which
    *  shows from load (a CSS background until then), and the clean one under
    *  it. */
@@ -159,6 +193,7 @@ export function VideoHero() {
   // the sheets' drawings into theirs as they lie beside the open book - each
   // taking its picture's place once drawn.
   useEffect(() => {
+    if (plainStills()) return;
     let disposed = false;
     const sidesDone = Promise.all(
       (["left", "right"] as const).map((side, i) =>
@@ -229,7 +264,7 @@ export function VideoHero() {
     const st = stage.current;
     const wrap = baked.current;
     if (!el || !st || !wrap || !grainLayer.current || !grain || !sidesReady || !sheetsReady || settled !== version) return;
-    if (window.matchMedia("(max-aspect-ratio: 1/1)").matches) return;
+    if (plainStills() || window.matchMedia("(max-aspect-ratio: 1/1)").matches) return;
     const parts = { hero: el, stage: st, sides: sides.current, sheets: sheetCanvases.current, grainLayer: grainLayer.current, grain };
     const settings = bodyWallSettings();
     const next = { ...bakedAt };
@@ -267,27 +302,51 @@ export function VideoHero() {
     // clip's were (hero-video-mask.png) - drawn in rather than masked on the
     // page, so a zoom has nothing to draw again. The dotted one first, as it
     // is what shows; the clean one after, wanted only when the layouts come.
-    const big = window.matchMedia(HERO_VIDEO.media4k).matches;
-    const mask = loadPicture("/landing/hero-video-mask.png");
-    const frame = (src: string, into: { current: HTMLCanvasElement | null }) =>
-      Promise.all([loadPicture(src), mask]).then(([pic, m]) => {
-        const c = into.current;
-        if (disposed || !c) return false;
-        paintPicture(c, pic, { mask: m });
-        return true;
-      });
     let cleanDrawn = false;
-    void frame(big ? HERO_VIDEO.dots4k : HERO_VIDEO.dots, dotsFrame)
-      .then((ok) => ok && setDotsUp(true))
-      .catch(() => {})
-      .then(() => frame(big ? HERO_VIDEO.last4k : HERO_VIDEO.last, cleanFrame))
-      .then((ok) => {
-        if (!ok) return;
-        setCleanUp(true);
-        cleanDrawn = true;
+    if (plainStills()) {
+      // The clean frame is its <img>, under the dotted one's: ready once
+      // decoded.
+      void (cleanPicture.current?.decode() ?? Promise.reject(new Error("no picture")))
+        .then(() => {
+          if (disposed) return;
+          cleanDrawn = true;
+          ready();
+        })
+        .catch(() => {});
+    } else {
+      const big = window.matchMedia(HERO_VIDEO.media4k).matches;
+      const mask = loadPicture("/landing/hero-video-mask.png");
+      const frame = (src: string, into: { current: HTMLCanvasElement | null }) =>
+        Promise.all([loadPicture(src), mask]).then(([pic, m]) => {
+          const c = into.current;
+          if (disposed || !c) return false;
+          paintPicture(c, pic, { mask: m });
+          return true;
+        });
+      void frame(big ? HERO_VIDEO.dots4k : HERO_VIDEO.dots, dotsFrame)
+        .then((ok) => ok && setDotsUp(true))
+        .catch(() => {})
+        .then(() => frame(big ? HERO_VIDEO.last4k : HERO_VIDEO.last, cleanFrame))
+        .then((ok) => {
+          if (!ok) return;
+          setCleanUp(true);
+          cleanDrawn = true;
+          ready();
+        })
+        .catch(() => {});
+    }
+
+    // Not before the page has arrived and the book has been seen open on its
+    // dots a moment (arrival.ts).
+    let arrived = false;
+    let arrivalTimer = 0;
+    void whenArrived().then(() => {
+      if (disposed) return;
+      arrivalTimer = window.setTimeout(() => {
+        arrived = true;
         ready();
-      })
-      .catch(() => {});
+      }, LAYOUT_AFTER_ARRIVAL * 1000);
+    });
 
     /** The first spread printed and its writing planned. */
     let pages: import("./video/pageLoop").PageLoop | null = null;
@@ -317,8 +376,9 @@ export function VideoHero() {
     if (hero.current) io.observe(hero.current);
     document.addEventListener("visibilitychange", run);
 
-    // The layout comes when all three are there: the tagline written, the
-    // first spread printed, and the clean page drawn to show as the dots go.
+    // The layout comes when all four are there: the page arrived, the
+    // tagline written, the first spread printed, and the clean page drawn to
+    // show as the dots go.
     const begin = () => {
       if (drawing || !pages) return;
       drawing = true;
@@ -340,7 +400,7 @@ export function VideoHero() {
       run();
     };
     function ready() {
-      if (written.current && cleanDrawn && pages) begin();
+      if (arrived && written.current && cleanDrawn && pages) begin();
     }
     afterWritten.current = ready;
 
@@ -353,19 +413,36 @@ export function VideoHero() {
         ]));
       if (disposed) return;
       let warp: InstanceType<typeof PageWarp>;
-      // As many pixels as the stage shows, at most the frame's.
-      const across = Math.min(HERO_VIDEO.width, Math.ceil((canvas.parentElement?.clientWidth ?? HERO_VIDEO.width) * window.devicePixelRatio));
+      const pictures: HTMLCanvasElement[] = [];
+      const dirty = [false, false];
+      // As many pixels as the stage shows, at most the frame's - and at most
+      // two to a CSS pixel: a 3x phone's stage is twice its screen wide, and
+      // its book's lines are finer than a third pixel would show (2026-11-04:
+      // half the memory, on the iPhone where the hero went dark).
+      const across = Math.min(HERO_VIDEO.width, Math.ceil((canvas.parentElement?.clientWidth ?? HERO_VIDEO.width) * Math.min(window.devicePixelRatio, 2)));
       try {
-        warp = new PageWarp(canvas, [PAGE_OUTLINES.left, PAGE_OUTLINES.right], HERO_VIDEO, {
-          width: across,
-          height: Math.round((across * HERO_VIDEO.height) / HERO_VIDEO.width),
-        });
+        warp = new PageWarp(
+          canvas,
+          [PAGE_OUTLINES.left, PAGE_OUTLINES.right],
+          HERO_VIDEO,
+          { width: across, height: Math.round((across * HERO_VIDEO.height) / HERO_VIDEO.width) },
+          {
+            // The browser took the canvas back (a phone short of memory, the
+            // app in the background): put away, not left to show black
+            // multiplied over the whole photo; drawn again when it is back.
+            lost: () => !disposed && setGlLost(true),
+            restored: () => {
+              if (disposed) return;
+              dirty[0] = dirty[1] = true;
+              paint();
+              setGlLost(false);
+            },
+          },
+        );
       } catch {
         // No WebGL: the book stays open on its dot grid.
         return;
       }
-      const pictures: HTMLCanvasElement[] = [];
-      const dirty = [false, false];
       const textureHeight = window.devicePixelRatio >= 2 && window.innerWidth > 900 ? 2048 : 1448;
       const printed = new PageLoop(spreads, textureHeight, (page, picture) => {
         pictures[page] = picture;
@@ -379,7 +456,7 @@ export function VideoHero() {
       paint = () => {
         let any = false;
         for (const page of [0, 1] as const) {
-          if (!dirty[page]) continue;
+          if (!dirty[page] || !pictures[page]) continue;
           warp.upload(page, pictures[page]);
           dirty[page] = false;
           any = true;
@@ -397,6 +474,7 @@ export function VideoHero() {
     return () => {
       disposed = true;
       afterWritten.current = () => {};
+      window.clearTimeout(arrivalTimer);
       cancelAnimationFrame(raf);
       io.disconnect();
       document.removeEventListener("visibilitychange", run);
@@ -471,15 +549,7 @@ export function VideoHero() {
       data-off-paper=""
       data-baked={showBaked ? "" : undefined}
     >
-      <div className={styles.videoBackdrop} style={{ backgroundImage: `url(${HERO_VIDEO.dots})` }} aria-hidden="true" />
-      <div
-        ref={stage}
-        className={styles.videoStage}
-        // The dotted frame from the first paint, until its canvas is drawn:
-        // then nothing, or a zoom would draw it again under the canvas.
-        style={{ backgroundImage: dotsUp ? "none" : `url(${HERO_VIDEO.dots})` }}
-        aria-hidden="true"
-      >
+      <div ref={stage} className={styles.videoStage} aria-hidden="true">
         {/* The still layers, in the flattened picture once it is drawn. */}
         <div className={styles.liveLayers}>
         {/* The desk beyond the frame's sides - see .videoExtend. */}
@@ -495,6 +565,8 @@ export function VideoHero() {
                 src={`/landing/hero-extend-${side}.webp`}
                 alt=""
                 fetchPriority="high"
+                // not fetched where it is not shown (upright: display none)
+                loading="lazy"
                 style={{ ...place, visibility: sidesReady ? "hidden" : "visible" }}
               />,
               <canvas
@@ -509,12 +581,38 @@ export function VideoHero() {
           })}
         </div>
         {/* The clean page, under the dotted one, there for when the dots
-            fade off it. */}
+            fade off it; and the dotted one, from the first paint. Each a
+            picture, until (not plainStills) its canvas is drawn. The clean
+            one is wanted only once the layouts come, so it waits its turn
+            and the curtain does not wait for it (data-arrival-skip). */}
+        <picture>
+          <source media={HERO_VIDEO.media4k} srcSet={HERO_VIDEO.last4k} />
+          <img
+            ref={cleanPicture}
+            className={`${styles.videoStill} ${styles.videoStillPicture}`}
+            src={HERO_VIDEO.last}
+            alt=""
+            fetchPriority="low"
+            data-arrival-skip=""
+            style={{ visibility: dotsUp || cleanUp ? "hidden" : "visible" }}
+          />
+        </picture>
         <canvas ref={cleanFrame} className={styles.videoStill} style={{ visibility: cleanUp ? "visible" : "hidden" }} />
+        <picture>
+          <source media={HERO_VIDEO.media4k} srcSet={HERO_VIDEO.dots4k} />
+          <img
+            className={`${styles.videoStill} ${styles.videoStillPicture}`}
+            src={HERO_VIDEO.dots}
+            alt=""
+            fetchPriority="high"
+            style={{ visibility: dotsUp || dotsOut ? "hidden" : "visible", opacity: drawn ? 0 : 1, transition: fade }}
+            onTransitionEnd={() => setDotsGone(true)}
+          />
+        </picture>
         <canvas
           ref={dotsFrame}
           className={styles.videoStill}
-          style={{ visibility: dotsUp && !dotsGone && !(instant && drawn) ? "visible" : "hidden", opacity: drawn ? 0 : 1, transition: fade }}
+          style={{ visibility: dotsUp && !dotsOut ? "visible" : "hidden", opacity: drawn ? 0 : 1, transition: fade }}
           onTransitionEnd={() => setDotsGone(true)}
         />
         {/* The loose sheets on the desk, drawn on (2026-09-28: "add two
@@ -563,7 +661,7 @@ export function VideoHero() {
             onTransitionEnd={() => setDotsGone(true)}
           />
         </div>
-        <canvas ref={overlay} className={styles.videoDrawing} style={{ opacity: drawn ? 1 : 0, transition: fade }} />
+        <canvas ref={overlay} className={styles.videoDrawing} style={{ opacity: drawn && !glLost ? 1 : 0, transition: fade }} />
       </div>
       <div className={styles.liveLayers} aria-hidden="true">
         {/* The blur toward the screen's sides - see .sideBlur. */}

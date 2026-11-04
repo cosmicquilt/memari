@@ -21,5 +21,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
   // (2026-09-25: "I like ... video hero best"); ?hero=desk still shows the
   // desk.
   const hero = (await searchParams).hero === "desk" ? "desk" : "video";
-  return <Landing signedIn={owner !== null} guest={owner?.guest ?? false} hero={hero} />;
+  return <Landing signedIn={owner !== null} guest={owner?.guest ?? false} hero={hero} coverSeed={visitSeed()} />;
+}
+
+/** A new order of the covers for each visit, drawn here - the page is
+ *  rendered for each request (it reads who is signed in) - so the order the
+ *  page opens with is the one it keeps (CoverCarousel). */
+function visitSeed() {
+  return Math.floor(Math.random() * 2147483647);
 }
