@@ -1,6 +1,7 @@
 // memari. for businesses - Templates: the journals every client's journal
 // starts from. A template is one of your own journals; you edit it in the
-// editor as any other.
+// editor as any other. Clients move onto another one here, several at once
+// (2026-11-04, MoveClients.tsx): onto a copy a connected assistant made, say.
 
 import Link from "next/link";
 import type { CSSProperties } from "react";
@@ -9,12 +10,15 @@ import { requireBusiness } from "@/lib/business";
 import { journalSlugOf } from "@/app/planner/journalSlugs";
 import { clientsBehind } from "@/lib/businessJournals";
 import { questionsOf } from "@/lib/clientAnswers";
+import { aiRunStatus } from "@/lib/connector/journalRuns";
 import { AddTemplateForm, RemoveTemplateButton, UpdateClientsButton } from "../forms";
+import { MoveClients, type MoveClient } from "../MoveClients";
 import css from "../business.module.css";
 
-export default async function TemplatesPage() {
+export default async function TemplatesPage({ searchParams }: { searchParams: Promise<{ move?: string }> }) {
   const { owner, business } = await requireBusiness();
-  const [templates, journals] = await Promise.all([
+  const { move } = await searchParams;
+  const [templates, journals, everyone] = await Promise.all([
     prisma.businessTemplate.findMany({
       where: { businessId: business.id },
       orderBy: { createdAt: "asc" },
@@ -30,7 +34,38 @@ export default async function TemplatesPage() {
       orderBy: { updatedAt: "desc" },
       select: { id: true, title: true },
     }),
+    // who could move onto another template
+    prisma.businessClient.findMany({
+      where: { businessId: business.id, archivedAt: null },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        templateId: true,
+        plannerId: true,
+        template: { select: { planner: { select: { title: true } } } },
+        group: { select: { name: true, templateId: true, template: { select: { planner: { select: { title: true } } } } } },
+      },
+    }),
   ]);
+  const movers: MoveClient[] = everyone.map((c) => ({
+    id: c.id,
+    name: c.name,
+    templateId: c.templateId,
+    template: c.template?.planner.title ?? null,
+    journal: !!c.plannerId,
+    group: c.group ? { name: c.group.name, templateId: c.group.templateId, template: c.group.template?.planner.title ?? null } : null,
+  }));
+  const canMoveTo = (templateId: string) => movers.some((c) => c.templateId !== templateId);
+  // the one asked for (a row's Move clients here), or the newest with no
+  // clients: most likely the copy just made
+  const moveTo = templates.find((t) => t.id === move)?.id ?? [...templates].reverse().find((t) => t._count.clients === 0)?.id ?? templates[0]?.id ?? "";
+  // what a connected assistant changed in each and could still undo, until
+  // clients are on it (journalRuns.ts)
+  const assistant = new Map(await Promise.all(templates.map(async (t) => [t.id, (await aiRunStatus(t.planner.id)).changes.length] as const)));
+  // where clients added through the business's address start (clientIntake.ts
+  // firstTemplateOf: the first template), while it has one
+  const intake = business.intakeTokenHash && templates[0] ? { id: templates[0].id, title: templates[0].planner.title } : null;
   for (const t of templates) if (!t.planner.slug) t.planner.slug = await journalSlugOf(t.planner.id);
   // whose journals a change to a template's pages or settings has left behind
   const behind = await Promise.all(templates.map(async (t) => ({ template: t, clients: await clientsBehind(t.id) })));
@@ -78,6 +113,15 @@ export default async function TemplatesPage() {
                     · your edits reach {t.clients.length === 1 ? "1 journal" : `${t.clients.length} journals`}
                   </span>
                 )}
+                {/* a template waiting for its first clients: a copy just made, say */}
+                {t._count.clients === 0 && canMoveTo(t.id) && (
+                  <>
+                    <span className={css.dim}> · </span>
+                    <Link href={`/app/business/templates?move=${t.id}#move`} className={css.textLink}>
+                      Move clients here
+                    </Link>
+                  </>
+                )}
               </span>
               <span className={css.actions}>
                 <Link href={`/app/j/${t.planner.slug ?? t.planner.id}`} className={css.btn}>
@@ -94,6 +138,19 @@ export default async function TemplatesPage() {
             </div>
           ))}
         </div>
+      )}
+      {templates.some((t) => canMoveTo(t.id)) && (
+        // Keyed by the address alone, not by moveTo (review, 2026-11-04): with
+        // none asked for, moveTo is the newest template with no clients, which
+        // a move onto it changes, and the card started over as it came back,
+        // losing who hadn't moved and why, and the template chosen.
+        <MoveClients
+          key={move ?? ""}
+          initial={moveTo}
+          intake={intake}
+          templates={templates.map((t) => ({ id: t.id, title: t.planner.title, clients: t._count.clients, assistantChanges: assistant.get(t.id) ?? 0 }))}
+          clients={movers}
+        />
       )}
       <div className={css.card}>
         <h2>{templates.length ? "Add a template" : "Make your first template"}</h2>

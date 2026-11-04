@@ -10,6 +10,7 @@ const PARTS: Array<[href: string, label: string]> = [
   ["/app/account/profile", "Profile"],
   ["/app/account/preferences", "Preferences"],
   ["/app/account/orders", "Orders"],
+  ["/app/account/assistants", "AI assistant"],
   ["/app/account/data", "Data & account"],
 ];
 

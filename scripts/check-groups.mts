@@ -249,12 +249,22 @@ try {
   say(bankEmails.length === 1 && /3 books/.test(bankEmails[0].text), `one email for the failed bank payment, of all three (${bankEmails.length})`);
 
   // ---- books home again; a group deleted, its people kept
+  // One of them moved onto another template from Templates first (review,
+  // 2026-11-04): a save that keeps the group's template keeps them there.
+  const { copyAsTemplate, moveClientsTo } = await import("../src/lib/businessJournals");
+  const elsewhere = await copyAsTemplate(guest.ownerId, guest.journalId, "");
+  const mover = await prisma.businessClient.findFirstOrThrow({ where: { groupId: group.id, archivedAt: null, plannerId: { not: null } }, orderBy: { name: "asc" } });
+  await moveClientsTo(guest.ownerId, elsewhere.templateId, [mover.id]);
   await tab.goto(`${server.base}/app/business/groups/${group.id}`, { waitUntil: "networkidle" });
+  say((await text(tab)).includes(`${mover.name} is on another template now`), "the group says who is on another template now");
   await tab.getByLabel("Each to their own address").check();
   await tab.getByRole("button", { name: "Save", exact: true }).click();
   await tab.getByRole("status").filter({ hasText: "Saved" }).waitFor();
   const home = await prisma.businessGroup.findUniqueOrThrow({ where: { id: group.id } });
   say(!home.shipToVenue && (home.venueAddress as { city?: string } | null)?.city === "Austin", "books home again: the place is kept for later");
+  const moverAfter = await prisma.businessClient.findUniqueOrThrow({ where: { id: mover.id } });
+  const moverPages = await prisma.page.count({ where: { plannerId: mover.plannerId!, savedPage: { sourceKey: `template:${elsewhere.plannerId}` } } });
+  say(moverAfter.templateId === elsewhere.templateId && moverPages > 0, "A CLIENT MOVED ONTO ANOTHER TEMPLATE STAYS ON IT WHEN THEIR GROUP IS SAVED, journal and all");
   await prisma.businessGroup.update({ where: { id: group.id }, data: { templateId: null } });
   await tab.goto(`${server.base}/app/business/groups/${group.id}`, { waitUntil: "networkidle" });
   say((await tab.locator('select[name="templateId"]').inputValue()) === "", "A GROUP WHERE EACH KEEPS THEIR OWN TEMPLATE SHOWS THAT, not the first template (review: Save would have moved everyone)");

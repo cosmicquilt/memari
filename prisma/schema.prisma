@@ -93,10 +93,44 @@ model Planner {
   /// templates, or as a client's journal built from one (see Business).
   businessTemplate BusinessTemplate? @relation("BusinessTemplateJournal")
   businessClient   BusinessClient?   @relation("BusinessClientJournal")
+  /// A connected assistant's changes to this journal, each with the journal
+  /// as it stood before them (see JournalAiRun).
+  aiRuns           JournalAiRun[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
   @@index([ownerId])
+}
+
+// ONE STRETCH OF A CONNECTED ASSISTANT'S CHANGES to one journal, and the copy
+// that takes them back (src/lib/connector/journalRuns.ts). The editor's undo
+// stack lives in the browser and never hears of these changes, so the undo
+// lives here. A connector has no sessions, so a run is a stretch of time: it
+// starts at the first change and ends once the assistant has been quiet for a
+// while, or when it is undone.
+model JournalAiRun {
+  id            String    @id @default(cuid())
+  plannerId     String
+  planner       Planner   @relation(fields: [plannerId], references: [id], onDelete: Cascade)
+  /// The journal before the run's first change, whole.
+  before        Json
+  /// What changed, in plain words, oldest first; and what undo must remove by
+  /// hand, since calendar events belong to a person, not to the journal.
+  changes       Json      @default("[]")
+  eventIds      String[]  @default([])
+  /// The journal's fingerprint after the run's last change: if it no longer
+  /// matches, someone has edited it by hand since, and undo says so first.
+  afterHash     String?
+  /// Someone edited it by hand between two of the run's changes: the fingerprint
+  /// above moved on with the next change, and undo must still say so.
+  editedBetween Boolean   @default(false)
+  startedAt     DateTime  @default(now())
+  lastChangeAt  DateTime  @default(now())
+  /// When a change last BEGAN: changes that overlap are one assistant, not a hand.
+  touchedAt     DateTime  @default(now())
+  undoneAt      DateTime?
+
+  @@index([plannerId, lastChangeAt])
 }
 
 // A single page within a planner, in display order. Every page has a grid

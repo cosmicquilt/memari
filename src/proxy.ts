@@ -24,8 +24,9 @@ const COMING_SOON = false;
 const OFF_HOSTS = new Set(["memari.studio", "www.memari.studio"]);
 // c: a coach's client's own page (src/lib/clientPortal.ts) - their link
 // should keep working while the site is closed; claim: a workspace prepared
-// for a coach (businessClaim.ts), the link in their note, the same
-const STILL_SERVED = /^\/(?:api|trpc|coming-soon|privacy|terms|legal|renewal|arrival|c|claim)(?:\/|$)/;
+// for a coach (businessClaim.ts), the link in their note, the same; mcp and
+// .well-known: a person's connected assistant (src/lib/connector), an API
+const STILL_SERVED = /^\/(?:api|trpc|coming-soon|privacy|terms|legal|renewal|arrival|c|claim|mcp|\.well-known)(?:\/|$)/;
 
 export default clerkMiddleware(async (_auth, req) => {
   // the address the visitor asked for, as the platform passes it on

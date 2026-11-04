@@ -52,6 +52,14 @@ const GROUPS: Array<[heading: string, items: QA[]]> = [
         </p>,
       },
       { q: "Is it free?", a: <p>The editor and your whole book as a PDF are free. You pay only for a printed, bound book. See <Link href="/pricing">Pricing</Link>.</p> },
+      {
+        id: "assistant",
+        q: "Can an AI assistant build my planner?",
+        a: <p>
+          Yes, if you use Claude. Connect it under <Link href="/app/account/assistants">Account, AI assistant</Link>, and you can ask it to make a planner or
+          change one you have. Your Claude plan pays for the chat. Claude asks before it changes anything, and you can undo everything it did from the journal, except on a coaching template once clients are on it.
+        </p>,
+      },
     ],
   ],
   [

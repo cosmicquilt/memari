@@ -110,6 +110,7 @@ import { ModulePreview } from "./ModulePreview";
 import { PaletteResizeHandle } from "./PaletteResizeHandle";
 import { BROWSE_PALETTE_PREFIX, BROWSE_SAVED_PREFIX, FloatingModule, ModuleBrowser } from "./ModuleBrowser";
 import { BetaBadge } from "./BetaBadge";
+import { AiChangesChip } from "./AiChangesChip";
 import { useRefreshPages } from "./pagesRefreshContext";
 import { resolveFontFamily, FONT_SERIF, FONT_SANS, type FontChoice } from "@/lib/theme";
 import { PRINT_WIDTH_PX, PRINT_HEIGHT_PX } from "@/lib/print-spec";
@@ -10757,6 +10758,7 @@ export function NativePlannerEditor({
             {journalTitle}
           </span>
         )}
+        <AiChangesChip />
         {business && (
           <a
             href={business.kind === "template" ? "/app/business/templates" : `/app/business/clients/${business.clientId}`}

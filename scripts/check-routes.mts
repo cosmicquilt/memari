@@ -125,6 +125,10 @@ async function main() {
     // the first coaches (2026-10-31): a claim link that isn't one is a page
     // saying so; the pilot page says nothing to anyone but an admin
     { path: "/claim/not-a-real-claim-token", expect: [200], as: "nobody", what: "a claim link that isn't one is a page saying so, not an error" },
+    // A CONNECTED ASSISTANT (2026-11-02): a token or nothing, and the details of how to get one are public.
+    { path: "/mcp", expect: [401], as: "nobody", what: "the connector, with no token" },
+    { path: "/mcp", expect: [401], as: "guest", what: "the connector: a guest cannot connect" },
+    { path: "/.well-known/oauth-protected-resource/mcp", expect: [200], as: "nobody", what: "how an assistant finds where to sign in" },
     { path: "/app/admin/coaches", expect: [404], as: "guest", what: "the pilot page is a 404 to anyone but an admin" },
     // And "has it arrived?" (src/lib/print/delivery.ts), the same way.
     { path: "/arrival/not-an-order?a=no&sig=0000", expect: [200], as: "nobody", what: "a broken arrival link is a page saying so, not an error" },
@@ -175,7 +179,7 @@ async function main() {
     // THE ACCOUNT'S PAGES SIGNED OUT (2026-11-01): each sends the person to
     // sign in and back to itself - the footer's "Your orders" came back to
     // Profile, the layout's fixed return. As a guest, each draws.
-    ...["/orders", "/preferences", "/data", "/profile"].flatMap((sub): Expectation[] => [
+    ...["/orders", "/preferences", "/assistants", "/data", "/profile"].flatMap((sub): Expectation[] => [
       { path: `/app/account${sub}`, expect: [307, 302, 303], as: "nobody", to: "/sign-in", back: `/app/account${sub}`, what: "SIGNED OUT, SENT TO SIGN IN AND BACK TO THIS PAGE" },
       { path: `/app/account${sub}`, expect: [200], as: "guest", what: "the account page, for a guest" },
     ]),

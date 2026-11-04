@@ -15,11 +15,12 @@ import { appUrl } from "@/lib/print/fileUrls";
 import { escapeHtml, sendEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, currentBusiness } from "@/lib/business";
-import { buildClientJournal, formerTemplateOf, updateClientJournal, updateClientsOf } from "@/lib/businessJournals";
+import { buildClientJournal, moveClientJournal, moveClientsTo, updateClientsOf } from "@/lib/businessJournals";
 import { COUNTRY_CODES } from "@/lib/print/countries";
 import { addClients, clientsFromCsv, makeIntakeToken, turnOffIntake } from "@/lib/clientIntake";
 import { saveClientAnswers } from "@/lib/clientAnswers";
 import { askQuestion, stopAsking } from "@/lib/templateQuestions";
+import { MOVE_AT_ONCE } from "./moveAtOnce";
 
 export type FormState = { error?: string; saved?: boolean } | null;
 
@@ -177,20 +178,21 @@ export async function saveClient(_: FormState, form: FormData): Promise<FormStat
   if (id) {
     const found = await prisma.businessClient.findFirst({ where: { id, businessId: business.id }, select: { id: true, plannerId: true, templateId: true, template: { select: { plannerId: true } } } });
     if (!found) return { error: "That client is not one of yours." };
-    await prisma.businessClient.update({ where: { id }, data });
+    // Moved to another template, with a journal: the new one is written on
+    // their row with the rebuild, not before it (businessJournals.ts
+    // moveClientJournal), so a move that can't finish leaves them as they were.
+    const moving = !!found.plannerId && !!templateId && templateId !== found.templateId;
+    await prisma.businessClient.update({ where: { id }, data: moving ? { ...data, templateId: found.templateId } : data });
     if (found.plannerId) {
       // The name on the cover is the journal's title, which every book's
       // cover prints: a correction reaches the next book (review, 2026-10-26).
       await prisma.planner.update({ where: { id: found.plannerId }, data: { title: data.coverName || name } });
-      // Moved to another template: their journal is rebuilt from it, the old
-      // one's pages taken away and their own kept (businessJournals.ts).
-      if (templateId && templateId !== found.templateId) {
+      // their journal rebuilt from it, the old one's pages taken away and
+      // their own kept
+      if (moving) {
         try {
-          await updateClientJournal(owner.id, id, { leaving: found.template?.plannerId ?? (await formerTemplateOf(found.plannerId)) });
+          await moveClientJournal(owner.id, found, templateId!);
         } catch (error) {
-          // the template they were on, back: left naming the new one, a later
-          // Update would add its pages beside the old one's (review, 2026-10-26)
-          await prisma.businessClient.update({ where: { id }, data: { templateId: found.templateId } });
           return { error: error instanceof Error ? error.message : "Their journal could not be moved to that template." };
         }
       }
@@ -224,6 +226,27 @@ export async function updateTemplateClients(templateId: string): Promise<{ updat
     return { updated };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Their journals could not be updated." };
+  }
+}
+
+/** Several clients onto one template at once (2026-11-04, Andrew: "claude
+ *  then move the clients over on the website"), once Templates has said whose
+ *  next books it changes. Each is moved as one client is from their own page
+ *  (businessJournals.ts moveClientsTo); who didn't move comes back named. */
+export async function moveClientsToTemplate(templateId: string, clientIds: string[]): Promise<{ moved?: number; problems?: string[]; error?: string }> {
+  const { owner } = await myBusiness();
+  // A FEW AT A TIME (review, 2026-11-04): the card sends its choice in
+  // turns, so no one request runs into the platform's time limit, however
+  // many are moved. More than a turn's worth is refused, not cut short.
+  const ids = Array.isArray(clientIds) ? [...new Set(clientIds.filter((id): id is string => typeof id === "string"))] : [];
+  if (ids.length === 0) return { error: "Choose who to move." };
+  if (ids.length > MOVE_AT_ONCE) return { error: `At most ${MOVE_AT_ONCE} at a time.` };
+  try {
+    const { moved, problems } = await moveClientsTo(owner.id, String(templateId), ids);
+    revalidatePath("/app/business", "layout");
+    return { moved: moved.length, problems };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Their journals could not be moved." };
   }
 }
 

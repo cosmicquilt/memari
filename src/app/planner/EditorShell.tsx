@@ -61,6 +61,8 @@ import { TimelineDrawer, DRAWER_DEFAULT_HEIGHT, SLIDE_MS } from "./TimelineDrawe
 import { usePrefersReducedMotion, ServerDevicePixelRatio } from "./useMediaQuery";
 import { loadLevel } from "./loadLevel";
 import { ClientJournalProvider } from "./clientJournalContext";
+import { AiChangesProvider } from "./AiChangesChip";
+import { journalAiStatus, undoJournalAiRun } from "./aiRunActions";
 
 /** A layout, and the view it opens with - the view the previous one left. */
 type OpenLayout = LoadedPlanner & { level: PageLevel; ui: EditorUi | null };
@@ -259,6 +261,52 @@ export function EditorShell({
     };
   }, [journalId]);
 
+  // A CONNECTED ASSISTANT WORKS WHERE THIS EDITOR CAN'T SEE (2026-11-02,
+  // src/lib/connector): looked for when the journal opens and whenever someone
+  // comes back to it, from their chat in another window or tab. Something new
+  // REBUILDS the editor: its modules have moved under it, and the undo steps it
+  // holds describe a page that is gone, so they go too. The server answers only
+  // two indexed queries.
+  const [aiChanges, setAiChanges] = useState<string[]>([]);
+  const [aiClients, setAiClients] = useState(0);
+  const aiSeen = useRef<string | null | undefined>(undefined);
+  const lookForAi = useCallback(async () => {
+    const status = await journalAiStatus(journalId).catch(() => null);
+    if (!status) return;
+    const moved = aiSeen.current !== undefined && aiSeen.current !== status.changedAt;
+    aiSeen.current = status.changedAt;
+    if (moved) await refreshRef.current({ rebuild: true, saved: true });
+    // After the rebuild, which the chip is part of: it should not appear and
+    // then be replaced under someone's pointer.
+    setAiChanges(status.changes);
+    setAiClients(status.clients);
+  }, [journalId]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- set once the server has answered, not during the effect
+    void lookForAi();
+    const onBack = () => {
+      if (document.visibilityState === "visible") void lookForAi();
+    };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("focus", onBack);
+    return () => {
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("focus", onBack);
+    };
+  }, [lookForAi]);
+  const aiContext = useMemo(
+    () => ({
+      changes: aiChanges,
+      clients: aiClients,
+      undo: async (evenEditsSince: boolean) => {
+        const result = await undoJournalAiRun(journalId, evenEditsSince);
+        if (result.status !== "edited-since") await lookForAi();
+        return result;
+      },
+    }),
+    [aiChanges, aiClients, journalId, lookForAi]
+  );
+
   // What the timeline shows as open: the one being opened, if any.
   const shownLevel = choosing?.level ?? open.level;
   const shownVariantKey = choosing ? choosing.variantKey : open.variantKey;
@@ -305,6 +353,7 @@ export function EditorShell({
         <JournalProvider value={journalId}>
           <SavedProvider value={saved}>
           <ClientJournalProvider value={business?.kind === "client" ? business.name : null}>
+          <AiChangesProvider value={aiContext}>
         {editor}
         <TimelineDrawer
           editorKey={editorKey}
@@ -322,6 +371,7 @@ export function EditorShell({
             void openLevel(next, nextVariant);
           }}
         />
+          </AiChangesProvider>
           </ClientJournalProvider>
           </SavedProvider>
         </JournalProvider>

@@ -47,6 +47,10 @@ export default async function GroupPage({ params, searchParams }: { params: Prom
   for (const o of orders) if (o.plannerId && !latest.has(o.plannerId)) latest.set(o.plannerId, o);
 
   const unbuilt = people.filter((c) => c.templateId && !c.plannerId).map((c) => ({ id: c.id, name: c.name }));
+  // moved onto another template from Templates since: a save keeps them
+  // there (businessGroups.ts saveGroupDetails, review 2026-11-04)
+  const elsewhere = group.templateId ? people.filter((c) => c.templateId && c.templateId !== group.templateId) : [];
+  const elsewhereNames = elsewhere.length <= 3 ? elsewhere.map((c) => c.name).join(", ").replace(/, ([^,]*)$/, " and $1") : `${elsewhere.slice(0, 2).map((c) => c.name).join(", ")} and ${elsewhere.length - 2} more`;
   const noTemplate = people.filter((c) => !c.templateId && !c.plannerId).length;
   const unlinked = people.filter((c) => c.email && !c.accessMadeAt).map((c) => ({ id: c.id, name: c.name }));
   const noEmail = people.filter((c) => !c.email && !c.accessMadeAt).length;
@@ -85,7 +89,11 @@ export default async function GroupPage({ params, searchParams }: { params: Prom
         <h2>Their journals</h2>
         <p className={css.dim}>
           {journals.length} of {people.length} built
-          {group.template ? `, each from ${group.template.planner.title}: what you change in it reaches all of theirs until a book is printed.` : "."}
+          {group.template
+            ? elsewhere.length === 0
+              ? `, each from ${group.template.planner.title}: what you change in it reaches all of theirs until a book is printed.`
+              : `, from ${group.template.planner.title}: what you change in it reaches theirs until a book is printed. ${elsewhereNames} ${elsewhere.length === 1 ? "is" : "are"} on another template now, moved from Templates: saving the group keeps them there, and choosing another template for the group moves everyone onto that one.`
+            : "."}
           {noTemplate > 0 && ` ${noTemplate === 1 ? "One has" : `${noTemplate} have`} no template: choose one for the group below.`}
         </p>
         <BuildJournals people={unbuilt} autoStart={asked.build === "1"} />

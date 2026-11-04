@@ -56,7 +56,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="27 October 2026">
+    <LegalPage title="Privacy" updated="2 November 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
@@ -233,9 +233,36 @@ export default function PrivacyPage() {
         </LI>
       </UL>
 
+      <H2>If you connect an AI assistant</H2>
+
+      <P>
+        You can connect your own Claude to Memari, under Account &rarr; AI assistant. It is off
+        unless you turn it on, it needs an account, and you can disconnect it from Claude at any
+        time. Anthropic is not one of the companies above: it isn&rsquo;t acting for us. You have
+        your own account with them, and their terms and{" "}
+        <A href="https://www.anthropic.com/legal/privacy">privacy policy</A> cover what happens on
+        their side.
+      </P>
+
+      <P>
+        While it is connected, Claude can read your own journals, including what you have written
+        in them, and change them when you ask. It can read and change a business&rsquo;s templates
+        only while no client is on them, and copy one into a new template; it never reaches a
+        client&rsquo;s journal, and it cannot order anything. Anthropic says it doesn&rsquo;t use
+        what connectors send to train its models, but if your &ldquo;Help improve Claude&rdquo;
+        setting is on, the rest of the conversation may be used, including what you type and
+        Claude&rsquo;s replies, which may quote your journal. That setting is in your Claude account.
+      </P>
+
       <H2>How long anything is kept</H2>
 
       <UL>
+        <LI>
+          <strong>Copies for undoing an assistant&rsquo;s changes.</strong> Before a connected
+          assistant first changes a journal, we keep a copy of the journal so you can undo what it
+          did, along with a list of those changes. The last five are kept per journal, and they go
+          when the journal does.
+        </LI>
         <LI>
           <strong>Guest journals are deleted after 30 days without being opened.</strong> Saved
           pages and saved modules belonging to a guest go when that guest has no journals left.

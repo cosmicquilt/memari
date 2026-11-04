@@ -1,8 +1,9 @@
 // npm run check:business - memari. for businesses, end to end as a guest
 // (2026-10-22): start a business, make a journal a template, add a client
 // with an address, archive them and undo it, set a logo, see Orders, and the
-// template leave the guest's own journal list. Screens shot into the folder
-// given (for the proof), if one is.
+// template leave the guest's own journal list; move several clients onto a
+// copy of a template at once (2026-11-04). Screens shot into the folder given
+// (for the proof), if one is.
 //
 //   npm run check:business -- <shots folder>
 
@@ -669,6 +670,155 @@ try {
     await prisma.planner.delete({ where: { id: second.id } });
   }
   await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+
+  // SEVERAL CLIENTS AT ONCE (2026-11-04, Andrew: "claude then move the clients
+  // over on the website"). Onto a copy of a template, made as a connected
+  // assistant makes one (copyAsTemplate): Templates says whose next books
+  // change, and that printed books don't, before anything moves; then each
+  // chosen journal is rebuilt as moving one client rebuilds it, and nobody
+  // else moves. The clients made here go again at the end.
+  {
+    const { buildClientJournal, copyAsTemplate } = await import("../src/lib/businessJournals");
+    const { syncLinkedPages } = await import("../src/app/planner/savedItems");
+    const noor = await prisma.businessClient.create({ data: { businessId: business!.id, name: "Noor Haddad", templateId: template!.id } });
+    const theo = await prisma.businessClient.create({ data: { businessId: business!.id, name: "Theo Brandt", templateId: template!.id } });
+    const noorJournal = await buildClientJournal(guest.ownerId, noor.id);
+    const theoJournal = await buildClientJournal(guest.ownerId, theo.id);
+    const noorOwn = await prisma.page.create({ data: { plannerId: noorJournal, level: "WEEKLY", position: 500 } });
+    const printed = await prisma.printOrder.create({
+      data: { ownerId: guest.ownerId, plannerId: noorJournal, status: "PAID", title: "Noor Haddad", startDate: new Date("2027-01-04T00:00:00Z"), endDate: new Date("2027-04-03T00:00:00Z"), days: 90, binding: "PAPERBACK", podPackageId: "check-business", pageCount: 100, shippingLevel: "GROUND", shippingAddress: { name: "Noor Haddad" }, bookCents: 2975, shippingCents: 500, totalCents: 3475, costCents: 1500 },
+    });
+    const copy = await copyAsTemplate(guest.ownerId, guest.journalId, "");
+    const mayaBefore = await prisma.businessClient.findUniqueOrThrow({ where: { id: client!.id }, select: { templateId: true } });
+    const mainLinks = new Set((await prisma.page.findMany({ where: { plannerId: guest.journalId, savedPageId: { not: null } }, select: { savedPageId: true } })).map((p) => p.savedPageId));
+
+    await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+    const copyRow = tab.locator("div").filter({ hasText: "Clarity Quarterly (copy)" }).filter({ has: tab.getByRole("link", { name: "Move clients here" }) }).last();
+    await copyRow.getByRole("link", { name: "Move clients here" }).click();
+    await tab.waitForURL(`**/templates?move=${copy.templateId}*`);
+    const card = tab.locator("#move");
+    await card.waitFor();
+    await tab.waitForTimeout(400);
+    say((await card.getByLabel("Move to").inputValue()) === copy.templateId, "MOVE CLIENTS HERE, on the copy's row: the card opens on the copy");
+    say(
+      (await card.getByRole("checkbox", { name: /Noor Haddad/ }).count()) === 1 && (await card.getByRole("checkbox", { name: /Theo Brandt/ }).count()) === 1 && (await card.getByRole("checkbox", { name: /Maya/ }).count()) === 1 && (await card.getByText("On Clarity Quarterly now").count()) === 1,
+      "it offers every client not on the copy, by the template they're on now"
+    );
+    await card.getByRole("checkbox", { name: /Noor Haddad/ }).check();
+    await card.getByRole("checkbox", { name: /Theo Brandt/ }).check();
+    const impact = card.getByText(/^This changes the next book for 2 clients: Noor Haddad and Theo Brandt\. Books already printed don.t change\.$/);
+    say((await impact.count()) === 1, "BEFORE ANYTHING MOVES, it says whose next books change and that printed books don't");
+    say((await prisma.businessClient.count({ where: { id: { in: [noor.id, theo.id] }, templateId: template!.id } })) === 2, "and nothing has moved yet");
+    await shoot(tab, "biz-move-clients");
+    await card.getByRole("button", { name: /^Move 2 clients to Clarity Quarterly \(copy\)$/ }).click();
+    const moveToast = tab.getByRole("status").filter({ hasText: /moved to Clarity Quarterly \(copy\)/ });
+    await moveToast.waitFor({ timeout: 90_000 });
+    say((await moveToast.innerText()).includes("2 clients moved to Clarity Quarterly (copy)"), `and says so: "${await moveToast.innerText()}"`);
+    const after = await prisma.businessClient.findMany({ where: { id: { in: [noor.id, theo.id, client!.id] } }, select: { id: true, templateId: true } });
+    say(after.filter((c) => c.templateId === copy.templateId).length === 2 && after.find((c) => c.id === client!.id)?.templateId === mayaBefore.templateId, "MOVE: both are on the copy, and Maya, not chosen, stays where she was");
+    const copyPages = await prisma.page.findMany({ where: { plannerId: copy.plannerId } });
+    const noorPages = await prisma.page.findMany({ where: { plannerId: noorJournal }, include: { savedPage: { select: { sourceKey: true } } } });
+    const theoPages = await prisma.page.findMany({ where: { plannerId: theoJournal }, include: { savedPage: { select: { sourceKey: true } } } });
+    const rebuilt = (pages: typeof noorPages) =>
+      !pages.some((p) => (p.savedPageId && mainLinks.has(p.savedPageId)) || p.savedPage?.sourceKey === `template:${guest.journalId}`) &&
+      copyPages.every((c) => c.savedPageId && !mainLinks.has(c.savedPageId) && pages.some((p) => p.savedPageId === c.savedPageId && p.level === c.level && p.position === c.position));
+    say(rebuilt(noorPages) && rebuilt(theoPages), `each journal is rebuilt from the copy: the first template's pages gone, the copy's ${copyPages.length} in, linked through links of its own`);
+    say(noorPages.some((p) => p.id === noorOwn.id) && noorPages.length === copyPages.length + 1, `Noor's own page is kept (${noorPages.length} pages)`);
+    const printedAfter = await prisma.printOrder.findUniqueOrThrow({ where: { id: printed.id } });
+    say(JSON.stringify(printedAfter) === JSON.stringify(printed), "her printed book is untouched");
+    // the copy is what her journal follows now
+    const copyPage = (await prisma.page.findMany({ where: { plannerId: copy.plannerId }, include: { moduleInstances: true } })).find((p) => p.moduleInstances.length && p.savedPageId)!;
+    const m = copyPage.moduleInstances[0];
+    await prisma.moduleInstance.update({ where: { id: m.id }, data: { propValues: { ...(m.propValues as Record<string, unknown>), checkBusinessMark: "edited in the copy" } } });
+    await syncLinkedPages([copyPage.id]);
+    const noorCopy = await prisma.page.findFirst({ where: { plannerId: noorJournal, savedPageId: copyPage.savedPageId, savedPageIndex: copyPage.savedPageIndex }, include: { moduleInstances: true } });
+    say(!!noorCopy?.moduleInstances.some((x) => (x.propValues as Record<string, unknown>).checkBusinessMark === "edited in the copy"), "and an edit to the copy reaches her journal");
+    await tab.reload({ waitUntil: "networkidle" });
+    say((await tab.locator("#move").getByRole("checkbox", { name: /Noor Haddad/ }).count()) === 0 && (await tab.locator("#move").getByRole("checkbox", { name: /Maya/ }).count()) === 1, "and the card no longer offers them for the copy, only Maya");
+    await prisma.printOrder.delete({ where: { id: printed.id } });
+    await prisma.businessClient.deleteMany({ where: { id: { in: [noor.id, theo.id] } } });
+    await prisma.planner.deleteMany({ where: { id: { in: [noorJournal, theoJournal, copy.plannerId] } } });
+  }
+
+  // IN TURNS, AND THE CARD KEEPS ITS PLACE (review, 2026-11-04). Six
+  // clients, more than one request's worth, onto a second copy, from
+  // Templates opened with nothing asked for, where the card opens on the
+  // newest template with no clients: each request moves a few, and when the
+  // last comes back the card still shows that template, not the one it would
+  // open on now. Before anything moves it says the assistant's changes to it
+  // stop being undoable, and that the address for adding clients still starts
+  // them on the first template. The clients and copies made here go again.
+  {
+    const { buildClientJournal, copyAsTemplate, moveClientsTo, updateClientJournal } = await import("../src/lib/businessJournals");
+    const { recordedChange } = await import("../src/lib/connector/journalRuns");
+    const first = await copyAsTemplate(guest.ownerId, guest.journalId, "");
+    const second = await copyAsTemplate(guest.ownerId, guest.journalId, "");
+    const titles = await prisma.planner.findMany({ where: { id: { in: [first.plannerId, second.plannerId] } }, select: { id: true, title: true } });
+    const titleOf = (id: string) => titles.find((t) => t.id === id)?.title;
+    say(titleOf(first.plannerId) === "Clarity Quarterly (copy)" && titleOf(second.plannerId) === "Clarity Quarterly (copy 2)", `TWO COPIES OF ONE TEMPLATE ARE TOLD APART: "${titleOf(first.plannerId)}", "${titleOf(second.plannerId)}"`);
+    await recordedChange(second.plannerId, "Changed a heading", async () => {});
+    const six = await Promise.all(["Ada", "Bo", "Cy", "Di", "Ed", "Flo"].map((name) => prisma.businessClient.create({ data: { businessId: business!.id, name: `${name} Six`, templateId: template!.id } })));
+    await makeIntakeToken(business!.id);
+    let actions = 0;
+    const countActions = (request: { method: () => string; headers: () => Record<string, string> }) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) actions++;
+    };
+    await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
+    const card = tab.locator("#move");
+    await card.waitFor();
+    await tab.waitForTimeout(400);
+    say((await card.getByLabel("Move to").inputValue()) === second.templateId, "with nothing asked for, the card opens on the newest template with no clients");
+    for (const c of six) await card.getByRole("checkbox", { name: new RegExp(c.name) }).check();
+    say((await card.locator("[data-move-assistant]").count()) === 1, "IT SAYS THE ASSISTANT'S CHANGES TO IT CAN'T BE UNDONE ONCE CLIENTS ARE ON IT, before anything moves");
+    say((await card.locator("[data-move-intake]").filter({ hasText: "still start on Clarity Quarterly, your first template" }).count()) === 1, "AND THAT CLIENTS ADDED THROUGH THE ADDRESS STILL START ON THE FIRST TEMPLATE");
+    tab.on("request", countActions);
+    await card.getByRole("button", { name: /^Move 6 clients to Clarity Quarterly \(copy 2\)$/ }).click();
+    const sixToast = tab.getByRole("status").filter({ hasText: "6 clients moved to Clarity Quarterly (copy 2)" });
+    const toasted = await sixToast.waitFor({ timeout: 90_000 }).then(() => true, () => false);
+    tab.off("request", countActions);
+    await tab.waitForTimeout(800);
+    const sixAfter = await prisma.businessClient.count({ where: { id: { in: six.map((c) => c.id) }, templateId: second.templateId } });
+    say(toasted && sixAfter === 6 && actions === 2, `SIX ARE MOVED IN TURNS: ${actions} requests, ${sixAfter} on the copy`);
+    say((await card.getByLabel("Move to").inputValue()) === second.templateId && (await card.getByRole("checkbox", { name: /Six/ }).count()) === 0, "AND THE CARD KEEPS ITS PLACE AS THE PAGE COMES BACK: still on the copy they went to");
+    await turnOffIntake(business!.id);
+
+    // A MOVE CUT OFF HALFWAY HEALS (review, 2026-11-04): a client whose row
+    // names the copy over a journal of the first template's pages, as a move
+    // cut off between writing the row and rebuilding once left one. The copy's
+    // Update (Templates, updateClientJournal) puts only the copy's pages in it.
+    const half = await prisma.businessClient.create({ data: { businessId: business!.id, name: "Half Moved", templateId: template!.id } });
+    const halfJournal = await buildClientJournal(guest.ownerId, half.id);
+    await prisma.businessClient.update({ where: { id: half.id }, data: { templateId: first.templateId } });
+    await updateClientJournal(guest.ownerId, half.id);
+    const halfPages = await prisma.page.findMany({ where: { plannerId: halfJournal }, include: { savedPage: { select: { sourceKey: true } } } });
+    const firstPages = await prisma.page.count({ where: { plannerId: first.plannerId } });
+    say(
+      !halfPages.some((p) => p.savedPage?.sourceKey === `template:${guest.journalId}`) && halfPages.length === firstPages,
+      `A MOVE CUT OFF HALFWAY HEALS AT THE NEXT UPDATE: the first template's pages go, ${halfPages.length} pages for the copy's ${firstPages}`
+    );
+    // AND THE ROW AND THE JOURNAL MOVE TOGETHER (review, 2026-11-04): watched
+    // all through a move, the row never names the copy while the journal
+    // still has the first template's pages.
+    const together = await prisma.businessClient.create({ data: { businessId: business!.id, name: "Together", templateId: template!.id } });
+    const togetherJournal = await buildClientJournal(guest.ownerId, together.id);
+    let apart = 0;
+    let looks = 0;
+    let watching = true;
+    const watch = (async () => {
+      while (watching) {
+        looks++;
+        const row = await prisma.businessClient.findUniqueOrThrow({ where: { id: together.id }, select: { templateId: true } });
+        if (row.templateId !== second.templateId) continue;
+        if ((await prisma.page.count({ where: { plannerId: togetherJournal, savedPage: { sourceKey: `template:${guest.journalId}` } } })) > 0) apart++;
+      }
+    })();
+    const togetherMoved = await moveClientsTo(guest.ownerId, second.templateId, [together.id]);
+    watching = false;
+    await watch;
+    say(togetherMoved.moved.length === 1 && apart === 0, `THE ROW AND THE JOURNAL MOVE TOGETHER: in ${looks} looks during a move, the row never named the copy over the old pages (${apart} times it did)`);
+    await prisma.businessClient.deleteMany({ where: { id: { in: [...six.map((c) => c.id), half.id, together.id] } } });
+    await prisma.planner.deleteMany({ where: { id: { in: [halfJournal, togetherJournal, first.plannerId, second.plannerId] } } });
+  }
 
   // CLIENTS WITHOUT TYPING (2026-10-30, clientIntake.ts): a spreadsheet, and
   // the web address other tools post to. The clients made here are taken

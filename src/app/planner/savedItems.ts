@@ -118,8 +118,13 @@ export function cleanSavedName(raw: unknown, fallback: string): string {
 const MODULES_WITH_TYPE = { moduleInstances: { include: { moduleType: { select: { slug: true } } } } } as const;
 
 type InstanceWithSlug = Prisma.ModuleInstanceGetPayload<{ include: { moduleType: { select: { slug: true } } } }>;
+/** What a slot is made from: a module row, or a stored copy of one with its
+ *  type's slug (undo, connector/journalRuns.ts). */
+type SlotSource = Pick<InstanceWithSlug, "placementMode" | "locked" | "x" | "y" | "width" | "height" | "columnStart" | "rowStart" | "columnSpan" | "rowSpan" | "zIndex" | "propValues" | "savedModuleId"> & {
+  moduleType: { slug: string };
+};
 
-function slotOf(instance: InstanceWithSlug): ModuleSlot {
+function slotOf(instance: SlotSource): ModuleSlot {
   return {
     slug: instance.moduleType.slug,
     placementMode: instance.placementMode,
@@ -140,7 +145,7 @@ function slotOf(instance: InstanceWithSlug): ModuleSlot {
 
 /** A page's modules as slots, in a stable order - so two copies compare
  *  equal when they hold the same thing, whatever order the rows came in. */
-function slotsOf(instances: InstanceWithSlug[]): ModuleSlot[] {
+export function slotsOf(instances: SlotSource[]): ModuleSlot[] {
   return instances
     .map(slotOf)
     .sort(
@@ -152,7 +157,7 @@ function slotsOf(instances: InstanceWithSlug[]): ModuleSlot[] {
     );
 }
 
-function contentOf(json: Prisma.JsonValue): SavedPageContent {
+export function contentOf(json: Prisma.JsonValue): SavedPageContent {
   const pages = (json as { pages?: unknown } | null)?.pages;
   return { pages: Array.isArray(pages) ? (pages as ModuleSlot[][]) : [] };
 }
@@ -164,7 +169,7 @@ function contentOf(json: Prisma.JsonValue): SavedPageContent {
  * same owner's - content written before a saved module was deleted still
  * names it, and the link must not outlive the thing it links to.
  */
-async function writeSlots(db: Db, pageId: string, ownerId: string, slots: ModuleSlot[]): Promise<void> {
+export async function writeSlots(db: Db, pageId: string, ownerId: string, slots: ModuleSlot[]): Promise<void> {
   const slugs = [...new Set(slots.map((slot) => slot.slug))];
   const types = await db.moduleType.findMany({ where: { slug: { in: slugs } }, select: { id: true, slug: true } });
   const typeId = new Map(types.map((type) => [type.slug, type.id]));

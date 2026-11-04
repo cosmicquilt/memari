@@ -7,6 +7,7 @@
 //
 // SERVER-ONLY.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
@@ -15,10 +16,27 @@ import { markClaimed } from "@/lib/businessClaim";
 
 export type Owner = { id: string; guest: boolean };
 
+// A PERSON'S OWN ASSISTANT, CONNECTED (2026-11-02, src/lib/connector): it
+// arrives with an OAuth token instead of a session, and asks for the same
+// actions the editor does. Everything it touches asks here who is asking, so
+// the token's owner is held for the length of that one tool call - and every
+// action's ownership checks then hold for it, with no second list of them.
+// Nothing in a browser can reach this: only the connector's token check calls
+// it, and this is not a "use server" file.
+const connected = new AsyncLocalStorage<Owner>();
+
+/** Run `work` as the account `userId`, whose token has already been checked.
+ *  Always an account: a guest has no way to connect. */
+export function asConnectedOwner<T>(userId: string, work: () => Promise<T>): Promise<T> {
+  return connected.run({ id: userId, guest: false }, work);
+}
+
 /** The signed-in person, else a guest with a valid cookie, else null. A
  *  signed-in person always wins: a guest cookie left in the browser does not
  *  turn an account into a guest. */
 export async function currentOwner(): Promise<Owner | null> {
+  const acting = connected.getStore();
+  if (acting) return acting;
   const { userId } = await auth();
   if (userId) return { id: userId, guest: false };
   const guestId = guestIdFromCookie((await cookies()).get(GUEST_COOKIE)?.value);

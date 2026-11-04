@@ -19,7 +19,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { BOOK_MONTHS, shippableAddress } from "@/lib/business";
-import { formerTemplateOf, updateClientJournal } from "@/lib/businessJournals";
+import { moveClientJournal } from "@/lib/businessJournals";
 import { keyOf } from "@/lib/clientIntake";
 import { COUNTRY_CODES } from "@/lib/print/countries";
 
@@ -135,17 +135,16 @@ type Moved = { added: number; joined: number; problems: string[] };
 
 /** Their journals onto the group's template, for those whose journal was
  *  built from another - rebuilt from it, their own pages kept, as moving one
- *  client does (actions.ts saveClient). One that will not move goes back to
- *  its template, and is named. */
+ *  client does (businessJournals.ts moveClientJournal). One that will not
+ *  move goes back to its template, and is named. */
 async function moveJournals(ownerId: string, groupTemplateId: string | null, people: Array<{ id: string; name: string; plannerId: string | null; templateId: string | null; template: { plannerId: string } | null }>): Promise<string[]> {
   const problems: string[] = [];
   if (!groupTemplateId) return problems;
   for (const c of people) {
     if (!c.plannerId || c.templateId === groupTemplateId) continue;
     try {
-      await updateClientJournal(ownerId, c.id, { leaving: c.template?.plannerId ?? (await formerTemplateOf(c.plannerId)) });
+      await moveClientJournal(ownerId, c, groupTemplateId);
     } catch (error) {
-      await prisma.businessClient.update({ where: { id: c.id }, data: { templateId: c.templateId } });
       problems.push(`${c.name}'s journal stayed on its template: ${error instanceof Error ? error.message : "it could not be moved"}`);
     }
   }
@@ -195,7 +194,14 @@ export async function createGroup(ownerId: string, businessId: string, details: 
 }
 
 /** The group's settings changed: written onto each of its people, whose
- *  journals move with a new template. */
+ *  journals move with a new template.
+ *
+ *  ONLY A NEW TEMPLATE MOVES THEM (review, 2026-11-04). Written on everyone
+ *  at every save, a group's template took back whoever the coach had moved
+ *  onto another one since (Templates, MoveClients.tsx): a save to change a
+ *  start date rebuilt their journals from the old template without a word,
+ *  and what was written on the new one's pages for each of them went. So a
+ *  save that keeps the group's template leaves each on theirs. */
 export async function saveGroupDetails(ownerId: string, businessId: string, groupId: string, details: GroupDetails): Promise<{ problems: string[] } | { error: string }> {
   const group = await prisma.businessGroup.findFirst({ where: { id: groupId, businessId } });
   if (!group) return { error: "That group is not one of yours." };
@@ -206,8 +212,9 @@ export async function saveGroupDetails(ownerId: string, businessId: string, grou
     where: { groupId, businessId, archivedAt: null },
     select: { id: true, name: true, plannerId: true, templateId: true, template: { select: { plannerId: true } } },
   });
-  if (people.length) await prisma.businessClient.updateMany({ where: { groupId, businessId, archivedAt: null }, data: onEach(details) });
-  return { problems: await moveJournals(ownerId, details.templateId, people) };
+  const newTemplate = details.templateId !== group.templateId;
+  if (people.length) await prisma.businessClient.updateMany({ where: { groupId, businessId, archivedAt: null }, data: onEach({ ...details, templateId: newTemplate ? details.templateId : null }) });
+  return { problems: newTemplate ? await moveJournals(ownerId, details.templateId, people) : [] };
 }
 
 /** Out of the group: they stay a client, with its settings. */
