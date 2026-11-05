@@ -11,7 +11,7 @@
 // no hero, so they ask for it `solid`: the bar from the first frame.
 //
 // What it links to is the site map (siteMap.ts, 2026-10-26): a Layouts
-// menu, Covers, How it works and Help, "For coaches" beside Sign in. The
+// menu, Covers, How it works and Help, "For businesses" beside Sign in. The
 // Layouts menu opens on a CLICK, never a hover - hover is unreliable on
 // Andrew's touchscreen laptop (memari-pointer-not-media) and NN/g's 2024
 // menu checklist says the same - and closes on Escape, a click outside,

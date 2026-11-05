@@ -92,6 +92,9 @@
   outline: 2px solid transparent;
   outline-offset: -1px;
   transition: outline-color 120ms ease-out, background 120ms ease-out;
+  /* its Save and its mark are sized to it (2026-11-04: on a module one row
+     tall the 30px pill overflowed it in the previews) */
+  container-type: size;
 }
 
 .region:hover,
@@ -132,6 +135,30 @@
   background: #4a5cff;
 }
 
+/* A short or narrow module - one row, a strip, a small box - keeps its Save
+   inside it: never taller than the module (less a hair), never wider; the
+   word goes first, then the bookmark shrinks with the module. */
+.regionButton {
+  max-height: calc(100cqh - 2px);
+  max-width: calc(100cqw - 2px);
+}
+
+.regionButton svg {
+  flex: none;
+  width: min(14px, calc(100cqh - 8px));
+  height: auto;
+}
+
+@container (max-height: 26px) or (max-width: 76px) {
+  .regionButton {
+    gap: 0;
+    padding: 0 min(8px, 20cqh);
+  }
+  .regionButton span {
+    display: none;
+  }
+}
+
 /* Once saved, a small mark in the corner, hovered or not. */
 .regionMark {
   position: absolute;
@@ -145,6 +172,19 @@
   background: #4a5cff;
   color: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+@container (max-height: 30px) {
+  .regionMark {
+    top: 1px;
+    right: 1px;
+    width: calc(100cqh - 2px);
+    height: calc(100cqh - 2px);
+  }
+  .regionMark svg {
+    width: 60%;
+    height: auto;
+  }
 }
 
 /* No hover on a touch screen: a tap on a module brings its Save up (the

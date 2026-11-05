@@ -3,7 +3,7 @@
 // disagree again - the modules, the planners and the coach side had gone
 // missing from both header and footer because each kept its own list.
 // Andrew chose the header (option A): a Layouts menu, Covers, How it works
-// and Help, "For coaches" quiet beside Sign in, and Pricing in the footer
+// and Help, "For businesses" quiet beside Sign in, and Pricing in the footer
 // only ("i also don't want pricing"). The proposal and its research:
 // https://claude.ai/artifact/ChVzfVCh2ru5wBRwNz7GpV
 //
@@ -57,8 +57,10 @@ export const HEADER_LINKS: SiteLink[] = [
 ];
 
 /** Quiet, beside Sign in: the existing start page for now; a public page
- *  for coaches is the proposal's phase 2. */
-export const FOR_COACHES: SiteLink = { href: "/app/business", label: "For coaches" };
+ *  for coaches is the proposal's phase 2. Named for the side itself,
+ *  memari. for businesses (2026-11-04: "i like for businesses better than
+ *  for coaches"); coaches are who it is for first. */
+export const FOR_COACHES: SiteLink = { href: "/app/business", label: "For businesses" };
 
 /** Which header item a page belongs to: Layouts stays lit on a layout's
  *  page, a planner shelf and a module's page. "How it works" is a section
