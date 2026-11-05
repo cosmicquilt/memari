@@ -26,6 +26,7 @@ import { coverById } from "@/app/covers/catalogue";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
 import { whenArrived } from "./arrival";
 import styles from "./coverCarousel.module.css";
+import landing from "./landing.module.css";
 
 type Cover = { id: string; name: string; photo: string };
 
@@ -75,6 +76,13 @@ function sizes(n: number): ("big" | "small")[] {
   }
   return units.flatMap((u) => ["big", ...Array(u - 1).fill("small")] as ("big" | "small")[]);
 }
+
+/** How many covers, from the strip's start, can be on the first screen (a
+ *  wide screen shows about this many). */
+const FIRST_SCREEN_COVERS = 9;
+
+/** The longest the covers wait for the doodle wall before being fetched. */
+const WARM_AFTER_MS = 6000;
 
 /** Every cover in `track` fetched and decoded, once the page is idle; the
  *  returned function calls it off. */
@@ -142,14 +150,35 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
   // drop. try to omptimize"). And not before the page has arrived (the
   // curtain, arrival.ts): 58 of them were coming down on a phone with the
   // first screen's doodles, and held them up by seconds (2026-11-04).
+  // Nor before the doodle wall is laid out (or WARM_AFTER_MS have passed):
+  // the curtain no longer waits for the wall on a slow phone, and the covers
+  // fetched as it lifted queued its drawings behind them - laid out at 6.3 s
+  // instead of 2.9 (measured 2026-11-04).
   useEffect(() => {
     let live = true;
     let cancel = () => {};
+    let watching: MutationObserver | null = null;
+    let fallback = 0;
     void whenArrived().then(() => {
-      if (live) cancel = warmWhenIdle(track.current);
+      if (!live) return;
+      const page = track.current?.closest(`.${landing.page}`) ?? null;
+      let started = false;
+      const warm = () => {
+        if (started || !live) return;
+        started = true;
+        watching?.disconnect();
+        window.clearTimeout(fallback);
+        cancel = warmWhenIdle(track.current);
+      };
+      if (!page || page.hasAttribute("data-wall-ready")) return warm();
+      watching = new MutationObserver(() => page.hasAttribute("data-wall-ready") && warm());
+      watching.observe(page, { attributes: true, attributeFilter: ["data-wall-ready"] });
+      fallback = window.setTimeout(warm, WARM_AFTER_MS);
     });
     return () => {
       live = false;
+      watching?.disconnect();
+      window.clearTimeout(fallback);
       cancel();
     };
   }, [order]);
@@ -192,7 +221,11 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
                       alt={copy === 1 ? "" : `A notebook with the ${coverById(c.id)?.name ?? c.name} cover`}
                       width={640}
                       height={640}
-                      loading="lazy"
+                      // the first few are on the first screen, and the curtain
+                      // waits for them (arrival.ts): asked for at once, ahead
+                      // of the doodle wall's drawings; the rest later
+                      loading={copy === 0 && i < FIRST_SCREEN_COVERS ? "eager" : "lazy"}
+                      fetchPriority={copy === 0 && i < FIRST_SCREEN_COVERS ? "high" : "low"}
                       decoding="async"
                       draggable={false}
                     />

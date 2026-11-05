@@ -96,7 +96,11 @@ const load = (src: string) => {
  *  no hero, and start the drawings straight away. */
 export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
   // in the page's head, with the paper's photos
-  for (const full of choices.body ?? choices.wall) preload(`/landing/doodles/${full}.webp`, { as: "image" });
+  // Low: behind what the first screen shows (the curtain waits for that;
+  // 2026-11-04, on a phone the otter's three small drawings came in 2.4 s
+  // late, queued behind these 104 - the wall itself waits for the page's
+  // script anyway).
+  for (const full of choices.body ?? choices.wall) preload(`/landing/doodles/${full}.webp`, { as: "image", fetchPriority: "low" });
   const layer = useRef<HTMLDivElement>(null);
   // The first layout done, and the wall's paper baked (or none wanted):
   // then the page's paper and the drawings show, together.
@@ -115,6 +119,11 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     wallDone.current();
   }, [packedOnce, bakedOnce]);
   const [placed, setPlaced] = useState<Placed[]>([]);
+  // Laid out first after the page's curtain had lifted without it (a slow
+  // phone): the drawings fade in (.bodyDoodles[data-late]) rather than
+  // appear at once.
+  const [late, setLate] = useState(false);
+  const placedOnce = useRef(false);
   // What is on the page now, for a pack that keeps what still fits.
   const current = useRef<Placed[]>([]);
   // Where the page's blocks were when it was packed: a drawing travels with
@@ -235,6 +244,10 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       });
       if (out && mine === run) {
         current.current = out;
+        if (!placedOnce.current) {
+          placedOnce.current = true;
+          setLate(hasArrived());
+        }
         setPlaced(out);
         setPackedOnce(true);
       }
@@ -248,13 +261,10 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
     const start = () => {
       if (started) return;
       started = true;
-      const go = () => void pack();
-      // Under the page's curtain (arrival.ts) nothing can be seen to stutter,
-      // and the curtain is waiting for this: at once. After it, in a quiet
-      // moment, as ever.
-      if (!hasArrived()) setTimeout(go, 0);
-      else if ("requestIdleCallback" in window) window.requestIdleCallback(go, { timeout: 500 });
-      else setTimeout(go, 100);
+      // At once: the page's curtain may be waiting for it (arrival.ts), and
+      // if it has lifted already the drawings are late (a quiet moment was
+      // waited for until 2026-11-04, up to half a second).
+      setTimeout(() => void pack(), 0);
     };
     void (document.fonts?.ready ?? Promise.resolve()).then(start);
 
@@ -303,6 +313,7 @@ export function BodyDoodles({ band: bandOverride }: { band?: number } = {}) {
       ref={layer}
       className={styles.bodyDoodles}
       aria-hidden="true"
+      data-late={late ? "" : undefined}
       data-paper={paper ? "" : undefined}
       style={paper ? ({ "--wall-paper": `url(${paper}) 0 0 / ${WALL_PAPER_TILE}px ${WALL_PAPER_TILE}px` } as CSSProperties) : undefined}
     >

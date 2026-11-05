@@ -4,6 +4,7 @@ import { sans } from "./landing/sansFont";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { VIEWPORT_GUARD_SCRIPT } from "@/lib/viewportCookie";
+import { ARRIVAL_SCRIPT } from "./landing/arrivalScript";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -89,14 +90,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} ${hankenGrotesk.variable} ${almarai.variable} ${sans.variable} h-full antialiased`}
-        // VIEWPORT_GUARD_SCRIPT may set an attribute here before React
-        // hydrates. Suppresses the warning for this one element only.
+        // VIEWPORT_GUARD_SCRIPT and ARRIVAL_SCRIPT may set attributes here
+        // before React hydrates. Suppresses the warning for this one element
+        // only.
         suppressHydrationWarning
       >
         <head>
           {/* Before anything paints: was this page rendered for this
               window's size? See src/lib/viewportCookie.ts. */}
           <script dangerouslySetInnerHTML={{ __html: VIEWPORT_GUARD_SCRIPT }} />
+          {/* A site page's curtain lifted as soon as its first screen has
+              come, not once its script has started (arrivalScript.ts). Does
+              nothing on a page without one. */}
+          <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
         </head>
         <body className="min-h-full flex flex-col">{children}</body>
       </html>

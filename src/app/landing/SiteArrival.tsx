@@ -7,19 +7,28 @@
 // content, and on the landing page reads as well on the curtain's dark as on
 // the hero.
 //
-// It waits for:
+// What it waits for:
 // - every picture on the first screen and a little below it: <img> and SVG
 //   <image> elements laid out there (the hero's frame and sheets, the torn
 //   edge, the otter, the covers in view), found on the page rather than
 //   listed, so a picture added later is waited for too;
 // - the paper's photos, which are backgrounds (the page's --*-img variables,
 //   as pageVars sets them) and `pictures`, the backgrounds a part names;
-// - what the page's parts hold it for (holdArrival: the doodle wall laid out);
-// - the type.
-// Never longer than LONGEST_MS from the page's start (or from arriving on
-// it from another page): then it lifts on whatever has come, and the rest
-// comes in as it would have. Without script the same, by CSS alone
+// - the type;
+// - and then, for at most a grace more, the doodle wall laid out. The wall
+//   is the one part that waits for the page's script, and on a phone it was
+//   the whole wait (2026-11-04, on his iPhone: "take a long time to load").
+//   Past the grace the curtain lifts with the paper there and the drawings
+//   fade in as they are laid out (BodyDoodles, data-late).
+// Never longer than the limit; without script, the same by CSS alone
 // (.curtain's animation).
+//
+// WHO LIFTS IT. On a page's first load, the head's script (arrivalScript.ts),
+// as soon as its first screen has come - before hydration, which on a phone
+// is long after; this follows it (data-site-arrived on <html>). On a page
+// reached by a click inside the site the head's script does not run again,
+// so this does the same looking itself (holdArrival is how the wall says it
+// is ready here; there, by its data-wall-ready).
 //
 // Rendered FIRST on the page: the page's HTML streams in and is painted as
 // it comes, so a curtain at the end arrived after everything it was to
@@ -28,17 +37,10 @@
 // microtask: after every part's effects in the same commit have run and
 // taken their holds).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { markArrived, resetArrival, takeHolds } from "./arrival";
+import { ARRIVAL_LONGEST_MS, ARRIVAL_WALL_GRACE_MS } from "./arrivalScript";
 import styles from "./landing.module.css";
-
-/** The longest the curtain waits, ms from the page's start. In step with
- *  .curtain's animation, which lifts it without script. Measured on a
- *  production build (2026-11-04), with nothing slowed but the processor (1.5
- *  times): the doodle wall ready at 2.5-2.7 s, the curtain lifting at
- *  2.7-2.9 s; the wall is the last to come, as it waits for the page's
- *  script. */
-const LONGEST_MS = 3500;
 
 /** Arriving from another of the site's pages, whose nav is already there to
  *  answer the click: never this long. Its paper and doodles are in hand
@@ -49,6 +51,12 @@ const LONGEST_AFTER_NAV_MS = 1200;
  *  height again by this. */
 const BELOW = 0.25;
 
+/** The curtain's fade (.curtain[data-lifted]), and a little over: then it
+ *  is taken off the page. */
+const GONE_AFTER_MS = 600;
+
+/** No curtain has lifted yet in this document: this is the page it was
+ *  loaded with, whose curtain the head's script lifts. */
 let firstPage = true;
 
 function decoded(src: string): Promise<unknown> {
@@ -90,11 +98,20 @@ export function SiteArrival({ ground = "cream", pictures = [] }: { ground?: "cre
   const [lifted, setLifted] = useState(false);
   const [gone, setGone] = useState(false);
 
+  // A page reached by a click: the last page's lifting is still on <html>,
+  // and would lift this curtain before it was ever seen. Taken off before
+  // this page is painted.
+  useLayoutEffect(() => {
+    if (!firstPage) document.documentElement.removeAttribute("data-site-arrived");
+  }, []);
+
   useEffect(() => {
     const el = curtain.current;
     const page = el?.parentElement;
     if (!el || !page) return;
+    const html = document.documentElement;
     let done = false;
+    let goneTimer = 0;
     const lift = () => {
       if (done) return;
       done = true;
@@ -103,35 +120,58 @@ export function SiteArrival({ ground = "cream", pictures = [] }: { ground?: "cre
       // development, and the second took itself for a later page (found by
       // check:arrival).
       firstPage = false;
+      // the paper shows from now, with or without the doodle wall
+      // (landing.module.css); and the curtain, if this is the one lifting it
+      page.setAttribute("data-arrived", "");
+      html.setAttribute("data-site-arrived", "");
       markArrived();
       setLifted(true);
+      goneTimer = window.setTimeout(() => setGone(true), GONE_AFTER_MS);
     };
-    // On the page's first load the wait began with the page; arriving from
-    // another page, it begins now.
-    // check:arrival waits longer, to see what the curtain waits for rather
+    // check:arrival can wait longer, to see what the curtain waits for rather
     // than how fast the machine running it is
-    const longest = (window as { __arrivalLongestMs?: number }).__arrivalLongestMs ?? LONGEST_MS;
-    const left = firstPage ? Math.max(0, longest - performance.now()) : Math.min(longest, LONGEST_AFTER_NAV_MS);
-    const timer = window.setTimeout(lift, left);
+    const hooks = window as { __arrivalLongestMs?: number; __arrivalWallGraceMs?: number };
+    const longest = hooks.__arrivalLongestMs ?? ARRIVAL_LONGEST_MS;
+    const grace = hooks.__arrivalWallGraceMs ?? ARRIVAL_WALL_GRACE_MS;
+
+    if (firstPage) {
+      // The head's script lifts it (arrivalScript.ts): follow. Its own limit
+      // stands behind this one.
+      const timer = window.setTimeout(lift, Math.max(0, longest - performance.now()));
+      const follow = new MutationObserver(() => html.hasAttribute("data-site-arrived") && lift());
+      follow.observe(html, { attributes: true, attributeFilter: ["data-site-arrived"] });
+      if (html.hasAttribute("data-site-arrived")) lift();
+      // the parts' holds are the head script's business here, by the page's
+      // attributes; not left waiting for a later page
+      void Promise.resolve().then(takeHolds);
+      return () => {
+        done = true;
+        follow.disconnect();
+        window.clearTimeout(timer);
+        window.clearTimeout(goneTimer);
+        resetArrival();
+      };
+    }
+
+    const timer = window.setTimeout(lift, Math.min(longest, LONGEST_AFTER_NAV_MS));
     // once the rest of the page's effects have run (see the top)
     void Promise.resolve().then(() => {
       if (done) return;
       const fonts = document.fonts?.ready ?? Promise.resolve();
-      return Promise.all([
-        ...takeHolds(),
-        ...picturesInView(page),
-        ...[...paperPictures(page), ...pictures].map(decoded),
-        fonts,
-      ]).then(() => {
-        // drawn under the curtain before it goes: a frame for the pictures
-        // to be painted, another for the wall's own fade to have settled at
-        // once
-        requestAnimationFrame(() => requestAnimationFrame(lift));
-      });
+      const held = Promise.all(takeHolds());
+      return Promise.all([...picturesInView(page), ...[...paperPictures(page), ...pictures].map(decoded), fonts])
+        .then(() => Promise.race([held, new Promise((r) => window.setTimeout(r, grace))]))
+        .then(() => {
+          // drawn under the curtain before it goes: a frame for the pictures
+          // to be painted, another for the wall's own fade to have settled
+          // at once
+          requestAnimationFrame(() => requestAnimationFrame(lift));
+        });
     });
     return () => {
       done = true;
       window.clearTimeout(timer);
+      window.clearTimeout(goneTimer);
       resetArrival();
     };
     // the pictures are the page's, fixed for it
@@ -145,10 +185,10 @@ export function SiteArrival({ ground = "cream", pictures = [] }: { ground?: "cre
       className={styles.curtain}
       data-curtain=""
       data-ground={ground}
+      // for the head's script, which has no props to read (arrivalScript.ts)
+      data-pictures={pictures.join(" ") || undefined}
       data-lifted={lifted ? "" : undefined}
       aria-hidden="true"
-      onTransitionEnd={(e) => e.target === e.currentTarget && lifted && setGone(true)}
-      onAnimationEnd={(e) => e.target === e.currentTarget && setGone(true)}
     />
   );
 }

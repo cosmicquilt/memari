@@ -31,6 +31,7 @@
 // a colour matrix, the drawn rip's colours computed.
 
 import { useEffect, useState } from "react";
+import { preload } from "react-dom";
 import { TORN_HEIGHT, TORN_LENGTH, tornHalf } from "./tornEdgeShape";
 import { bodyWallSettings, creamLineMatrix, onBodyWallSettings, onCreamLine, type BodyWallSettings } from "./bodyWall";
 import flow from "./tornFlow.json";
@@ -55,6 +56,9 @@ type FlowKey = keyof typeof flow;
 
 export function TornEdge() {
   const [s, setS] = useState<BodyWallSettings>(bodyWallSettings());
+  // On the first screen, and the curtain waits for it (arrival.ts): asked
+  // for first, not after the doodle wall's drawings (2026-11-04).
+  if (s.tornEdge !== "none" && s.tornEdge !== "drawn") preload(flow[s.tornEdge].src, { as: "image", fetchPriority: "high" });
   useEffect(() => {
     const off = onBodyWallSettings(() => setS(bodyWallSettings()));
     return () => void off();

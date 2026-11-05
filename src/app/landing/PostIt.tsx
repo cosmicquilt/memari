@@ -28,6 +28,7 @@
 // the last one ill make a new one in flow eventually" (2026-10-06).
 
 import { useEffect, useRef, useState } from "react";
+import { preload } from "react-dom";
 import otters from "../../../public/landing/otter/otters.json";
 import flat from "./postitFlat.json";
 import { loadPicture, paintPicture } from "./video/canvasPicture";
@@ -88,6 +89,10 @@ const LINE_Y = FREE_H - (GAP * 100) / Math.cos((LIFT * Math.PI) / 180);
 const FLAT = 36;
 
 export function PostIt() {
+  // On the first screen, and the curtain waits for them (arrival.ts): asked
+  // for first, not after the doodle wall's drawings (2026-11-04).
+  for (const o of DRAWN) preload(`/landing/otter/${o}.webp`, { as: "image", fetchPriority: "high" });
+  preload("/landing/paper.jpg", { as: "image", fetchPriority: "high" });
   const [over, setOver] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [rest, setRest] = useState(0);

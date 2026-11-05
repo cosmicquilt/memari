@@ -16,11 +16,16 @@
 //   this machine is; on the 390 phone the hero's photo, the torn edge and
 //   the covers are held back past the wall, on the 360 phone the paper's
 //   photos, so each is what it waits on there;
+//   (the wall's grace is stretched for these runs too);
+// - and does NOT hold the page for a late wall: a run with the wall's
+//   drawings held back 4 s and the real grace kept (a slow phone) must lift
+//   before the wall, with the paper showing, and the drawings fade in;
 // - lifts at all;
 // - and the hero's first layout begins only after it has lifted.
 //
 // THE PHONE'S HERO (landing.module.css, upright)
-// - the film covers the hero, unmasked, and the book fits across;
+// - the film covers the hero, unmasked, and the book fits across, with no
+//   grain over it;
 // - the hero is no taller than the film is there;
 // - the tagline ends above the book, the post-it begins below it;
 // - the desk beyond the frame is never fetched, and no still is drawn into a
@@ -55,6 +60,9 @@ const ok = (what: string) => seen.push(what);
  *  content, and the state of the page at the moment it lifts. */
 const WATCH = `(() => {
   window.__arrivalLongestMs = 60000;
+  // the wall's grace stretched too, to see the curtain wait for its holds -
+  // except where the late wall itself is checked
+  if (!window.__arrivalKeepGrace) window.__arrivalWallGraceMs = 60000;
   const out = (window.__arrival = { order: null, lift: null, layout: null, wallAt: null });
   const s = document.createElement("style");
   s.textContent = "[data-curtain]{animation:none!important} nextjs-portal{display:none!important}";
@@ -78,13 +86,16 @@ const WATCH = `(() => {
         if (!s.isConnected && document.head) document.head.append(s);
       }
       if (m.type === "attributes" && m.attributeName === "data-wall-ready" && out.wallAt === null) out.wallAt = performance.now();
-      if (m.type === "attributes" && m.attributeName === "data-lifted" && !out.lift) {
-        const page = m.target.parentElement;
-        out.lift = { at: performance.now(), pending: firstScreen(), fonts: document.fonts.status, wall: page.hasAttribute("data-wall-ready"), hasWall: !!page.querySelector("[class*=bodyDoodles]") };
+      // lifted: by the head's script on <html> (a page's first load), or on
+      // the curtain itself by SiteArrival (a page reached by a click)
+      if (m.type === "attributes" && (m.attributeName === "data-lifted" || m.attributeName === "data-site-arrived") && !out.lift && m.target.hasAttribute(m.attributeName)) {
+        const page = document.querySelector("[data-curtain]")?.parentElement;
+        if (!page) continue;
+        out.lift = { by: m.attributeName, at: performance.now(), pending: firstScreen(), fonts: document.fonts.status, wall: page.hasAttribute("data-wall-ready"), hasWall: !!page.querySelector("[class*=bodyDoodles]"), paper: getComputedStyle(page).getPropertyValue("--wall-shown").trim() };
       }
       if (m.type === "attributes" && m.attributeName === "style" && m.target.tagName === "CANVAS" && String(m.target.className).includes("videoDrawing") && m.target.style.opacity === "1" && out.layout === null) out.layout = performance.now();
     }
-  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-lifted", "style", "data-wall-ready"] });
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-lifted", "style", "data-wall-ready", "data-site-arrived"] });
 })()`;
 
 /** `slow`: pictures held back this long, so they come after the doodle wall
@@ -138,6 +149,7 @@ type Geometry = {
   postitTop: number;
   stills: number[];
   backdrop: boolean;
+  grain: string;
   sides: number;
   baked: boolean;
 };
@@ -160,6 +172,7 @@ const GEOMETRY = `(() => {
     postitTop: postit ? postit.top : NaN,
     stills: [...stage.querySelectorAll("canvas")].filter((c) => !String(c.className).includes("videoDrawing")).map((c) => c.width),
     backdrop: !!hero.querySelector('[class*="videoBackdrop"]'),
+    grain: getComputedStyle(hero.querySelector('[class*="grain"]')).display,
     sides: performance.getEntriesByType("resource").filter((e) => /hero-extend-/.test(e.name)).length,
     baked: hero.hasAttribute("data-baked"),
   };
@@ -174,6 +187,8 @@ function phoneHero(name: string, g: Geometry) {
   else ok(`${name}: the film covers the hero`);
   if (g.stage.mask && g.stage.mask !== "none") fail(`${name} hero`, `the film is masked (${g.stage.mask.slice(0, 60)}) - faded at its top and bottom`);
   if (g.backdrop) fail(`${name} hero`, "the blurred copy of the frame is back behind it");
+  if (g.grain !== "none") fail(`${name} hero`, "the grain is over it - on iOS its blend is not drawn, and it lies over the photo as grey speckle");
+  else ok(`${name}: no grain over the photo`);
   if (g.book.left < -0.5 || g.book.right > g.vw + 0.5) fail(`${name} hero`, `the book is cropped (${g.book.left.toFixed(0)}..${g.book.right.toFixed(0)} of ${g.vw})`);
   else ok(`${name}: the book fits across (${g.book.left.toFixed(0)}..${g.book.right.toFixed(0)})`);
   if (g.tagBottom > g.book.top - 4) fail(`${name} title`, `the tagline ends at ${g.tagBottom.toFixed(0)}, on the book (its top at ${g.book.top.toFixed(0)})`);
@@ -185,7 +200,73 @@ function phoneHero(name: string, g: Geometry) {
   else ok(`${name}: no still drawn into a canvas, no desk beyond the frame fetched`);
 }
 
+/** A slow phone, as on Andrew's iPhone (2026-11-04: "take a long time to
+ *  load"): the doodle wall's drawings held back well past everything else,
+ *  the curtain's real grace for the wall kept. The page must not wait on it:
+ *  the curtain lifts first, the paper shows when it does, and the drawings
+ *  fade in when laid out. */
+async function lateWall() {
+  const name = "phone 390, a late wall";
+  const context = await browser.newContext({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  await context.addInitScript(`window.__arrivalKeepGrace = true`);
+  await context.addInitScript(WATCH);
+  await context.route(/\/landing\/doodles\//, async (route) => {
+    await new Promise((r) => setTimeout(r, LATE_WALL_MS));
+    await route.continue().catch(() => {});
+  });
+  const tab = await context.newPage();
+  await tab.goto(server.base + "/", { waitUntil: "load" });
+  await tab.waitForFunction(() => document.querySelector('[class*="page"]')?.hasAttribute("data-wall-ready"), null, { timeout: 60000 }).catch(() => {});
+  // and the curtain lifted - after the wall, if it waited for it
+  await tab.waitForFunction(() => (window as unknown as { __arrival: { lift: unknown } }).__arrival.lift, null, { timeout: 10000 }).catch(() => {});
+  const a = (await tab.evaluate(`window.__arrival`)) as { lift: { at: number; wall: boolean; paper: string } | null; wallAt: number | null };
+  const late = await tab.evaluate(() => document.querySelector('[class*="bodyDoodles"]')?.hasAttribute("data-late") ?? false);
+  if (!a.lift) fail(`${name} curtain`, "it never lifted");
+  else if (a.lift.wall || (a.wallAt !== null && a.wallAt <= a.lift.at)) fail(`${name} curtain`, `it waited for the wall (lifted ${Math.round(a.lift.at)} ms, the wall at ${a.wallAt === null ? "?" : Math.round(a.wallAt)} ms) - the page sat covered for it`);
+  else {
+    ok(`${name}: the curtain lifted at ${Math.round(a.lift.at)} ms, without waiting for the wall (${a.wallAt === null ? "never laid out" : Math.round(a.wallAt) + " ms"})`);
+    if (a.lift.paper !== "1") fail(`${name} paper`, `it was still held back (--wall-shown ${a.lift.paper || "unset"}) when the curtain lifted`);
+    else ok(`${name}: the paper showed when the curtain lifted`);
+    if (a.wallAt === null) fail(`${name} wall`, "it was never laid out");
+    else if (!late) fail(`${name} wall`, "laid out after the curtain lifted, it appeared at once instead of fading in");
+    else ok(`${name}: the drawings faded in when laid out`);
+  }
+  await context.close();
+}
+
+/** How long the late wall's drawings are held back, ms. */
+const LATE_WALL_MS = 4000;
+
+/** A phone slow to start the page's script (2026-11-04, on his iPhone: the
+ *  curtain had waited for hydration): every script chunk held back, the
+ *  pictures not. The head's script (arrivalScript.ts) must lift the curtain
+ *  on the pictures alone, long before the page's script runs. */
+async function slowScript() {
+  const name = "phone 390, a slow script";
+  const context = await browser.newContext({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  await context.addInitScript(`window.__arrivalKeepGrace = true`);
+  await context.addInitScript(WATCH);
+  await context.route(/\/_next\/static\/chunks\/.*\.js/, async (route) => {
+    await new Promise((r) => setTimeout(r, SLOW_SCRIPT_MS));
+    await route.continue().catch(() => {});
+  });
+  const tab = await context.newPage();
+  await tab.goto(server.base + "/", { waitUntil: "commit" });
+  await tab.waitForFunction(() => (window as unknown as { __arrival: { lift: unknown } }).__arrival.lift, null, { timeout: 30000 }).catch(() => {});
+  const a = (await tab.evaluate(`window.__arrival`)) as { lift: { at: number; pending: string[] } | null };
+  if (!a.lift) fail(`${name} curtain`, "it never lifted");
+  else if (a.lift.at >= SLOW_SCRIPT_MS) fail(`${name} curtain`, `it lifted at ${Math.round(a.lift.at)} ms, after the page's script (held to ${SLOW_SCRIPT_MS} ms) - it waited for hydration`);
+  else if (a.lift.pending.length) fail(`${name} curtain`, `it lifted with ${a.lift.pending.length} picture(s) still coming: ${a.lift.pending.slice(0, 4).join(", ")}`);
+  else ok(`${name}: the curtain lifted at ${Math.round(a.lift.at)} ms on its pictures alone, before the page's script (held to ${SLOW_SCRIPT_MS} ms)`);
+  await context.close();
+}
+
+/** How long the page's script chunks are held back, ms. */
+const SLOW_SCRIPT_MS = 5000;
+
 try {
+  await slowScript();
+  await lateWall();
   for (const [name, w, h] of [
     ["phone 390", 390, 664],
     ["phone 360", 360, 640],

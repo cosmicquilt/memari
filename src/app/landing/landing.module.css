@@ -82,6 +82,32 @@
   transition: opacity 500ms ease-out;
 }
 
+/* The page arrived without its doodle wall (SiteArrival's grace ran out:
+   a slow phone, 2026-11-04): the paper shows with everything else, and the
+   drawings fade in when they are laid out (BodyDoodles marks such a wall
+   data-late). */
+.page[data-arrived]:not([data-wall-ready]),
+:root[data-site-arrived] .page:not([data-wall-ready]) {
+  --wall-shown: 1;
+  animation: none;
+}
+
+.bodyDoodles[data-late] {
+  animation: wallLate 600ms ease-out both;
+}
+
+@keyframes wallLate {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bodyDoodles[data-late] {
+    animation: none;
+  }
+}
+
 /* THE PAGE ARRIVES WHOLE (2026-11-04: "things load in at different times
    like doodles, paper texture, hero, etc."): the curtain over the content
    (SiteArrival.tsx, arrival.ts) until the first screen's pictures, paper,
@@ -92,7 +118,7 @@
    load and a screen more, not the whole page: on a phone a page-high
    layer would be tens of megabytes for nothing.
 
-   Without script it lifts anyway at 3.5 s, as SiteArrival does at the
+   Without script it lifts anyway at 2.5 s, as SiteArrival does at the
    latest. */
 .curtain {
   position: absolute;
@@ -103,7 +129,7 @@
   height: min(100%, 220svh);
   pointer-events: none;
   background: var(--paper);
-  animation: curtainAnyway 450ms ease-out 3.5s forwards;
+  animation: curtainAnyway 450ms ease-out 2.5s forwards;
 }
 
 .curtain[data-ground="hero"] {
@@ -111,7 +137,10 @@
   background: linear-gradient(to bottom, #24160d 0, #24160d var(--hero-h), var(--paper) var(--hero-h));
 }
 
-.curtain[data-lifted] {
+/* Lifted: by the head's script on a page's first load (data-site-arrived on
+   <html>, arrivalScript.ts), or by SiteArrival after a click. */
+.curtain[data-lifted],
+:root[data-site-arrived] .curtain {
   opacity: 0;
   transition: opacity 450ms ease-out;
   animation: none;
@@ -132,7 +161,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .curtain[data-lifted] {
+  .curtain[data-lifted],
+  :root[data-site-arrived] .curtain {
     transition: none;
   }
 }
@@ -1135,10 +1165,20 @@
   .titleOverFilm .tagline {
     font-size: var(--tag);
   }
-  /* The grain as fine against the photo as on a desktop's (there the frame
-     is shown about 1.7 times larger): 160px tiles there, 96 here. */
+  /* No grain (2026-11-04, on his iPhone after it was made finer: "still a
+     grainy overlay"). On iOS a blend between separately composited layers
+     is not drawn - Core Animation has no blend modes there - so the soft-light
+     noise lay over the photo as plain grey speckle; and a phone shows the
+     film's own grain at its own scale anyway. */
   .grain {
-    background-size: auto, 96px 96px;
+    display: none;
+  }
+}
+
+/* iOS on its side as well (every browser there is WebKit): see above. */
+@supports (-webkit-touch-callout: none) {
+  .grain {
+    display: none;
   }
 }
 
