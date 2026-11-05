@@ -116,6 +116,10 @@ function coldCovers() {
   return window.matchMedia("(max-aspect-ratio: 1/1)").matches || CSS.supports("-webkit-touch-callout", "none");
 }
 
+/** Where the covers are not warmed, the longest the strip waits after the
+ *  page's arrival for the doodle wall before it starts to drift, ms. */
+const DRIFT_AFTER_MS = 4000;
+
 /** How far past the screen's right edge the covers coming are fetched where
  *  they are not warmed, in screens: at the strip's pace, seconds ahead. */
 const AHEAD_SCREENS = 2;
@@ -190,7 +194,36 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
       live = false;
     };
   }, []);
-  const duration = arrived && width && speed > 0 ? width / speed : 0;
+  // Where the covers are not warmed (a phone, iOS), still a while longer:
+  // until the doodle wall is laid out, or DRIFT_AFTER_MS (2026-11-05, his
+  // iPhone: "layout faded in the carousel stops loading in new photos as it
+  // continues to move the last one cut off on the side then the doodles load
+  // in at the same time as the hero writing and the carousel starting
+  // working"). Those seconds are when the first layout's writing and the
+  // wall are made, and WebKit paints the strip's covers on that same thread:
+  // drifting, the strip ran off the end of what it had painted. It starts
+  // with them now - the wall is laid out as the writing begins.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!arrived) return;
+    let live = true;
+    let watching: MutationObserver | null = null;
+    let cap = 0;
+    const settle = () => live && setSettled(true);
+    const page = track.current?.closest(`.${landing.page}`) ?? null;
+    if (!coldCovers() || !page || page.hasAttribute("data-wall-ready")) queueMicrotask(settle);
+    else {
+      watching = new MutationObserver(() => page.hasAttribute("data-wall-ready") && settle());
+      watching.observe(page, { attributes: true, attributeFilter: ["data-wall-ready"] });
+      cap = window.setTimeout(settle, DRIFT_AFTER_MS);
+    }
+    return () => {
+      live = false;
+      watching?.disconnect();
+      window.clearTimeout(cap);
+    };
+  }, [arrived]);
+  const duration = arrived && settled && width && speed > 0 ? width / speed : 0;
 
   // Where they are not warmed: the covers coming fetched ahead, from when
   // the strip starts to move - not after the doodle wall, as the warming
