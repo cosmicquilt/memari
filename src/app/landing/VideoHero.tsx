@@ -443,7 +443,17 @@ export function VideoHero() {
         // No WebGL: the book stays open on its dot grid.
         return;
       }
-      const textureHeight = window.devicePixelRatio >= 2 && window.innerWidth > 900 ? 2048 : 1448;
+      // Upright (a phone), as tall as the page is shown there in device
+      // pixels and a little over (2026-11-04): 1448 on a 390px phone, whose
+      // page shows about 250px tall, made each of the four pages' six
+      // canvases 6 MB - 136 MB, on the iPhone that crashed. A laptop keeps
+      // the sizes the ink was judged at (see handwriting/paperInk.ts).
+      const pageShown = (1172 / HERO_VIDEO.height) * (hero.current?.clientHeight ?? 600) * Math.min(window.devicePixelRatio, 3);
+      const textureHeight = !window.matchMedia(WIDE).matches
+        ? Math.round(Math.min(1448, Math.max(640, pageShown * 1.2)))
+        : window.devicePixelRatio >= 2 && window.innerWidth > 900
+          ? 2048
+          : 1448;
       const printed = new PageLoop(spreads, textureHeight, (page, picture) => {
         pictures[page] = picture;
         dirty[page] = true;

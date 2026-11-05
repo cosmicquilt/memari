@@ -124,6 +124,12 @@ export class PageSurface {
       b.save();
       this.printLayout(b, layout);
       b.restore();
+      // a full page of pixels, wanted only for this print: given back now.
+      // iOS counts a canvas against its memory until it is collected, and
+      // the hero prints a page every few seconds (2026-11-04: on Andrew's
+      // iPhone the writing never came, the pages went black, and the page
+      // crashed).
+      layout.width = layout.height = 0;
       this.compose();
       return;
     }
@@ -163,6 +169,7 @@ export class PageSurface {
       b.fillRect(0, 0, width, height);
     }
     b.restore();
+    layout.width = layout.height = 0;
     this.compose();
   }
 

@@ -172,6 +172,30 @@ export type TimedArt = {
 
 export type Timed = TimedStroke | TimedGlyph | TimedArt;
 
+/** A spread's writing done with - written in (its ink is in the page's
+ *  layers by then) or put aside unshown: every letter's sprite and every
+ *  doodle's canvases given back at once, as a 0 x 0 canvas holds nothing.
+ *  Left to the collector they piled up on iOS, which counts a canvas against
+ *  its memory until it is collected - about two hundred a second while the
+ *  hero writes - until new canvases came back empty: the writing never came,
+ *  the pages went black, the page crashed (2026-11-04, Andrew's iPhone). */
+export function releaseInk(timeline: Timed[]) {
+  const empty = (c: { width: number; height: number } | null | undefined) => {
+    if (c) c.width = c.height = 0;
+  };
+  for (const item of timeline) {
+    if (item.kind === "glyph") {
+      empty(item.glyph.sprite?.canvas);
+      item.glyph.sprite = undefined;
+    } else if (item.kind === "art" && item.art) {
+      empty(item.art.sprite);
+      empty(item.art.mask.canvas);
+      empty(item.art.shown.canvas);
+      item.art = null;
+    }
+  }
+}
+
 /** Print px per second at a human pace, before the time-lapse. */
 const SPEED: Record<Pen["kind"], number> = { ink: 700, marker: 600, pencil: 650, highlighter: 1200 };
 /** How much faster than life the drawing itself may run. */

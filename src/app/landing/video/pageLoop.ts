@@ -12,7 +12,7 @@
 import type { LandingSpread } from "../spreads";
 import { PageSurface } from "../desk/pageSurface";
 import { familiesFor, planSpread } from "../handwriting/plan";
-import { inkTimeline, paintInk, prepareInk, type Timed } from "../handwriting/ink";
+import { inkTimeline, paintInk, prepareInk, releaseInk, type Timed } from "../handwriting/ink";
 import { loadArtIndex } from "../handwriting/art";
 import { InkClock } from "../pace";
 
@@ -147,6 +147,9 @@ export class PageLoop {
         this.changed(1, right.canvas);
       }
       if (t > phase.duration + 0.2) {
+        // written in: its letters' and doodles' canvases are done with
+        // (releaseInk; 2026-11-04, the iPhone that crashed)
+        releaseInk(phase.timeline);
         this.phase = { name: "resting", since: now };
         this.nextReady = false;
         const step = this.cycle + 1;
