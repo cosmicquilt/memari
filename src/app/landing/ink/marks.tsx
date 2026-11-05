@@ -5,7 +5,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { Ink } from "./Ink";
-import { arrowDrawing, circleDrawing, doodleDrawing, underlineDrawing, type DoodleKind } from "./pen";
+import { arrowBetween, arrowDrawing, circleDrawing, doodleDrawing, underlineDrawing, type DoodleKind } from "./pen";
 import styles from "../landing.module.css";
 
 /** Words in the handwriting face, in the editor's blue. data-paper-inline:
@@ -63,4 +63,31 @@ export function Doodle({
 /** A hand-drawn arrow, from top left to bottom right; turn or flip it with `style`. */
 export function Arrow({ seed, style, delay = 0.2 }: { seed: number; style: CSSProperties; delay?: number }) {
   return <Ink drawing={arrowDrawing(seed)} className={styles.arrow} style={style} delay={delay} />;
+}
+
+/** A hand-drawn arrow between two points of a `frame` (the hero's, in its
+ *  pixels), leaving its start heading `leave` and arriving heading `arrive`
+ *  (radians, y down - see arrowBetween); placed on the frame in %, as the
+ *  hero's notes are. */
+export function ArrowBetween({
+  seed,
+  from,
+  to,
+  leave,
+  arrive,
+  frame,
+  delay = 0.2,
+}: {
+  seed: number;
+  from: [number, number];
+  to: [number, number];
+  leave: number;
+  arrive: number;
+  frame: { width: number; height: number };
+  delay?: number;
+}) {
+  const drawn = arrowBetween(seed, from, to, leave, arrive);
+  const [x, y, w] = drawn.box;
+  const style = { left: `${(x / frame.width) * 100}%`, top: `${(y / frame.height) * 100}%`, width: `${(w / frame.width) * 100}%` };
+  return <Ink drawing={drawn} className={styles.arrow} style={style} delay={delay} />;
 }

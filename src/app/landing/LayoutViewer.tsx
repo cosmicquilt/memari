@@ -56,6 +56,12 @@ export function loadDetail(key: string): Promise<LayoutDetail> {
   return hit;
 }
 
+/** Opens a layout in the popup of the LayoutViewer around it (null outside
+ *  one): for a control that is not a card, the hero's expand. */
+export function useOpenLayout(): ((key: string) => void) | null {
+  return useContext(ViewerContext);
+}
+
 /** Around anything that shows layouts: one popup for all of them. */
 export function LayoutViewer({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<string[]>([]);

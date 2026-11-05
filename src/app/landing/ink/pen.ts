@@ -92,6 +92,40 @@ export function doodleDrawing(kind: DoodleKind, seed: number): Drawing {
   return drawing(strokes.map((st) => st.path), [0, 0, 100, 100], 3.6, strokes.map((st) => (st.weight >= 1 ? 3.6 : 2.2)));
 }
 
+/** A curved arrow from `from` to `to`, in any units (the hero's frame
+ *  pixels, say): it leaves its start heading `leave` and comes into its tip
+ *  heading `arrive` (radians, y down), so its tail can lead back to the words
+ *  it belongs to - one turned and flipped from arrowDrawing hooked under
+ *  them instead (2026-11-05, the hero's print note: "the base isnt pointing
+ *  toward the text it curls under it"). Its box is the curve's own, with
+ *  room for the pen. */
+export function arrowBetween(seed: number, from: [number, number], to: [number, number], leave: number, arrive: number, pen = 3.4): Drawing {
+  const [x0, y0] = from;
+  const [x3, y3] = to;
+  const reach = Math.hypot(x3 - x0, y3 - y0) * 0.42;
+  const [x1, y1] = [x0 + Math.cos(leave) * reach, y0 + Math.sin(leave) * reach];
+  const [x2, y2] = [x3 - Math.cos(arrive) * reach, y3 - Math.sin(arrive) * reach];
+  const shaft: Path = [];
+  for (let i = 0; i <= 16; i++) {
+    const t = i / 16;
+    const u = 1 - t;
+    const [a, b, c, d] = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
+    shaft.push(a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3);
+  }
+  // The head as arrowDrawing's: two strokes back from the tip, 30 degrees
+  // either side of the way the shaft arrives.
+  const back = arrive + Math.PI;
+  const arm = (a: number): [number, number] => [x3 + Math.cos(back + a) * 20, y3 + Math.sin(back + a) * 20];
+  const head: Path = [...arm(0.52), x3, y3, ...arm(-0.52)];
+  const all = [...shaft, ...head];
+  const xs = all.filter((_, i) => i % 2 === 0);
+  const ys = all.filter((_, i) => i % 2 === 1);
+  const m = pen * 2 + 2;
+  const [bx, by] = [Math.min(...xs) - m, Math.min(...ys) - m];
+  const box: Drawing["box"] = [bx, by, Math.max(...xs) + m - bx, Math.max(...ys) + m - by];
+  return drawing([wobble(shaft, 1.2, seed, 10), wobble(head, 1.2, seed + 1, 10)], box, pen);
+}
+
 /** A curved arrow from the top left of a 160 x 100 box towards its bottom
  *  right - flipped with CSS to point anywhere else. */
 export function arrowDrawing(seed: number): Drawing {

@@ -39,11 +39,31 @@ export class PageLoop {
   private next: Pair;
   private phase: Phase = { name: "waiting" };
   private order: number[];
+  /** The spread on the pages, as a step of the order from the first. */
   private cycle = 0;
   private nextTimeline: { timeline: Timed[]; duration: number } | null = null;
   private nextReady = false;
+  /** The step `next` holds once nextReady. */
+  private nextStep = -1;
   /** The first spread's writing, planned while it appears. */
   private firstWriting: Promise<unknown> | null = null;
+  /** THE HERO'S CONTROLS (2026-11-04: "play pause forward back should steer
+   *  layout and writing should still fill out with writing even if you pause
+   *  the layout should just not go to the next"). Paused: the layout on the
+   *  pages still writes itself in, and then stays. */
+  private paused = false;
+  /** A jump back or forward asked for, the step it is to (the latest wins). */
+  private wanted: number | null = null;
+  private jumping = false;
+  /** Prints into `next`, one at a time: the rest's print of what comes next
+   *  and a jump both use it. */
+  private work: Promise<unknown> = Promise.resolve();
+  /** Moves on with each jump: a print begun for an older plan is dropped. */
+  private printToken = 0;
+  /** The last frame's time, for a jump made between frames. */
+  private lastNow = 0;
+  /** Told when another spread comes onto the pages (its key). */
+  onShown?: (key: string) => void;
 
   constructor(
     private readonly spreads: LandingSpread[],
@@ -61,7 +81,78 @@ export class PageLoop {
   }
 
   private spreadAt(step: number) {
-    return this.spreads[this.order[step % this.order.length]];
+    const n = this.order.length;
+    return this.spreads[this.order[((step % n) + n) % n]];
+  }
+
+  /** The spread on the pages. */
+  get spread(): LandingSpread {
+    return this.spreadAt(this.cycle);
+  }
+
+  get isPaused() {
+    return this.paused;
+  }
+
+  /** Stop going on to the next layout (the one on the pages still writes
+   *  itself in), or go on again - at once, if it has rested long enough. */
+  setPaused(paused: boolean) {
+    this.paused = paused;
+  }
+
+  /** The next spread written into `next`, alone in the queue. */
+  private queue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.work.then(fn);
+    this.work = run.catch(() => {});
+    return run;
+  }
+
+  /** Back or forward a layout: printed, planned, and then shown blank to be
+   *  written in, as a layout coming on its own is. Presses while one is
+   *  printing add up; the last is where it lands. */
+  async jump(by: 1 | -1) {
+    if (this.phase.name === "waiting" || this.phase.name === "starting") return;
+    // never below the first: back from it is the last, as a step of the
+    // order - a negative step made a negative seed for the handwriting,
+    // which failed to plan the week ("Writing student's week failed")
+    const n = this.order.length;
+    const step = (this.wanted ?? this.cycle) + by;
+    this.wanted = step < 0 ? ((step % n) + n) % n : step;
+    if (this.jumping) return;
+    this.jumping = true;
+    try {
+      while (this.wanted !== null) {
+        const target: number = this.wanted;
+        // the rest's print, if it was for another step, is not to be shown
+        const token = ++this.printToken;
+        const writing =
+          this.nextReady && this.nextStep === target && this.nextTimeline
+            ? this.nextTimeline
+            : await this.queue(async () => {
+                await this.print(this.spreadAt(target), this.next);
+                return this.prepareWriting(this.spreadAt(target));
+              });
+        if (this.wanted !== target || token !== this.printToken) {
+          // put aside for a later press: given back (releaseInk)
+          if (writing !== this.nextTimeline) releaseInk(writing.timeline);
+          continue;
+        }
+        this.wanted = null;
+        // the writing it replaces, if it was still going
+        if (this.phase.name === "writing") releaseInk(this.phase.timeline);
+        [this.showing, this.next] = [this.next, this.showing];
+        this.cycle = target;
+        this.nextReady = false;
+        // the rest's own next, if it was not this
+        if (this.nextTimeline && this.nextTimeline !== writing) releaseInk(this.nextTimeline.timeline);
+        this.nextTimeline = null;
+        this.show();
+        this.phase = { name: "writing", clock: new InkClock(this.lastNow + BEFORE_WRITING), ...writing };
+        this.onShown?.(this.spread.key);
+      }
+    } finally {
+      this.jumping = false;
+    }
   }
 
   private async print(spread: LandingSpread, pair: Pair) {
@@ -128,6 +219,7 @@ export class PageLoop {
   }
 
   update(now: number) {
+    this.lastNow = now;
     const phase = this.phase;
     if (phase.name === "starting") {
       if (!this.nextTimeline) return;
@@ -148,25 +240,44 @@ export class PageLoop {
       }
       if (t > phase.duration + 0.2) {
         // written in: its letters' and doodles' canvases are done with
-        // (releaseInk; 2026-11-04, the iPhone that crashed)
         releaseInk(phase.timeline);
         this.phase = { name: "resting", since: now };
         this.nextReady = false;
         const step = this.cycle + 1;
+        const token = this.printToken;
         idle(() => {
-          void this.print(this.spreadAt(step), this.next).then(async () => {
-            this.nextTimeline = await this.prepareWriting(this.spreadAt(step));
+          void this.queue(async () => {
+            if (token !== this.printToken) return;
+            await this.print(this.spreadAt(step), this.next);
+            const writing = await this.prepareWriting(this.spreadAt(step));
+            // a jump since has printed over it
+            if (token !== this.printToken) {
+              releaseInk(writing.timeline);
+              return;
+            }
+            this.nextTimeline = writing;
+            this.nextStep = step;
             this.nextReady = true;
           });
         });
       }
-    } else if (phase.name === "resting" && now - phase.since > AFTER_WRITING && this.nextReady && this.nextTimeline) {
+    } else if (
+      phase.name === "resting" &&
+      !this.paused &&
+      !this.jumping &&
+      now - phase.since > AFTER_WRITING &&
+      this.nextReady &&
+      this.nextStep === this.cycle + 1 &&
+      this.nextTimeline
+    ) {
       // The new layout replaces the last, blank, all at once.
       [this.showing, this.next] = [this.next, this.showing];
       this.cycle++;
+      this.nextReady = false;
       this.show();
       this.phase = { name: "writing", clock: new InkClock(now + BEFORE_WRITING), ...this.nextTimeline };
       this.nextTimeline = null;
+      this.onShown?.(this.spread.key);
     }
   }
 }

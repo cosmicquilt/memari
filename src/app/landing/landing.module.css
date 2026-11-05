@@ -1036,6 +1036,159 @@
   }
 }
 
+/* THE HERO'S CONTROLS (HeroControls.tsx): back, play/pause, forward and
+   expand for the layouts on the book. A frosted pill - "it look fine for
+   now" (2026-11-05): the liquid glass is tabled, his Gemini report kept in
+   handoff/research/gemini-report-liquid-glass-summary.md. On the desk at the
+   hero's lower right, clear of the torn edge; on a phone, on the desk right
+   of the post-it, smaller. Over the film's layers and the title (z 3);
+   fades in with the first layout. */
+.heroControls {
+  position: absolute;
+  z-index: 3;
+  right: max(20px, 2.5vw);
+  bottom: 84px;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(30, 20, 12, 0.32);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 248, 235, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 6px 22px rgba(10, 6, 3, 0.28);
+  animation: heroControlsIn 600ms ease-out both;
+}
+
+@keyframes heroControlsIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.heroControl {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(var(--cream-rgb), 0.92);
+  cursor: pointer;
+  transition: background 140ms ease-out, transform 140ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.heroControl:hover {
+  background: rgba(255, 248, 235, 0.14);
+}
+
+.heroControl:active {
+  transform: scale(0.92);
+}
+
+.heroControl:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 1px;
+}
+
+.heroControl[aria-pressed="true"] {
+  background: rgba(255, 248, 235, 0.18);
+}
+
+/* A phone: on the desk below the book, right of the post-it, off the
+   pages (2026-11-05, his pick of three shown: "right", then "slightly up
+   from where it is in proof"). The strip of desk there is about 60px tall
+   and 130 wide on a 390 phone, so the buttons are a little smaller. */
+@media (max-aspect-ratio: 1/1) and (max-width: 760px) {
+  .heroControls {
+    right: 6px;
+    left: auto;
+    bottom: 18px;
+    padding: 3px;
+    gap: 0;
+  }
+  .heroControl {
+    width: 28px;
+    height: 28px;
+  }
+  .heroControl svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+/* The narrowest phones (360): the post-it shrinks less than the screen, so
+   at 28px the buttons met its edge and the book's. */
+@media (max-aspect-ratio: 1/1) and (max-width: 374px) {
+  .heroControl {
+    width: 26px;
+    height: 26px;
+  }
+  .heroControl svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroControls {
+    animation: none;
+  }
+  .heroControl {
+    transition: none;
+  }
+}
+
+/* THE PRINT NOTE (VideoHero): handwritten on the desk, each line by its
+   loose sheet with an arrow to it. Laid out on the stage's own box (it takes
+   .videoStage's size and place; not its dark ground), so frame coordinates
+   place it, and its writing is sized by the frame's width (cqw) - it stays
+   on the same wood at any window size. Over the film (z 2), under the
+   controls. A wide screen only: upright, the sheets are off the screen. */
+.heroNotes {
+  z-index: 2;
+  background: none;
+  pointer-events: none;
+  container-type: size;
+  /* A lighter blue pen than the page's (2026-11-05, his pick of two shown:
+     "lighter"): the site's blue, on the dark wood and in the leaves' shade,
+     was hard to read. Its words, arrows and underline all take it. */
+  --hand: #b3bdff;
+}
+
+/* The hand's own face and blue (as .hand), but a block with its own lines -
+   the pen's underline sits under the words, not through them. */
+.heroNote {
+  position: absolute;
+  margin: 0;
+  font-family: var(--font-hand), cursive;
+  font-size: 1.45cqw;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--hand);
+}
+
+.heroNoteLink {
+  color: inherit;
+  text-decoration: none;
+  pointer-events: auto;
+  border-radius: 4px;
+}
+
+.heroNoteLink:focus-visible {
+  outline: 2px solid var(--hand);
+  outline-offset: 3px;
+}
+
+@media (max-aspect-ratio: 1/1) {
+  .heroNotes {
+    display: none;
+  }
+}
+
 /* A phone's nav is a button's height nearer: keep the title clear of it. */
 @media (max-width: 760px) {
   .titleOverFilm {

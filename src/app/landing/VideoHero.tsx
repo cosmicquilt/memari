@@ -34,7 +34,13 @@ import { bakeHero, heroInStage } from "./video/heroBake";
 import EXTEND from "./video/heroExtend.json";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
 import { whenArrived } from "./arrival";
+import { HeroControls } from "./HeroControls";
+import { ArrowBetween, Underlined } from "./ink/marks";
+import { LayoutViewer } from "./LayoutViewer";
 import styles from "./landing.module.css";
+
+/** Degrees, as radians. */
+const deg = (d: number) => (d * Math.PI) / 180;
 
 /** Seconds the first layout takes to fade onto the pages, and the dots off
  *  them (Andrew, 2026-09-24: "when the very first layout comes onto the
@@ -145,6 +151,10 @@ export function VideoHero() {
   const cleanPicture = useRef<HTMLImageElement>(null);
   /** The layouts' canvas lost by the browser, until it is given back. */
   const [glLost, setGlLost] = useState(false);
+  /** The layouts on the book once they are going, for the controls
+   *  (HeroControls), and the spread on the pages now. */
+  const steerRef = useRef<import("./video/pageLoop").PageLoop | null>(null);
+  const [showing, setShowing] = useState<LandingSpread | null>(null);
   /** The resting frames are drawn into their canvases: the dotted one, which
    *  shows from load (a CSS background until then), and the clean one under
    *  it. */
@@ -410,6 +420,11 @@ export function VideoHero() {
       setDrawn(true);
       loop.start(now() + LAYOUT_FADE);
       run();
+      // the controls steer it from here (HeroControls)
+      const steering = loop;
+      steering.onShown = () => !disposed && setShowing(steering.spread);
+      steerRef.current = steering;
+      setShowing(steering.spread);
     };
     function ready() {
       if (arrived && written.current && cleanDrawn && pages) begin();
@@ -708,7 +723,40 @@ export function VideoHero() {
         <div className={styles.vignette} />
         <div ref={grainLayer} className={styles.grain} />
       </div>
+      {/* The print note (2026-11-04: "print at home with an arrow to the
+          left loose and or at a library with our library locator
+          (underlined) with arrow to right loose"), on a wide screen: in the
+          pen's blue, on the desk, in the frame's own place (laid out like
+          the stage, so it stays by its sheet at any size). */}
+      <div className={`${styles.videoStage} ${styles.heroNotes}`}>
+        <p className={styles.heroNote} style={{ left: `${(560 / 3840) * 100}%`, top: `${(905 / 2160) * 100}%` }}>
+          print at home!
+        </p>
+        {/* Each arrow starts at its words, its tail leading back to them
+            (2026-11-05: "the base isnt pointing toward the text it curls
+            under it", "the arrows bases arent close enough"): from beside
+            the "p" out to the left and down onto the left sheet; from just
+            past "with" out to the right and down onto the right one. In the
+            frame's pixels, as the notes are placed. */}
+        <ArrowBetween seed={113} delay={0.6} frame={HERO_VIDEO} from={[546, 962]} to={[452, 1068]} leave={deg(160)} arrive={deg(105)} />
+        <p className={styles.heroNote} style={{ left: `${(2480 / 3840) * 100}%`, top: `${(505 / 2160) * 100}%` }}>
+          or at a library with
+          <br />
+          our{" "}
+          <a href="/print#find-a-library" className={styles.heroNoteLink}>
+            <Underlined seed={117} delay={0.9}>
+              library locator
+            </Underlined>
+          </a>
+        </p>
+        <ArrowBetween seed={119} delay={1.1} frame={HERO_VIDEO} from={[2998, 556]} to={[3200, 738]} leave={deg(10)} arrive={deg(80)} />
+      </div>
       <Wordmark className={styles.titleOverFilm} onWritten={taglineWritten} />
+      {showing && (
+        <LayoutViewer>
+          <HeroControls steer={steerRef} showing={showing} />
+        </LayoutViewer>
+      )}
       <p className={styles.srOnly}>
         A journal lies open on a desk at a dot-grid page; a planner layout appears on its pages and is written in by hand, then
         another layout takes its place.

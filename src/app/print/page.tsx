@@ -33,7 +33,8 @@ export default function PrintPage() {
         </p>
       </header>
 
-      <section className={site.block} aria-label="Find a library">
+      {/* the hero's note ("our library locator") links here */}
+      <section id="find-a-library" className={site.block} aria-label="Find a library">
         <LibraryFinder />
       </section>
 

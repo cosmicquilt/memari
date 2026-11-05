@@ -109,7 +109,13 @@ export type Region =
   | { kind: "title"; box: Box };
 
 export type LandingPage = { marks: PreviewMark[]; regions: Region[] };
-export type LandingSpread = { key: string; fontFamily: string; pages: [LandingPage, LandingPage] };
+export type LandingSpread = {
+  key: string;
+  fontFamily: string;
+  pages: [LandingPage, LandingPage];
+  /** The layouts popup can show it (set by the /landing/spreads route). */
+  openable?: boolean;
+};
 
 const isHRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.h <= 3 && m.w >= 60;
 const isVRule = (m: PreviewMark): m is Extract<PreviewMark, { k: "r" }> => m.k === "r" && m.w <= 3 && m.h >= 150;
