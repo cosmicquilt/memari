@@ -85,8 +85,18 @@ const FIRST_SCREEN_COVERS = 9;
 const WARM_AFTER_MS = 6000;
 
 /** Every cover in `track` fetched and decoded, once the page is idle; the
- *  returned function calls it off. */
+ *  returned function calls it off.
+ *
+ *  NOT ON A PHONE, NOR ANYWHERE ON iOS (2026-11-04: on Andrew's iPhone the
+ *  layout "faded in then it paused then glitched out and page failed").
+ *  All 85 covers decoded at once are 133 MB of pictures - measured on the
+ *  live page at a phone's size, of 158 MB in all, with three to six covers on
+ *  the screen - taken just as the layouts start writing, and iOS ends a page
+ *  that asks too much (it had first dropped the hero's canvases: the "brown"
+ *  hero). There the covers come as they always could: each fetched as it
+ *  drifts near (loading="lazy") and decoded off the main thread. */
 function warmWhenIdle(track: HTMLElement | null) {
+  if (window.matchMedia("(max-aspect-ratio: 1/1)").matches || CSS.supports("-webkit-touch-callout", "none")) return () => {};
   const warm = () => {
     for (const img of track?.querySelectorAll("img") ?? []) {
       img.loading = "eager";
