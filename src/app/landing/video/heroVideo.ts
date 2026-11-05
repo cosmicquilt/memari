@@ -58,6 +58,17 @@ export const HERO_VIDEO = {
    *  last frame, 111 of 111. */
   last: "/landing/hero-open-last.jpg",
   last4k: "/landing/hero-open-last-4k.webp",
+  /** A phone held upright (the hero's own query for it, landing.module.css):
+   *  the same two frames cut to the spread and some desk either side - more
+   *  than a phone ever shows of the frame (at most about 2,450px of it, a
+   *  square 760px window) - at 0.7 of 4K, as sharp as a 3x phone shows them
+   *  (2026-11-05: "it is blurry on mobile"; the 1080p frames were drawn
+   *  1.28 times their size there). Placed on the frame by phoneCrop. Made
+   *  from the 4K frames (Lanczos, webp 86): half the bytes of the 1080p. */
+  phone: "(max-aspect-ratio: 1/1) and (max-width: 760px)",
+  dotsPhone: "/landing/hero-open-dots-phone.webp",
+  lastPhone: "/landing/hero-open-last-phone.webp",
+  phoneCrop: { x: 653, width: 2560 },
   width: 3840,
   height: 2160,
 };
@@ -114,3 +125,22 @@ export const SPREAD_CENTRE: Point = [1933, 1248];
 /** How much of the frame a phone fits across its width: the spread cover to
  *  cover (about 1,795px) and a sliver of desk either side. */
 export const SPREAD_WIDTH = 1840;
+
+/** The part of the frame the pages' drawing can reach: both pages' outlines
+ *  (a page's mesh only blends between their points, pageWarp.ts) and a few
+ *  pixels round for the edges' smoothing. The drawing's canvas covers this
+ *  alone (2026-11-05), not the whole frame - which is mostly desk, and on a
+ *  phone mostly off the screen - so it can have the screen's every pixel
+ *  for fewer than it had. About 1766 x 1188. */
+export const DRAWN_BOX = (() => {
+  const points = [PAGE_OUTLINES.left, PAGE_OUTLINES.right].flatMap((o) => [o.aTop, o.aBottom, o.bTop, o.bBottom, ...o.top, ...o.bottom]);
+  const pad = 8;
+  const x = Math.floor(Math.min(...points.map((p) => p[0])) - pad);
+  const y = Math.floor(Math.min(...points.map((p) => p[1])) - pad);
+  return {
+    x,
+    y,
+    width: Math.ceil(Math.max(...points.map((p) => p[0])) + pad) - x,
+    height: Math.ceil(Math.max(...points.map((p) => p[1])) + pad) - y,
+  };
+})();

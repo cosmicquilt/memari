@@ -43,6 +43,10 @@
 import "./appUnderTest.mjs";
 import { chromium, type Page } from "playwright-core";
 import { ensureServer } from "./appUnderTest.mjs";
+import { readFileSync } from "node:fs";
+
+/** Where iOS's pictures of the post-it lie on the note, in note sides. */
+const FLAT = JSON.parse(readFileSync(new URL("../src/app/landing/postitFlat.json", import.meta.url), "utf8")) as { w: number; h: number };
 
 const baseArg = process.argv.indexOf("--base");
 const server = await ensureServer(baseArg > 0 ? process.argv[baseArg + 1] : process.env.BASE);
@@ -285,6 +289,21 @@ try {
     const after = (await tab.evaluate(GEOMETRY)) as Geometry;
     if (!(Math.abs(after.postitTop - before.postitTop) < 8)) fail(`${name} post-it`, `iOS's picture of it begins at ${after.postitTop.toFixed(0)}, the note at ${before.postitTop.toFixed(0)}`);
     else ok(`${name}: iOS's picture of the post-it lies where the note does (within ${Math.abs(after.postitTop - before.postitTop).toFixed(1)}px)`);
+    // and at its own size: the site's images are held to their box's width
+    // (Tailwind's base), which made it 17% too narrow on every iPhone, while
+    // where it began was right (2026-11-05: "post it shrunk horizontally
+    // stretched vertically")
+    const shape = (await tab.evaluate(() => {
+      const img = [...document.querySelectorAll<HTMLImageElement>('[class*="postitPhotos"] img')].find((i) => i.style.visibility !== "hidden");
+      const note = img?.closest("a");
+      if (!img || !note) return null;
+      const b = img.getBoundingClientRect();
+      return { w: b.width, h: b.height, side: note.getBoundingClientRect().width };
+    })) as { w: number; h: number; side: number } | null;
+    if (!shape) fail(`${name} post-it`, "no picture of it shown");
+    else if (Math.abs(shape.w - shape.side * FLAT.w) > 1 || Math.abs(shape.h - shape.side * FLAT.h) > 1)
+      fail(`${name} post-it`, `iOS's picture of it is ${shape.w.toFixed(1)} x ${shape.h.toFixed(1)}px, not ${(shape.side * FLAT.w).toFixed(1)} x ${(shape.side * FLAT.h).toFixed(1)} (the ${shape.side.toFixed(1)}px note's)`);
+    else ok(`${name}: iOS's picture of the post-it is the note's size, ${shape.w.toFixed(1)} x ${shape.h.toFixed(1)}px`);
     await tab.context().close();
   }
   {

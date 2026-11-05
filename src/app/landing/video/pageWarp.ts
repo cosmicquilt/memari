@@ -1,7 +1,7 @@
 // Lays two page pictures onto the pages of a video frame.
 //
-// A WebGL canvas the size of the video frame, placed over it with the same
-// object-fit, cleared to white and multiplied onto the video (CSS
+// A WebGL canvas over the part of the video frame the pages lie in (its
+// `frame`, DRAWN_BOX), cleared to white and multiplied onto the video (CSS
 // mix-blend-mode): where it is white nothing changes, and the printed
 // layout and the ink darken the page the camera saw - its paper, its warm
 // light and the leaf shadows across it all come through, so the drawing
@@ -91,7 +91,9 @@ export class PageWarp {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly outlines: readonly [PageOutline, PageOutline],
-    private readonly frame: { width: number; height: number },
+    /** The part of the video frame the canvas covers, in the frame's
+     *  pixels (from its top left, x and y; the whole frame without them). */
+    private readonly frame: { x?: number; y?: number; width: number; height: number },
     /** The canvas's own size in pixels - the outlines stay in the frame's.
      *  A 4K frame need not mean a 4K canvas on a phone. */
     pixels: { width: number; height: number } = frame,
@@ -134,13 +136,13 @@ export class PageWarp {
     return program;
   }
 
-  private mesh(outline: PageOutline, frame: { width: number; height: number }): Mesh {
+  private mesh(outline: PageOutline, frame: { x?: number; y?: number; width: number; height: number }): Mesh {
     const gl = this.gl;
     // Two triangles per cell: x, y (clip space), u, v.
     const data: number[] = [];
     const vertex = (u: number, v: number) => {
       const [x, y] = placeOnPage(outline, u, v);
-      data.push((x / frame.width) * 2 - 1, 1 - (y / frame.height) * 2, u, v);
+      data.push(((x - (frame.x ?? 0)) / frame.width) * 2 - 1, 1 - ((y - (frame.y ?? 0)) / frame.height) * 2, u, v);
     };
     for (let j = 0; j < ROWS; j++) {
       for (let i = 0; i < COLUMNS; i++) {

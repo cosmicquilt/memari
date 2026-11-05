@@ -27,7 +27,7 @@ import { preload } from "react-dom";
 import type { LandingSpread } from "./spreads";
 import { Wordmark } from "./Wordmark";
 import { HAND_FONT_CLASSES } from "./handFonts";
-import { HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
+import { DRAWN_BOX, HERO_VIDEO, PAGE_OUTLINES } from "./video/heroVideo";
 import { BOOK_ON_SHEETS, sheetClip, sheetShows, SHEET_IDS, SHEETS, sheetPath } from "./video/sheets";
 import { loadPicture, paintPicture } from "./video/canvasPicture";
 import { bakeHero, heroInStage } from "./video/heroBake";
@@ -81,13 +81,25 @@ heroPieces?.catch(() => {});
  *  arrives whole. */
 function preloadHero() {
   const high = { as: "image", fetchPriority: "high" } as const;
-  preload(HERO_VIDEO.dots, high);
+  // the phone's own cut of the frame there, the 1080p one elsewhere: not
+  // both (the 4K one still comes on top of it where its screens are)
+  preload(HERO_VIDEO.dotsPhone, { ...high, media: HERO_VIDEO.phone });
+  preload(HERO_VIDEO.dots, { ...high, media: `not all and ${HERO_VIDEO.phone}` });
   preload(HERO_VIDEO.dots4k, { ...high, media: HERO_VIDEO.media4k });
   // the desk beyond the frame shows only on a screen wider than tall: a
   // phone held upright fetched 330 KB of it for nothing (2026-11-04)
   for (const side of ["left", "right"] as const) preload(`/landing/hero-extend-${side}.webp`, { ...high, media: WIDE });
   for (const id of SHEET_IDS) preload(sheetPath(id), high);
 }
+
+/** The drawing's canvas on the stage: over DRAWN_BOX, the pages' part of
+ *  the frame, as the loose sheets are placed on theirs. */
+const DRAWN_PLACE = {
+  left: `${(DRAWN_BOX.x / HERO_VIDEO.width) * 100}%`,
+  top: `${(DRAWN_BOX.y / HERO_VIDEO.height) * 100}%`,
+  width: `${(DRAWN_BOX.width / HERO_VIDEO.width) * 100}%`,
+  height: `${(DRAWN_BOX.height / HERO_VIDEO.height) * 100}%`,
+};
 
 /** A screen wider than tall: the hero with the desk beyond the frame's sides
  *  (landing.module.css). */
@@ -415,17 +427,20 @@ export function VideoHero() {
       let warp: InstanceType<typeof PageWarp>;
       const pictures: HTMLCanvasElement[] = [];
       const dirty = [false, false];
-      // As many pixels as the stage shows, at most the frame's - and at most
-      // two to a CSS pixel: a 3x phone's stage is twice its screen wide, and
-      // its book's lines are finer than a third pixel would show (2026-11-04:
-      // half the memory, on the iPhone where the hero went dark).
-      const across = Math.min(HERO_VIDEO.width, Math.ceil((canvas.parentElement?.clientWidth ?? HERO_VIDEO.width) * Math.min(window.devicePixelRatio, 2)));
+      // Over the pages' part of the frame only (DRAWN_BOX), with as many
+      // pixels as the screen shows it there - at most the frame's own
+      // (2026-11-05: "it is blurry on mobile"). It covered the whole frame
+      // at two to a CSS pixel until then (2026-11-04, for memory): on a 3x
+      // phone the pages' lines and writing were drawn 1.5 times their
+      // pixels, from a canvas with nearly twice the pixels this one has.
+      const shown = ((canvas.parentElement?.clientWidth ?? HERO_VIDEO.width) * DRAWN_BOX.width) / HERO_VIDEO.width;
+      const across = Math.min(DRAWN_BOX.width, Math.ceil(shown * Math.min(window.devicePixelRatio, 3)));
       try {
         warp = new PageWarp(
           canvas,
           [PAGE_OUTLINES.left, PAGE_OUTLINES.right],
-          HERO_VIDEO,
-          { width: across, height: Math.round((across * HERO_VIDEO.height) / HERO_VIDEO.width) },
+          DRAWN_BOX,
+          { width: across, height: Math.round((across * DRAWN_BOX.height) / DRAWN_BOX.width) },
           {
             // The browser took the canvas back (a phone short of memory, the
             // app in the background): put away, not left to show black
@@ -443,14 +458,16 @@ export function VideoHero() {
         // No WebGL: the book stays open on its dot grid.
         return;
       }
-      // Upright (a phone), as tall as the page is shown there in device
-      // pixels and a little over (2026-11-04): 1448 on a 390px phone, whose
-      // page shows about 250px tall, made each of the four pages' six
-      // canvases 6 MB - 136 MB, on the iPhone that crashed. A laptop keeps
-      // the sizes the ink was judged at (see handwriting/paperInk.ts).
-      const pageShown = (1172 / HERO_VIDEO.height) * (hero.current?.clientHeight ?? 600) * Math.min(window.devicePixelRatio, 3);
+      // Upright (a phone), a page's picture as tall as the canvas draws the
+      // pages (1172 of the frame, top to bottom), pixel for pixel: 1448 on a
+      // 390px phone made each of the four pages' six canvases 6 MB - 136 MB,
+      // on the iPhone that crashed (2026-11-04) - and even 1.2 times over, as
+      // it was then, is drawn a quarter through its half-size mipmap, softly
+      // (2026-11-05). A laptop keeps the sizes the ink was judged at (see
+      // handwriting/paperInk.ts).
+      const pageInCanvas = (1172 * across) / DRAWN_BOX.width;
       const textureHeight = !window.matchMedia(WIDE).matches
-        ? Math.round(Math.min(1448, Math.max(640, pageShown * 1.2)))
+        ? Math.round(Math.min(1448, Math.max(640, pageInCanvas)))
         : window.devicePixelRatio >= 2 && window.innerWidth > 900
           ? 2048
           : 1448;
@@ -596,6 +613,7 @@ export function VideoHero() {
             one is wanted only once the layouts come, so it waits its turn
             and the curtain does not wait for it (data-arrival-skip). */}
         <picture>
+          <source media={HERO_VIDEO.phone} srcSet={HERO_VIDEO.lastPhone} />
           <source media={HERO_VIDEO.media4k} srcSet={HERO_VIDEO.last4k} />
           <img
             ref={cleanPicture}
@@ -609,6 +627,7 @@ export function VideoHero() {
         </picture>
         <canvas ref={cleanFrame} className={styles.videoStill} style={{ visibility: cleanUp ? "visible" : "hidden" }} />
         <picture>
+          <source media={HERO_VIDEO.phone} srcSet={HERO_VIDEO.dotsPhone} />
           <source media={HERO_VIDEO.media4k} srcSet={HERO_VIDEO.dots4k} />
           <img
             className={`${styles.videoStill} ${styles.videoStillPicture}`}
@@ -671,7 +690,7 @@ export function VideoHero() {
             onTransitionEnd={() => setDotsGone(true)}
           />
         </div>
-        <canvas ref={overlay} className={styles.videoDrawing} style={{ opacity: drawn && !glLost ? 1 : 0, transition: fade }} />
+        <canvas ref={overlay} className={styles.videoDrawing} style={{ ...DRAWN_PLACE, opacity: drawn && !glLost ? 1 : 0, transition: fade }} />
       </div>
       <div className={styles.liveLayers} aria-hidden="true">
         {/* The blur toward the screen's sides - see .sideBlur. */}

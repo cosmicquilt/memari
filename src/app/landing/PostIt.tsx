@@ -211,6 +211,10 @@ export function PostIt() {
               top: `calc(var(--note) * ${flat.y})`,
               width: `calc(var(--note) * ${flat.w})`,
               height: `calc(var(--note) * ${flat.h})`,
+              // wider than the note, for its shadow: the site's images are
+              // held to their box's width (Tailwind's base), which narrowed
+              // it to the note's - 17% too thin, on every iPhone (2026-11-05)
+              maxWidth: "none",
               visibility: s === pose ? "visible" : "hidden",
             }}
           />

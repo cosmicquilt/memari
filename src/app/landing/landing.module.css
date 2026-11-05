@@ -1193,6 +1193,12 @@
   .page .body {
     --note: clamp(92px, calc(var(--hero-h) * 0.21), 124px);
   }
+  /* The resting frames' phone cut (HERO_VIDEO.phone, the same query): on
+     the part of the frame it is, x 653 for 2560 of 3840, all its height. */
+  .videoStillPicture {
+    left: calc(100% * 653 / 3840);
+    width: calc(100% * 2560 / 3840);
+  }
 }
 
 .srOnly {
