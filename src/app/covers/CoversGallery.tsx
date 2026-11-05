@@ -1,128 +1,250 @@
 "use client";
 
-// The covers page's gallery (2026-10-26): every carousel cover, filtered by
-// material group and by mark, and one shown large with what it is. Choosing
-// a cover puts its own address in the bar (/covers/onyx-4), so what is on
-// screen can be sent to someone.
+// The covers page's gallery (2026-11-05, board 4 of the covers mockups,
+// https://claude.ai/artifact/At9mkReAMmapqQnv4342Xj): the chosen cover on a
+// dark stage - on its notebook as pictured, and its front flat as it prints
+// with the person's own choices - then the page's words (intro, from the
+// server), then every cover as a sample card in a swatch book, by material.
+//
+// MAKE IT YOURS: the mark, its finish, the dates and a name are choices on
+// every cover (Andrew, 2026-11-05). They start as the first cover is
+// pictured and stay with the person as they look through the covers, so one
+// look can be tried on many materials. The photo keeps showing each cover as
+// it was pictured; the flat front shows theirs.
 //
 // THE ADDRESS IS THE CHOICE (review, 2026-10-26): the cover on screen is
 // read from the address, and choosing one replaces it with Next's own state
 // (replaceState with null - passing the old state skipped Next's router), so
 // Back, the header's Covers link and a copied link all show the cover their
 // address names.
-//
-// No "Use this cover" yet: Andrew chose to build printing these covers
-// before the page offers them. Until then every printed book has the plain
-// cover, and the panel says so rather than offering a choice that would
-// not reach the book.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { COVERS, COVER_GROUPS, coverBySlug, type Cover, type CoverFinish, type CoverGroup } from "./catalogue";
+import { COVERS, COVER_GROUPS, coverBySlug, coverNumber, groupMaterialsWords, type Cover, type CoverGroup } from "./catalogue";
+import { CoverFront, MARK_WORDS, picturedOptions, type FrontMark, type FrontOptions } from "./CoverFront";
+import { CoverZoom } from "./CoverZoom";
+import { coverDatesWords } from "@/lib/print/coverDates";
 import css from "./covers.module.css";
 
-const FINISH_WORDS: Record<CoverFinish, string> = {
-  imprint: "printed to look pressed into the cover",
-  gold: "printed in gold ink",
-};
+const MARKS: FrontMark[] = ["m-centre", "m-corner", "wordmark-serif", "wordmark-sans", "none"];
+
+/** An example book's dates, as its cover would print them: the three whole
+ *  months from next month ("December 2026 to February 2027"). */
+function exampleDates(now = new Date()): string {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 0));
+  return coverDatesWords({ start, end });
+}
 
 /** `orderable`: the covers can be printed here (their scans' host is
- *  set), so the page says where they are chosen. */
-export function CoversGallery({ orderable }: { orderable: boolean }) {
-  const [group, setGroup] = useState<CoverGroup | null>(null);
-  const [finish, setFinish] = useState<CoverFinish | null>(null);
+ *  set), so the stage says where they are chosen. `intro`: the page's
+ *  headline and words, between the stage and the covers. */
+export function CoversGallery({ orderable, intro }: { orderable: boolean; intro: ReactNode }) {
   const slug = usePathname().split("/")[2] ?? "";
   const chosen = coverBySlug(slug) ?? COVERS[0];
+  const [group, setGroup] = useState<CoverGroup | null>(null);
+  const [options, setOptions] = useState<FrontOptions>(() => picturedOptions(chosen));
+  const [name, setName] = useState("");
+  const dates = useMemo(() => exampleDates(), []);
+  const stage = useRef<HTMLElement>(null);
+  const [zoom, setZoom] = useState(false);
+
   // The tab names the cover the address names, as /covers/<slug>'s own
   // metadata does on a fresh load; plain /covers keeps its title.
   useEffect(() => {
     const named = coverBySlug(slug);
     if (named) document.title = `${named.name} cover - memari. STUDIO`;
   }, [slug]);
-  const detail = useRef<HTMLElement>(null);
-  const shown = useMemo(() => COVERS.filter((c) => (!group || c.group === group) && (!finish || c.finish === finish)), [group, finish]);
+
+  const shown = useMemo(() => COVERS.filter((c) => !group || c.group === group), [group]);
   const inGroup = (g: CoverGroup) => COVERS.filter((c) => c.group === g).length;
-  const withFinish = (f: CoverFinish) => COVERS.filter((c) => c.finish === f).length;
 
   const choose = (cover: Cover) => {
     window.history.replaceState(null, "", `/covers/${cover.slug}`);
-    // On a phone the panel is above the grid: bring it into view, without
-    // the long animated scroll when motion is turned down.
-    if (window.matchMedia("(max-width: 860px)").matches) {
+    // from the covers below, bring the stage back into view to see it
+    const top = stage.current?.getBoundingClientRect().top ?? 0;
+    if (top < -40) {
       const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      detail.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+      stage.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     }
   };
+  // back and on through the covers in view (all of them, or one material's)
+  const order = shown.some((c) => c.id === chosen.id) ? shown : COVERS;
+  const at = order.findIndex((c) => c.id === chosen.id);
+  const before = order[(at - 1 + order.length) % order.length];
+  const after = order[(at + 1) % order.length];
+
+  const set = (change: Partial<FrontOptions>) => setOptions((o) => ({ ...o, ...change }));
+  const frontLabel = [
+    options.mark === "none" ? `The ${chosen.name} front, flat, with no mark` : `The ${chosen.name} front, flat, with ${MARK_WORDS[options.mark]} in ${options.finish}`,
+    options.dates ? `dated ${dates}` : "",
+    options.name && name.trim() ? `named ${name.trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return (
-    <div className={css.gallery}>
-      <div className={css.filters}>
-        <div className={css.chips} role="group" aria-label="Material">
-          <button type="button" aria-pressed={group === null} onClick={() => setGroup(null)}>
-            All <span>{COVERS.length}</span>
-          </button>
-          {COVER_GROUPS.map((g) => (
-            <button key={g} type="button" aria-pressed={group === g} onClick={() => setGroup(g)}>
-              {g} <span>{inGroup(g)}</span>
+    <>
+      <section ref={stage} className={css.stage} aria-label={`${chosen.name} cover`} data-paper-skip="">
+        <div className={css.stageInner}>
+          <figure className={css.photo}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- the carousel's own pictures, already sized */}
+            <img src={chosen.image} alt={`A notebook with the ${chosen.name} cover`} width={640} height={640} fetchPriority="high" />
+            <figcaption>On a notebook, as pictured</figcaption>
+          </figure>
+
+          <figure className={css.flat}>
+            {/* a close look: the front large, on the cover's whole scan (CoverZoom) */}
+            <button type="button" className={css.flatButton} onClick={() => setZoom(true)} aria-label={`${frontLabel}. See it up close`} aria-haspopup="dialog">
+              <CoverFront cover={chosen} options={options} datesWords={dates} name={name} eager />
             </button>
-          ))}
-        </div>
-        <div className={css.chips} role="group" aria-label="Mark">
-          <button type="button" aria-pressed={finish === null} onClick={() => setFinish(null)}>
-            Any mark
-          </button>
-          <button type="button" aria-pressed={finish === "imprint"} onClick={() => setFinish("imprint")}>
-            Imprint <span>{withFinish("imprint")}</span>
-          </button>
-          <button type="button" aria-pressed={finish === "gold"} onClick={() => setFinish("gold")}>
-            Gold <span>{withFinish("gold")}</span>
-          </button>
-        </div>
-      </div>
+            <figcaption>The front, flat, as it prints · click to look closer</figcaption>
+          </figure>
 
-      <div className={css.body}>
-        <div className={css.gridSide}>
-          <p className={css.count} aria-live="polite">
-            {shown.length === COVERS.length ? `All ${COVERS.length} covers` : `${shown.length} of ${COVERS.length} covers`}
-          </p>
-          <ul className={css.grid}>
-            {shown.map((cover) => (
-              <li key={cover.id}>
-                <button type="button" className={css.tile} aria-pressed={cover.id === chosen.id} onClick={() => choose(cover)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={cover.image} alt="" width={640} height={640} loading="lazy" decoding="async" />
-                  <span>{cover.name}</span>
+          <div className={css.details}>
+            <p className={css.eyebrow}>Covers</p>
+            <h1 className={css.coverName}>
+              {chosen.material} <span className={css.coverNumber}>{coverNumber(chosen)}</span>
+            </h1>
+            <p className={css.material}>{chosen.material}, a photograph printed on the cover</p>
+
+            <div className={css.panel}>
+              <p className={css.panelTitle}>Make it yours</p>
+              <div className={css.option}>
+                <span className={css.optionLabel} id="opt-mark">
+                  Mark
+                </span>
+                <div className={css.choices} role="group" aria-labelledby="opt-mark">
+                  {MARKS.map((m) => (
+                    <button key={m} type="button" aria-pressed={options.mark === m} onClick={() => set({ mark: m })}>
+                      {MARK_WORDS[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={css.option}>
+                <span className={css.optionLabel} id="opt-finish">
+                  Finish
+                </span>
+                <div className={css.choices} role="group" aria-labelledby="opt-finish">
+                  <button type="button" aria-pressed={options.finish === "imprint"} onClick={() => set({ finish: "imprint" })}>
+                    Imprint
+                  </button>
+                  <button type="button" aria-pressed={options.finish === "gold"} onClick={() => set({ finish: "gold" })}>
+                    Gold
+                  </button>
+                </div>
+              </div>
+              <div className={css.option}>
+                <span className={css.optionLabel} id="opt-dates">
+                  Dates
+                </span>
+                <div className={css.choices} role="group" aria-labelledby="opt-dates">
+                  <button type="button" aria-pressed={options.dates} onClick={() => set({ dates: true })}>
+                    On
+                  </button>
+                  <button type="button" aria-pressed={!options.dates} onClick={() => set({ dates: false })}>
+                    Off
+                  </button>
+                </div>
+              </div>
+              <div className={css.option}>
+                <span className={css.optionLabel} id="opt-name">
+                  Name
+                </span>
+                <div className={css.choices} role="group" aria-labelledby="opt-name">
+                  <button type="button" aria-pressed={options.name} onClick={() => set({ name: true })}>
+                    On
+                  </button>
+                  <button type="button" aria-pressed={!options.name} onClick={() => set({ name: false })}>
+                    Off
+                  </button>
+                </div>
+              </div>
+              {options.name && (
+                <label className={css.nameField}>
+                  Name on the cover
+                  <input type="text" value={name} maxLength={40} autoComplete="name" placeholder="Your name" onChange={(e) => setName(e.target.value)} />
+                </label>
+              )}
+              <p className={css.dim}>Every option works on every cover. The photo shows the cover as pictured; the flat front shows yours.</p>
+            </div>
+
+            <div className={css.navRow}>
+              <button type="button" className={css.navButton} onClick={() => choose(before)} aria-label={`Back to ${before.name}`}>
+                ‹
+              </button>
+              <button type="button" className={css.navButton} onClick={() => choose(after)} aria-label={`On to ${after.name}`}>
+                ›
+              </button>
+              <span className={css.dim}>
+                {at + 1} of {order.length}
+                {group ? ` in ${group}` : ""}
+              </span>
+            </div>
+            <p className={css.dim}>
+              {orderable
+                ? "Choose it, and what is on its front, when you order a printed book, under Cover. Every book after prints it too."
+                : "Books with these covers are coming. Until then, printed books have a plain cover."}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {zoom && <CoverZoom cover={chosen} options={options} datesWords={dates} name={name} label={frontLabel} onClose={() => setZoom(false)} />}
+
+      <div className={css.book}>
+        {intro}
+        <div className={css.body}>
+          <aside className={css.rail} aria-label="Materials">
+            <div>
+              <p className={css.railTitle}>Material</p>
+              <div className={css.railList}>
+                <button type="button" aria-pressed={group === null} onClick={() => setGroup(null)}>
+                  <span>All</span>
+                  <span>{COVERS.length}</span>
                 </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+                {COVER_GROUPS.map((g) => (
+                  <button key={g} type="button" aria-pressed={group === g} onClick={() => setGroup(g)}>
+                    <span>{g}</span>
+                    <span>{inGroup(g)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className={css.railNote}>The mark, its finish, dates and your name are yours to choose, on any cover.</p>
+          </aside>
 
-        <aside ref={detail} className={css.detail} aria-label={`${chosen.name} cover`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={chosen.image} alt={`A notebook with the ${chosen.name} cover`} width={640} height={640} />
-          <h2>{chosen.name}</h2>
-          <dl className={css.facts}>
-            <dt>Material</dt>
-            <dd>
-              {chosen.material}, a photograph printed on the cover
-            </dd>
-            <dt>On the front</dt>
-            <dd>{chosen.mark}</dd>
-            <dt>Finish</dt>
-            <dd>
-              {chosen.finishName}, {FINISH_WORDS[chosen.finish]}
-            </dd>
-            <dt>Dates</dt>
-            <dd>{chosen.dated ? "On the front, bottom right" : "None"}</dd>
-          </dl>
-          <p className={css.soon}>
-            {orderable
-              ? "Choose it for your journal when you order a printed book, under Cover. Every book after prints it too."
-              : "Books with these covers are coming. Until then, printed books have a plain cover."}
-          </p>
-        </aside>
+          <div className={css.groups} aria-live="polite">
+            {COVER_GROUPS.filter((g) => !group || g === group).map((g) => (
+              <section key={g} className={css.group} aria-labelledby={`group-${g.replace(/\W+/g, "-")}`}>
+                <div className={css.groupHead}>
+                  <h3 id={`group-${g.replace(/\W+/g, "-")}`}>{g}</h3>
+                  <p>
+                    {inGroup(g)} covers · {groupMaterialsWords(g)}
+                  </p>
+                </div>
+                <ul className={css.swatches} data-paper-skip="">
+                  {shown
+                    .filter((c) => c.group === g)
+                    .map((cover) => (
+                      <li key={cover.id} className={css.swatch}>
+                        <button type="button" aria-pressed={cover.id === chosen.id} onClick={() => choose(cover)}>
+                          <span className={css.hole} aria-hidden="true" />
+                          {/* eslint-disable-next-line @next/next/no-img-element -- the front, already sized */}
+                          <img src={cover.front} alt="" width={420} height={600} loading="lazy" decoding="async" suppressHydrationWarning />
+                          <span className={css.swatchName}>
+                            {cover.material} <span className={css.swatchNumber}>{coverNumber(cover)}</span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

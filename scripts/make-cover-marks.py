@@ -37,12 +37,11 @@ SHAPES = {
     "memari-sans": ("memari.", "sans", 0.257 * 7),
     "memari-serif": ("memari.", "serif", 0.257 * 7),
 }
-# which finishes each shape is printed in (coverCarousel.json)
-FINISHES = {
-    "m-sans": ["imprint", "gold", "deep"],
-    "memari-sans": ["imprint", "gold", "dark"],
-    "memari-serif": ["imprint", "gold"],
-}
+# every shape in every finish: any cover takes any mark in imprint or gold
+# (2026-11-05), and a gold mark is printed in the cover's own gold - bright,
+# deep on a light cover, dark on kraft (catalogue.ts goldTone). Until then
+# each shape had only the finishes its pictures used (coverCarousel.json).
+FINISHES = {shape: ["imprint", "gold", "deep", "dark"] for shape in ("m-sans", "memari-sans", "memari-serif")}
 GOLD = {"gold": (194, 160, 96), "deep": (158, 122, 60), "dark": (94, 69, 32)}
 
 

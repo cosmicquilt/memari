@@ -12,7 +12,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const cover = coverBySlug((await params).slug);
   return cover
-    ? { title: `${cover.name} cover - memari. STUDIO`, description: `The ${cover.name} cover, ${cover.material.toLowerCase()} with ${cover.mark}, shown on a real notebook.` }
+    ? { title: `${cover.name} cover - memari. STUDIO`, description: `The ${cover.name} cover, ${cover.material.toLowerCase()} on a printed journal, shown on a real notebook, with your choice of mark, finish, dates and name.` }
     : {};
 }
 

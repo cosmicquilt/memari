@@ -35,16 +35,28 @@
 
 import type { jsPDF } from "jspdf";
 import { GState } from "jspdf";
-import type { Cover } from "@/app/covers/catalogue";
+import type { CoverFinish, CoverGoldTone, CoverMarkKind } from "@/app/covers/catalogue";
 import { COVER_MARKS } from "./coverMarks.generated";
 import type { CoverBrand, CoverLayout } from "./cover";
+import { DATES_BASELINE, DATES_REF, DATES_REF_WIDTH, DATES_RIGHT, MARK_PLACES, NAME_PLACES, NAME_ROOM, NAME_SIZE, NAME_TRACK, type FrontMark } from "./coverFront";
 
 const PT_PER_IN = 72;
 type Rgb = [number, number, number];
 const CREAM: Rgb = [0xf5, 0xea, 0xd5];
 
-/** What a photographed cover prints: the catalogue's cover, as data. */
-export type TextureCover = Pick<Cover, "id" | "kind" | "face" | "finish" | "tone" | "dated">;
+/** What a photographed cover prints: its scan, and on its front the
+ *  journal's own choices (coverFront.ts) - or the cover as pictured. */
+export type TextureCover = {
+  id: string;
+  /** where the mark is, or "none" for a front with no mark */
+  kind: CoverMarkKind | "none";
+  face: "sans" | "serif";
+  finish: CoverFinish;
+  tone: CoverGoldTone | null;
+  dated: boolean;
+  /** a name on the front, in spaced capitals; "" for none */
+  name: string;
+};
 
 /** A scan's pixels (a JPEG, carried into the PDF as it is) and size. */
 export type CoverScan = { data: Uint8Array; width: number; height: number };
@@ -58,18 +70,9 @@ const GOLD: Record<NonNullable<TextureCover["tone"]>, Rgb> = { gold: [194, 160, 
  *  shows through, a little stronger than the mark's 30% so small type reads. */
 const IMPRINT_INK = 0.45;
 
-/** Measured off the carousel's pictures (fractions of the front). */
-export const MARK_PLACES = {
-  "m-centre": { width: 0.132, x: 0.5, y: 0.34 },
-  "m-corner": { width: 0.076, x: 0.876, y: 0.922 },
-  wordmark: { width: 0.257, x: 0.5, y: 0.32 },
-} as const;
-/** The dates: "January to March 2027" is 0.26 of the front's width, its
- *  right end 0.08 in from the edge, its baseline 0.935 down. */
-const DATES_REF = "January to March 2027";
-const DATES_REF_WIDTH = 0.26;
-const DATES_RIGHT = 0.08;
-const DATES_BASELINE = 0.935;
+// Measured off the carousel's pictures (fractions of the front): one set,
+// shared with the covers page's preview (coverFront.ts).
+export { MARK_PLACES } from "./coverFront";
 
 /** Where the back's picture ends and the front's begins: the fold between
  *  the back and the spine, or the middle of wire-o's two pages. */
@@ -117,8 +120,15 @@ export function estimatedScanPpi(scan: { width: number; height: number }, cover:
 /** A cover sheet's scan prints too soft. */
 export class CoverTooSoftError extends Error {}
 
+/** The front's mark as the covers page names it. */
+function frontMark(cover: TextureCover): FrontMark {
+  if (cover.kind === "none") return "none";
+  if (cover.kind === "wordmark") return cover.face === "serif" ? "wordmark-serif" : "wordmark-sans";
+  return cover.kind;
+}
+
 /** The mark's picture for a cover: its shape and finish. */
-export function markKey(cover: TextureCover): string {
+export function markKey(cover: TextureCover & { kind: CoverMarkKind }): string {
   const shape = cover.kind === "wordmark" ? `memari-${cover.face}` : "m-sans";
   return `${shape}/${cover.finish === "imprint" ? "imprint" : (cover.tone ?? "gold")}`;
 }
@@ -137,7 +147,7 @@ function markPng(key: string): Uint8Array {
 
 /** Where the mark goes on the front, kept inside the binding's safety
  *  margin (the corner m. sits within a hair of wire-o's 15mm). */
-export function markBox(cover: TextureCover, front: { left: number; top: number; width: number; height: number }, safe: number): { x: number; y: number; w: number; h: number } {
+export function markBox(cover: TextureCover & { kind: CoverMarkKind }, front: { left: number; top: number; width: number; height: number }, safe: number): { x: number; y: number; w: number; h: number } {
   const place = MARK_PLACES[cover.kind];
   const mark = COVER_MARKS[markKey(cover)];
   const w = place.width * front.width;
@@ -202,10 +212,13 @@ export function drawTexturedCover(
   doc.addImage(scan.data, "JPEG", placed.back.x, placed.back.y, placed.back.w, placed.back.h, `scan-${cover.id}`, "NONE");
   doc.restoreGraphicsState();
 
-  // THE MARK
-  const key = markKey(cover);
-  const box = markBox(cover, { left: frontLeft, top: trimTop, width: trimW, height: trimH }, safe);
-  doc.addImage(markPng(key), "PNG", box.x, box.y, box.w, box.h, `mark-${key}`, "MEDIUM");
+  // THE MARK, unless the front has none (2026-11-05)
+  if (cover.kind !== "none") {
+    const marked = { ...cover, kind: cover.kind };
+    const key = markKey(marked);
+    const box = markBox(marked, { left: frontLeft, top: trimTop, width: trimW, height: trimH }, safe);
+    doc.addImage(markPng(key), "PNG", box.x, box.y, box.w, box.h, `mark-${key}`, "MEDIUM");
+  }
 
   // Words in the cover's finish: gold ink, or black faintly over the grain.
   const ink = (draw: () => void) => {
@@ -219,6 +232,27 @@ export function drawTexturedCover(
   };
   const frontRight = frontLeft + trimW;
   const footBaseline = Math.min(trimTop + DATES_BASELINE * trimH, trimTop + trimH - safe - 3);
+
+  // THE NAME, where one is given (2026-11-05: "as well as the persons
+  // name"): spaced capitals centred under the mark, or in the mark's place a
+  // third of the way down when the mark is in the corner or off - the places
+  // the covers page draws (coverFront.ts) - made smaller rather than running
+  // past most of the front's width
+  const name = cover.name.trim().toUpperCase();
+  if (name) {
+    let size = NAME_SIZE * trimW;
+    doc.setFontSize(size);
+    const width = () => doc.getTextWidth(name) + NAME_TRACK * size * Math.max(0, name.length - 1);
+    while (size > 6 && width() > NAME_ROOM * trimW) doc.setFontSize((size -= 0.25));
+    // the capitals' middle on the place: Newsreader's capital is 0.67em tall
+    const baseline = trimTop + NAME_PLACES[frontMark(cover)] * trimH + 0.335 * size;
+    const left = frontLeft + trimW / 2 - width() / 2;
+    ink(() => {
+      doc.setCharSpace(NAME_TRACK * size);
+      doc.text(name, left, baseline, { baseline: "alphabetic" });
+      doc.setCharSpace(0);
+    });
+  }
 
   // THE DATES, at the foot on the right, in the size the carousel set them
   if (cover.dated && input.datesWords) {

@@ -142,6 +142,9 @@ async function main() {
     { path: "/covers", expect: [200], as: "nobody", what: "the covers gallery" },
     { path: "/covers/onyx-1", expect: [200], as: "nobody", what: "one cover's own page" },
     { path: "/covers/not-a-cover", expect: [404], as: "nobody", what: "an unknown cover is 404, not 500" },
+    // a front up close (2026-11-05): the cover's whole scan, read here or sent on to the file host
+    { path: "/covers/onyx-1/scan", expect: [200, 307], as: "nobody", what: "a cover's whole scan, for its close look" },
+    { path: "/covers/not-a-cover/scan", expect: [404], as: "nobody", what: "an unknown cover's scan is 404, not 500" },
     { path: "/quiz", expect: [307, 308], as: "nobody", what: "the quiz's address sends people to the otter" },
     { path: "/help", expect: [200], as: "nobody", what: "help, whose answers the footer opens by address" },
     { path: "/modules", expect: [200], as: "nobody", what: "the modules, now in the Layouts menu" },

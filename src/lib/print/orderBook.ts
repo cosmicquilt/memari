@@ -96,24 +96,12 @@ export function trimInches(trim: PlannerTrimKey): { widthIn: number; heightIn: n
   return { widthIn: (spec.widthPx - spec.bleedPx * 2) / 300, heightIn: (spec.heightPx - spec.bleedPx * 2) / 300 };
 }
 
+/** The dates a cover prints, in words (a pure module, so the covers page
+ *  shows them as printed). */
+export { coverDatesWords } from "./coverDates";
+
 /** "4 Jan - 3 Apr 2027", or across a new year "4 Jan 2027 - 3 Jan 2028" -
  *  for the cover and the order. */
-/** The dates as a photographed cover prints them, in words, as the
- *  carousel set them ("January to March 2027"): whole months by their
- *  names, any other days by their dates, "4 January to 3 April 2027". */
-export function coverDatesWords(range: Pick<OrderRange, "start" | "end">): string {
-  const { start, end } = range;
-  const month = (d: Date) => MONTH_NAMES[d.getUTCMonth()];
-  const lastOfMonth = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate() === d.getUTCDate();
-  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
-  if (start.getUTCDate() === 1 && lastOfMonth(end)) {
-    if (sameYear && start.getUTCMonth() === end.getUTCMonth()) return `${month(start)} ${end.getUTCFullYear()}`;
-    return sameYear ? `${month(start)} to ${month(end)} ${end.getUTCFullYear()}` : `${month(start)} ${start.getUTCFullYear()} to ${month(end)} ${end.getUTCFullYear()}`;
-  }
-  const day = (d: Date) => `${d.getUTCDate()} ${month(d)}`;
-  return sameYear ? `${day(start)} to ${day(end)} ${end.getUTCFullYear()}` : `${day(start)} ${start.getUTCFullYear()} to ${day(end)} ${end.getUTCFullYear()}`;
-}
-
 export function rangeLabel(range: OrderRange): string {
   const day = (d: Date) => `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)}`;
   const sameYear = range.start.getUTCFullYear() === range.end.getUTCFullYear();

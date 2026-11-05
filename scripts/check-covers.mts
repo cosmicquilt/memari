@@ -20,10 +20,13 @@
 import "./appUnderTest.mjs";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { inflateSync } from "node:zlib";
 import { chromium } from "playwright-core";
 import { ensureServer, makeGuestJournal, disconnect } from "./appUnderTest.mjs";
 import { prisma } from "../src/lib/prisma";
-import { coverById } from "../src/app/covers/catalogue";
+import { coverById, coverNumber, type Cover } from "../src/app/covers/catalogue";
+/** a cover as the order screen names it: "Onyx 009" */
+const shownName = (c: Cover) => `${c.material} ${coverNumber(c)}`;
 import { choosableCover, coverMisfit, journalCover, loadCoverScan } from "../src/lib/print/coverScans";
 import { runRenewals, type RenewalDeps } from "../src/lib/print/renewals";
 import { createBookFor, validateNewJournal } from "../src/app/planner/bookSeeding";
@@ -50,6 +53,28 @@ const preview = async (binding: string, extra = "") => {
   return { status: response.status, type: response.headers.get("content-type") ?? "", bytes, text, jpegs: (text.match(/\/Filter \/DCTDecode/g) ?? []).length, pages: (text.match(/\/Type \/Page\b/g) ?? []).length };
 };
 let host: ReturnType<typeof createServer> | null = null;
+/** a PDF's drawing, its streams inflated */
+const drawing = (bytes: Buffer) => {
+  let out = "";
+  for (const m of bytes.toString("latin1").matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    try {
+      out += inflateSync(Buffer.from(m[1], "latin1")).toString("latin1");
+    } catch {
+      // a picture's stream
+    }
+  }
+  return out;
+};
+/** lines of spaced type: a name on the front (a coach's name is the other) */
+const spacedLines = (bytes: Buffer) => (drawing(bytes).match(/[\d.]+ Tc/g) ?? []).filter((t) => Number(t.split(" ")[0]) > 0).length;
+/** settled, not slept: the front saves as it is chosen */
+const settle = async (test: () => Promise<boolean>, ms = 10_000) => {
+  for (const end = Date.now() + ms; Date.now() < end; ) {
+    if (await test()) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return test();
+};
 
 try {
   // ---- CHOSEN
@@ -69,8 +94,8 @@ try {
   if (shots) await tab.screenshot({ path: `${shots}/covers-picker.png` });
   const onyx = coverById("Onyx010")!;
   await tab.locator('[data-cover="Onyx010"]').click();
-  await tab.waitForFunction((want) => document.querySelector("[data-cover-name]")?.textContent?.trim() === want, onyx.name, { timeout: 15_000 });
-  say((await themeOf()).cover === "Onyx010", `A COVER PICKED IS KEPT ON THE JOURNAL: "${onyx.name}" (theme.cover ${(await themeOf()).cover})`);
+  await tab.waitForFunction((want) => document.querySelector("[data-cover-name]")?.textContent?.trim() === want, shownName(onyx), { timeout: 15_000 });
+  say((await themeOf()).cover === "Onyx010", `A COVER PICKED IS KEPT ON THE JOURNAL: "${shownName(onyx)}", its number in three digits (theme.cover ${(await themeOf()).cover})`);
   if (shots) await tab.screenshot({ path: `${shots}/covers-chosen.png` });
 
   // ---- PRINTED
@@ -80,9 +105,44 @@ try {
   const paper = await preview("paperback");
   say(paper.status === 200 && paper.jpegs === 1 && paper.pages === 1, `and a paperback's one sheet (${paper.status}, ${paper.pages} page, ${paper.jpegs} scan)`);
   if (shots) writeFileSync(`${shots}/covers-onyx010-paperback.pdf`, paper.bytes);
+
+  // ---- THE FRONT'S OWN CHOICES (2026-11-05): under a photographed cover,
+  // the covers page's choices; kept on the journal as they are made, and
+  // printed - here no mark, imprint, and a name
+  const front = tab.locator("[data-cover-front]");
+  say(await front.isVisible(), "UNDER A PHOTOGRAPHED COVER, ITS FRONT'S CHOICES: Make it yours");
+  const pick = (group: string, label: string) => front.getByRole("group", { name: group }).getByRole("button", { name: label, exact: true }).click();
+  const kept = () => (themeOf().then((t) => t.coverFront as { mark?: string; finish?: string; dates?: boolean; name?: string } | undefined));
+  await pick("Mark", "No mark");
+  await settle(async () => (await kept())?.mark === "none");
+  await pick("Finish", "Imprint");
+  await settle(async () => (await kept())?.finish === "imprint");
+  await pick("Name", "On");
+  await front.getByLabel("Name on the cover").fill("Sam Rivera");
+  const named = await settle(async () => (await kept())?.name === "Sam Rivera");
+  const k = await kept();
+  say(named && k?.mark === "none" && k?.finish === "imprint", `EACH CHOICE IS KEPT ON THE JOURNAL as it is made (${JSON.stringify(k)})`);
+  const summary = (await tab.locator("[data-cover-summary]").textContent())?.trim();
+  say(summary === "No mark, imprint, with its dates, with Sam Rivera", `and the line under the cover's name says them ("${summary}")`);
+  if (shots) await tab.screenshot({ path: `${shots}/covers-front.png` });
+  const ownPdf = await preview("wireoStandard");
+  // wire-o draws the whole sheet on each of its two pages (cover.ts), so
+  // the name is in both drawings, seen on the front's; a paperback's one sheet once
+  const ownPaper = await preview("paperback");
+  say(
+    ownPdf.status === 200 && ownPdf.jpegs === 1 && !/\/SMask/.test(ownPdf.text) && spacedLines(ownPdf.bytes) === ownPdf.pages && spacedLines(ownPaper.bytes) === 1 && !/\/SMask/.test(ownPaper.text),
+    `AND PRINTED: no mark's picture on the cover, the name in spaced capitals (wire-o ${spacedLines(ownPdf.bytes)} for its ${ownPdf.pages} pages, paperback ${spacedLines(ownPaper.bytes)})`
+  );
+  // a mark back, and the name off: printed so
+  await pick("Mark", "memari. serif");
+  await pick("Finish", "Gold");
+  await pick("Name", "Off");
+  await settle(async () => (await kept())?.mark === "wordmark-serif" && (await kept())?.name === "");
+  const markBack = await preview("wireoStandard");
+  say(/\/SMask/.test(markBack.text) && spacedLines(markBack.bytes) === 0, `the mark back on and the name off print so too (${spacedLines(markBack.bytes)} spaced lines)`);
   await tab.getByRole("button", { name: "Change" }).click();
   await tab.locator('[data-cover="Concrete034"]').click();
-  await tab.waitForFunction((want) => document.querySelector("[data-cover-name]")?.textContent?.trim() === want, coverById("Concrete034")!.name);
+  await tab.waitForFunction((want) => document.querySelector("[data-cover-name]")?.textContent?.trim() === want, shownName(coverById("Concrete034")!));
   const hard = await preview("hardcover");
   say(hard.status === 409 && /isn't large enough for a hardcover/.test(hard.text), `A 2:1 SCAN IS REFUSED FOR A HARDCOVER (${hard.status}: ${hard.text.slice(0, 80)})`);
   const pbConcrete = await preview("paperback");

@@ -5,6 +5,7 @@
 // (confirmed against the same mechanism Newsreader already relied on).
 
 import type { DayIcon } from "./dayIcons";
+import type { CoverFront } from "./print/coverFront";
 
 export const FONT_SERIF = "Newsreader";
 export const FONT_SANS = "Hanken Grotesk";
@@ -29,6 +30,10 @@ export type PlannerTheme = {
    *  /covers ("Onyx004"); none for the drawn cover. Read through
    *  print/coverScans.ts journalCover, which drops one it doesn't know. */
   cover?: string;
+  /** What is on that cover's front, the person's own (2026-11-05): mark,
+   *  finish, dates and a name (print/coverFront.ts). None: the cover as it
+   *  is pictured. */
+  coverFront?: CoverFront;
 };
 
 // Cast + resolve in one step — every server action that loads a planner

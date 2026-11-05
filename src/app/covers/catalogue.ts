@@ -26,6 +26,7 @@
 
 import covers from "@/app/landing/coverCarousel.json";
 import frozenSlugs from "./coverSlugs.json";
+import goldTones from "./coverGoldTones.json";
 
 export const COVER_GROUPS = ["Stone", "Wood", "Cloth & leather", "Nature", "Board & more"] as const;
 export type CoverGroup = (typeof COVER_GROUPS)[number];
@@ -79,6 +80,8 @@ export type Cover = {
   slug: string;
   /** "Onyx 4" */
   name: string;
+  /** its number within the material, 4 - shown "004" on the covers page */
+  number: number;
   /** "Onyx" */
   material: string;
   group: CoverGroup;
@@ -94,6 +97,15 @@ export type Cover = {
   tone: CoverGoldTone | null;
   photo: string;
   image: string;
+  /** the front alone, flat, as it prints: the scan fitted to the 7 x 10
+   *  board (public/landing/covers/front, from handoff/print-scans) */
+  front: string;
+  /** the gold this cover prints when gold is chosen (2026-11-05: any cover
+   *  takes either finish): its pictured gold, else deep gold where the
+   *  cover is bright behind the mark and dark gold on kraft - the rule that
+   *  gives 24 of the 25 pictured golds the tone they were given
+   *  (coverGoldTones.json) */
+  goldTone: CoverGoldTone;
 };
 
 type Raw = { id: string; name: string; photo: string; brand?: string };
@@ -157,11 +169,14 @@ function build(list: Raw[]): Cover[] {
       id: raw.id,
       slug,
       name: `${material} ${slugNumber(slug)}`,
+      number: slugNumber(slug),
       material,
       group: MATERIAL_GROUP[raw.name],
       ...describeBrand(raw.brand ?? ""),
       photo: raw.photo,
       image: `/landing/covers/${raw.id}.webp`,
+      front: `/landing/covers/front/${raw.id}.webp`,
+      goldTone: ((goldTones as Record<string, CoverGoldTone>)[raw.id] ?? "gold") as CoverGoldTone,
     };
   });
 }
@@ -185,5 +200,17 @@ export function coverById(id: string): Cover | null {
   return BY_ID.get(id) ?? null;
 }
 
+/** "004": a cover's number as the covers page shows it, three digits
+ *  (2026-11-05: "make the texture numbers to be 3 digits ex 003 or 021"). */
+export const coverNumber = (cover: Pick<Cover, "number">) => String(cover.number).padStart(3, "0");
+
 /** How many materials there are, for the page's words. */
 export const MATERIAL_COUNT = new Set(COVERS.map((c) => c.material)).size;
+
+/** Each group's materials in words, as the page lists them: "Onyx,
+ *  marble, travertine, concrete, plaster, tiles, brick and asphalt". */
+export function groupMaterialsWords(group: CoverGroup): string {
+  const names = MATERIALS.filter((m) => MATERIAL_GROUP[m] === group && COVERS.some((c) => c.group === group && c.material.toLowerCase() === m));
+  const words = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}

@@ -36,12 +36,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { CREAM, cream, onCream } from "@/lib/cream";
 import { CONTROL_RADIUS, PANEL_RADIUS } from "./editorStyle";
-import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, journalCoverId, type OrderingStatus } from "./printActions";
+import { checkoutPrint, orderingStatus, quotePrint, reorderDefaults, clientOrderDefaults, journalCoverChoice, type OrderingStatus } from "./printActions";
+import { coverDatesWords } from "@/lib/print/coverDates";
+import type { CoverFront } from "@/lib/print/coverFront";
 import { CoverChoice } from "./CoverChoice";
 import { arrivesLabel } from "@/lib/print/arrives";
 import type { Quote } from "@/lib/print/orders";
 import { BINDINGS, BINDING_SPECS, DEFAULT_PAPER, PAPER_LABELS, paperChoices, shippedAbroad, type Binding, type PaperColour } from "@/lib/print/products";
-import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
+import { MAX_ORDER_DAYS, ORDER_LENGTH_PRESETS, orderRange, suggestedStart, type ShippingLevel } from "@/lib/print/orderRange";
 import { formatCents } from "@/lib/print/pricing";
 import { countryOptions } from "@/lib/print/countries";
 import type { ShippingAddress } from "@/lib/print/lulu";
@@ -179,6 +181,10 @@ export function OrderDialog({
   const [autoRenew, setAutoRenew] = useState(false);
   // The journal's photographed cover (CoverChoice), or null for the drawn one.
   const [coverId, setCoverId] = useState<string | null>(null);
+  // and what is on its front, the journal's own (null: as pictured), and
+  // whether the journal is dated (an undated one prints no dates)
+  const [coverFront, setCoverFront] = useState<CoverFront | null>(null);
+  const [journalDated, setJournalDated] = useState(true);
   const [busy, setBusy] = useState<"quote" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Only the latest pricing lands: choosing bindings quickly asks twice.
@@ -195,10 +201,12 @@ export function OrderDialog({
         // they give now, not the one the last book went to (review,
         // 2026-10-26).
         clientOrderDefaults(journalId),
-        journalCoverId(journalId),
+        journalCoverChoice(journalId),
       ]);
       if (!live) return;
-      setCoverId(cover);
+      setCoverId(cover?.coverId ?? null);
+      setCoverFront(cover?.front ?? null);
+      setJournalDated(cover?.dated ?? true);
       if (client) {
         setDays(client.days);
         setCustomDays(typedDays(client.days));
@@ -448,6 +456,14 @@ export function OrderDialog({
                 <CoverChoice
                   journalId={journalId}
                   coverId={coverId}
+                  front={coverFront}
+                  dated={journalDated}
+                  datesWords={(() => {
+                    // this book's dates, as its cover prints them
+                    const start = new Date(`${startISO}T00:00:00Z`);
+                    return Number.isNaN(start.getTime()) ? "" : coverDatesWords(orderRange(start, days));
+                  })()}
+                  onFrontChange={setCoverFront}
                   offered={status.covers}
                   onChange={(id) => {
                     setCoverId(id);

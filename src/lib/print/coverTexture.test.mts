@@ -13,8 +13,9 @@
 //
 // Run as part of: npm test
 
+import { inflateSync } from "node:zlib";
 import sharp from "sharp";
-import { COVERS, describeBrand } from "@/app/covers/catalogue";
+import { COVERS, describeBrand, type CoverMarkKind } from "@/app/covers/catalogue";
 import manifest from "./coverScans.json";
 import { COVER_MARKS } from "./coverMarks.generated";
 import { CoverTooSoftError, estimatedScanPpi, MARK_PLACES, markBox, markKey, MIN_COVER_PPI, placeScan, scanPlacements, type TextureCover } from "./coverTexture";
@@ -44,6 +45,10 @@ const SCANS: Record<string, { w: number; h: number; bytes: number; sha256: strin
   check(noScan.length === 0, `EVERY COVER HAS A PRINT SCAN in the manifest (${noScan.join(", ") || "none missing"})`);
   const noMark = COVERS.filter((cover) => !COVER_MARKS[markKey(cover)]).map((cover) => `${cover.id} ${markKey(cover)}`);
   check(noMark.length === 0, `every cover's mark, in its finish, has a picture (${noMark.join(", ") || "none missing"})`);
+  // any cover takes any mark in either finish, and gold in its own tone
+  // (2026-11-05): every shape in every ink has its picture
+  const missing = ["m-sans", "memari-sans", "memari-serif"].flatMap((shape) => ["imprint", "gold", "deep", "dark"].map((ink) => `${shape}/${ink}`)).filter((key) => !COVER_MARKS[key]);
+  check(missing.length === 0, `EVERY MARK IN EVERY FINISH HAS ITS PICTURE: 12 (${missing.join(", ") || "none missing"})`);
 }
 
 // ---- how a scan is laid on a sheet
@@ -87,7 +92,7 @@ const SCANS: Record<string, { w: number; h: number; bytes: number; sha256: strin
 // ---- where the mark goes
 {
   const front = { left: 0, top: 0, width: 504, height: 720 };
-  const cover = (kind: TextureCover["kind"], face: TextureCover["face"] = "sans"): TextureCover => ({ id: "x", kind, face, finish: "imprint", tone: null, dated: false });
+  const cover = (kind: CoverMarkKind, face: TextureCover["face"] = "sans"): TextureCover & { kind: CoverMarkKind } => ({ id: "x", kind, face, finish: "imprint", tone: null, dated: false, name: "" });
   const centre = markBox(cover("m-centre"), front, 15 / 25.4 * 72);
   check(near(centre.w, MARK_PLACES["m-centre"].width * 504) && near(centre.x + centre.w / 2, 252) && near(centre.y + centre.h / 2, 0.34 * 720), `the m. a third of the way down the middle, 0.132 of the width (${centre.w.toFixed(1)}pt wide at ${((centre.y + centre.h / 2) / 720).toFixed(3)})`);
   const word = markBox(cover("wordmark", "serif"), front, 36);
@@ -125,7 +130,7 @@ const SCANS: Record<string, { w: number; h: number; bytes: number; sha256: strin
     height: h,
   });
   const scan = await scanOf(3600, 3600);
-  const cover: TextureCover = { id: "Onyx010", kind: "wordmark", face: "serif", finish: "gold", tone: "gold", dated: true };
+  const cover: TextureCover = { id: "Onyx010", kind: "wordmark", face: "serif", finish: "gold", tone: "gold", dated: true, name: "" };
   const page = { widthPt: (184 / 25.4) * 72, heightPt: (260 / 25.4) * 72 };
   const panels = buildCoverPdf({ ...page, form: "panels", trimWidthIn: 7, trimHeightIn: 10, title: "My Journal", dates: "1 Jan – 31 Mar 2027", datesWords: "January to March 2027", texture: { cover, scan } });
   const text = Buffer.from(panels.bytes).toString("latin1");
@@ -144,6 +149,33 @@ const SCANS: Record<string, { w: number; h: number; bytes: number; sha256: strin
     refused = error instanceof CoverTooSoftError;
   }
   check(refused, "A SCAN TOO SMALL IS REFUSED: 1200 pixels down a wire-o page is 117 ppi");
+
+  // THE FRONT'S OWN CHOICES (2026-11-05): no mark draws no mark's picture;
+  // a name is one more line of spaced type (its letter spacing, Tc, is the
+  // only spaced text on a cover with no coach)
+  const contents = (bytes: ArrayBuffer) => {
+    const raw = Buffer.from(bytes).toString("latin1");
+    let out = "";
+    for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+      try {
+        out += inflateSync(Buffer.from(m[1], "latin1")).toString("latin1");
+      } catch {
+        // a picture's stream, not drawing
+      }
+    }
+    return out;
+  };
+  const spaced = (bytes: ArrayBuffer) => (contents(bytes).match(/[\d.]+ Tc/g) ?? []).filter((t) => Number(t.split(" ")[0]) > 0).length;
+  const sheet = { widthPt: 1058, heightPt: 738, trimWidthIn: 7, trimHeightIn: 10, title: "My Journal", dates: "" };
+  const plain = buildCoverPdf({ ...sheet, texture: { cover, scan } });
+  const bare = buildCoverPdf({ ...sheet, texture: { cover: { ...cover, kind: "none" }, scan } });
+  check(/\/SMask/.test(Buffer.from(plain.bytes).toString("latin1")) && !/\/SMask/.test(Buffer.from(bare.bytes).toString("latin1")), "NO MARK DRAWS NO MARK: the mark's picture is in the one with a mark, not in the one without");
+  const named = buildCoverPdf({ ...sheet, texture: { cover: { ...cover, name: "Sam Rivera" }, scan } });
+  check(spaced(plain.bytes) === 0 && spaced(named.bytes) === 1, `A NAME PRINTS ON THE FRONT, in spaced capitals (${spaced(plain.bytes)} spaced line without, ${spaced(named.bytes)} with)`);
+  const sizesOf = (bytes: ArrayBuffer) => [...contents(bytes).matchAll(/\/F\d+ ([\d.]+) Tf/g)].map((m) => Number(m[1]));
+  const long = buildCoverPdf({ ...sheet, texture: { cover: { ...cover, name: "Bartholomew Montgomery-Featherstonehaugh" }, scan } });
+  const full = 0.031 * 504;
+  check(sizesOf(named.bytes).some((size) => Math.abs(size - full) < 0.05) && sizesOf(long.bytes).some((size) => size < full - 1), `a name is 0.031 of the front's width (${full.toFixed(1)}pt), a long one set smaller to fit (${Math.min(...sizesOf(long.bytes)).toFixed(1)}pt)`);
 }
 
 if (failures > 0) {

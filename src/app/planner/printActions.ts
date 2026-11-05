@@ -33,6 +33,7 @@ import { choosableCover, journalCover, photographedCoversOffered } from "@/lib/p
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { PlannerTheme } from "@/lib/theme";
+import { cleanCoverFront, type CoverFront } from "@/lib/print/coverFront";
 
 /** Ready, with the bindings that can be ordered here (each one's printer has
  *  its keys), in the screen's order - the first is chosen to start with -
@@ -83,6 +84,32 @@ export async function journalCoverId(journalId: string): Promise<string | null> 
   if (!owner) return null;
   const journal = await prisma.planner.findFirst({ where: { id: journalId, ownerId: owner.id }, select: { theme: true } });
   return journal ? (journalCover(journal.theme)?.id ?? null) : null;
+}
+
+/** The journal's cover for the order screen's Cover: its scan id, the
+ *  front's own choices if it has any (null: as the cover is pictured), and
+ *  whether the journal is dated - an undated one prints no dates. */
+export async function journalCoverChoice(journalId: string): Promise<{ coverId: string | null; front: CoverFront | null; dated: boolean } | null> {
+  const owner = await currentOwner();
+  if (!owner) return null;
+  const journal = await prisma.planner.findFirst({ where: { id: journalId, ownerId: owner.id }, select: { theme: true, dated: true } });
+  if (!journal) return null;
+  return { coverId: journalCover(journal.theme)?.id ?? null, front: cleanCoverFront((journal.theme as PlannerTheme | null)?.coverFront), dated: journal.dated };
+}
+
+/** What is on the journal's cover's front, chosen on the order screen: the
+ *  mark, its finish, the dates and a name (print/coverFront.ts), kept on
+ *  the journal beside its cover, so the next book and a renewal print it. */
+export async function chooseJournalCoverFront(journalId: string, front: unknown): Promise<Result<{ front: CoverFront }>> {
+  const owner = await currentOwner();
+  if (!owner) return { ok: false, error: "Sign in, or continue as a guest, to choose a cover." };
+  const clean = cleanCoverFront(front);
+  if (!clean) return { ok: false, error: "That front isn't one we print." };
+  const journal = await prisma.planner.findFirst({ where: { id: String(journalId), ownerId: owner.id }, select: { id: true, theme: true } });
+  if (!journal) return { ok: false, error: "That journal could not be found." };
+  const theme: PlannerTheme = { ...((journal.theme as PlannerTheme | null) ?? {}), coverFront: clean };
+  await prisma.planner.update({ where: { id: journal.id }, data: { theme: theme as Prisma.InputJsonValue } });
+  return { ok: true, value: { front: clean } };
 }
 
 /** The journal's cover, chosen on the order screen: one of /covers by its

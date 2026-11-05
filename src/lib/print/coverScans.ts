@@ -24,6 +24,7 @@ import type { PlannerTheme } from "@/lib/theme";
 import { BINDING_SPECS, type Binding } from "./products";
 import { estimatedScanPpi, MIN_COVER_PPI, type CoverScan, type TextureCover } from "./coverTexture";
 import { scanSource } from "./coverSource";
+import { frontOf } from "./coverFront";
 import manifest from "./coverScans.json";
 import { OrderError } from "./orderBook";
 
@@ -37,7 +38,21 @@ export function journalCover(theme: unknown): TextureCover | null {
   const id = (theme as PlannerTheme | null)?.cover;
   if (typeof id !== "string" || !SCANS[id]) return null;
   const cover = coverById(id);
-  return cover ? { id: cover.id, kind: cover.kind, face: cover.face, finish: cover.finish, tone: cover.tone, dated: cover.dated } : null;
+  if (!cover) return null;
+  // the journal's own front, or the cover as pictured (every journal before
+  // 2026-11-05: it prints just as it did)
+  const front = frontOf(theme, cover);
+  const kind = front.mark === "none" ? "none" : front.mark === "m-corner" ? "m-corner" : front.mark === "m-centre" ? "m-centre" : "wordmark";
+  return {
+    id: cover.id,
+    kind,
+    face: front.mark === "wordmark-serif" ? "serif" : "sans",
+    finish: front.finish,
+    // a light cover's gold is the deeper gold its picture has
+    tone: front.finish === "gold" ? cover.goldTone : null,
+    dated: front.dates,
+    name: front.name,
+  };
 }
 
 /** Is this a cover a journal may choose? */
