@@ -50,8 +50,37 @@ export type GlyphRun = {
 
 let measurer: CanvasRenderingContext2D | null = null;
 function measureCtx(): CanvasRenderingContext2D {
-  if (!measurer) measurer = document.createElement("canvas").getContext("2d")!;
+  if (!measurer) {
+    measurer = document.createElement("canvas").getContext("2d")!;
+    // a measurement made in a fallback face must not outlive it
+    document.fonts?.addEventListener("loadingdone", () => {
+      measured.clear();
+      measuredFont = "";
+    });
+  }
   return measurer;
+}
+
+/** What the measurer said, by font and text (2026-11-05): planning a spread
+ *  measures the same letters in the same hand hundreds of times, and that
+ *  was 83% of planSpread - on the phone whose hero hitched as its first
+ *  writing began. The same font strings, the same metrics, measured once. */
+const measured = new Map<string, Pick<TextMetrics, "width" | "actualBoundingBoxLeft" | "actualBoundingBoxRight">>();
+let measuredFont = "";
+function measure(font: string, text: string) {
+  const key = `${font}\n${text}`;
+  let m = measured.get(key);
+  if (!m) {
+    const ctx = measureCtx();
+    if (measuredFont !== font) {
+      ctx.font = font;
+      measuredFont = font;
+    }
+    const t = ctx.measureText(text);
+    m = { width: t.width, actualBoundingBoxLeft: t.actualBoundingBoxLeft, actualBoundingBoxRight: t.actualBoundingBoxRight };
+    measured.set(key, m);
+  }
+  return m;
 }
 
 export type GlyphOptions = {
@@ -83,14 +112,12 @@ function shade(hex: string, amount: number): string {
 }
 
 export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
-  const ctx = measureCtx();
   const weight = o.weight ?? 400;
   const r = makeRng(o.seed);
   const drift = noise1(o.seed + 11);
   const wander = noise1(o.seed + 12);
   const tracking = o.tracking ?? 0;
-  ctx.font = `${weight} ${o.size}px ${o.family}`;
-  const natural = ctx.measureText(text).width * (1 + tracking * 2);
+  const natural = measure(`${weight} ${o.size}px ${o.family}`, text).width * (1 + tracking * 2);
   // SHRINK TO FIT, always (Andrew, 2026-10-06: "entries go past their space
   // shrink to fit"). Smaller down to half size, then narrower - the letters
   // drawn closer and slimmer - the way the script hand already fits
@@ -102,14 +129,14 @@ export function layoutGlyphs(text: string, o: GlyphOptions): GlyphRun {
   const fit = Math.min(1, Math.max(0.5, room));
   const squeeze = room < 0.5 ? room / 0.5 : 1;
   const size = o.size * fit;
-  ctx.font = `${weight} ${size}px ${o.family}`;
+  const font = `${weight} ${size}px ${o.family}`;
   const angle = o.angle ?? r.range(-0.018, 0.018);
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const glyphs: Glyph[] = [];
   let pen = 0;
   for (const [i, ch] of [...text].entries()) {
-    const m = ctx.measureText(ch);
+    const m = measure(font, ch);
     const advance = (m.width * r.range(0.95, 1.06) + tracking * size) * squeeze;
     if (ch !== " ") {
       const lx = pen;

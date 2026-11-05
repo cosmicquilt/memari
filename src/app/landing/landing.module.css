@@ -62,13 +62,22 @@
    say so (no script, a failed picture), they come anyway after 5s. */
 @property --wall-shown {
   syntax: "<number>";
-  inherits: true;
+  inherits: false;
   initial-value: 1;
 }
 
-.page:not([data-wall-ready]) {
+/* On the two that read it, not on the page (2026-11-05): inherited from
+   the page, its turning restyled every element on it - 1,200, a quarter
+   second on a slowed phone, as the first layout wrote itself in ("the
+   carousel stops loading in new images ... when doodles load in"). The
+   fallback is the paper's alone: with no script there are no drawings. */
+.page:not([data-wall-ready]) .paperLayer {
   --wall-shown: 0;
   animation: wallAnyway 0s linear 5s forwards;
+}
+
+.page:not([data-wall-ready]) .bodyDoodles {
+  --wall-shown: 0;
 }
 
 @keyframes wallAnyway {
@@ -86,9 +95,14 @@
    a slow phone, 2026-11-04): the paper shows with everything else, and the
    drawings fade in when they are laid out (BodyDoodles marks such a wall
    data-late). */
-.page[data-arrived]:not([data-wall-ready]),
-:root[data-site-arrived] .page:not([data-wall-ready]) {
+.page[data-arrived]:not([data-wall-ready]) :is(.paperLayer, .bodyDoodles),
+:root[data-site-arrived] .page:not([data-wall-ready]) :is(.paperLayer, .bodyDoodles) {
   --wall-shown: 1;
+}
+
+/* the paper's only: the drawings' own animation is their late fade */
+.page[data-arrived]:not([data-wall-ready]) .paperLayer,
+:root[data-site-arrived] .page:not([data-wall-ready]) .paperLayer {
   animation: none;
 }
 

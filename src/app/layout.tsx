@@ -77,6 +77,16 @@ const almarai = Almarai({
   weight: ["300", "400", "700", "800"],
 });
 
+/** The CSS property Clerk's UI registers when it loads (@clerk/ui 1.42.0,
+ *  ui-common: --cl-collapsible-mask-size), seconds into the page - and a
+ *  property registered restyles every element there is: 1,083 on the
+ *  landing, a quarter second on a slowed phone, just as the hero's first
+ *  layout writes itself in (2026-11-05: "the carousel stops loading in new
+ *  images"). Registered here first, the same, while the page is only its
+ *  head; Clerk's own call then fails inside its try/catch and changes
+ *  nothing. Should Clerk change its definition, change it here. */
+const CLERK_PROPERTY_SCRIPT = `try{CSS.registerProperty({name:"--cl-collapsible-mask-size",syntax:"<length>",initialValue:"0px",inherits:false})}catch(e){}`;
+
 export const metadata: Metadata = {
   title: "memari. STUDIO",
   description: "Build and print your own planner.",
@@ -103,6 +113,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               come, not once its script has started (arrivalScript.ts). Does
               nothing on a page without one. */}
           <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
+          {/* Clerk's one CSS property, before Clerk can restyle the whole
+              page registering it (CLERK_PROPERTY_SCRIPT). */}
+          <script dangerouslySetInnerHTML={{ __html: CLERK_PROPERTY_SCRIPT }} />
         </head>
         <body className="min-h-full flex flex-col">{children}</body>
       </html>

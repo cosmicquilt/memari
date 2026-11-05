@@ -68,7 +68,7 @@ export class PageLoop {
     for (const [i, page] of spread.pages.entries()) await pair[i].print(page, spread.fontFamily, i === 0 ? "left" : "right");
   }
 
-  private async prepareWriting(spread: LandingSpread, { first = false } = {}) {
+  private async prepareWriting(spread: LandingSpread) {
     await Promise.all([...familiesFor(spread.key).map((family) => document.fonts.load(`40px ${family}`).catch(() => [])), loadArtIndex()]);
     // A spread whose writing fails is shown unwritten rather than stopping
     // the loop on it: a throw here left the hero on one week forever.
@@ -79,9 +79,9 @@ export class PageLoop {
       console.error(`Writing ${spread.key}'s week failed:`, error);
     }
     const { strokes, duration } = inkTimeline(plan, WRITING_TARGET, this.cycle + 1);
-    // the first spread's letters for its opening seconds, the rest warmed
-    // behind the pen; later spreads are prepared while one rests
-    await prepareInk(strokes, this.showing[0].scale, first ? { firstSeconds: 3 } : {});
+    // every letter made before the writing starts, the first spread's too
+    // (prepareInk, 2026-11-05); later spreads are prepared while one rests
+    await prepareInk(strokes, this.showing[0].scale);
     return { timeline: strokes, duration };
   }
 
@@ -98,7 +98,7 @@ export class PageLoop {
    *  now the layout comes as soon as it is printed, and the writing is
    *  planned while it fades (start() waits for it, if it must). */
   async ready() {
-    this.firstWriting = this.prepareWriting(this.spreadAt(0), { first: true })
+    this.firstWriting = this.prepareWriting(this.spreadAt(0))
       // the ink failing leaves the spread unwritten, never the hero stuck
       .catch((error) => {
         console.error("Planning the first spread's writing failed:", error);

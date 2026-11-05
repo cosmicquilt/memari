@@ -96,7 +96,7 @@ const WARM_AFTER_MS = 6000;
  *  hero). There the covers come as they always could: each fetched as it
  *  drifts near (loading="lazy") and decoded off the main thread. */
 function warmWhenIdle(track: HTMLElement | null) {
-  if (window.matchMedia("(max-aspect-ratio: 1/1)").matches || CSS.supports("-webkit-touch-callout", "none")) return () => {};
+  if (coldCovers()) return () => {};
   const warm = () => {
     for (const img of track?.querySelectorAll("img") ?? []) {
       img.loading = "eager";
@@ -109,6 +109,43 @@ function warmWhenIdle(track: HTMLElement | null) {
   }
   const t = setTimeout(warm, 1500);
   return () => clearTimeout(t);
+}
+
+/** A phone, or anywhere on iOS: the covers are not warmed (warmWhenIdle). */
+function coldCovers() {
+  return window.matchMedia("(max-aspect-ratio: 1/1)").matches || CSS.supports("-webkit-touch-callout", "none");
+}
+
+/** How far past the screen's right edge the covers coming are fetched where
+ *  they are not warmed, in screens: at the strip's pace, seconds ahead. */
+const AHEAD_SCREENS = 2;
+
+/** Where the covers are not warmed, the ones coming fetched a little ahead
+ *  of the screen (2026-11-05, his iPhone: "the carousel stops loading in new
+ *  images even though it keeps moving, then after the hitch it loads and
+ *  works"). WebKit starts a lazy picture only once it is nearly on the
+ *  screen - Chrome some 1,250px ahead - so each cover was fetched at the last
+ *  moment, and the first writing's burst (its doodles, the wall's, the
+ *  sign-in scripts) left them coming as they came on. Fetched only, a few at
+ *  a time as the strip drifts, not decoded: all 85 decoded at once is what
+ *  crashed. The strip moves left at one speed and its covers come in the
+ *  page's order, so only the next one is looked at; the second copy's are
+ *  the same pictures, fetched by then. */
+function fetchAhead(track: HTMLElement | null) {
+  const imgs = [...(track?.firstElementChild?.querySelectorAll("img") ?? [])];
+  let next = imgs.findIndex((img) => img.loading === "lazy");
+  if (next < 0) return () => {};
+  const tick = () => {
+    const edge = window.innerWidth * (1 + AHEAD_SCREENS);
+    while (next < imgs.length && imgs[next].getBoundingClientRect().left < edge) {
+      imgs[next].loading = "eager";
+      next++;
+    }
+    if (next >= imgs.length) window.clearInterval(id);
+  };
+  const id = window.setInterval(tick, 500);
+  tick();
+  return () => window.clearInterval(id);
 }
 
 /** `seed`: the visit's deal, drawn by the server for each visit (Landing),
@@ -154,6 +191,14 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
     };
   }, []);
   const duration = arrived && width && speed > 0 ? width / speed : 0;
+
+  // Where they are not warmed: the covers coming fetched ahead, from when
+  // the strip starts to move - not after the doodle wall, as the warming
+  // waits: the first writing's hitch comes before it (fetchAhead).
+  useEffect(() => {
+    if (!arrived || !coldCovers()) return;
+    return fetchAhead(track.current);
+  }, [arrived, order]);
 
   // Every picture fetched and decoded once the page is idle, not as it
   // drifts into view: decoding on arrival dropped frames ("carousel frame
