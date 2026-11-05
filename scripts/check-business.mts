@@ -22,6 +22,19 @@ const say = (ok: boolean, what: string) => {
   if (!ok) failures++;
   console.log(`${ok ? "ok  " : "FAIL"}  ${what}`);
 };
+// SETTLED, NOT SLEPT (2026-11-05): after a step that changes something, poll
+// the condition its check reads (a row, a locator) every 150ms until it holds
+// or the deadline passes, rather than sleeping a fixed time a busy dev server
+// outran. The check then reads and asserts as it always did, so a change that
+// never comes still fails, only later.
+const settle = async (test: () => Promise<boolean>, ms = 10_000) => {
+  for (const end = Date.now() + ms; ; ) {
+    // a read can throw while a page is between documents: not yet, not a failure
+    if (await test().catch(() => false)) return true;
+    if (Date.now() >= end) return false;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+};
 // the development build's own badge left out of the shots
 const HIDE_DEV = `addEventListener("DOMContentLoaded", () => { const s = document.createElement("style"); s.textContent = "nextjs-portal { display: none !important; }"; document.head.append(s); });`;
 const shoot = async (tab: Page, name: string) => {
@@ -37,11 +50,28 @@ try {
   await context.addInitScript(HIDE_DEV);
   const tab = await context.newPage();
 
+  // THE PAGE FOR COACHES (/business, 2026-11-05), the header's "For
+  // businesses": its way in is in the visitor's words, and leads to the
+  // workspace. A guest with no business yet tries it.
+  const wayIn = async () => {
+    await tab.goto(`${server.base}/business`, { waitUntil: "networkidle" });
+    const links = tab.locator("main").getByRole("link");
+    const words = await links.allTextContents();
+    const hrefs = await links.evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+    return { words, hrefs };
+  };
+  {
+    const { words, hrefs } = await wayIn();
+    const tries = words.filter((w) => w === "Try it without an account").length;
+    say(tries === 2 && hrefs.includes("/app/business") && !words.includes("Open your workspace"), `the page for coaches, to a guest with no business: Try it without an account, twice, into the workspace (${tries})`);
+  }
+
   // Before there is a business: what it is, and its name.
   await tab.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
   say((await tab.getByRole("heading", { name: /for businesses/ }).count()) > 0, "before a business: the start page");
   await shoot(tab, "biz-start");
   await tab.getByRole("button", { name: "Start" }).click();
+  // a sleep that stays: this checks that nothing happens, which only time shows
   await tab.waitForTimeout(500);
   const stopped = await tab.getByLabel("Your business’s name").evaluate((el) => !(el as HTMLInputElement).validity.valid);
   say(stopped && !(await prisma.business.findUnique({ where: { ownerId: guest.ownerId } })), "starting with no name is stopped: a name is required");
@@ -52,6 +82,12 @@ try {
   const business = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
   say(!!business && business.name === "Northwind Coaching", "the business is made, the guest's");
   say((await tab.getByText("0 of 4").count()) === 1, "Home: the checklist, nothing done");
+  {
+    const { words } = await wayIn();
+    const opens = words.filter((w) => w === "Open your workspace").length;
+    say(opens === 2 && !words.includes("Try it without an account"), `and to a coach with a business: Open your workspace, twice (${opens})`);
+    await tab.goto(`${server.base}/app/business`, { waitUntil: "networkidle" });
+  }
   // THE DOODLE WALL (2026-10-31): the start dialog's pens, fainter, behind
   // the coach's workspace - Studio's wall in light, Night's in dark - and
   // the picture really there, not a 404 behind a plain ground.
@@ -74,7 +110,7 @@ try {
   await tab.getByLabel("Use one of your journals").selectOption({ label: "Clarity Quarterly" });
   await tab.getByRole("button", { name: "Make it a template" }).click();
   await tab.getByRole("cell", { name: "Clarity Quarterly" }).or(tab.getByText("Clarity Quarterly", { exact: true })).first().waitFor();
-  await tab.waitForTimeout(400);
+  await settle(async () => (await prisma.businessTemplate.findFirst({ where: { businessId: business!.id } }))?.plannerId === guest.journalId);
   const template = await prisma.businessTemplate.findFirst({ where: { businessId: business!.id } });
   say(template?.plannerId === guest.journalId, "the journal is the business's template");
   await shoot(tab, "biz-templates");
@@ -115,8 +151,9 @@ try {
   say(!!(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.archivedAt, "Archive archives at once");
   await shoot(tab, "biz-undo");
   await tab.getByRole("button", { name: "Undo" }).click();
-  await tab.waitForTimeout(800);
-  say(!(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.archivedAt, "Undo brings her back");
+  // settled, not slept: on a busy server the undo took longer than a fixed
+  // 800ms (2026-11-05), and every check after it failed with it
+  say(await settle(async () => !(await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.archivedAt), "Undo brings her back");
 
   // HER JOURNAL, built from the template and linked to it.
   await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
@@ -223,7 +260,7 @@ try {
   await tab.getByRole("heading", { name: "Settings" }).waitFor();
   await tab.getByLabel("Logo").fill("http://example.com/logo.png");
   await tab.getByRole("button", { name: "Save" }).first().click();
-  await tab.waitForTimeout(1500);
+  await settle(async () => (await tab.getByRole("alert").filter({ hasText: "https" }).count()) === 1);
   say((await tab.getByRole("alert").filter({ hasText: "https" }).count()) === 1, "a logo address that is not https is refused");
   // a real picture (the otter, standing in for a coach's logo), so the shots show one
   await tab.getByLabel("Logo").fill("https://memari.studio/landing/otter/otter-1.webp");
@@ -305,7 +342,7 @@ try {
   say((await tab.locator(`svg[aria-label="Spent"] g[aria-label="${thisMonth}: $34.75"]`).count()) === 1, "and spent, $34.75 this month, on a chart of its own");
   await tab.getByRole("link", { name: "6 months", exact: true }).click();
   await tab.waitForURL("**/orders?range=6");
-  await tab.waitForTimeout(400);
+  await settle(async () => (await columns.count()) === 6);
   say((await columns.count()) === 6, "6 months: the charts redraw over 6");
   await shoot(tab, "biz-orders-charts");
   await tab.goto(`${server.base}/app/business/clients`, { waitUntil: "networkidle" });
@@ -331,14 +368,14 @@ try {
     say(first === "dark" && darkGround !== "rgb(247, 244, 238)", `Automatic with the system dark: dark from the first paint (${first}, ${darkGround})`);
     await dark.getByRole("button", { name: /^Appearance/ }).click();
     await dark.getByRole("menuitemradio", { name: /^Light/ }).click();
-    await dark.waitForTimeout(200);
+    await settle(async () => (await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"))) === "light");
     const chosen = await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"));
     await dark.reload({ waitUntil: "networkidle" });
     const kept = await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"));
     say(chosen === "light" && kept === "light" && (await ground(dark)) === "rgb(247, 244, 238)", `Light chosen holds against the system, and over a reload (${chosen}, ${kept})`);
     await dark.getByRole("button", { name: /^Appearance/ }).click();
     await dark.getByRole("menuitemradio", { name: /^Dark/ }).click();
-    await dark.waitForTimeout(200);
+    await settle(async () => (await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"))) === "dark");
     say((await dark.evaluate(() => document.querySelector("[data-biz-root]")?.getAttribute("data-mode"))) === "dark", "Dark chosen: dark");
     await night.close();
   }
@@ -364,7 +401,7 @@ try {
   const her = await visitor.newPage();
   const opened = await her.goto(link, { waitUntil: "networkidle" });
   say(opened?.status() === 200 && (await her.getByRole("heading", { name: "Maya, your journal" }).count()) === 1, "with no account or cookie, the link opens her page");
-  await her.waitForTimeout(1500);
+  await settle(async () => (await her.locator("canvas").count()) >= tplPages.length);
   const canvases = await her.locator("canvas").count();
   say(canvases >= tplPages.length, `her page shows her journal's pages (${canvases} drawn)`);
   say((await her.getByText("Approved", { exact: true }).count()) === 1, "and her book");
@@ -395,7 +432,7 @@ try {
   // a new link stops the old; turning it off closes the page
   await tab.getByRole("button", { name: "Make a new link to copy" }).click();
   await linkBox.waitFor();
-  await tab.waitForTimeout(300);
+  await settle(async () => (await linkBox.inputValue()) !== link);
   const newLink = await linkBox.inputValue();
   say(newLink !== link && (await her.goto(link))?.status() === 404 && (await her.goto(newLink))?.status() === 200, "a new link: the old one stops working, the new one opens");
   // TURN IT OFF, WITH AN UNDO (review, 2026-10-26: it could not be taken
@@ -407,11 +444,16 @@ try {
   say((await her.goto(newLink))?.status() === 404, "turned off: her page is closed at once");
   await shoot(tab, "biz-link-off-undo");
   await undo.click();
-  await tab.waitForTimeout(800);
+  await settle(async () => (await linkBox.count()) === 1 && (await fetch(newLink)).status === 200);
   say((await her.goto(newLink))?.status() === 200 && (await linkBox.count()) === 1, "TURN IT OFF HAS AN UNDO: the same link opens her page again, and is shown to copy again");
   await tab.getByRole("button", { name: "Turn it off" }).click();
   await undo.waitFor();
-  await tab.waitForTimeout(800);
+  await settle(
+    async () =>
+      (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessMadeAt === null &&
+      (await tab.getByRole("button", { name: "Make a link to copy" }).count()) === 1 &&
+      (await fetch(newLink)).status === 404
+  );
   say((await her.goto(newLink))?.status() === 404 && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.accessMadeAt === null, "turned off again and left: her page stays closed");
   say((await tab.getByRole("button", { name: "Make a link to copy" }).count()) === 1, "and the card offers a new link, not the old one");
   say((await her.goto(`${server.base}/c/not-a-real-token`))?.status() === 404, "a made-up link opens nothing");
@@ -463,7 +505,10 @@ try {
     await tab.getByRole("radio", { name: /^Your clients/ }).check();
     await tab.getByRole("radio", { name: /^Memari.s price What you would pay/ }).check();
     await tab.getByRole("button", { name: "Save" }).last().click();
-    await tab.waitForTimeout(800);
+    await settle(async () => {
+      const saved = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
+      return saved?.clientsPay === true && saved.markupCents === 0;
+    });
     let biz = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
     say(biz?.clientsPay === true && biz.markupCents === 0, "Who pays for books: Your clients, at Memari's price, saved");
     await tab.getByRole("radio", { name: /^Memari.s price, plus your share/ }).check();
@@ -473,7 +518,10 @@ try {
     say(payoutCountries.includes("US") && payoutCountries.includes("GB") && payoutCountries.includes("DE") && payoutCountries.includes("CA") && payoutCountries.includes("CH") && !payoutCountries.includes("AU"), `where they can be paid: the US, UK, Europe, Canada, Switzerland - not yet Australia (${payoutCountries.length - 1} countries)`);
     say((await tab.getByLabel("Where you are paid").inputValue()) === "", "no country chosen for them: the coach must pick one");
     await tab.getByRole("button", { name: "Save" }).last().click();
-    await tab.waitForTimeout(800);
+    await settle(async () => {
+      const saved = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
+      return saved?.markupCents === 1000 && !saved.payoutsReady;
+    });
     biz = await prisma.business.findUnique({ where: { ownerId: guest.ownerId } });
     say(biz?.markupCents === 1000 && !biz.payoutsReady, "the share is kept, $10, payouts not set up");
     say((await tab.getByText(/Until then, clients pay Memari.s price\./).count()) === 1 && (await tab.getByRole("button", { name: "Set up payouts" }).isDisabled()), "until payouts are set up clients pay Memari's price, and with payments off here Set up payouts cannot be pressed");
@@ -521,6 +569,46 @@ try {
     say((await herPage.getByText("Thank you: your book is ordered.").count()) === 1 && (await herPage.getByRole("heading", { name: "Order your next book" }).count()) === 0, "back from paying: thanks, and not the same order form again");
     await shoot(herPage, "biz-portal-placed");
     await reader.close();
+
+    // PRINTING IT THEMSELVES (2026-11-05: "theyll get a link and be able to
+    // print it from there as an option"; Business.clientsMayPrint, the
+    // coach's switch). Off by default: her link's /print gives nothing. On:
+    // her page offers it, and /print is her whole journal as the very PDF
+    // her coach downloads. A turned-off link, or a made-up one, never.
+    {
+      const printUrl = `${emailedLink}/print`;
+      const pagesIn = (bytes: Uint8Array) => (new TextDecoder("latin1").decode(bytes).match(/\/Type\s*\/Page\b(?!s)/g) ?? []).length;
+      say((await fetch(printUrl)).status === 404, "printing at home is off until the coach turns it on: her /print gives nothing");
+      await tab.goto(`${server.base}/app/business/settings`, { waitUntil: "networkidle" });
+      await tab.getByRole("checkbox", { name: /^Let clients print it themselves/ }).check();
+      await tab.getByRole("button", { name: "Save" }).last().click();
+      await settle(async () => (await prisma.business.findUnique({ where: { ownerId: guest.ownerId } }))?.clientsMayPrint === true);
+      say((await prisma.business.findUnique({ where: { ownerId: guest.ownerId } }))?.clientsMayPrint === true, "Let clients print it themselves: saved");
+      await shoot(tab, "biz-settings-print");
+      const printing = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await printing.addInitScript(HIDE_DEV);
+      const herPrint = await printing.newPage();
+      await herPrint.goto(emailedLink, { waitUntil: "networkidle" });
+      say(
+        (await herPrint.getByRole("heading", { name: "Print it yourself" }).count()) === 1 && (await herPrint.getByRole("link", { name: "Download to print" }).count()) === 1 && (await herPrint.getByRole("link", { name: "Find a library" }).count()) === 1,
+        "her page: Print it yourself, with Download to print and Find a library"
+      );
+      await shoot(herPrint, "biz-portal-print");
+      await printing.close();
+      const pdf = await fetch(printUrl);
+      const bytes = new Uint8Array(await pdf.arrayBuffer());
+      const isPdf = new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-";
+      say(pdf.status === 200 && pdf.headers.get("content-type") === "application/pdf" && isPdf && (pdf.headers.get("content-disposition") ?? "").startsWith("attachment"), `with no account, her link downloads her journal as a PDF (${pdf.status}, ${bytes.length} bytes)`);
+      const coachPdf = new Uint8Array(await (await tab.request.get(`${server.base}/app/export?journal=${journalId}`)).body());
+      say(pagesIn(bytes) > 0 && pagesIn(bytes) === pagesIn(coachPdf), `the same book her coach downloads: ${pagesIn(bytes)} pages, and ${pagesIn(coachPdf)}`);
+      say((await fetch(`${newLink}/print`)).status === 404 && (await fetch(`${server.base}/c/not-a-real-token/print`)).status === 404, "a turned-off link and a made-up one print nothing");
+      await tab.getByRole("checkbox", { name: /^Let clients print it themselves/ }).uncheck();
+      await tab.getByRole("button", { name: "Save" }).last().click();
+      // the row her /print reads, not /print itself: asked while still on, it
+      // renders her whole book each time
+      await settle(async () => (await prisma.business.findUnique({ where: { ownerId: guest.ownerId } }))?.clientsMayPrint === false);
+      say((await fetch(printUrl)).status === 404, "switched off again: her /print gives nothing");
+    }
 
     // a book she paid for herself, with the coach's $10 share
     const before = await prisma.printOrder.count({ where: { plannerId: journalId! } });
@@ -602,11 +690,15 @@ try {
   tab.once("dialog", (dialog) => void dialog.accept());
   await tab.getByRole("button", { name: "Reset to their template" }).click();
   await tab.getByRole("button", { name: "Reset to their template" }).waitFor({ timeout: 60_000 });
-  await tab.waitForTimeout(800);
-  const reset = await prisma.page.findMany({ where: { plannerId: journalId! }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
-  const tplNow = await prisma.page.findMany({ where: { plannerId: guest.journalId }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  const pagesNow = (plannerId: string) => prisma.page.findMany({ where: { plannerId }, orderBy: [{ level: "asc" }, { variantKey: "asc" }, { position: "asc" }] });
+  const isReset = (reset: Awaited<ReturnType<typeof pagesNow>>, tplNow: typeof reset) =>
+    !reset.some((p) => p.id === ownPage.id) && reset.length === tplNow.length && tplNow.every((t) => reset.some((p) => p.savedPageId === t.savedPageId && p.level === t.level && p.position === t.position));
+  // as long as the button itself is given: a reset rebuilds her whole journal
+  await settle(async () => isReset(await pagesNow(journalId!), await pagesNow(guest.journalId)), 60_000);
+  const reset = await pagesNow(journalId!);
+  const tplNow = await pagesNow(guest.journalId);
   say(
-    !reset.some((p) => p.id === ownPage.id) && reset.length === tplNow.length && tplNow.every((t) => reset.some((p) => p.savedPageId === t.savedPageId && p.level === t.level && p.position === t.position)),
+    isReset(reset, tplNow),
     `Reset to their template: her own page gone, the template's ${tplNow.length} pages, linked, in their places (${reset.length})`
   );
 
@@ -658,14 +750,19 @@ try {
     await tab.getByText("Second template is no longer a template").waitFor();
     say((await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === null, "Stop using: she is on no template");
     await tab.getByRole("button", { name: "Undo" }).click();
-    await tab.waitForTimeout(1500);
+    await settle(async () => {
+      const again = await prisma.businessTemplate.findUnique({ where: { plannerId: second.id } });
+      return !!again && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === again.id;
+    });
     const back = await prisma.businessTemplate.findUnique({ where: { plannerId: second.id } });
     say(!!back && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === back.id, "Undo: the journal is a template again, and she is back on it");
     say(await mark("edited after the undo"), "and its edits reach her again");
     await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
     await stop().click();
     await tab.getByText("Second template is no longer a template").waitFor();
-    await tab.waitForTimeout(500);
+    // on what decides whether its edits reach her, her template gone - not on
+    // mark(), which writes the very edit it then looks for
+    await settle(async () => !(await prisma.businessTemplate.findUnique({ where: { plannerId: second.id } })) && (await prisma.businessClient.findUnique({ where: { id: client!.id } }))?.templateId === null);
     say(!(await mark("edited once it was no template")), "once it is not her template, its edits no longer reach her journal");
     await prisma.planner.delete({ where: { id: second.id } });
   }
@@ -698,7 +795,7 @@ try {
     await tab.waitForURL(`**/templates?move=${copy.templateId}*`);
     const card = tab.locator("#move");
     await card.waitFor();
-    await tab.waitForTimeout(400);
+    await settle(async () => (await card.getByLabel("Move to").inputValue()) === copy.templateId);
     say((await card.getByLabel("Move to").inputValue()) === copy.templateId, "MOVE CLIENTS HERE, on the copy's row: the card opens on the copy");
     say(
       (await card.getByRole("checkbox", { name: /Noor Haddad/ }).count()) === 1 && (await card.getByRole("checkbox", { name: /Theo Brandt/ }).count()) === 1 && (await card.getByRole("checkbox", { name: /Maya/ }).count()) === 1 && (await card.getByText("On Clarity Quarterly now").count()) === 1,
@@ -766,7 +863,7 @@ try {
     await tab.goto(`${server.base}/app/business/templates`, { waitUntil: "networkidle" });
     const card = tab.locator("#move");
     await card.waitFor();
-    await tab.waitForTimeout(400);
+    await settle(async () => (await card.getByLabel("Move to").inputValue()) === second.templateId);
     say((await card.getByLabel("Move to").inputValue()) === second.templateId, "with nothing asked for, the card opens on the newest template with no clients");
     for (const c of six) await card.getByRole("checkbox", { name: new RegExp(c.name) }).check();
     say((await card.locator("[data-move-assistant]").count()) === 1, "IT SAYS THE ASSISTANT'S CHANGES TO IT CAN'T BE UNDONE ONCE CLIENTS ARE ON IT, before anything moves");
@@ -776,7 +873,14 @@ try {
     const sixToast = tab.getByRole("status").filter({ hasText: "6 clients moved to Clarity Quarterly (copy 2)" });
     const toasted = await sixToast.waitFor({ timeout: 90_000 }).then(() => true, () => false);
     tab.off("request", countActions);
-    await tab.waitForTimeout(800);
+    // the moved six leave the card only with the server's list, once the page
+    // has come back (MoveClients.tsx movable), so this can't hold before it
+    await settle(
+      async () =>
+        (await prisma.businessClient.count({ where: { id: { in: six.map((c) => c.id) }, templateId: second.templateId } })) === 6 &&
+        (await card.getByLabel("Move to").inputValue()) === second.templateId &&
+        (await card.getByRole("checkbox", { name: /Six/ }).count()) === 0
+    );
     const sixAfter = await prisma.businessClient.count({ where: { id: { in: six.map((c) => c.id) }, templateId: second.templateId } });
     say(toasted && sixAfter === 6 && actions === 2, `SIX ARE MOVED IN TURNS: ${actions} requests, ${sixAfter} on the copy`);
     say((await card.getByLabel("Move to").inputValue()) === second.templateId && (await card.getByRole("checkbox", { name: /Six/ }).count()) === 0, "AND THE CARD KEEPS ITS PLACE AS THE PAGE COMES BACK: still on the copy they went to");
@@ -871,8 +975,8 @@ try {
   await shoot(tab, "biz-switcher");
   await tab.getByRole("menuitem", { name: /Your journals/ }).click();
   await tab.waitForURL("**/app");
-  await tab.waitForTimeout(1500);
   const { journalsOf } = await import("../src/app/planner/journals");
+  await settle(async () => !(await journalsOf(guest.ownerId)).some((j) => j.id === guest.journalId));
   say(!(await journalsOf(guest.ownerId)).some((j) => j.id === guest.journalId), "the template is listed in the business, not in the guest's own journals");
 
   // A phone: the menu across the top, the rows as cards.

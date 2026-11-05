@@ -72,7 +72,7 @@ export async function clientForToken(token: string) {
   const client = await prisma.businessClient.findUnique({
     where: { accessTokenHash: hashOf(token) },
     include: {
-      business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, payoutsReady: true, stripeAccountId: true } },
+      business: { select: { name: true, logoUrl: true, ownerId: true, clientsPay: true, markupCents: true, clientsMayPrint: true, payoutsReady: true, stripeAccountId: true } },
       // where their books go while their group sends every book to one place
       group: { select: { name: true, shipToVenue: true, venueAddress: true } },
     },
@@ -92,6 +92,9 @@ const LEVELS: Array<{ level: string; label: string }> = [
 export type PortalPage = { marks: PreviewMark[]; widthPx: number; heightPx: number };
 export type PortalData = {
   business: { name: string; logoUrl: string | null };
+  /** Their coach lets them print their journal themselves, and there is a
+   *  journal to print (/c/<token>/print, 2026-11-05). */
+  canPrint: boolean;
   client: { name: string; coverName: string | null; address: Partial<ShippingAddress> | null; startDate: Date | null; bookMonths: number };
   /** Their group's place, while it sends every book there: what their page
    *  says instead of asking where to post them (groups, 2026-10-31). */
@@ -153,6 +156,7 @@ export async function portalFor(token: string): Promise<PortalData | null> {
   }
   return {
     business: { name: client.business.name, logoUrl: client.business.logoUrl },
+    canPrint: client.business.clientsMayPrint && !!client.plannerId && !!journal?.length,
     client: {
       name: client.name,
       coverName: client.coverName,

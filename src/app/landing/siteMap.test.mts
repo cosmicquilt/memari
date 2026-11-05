@@ -56,7 +56,7 @@ check(HEADER_LINKS.some((l) => l.href === "/covers"), "Covers is in the header")
 check(!HEADER_LINKS.some((l) => l.href === "/pricing"), "Pricing is not in the header (his call)");
 check(FOOTER_COLUMNS.some((c) => c.links.some((l) => l.href === "/pricing")), "but Pricing is in the footer");
 // pages missing from both header and footer until now
-for (const href of ["/modules", "/layouts#planners", "/quiz", "/covers", "/app/business"]) {
+for (const href of ["/modules", "/layouts#planners", "/quiz", "/covers", "/business"]) {
   check(FOOTER_COLUMNS.some((c) => c.links.some((l) => l.href === href)), `${href} is in the footer`);
 }
 check(FOOTER_COLUMNS.some((c) => c.links.some((l) => l.href === `mailto:${LEGAL_CONTACT}`)), "Contact writes to the legal contact address");

@@ -723,6 +723,11 @@ model Business {
   /// What a client pays on top of Memari's price, the coach's share; 0 is
   /// Memari's price. More than 0 only with payouts ready.
   markupCents     Int                @default(0)
+  /// Clients may print their own book from their link (2026-11-05: "theyll
+  /// get a link and be able to print it from there as an option"): their
+  /// page offers their journal as the print-ready PDF. The coach's switch,
+  /// off by default - a book printed at home earns no one anything.
+  clientsMayPrint Boolean            @default(false)
   /// The coach's Stripe Connect account (Express), for their share.
   stripeAccountId String?            @unique
   /// Stripe has said it can take payments and pay out to it.

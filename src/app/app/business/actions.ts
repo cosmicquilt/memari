@@ -84,7 +84,9 @@ export async function saveBookPayer(_: FormState, form: FormData): Promise<FormS
     if (!Number.isFinite(dollars) || cents < MIN_SHARE_CENTS || cents > MAX_SHARE_CENTS) return { error: `Your share is an amount from $${MIN_SHARE_CENTS / 100} to $${MAX_SHARE_CENTS / 100} a book.` };
     markupCents = cents;
   }
-  await prisma.business.update({ where: { id: business.id }, data: { clientsPay, markupCents } });
+  // and whether their page also lets them print it themselves (2026-11-05)
+  const clientsMayPrint = form.get("print") === "on";
+  await prisma.business.update({ where: { id: business.id }, data: { clientsPay, markupCents, clientsMayPrint } });
   revalidatePath("/app/business", "layout");
   return { saved: true };
 }

@@ -145,6 +145,11 @@ async function main() {
     { path: "/quiz", expect: [307, 308], as: "nobody", what: "the quiz's address sends people to the otter" },
     { path: "/help", expect: [200], as: "nobody", what: "help, whose answers the footer opens by address" },
     { path: "/modules", expect: [200], as: "nobody", what: "the modules, now in the Layouts menu" },
+    // the page for coaches, the header's "For businesses" (2026-11-05), and
+    // a client's own print link (clientsMayPrint) that isn't one
+    { path: "/business", expect: [200], as: "nobody", what: "the page for coaches" },
+    { path: "/business", expect: [200], as: "guest", what: "the page for coaches, for a guest" },
+    { path: "/c/not-a-real-token/print", expect: [404], as: "nobody", what: "a client's print link that isn't one is 404, not 500" },
     { path: "/guest", expect: [303], as: "nobody", what: "GET /guest redirects rather than minting a guest" },
     { path: "/app", expect: [307, 302, 303], as: "nobody", what: "/app with no cookie is sent to sign-in" },
     { path: "/app", expect: [200], as: "guest", what: "the start dialog" },

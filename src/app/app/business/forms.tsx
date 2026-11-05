@@ -71,6 +71,7 @@ export function SettingsForm({ name, logoUrl }: { name: string; logoUrl: string 
 export function BookPayerForm({
   clientsPay,
   markupCents,
+  clientsMayPrint = false,
   payouts,
   paymentsOn,
   guest = false,
@@ -78,6 +79,8 @@ export function BookPayerForm({
 }: {
   clientsPay: boolean;
   markupCents: number;
+  /** Their page also offers their journal as a print-ready PDF (2026-11-05). */
+  clientsMayPrint?: boolean;
   /** none: no Stripe account; pending: made, Stripe wants more; noBank: the
    *  share is on and collects in Stripe until they add a bank (payouts.ts
    *  standingOf); ready: paid out to their bank too. */
@@ -94,6 +97,7 @@ export function BookPayerForm({
   const [who, setWho] = useState(clientsPay ? "client" : "coach");
   const [price, setPrice] = useState(markupCents > 0 ? "share" : "memari");
   const [share, setShare] = useState(markupCents > 0 ? (markupCents / 100).toFixed(2).replace(/\.00$/, "") : "10");
+  const [canPrint, setCanPrint] = useState(clientsMayPrint);
   const [payoutError, setPayoutError] = useState<string | null>(null);
   // no country until the coach chooses one: a US account made by default
   // for a coach in Germany could not be paid there (third review)
@@ -163,6 +167,19 @@ export function BookPayerForm({
             )}
           </fieldset>
         )}
+        {/* As well as a printed book: their journal to print themselves
+            (2026-11-05, "theyll get a link and be able to print it from
+            there as an option"). */}
+        <fieldset className={css.choices}>
+          <legend className={css.choicesLegend}>Printing at home</legend>
+          <label className={css.choice}>
+            <input type="checkbox" name="print" value="on" checked={canPrint} onChange={(e) => setCanPrint(e.target.checked)} />
+            <span>
+              <strong>Let clients print it themselves</strong>
+              <small>Their page offers their journal as a print-ready PDF, for home, a print shop or a library. A book printed that way is free: no one is paid for it.</small>
+            </span>
+          </label>
+        </fieldset>
         <Status state={state} />
         <div className={css.actions}>
           <button type="submit" className={`${css.btn} ${css.primary}`} disabled={pending}>

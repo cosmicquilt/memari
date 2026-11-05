@@ -56,11 +56,11 @@ export const HEADER_LINKS: SiteLink[] = [
   { href: "/help", label: "Help" },
 ];
 
-/** Quiet, beside Sign in: the existing start page for now; a public page
- *  for coaches is the proposal's phase 2. Named for the side itself,
- *  memari. for businesses (2026-11-04: "i like for businesses better than
- *  for coaches"); coaches are who it is for first. */
-export const FOR_COACHES: SiteLink = { href: "/app/business", label: "For businesses" };
+/** Quiet, beside Sign in: the public page for coaches (2026-11-05, the
+ *  proposal's phase 2; its buttons lead into /app/business). Named for the
+ *  side itself, memari. for businesses (2026-11-04: "i like for businesses
+ *  better than for coaches"); coaches are who it is for first. */
+export const FOR_COACHES: SiteLink = { href: "/business", label: "For businesses" };
 
 /** Which header item a page belongs to: Layouts stays lit on a layout's
  *  page, a planner shelf and a module's page. "How it works" is a section

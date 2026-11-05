@@ -1,0 +1,767 @@
+/* memari.studio/business - the public page for coaches (page.tsx). On the
+   site's paper, in its type and ink (landing.module.css: --ink, --muted,
+   --line, --hand, --cream); the screens it shows - the client's phone, the
+   workspace - are white, as the app is, and keep off the paper
+   (data-paper-skip). */
+
+.wrap {
+  position: relative;
+  max-width: 1168px;
+  margin: 0 auto;
+  padding-inline: 24px;
+}
+
+/* --- the opening ------------------------------------------------------- */
+
+.hero {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  padding-block: 72px 36px;
+  text-align: center;
+}
+
+.hero .eyebrowBlue {
+  margin: 0;
+  color: #3242c8;
+}
+
+.hero h1 {
+  max-width: 15em;
+  text-wrap: balance;
+}
+
+.hero .lede {
+  margin: 0;
+  max-width: 35em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.big {
+  min-height: 50px;
+  padding-inline: 24px;
+  font-size: 16px;
+}
+
+.photo {
+  margin: 0;
+}
+
+.photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgba(40, 30, 20, 0.22);
+}
+
+.photo figcaption {
+  margin-top: 14px;
+  text-align: right;
+  font-family: var(--font-hand), cursive;
+  font-size: clamp(18px, 2vw, 22px);
+  text-wrap: balance;
+  color: var(--hand);
+}
+
+/* --- the books --------------------------------------------------------- */
+
+.books {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  padding-block: 64px 80px;
+}
+
+.books figure {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.books img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 18px;
+}
+
+.books figcaption {
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
+.books figcaption b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* --- headings and text the sections share ------------------------------ */
+
+.center {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 40em;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.note {
+  margin: 0;
+  font-family: var(--font-hand), cursive;
+  font-size: 26px;
+  line-height: 1.2;
+  color: var(--hand);
+}
+
+.h2 {
+  margin: 0;
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.h2Big {
+  font-size: clamp(32px, 4.4vw, 54px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+.sub {
+  margin: 0;
+  max-width: 36em;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.textLink {
+  color: var(--ink);
+  font-weight: 650;
+  text-underline-offset: 3px;
+}
+
+.textLink:hover {
+  color: #3242c8;
+}
+
+.section {
+  padding-block: 80px;
+  border-top: 1px solid var(--line);
+}
+
+.ownPrint {
+  padding-block: 0 88px;
+}
+
+/* --- the client's answers, then their printed page ---------------------- */
+
+.demo {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 340px) auto minmax(0, 420px);
+  justify-content: center;
+  align-items: center;
+  gap: 28px;
+}
+
+.phone {
+  background: #1c1917;
+  border-radius: 46px;
+  padding: 12px;
+  box-shadow: 0 30px 70px rgba(40, 30, 20, 0.22);
+}
+
+.screen {
+  background: #f7f4ee;
+  border-radius: 36px;
+  padding: 28px 22px;
+  min-height: 500px;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  text-align: left;
+}
+
+.screenFrom {
+  margin: 0;
+  font-size: 13px;
+  color: #6b6259;
+}
+
+.screenTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.answers {
+  background: #fff;
+  border-radius: 18px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.06);
+}
+
+.answers p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b6259;
+}
+
+.field span {
+  font-size: 15px;
+  color: #1c1917;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(28, 25, 23, 0.16);
+  background: #fff;
+  /* one line, as an input is */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fakeButton {
+  justify-self: start;
+  font-size: 15px;
+  font-weight: 650;
+  background: #4a5cff;
+  color: #fff;
+  border-radius: 999px;
+  padding: 11px 18px;
+}
+
+.answers .fakeButton {
+  justify-self: stretch;
+  text-align: center;
+}
+
+.arrow {
+  display: block;
+}
+
+.printed {
+  aspect-ratio: 7 / 10;
+  background: #fbf7ee;
+  border-radius: 6px;
+  padding: 40px 36px;
+  box-shadow: 0 1px 0 rgba(28, 25, 23, 0.06), 0 24px 60px rgba(40, 30, 20, 0.16);
+  font-family: Georgia, "Times New Roman", serif;
+  color: #3b342e;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  text-align: left;
+}
+
+.printedLabel {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.box {
+  border: 1px solid #3b342e;
+  padding: 14px 16px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.boxGrow {
+  flex: 1 1 auto;
+  gap: 14px;
+}
+
+.box .printedLabel {
+  text-align: center;
+}
+
+.line {
+  margin: 0;
+  font-size: 19px;
+  border-bottom: 1px solid rgba(59, 52, 46, 0.4);
+  padding-bottom: 6px;
+}
+
+.blank {
+  height: 22px;
+  border-bottom: 1px solid rgba(59, 52, 46, 0.4);
+}
+
+.printedFoot {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: #6b6259;
+}
+
+@media (max-width: 960px) {
+  .demo {
+    grid-template-columns: minmax(0, 360px);
+    justify-items: stretch;
+  }
+
+  .arrow {
+    justify-self: center;
+    transform: rotate(90deg);
+    margin-block: 18px;
+  }
+}
+
+/* --- what the workspace does ------------------------------------------- */
+
+.features {
+  display: grid;
+  gap: 88px;
+}
+
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  align-items: center;
+  gap: 48px;
+}
+
+.featureFlip > :first-child {
+  order: 2;
+}
+
+.featureText {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 22px;
+  padding: 26px;
+  box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 12px 40px rgba(40, 30, 20, 0.07);
+  display: grid;
+  gap: 12px;
+  font-size: 15px;
+}
+
+.card p {
+  margin: 0;
+}
+
+.cardTitle {
+  font-weight: 650;
+}
+
+.dim {
+  color: #6b6259;
+}
+
+.small {
+  font-size: 12.5px;
+}
+
+.rows {
+  display: grid;
+  gap: 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 14px;
+}
+
+.track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.06);
+}
+
+.fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: 999px;
+  background: #4a5cff;
+}
+
+.fillSoon {
+  background: #c2690f;
+}
+
+.state {
+  font-size: 13.5px;
+  color: #6b6259;
+  text-align: right;
+}
+
+.stateSoon {
+  color: #9a4f06;
+  font-weight: 650;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips span {
+  background: #f1ede6;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+@media (max-width: 860px) {
+  .feature {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .featureFlip > :first-child {
+    order: 0;
+  }
+}
+
+/* --- who pays ---------------------------------------------------------- */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 40px 48px;
+  align-items: start;
+}
+
+.splitText {
+  display: grid;
+  gap: 12px;
+}
+
+.payers {
+  display: grid;
+  gap: 12px;
+}
+
+.payer {
+  margin: 0;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 18px;
+  padding: 18px 20px;
+  box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.08);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.payer b {
+  font-weight: 650;
+}
+
+.payer span {
+  color: var(--muted);
+}
+
+.payerFree {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(28, 25, 23, 0.18);
+}
+
+/* --- common questions -------------------------------------------------- */
+
+.questions {
+  display: grid;
+}
+
+.question {
+  display: grid;
+  gap: 6px;
+  padding-block: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.question:first-child {
+  padding-top: 0;
+}
+
+.question:last-child {
+  border-bottom: none;
+}
+
+.question h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.question p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- the workspace, as an example -------------------------------------- */
+
+.workspace {
+  margin-top: 40px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.06), 0 30px 80px rgba(40, 30, 20, 0.12);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  font-size: 15px;
+}
+
+.wsNav {
+  padding: 24px 16px;
+  border-right: 1px solid rgba(28, 25, 23, 0.08);
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.wsNav p {
+  margin: 0 0 14px;
+  padding-inline: 10px;
+  font-weight: 650;
+}
+
+.wsNav span {
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #5d554c;
+}
+
+.wsNav .wsHere {
+  background: rgba(74, 92, 255, 0.1);
+  color: #1c1917;
+}
+
+.wsNav .wsLower {
+  margin-top: 18px;
+}
+
+.wsMain {
+  padding: 28px;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.wsHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.wsHead p {
+  margin: 0;
+}
+
+.wsTitle {
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  background: #f7f6f3;
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+
+.tile p {
+  margin: 0;
+}
+
+.tileLabel {
+  font-size: 13px;
+  color: #6b6259;
+}
+
+.tileValue {
+  font-size: 30px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.tileWarn {
+  color: #9a4f06;
+}
+
+.tileNote {
+  font-size: 12.5px;
+  color: #6b6259;
+}
+
+.todo {
+  background: #f7f6f3;
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.todo p {
+  margin: 0;
+}
+
+.todoRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+}
+
+.bang {
+  grid-row: span 2;
+  align-self: start;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(194, 105, 15, 0.14);
+  color: #9a4f06;
+}
+
+@media (max-width: 860px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wsNav {
+    border-right: none;
+    border-bottom: 1px solid rgba(28, 25, 23, 0.08);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 16px;
+  }
+
+  .wsNav p {
+    flex: 1 0 100%;
+    margin-bottom: 6px;
+  }
+
+  .wsNav .wsLower {
+    margin-top: 0;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .books {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .wsMain {
+    padding: 20px 16px;
+  }
+
+  .screen {
+    min-height: 0;
+  }
+
+  .printed {
+    padding: 28px 22px;
+  }
+}
+
+/* --- the close --------------------------------------------------------- */
+
+.close {
+  margin-block: 24px 96px;
+  background: #1c1917;
+  color: #f7f4ee;
+  border-radius: 28px;
+  padding: clamp(32px, 6vw, 72px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.close h2 {
+  flex: 1 1 420px;
+  margin: 0;
+  font-size: clamp(30px, 3.6vw, 46px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.closeLight {
+  background: #f7f4ee;
+  color: #1c1917;
+}
+
+.closeLight:hover {
+  background: #fff;
+}
+
+.closeQuiet {
+  background: transparent;
+  color: #f7f4ee;
+  box-shadow: inset 0 0 0 1px rgba(247, 244, 238, 0.4);
+}
+
+.closeQuiet:hover {
+  background: rgba(247, 244, 238, 0.08);
+}

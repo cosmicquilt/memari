@@ -43,7 +43,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </a>
         </div>
       </div>
-      <BookPayerForm clientsPay={business.clientsPay} markupCents={business.markupCents} payouts={ready ? (bank === false ? "noBank" : "ready") : business.stripeAccountId ? "pending" : "none"} paymentsOn={orderingConfigured().ok} guest={ctx.owner.guest} countries={countryOptions().filter((c) => PAYOUT_COUNTRIES.includes(c.code))} />
+      <BookPayerForm clientsPay={business.clientsPay} markupCents={business.markupCents} clientsMayPrint={business.clientsMayPrint} payouts={ready ? (bank === false ? "noBank" : "ready") : business.stripeAccountId ? "pending" : "none"} paymentsOn={orderingConfigured().ok} guest={ctx.owner.guest} countries={countryOptions().filter((c) => PAYOUT_COUNTRIES.includes(c.code))} />
     </>
   );
 }

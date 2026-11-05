@@ -90,6 +90,25 @@ export default async function ClientPortal({ params, searchParams }: { params: P
           </section>
         )}
 
+        {data.canPrint && (
+          // their journal to print themselves, where their coach lets them
+          // (2026-11-05, Settings beside who pays for books)
+          <section className={css.page} id="print">
+            <h2>Print it yourself</h2>
+            <div className={css.card}>
+              <p className={css.dim}>Your journal as a print-ready PDF, to print at home, at a print shop or at a library.</p>
+              <div className={css.actions}>
+                <a href={`/c/${token}/print`} className={`${css.btn} ${css.primary}`} download data-print-own="">
+                  Download to print
+                </a>
+                <Link href="/print#find-a-library" className={css.btn}>
+                  Find a library
+                </Link>
+              </div>
+            </div>
+          </section>
+        )}
+
         <section className={css.page}>
           <h2>Your books</h2>
           <div className={css.card}>
