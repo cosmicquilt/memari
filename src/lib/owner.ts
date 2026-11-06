@@ -76,6 +76,10 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
   // ORDERS MOVE TOO (2026-10-15, when guests could order): a book bought as
   // a guest is the account's from the moment they sign in, on the Orders
   // page and for "order the next one".
+  // A GROUP'S PRINT RUN moves with its orders (2026-11-05, found when the
+  // check began reading the schema): left the guest's, a run started as a
+  // guest could not be paid for once signed in - groupOrders.ts finds it by
+  // its owner - and "placed" no longer showed on the group's page.
   const [journals, pages, modules, calendars, events, orders] = await prisma.$transaction([
     prisma.planner.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.savedPage.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
@@ -83,6 +87,7 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
     prisma.calendar.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.calendarEvent.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
     prisma.printOrder.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
+    prisma.printBatch.updateMany({ where: { ownerId: guestOwner }, data: { ownerId: userId } }),
   ]);
   // SETTINGS: the account keeps its own if it has any - a default time zone
   // somebody chose on their account is not replaced by one a guest cookie
@@ -112,7 +117,15 @@ export async function moveGuestWork(guestOwner: string, userId: string): Promise
     await prisma.savedPlanner.createMany({ data: planners.map((p) => ({ ownerId: userId, templateKey: p.templateKey })), skipDuplicates: true });
     await prisma.savedPlanner.deleteMany({ where: { ownerId: guestOwner } });
   }
-  return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count + planners.length;
+  // HEARTED COVERS (coverHearts.ts, 2026-11-05), the same way - and with
+  // their dates, which order them, newest first. Only the rows copied are
+  // removed, so a heart the guest adds mid-claim is not lost unmoved.
+  const hearts = await prisma.coverHeart.findMany({ where: { ownerId: guestOwner }, select: { coverId: true, createdAt: true } });
+  if (hearts.length > 0) {
+    await prisma.coverHeart.createMany({ data: hearts.map((h) => ({ ownerId: userId, coverId: h.coverId, createdAt: h.createdAt })), skipDuplicates: true });
+    await prisma.coverHeart.deleteMany({ where: { ownerId: guestOwner, coverId: { in: hearts.map((h) => h.coverId) } } });
+  }
+  return journals.count + pages.count + modules.count + calendars.count + events.count + orders.count + planners.length + hearts.length;
 }
 
 /** The guest's business to the account (moveGuestWork): moved whole when
@@ -164,8 +177,8 @@ export async function moveGuestBusiness(guestBusinessId: string, guestOwner: str
 }
 
 /** EVERYTHING A PERSON MADE, gone (account/actions.ts, deleteAccount): their
- *  journals (pages and modules cascade), saved pages and modules, calendars
- *  and events, settings - and their business, with its clients, templates
+ *  journals (pages and modules cascade), saved pages, modules and planners,
+ *  calendars and events, settings, hearted covers (2026-11-05) - and their business, with its clients, templates
  *  and emailed-link count (2026-10-27: it was left behind, a guest's beyond
  *  anyone's reach, its clients' names and addresses kept for as long as any
  *  client kept opening their page). A coach's payouts account is theirs at
@@ -181,6 +194,10 @@ export async function deleteOwnerWork(ownerId: string): Promise<void> {
     prisma.calendarEvent.deleteMany({ where: { ownerId } }),
     prisma.calendar.deleteMany({ where: { ownerId } }),
     prisma.ownerSettings.deleteMany({ where: { ownerId } }),
+    prisma.coverHeart.deleteMany({ where: { ownerId } }),
+    // planners saved from our gallery (2026-11-05: left behind since they
+    // arrived on 2026-10-21, until check:guest-sweep read the schema)
+    prisma.savedPlanner.deleteMany({ where: { ownerId } }),
     prisma.business.deleteMany({ where: { ownerId } }),
   ]);
 }

@@ -11,6 +11,11 @@
 // - the options stay as another cover is chosen, the address and tab
 //   follow, and the stage comes back into view from the covers below
 // - the materials filter the book; the arrows go through what is in view
+// - HEARTS (part 3): the first heart makes a guest (an httpOnly cookie);
+//   hearts from the stage and the cards are kept on the server (a reload
+//   keeps them), "Your hearts" shows only those, newest first, as does the
+//   example order screen; quick taps end as the last tap left them; with
+//   none, the empty state
 // - no hydration warning (the arrival curtain turns lazy pictures eager on
 //   purpose) and no sideways scroll on a phone
 //
@@ -60,6 +65,18 @@ const pick = async (tab: Page, group: string, label: string) => {
 };
 
 try {
+  // THE HEARTS ADDRESS REFUSES what is not ours to keep, and making nothing
+  // makes no guest
+  const hearts = `${server.base}/app/saved/covers`;
+  const post = (body: unknown, origin?: string) =>
+    fetch(hearts, { method: "POST", headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify(body) });
+  const foreign = await post({ coverId: "Onyx010" }, "https://elsewhere.example");
+  const unknown = await post({ coverId: "NotACover001" });
+  const offByNobody = await fetch(hearts, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ coverId: "Onyx010" }) });
+  say(foreign.status === 403 && !foreign.headers.get("set-cookie"), `hearts: a heart sent from another site is refused, and makes no guest (${foreign.status})`);
+  say(unknown.status === 400 && !unknown.headers.get("set-cookie"), `hearts: a cover that isn't one of ours is refused (${unknown.status})`);
+  say(offByNobody.status === 200 && !offByNobody.headers.get("set-cookie"), `hearts: taking a heart off as nobody makes no guest (${offByNobody.status})`);
+
   for (const [label, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2 });
     // the development build's own badge left out of the shots
@@ -160,13 +177,82 @@ try {
     const wood = COVERS.filter((c) => c.group === "Wood");
     await tab.locator('aside[aria-label="Materials"] button', { hasText: /^Wood/ }).click();
     await tab.waitForTimeout(200);
-    const cards = await tab.locator("ul button").count();
+    // a card's own button, not the heart beside it
+    const cardButtons = tab.locator("ul li > button:first-child");
+    const cards = await cardButtons.count();
     say(cards === wood.length, `${label}: Wood shows its ${wood.length} covers (${cards})`);
-    await tab.locator("ul button").first().click();
+    await cardButtons.first().click();
     await tab.waitForTimeout(800);
     await stage(tab).getByRole("button", { name: /^On to / }).click();
     await tab.waitForTimeout(300);
     say((await tab.locator("h1").textContent()) === shownName(wood[1]), `${label}: › goes on to the next wood cover (${shownName(wood[1])})`);
+
+    // ---- HEARTS
+    await tab.goto(`${server.base}/covers/${onyx9.slug}`, { waitUntil: "networkidle" });
+    const count = () => tab.locator("[data-hearts-count]").textContent();
+    const serverHearts = async () => ((await (await tab.request.get(`${server.base}/app/saved/covers`)).json()) as { hearts: string[] }).hearts;
+    const settled = async (want: string[]) => {
+      // the page's answer has come back once the server holds what it shows
+      for (let i = 0; i < 40 && (await serverHearts()).join() !== want.join(); i++) await tab.waitForTimeout(150);
+      await tab.waitForTimeout(150);
+    };
+    await tab.waitForFunction(() => document.querySelector("[data-hearts-count]")?.textContent !== "");
+    const guestCookie = async () => (await context.cookies()).find((c) => c.name === "memari-guest");
+    const stageHeart = stage(tab).locator("[data-stage-heart]");
+    say((await count()) === "0" && (await stageHeart.textContent()) === "Heart it" && !(await guestCookie()), `${label}: nobody yet: no hearts, "Heart it" on the stage, no guest made`);
+    await stageHeart.click();
+    await settled([onyx9.id]);
+    const made = await guestCookie();
+    say(
+      (await stageHeart.getAttribute("aria-pressed")) === "true" && (await stageHeart.textContent()) === "Hearted" && (await count()) === "1" && !!made?.httpOnly,
+      `${label}: the stage's heart keeps it: "Hearted", 1 heart, and the first heart made a guest (httpOnly ${made?.httpOnly})`
+    );
+    const second = COVERS.find((c) => c.group === "Cloth & leather")!;
+    const secondHeart = tab.locator(`[data-heart="${second.id}"]`);
+    await secondHeart.scrollIntoViewIfNeeded();
+    // the heart sits in its card's top right corner, on the swatch, at any width
+    const placed = await secondHeart.evaluate((el) => {
+      const h = el.getBoundingClientRect();
+      const img = el.parentElement!.querySelector("img")!.getBoundingClientRect();
+      return { right: Math.round(img.right - h.right), top: Math.round(h.top - img.top) };
+    });
+    say(placed.right >= 2 && placed.right <= 12 && placed.top >= 2 && placed.top <= 12, `${label}: a card's heart sits inside its swatch's top right corner (${placed.right}px in, ${placed.top}px down)`);
+    await secondHeart.click();
+    await settled([second.id, onyx9.id]);
+    say((await count()) === "2" && (await secondHeart.getAttribute("aria-pressed")) === "true", `${label}: a card's heart keeps its cover too (2 hearts)`);
+    await tab.reload({ waitUntil: "networkidle" });
+    await tab.waitForFunction(() => document.querySelector("[data-hearts-count]")?.textContent === "2", null, { timeout: 10_000 }).catch(() => {});
+    say((await count()) === "2" && (await stageHeart.getAttribute("aria-pressed")) === "true", `${label}: a reload keeps them: the server holds the hearts, not the page`);
+    await tab.locator("[data-hearts-filter]").click();
+    await tab.waitForTimeout(200);
+    const inHearts = await cardButtons.evaluateAll((els) => els.map((el) => el.textContent));
+    const inBand = await tab.locator('[data-first-in-line] button[aria-label^="Open "]').evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    say(inHearts.join() === [shownName(second), shownName(onyx9)].join(), `${label}: "Your hearts" shows only those, newest first (${inHearts.join(", ")})`);
+    say(inBand.join() === [`Open ${second.name}`, `Open ${onyx9.name}`].join(), `${label}: and the example order screen puts them first, in that order (${inBand.join(", ")})`);
+    if (shots) await tab.locator("aside[aria-label='Materials']").evaluate((el) => el.scrollIntoView({ block: "start" }));
+    if (shots) await tab.screenshot({ path: `${shots}/covers-hearts-${label}.png` });
+    // three quick taps in "Your hearts": off, on, off... on - the card stays
+    // under the pointer, and the requests go one after another, never out of order
+    const tapped = tab.locator(`[data-heart="${second.id}"]`);
+    // (each tap allowed a moment: a card gone from under the pointer is a FAIL below, not a hang)
+    for (let i = 0; i < 3; i++) await tapped.click({ timeout: 3000 }).catch(() => {});
+    await settled([onyx9.id]);
+    await tab.waitForTimeout(600);
+    const stays = (await tapped.count()) === 1;
+    say(stays && (await tapped.getAttribute("aria-pressed")) === "false" && (await serverHearts()).join() === onyx9.id && (await cardButtons.count()) === 2, `${label}: three quick taps in "Your hearts" end as the last left it, on the page and the server, and its card stays put`);
+    await tab.locator(`[data-heart="${onyx9.id}"]`).click();
+    await settled([]);
+    const leftInView = await tab.locator("ul li > [data-heart]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-pressed")));
+    say(leftInView.join() === "false,false", `${label}: a heart taken off there leaves its card in place, an outline to put it back (${leftInView.join(", ")})`);
+    // opened again, the view starts from what is hearted now: nothing
+    await tab.locator("[data-hearts-filter]").click();
+    await tab.locator("[data-hearts-filter]").click();
+    await tab.waitForTimeout(200);
+    say(
+      (await count()) === "0" && (await tab.locator("[data-hearts-empty]").isVisible()) && (await tab.locator("[data-first-in-line] [class*='exampleSlot']").count()) === 3 && (await tab.locator("[data-hearts-note]").isVisible()),
+      `${label}: opened again with every heart off: "No hearts yet", empty places in the example, and the note that a guest's hearts are kept on this browser`
+    );
+    say((await serverHearts()).length === 0, `${label}: and the server holds none`);
 
     const wide = await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     if (label === "phone") say(wide === 0, `phone: no sideways scroll (${wide}px)`);

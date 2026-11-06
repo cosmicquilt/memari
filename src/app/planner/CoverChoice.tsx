@@ -15,10 +15,14 @@
 // choices as the covers page, drawn on the same flat front, kept on the
 // journal (printActions chooseJournalCoverFront) so every book after prints
 // them. A journal that has chosen none prints its cover as pictured.
+//
+// HEARTS FIRST (2026-11-05): the covers the person hearted on /covers open
+// the picker, newest first, and keep a small heart in their material below.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { COVERS, COVER_GROUPS, coverById, coverNumber, type Cover } from "@/app/covers/catalogue";
 import { CoverFront as FlatFront } from "@/app/covers/CoverFront";
+import { HeartIcon } from "@/app/covers/Heart";
 import { FRONT_MARKS, MARK_WORDS, NAME_MAX, picturedFront, type CoverFront } from "@/lib/print/coverFront";
 import { CREAM, cream } from "@/lib/cream";
 import { CONTROL_RADIUS } from "./editorStyle";
@@ -46,6 +50,7 @@ export function CoverChoice({
   dated = true,
   datesWords = "",
   onFrontChange,
+  hearted = [],
 }: {
   journalId: string;
   coverId: string | null;
@@ -58,6 +63,8 @@ export function CoverChoice({
   /** this book's dates as its cover prints them */
   datesWords?: string;
   onFrontChange?: (front: CoverFront) => void;
+  /** the covers this person hearted on /covers, newest first */
+  hearted?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -84,7 +91,14 @@ export function CoverChoice({
     setOpen(false);
   };
 
-  const tile = (id: string | null, label: string, picture: ReactNode) => {
+  const hearts = hearted.map(coverById).filter((c): c is Cover => c !== null);
+  const isHearted = (id: string) => hearted.includes(id);
+  const photo = (c: Cover) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={c.image} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+  );
+
+  const tile = (id: string | null, label: string, picture: ReactNode, heart = false) => {
     const selected = (shown ?? null) === id;
     return (
       <button
@@ -98,6 +112,7 @@ export function CoverChoice({
         onClick={() => void choose(id)}
         data-cover={id ?? "plain"}
         style={{
+          position: "relative",
           padding: 0,
           width: "100%",
           aspectRatio: "1",
@@ -110,6 +125,11 @@ export function CoverChoice({
         }}
       >
         {picture}
+        {heart && (
+          <span aria-hidden style={{ position: "absolute", top: 3, right: 3 }}>
+            <HeartIcon filled size={12} stroke="#fffaf0" />
+          </span>
+        )}
       </button>
     );
   };
@@ -150,6 +170,17 @@ export function CoverChoice({
       )}
       {open && (
         <div role="radiogroup" aria-label="Cover" style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: 2 }}>
+          {offered && hearts.length > 0 && (
+            <div data-hearts="" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: cream(0.5) }}>
+                <HeartIcon filled size={11} />
+                Your hearts
+              </span>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB}px, 1fr))`, gap: 6 }}>
+                {hearts.map((c) => tile(c.id, `${c.material} ${coverNumber(c)}, hearted`, photo(c), true))}
+              </div>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB}px, 1fr))`, gap: 6 }}>
             {tile(null, "Plain: cream, your journal's name on the front", <PlainSwatch size={THUMB} />)}
           </div>
@@ -159,8 +190,7 @@ export function CoverChoice({
                 <span style={{ fontSize: 11, color: cream(0.5) }}>{group}</span>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB}px, 1fr))`, gap: 6 }}>
                   {COVERS.filter((c) => c.group === group).map((c) =>
-                    // eslint-disable-next-line @next/next/no-img-element
-                    tile(c.id, `${c.material} ${coverNumber(c)}`, <img src={c.image} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />)
+                    tile(c.id, `${c.material} ${coverNumber(c)}${isHearted(c.id) ? ", hearted" : ""}`, photo(c), isHearted(c.id))
                   )}
                 </div>
               </div>

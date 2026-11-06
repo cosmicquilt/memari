@@ -174,6 +174,7 @@ export async function makeGuestJournal(title: string): Promise<GuestJournal> {
       await prisma.planner.deleteMany({ where: { ownerId } });
       await prisma.calendar.deleteMany({ where: { ownerId } });
       await prisma.ownerSettings.deleteMany({ where: { ownerId } });
+      await prisma.coverHeart.deleteMany({ where: { ownerId } });
     },
     forgetSettings: async () => {
       await prisma.ownerSettings.deleteMany({ where: { ownerId } });

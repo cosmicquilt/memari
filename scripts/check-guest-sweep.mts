@@ -63,6 +63,14 @@ async function main() {
   // and a guest coach who has had a book ordered, idle a month (the privacy
   // page says such a guest's journals and business are kept with the order)
   const coachCustomer = `guest:${tag}oooo`;
+  // Hearts on covers (2026-11-05): a guest made by hearts alone on /covers,
+  // who owns nothing else, idle a month; and one who hearted just now.
+  const heartsOnly = `guest:${tag}pppp`;
+  const heartsFresh = `guest:${tag}qqqq`;
+  // Saved planners (2026-11-05): the same two - a guest made by saving a
+  // planner from /layouts and nothing else, idle a month; one who saved now.
+  const plannersOnly = `guest:${tag}rrrr`;
+  const plannersFresh = `guest:${tag}ssss`;
   const coaches = [coachWorking, coachSeen, coachGone, coachSigner, coachAccount, coachEditing, coachLagging, lagAccount, coachTwice, twiceAccount, coachLeaving, coachCustomer];
 
   const old = new Date(Date.now() - (GUEST_IDLE_DAYS + 5) * DAY_MS);
@@ -157,12 +165,22 @@ async function main() {
     return row;
   };
 
+  const heart = (ownerId: string, coverId: string, when: Date) => prisma.coverHeart.create({ data: { ownerId, coverId, createdAt: when } });
+  const savedPlanner = (ownerId: string, templateKey: string, when: Date) => prisma.savedPlanner.create({ data: { ownerId, templateKey, createdAt: when } });
+
   try {
     // ABANDONED: an idle journal, an idle calendar, an idle saved page. All go.
     await planner(abandoned, old);
     const goneCalendar = await calendar(abandoned, old);
     const goneSaved = await savedPage(abandoned, old);
     await settings(abandoned, old);
+    const goneHeart = await heart(abandoned, "Onyx010", old);
+    // hearts alone: a guest made by a heart on /covers, never a journal
+    const goneHeartOnly = await heart(heartsOnly, "Onyx010", old);
+    const keptFreshHeart = await heart(heartsFresh, "Onyx010", new Date());
+    const goneBookmark = await savedPlanner(abandoned, "adhd", old);
+    const goneBookmarkOnly = await savedPlanner(plannersOnly, "adhd", old);
+    const keptFreshBookmark = await savedPlanner(plannersFresh, "adhd", new Date());
 
     // ACTIVE: an idle calendar and saved page, but a journal still in use.
     // The rule is "no journals left", so both must stay - a guest who is
@@ -172,6 +190,8 @@ async function main() {
     const keptCalendar = await calendar(active, old);
     const keptSaved = await savedPage(active, old);
     await settings(active, old);
+    const keptHeart = await heart(active, "Onyx010", old);
+    const keptBookmark = await savedPlanner(active, "adhd", old);
 
     // FRESH: everything recent. Nothing goes.
     const freshCalendar = await calendar(fresh, new Date());
@@ -182,6 +202,8 @@ async function main() {
     const accountCalendar = await calendar(account, old);
     await savedPage(account, old);
     await settings(account, old);
+    const accountHeart = await heart(account, "Onyx010", old);
+    const accountBookmark = await savedPlanner(account, "adhd", old);
 
     // A CUSTOMER: idle for months, but they paid for a book. Their journal and
     // settings (the Stripe customer) stay, and so does the order.
@@ -258,6 +280,25 @@ async function main() {
     check(!(await exists("planner", browserJournal.id)), "a guest who only opened a payment page is swept like any other");
     check((await prisma.printOrder.findUnique({ where: { id: abandonedCheckout.id } })) !== null, "though their unpaid order row stays");
 
+    // HEARTED COVERS - the fourth kind the sweep was told about (2026-11-05).
+    const heartLeft = async (id: string) => (await prisma.coverHeart.findUnique({ where: { id } })) !== null;
+    check(!(await heartLeft(goneHeart.id)), "AND THEIR HEARTED COVERS GO");
+    check(!(await heartLeft(goneHeartOnly.id)), "as do the hearts of a guest made by hearts alone, who never had a journal");
+    check(await heartLeft(keptFreshHeart.id), "a heart made just now is left alone");
+    check(await heartLeft(keptHeart.id), "a guest still using their journals keeps an old heart");
+    check(await heartLeft(accountHeart.id), "and an account's hearts are never swept");
+    check(result.hearts >= 2, `the sweep counts the hearts it took (${result.hearts})`);
+
+    // SAVED PLANNERS - the fifth kind, and the one no list had been told
+    // about (2026-11-05): saved from /layouts since 2026-10-21, never swept.
+    const bookmarkLeft = async (id: string) => (await prisma.savedPlanner.findUnique({ where: { id } })) !== null;
+    check(!(await bookmarkLeft(goneBookmark.id)), "AND THEIR SAVED PLANNERS GO");
+    check(!(await bookmarkLeft(goneBookmarkOnly.id)), "as do those of a guest made by saving a planner, who never had a journal");
+    check(await bookmarkLeft(keptFreshBookmark.id), "a planner saved just now is left alone");
+    check(await bookmarkLeft(keptBookmark.id), "a guest still using their journals keeps an old saved planner");
+    check(await bookmarkLeft(accountBookmark.id), "and an account's saved planners are never swept");
+    check(result.savedPlanners >= 2, `the sweep counts the saved planners it took (${result.savedPlanners})`);
+
     const journalsLeft = async (ids: string[]) => prisma.planner.count({ where: { id: { in: ids } } });
     check((await journalsLeft(working.journals)) === 2, "A GUEST COACH STILL USING THEIR BUSINESS KEEPS EVERY JOURNAL, each untouched a month");
     check((await journalsLeft(seen.journals)) === 2, "and so does one whose client opened their page this month");
@@ -282,11 +323,32 @@ async function main() {
     await calendar(signer, new Date());
     await settings(signer, new Date());
     const signerOrder = await order(signer, signerJournal.id, "SUBMITTED");
+    // hearts: one the account already has, and one it hasn't
+    const heartedThen = new Date(Date.now() - 3 * DAY_MS);
+    await heart(signer, "Onyx010", heartedThen);
+    await heart(signer, "Fabric066", heartedThen);
+    await heart(signedIn, "Onyx010", new Date());
+    // saved planners the same way, and a group's print run started as a guest
+    await savedPlanner(signer, "adhd", heartedThen);
+    await savedPlanner(signer, "student", heartedThen);
+    await savedPlanner(signedIn, "adhd", new Date());
+    const signerRun = await prisma.printBatch.create({ data: { ownerId: signer } });
     await moveGuestWork(signer, signedIn);
     check((await prisma.planner.findUnique({ where: { id: signerJournal.id } }))?.ownerId === signedIn, "signing in moves a guest's journals to the account");
     check((await prisma.printOrder.findUnique({ where: { id: signerOrder.id } }))?.ownerId === signedIn, "AND THEIR ORDERS");
     check((await prisma.calendar.count({ where: { ownerId: signedIn } })) === 1 && (await prisma.calendarEvent.count({ where: { ownerId: signedIn } })) === 1, "and their calendars, events and all");
     check((await prisma.ownerSettings.findUnique({ where: { ownerId: signedIn } })) !== null, "and their settings, where the account had none");
+    const movedHearts = await prisma.coverHeart.findMany({ where: { ownerId: signedIn }, orderBy: { coverId: "asc" } });
+    check(
+      movedHearts.map((h) => h.coverId).join() === "Fabric066,Onyx010" && movedHearts[0].createdAt.getTime() === heartedThen.getTime() && (await prisma.coverHeart.count({ where: { ownerId: signer } })) === 0,
+      `AND THEIR HEARTED COVERS, one each, with when they were hearted (${movedHearts.map((h) => h.coverId).join(", ")})`
+    );
+    const movedBookmarks = await prisma.savedPlanner.findMany({ where: { ownerId: signedIn }, orderBy: { templateKey: "asc" } });
+    check(
+      movedBookmarks.map((b) => b.templateKey).join() === "adhd,student" && (await prisma.savedPlanner.count({ where: { ownerId: signer } })) === 0,
+      `AND THEIR SAVED PLANNERS, one each (${movedBookmarks.map((b) => b.templateKey).join(", ")})`
+    );
+    check((await prisma.printBatch.findUnique({ where: { id: signerRun.id } }))?.ownerId === signedIn, "AND A GROUP'S PRINT RUN, so it can still be paid for");
     check((await prisma.printOrder.count({ where: { ownerId: signer } })) + (await prisma.planner.count({ where: { ownerId: signer } })) === 0, "leaving the guest owning nothing");
 
     // SIGNING IN TO AN ACCOUNT WITH A BUSINESS (review, 2026-10-27): the
@@ -327,11 +389,15 @@ async function main() {
     // deleteAccount): before, a guest's stayed, out of anyone's reach, kept
     // for as long as any client opened their page.
     const leaving = await business(coachLeaving, "Leaving Coaching", new Date(), new Date());
+    await heart(coachLeaving, "Onyx010", new Date());
+    await savedPlanner(coachLeaving, "adhd", new Date());
     await deleteOwnerWork(coachLeaving);
     check(
       (await prisma.business.count({ where: { ownerId: coachLeaving } })) + (await prisma.businessClient.count({ where: { id: leaving.clientId } })) + (await prisma.planner.count({ where: { ownerId: coachLeaving } })) === 0,
       "DELETING EVERYTHING DELETES THE BUSINESS, its clients and its journals with it"
     );
+    check((await prisma.coverHeart.count({ where: { ownerId: coachLeaving } })) === 0, "and their hearted covers");
+    check((await prisma.savedPlanner.count({ where: { ownerId: coachLeaving } })) === 0, "AND THEIR SAVED PLANNERS");
 
     // EVERY KIND OF ROW HANGING OFF A BUSINESS is named in the merge above
     // (owner.ts). A new one added to the schema and not to the merge would
@@ -353,6 +419,59 @@ async function main() {
     const moved = [...merge.matchAll(/prisma\.(\w+)\.updateMany\(\{ where: \{ business: theGuests \}/g)].map((m) => m[1].charAt(0).toUpperCase() + m[1].slice(1)).sort();
     check(hanging.length >= 5 && hanging.join() === moved.join(), `every kind of row hanging off a business is moved by the merge (hanging: ${hanging.join(", ")}; moved: ${moved.join(", ")})`);
 
+    // EVERY TABLE WITH AN OWNER, read from the schema (2026-11-05). The
+    // lists below were kept by hand, and saved planners sat outside two of
+    // them for a fortnight: moved on sign-in, but never swept and never
+    // deleted with the account. Each table with an `ownerId` must now be
+    // named by each of the three - or be excused here, with the reason.
+    const ownedTables = schema
+      .split(/^model /m)
+      .slice(1)
+      .filter((block) => /^\s+ownerId\s+String\b/m.test(block))
+      .map((block) => block.slice(0, block.indexOf(" ")))
+      .sort();
+    const sweepSource = readFileSync("src/lib/guestSweep.ts", "utf8");
+    const named = (code: string, verbs: string) =>
+      new Set([...code.matchAll(new RegExp(`prisma\\.(\\w+)\\.(?:${verbs})\\(`, "g"))].map((m) => m[1].charAt(0).toUpperCase() + m[1].slice(1)));
+    const lists: { name: string; code: string; verbs: string; excused: Record<string, string> }[] = [
+      {
+        name: "signing in (moveGuestWork)",
+        code: owner.slice(owner.indexOf("export async function moveGuestWork"), owner.indexOf("export async function deleteOwnerWork")),
+        verbs: "updateMany|createMany|findUnique",
+        excused: { BusinessFeedback: "a message to us; it follows its business, and its ownerId is only who wrote it" },
+      },
+      {
+        name: "deleting everything (deleteOwnerWork)",
+        code: owner.slice(owner.indexOf("export async function deleteOwnerWork"), owner.indexOf("export function signInPath")),
+        verbs: "deleteMany",
+        excused: {
+          PrintOrder: "the record of a sale: kept, auto-renew off",
+          PrintBatch: "the record of a sale, with its orders",
+          BusinessFeedback: "a message to us, already emailed; its business link is cleared",
+        },
+      },
+      {
+        name: "the guest sweep (sweepIdleGuests)",
+        code: sweepSource,
+        verbs: "deleteMany",
+        excused: {
+          CalendarEvent: "goes with its calendar (cascade)",
+          PrintOrder: "the record of a sale: never swept",
+          PrintBatch: "the record of a sale: never swept",
+          BusinessFeedback: "a message to us, already emailed",
+        },
+      },
+    ];
+    for (const list of lists) {
+      const covers = named(list.code, list.verbs);
+      const missing = ownedTables.filter((t) => !covers.has(t) && !(t in list.excused));
+      const stale = Object.keys(list.excused).filter((t) => !ownedTables.includes(t));
+      check(
+        ownedTables.length >= 12 && missing.length === 0 && stale.length === 0,
+        `EVERY TABLE WITH AN OWNER IS NAMED BY ${list.name.toUpperCase()}${missing.length ? ` - missing: ${missing.join(", ")}` : ""}${stale.length ? ` - excused but not in the schema: ${stale.join(", ")}` : ""} (${ownedTables.length} tables)`
+      );
+    }
+
     // EVERY KIND OF ROW A GUEST CAN OWN is named above. If a new one is added
     // to the schema and not to the sweep, this is where it should have been.
     check(
@@ -363,6 +482,9 @@ async function main() {
     await prisma.business.deleteMany({ where: { ownerId: { in: coaches } } });
     await prisma.planner.deleteMany({ where: { ownerId: { in: coaches } } });
     await prisma.printOrder.deleteMany({ where: { ownerId: { in: [customer, browser, signer, signedIn, coachCustomer] } } });
+    await prisma.coverHeart.deleteMany({ where: { ownerId: { in: [abandoned, active, account, signer, signedIn, heartsOnly, heartsFresh, coachLeaving] } } });
+    await prisma.savedPlanner.deleteMany({ where: { ownerId: { in: [abandoned, active, account, signer, signedIn, plannersOnly, plannersFresh, coachLeaving] } } });
+    await prisma.printBatch.deleteMany({ where: { ownerId: { in: [signer, signedIn] } } });
     for (const ownerId of [abandoned, active, fresh, account, customer, browser, signer, signedIn]) {
       await prisma.calendar.deleteMany({ where: { ownerId } });
       await prisma.savedPage.deleteMany({ where: { ownerId } });
@@ -396,6 +518,17 @@ try {
 //   * drop `working` from the exclusion (2026-10-27)
 //     -> "A GUEST COACH STILL USING THEIR BUSINESS KEEPS EVERY JOURNAL"
 //   * drop the business from the sweep -> "AND THEIR BUSINESS GOES"
+//   * drop hearted covers from the sweep -> "AND THEIR HEARTED COVERS GO"
+//   * drop them from moveGuestWork -> "AND THEIR HEARTED COVERS"
+//   * drop them from deleteOwnerWork -> "and their hearted covers"
+//   * drop saved planners from the sweep -> "AND THEIR SAVED PLANNERS GO"
+//     and "EVERY TABLE WITH AN OWNER IS NAMED BY THE GUEST SWEEP"
+//   * drop them from deleteOwnerWork -> "AND THEIR SAVED PLANNERS" and the
+//     same line for deleting everything
+//   * drop printBatch from moveGuestWork -> "AND A GROUP'S PRINT RUN" and
+//     the same line for signing in
+//   * add a table with an ownerId to the schema and nowhere else -> all
+//     three "EVERY TABLE WITH AN OWNER" lines
 //   * go back to moving the business only when the account has none
 //     -> "SIGNING IN TO AN ACCOUNT WITH A BUSINESS LEAVES THE GUEST NONE"
 //   * drop the business's own updatedAt from `working`

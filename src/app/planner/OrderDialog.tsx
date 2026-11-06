@@ -185,6 +185,7 @@ export function OrderDialog({
   // whether the journal is dated (an undated one prints no dates)
   const [coverFront, setCoverFront] = useState<CoverFront | null>(null);
   const [journalDated, setJournalDated] = useState(true);
+  const [coverHearts, setCoverHearts] = useState<string[]>([]);
   const [busy, setBusy] = useState<"quote" | "pay" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Only the latest pricing lands: choosing bindings quickly asks twice.
@@ -207,6 +208,7 @@ export function OrderDialog({
       setCoverId(cover?.coverId ?? null);
       setCoverFront(cover?.front ?? null);
       setJournalDated(cover?.dated ?? true);
+      setCoverHearts(cover?.hearts ?? []);
       if (client) {
         setDays(client.days);
         setCustomDays(typedDays(client.days));
@@ -464,6 +466,7 @@ export function OrderDialog({
                     return Number.isNaN(start.getTime()) ? "" : coverDatesWords(orderRange(start, days));
                   })()}
                   onFrontChange={setCoverFront}
+                  hearted={coverHearts}
                   offered={status.covers}
                   onChange={(id) => {
                     setCoverId(id);

@@ -353,6 +353,20 @@ model SavedPlanner {
   @@index([ownerId])
 }
 
+// A cover somebody hearted on /covers (2026-11-05): kept per owner, a guest
+// too, and moved to the account on sign-in (owner.ts moveGuestWork). The
+// order screen's Cover picker shows them first. coverId is a scan id from
+// the covers catalogue (Onyx009), checked against it before it is kept.
+model CoverHeart {
+  id        String   @id @default(cuid())
+  ownerId   String
+  coverId   String
+  createdAt DateTime @default(now())
+
+  @@unique([ownerId, coverId])
+  @@index([ownerId])
+}
+
 // --- Calendars and events --------------------------------------------------
 //
 // PER OWNER, NOT PER JOURNAL (Andrew, 2026-09-26). Your calendar is yours: a

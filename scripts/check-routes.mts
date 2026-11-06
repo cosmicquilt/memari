@@ -145,6 +145,9 @@ async function main() {
     // a front up close (2026-11-05): the cover's whole scan, read here or sent on to the file host
     { path: "/covers/onyx-1/scan", expect: [200, 307], as: "nobody", what: "a cover's whole scan, for its close look" },
     { path: "/covers/not-a-cover/scan", expect: [404], as: "nobody", what: "an unknown cover's scan is 404, not 500" },
+    // hearts on covers (2026-11-05): read by the covers page as it loads
+    { path: "/app/saved/covers", expect: [200], as: "nobody", what: "hearts, for somebody new: none, and no guest made" },
+    { path: "/app/saved/covers", expect: [200], as: "guest", what: "a guest's hearts" },
     { path: "/quiz", expect: [307, 308], as: "nobody", what: "the quiz's address sends people to the otter" },
     { path: "/help", expect: [200], as: "nobody", what: "help, whose answers the footer opens by address" },
     { path: "/modules", expect: [200], as: "nobody", what: "the modules, now in the Layouts menu" },

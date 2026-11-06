@@ -40,6 +40,8 @@ export type SweepResult = {
   calendars: number;
   settings: number;
   businesses: number;
+  hearts: number;
+  savedPlanners: number;
 };
 
 export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResult> {
@@ -80,6 +82,10 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
   const idleGuest = { ownerId: { startsWith: GUEST_OWNER_PREFIX, notIn: [...customers, ...working] }, updatedAt: { lt: cutoff } };
 
   const journals = await prisma.planner.deleteMany({ where: idleGuest });
+  // A heart, or a planner saved from our gallery, is never touched once made
+  // (coverHearts.ts; templateSaving.ts saves again as a no-op), so its age is
+  // when it was made: it has "sat as long" once it was made that long ago.
+  const madeLongAgo = { ownerId: idleGuest.ownerId, createdAt: idleGuest.updatedAt };
 
   // A guest's OTHER belongings go once that guest has no journals left and
   // the thing itself has sat as long. Not on idleness alone: a saved page is
@@ -97,9 +103,17 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
       // A business, the third (2026-10-27). Its clients, templates and
       // emailed-link counts cascade with it.
       ...(await prisma.business.findMany({ where: idleGuest, select: { ownerId: true } })),
+      // Hearted covers, the fourth (2026-11-05). A guest made by a heart on
+      // /covers may own nothing else at all.
+      ...(await prisma.coverHeart.findMany({ where: madeLongAgo, select: { ownerId: true }, distinct: ["ownerId"] })),
+      // Saved planners, the fifth (2026-11-05) - though the oldest of them:
+      // saving one from /layouts has made a guest since 2026-10-21, and no
+      // list here was told. check:guest-sweep now reads the schema for every
+      // table with an owner, so a sixth cannot be missed the same way.
+      ...(await prisma.savedPlanner.findMany({ where: madeLongAgo, select: { ownerId: true }, distinct: ["ownerId"] })),
     ].map((row) => row.ownerId)
   );
-  const nothing = { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0, settings: 0, businesses: 0 };
+  const nothing = { journals: journals.count, savedPages: 0, savedModules: 0, calendars: 0, settings: 0, businesses: 0, hearts: 0, savedPlanners: 0 };
   if (owners.size === 0) return nothing;
 
   const active = await prisma.planner.findMany({
@@ -112,12 +126,15 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
 
   const gone = { ...idleGuest, ownerId: { in: [...owners] } };
   // The events cascade with their calendar, so nothing of the feed is left.
-  const [savedPages, savedModules, calendars, settings, businesses] = await prisma.$transaction([
+  const longGone = { ...madeLongAgo, ownerId: { in: [...owners] } };
+  const [savedPages, savedModules, calendars, settings, businesses, hearts, savedPlanners] = await prisma.$transaction([
     prisma.savedPage.deleteMany({ where: gone }),
     prisma.savedModule.deleteMany({ where: gone }),
     prisma.calendar.deleteMany({ where: gone }),
     prisma.ownerSettings.deleteMany({ where: gone }),
     prisma.business.deleteMany({ where: gone }),
+    prisma.coverHeart.deleteMany({ where: longGone }),
+    prisma.savedPlanner.deleteMany({ where: longGone }),
   ]);
 
   return {
@@ -127,5 +144,7 @@ export async function sweepIdleGuests(now: Date = new Date()): Promise<SweepResu
     calendars: calendars.count,
     settings: settings.count,
     businesses: businesses.count,
+    hearts: hearts.count,
+    savedPlanners: savedPlanners.count,
   };
 }

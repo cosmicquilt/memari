@@ -28,28 +28,40 @@ export async function saveTimeZone(zone: string): Promise<void> {
 }
 
 /** What deleting would take: shown before the person confirms. */
-export type DeletionSummary = { journals: number; savedPages: number; savedModules: number; calendars: number; booksOnTheWay: number; renewing: number; business: { name: string; clients: number } | null };
+export type DeletionSummary = {
+  journals: number;
+  savedPages: number;
+  savedModules: number;
+  savedPlanners: number;
+  calendars: number;
+  hearts: number;
+  booksOnTheWay: number;
+  renewing: number;
+  business: { name: string; clients: number } | null;
+};
 
 const ON_THE_WAY = ["PAID", "SUBMITTED", "IN_PRODUCTION", "SHIPPED"] as const;
 
 export async function deletionSummary(): Promise<DeletionSummary> {
   const { id } = await owner();
-  const [journals, savedPages, savedModules, calendars, booksOnTheWay, renewing, business] = await Promise.all([
+  const [journals, savedPages, savedModules, savedPlanners, calendars, hearts, booksOnTheWay, renewing, business] = await Promise.all([
     prisma.planner.count({ where: { ownerId: id, isTemplate: false } }),
     prisma.savedPage.count({ where: { ownerId: id } }),
     prisma.savedModule.count({ where: { ownerId: id } }),
+    prisma.savedPlanner.count({ where: { ownerId: id } }),
     prisma.calendar.count({ where: { ownerId: id } }),
+    prisma.coverHeart.count({ where: { ownerId: id } }),
     prisma.printOrder.count({ where: { ownerId: id, status: { in: [...ON_THE_WAY] } } }),
     prisma.printOrder.count({ where: { ownerId: id, autoRenew: true } }),
     prisma.business.findUnique({ where: { ownerId: id }, select: { name: true, _count: { select: { clients: true } } } }),
   ]);
-  return { journals, savedPages, savedModules, calendars, booksOnTheWay, renewing, business: business ? { name: business.name, clients: business._count.clients } : null };
+  return { journals, savedPages, savedModules, savedPlanners, calendars, hearts, booksOnTheWay, renewing, business: business ? { name: business.name, clients: business._count.clients } : null };
 }
 
 /**
  * Delete the person and everything they made: journals (their pages and
- * modules cascade), saved pages and modules, calendars and events, settings,
- * their business and its clients (owner.ts, deleteOwnerWork) - and, for an
+ * modules cascade), saved pages, modules and planners, calendars and events, settings,
+ * hearted covers, their business and its clients (owner.ts, deleteOwnerWork) - and, for an
  * account, the account itself at Clerk. Asked twice: the page makes them
  * type "delete".
  *

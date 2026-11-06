@@ -10,31 +10,17 @@
 //           site is theirs when they open the app.
 //   DELETE  un-save it.
 //
-// JSON, and same-origin only: a form from another site cannot send JSON
-// without a preflight it would fail, and the Origin check refuses the rest.
+// JSON, and same-origin only (lib/siteSave.ts, shared with hearts).
 
 import { NextResponse, type NextRequest } from "next/server";
 import { currentOwner } from "@/lib/owner";
-import {
-  GUEST_COOKIE,
-  GUEST_COOKIE_MAX_AGE,
-  GUEST_OWNER_PREFIX,
-  guestCookieValue,
-  guestModeAvailable,
-  newGuestId,
-} from "@/lib/guest";
-import { sweepIdleGuests } from "@/lib/guestSweep";
+import { ownerOrNewGuest, sameOrigin, setGuestCookie } from "@/lib/siteSave";
 import { parseTemplateSave, saveTemplateItem, templateSavedKeys, unsaveTemplateItem } from "@/app/planner/templateSaving";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
-
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  return !origin || origin === new URL(request.url).origin;
-}
 
 async function bodyOf(request: NextRequest) {
   return parseTemplateSave(await request.json().catch(() => null));
@@ -49,32 +35,16 @@ export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return json({ error: "Not from here." }, 403);
   const save = await bodyOf(request);
   if (!save) return json({ error: "Nothing to save." }, 400);
-  let owner = await currentOwner();
-  let newGuest: string | null = null;
-  if (!owner) {
-    if (!guestModeAvailable()) return json({ error: "Sign in to save.", signIn: true }, 401);
-    await sweepIdleGuests();
-    const id = newGuestId();
-    newGuest = guestCookieValue(id);
-    owner = { id: `${GUEST_OWNER_PREFIX}${id}`, guest: true };
-  }
+  const saver = await ownerOrNewGuest();
+  if (!saver) return json({ error: "Sign in to save.", signIn: true }, 401);
+  const { owner } = saver;
   let saved: Awaited<ReturnType<typeof saveTemplateItem>>;
   try {
     saved = await saveTemplateItem(owner.id, save);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "It did not save." }, 400);
   }
-  const response = json({ ...saved, keys: await templateSavedKeys(owner.id) });
-  if (newGuest) {
-    response.cookies.set(GUEST_COOKIE, newGuest, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: GUEST_COOKIE_MAX_AGE,
-    });
-  }
-  return response;
+  return setGuestCookie(json({ ...saved, keys: await templateSavedKeys(owner.id) }), saver.cookie);
 }
 
 export async function DELETE(request: NextRequest) {

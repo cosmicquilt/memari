@@ -4,6 +4,8 @@
 //   by /dev/covers, as ordering is off where the printers' keys aren't set)
 //   opens on the drawn cover, offers all 85 and the plain one, and a cover
 //   picked is kept on the journal; the plain one picked takes it off.
+//   HEARTS FIRST: covers hearted on /covers open the picker, newest first,
+//   before the plain one, and stay in their material, marked.
 //   PRINTED: the preview of the cover (the very file an order sends) carries
 //   the chosen scan, once, on wire-o's two pages and a paperback's one; a
 //   2:1 scan is refused for a hardcover, and a cover asked for by a name
@@ -154,6 +156,42 @@ try {
   const plain = await preview("wireoStandard");
   const bogus = await preview("wireoStandard", "&cover=NotACover");
   say(plain.status === 200 && plain.jpegs === 0 && bogus.status === 200 && bogus.jpegs === 0, "the plain cover prints drawn, as does one asked for by a name that isn't a cover");
+
+  // ---- HEARTS FIRST (2026-11-05): hearted on /covers, as this guest
+  const heart = async (coverId: string, method = "POST") => {
+    const response = await fetch(`${server.base}/app/saved/covers`, { method, headers: { cookie: guest.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ coverId }) });
+    return ((await response.json()) as { hearts?: string[] }).hearts ?? [];
+  };
+  await heart("Fabric066");
+  const heartsKept = await heart("Wood052");
+  await tab.reload();
+  await tab.getByRole("button", { name: "Change" }).click();
+  await tab.locator("[data-hearts] [data-cover]").first().waitFor({ timeout: 15_000 }).catch(() => {});
+  const picker = await tab.evaluate(() => {
+    const all = [...document.querySelectorAll("[data-cover]")];
+    return {
+      hearts: [...document.querySelectorAll("[data-hearts] [data-cover]")].map((el) => el.getAttribute("data-cover")),
+      first: all.slice(0, 3).map((el) => el.getAttribute("data-cover")),
+      count: all.length,
+      marked: all.filter((el) => /, hearted$/.test(el.getAttribute("aria-label") ?? "")).map((el) => el.getAttribute("data-cover")),
+    };
+  });
+  say(
+    heartsKept.join() === "Wood052,Fabric066" && picker.hearts.join() === "Wood052,Fabric066" && picker.first.join() === "Wood052,Fabric066,plain",
+    `HEARTED COVERS OPEN THE PICKER, newest first, before the plain one (${picker.first.join(", ")})`
+  );
+  say(picker.count === 88 && picker.marked.sort().join() === "Fabric066,Fabric066,Wood052,Wood052", `and stay in their material too, marked hearted (${picker.count} tiles; hearted: ${picker.marked.join(", ")})`);
+  await tab.waitForTimeout(600);
+  if (shots) await tab.screenshot({ path: `${shots}/covers-hearts.png` });
+  await tab.locator('[data-hearts] [data-cover="Wood052"]').click();
+  await tab.waitForFunction((want) => document.querySelector("[data-cover-name]")?.textContent?.trim() === want, shownName(coverById("Wood052")!), { timeout: 15_000 }).catch(() => {});
+  say((await themeOf()).cover === "Wood052", `and a hearted cover picked there is the journal's (theme.cover ${(await themeOf()).cover})`);
+  await heart("Fabric066", "DELETE");
+  const none = await heart("Wood052", "DELETE");
+  await tab.reload();
+  await tab.getByRole("button", { name: "Change" }).click();
+  await tab.locator("[data-cover]").first().waitFor();
+  say(none.length === 0 && (await tab.locator("[data-hearts]").count()) === 0 && (await tab.locator("[data-cover]").count()) === 86, "with no hearts the picker is as before: no hearts row, the plain cover and all 85");
 
   // ---- WHERE CHOOSING IS SHUT
   await prisma.planner.update({ where: { id: guest.journalId }, data: { theme: { ...(await themeOf()), cover: "Onyx002" } } });

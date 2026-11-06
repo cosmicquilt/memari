@@ -34,6 +34,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { PlannerTheme } from "@/lib/theme";
 import { cleanCoverFront, type CoverFront } from "@/lib/print/coverFront";
+import { heartedCovers } from "@/lib/coverHearts";
 
 /** Ready, with the bindings that can be ordered here (each one's printer has
  *  its keys), in the screen's order - the first is chosen to start with -
@@ -89,12 +90,21 @@ export async function journalCoverId(journalId: string): Promise<string | null> 
 /** The journal's cover for the order screen's Cover: its scan id, the
  *  front's own choices if it has any (null: as the cover is pictured), and
  *  whether the journal is dated - an undated one prints no dates. */
-export async function journalCoverChoice(journalId: string): Promise<{ coverId: string | null; front: CoverFront | null; dated: boolean } | null> {
+export async function journalCoverChoice(
+  journalId: string
+): Promise<{ coverId: string | null; front: CoverFront | null; dated: boolean; hearts: string[] } | null> {
   const owner = await currentOwner();
   if (!owner) return null;
   const journal = await prisma.planner.findFirst({ where: { id: journalId, ownerId: owner.id }, select: { theme: true, dated: true } });
   if (!journal) return null;
-  return { coverId: journalCover(journal.theme)?.id ?? null, front: cleanCoverFront((journal.theme as PlannerTheme | null)?.coverFront), dated: journal.dated };
+  return {
+    coverId: journalCover(journal.theme)?.id ?? null,
+    front: cleanCoverFront((journal.theme as PlannerTheme | null)?.coverFront),
+    dated: journal.dated,
+    // the covers this person hearted on /covers, shown first (2026-11-05):
+    // whoever is choosing - a coach ordering a client's book sees their own
+    hearts: await heartedCovers(owner.id),
+  };
 }
 
 /** What is on the journal's cover's front, chosen on the order screen: the

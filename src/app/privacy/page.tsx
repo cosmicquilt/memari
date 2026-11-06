@@ -11,10 +11,10 @@ import { LegalPage, Summary, H2, P, UL, LI, A, LEGAL_CONTACT, LEGAL_ENTITY } fro
 //     lives in Clerk and our rows key on Clerk's id string alone
 //   - four first-party cookies, all named memari-*, in src/lib
 //   - guest journals are deleted after GUEST_IDLE_DAYS idle, in
-//     src/app/guest/route.ts, and their saved items follow - except a guest
-//     business's, kept while the business is in use; an unused guest
-//     business goes once its journals have (src/lib/guestSweep.ts,
-//     2026-10-27). A guest who has ordered a book is never swept
+//     src/app/guest/route.ts, and their saved items and hearted covers
+//     follow - except a guest business's, kept while the business is in
+//     use; an unused guest business goes once its journals have
+//     (src/lib/guestSweep.ts, 2026-10-27). A guest who has ordered a book is never swept
 //     (guestSweep.ts `customers`, since 2026-10-15)
 //   - the PDF is built on the server (src/app/app/export/route.ts) and
 //     handed back; it is not stored and not sent anywhere
@@ -56,7 +56,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy" updated="2 November 2026">
+    <LegalPage title="Privacy" updated="5 November 2026">
       <Summary>
         <P>
           <strong>The short version.</strong> Memari stores the planners you build and, if you make
@@ -265,7 +265,8 @@ export default function PrivacyPage() {
         </LI>
         <LI>
           <strong>Guest journals are deleted after 30 days without being opened.</strong> Saved
-          pages and saved modules belonging to a guest go when that guest has no journals left.
+          pages, saved modules, saved planners and hearted covers belonging to a guest go when that
+          guest has no journals left.
           A business started as a guest keeps its journals while it is in use &mdash; opened by
           you, or a client&rsquo;s page opened by them &mdash; and once it has gone 30 days unused,
           it is deleted with its journals, and its clients&rsquo; names, emails and addresses go

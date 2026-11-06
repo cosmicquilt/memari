@@ -286,7 +286,8 @@
 .stage button:focus-visible,
 .stage input:focus-visible,
 .rail button:focus-visible,
-.swatch button:focus-visible {
+.swatch button:focus-visible,
+.example button:focus-visible {
   outline: 2px solid var(--hand);
   outline-offset: 3px;
 }
@@ -587,8 +588,19 @@
   gap: 16px;
 }
 
-/* a sample card: punched for the ring, the swatch, its name */
-.swatch button {
+/* a sample card: punched for the ring, the swatch, its name - and its
+   heart beside it (a button of its own: one cannot sit in another), so the
+   card and its heart lift together */
+.swatch {
+  position: relative;
+  transition: transform 160ms ease-out;
+}
+
+.swatch:hover {
+  transform: translateY(-2px);
+}
+
+.swatchCard {
   width: 100%;
   display: grid;
   gap: 10px;
@@ -601,14 +613,9 @@
   text-align: left;
   cursor: pointer;
   box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.08), 0 6px 18px rgba(40, 30, 20, 0.06);
-  transition: transform 160ms ease-out;
 }
 
-.swatch button:hover {
-  transform: translateY(-2px);
-}
-
-.swatch button[aria-pressed="true"] {
+.swatchCard[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--ink), 0 6px 18px rgba(40, 30, 20, 0.06);
 }
 
@@ -641,6 +648,271 @@
   font-weight: 500;
   opacity: 0.62;
   font-variant-numeric: tabular-nums;
+}
+
+/* --- hearts (part 3, 2026-11-05) ---------------------------------------- */
+
+/* on a card: over the swatch's top right corner (card padding 10 + hole 10
+   + gap 10 = the swatch's top at 30px, the heart 6px inside it) */
+.swatchHeart {
+  position: absolute;
+  top: 36px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 250, 240, 0.94);
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(28, 25, 23, 0.18);
+  cursor: pointer;
+  transition: transform 140ms ease-out;
+}
+
+.swatchHeart:hover {
+  transform: scale(1.08);
+}
+
+/* on the stage, before back and on */
+.heartPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(245, 234, 213, 0.12);
+  color: #f5ead5;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.heartPill:hover {
+  background: rgba(245, 234, 213, 0.2);
+}
+
+.heartPill[aria-pressed="true"] {
+  background: #c8324b;
+}
+
+.heartProblem {
+  margin: 0;
+  font-size: 13px;
+  color: #ffb4a8;
+}
+
+/* the rail's first button: only the hearted */
+.heartsFilter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 14px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: 0 0 0 1px rgba(28, 25, 23, 0.08);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.heartsFilter > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.heartsFilter > span:last-child {
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.heartsFilter:hover {
+  background: #fffaf0;
+}
+
+.heartsFilter[aria-pressed="true"] {
+  background: rgba(200, 50, 75, 0.14);
+  box-shadow: 0 0 0 1px rgba(200, 50, 75, 0.35);
+}
+
+.heartsEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 40px 24px;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: center;
+}
+
+.heartsEmpty p {
+  margin: 0;
+  max-width: 34em;
+  color: var(--muted);
+}
+
+.heartsEmpty .heartsEmptyTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* "When you order, your hearts come first": the order screen, by example */
+.firstInLine {
+  position: relative;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32px 48px;
+}
+
+/* after what is on a cover, its bottom space is the gap */
+.made + .firstInLine {
+  margin-top: -40px;
+}
+
+.firstText {
+  flex: 1 1 340px;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.firstText h2 {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.firstText p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.firstText .handNote {
+  font-family: var(--font-hand), cursive;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--hand);
+}
+
+.example {
+  flex: 1 1 520px;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border-radius: 18px;
+  background: #1f1b18;
+  color: #f5ead5;
+}
+
+.exampleHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.exampleHead span:last-child {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(245, 234, 213, 0.72);
+}
+
+.example .exampleLabel {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(245, 234, 213, 0.72);
+}
+
+.exampleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.exampleHearted {
+  position: relative;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+}
+
+.exampleHearted img {
+  display: block;
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px #e8576d;
+}
+
+.exampleHearted svg {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.exampleSlot {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1.5px dashed rgba(245, 234, 213, 0.3);
+  color: rgba(245, 234, 213, 0.4);
+}
+
+.example .exampleHint {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(245, 234, 213, 0.72);
+}
+
+/* every other cover: one row that fades out at the panel's edge, "and
+   the rest" at any width, never a lone tile on a second line */
+.exampleOthers {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 72px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 72px), transparent);
+}
+
+.exampleOther {
+  flex: none;
+  display: block;
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  opacity: 0.9;
 }
 
 /* --- what is on a cover ------------------------------------------------ */
@@ -764,7 +1036,8 @@
   }
 
   .book,
-  .made {
+  .made,
+  .firstInLine {
     padding-inline: 16px;
   }
 
@@ -779,11 +1052,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .swatch button {
+  .swatch,
+  .swatchHeart {
     transition: none;
   }
 
-  .swatch button:hover {
+  .swatch:hover,
+  .swatchHeart:hover {
     transform: none;
   }
 }
