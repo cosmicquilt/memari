@@ -1198,10 +1198,13 @@
    VideoHero marks the hero data-notes-beside once a note on the desk would
    come within 8px of the screen's side; then the desk's notes and arrows
    hide - still laid out, as they are what is measured - and these copies,
-   in the title's own box (Wordmark's aside), show either side of it,
-   centred on the title and tagline together. The same size as on the desk
-   (1.45cqw of the stage, which is the film's 16:9 width whenever the sides
-   are cropped), so they only move. */
+   in the title's own box (Wordmark's aside), show either side of it.
+   Lower than the tagline and a fifth smaller than on the desk (2026-11-06,
+   after "decreased the size of the print notes a bit and move them down a
+   bit" and four options shown: "i want lower than tagline"): their tops
+   just under the title's box, whose bottom is the tagline's line. The
+   desk's size is 1.45cqw of the stage, which is the film's 16:9 width
+   whenever the sides are cropped. */
 .heroAside {
   position: absolute;
   inset: 0;
@@ -1218,9 +1221,8 @@
 }
 
 .heroAside .heroNote {
-  top: 50%;
-  translate: 0 -50%;
-  font-size: calc(var(--film-h) * 16 / 9 * 0.0145);
+  top: calc(100% + 0.15em);
+  font-size: calc(var(--film-h) * 16 / 9 * 0.0145 * 0.8);
 }
 
 .heroAside .heroAsideLeft {
