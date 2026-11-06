@@ -86,19 +86,11 @@
 }
 
 .end h2 {
-  margin: 0;
+  margin: calc(-1 * var(--ink-room, 0px)) 0; /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   font-size: clamp(28px, 3.6vw, 44px);
   font-weight: 800;
   letter-spacing: -0.025em;
   line-height: 1.08;
-}
-
-/* The paper is painted inside the box only, and at 1.08 the last line's
-   descenders hang below it: room for them, given back (see .headline in
-   landing.module.css). */
-[data-text-paper] .end h2 {
-  padding-bottom: 0.16em;
-  margin-bottom: -0.16em;
 }
 
 .note {
@@ -480,6 +472,7 @@
   content: counter(step);
   grid-row: span 2;
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 26px;
   line-height: 1;
   color: var(--hand);

@@ -38,6 +38,33 @@ function charmUp(cents: number): number {
   return Math.ceil((cents + 1) / 100) * 100 - 1;
 }
 
+/** What the margin and the card fee are taken out of. */
+const PRICE_SHARE = 1 - BOOK_MARGIN - CARD_FEE_SHARE;
+
+/**
+ * The book's price before it is rounded to a charm price: everything the
+ * printer charges for the book except the post, grossed up so that after
+ * the card fee BOOK_MARGIN of it is left. The card fee is on the WHOLE
+ * charge, post included - and the post is passed on at cost, so the book
+ * carries the fee on it too.
+ *
+ * Split out (2026-11-06) for the How it works estimate (estimate.ts), which
+ * interpolates it between quoted page counts: it is a straight line in the
+ * book's cost, so the estimate can never drift from this formula.
+ */
+export function rawBookCents(bookCostCents: number, shippingCents: number): number {
+  return (bookCostCents + CARD_FEE_FIXED_CENTS + shippingCents * CARD_FEE_SHARE) / PRICE_SHARE;
+}
+
+/** rawBookCents per cent of the book's cost, and per cent of post. */
+export const RAW_PER_COST_CENT = 1 / PRICE_SHARE;
+export const RAW_PER_POST_CENT = CARD_FEE_SHARE / PRICE_SHARE;
+
+/** The price a raw book price is charged at: charm-priced, never under the floor. */
+export function bookCentsFromRaw(raw: number): number {
+  return Math.max(MIN_BOOK_PRICE_CENTS, charmUp(raw));
+}
+
 /**
  * The customer's price for one book from Lulu's quote. The book carries
  * everything Lulu charges except the post - printing, the fulfilment fee
@@ -46,10 +73,7 @@ function charmUp(cents: number): number {
  */
 export function priceFromCost(cost: PrintCost): Price {
   const bookCost = cost.totalCents - cost.shippingCents;
-  // The card fee is on the WHOLE charge, post included - and the post is
-  // passed on at cost, so the book carries the fee on it too.
-  const raw = (bookCost + CARD_FEE_FIXED_CENTS + cost.shippingCents * CARD_FEE_SHARE) / (1 - BOOK_MARGIN - CARD_FEE_SHARE);
-  const bookCents = Math.max(MIN_BOOK_PRICE_CENTS, charmUp(raw));
+  const bookCents = bookCentsFromRaw(rawBookCents(bookCost, cost.shippingCents));
   return {
     bookCents,
     shippingCents: cost.shippingCents,

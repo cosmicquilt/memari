@@ -1174,6 +1174,7 @@
   position: absolute;
   margin: 0;
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 1.45cqw;
   line-height: 1.35;
   white-space: nowrap;
@@ -1454,7 +1455,7 @@
 }
 
 .headline {
-  margin: 0;
+  margin: calc(-1 * var(--ink-room, 0px)) 0; /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   font-size: clamp(34px, 5vw, 64px);
   font-weight: 800;
   letter-spacing: -0.025em;
@@ -1553,6 +1554,7 @@
   width: 34px;
   height: 34px;
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 24px;
   line-height: 1;
   color: var(--hand);
@@ -1750,6 +1752,7 @@ a.moreButton:focus-visible {
    never pushes its line. */
 .hand {
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-weight: 400;
   font-size: 1.18em;
   letter-spacing: 0;
@@ -1771,17 +1774,6 @@ a.moreButton:focus-visible {
   margin: 0 -0.5em 0 calc(0.22em - 0.5em);
 }
 
-/* A heading set this tight (line-height 1.04) has its last line's
-   descenders hanging below its box, and the paper is painted only inside
-   the box, so the tail of a y or a g was cut off (2026-10-22: "the bottom
-   of the y ... in 'Weeks, months and days. No two alike.' is cut off").
-   Room under it for them, given back below so nothing moves. Its margin is
-   0, so the negative one is all of it. */
-.page[data-text-paper] .headline {
-  padding-bottom: 0.16em;
-  margin-bottom: -0.16em;
-}
-
 /* A word with a pen mark on it (Underlined, Circled). */
 .marked {
   position: relative;
@@ -1795,27 +1787,33 @@ a.moreButton:focus-visible {
   position: absolute;
   color: var(--hand);
   pointer-events: none;
+  /* the room of the word they mark (see .underline below) */
+  --ink-room: inherit;
 }
 
+/* Placed from the word's box, which the ink's room (ROOM FOR THE INK) makes
+   taller by --ink-room above and below: these take it back, so the pen
+   marks sit where they did. */
 .underline {
   left: -3%;
   width: 106%;
-  bottom: -0.2em;
+  bottom: calc(-0.2em + var(--ink-room, 0px));
   height: 0.34em;
 }
 
 .underlineTwice {
   left: -3%;
   width: 106%;
-  bottom: -0.36em;
+  bottom: calc(-0.36em + var(--ink-room, 0px));
   height: 0.62em;
 }
 
 .circle {
   left: -30%;
   width: 160%;
-  top: -36%;
-  height: 172%;
+  /* -36% and 172% of the word's height, which is now 2 x room more */
+  top: calc(-36% + 1.72 * var(--ink-room, 0px));
+  height: calc(172% - 3.44 * var(--ink-room, 0px));
 }
 
 /* Doodles in the margins: the journal's own, faint, in the same blue. */
@@ -1825,6 +1823,8 @@ a.moreButton:focus-visible {
   position: absolute;
   color: var(--hand);
   pointer-events: none;
+  /* placed from the words it hangs off, which may have the ink's room */
+  --ink-room: inherit;
 }
 
 .doodle {
@@ -1846,8 +1846,9 @@ a.moreButton:focus-visible {
 /* The closing's line under its button, written with an arrow up to it. */
 .handNote {
   position: relative;
-  margin: -6px 0 0;
+  margin: calc(-6px - var(--ink-room, 0px)) 0 calc(-1 * var(--ink-room, 0px)); /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 22px;
   color: var(--hand);
   transform: rotate(-2deg);
@@ -2028,6 +2029,46 @@ a.moreButton:focus-visible {
   -webkit-background-clip: var(--text-paper-clip), text, padding-box;
   background-clip: var(--text-paper-clip), text, padding-box;
   -webkit-text-fill-color: transparent;
+}
+
+/* ROOM FOR THE INK (2026-11-06: "y's and g's in headings are cut off at
+   bottom. fix this throughout site"). The paper above is painted only
+   inside each element's own box, and text set tighter than its letters
+   are tall hangs out of that box: the tail of a g or a y, the top of a
+   hand-written "!" - and what hangs out gets no paper and vanishes. So
+   every text element gets room above and below for its letters, as
+   padding given back as negative margin, so nothing moves. Padding, not a
+   clear border (which would leave a background colour and anything
+   positioned inside where they were): Chrome rounds a border's width to
+   whole device pixels and never a margin, so a border of 8.33px gave back
+   8.33px for 8 and moved every word under it a third of a pixel.
+
+   The room is (--ink-height - line height) / 2 a side: none where the
+   leading already holds the letters. --ink-height is how tall the face's
+   letters run: the sans's fit in 1.3em; the hand's (Cedarville) need 2em,
+   set beside every font-family: var(--font-hand).
+
+   Zero specificity, so a class's own margin or padding wins - and such a
+   class must give the room back itself: margin: calc(12px -
+   var(--ink-room, 0px)) (the var is unset with the paper off, so 0), and
+   anything positioned inside it from its top or bottom moves by the room
+   too. npm run check:ink measures every site page at a desktop and a
+   phone width: no painted letter outside its box, and nothing moves when
+   the paper is on. (Replaces the one-off fixes on the headline and the
+   end heading, 2026-10-22.) */
+/* Each element's own room, never its parent's: a pen mark inside a word
+   with room takes the word's on purpose (--ink-room: inherit); a circle
+   round a step number inside a list item with room must not. */
+@property --ink-room {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+:where(.page[data-text-paper] :is(h1, h2, h3, h4, h5, h6, p, li, figcaption, blockquote, dt, dd, summary, .marked):not([data-off-paper], [data-off-paper] *, [role="dialog"] *, [data-paper-skip], [data-paper-skip] *)) {
+  --ink-room: max(0px, (var(--ink-height, 1.3em) - 1lh) / 2);
+  padding-block: var(--ink-room);
+  margin-block: calc(-1 * var(--ink-room));
 }
 
 /* A link left out keeps its own ink: without this it would take the clear

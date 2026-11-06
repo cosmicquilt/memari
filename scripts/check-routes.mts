@@ -150,6 +150,7 @@ async function main() {
     { path: "/app/saved/covers", expect: [200], as: "guest", what: "a guest's hearts" },
     { path: "/quiz", expect: [307, 308], as: "nobody", what: "the quiz's address sends people to the otter" },
     { path: "/help", expect: [200], as: "nobody", what: "help, whose answers the footer opens by address" },
+    { path: "/how-it-works", expect: [200], as: "nobody", what: "how it works, with the price calculator" },
     { path: "/modules", expect: [200], as: "nobody", what: "the modules, now in the Layouts menu" },
     // the page for coaches, the header's "For businesses" (2026-11-05), and
     // a client's own print link (clientsMayPrint) that isn't one

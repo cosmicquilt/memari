@@ -62,6 +62,8 @@ for (const href of ["/modules", "/layouts#planners", "/quiz", "/covers", "/busin
 check(FOOTER_COLUMNS.some((c) => c.links.some((l) => l.href === `mailto:${LEGAL_CONTACT}`)), "Contact writes to the legal contact address");
 check(headerSection("/layouts/week-adhd") === "layouts" && headerSection("/modules/habit-tracker") === "layouts" && headerSection("/covers/onyx-4") === "/covers", "Layouts stays lit on a layout's and a module's page; Covers on a cover's");
 check(headerSection("/") === null && headerSection("/pricing") === null, "the home page and Pricing light nothing");
+check(headerSection("/how-it-works") === "/how-it-works" && HEADER_LINKS.some((l) => l.href === "/how-it-works"), "How it works is its own page, lit in the header");
+check(!HEADER_LINKS.concat(FOOTER_COLUMNS.flatMap((c) => c.links)).some((l) => l.href === "/#how"), "nothing links to the old home-page section any more");
 
 // the covers: one for each carousel picture, every material in a group
 check(COVERS.length === (covers as unknown[]).length, `every carousel cover is on the page (${COVERS.length})`);

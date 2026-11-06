@@ -63,9 +63,10 @@
 }
 
 .photo figcaption {
-  margin-top: 14px;
+  margin-top: calc(14px - var(--ink-room, 0px)); /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   text-align: right;
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: clamp(18px, 2vw, 22px);
   text-wrap: balance;
   color: var(--hand);
@@ -118,15 +119,16 @@
 }
 
 .note {
-  margin: 0;
+  margin: calc(-1 * var(--ink-room, 0px)) 0; /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 26px;
   line-height: 1.2;
   color: var(--hand);
 }
 
 .h2 {
-  margin: 0;
+  margin: calc(-1 * var(--ink-room, 0px)) 0; /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
   font-size: clamp(28px, 3.2vw, 40px);
   font-weight: 800;
   line-height: 1.1;

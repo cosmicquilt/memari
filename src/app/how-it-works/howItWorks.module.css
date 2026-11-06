@@ -1,0 +1,1353 @@
+/* How it works (2026-11-06): mockup A ("the walkthrough") with mockup B's
+   book beside the covers. In the landing's paper and ink: --ink, --muted,
+   --cream and the blue --hand come from the page (landing.module.css). */
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.small {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.center {
+  text-align: center;
+}
+
+.live {
+  color: var(--hand);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the hero ------------------------------------------------------------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 48px;
+  align-items: center;
+  padding: 64px 0 24px;
+}
+
+.heroButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.button,
+.buttonGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 12px 20px;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.button {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.buttonGhost {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+.heroArt {
+  position: relative;
+  aspect-ratio: 1 / 0.92;
+  min-width: 0;
+}
+
+.heroPage {
+  position: absolute;
+  width: 31%;
+  aspect-ratio: 2175 / 3075;
+  background: #fffcf6;
+  box-shadow:
+    0 1px 2px rgba(40, 30, 20, 0.16),
+    0 14px 30px -12px rgba(40, 30, 20, 0.35);
+}
+
+.heroPage:nth-child(1) {
+  left: 0;
+  top: 6%;
+  transform: rotate(-9deg);
+}
+
+.heroPage:nth-child(2) {
+  left: 13%;
+  top: 18%;
+  transform: rotate(-3deg);
+}
+
+.heroPage:nth-child(3) {
+  left: 25%;
+  top: 31%;
+  transform: rotate(3deg);
+}
+
+.heroBook {
+  position: absolute;
+  right: 0;
+  top: 2%;
+  width: 62%;
+  display: grid;
+  place-items: center;
+}
+
+.heroNote {
+  position: absolute;
+  font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
+  color: var(--hand);
+  font-size: 22px;
+  white-space: nowrap;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-block: 1px solid rgba(28, 25, 23, 0.14);
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facts li {
+  padding: 18px 20px;
+  border-left: 1px solid rgba(28, 25, 23, 0.14);
+}
+
+.facts li:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.facts b {
+  display: block;
+  font-size: 17px;
+}
+
+.facts span {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* --- the steps ------------------------------------------------------------ */
+
+.step {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px 20px;
+  padding-top: 88px;
+}
+
+.step > :first-child {
+  margin-top: 10px;
+}
+
+.stepTitle {
+  margin: calc(-1 * var(--ink-room, 0px)) 0 calc(12px - var(--ink-room, 0px)); /* the ink's room, given back (landing.module.css, ROOM FOR THE INK) */
+  font-size: clamp(28px, 3.6vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.stepLede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.levelCards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.levelCard {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.levelCard p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.levelCard .cardCount {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.cardPicture {
+  height: 176px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.cardPicture > * {
+  width: 100%;
+}
+
+/* the editor, in miniature */
+.editor {
+  margin-top: 32px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(28, 25, 23, 0.12),
+    0 30px 60px -36px rgba(40, 30, 20, 0.55);
+  overflow: hidden;
+}
+
+.editorBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.1);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.editorBar i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(28, 25, 23, 0.18);
+}
+
+.editorBar b {
+  margin-left: 10px;
+  color: var(--ink);
+}
+
+.editorIn {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+
+.palette {
+  margin: 0;
+  padding: 14px;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  border-right: 1px solid rgba(28, 25, 23, 0.1);
+  background: #fbfaf8;
+  font-size: 13.5px;
+}
+
+.palette li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.palette li::before {
+  content: "";
+  flex: none;
+  width: 22px;
+  height: 16px;
+  border: 1px solid rgba(28, 25, 23, 0.25);
+  border-radius: 3px;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(28, 25, 23, 0.14) 3px 4px);
+}
+
+.palette .group {
+  margin-top: 6px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(28, 25, 23, 0.45);
+}
+
+.palette .group::before {
+  display: none;
+}
+
+.palette .picked {
+  background: rgba(74, 92, 255, 0.12);
+  color: #3242c8;
+  font-weight: 600;
+}
+
+.canvas {
+  position: relative;
+  padding: 28px;
+  background: #f1efea;
+  display: grid;
+  place-items: center;
+}
+
+.canvasSpread {
+  position: relative;
+  width: min(100%, 620px);
+}
+
+/* the habit tracker just dropped: laid exactly over the module as the
+   spread draws it (spreadBox.ts), at 0.4 so the module shows through
+   (2026-11-06) */
+.ghost {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--hand);
+  border-radius: 3px;
+  background: rgba(74, 92, 255, 0.1);
+  opacity: 0.4;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3242c8;
+  pointer-events: none;
+}
+
+/* the book's first pages */
+.strip {
+  overflow-x: auto;
+  margin-top: 28px;
+  padding-bottom: 12px;
+}
+
+.stripRow {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  width: max-content;
+  padding: 4px 2px;
+}
+
+.spreadThumb {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.thumbs {
+  display: flex;
+  box-shadow: 0 1px 2px rgba(40, 30, 20, 0.15);
+}
+
+.thumb,
+.thumbGone {
+  position: relative;
+  display: block;
+  width: 54px;
+  aspect-ratio: 2175 / 3075;
+  background: #fffcf6;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+}
+
+.thumbGone {
+  visibility: hidden;
+}
+
+.dots {
+  background-image: radial-gradient(circle, rgba(28, 25, 23, 0.35) 0.7px, transparent 1px);
+  background-size: 5px 5px;
+}
+
+.stripLabel {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.padLabel {
+  color: #9a4f17;
+  font-weight: 600;
+}
+
+.stripGap {
+  align-self: center;
+  padding: 0 6px;
+  font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
+  font-size: 26px;
+  color: var(--hand);
+}
+
+/* the outside: the book beside the covers */
+.outside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 36px;
+  margin-top: 32px;
+  align-items: start;
+}
+
+.stage {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  background: radial-gradient(120% 90% at 50% 28%, #fffdf8 0%, #f1e6d1 72%);
+  overflow: hidden;
+}
+
+.specs {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.specs b {
+  color: var(--ink);
+}
+
+.outsideControls {
+  display: grid;
+  gap: 26px;
+}
+
+/* the 3D book: 252 x 360 for 7 x 10 in (BookPreview.tsx) */
+.scene {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 450px;
+  perspective: 1800px;
+}
+
+.scene[data-still] {
+  min-height: 0;
+  padding: 24px 0 40px;
+}
+
+.book {
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  transform-style: preserve-3d;
+  transform: rotateX(12deg) rotateY(34deg) rotateZ(-2deg);
+}
+
+.book > * {
+  position: absolute;
+}
+
+.front {
+  inset: 0;
+  transform: translateZ(calc(var(--t) / 2));
+  border-radius: 2px 5px 5px 2px;
+  overflow: hidden;
+  box-shadow: inset 3px 0 6px -2px rgba(0, 0, 0, 0.3);
+}
+
+.front > :first-child {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0.08) 100%);
+  pointer-events: none;
+}
+
+.back {
+  inset: 0;
+  transform: translateZ(calc(var(--t) / -2)) rotateY(180deg);
+  background: #3b342e center / cover;
+  border-radius: 5px 2px 2px 5px;
+}
+
+/* the bound edge: on wire-o, the edges of the pages; on a paperback or
+   hardcover, the cover round the spine (its texture, set inline) */
+.spine {
+  top: 0;
+  left: calc(var(--t) / -2);
+  width: var(--t);
+  height: var(--h);
+  transform: rotateY(-90deg);
+  background: repeating-linear-gradient(90deg, #faf6ec 0 1.3px, #d9d1c1 1.3px 2px) center / cover;
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.1);
+}
+
+.book[data-binding="paperback"] .spine,
+.book[data-binding="hardcover"] .spine {
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.22);
+}
+
+/* THE PAGES' EDGES stop 1px short of each cover (--tp): a face that met the
+   cover's plane bled a hairline of its stripes through the cover along the
+   join - a thin dashed tan line just inside the fore-edge, the head and
+   the tail (2026-11-06, his "tan lines on the cover of the 3d previews"). */
+.book {
+  --tp: calc(var(--t) - 2px);
+}
+
+.foreEdge {
+  top: 3px;
+  height: calc(var(--h) - 6px);
+  width: var(--tp);
+  left: calc(var(--w) - var(--tp) / 2 - 2px);
+  transform: rotateY(90deg);
+  background: repeating-linear-gradient(90deg, #fbf8f1 0 1.3px, #ddd6c8 1.3px 2px);
+}
+
+.topEdge {
+  left: 2px;
+  width: calc(var(--w) - 4px);
+  height: var(--tp);
+  top: calc(var(--tp) / -2 + 3px);
+  transform: rotateX(90deg);
+  background: repeating-linear-gradient(0deg, #fbf8f1 0 1.3px, #ddd6c8 1.3px 2px);
+}
+
+.bottomEdge {
+  left: 2px;
+  width: calc(var(--w) - 4px);
+  height: var(--tp);
+  top: calc(var(--h) - var(--tp) / 2 - 3px);
+  transform: rotateX(90deg);
+  background: repeating-linear-gradient(0deg, #f3efe6 0 1.3px, #d2cabb 1.3px 2px);
+}
+
+/* A HARDCOVER IS A CASE (BookPreview.tsx): boards 4px proud of the pages
+   at head and tail and 6px at the fore-edge, a spine as tall as the
+   boards, and each board's edges, cover wrapped round them. The boards
+   reach 1px over the spine's corner: flush, the seam between the two
+   planes let the pages' pale edge through. */
+.book[data-binding="hardcover"] .front,
+.book[data-binding="hardcover"] .back {
+  inset: -4px -6px -4px -1px;
+}
+
+.book[data-binding="hardcover"] .spine {
+  top: -4px;
+  height: calc(var(--h) + 8px);
+  border-radius: 3px;
+}
+
+/* the spine's round: darker where it turns into the boards */
+.book[data-binding="hardcover"] .spine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.07) 38%, rgba(255, 255, 255, 0.07) 62%, rgba(0, 0, 0, 0.3));
+}
+
+.boardEdge {
+  background: center / cover;
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.3);
+}
+
+.boardEdge[data-edge="head"],
+.boardEdge[data-edge="tail"] {
+  left: 0;
+  width: calc(var(--w) + 6px);
+  height: var(--board);
+}
+
+.boardEdge[data-edge="head"] {
+  top: calc(-4px - var(--board) / 2);
+}
+
+.boardEdge[data-edge="tail"] {
+  top: calc(var(--h) + 4px - var(--board) / 2);
+}
+
+.boardEdge[data-edge="fore"] {
+  top: -4px;
+  height: calc(var(--h) + 8px);
+  width: var(--board);
+  left: calc(var(--w) + 6px - var(--board) / 2);
+}
+
+.boardEdge[data-side="front"][data-edge="head"],
+.boardEdge[data-side="front"][data-edge="tail"] {
+  transform: translateZ(calc(var(--t) / 2 - var(--board) / 2)) rotateX(90deg);
+}
+
+.boardEdge[data-side="back"][data-edge="head"],
+.boardEdge[data-side="back"][data-edge="tail"] {
+  transform: translateZ(calc(var(--t) / -2 + var(--board) / 2)) rotateX(90deg);
+}
+
+.boardEdge[data-side="front"][data-edge="fore"] {
+  transform: translateZ(calc(var(--t) / 2 - var(--board) / 2)) rotateY(90deg);
+}
+
+.boardEdge[data-side="back"][data-edge="fore"] {
+  transform: translateZ(calc(var(--t) / -2 + var(--board) / 2)) rotateY(90deg);
+}
+
+/* the hinge: the groove pressed into the front board beside the spine */
+.joint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 9px;
+  width: 6px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.24) 35%, rgba(255, 255, 255, 0.16) 70%, rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+/* wire-o: the punched holes, a pair of wires through each (rings) */
+.holes {
+  position: absolute;
+  left: calc(var(--hole-x) - 1.7px);
+  top: 9px;
+  bottom: 9px;
+  width: 3.4px;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0 calc(var(--pitch) / 2 - 2.4px),
+    rgba(12, 12, 14, 0.82) calc(var(--pitch) / 2 - 2.4px) calc(var(--pitch) / 2 + 2.4px),
+    transparent calc(var(--pitch) / 2 + 2.4px) var(--pitch)
+  );
+  pointer-events: none;
+}
+
+.ring {
+  box-sizing: border-box;
+  border: 1.25px solid #19191c;
+  border-radius: 50%;
+  transform: rotateX(90deg);
+}
+
+.ribbon {
+  left: 58%;
+  top: calc(var(--h) - 10px);
+  width: 10px;
+  height: 74px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+}
+
+/* open: the spread lying flat, wire-o loops across the gutter */
+.openBook {
+  position: relative;
+  width: min(100%, 520px);
+  transform: perspective(1400px) rotateX(16deg);
+  margin: 40px 0;
+}
+
+/* one loop, open: its two wires across the gutter, a punched hole under
+   each end */
+.loop {
+  position: absolute;
+  left: 50%;
+  width: 5.6%;
+  height: 4.6px;
+  transform: translate(-50%, -50%);
+  border-block: 1.5px solid #19191c;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.loop::before,
+.loop::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 3.5px;
+  height: 6.5px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: rgba(14, 14, 16, 0.55);
+}
+
+.loop::before {
+  left: -3px;
+}
+
+.loop::after {
+  right: -3px;
+}
+
+/* --- controls ------------------------------------------------------------- */
+
+.control {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8a5a3a;
+}
+
+.labelValue {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  border: 1.5px solid rgba(28, 25, 23, 0.25);
+  background: #fffcf6;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--cream);
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(28, 25, 23, 0.25);
+  cursor: pointer;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 180ms;
+}
+
+.switch[aria-checked="true"] {
+  background: var(--hand);
+}
+
+.switch[aria-checked="true"]::after {
+  transform: translateX(16px);
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid rgba(28, 25, 23, 0.25);
+  border-radius: 999px;
+  background: #fffcf6;
+}
+
+.stepper button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.stepper button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.stepper output {
+  min-width: 22px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.levels {
+  display: grid;
+  gap: 8px;
+}
+
+.level {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  border-radius: 12px;
+  background: #fffcf6;
+}
+
+.levelName {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.levelSum {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.levelNote,
+.levelExtra {
+  grid-column: 2 / 4;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.levelExtra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.level[data-off] .levelName,
+.level[data-off] .levelNote {
+  opacity: 0.5;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1.5px solid rgba(28, 25, 23, 0.25);
+  border-radius: 10px;
+  background: #fffcf6;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.covers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cov {
+  aspect-ratio: 7 / 10;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  border-radius: 3px 7px 7px 3px;
+  background: #3b342e center / cover no-repeat;
+  box-shadow:
+    inset 3px 0 0 rgba(0, 0, 0, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.cov[aria-pressed="true"] {
+  outline: 3px solid var(--hand);
+  outline-offset: 3px;
+}
+
+.binds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bindsWide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bind {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  padding: 12px;
+  border: 1.5px solid rgba(28, 25, 23, 0.12);
+  border-radius: 12px;
+  background: #fffcf6;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bind svg {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+}
+
+.bind b {
+  font-size: 15px;
+}
+
+.bind span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.bind .bindPrice {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bind .muted {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(28, 25, 23, 0.45);
+}
+
+.bind[aria-pressed="true"] {
+  background: #fff;
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.ribbons {
+  display: flex;
+  gap: 8px;
+}
+
+.rib {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #fffcf6;
+  padding: 0;
+  box-shadow: 0 0 0 1.5px rgba(28, 25, 23, 0.28);
+  cursor: pointer;
+}
+
+.rib[aria-pressed="true"] {
+  box-shadow: 0 0 0 2.5px var(--hand);
+}
+
+.note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  background: rgba(74, 92, 255, 0.1);
+  color: #3242c8;
+}
+
+.warn {
+  background: rgba(154, 79, 23, 0.1);
+  color: #8a4413;
+}
+
+.note button {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- printed and posted, keep it coming ------------------------------------ */
+
+.timeline {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 21px;
+  border-top: 2px dashed var(--hand);
+  opacity: 0.5;
+}
+
+.timeline li {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding-right: 18px;
+}
+
+.timeline li > span:last-child {
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
+.dot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: #fffcf6;
+  font-weight: 800;
+}
+
+.timeline b {
+  margin-top: 6px;
+}
+
+.renew {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: center;
+}
+
+.calendar {
+  display: grid;
+  gap: 8px;
+}
+
+.calRow {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.calBar {
+  position: relative;
+  height: 34px;
+  border: 1px solid rgba(28, 25, 23, 0.12);
+  border-radius: 8px;
+  background: #fffcf6;
+}
+
+.calThis,
+.calNext {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.calThis {
+  left: 0;
+  width: 50%;
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.calNext {
+  left: 50%;
+  width: 50%;
+  border: 1.5px dashed rgba(28, 25, 23, 0.3);
+  color: var(--muted);
+}
+
+.calNext[data-on] {
+  border-color: var(--hand);
+  background: rgba(74, 92, 255, 0.1);
+  color: #3242c8;
+}
+
+.calMark {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--hand);
+}
+
+.calMark span {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
+  font-size: 17px;
+  color: var(--hand);
+  white-space: nowrap;
+}
+
+.calSwitch {
+  margin-top: 30px;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+/* --- the calculator -------------------------------------------------------- */
+
+.calc {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr);
+  gap: 28px;
+  align-items: start;
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  border-radius: 22px;
+  background: #fbf5e9;
+}
+
+.form {
+  display: grid;
+  gap: 26px;
+  min-width: 0;
+}
+
+.summary {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow:
+    0 1px 0 rgba(28, 25, 23, 0.1),
+    0 18px 40px -24px rgba(40, 30, 20, 0.45);
+}
+
+.summaryTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.estimateTag {
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a5a3a;
+}
+
+.total {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.lines {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lines > div > span:last-child {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalLine {
+  padding-top: 8px;
+  border-top: 1px solid rgba(28, 25, 23, 0.12);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.quiet {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cta {
+  display: flex;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cream);
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+}
+
+/* --- questions ------------------------------------------------------------ */
+
+.faq {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 40px;
+  /* 24px under its title: the title's 12px margin, then 12px of padding.
+     A margin of 24 would collapse with the title's and swallow the room
+     the title gives back for its letters (ROOM FOR THE INK). */
+  padding-top: 12px;
+}
+
+.faq b {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.faq p {
+  margin: 0;
+  font-size: 15.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .hero,
+  .outside,
+  .renew,
+  .calc {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .levelCards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .timeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 0;
+  }
+  .timeline::before {
+    display: none;
+  }
+  .editorIn {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .palette {
+    display: none;
+  }
+  .stage,
+  .summary {
+    position: static;
+  }
+  .faq {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .wrap {
+    padding: 0 16px;
+  }
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .facts li {
+    border-left: 0;
+    border-top: 1px solid rgba(28, 25, 23, 0.14);
+    padding-left: 0;
+  }
+  .facts li:first-child {
+    border-top: 0;
+  }
+  .step {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 64px;
+  }
+  .cardPicture {
+    height: 120px;
+  }
+  .bindsWide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .calc {
+    padding: 16px;
+  }
+  .scene {
+    min-height: 380px;
+  }
+  .book {
+    transform: scale(0.8) rotateX(12deg) rotateY(34deg) rotateZ(-2deg);
+  }
+  .heroBook .book {
+    transform: scale(0.62) rotateX(12deg) rotateY(34deg) rotateZ(-2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch::after {
+    transition: none;
+  }
+}

@@ -52,7 +52,7 @@ export const LAYOUTS_MENU = {
 /** The header's plain links, after the Layouts menu. */
 export const HEADER_LINKS: SiteLink[] = [
   { href: "/covers", label: "Covers" },
-  { href: "/#how", label: "How it works" },
+  { href: "/how-it-works", label: "How it works" },
   { href: "/help", label: "Help" },
 ];
 
@@ -63,12 +63,14 @@ export const HEADER_LINKS: SiteLink[] = [
 export const FOR_COACHES: SiteLink = { href: "/business", label: "For businesses" };
 
 /** Which header item a page belongs to: Layouts stays lit on a layout's
- *  page, a planner shelf and a module's page. "How it works" is a section
- *  of the home page, so no address is ever it. */
-export function headerSection(path: string): "layouts" | "/covers" | "/help" | null {
+ *  page, a planner shelf and a module's page. "How it works" was a section
+ *  of the home page until it got its own page with the price calculator
+ *  (2026-11-06, /how-it-works); it is lit there now. */
+export function headerSection(path: string): "layouts" | "/covers" | "/how-it-works" | "/help" | null {
   const under = (base: string) => path === base || path.startsWith(`${base}/`);
   if (under("/layouts") || under("/modules")) return "layouts";
   if (under("/covers")) return "/covers";
+  if (under("/how-it-works")) return "/how-it-works";
   if (under("/help")) return "/help";
   return null;
 }
@@ -79,7 +81,7 @@ export const FOOTER_COLUMNS: Array<{ heading: string; links: SiteLink[] }> = [
   {
     heading: "Make",
     links: [
-      { href: "/#how", label: "How it works" },
+      { href: "/how-it-works", label: "How it works" },
       { href: "/layouts", label: "Layouts" },
       { href: "/layouts#planners", label: "Planners" },
       { href: "/modules", label: "Modules" },

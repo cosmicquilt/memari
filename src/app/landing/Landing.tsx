@@ -379,7 +379,9 @@ export function Landing({
                   seed={91}
                   style={{
                     right: "100%",
-                    bottom: "40%",
+                    // 40% of the note's height, as it was before the ink's room
+                    // (ROOM FOR THE INK) made the note 2 x room taller
+                    bottom: "calc(40% + 0.2 * var(--ink-room))",
                     width: 64,
                     marginRight: 6,
                     transform: "scaleY(-1) rotate(8deg)",

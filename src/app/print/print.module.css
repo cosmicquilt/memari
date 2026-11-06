@@ -160,6 +160,7 @@
   content: counter(step);
   grid-row: span 2;
   font-family: var(--font-hand), cursive;
+  --ink-height: 2em;
   font-size: 26px;
   line-height: 1.1;
   color: var(--hand);
