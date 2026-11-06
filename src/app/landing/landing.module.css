@@ -1653,10 +1653,10 @@
   color: var(--ink);
 }
 
-/* The gallery's ways on, as buttons: quiet pills (the page's one filled
-   button is Build for Free), centred under the grid side by side (layouts,
-   then covers), each arrow nudging toward where it goes. They stack on a
-   phone when they cannot share a line. */
+/* A way on, as a button (MoreButton.tsx): a quiet pill (the page's one
+   filled button is Build for Free), its arrow nudging toward where it
+   goes. Under the gallery it is centred; See all covers sits by the
+   collage (coverCarousel.module.css, .seeAll). */
 .more:has(.moreButton) {
   margin-top: 56px;
   display: flex;
@@ -1665,7 +1665,7 @@
   gap: 12px;
 }
 
-.more a.moreButton {
+a.moreButton {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -1680,15 +1680,15 @@
   transition: background 160ms ease-out, transform 160ms ease-out;
 }
 
-.more a.moreButton:hover {
+a.moreButton:hover {
   background: color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
-.more a.moreButton:active {
+a.moreButton:active {
   transform: scale(0.97);
 }
 
-.more a.moreButton:focus-visible {
+a.moreButton:focus-visible {
   outline: 2px solid var(--hand);
   outline-offset: 3px;
 }

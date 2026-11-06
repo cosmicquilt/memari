@@ -25,6 +25,7 @@ import covers from "./coverCarousel.json";
 import { coverById } from "@/app/covers/catalogue";
 import { bodyWallSettings, onBodyWallSettings } from "./bodyWall";
 import { whenArrived } from "./arrival";
+import { MoreButton } from "./MoreButton";
 import styles from "./coverCarousel.module.css";
 import landing from "./landing.module.css";
 
@@ -333,6 +334,12 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
             </ul>
           ))}
         </div>
+      </div>
+      {/* See all covers over the collage's right end (2026-11-06: "the see
+          all covers was supposed to be on the right side over the
+          carousel", "2: on the tiles"). */}
+      <div className={styles.seeAll}>
+        <MoreButton href="/covers">See all covers</MoreButton>
       </div>
     </section>
   );

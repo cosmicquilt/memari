@@ -15,9 +15,9 @@
 // descriptions.) The grow follows a mouse or pen over the card, not a media
 // query, which a touchscreen laptop answers "no hover" (2026-10-22).
 
-import Link from "next/link";
 import type { PointerEvent } from "react";
 import { LayoutCard, LayoutViewer } from "./LayoutViewer";
+import { MoreButton } from "./MoreButton";
 import type { StarterKind } from "./starterLayouts";
 import styles from "./landing.module.css";
 
@@ -53,29 +53,7 @@ export function LayoutGallery({ layouts }: { layouts: Array<{ key: string; title
       </div>
       <p className={styles.more}>
         <MoreButton href="/layouts">See all layouts</MoreButton>
-        <MoreButton href="/covers">See all covers</MoreButton>
       </p>
     </LayoutViewer>
-  );
-}
-
-/** A way on, as a pill with an arrow that nudges on hover (2026-11-05:
- *  "add a similar button a bit to the side with see all covers").
- *
- *  The words and the arrow are each their own span, so each takes the
- *  paper through the text by itself (landing.module.css, PAPER THROUGH THE
- *  TEXT). Until then the arrow was marked data-paper-inline, which made the
- *  link take the paper whole: the link's text clip held the arrow where it
- *  sits in the layout, the arrow painted its own on top, and the hover's
- *  translate moved only the second one, so it looked like an arrow with two
- *  heads (2026-11-05). One painter per glyph, and the glyph moves with it. */
-function MoreButton({ href, children }: { href: string; children: string }) {
-  return (
-    <Link href={href} className={styles.moreButton}>
-      <span>{children}</span>
-      <span aria-hidden="true" className={styles.moreArrow}>
-        &rarr;
-      </span>
-    </Link>
   );
 }

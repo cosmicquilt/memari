@@ -15,7 +15,32 @@
      panel's "Collage below the post-it" (Andrew, 2026-10-10: "on load
      desktop i want just the top of carousel visible", then "not that close
      to postit tho. add as slider"); the strip's own 14px top is in it */
-  padding: max(0px, calc(var(--note, 168px) * 0.31 + var(--carousel-gap, 40) * 1px - 40px)) 0 0;
+  --pad: max(0px, calc(var(--note, 168px) * 0.31 + var(--carousel-gap, 40) * 1px - 40px));
+  padding: var(--pad) 0 0;
+}
+
+/* See all covers (MoreButton), over the collage's right end, as far in from
+   the screen's side as the hero's controls, centred on the tiles' two rows
+   (the tiles start 40px into the strip) - 2026-11-06: "the see all covers
+   was supposed to be on the right side over the carousel", then "2: on the
+   tiles" of two shown (the other sat on the paper above them). A cream
+   pill with a shadow, so it reads on the photos moving under it; over the
+   side blur (z 1). */
+.seeAll {
+  position: absolute;
+  z-index: 2;
+  right: max(20px, 2.5vw);
+  top: calc(var(--pad) + 40px + var(--cell) + var(--gap) / 2);
+  translate: 0 -50%;
+}
+
+.seeAll a {
+  background: rgba(var(--cream-rgb, 245, 234, 213), 0.95);
+  box-shadow: 0 6px 22px rgba(10, 6, 3, 0.28);
+}
+
+.seeAll a:hover {
+  background: rgb(var(--cream-rgb, 245, 234, 213));
 }
 
 /* 40px of paper above the tiles and 44px below, for the side blur to fade
