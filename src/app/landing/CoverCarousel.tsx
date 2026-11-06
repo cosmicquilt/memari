@@ -339,7 +339,7 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
           all covers was supposed to be on the right side over the
           carousel", "2: on the tiles"). */}
       <div className={styles.seeAll}>
-        <MoreButton href="/covers">See all covers</MoreButton>
+        <MoreButton href="/covers" className={styles.seeAllButton}>See all covers</MoreButton>
       </div>
     </section>
   );

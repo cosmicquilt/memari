@@ -27,6 +27,7 @@ import { ResizeDemo } from "./ResizeDemo";
 import { resizeDemo } from "./resizeDemoData";
 import { sans } from "./sansFont";
 import { LayoutGallery } from "./LayoutGallery";
+import { MoreButton } from "./MoreButton";
 import { HOME_KEYS, STARTER_BY_KEY } from "./starterLayouts";
 import { TornEdge } from "./TornEdge";
 import { BodyDoodles } from "./BodyDoodles";
@@ -189,6 +190,11 @@ export function Landing({
                 </p>
               </li>
             </ol>
+            {/* The whole walkthrough, with the reader's own book and its
+                price, is its own page (2026-11-06). */}
+            <p className={styles.more}>
+              <MoreButton href="/how-it-works">Learn more</MoreButton>
+            </p>
           </section>
 
           <section

@@ -34,12 +34,16 @@
   translate: 0 -50%;
 }
 
-.seeAll a {
+/* Two classes (0,2,0) so the cream beats the shared a.moreButton (0,1,1)
+   whatever order the bundler puts the two module files in. `.seeAll a` tied
+   it, and production put landing.module.css second: a clear pill on live,
+   cream in dev, where each module is its own stylesheet */
+.seeAll .seeAllButton {
   background: rgba(var(--cream-rgb, 245, 234, 213), 0.95);
   box-shadow: 0 6px 22px rgba(10, 6, 3, 0.28);
 }
 
-.seeAll a:hover {
+.seeAll .seeAllButton:hover {
   background: rgb(var(--cream-rgb, 245, 234, 213));
 }
 
