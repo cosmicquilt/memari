@@ -29,6 +29,7 @@ import {
   spineMaxRowSpan,
   pageSections,
   fillSection,
+  sideGaps,
   stackUnderSpine,
   firstRowBelow,
   type SpineStack,
@@ -1520,3 +1521,49 @@ console.log("All arrival and proposalHolds checks passed.");
 }
 if (failures > 0) process.exitCode = 1;
 console.log(failures > 0 ? `${failures} stackUnderSpine/firstRowBelow checks FAILED` : "All stackUnderSpine and firstRowBelow checks passed.");
+
+// --- sideGaps (2026-11-06): the free space beside a narrowed module ---------
+// "horizontal gaps should also show dot grid and plus box like when boxes are
+// shrunk vertically." The weekly left page as seeded: the week title and the
+// hours locked over the top, the hours keeping one row clear under them, the
+// sidebar stack and the to-do below.
+{
+  const before = failures;
+  const lock = (columnStart: number, columnSpan: number, rowStart: number, rowSpan: number, gapBelow = 0) =>
+    ({ locked: true, gapBelow, columnStart, columnSpan, rowStart, rowSpan });
+  const mod = (columnStart: number, columnSpan: number, rowStart: number, rowSpan: number) =>
+    ({ locked: false, columnStart, columnSpan, rowStart, rowSpan });
+  const page = [lock(0, 6, 0, 3), lock(6, 18, 0, 20, 1), mod(0, 6, 3, 7), mod(0, 6, 10, 11), mod(0, 6, 21, 15)];
+  const gaps = (placed: typeof page, claimed: GridRect[] = [], minRows = 2) =>
+    sideGaps(placed, claimed, 24, 36, 6, minRows).map((g) => `${g.columnStart}+${g.columnSpan} r${g.rowStart}+${g.rowSpan}`).join(" | ");
+
+  assert(gaps([...page, mod(6, 18, 21, 15)]) === "", "the template has no free space");
+  assert(gaps([...page, mod(6, 12, 21, 15)]) === "18+6 r21+15", "narrowed from the right: the freed day, from under the hours' gap to the foot");
+  assert(gaps([...page, mod(12, 12, 21, 15)]) === "6+6 r21+15", "narrowed from the left: the freed day on that side");
+  assert(gaps([...page, mod(12, 6, 21, 15)]) === "6+6 r21+15 | 18+6 r21+15", "a day in the middle: a gap either side");
+  assert(gaps([...page, mod(6, 6, 21, 15)]) === "12+12 r21+15", "two free days side by side are one box, not two");
+  assert(
+    gaps([...page, mod(6, 6, 21, 15), mod(18, 6, 30, 6)]) === "12+6 r21+15 | 18+6 r21+9",
+    "neighbouring days with different free rows are separate boxes"
+  );
+  // Narrowed AND shortened: the rows under it are its stack's own box already.
+  assert(
+    gaps([...page, mod(12, 12, 21, 9)], [{ columnStart: 12, columnSpan: 12, rowStart: 30, rowSpan: 6 }]) === "6+6 r21+15",
+    "space a stack's own box already covers is not boxed again"
+  );
+  assert(gaps([...page, mod(12, 12, 21, 9)]) === "6+6 r21+15 | 12+12 r30+6", "...and without that box it would be (the claim is what stops it)");
+  // The row under the hours is theirs: never part of a gap.
+  assert(!gaps([...page, mod(6, 12, 21, 15)]).includes("r20"), "the hours' reserved row is never boxed");
+  assert(
+    gaps([lock(0, 6, 0, 3), lock(6, 18, 0, 20, 0), mod(0, 6, 3, 33), mod(6, 12, 20, 16)]) === "18+6 r20+16",
+    "with no row reserved under the hours, the gap starts right under them"
+  );
+  // Too short to hold anything: left out, as a stack's own box is.
+  assert(gaps([...page, mod(6, 12, 21, 15), mod(18, 6, 22, 14)]) === "", "a one-row gap gets no box");
+  assert(gaps([...page, mod(6, 12, 21, 15), mod(18, 6, 22, 14)], [], 1) === "18+6 r21+1", "...though it is found");
+  // The sidebar's space starts under the week title, not under the hours.
+  assert(gaps([lock(0, 6, 0, 3), lock(6, 18, 0, 20, 1), mod(6, 18, 21, 15)]) === "0+6 r3+33", "an empty sidebar starts under the week title");
+  // A locked module's own rows are never free, whatever is beside them.
+  assert(gaps([lock(0, 24, 0, 36)]) === "", "a page covered by a locked module has no gaps");
+  console.log(failures > before ? `${failures - before} sideGaps checks FAILED` : "All sideGaps checks passed.");
+}

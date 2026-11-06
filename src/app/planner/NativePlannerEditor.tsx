@@ -130,6 +130,7 @@ import {
   spineMaxRowSpan,
   pageSections,
   fillSection,
+  sideGaps,
   stackUnderSpine,
   firstRowBelow,
   type SpineStack,
@@ -1789,6 +1790,7 @@ function NativePage({
   stackBottoms,
   hourlyResizeStackBottoms,
   emptyZones,
+  sideGaps,
   suppressAddZones,
   blockedRegion,
   resizingIds,
@@ -1863,6 +1865,10 @@ function NativePage({
   // itself. Only AddModuleButton/SectionAddButton below read this;
   // StackResizeHandle stays scoped to stackBottoms/hourlyResizeStackBottoms.
   emptyZones: StackBottom[];
+  // The free space beside a narrowed module, as zero-member stand-ins - see
+  // sideGapsByPageId (main component). AddModuleButton only: a gap has no
+  // members to hover, so SectionAddButton would never show for one.
+  sideGaps: StackBottom[];
   // True while a crossing drag is live. Both "+" affordances below are
   // positioned from committed geometry, which a crossing has
   // deliberately departed from on screen - see their own render guards.
@@ -2469,6 +2475,22 @@ function NativePage({
               onClick={() => onOpenPaletteModules()}
             />
           ))}
+      {/* The free space BESIDE a narrowed module - same box, same rule for
+          hiding it mid-crossing. Unlike the two lists above these come and
+          go with a width step rather than staying mounted, so each fades in
+          when it appears rather than popping (appear). */}
+      {(suppressAddZones ? [] : sideGaps).map((sb) => (
+        <AddModuleButton
+          key={`add:${sb.bottomId}`}
+          pageGrid={page.pageGrid}
+          columnStart={sb.columnStart}
+          columnSpan={sb.columnSpan}
+          rowStart={sb.stackBottomRowEnd}
+          rowSpan={addZoneRows(sb.maxBottomBound - sb.stackBottomRowEnd)}
+          appear
+          onClick={() => onOpenPaletteModules()}
+        />
+      ))}
       {/* Hover-triggered "+" over the *whole* zone (top of the stack
           down to maxBottomBound), not just whatever free room
           AddModuleButton above is currently showing — requested
@@ -3324,6 +3346,7 @@ function AddModuleButton({
   columnSpan,
   rowStart,
   rowSpan,
+  appear = false,
   onClick,
 }: {
   pageGrid: PageGrid;
@@ -3331,6 +3354,10 @@ function AddModuleButton({
   columnSpan: number;
   rowStart: number;
   rowSpan: number;
+  // Fade in once when mounted. For a box that mounts when its space opens
+  // (a gap beside a narrowed module), not one that stays mounted and
+  // fades on its opacity transition.
+  appear?: boolean;
   onClick: () => void;
 }) {
   const rect = useMemo(
@@ -3375,8 +3402,9 @@ function AddModuleButton({
       onClick={rowSpan > 0 ? onClick : undefined}
       title="Add a module here"
       // The dashed box over free space - for the browser check, which must
-      // tell it from SectionAddButton's hover circle (same title).
-      data-add-zone=""
+      // tell it from SectionAddButton's hover circle (same title). "side" is
+      // a gap beside a narrowed module (sideGaps), which it checks apart.
+      data-add-zone={appear ? "side" : ""}
       style={{
         position: "absolute",
         left: rect.x,
@@ -3418,6 +3446,8 @@ function AddModuleButton({
         opacity: rowSpan > 0 ? 1 : 0,
         pointerEvents: rowSpan > 0 ? "auto" : "none",
         transition: "opacity 0.2s ease",
+        // A stable string, so a re-render never restarts it.
+        animation: appear ? "memari-mark-in 0.2s ease" : undefined,
       }}
     >
       {/* The dot field, behind everything else this button draws. */}
@@ -7200,6 +7230,62 @@ export function NativePlannerEditor({
     activeId,
     confirmedCrossingPreview,
   ]);
+
+  // The free space beside a narrowed module - see sideGaps (grid.ts). Drawn
+  // with the same dotted "+" box as the space under a stack, and taken from
+  // what those boxes leave, so no row is ever boxed twice.
+  //
+  // A module still sweeping a width step holds both of its widths until it
+  // lands. Read at its new width, the freed day was boxed at once and drawn
+  // over the edge still crossing it; this way the box arrives as the sweep
+  // ends (AddModuleButton's `appear`).
+  const sideGapsByPageId = useMemo(() => {
+    const byPage: Record<string, StackBottom[]> = {};
+    for (const page of pages) {
+      const pageIds = instanceIdsByPageId[page.pageId] ?? [];
+      // A page with nothing placeable on it keeps its bare paper, as before.
+      if (!pageIds.some((id) => moduleLookup.get(id) && !moduleLookup.get(id)!.locked)) continue;
+      const placed = pageIds.flatMap((id) => {
+        const info = moduleLookup.get(id);
+        const at = widthEase?.id === id ? widthEase.content : displayPlacements[id];
+        if (!info || !at) return [];
+        // A spine keeps rows clear under it: the same rows a drop is kept out of.
+        const gapBelow =
+          info.locked && isSpineSlug(info.slug)
+            ? spineGapRows(info.slug, cellHeightPx(page.pageGrid), info.propValues, at.rowSpan)
+            : 0;
+        return [{ columnStart: at.columnStart, columnSpan: at.columnSpan, rowStart: at.rowStart, rowSpan: at.rowSpan, locked: info.locked, gapBelow }];
+      });
+      const claimed = [...(stackBottomsByPageId[page.pageId] ?? []), ...(emptyZonesByPageId[page.pageId] ?? [])].map((sb) => ({
+        columnStart: sb.columnStart,
+        columnSpan: sb.columnSpan,
+        rowStart: sb.stackBottomRowEnd,
+        rowSpan: Math.max(0, sb.maxBottomBound - sb.stackBottomRowEnd),
+      }));
+      const gaps = sideGaps(
+        placed,
+        claimed,
+        page.pageGrid.gridColumns,
+        page.pageGrid.gridRows,
+        dayUnitColumns(page.pageGrid),
+        MIN_ADD_ZONE_ROWS
+      );
+      if (gaps.length === 0) continue;
+      byPage[page.pageId] = gaps.map((gap) => ({
+        key: `sidegap:${page.pageId}:${gap.columnStart}:${gap.rowStart}`,
+        pageId: page.pageId,
+        bottomId: `__sidegap__${page.pageId}:${gap.columnStart}:${gap.rowStart}`,
+        columnStart: gap.columnStart,
+        columnSpan: gap.columnSpan,
+        members: [],
+        stackTopRowStart: gap.rowStart,
+        stackBottomRowEnd: gap.rowStart,
+        maxBottomBound: gap.rowStart + gap.rowSpan,
+        followerIds: [],
+      }));
+    }
+    return byPage;
+  }, [pages, displayPlacements, moduleLookup, instanceIdsByPageId, stackBottomsByPageId, emptyZonesByPageId, widthEase]);
 
   const screenPointToPageCell = useCallback(
     (
@@ -11053,6 +11139,7 @@ export function NativePlannerEditor({
                     stackBottoms={stackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     hourlyResizeStackBottoms={hourlyStackBottomsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     emptyZones={emptyZonesByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
+                    sideGaps={sideGapsByPageId[page.pageId] ?? EMPTY_STACK_BOTTOMS}
                     suppressAddZones={crossingInProgress}
                     blockedRegion={
                       activeDragPreview?.blocked?.pageId === page.pageId ? activeDragPreview.blocked.region : null

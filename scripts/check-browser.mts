@@ -3039,6 +3039,40 @@ const widthResize: Probe = {
         frameTravels(await filmed(), "narrowing the to-do from the left");
       }
       if (!(await matches("after narrowing"))) return;
+      // The freed day shows the dotted "+" box, as the rows under a shortened
+      // stack do: "horizontal gaps should also show dot grid and plus box like
+      // when boxes are shrunk vertically" (2026-11-06). Beside the to-do, its
+      // top and foot level with it, over no module, and it opens the palette.
+      {
+        const sides = (await tab.evaluate(
+          `[...document.querySelectorAll('[data-add-zone="side"]')].filter((el) => +getComputedStyle(el).opacity > 0.5 && el.getBoundingClientRect().height > 2).map((el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, dots: el.querySelectorAll('circle').length }; })`
+        )) as Array<{ left: number; top: number; right: number; bottom: number; dots: number }>;
+        const modules = (await tab.evaluate(
+          `[...document.querySelectorAll('[data-module-instance-id]')].map((el) => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })`
+        )) as Array<{ left: number; top: number; right: number; bottom: number }>;
+        const narrowedTodo = await tab.locator(`[data-module-instance-id="${todo.id}"]`).boundingBox({ timeout: 5000 }).catch(() => null);
+        const beside = narrowedTodo
+          ? sides.filter(
+              (b) =>
+                b.right <= narrowedTodo.x + 2 &&
+                b.right > narrowedTodo.x - 40 &&
+                Math.abs(b.top - narrowedTodo.y) < 3 &&
+                Math.abs(b.bottom - (narrowedTodo.y + narrowedTodo.height)) < 3
+            )
+          : [];
+        if (beside.length !== 1) {
+          fail("width resize", `the day freed beside the narrowed to-do shows ${beside.length} dotted "+" box(es), not one (side boxes: ${JSON.stringify(sides.map((b) => [b.left, b.top, b.right, b.bottom].map(Math.round)))})`);
+        } else if (beside[0].dots === 0) fail("width resize", "the box beside the narrowed to-do has no dot grid");
+        const overModule = sides.filter((b) => modules.some((m) => b.left < m.right - 2 && m.left < b.right - 2 && b.top < m.bottom - 2 && m.top < b.bottom - 2));
+        if (overModule.length > 0) fail("width resize", `${overModule.length} side "+" box(es) drawn over a module`);
+        if (beside.length === 1) {
+          await tab.locator('[data-add-zone="side"]').first().click();
+          await tab.waitForTimeout(900);
+          const paletteOpen = await tab.evaluate(`[...document.querySelectorAll('[data-palette-slug]')].some((c) => c.getBoundingClientRect().width > 0)`);
+          if (!paletteOpen) fail("width resize", `the "+" box beside the narrowed to-do did not open the module palette`);
+          await tab.keyboard.press("Escape");
+        }
+      }
       // Shorter, with free rows under it. A drop on its lower half goes in
       // UNDER it, onto those free rows - where, read at the landing cell
       // rather than where it was aimed, the free space is the whole

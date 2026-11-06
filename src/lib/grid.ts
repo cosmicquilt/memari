@@ -755,6 +755,77 @@ export function fillSection(
   return { columnStart: columnOf(lo), columnSpan: endOf(hi - 1) - columnOf(lo) };
 }
 
+/**
+ * FREE SPACE NO STACK OWNS - the gaps a narrowed module leaves beside it.
+ *
+ * Andrew, 2026-11-06: "horizontal gaps should also show dot grid and plus box
+ * like when boxes are shrunk vertically." The editor drew the dotted "+" box
+ * in two places: under a stack, from its bottom to the first thing below it
+ * in ITS columns, and over a zone with nothing in it. A day freed by a width
+ * step is in neither - it is beside the stack, in columns the stack does not
+ * have - so it was bare paper, although a drop there already lands (see
+ * fillSection).
+ *
+ * Read day by day across the page. A day's space starts under the lowest
+ * locked module over it, plus the rows that module keeps clear beneath it
+ * (`gapBelow`: a spine's reserved gap, the same rows a drop is kept out of),
+ * so a box never claims the row under the hours. Below that, a row is free
+ * where no module and no box already drawn (`claimed`) touches the day.
+ * Each run of free rows is a gap; neighbouring days with the same run are
+ * one gap, so a free run of two days is one box, not two.
+ *
+ * Runs shorter than `minRows` are left out, as a stack's own box is.
+ */
+export function sideGaps(
+  placed: Array<GridRect & { locked: boolean; gapBelow?: number }>,
+  claimed: GridRect[],
+  gridColumns: number,
+  gridRows: number,
+  step: number,
+  minRows: number
+): GridRect[] {
+  const overlapsDay = (rect: GridRect, start: number, end: number) =>
+    rect.rowSpan > 0 && rect.columnStart < end && rect.columnStart + rect.columnSpan > start;
+  const gaps: GridRect[] = [];
+  // Gaps still open from the previous day, by their rows.
+  let open = new Map<string, GridRect>();
+  for (let columnStart = 0; columnStart < gridColumns; columnStart += step) {
+    const columnEnd = Math.min(gridColumns, columnStart + step);
+    let top = 0;
+    for (const rect of placed) {
+      if (rect.locked && overlapsDay(rect, columnStart, columnEnd)) {
+        top = Math.max(top, rect.rowStart + rect.rowSpan + (rect.gapBelow ?? 0));
+      }
+    }
+    const taken = [...placed, ...claimed].filter((rect) => overlapsDay(rect, columnStart, columnEnd));
+    const runs: Array<[number, number]> = [];
+    let runStart: number | null = null;
+    for (let row = top; row <= gridRows; row++) {
+      const free = row < gridRows && !taken.some((rect) => row >= rect.rowStart && row < rect.rowStart + rect.rowSpan);
+      if (free && runStart === null) runStart = row;
+      if (!free && runStart !== null) {
+        runs.push([runStart, row]);
+        runStart = null;
+      }
+    }
+    const next = new Map<string, GridRect>();
+    for (const [rowStart, rowEnd] of runs) {
+      const key = `${rowStart}:${rowEnd}`;
+      const continuing = open.get(key);
+      if (continuing) {
+        continuing.columnSpan = columnEnd - continuing.columnStart;
+        next.set(key, continuing);
+      } else {
+        const gap = { columnStart, columnSpan: columnEnd - columnStart, rowStart, rowSpan: rowEnd - rowStart };
+        gaps.push(gap);
+        next.set(key, gap);
+      }
+    }
+    open = next;
+  }
+  return gaps.filter((gap) => gap.rowSpan >= minRows);
+}
+
 export function resolveZone(
   hourly: GridRect | null | undefined,
   target: { columnStart: number; rowStart: number },
