@@ -29,12 +29,16 @@
   margin-bottom: -22px;
 }
 
-/* The ends blur away, more toward the edge: a progressive blur from four
-   still layers over the strip, each a stronger blur (backdrop-filter)
-   limited by its own fixed mask to a narrower band at the edge. The layers
-   never move (only the strip under them does), so their masks cost nothing
-   per frame; the blur is the GPU's, on two narrow bands. (backdrop-filter
-   alone: written with its -webkit- twin, the build dropped both.) */
+/* The ends blur away, more toward the edge: a progressive blur from eight
+   still layers over the strip (CoverCarousel's BLUR_LAYERS), each a
+   stronger blur (backdrop-filter) limited by its own fixed mask to a window
+   of the band - fading in from the one inside it, whole for an eighth,
+   fading out into the one beyond - so the blur grows with no step
+   (2026-11-05, the banding; it was four layers each opaque out to the
+   edge). The layers never move (only the strip under them does), so their
+   masks cost nothing per frame; the blur is the GPU's, on two narrow bands.
+   (backdrop-filter alone: written with its -webkit- twin, the build dropped
+   both.) */
 .blurStart,
 .blurEnd {
   position: absolute;
@@ -68,35 +72,27 @@
   mask-composite: intersect;
 }
 
-.blurStart span:nth-child(1),
-.blurEnd span:nth-child(1) {
-  --h: linear-gradient(90deg, #000 40%, transparent 100%);
-  backdrop-filter: blur(2px);
-}
-
-.blurStart span:nth-child(2),
-.blurEnd span:nth-child(2) {
-  --h: linear-gradient(90deg, #000 22%, transparent 62%);
-  backdrop-filter: blur(5px);
-}
-
-.blurStart span:nth-child(3),
-.blurEnd span:nth-child(3) {
-  --h: linear-gradient(90deg, #000 10%, transparent 38%);
-  backdrop-filter: blur(10px);
-}
-
-.blurStart span:nth-child(4),
-.blurEnd span:nth-child(4) {
-  --h: linear-gradient(90deg, #000 0%, transparent 20%);
-  backdrop-filter: blur(18px);
+/* Layer --i (0 the weakest, innermost) of eight, its blur --b: transparent
+   until (i)/8 of the way in from the band's inner side, whole from (i+1)/8
+   to (i+2)/8, gone by (i+3)/8 - written from the edge (0%), as the
+   gradient runs. The last windows run past the edge, so the strongest
+   layers are whole there. */
+.blurLayer {
+  --at: calc(var(--i) * 12.5%);
+  --h: linear-gradient(
+    90deg,
+    transparent calc(100% - var(--at) - 37.5%),
+    #000 calc(100% - var(--at) - 25%),
+    #000 calc(100% - var(--at) - 12.5%),
+    transparent calc(100% - var(--at))
+  );
+  backdrop-filter: blur(var(--b));
 }
 
 /* and the paper's tan over it, thickest at the edge, as if the page beyond
    the screen were blurred in too ("i also want tan in the blur on the side
    like it was off screen") */
-.blurStart span:nth-child(5),
-.blurEnd span:nth-child(5) {
+.blurTan {
   --h: linear-gradient(#000, #000);
   background: linear-gradient(90deg, rgba(var(--cream-rgb, 245, 234, 213), 0.92) 0%, rgba(var(--cream-rgb, 245, 234, 213), 0.5) 10%, rgba(var(--cream-rgb, 245, 234, 213), 0.14) 26%, rgba(var(--cream-rgb, 245, 234, 213), 0) 48%);
 }

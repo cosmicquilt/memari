@@ -42,7 +42,7 @@
 // its full stop - which is when the hero's first layout comes (2026-10-15:
 // "layouts it fades in when tagline is finished animating").
 
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { script } from "./scriptFont";
 import styles from "./landing.module.css";
 
@@ -88,7 +88,20 @@ const YOU_Y_PATCH = "M26.75 76.5 L23.6 83.6 Q22.2 86.6 22.15 89.5 C22.05 92 22.2
  *  fallback face, its letters elsewhere, is never left part hidden. */
 const YOU_DONE = 1.74;
 
-export function Wordmark({ onArrived, onWritten, className }: { onArrived?: () => void; onWritten?: () => void; className?: string }) {
+/** `aside`: laid in the title's own box after the tagline, so it can be
+ *  placed against the title's sides at any size (the film hero's print notes,
+ *  VideoHero). */
+export function Wordmark({
+  onArrived,
+  onWritten,
+  className,
+  aside,
+}: {
+  onArrived?: () => void;
+  onWritten?: () => void;
+  className?: string;
+  aside?: ReactNode;
+}) {
   const tagline = useRef<HTMLParagraphElement>(null);
   const youDone = useRef<SVGRectElement>(null);
 
@@ -195,6 +208,7 @@ export function Wordmark({ onArrived, onWritten, className }: { onArrived?: () =
           </g>
         </svg>
       </p>
+      {aside}
     </div>
   );
 }

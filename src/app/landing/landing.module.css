@@ -1042,12 +1042,16 @@
    handoff/research/gemini-report-liquid-glass-summary.md. On the desk at the
    hero's lower right, clear of the torn edge; on a phone, on the desk right
    of the post-it, smaller. Over the film's layers and the title (z 3);
-   fades in with the first layout. */
+   fades in with the first layout.
+
+   Lowered 2026-11-05 ("the top of its new position is about 20% of its
+   height below the bottom of its current position"): it sat 84px up and is
+   48px tall (40px buttons, 4px padding), so it came down 1.2 x 48px. */
 .heroControls {
   position: absolute;
   z-index: 3;
   right: max(20px, 2.5vw);
-  bottom: 84px;
+  bottom: calc(84px - 1.2 * 48px);
   display: flex;
   gap: 2px;
   padding: 4px;
@@ -1153,9 +1157,14 @@
   background: none;
   pointer-events: none;
   container-type: size;
-  /* A lighter blue pen than the page's (2026-11-05, his pick of two shown:
-     "lighter"): the site's blue, on the dark wood and in the leaves' shade,
-     was hard to read. Its words, arrows and underline all take it. */
+}
+
+/* A lighter blue pen than the page's (2026-11-05, his pick of two shown:
+   "lighter"): the site's blue, on the dark wood and in the leaves' shade,
+   was hard to read. Its words, arrows and underline all take it - on the
+   desk and by the title. */
+.heroNotes,
+.heroAside {
   --hand: #b3bdff;
 }
 
@@ -1183,8 +1192,50 @@
   outline-offset: 3px;
 }
 
+/* THE PRINT NOTES BY THE TITLE (2026-11-05: "once print at home/ library
+   text gets cut off by shrinking sides of the window the should jump
+   snuggly into the spaces on the sides of the company title and tagline").
+   VideoHero marks the hero data-notes-beside once a note on the desk would
+   come within 8px of the screen's side; then the desk's notes and arrows
+   hide - still laid out, as they are what is measured - and these copies,
+   in the title's own box (Wordmark's aside), show either side of it,
+   centred on the title and tagline together. The same size as on the desk
+   (1.45cqw of the stage, which is the film's 16:9 width whenever the sides
+   are cropped), so they only move. */
+.heroAside {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.hero[data-notes-beside] .heroNotes {
+  visibility: hidden;
+}
+
+.hero[data-notes-beside] .heroAside {
+  visibility: visible;
+}
+
+.heroAside .heroNote {
+  top: 50%;
+  translate: 0 -50%;
+  font-size: calc(var(--film-h) * 16 / 9 * 0.0145);
+}
+
+.heroAside .heroAsideLeft {
+  right: calc(100% + 0.9em);
+  text-align: right;
+}
+
+.heroAside .heroAsideRight {
+  left: calc(100% + 0.9em);
+  text-align: left;
+}
+
 @media (max-aspect-ratio: 1/1) {
-  .heroNotes {
+  .heroNotes,
+  .heroAside {
     display: none;
   }
 }
@@ -1600,13 +1651,16 @@
   color: var(--ink);
 }
 
-/* The gallery's way on, as a button: a quiet pill (the page's one filled
-   button is Build for Free), centred under the grid, its arrow nudging
-   toward where it goes. */
+/* The gallery's ways on, as buttons: quiet pills (the page's one filled
+   button is Build for Free), centred under the grid side by side (layouts,
+   then covers), each arrow nudging toward where it goes. They stack on a
+   phone when they cannot share a line. */
 .more:has(.moreButton) {
   margin-top: 56px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 12px;
 }
 
 .more a.moreButton {

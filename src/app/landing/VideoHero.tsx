@@ -134,6 +134,26 @@ function plainStills() {
  *  begins to fade onto the pages: the book is seen open on its dots first. */
 const LAYOUT_AFTER_ARRIVAL = 0.6;
 
+/** How near the screen's side (px) a print note on the desk may come before
+ *  it goes by the title instead: a letter at the very edge reads as cut. */
+const NOTE_EDGE = 8;
+
+/** The print note's second line, on the desk and by the title alike. */
+function LibraryNote() {
+  return (
+    <>
+      or at a library with
+      <br />
+      our{" "}
+      <a href="/print#find-a-library" className={styles.heroNoteLink}>
+        <Underlined seed={117} delay={0.9}>
+          library locator
+        </Underlined>
+      </a>
+    </>
+  );
+}
+
 export function VideoHero() {
   preloadHero();
   const hero = useRef<HTMLElement>(null);
@@ -143,6 +163,7 @@ export function VideoHero() {
   const sheetCanvases = useRef<Array<HTMLCanvasElement | null>>([]);
   const sides = useRef<Array<HTMLCanvasElement | null>>([]);
   const stage = useRef<HTMLDivElement>(null);
+  const printNotes = useRef<HTMLDivElement>(null);
   const grainLayer = useRef<HTMLDivElement>(null);
   const baked = useRef<HTMLDivElement>(null);
   const bakedDots = useRef<HTMLCanvasElement>(null);
@@ -209,6 +230,34 @@ export function VideoHero() {
     update();
     vv.addEventListener("resize", update);
     return () => vv.removeEventListener("resize", update);
+  }, []);
+
+  // The print notes by the title once the screen's side would cut one on
+  // the desk (2026-11-05: "once print at home/ library text gets cut off by
+  // shrinking sides of the window the should jump snuggly into the spaces on
+  // the sides of the company title and tagline"). Measured on the desk's
+  // notes, which keep their place, hidden, while their copies sit by the
+  // title (.heroAside) - so the switch cannot flicker at its edge. Upright
+  // they are not shown at all (no width: never cut).
+  useEffect(() => {
+    const el = hero.current;
+    const box = printNotes.current;
+    if (!el || !box) return;
+    const notes = [...box.querySelectorAll("p")];
+    const update = () => {
+      const { left, right } = el.getBoundingClientRect();
+      const cut = notes.some((p) => {
+        const r = p.getBoundingClientRect();
+        return r.width > 0 && (r.left < left + NOTE_EDGE || r.right > right - NOTE_EDGE);
+      });
+      el.toggleAttribute("data-notes-beside", cut);
+    };
+    update();
+    // the hero's width, and the notes' own (their hand's face loading late)
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    notes.forEach((p) => ro.observe(p));
+    return () => ro.disconnect();
   }, []);
 
   // The desk beyond the frame's sides, each side drawn into its canvas, and
@@ -728,7 +777,7 @@ export function VideoHero() {
           (underlined) with arrow to right loose"), on a wide screen: in the
           pen's blue, on the desk, in the frame's own place (laid out like
           the stage, so it stays by its sheet at any size). */}
-      <div className={`${styles.videoStage} ${styles.heroNotes}`}>
+      <div ref={printNotes} className={`${styles.videoStage} ${styles.heroNotes}`}>
         <p className={styles.heroNote} style={{ left: `${(560 / 3840) * 100}%`, top: `${(905 / 2160) * 100}%` }}>
           print at home!
         </p>
@@ -740,18 +789,25 @@ export function VideoHero() {
             frame's pixels, as the notes are placed. */}
         <ArrowBetween seed={113} delay={0.6} frame={HERO_VIDEO} from={[546, 962]} to={[452, 1068]} leave={deg(160)} arrive={deg(105)} />
         <p className={styles.heroNote} style={{ left: `${(2480 / 3840) * 100}%`, top: `${(505 / 2160) * 100}%` }}>
-          or at a library with
-          <br />
-          our{" "}
-          <a href="/print#find-a-library" className={styles.heroNoteLink}>
-            <Underlined seed={117} delay={0.9}>
-              library locator
-            </Underlined>
-          </a>
+          <LibraryNote />
         </p>
         <ArrowBetween seed={119} delay={1.1} frame={HERO_VIDEO} from={[2998, 556]} to={[3200, 738]} leave={deg(10)} arrive={deg(80)} />
       </div>
-      <Wordmark className={styles.titleOverFilm} onWritten={taglineWritten} />
+      <Wordmark
+        className={styles.titleOverFilm}
+        onWritten={taglineWritten}
+        aside={
+          // The same notes by the title, for when the desk's would be cut
+          // (data-notes-beside, above). No arrows: from here the sheets are
+          // off past the book.
+          <div className={styles.heroAside}>
+            <p className={`${styles.heroNote} ${styles.heroAsideLeft}`}>print at home!</p>
+            <p className={`${styles.heroNote} ${styles.heroAsideRight}`}>
+              <LibraryNote />
+            </p>
+          </div>
+        }
+      />
       {showing && (
         <LayoutViewer>
           <HeroControls steer={steerRef} showing={showing} />

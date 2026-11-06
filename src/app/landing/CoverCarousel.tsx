@@ -19,7 +19,7 @@
 // collage, the second where the first began. Reduced motion: it stands
 // still and scrolls by hand.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import covers from "./coverCarousel.json";
 import { coverById } from "@/app/covers/catalogue";
@@ -123,6 +123,16 @@ const DRIFT_AFTER_MS = 4000;
 /** How far past the screen's right edge the covers coming are fetched where
  *  they are not warmed, in screens: at the strip's pace, seconds ahead. */
 const AHEAD_SCREENS = 2;
+
+/** The side blur's layers, px, from the inside of the band to the screen's
+ *  edge: each in its own eighth-wide window that overlaps its neighbours'
+ *  (coverCarousel.module.css, .blurLayer). About 1.5 times the last each
+ *  time, so no step between two shows (2026-11-05: "there is also some
+ *  banding in the blurs on the side of the carousel"). It was four layers,
+ *  2, 5, 10 and 18px, each opaque out to the edge: each weaker one's ramp
+ *  ended where a much stronger one was already whole. The last two stack
+ *  at the edge to about the old strength there. */
+const BLUR_LAYERS = [0.5, 1, 2, 3.5, 6, 9, 13, 18];
 
 /** Where the covers are not warmed, the ones coming fetched a little ahead
  *  of the screen (2026-11-05, his iPhone: "the carousel stops loading in new
@@ -276,15 +286,15 @@ export function CoverCarousel({ seed = 20261009 }: { seed?: number }) {
       <div className={styles.strip}>
         {/* the ends blur away (2026-10-14: "instead of transparent gradient
             on sides of carousel can you make it more of a cool blur
-            effect"): four still layers, each blurring what passes under it
-            a little more toward the edge, and the paper's tan over them */}
+            effect"): still layers, each blurring what passes under it a
+            little more toward the edge (BLUR_LAYERS), and the paper's tan
+            over them */}
         {[styles.blurStart, styles.blurEnd].map((side) => (
           <div key={side} className={side} aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
+            {BLUR_LAYERS.map((b, i) => (
+              <span key={b} className={styles.blurLayer} style={{ "--i": i, "--b": `${b}px` } as CSSProperties} />
+            ))}
+            <span className={styles.blurTan} />
           </div>
         ))}
         <div

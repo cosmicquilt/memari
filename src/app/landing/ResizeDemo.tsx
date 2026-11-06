@@ -36,7 +36,8 @@ function blend(a: DemoMark[], b: DemoMark[], t: number): DemoMark[] {
 }
 
 /** The demo's script, one loop: where the handle is (in steps from the
- *  smallest height), where the cursor is, and whether it is pressing. */
+ *  smallest height), where the cursor is, and whether it is pressing.
+ *  `handle` is where the cursor takes the boundary at a step. */
 type Pose = { p: number; cursor: [number, number] | null; down: boolean };
 const LOOP = 9.2;
 function script(time: number, last: number, handle: (p: number) => [number, number]): Pose {
@@ -93,14 +94,44 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
       const b = border(p);
       return [b.x + b.w / 2, b.y + b.h];
     };
+    // The gap between the two modules at a step: from the habit tracker's
+    // bottom edge to the to-do list's top, across the tracker's width.
+    const gap = (p: number) => {
+      const a = border(p);
+      const b = border(p, "todo");
+      const top = a.y + a.h;
+      return { x: a.x, w: a.w, top, bottom: Math.max(top, b.y) };
+    };
+    // Where the script's cursor takes the boundary: the middle of the gap
+    // (2026-11-05: "can the demo cursor go to the center of the gap between
+    // the two modules").
+    const grip = (p: number): [number, number] => {
+      const g = gap(p);
+      return [g.x + g.w / 2, (g.top + g.bottom) / 2];
+    };
+    // Where the boundary can be taken, a visitor's pointer or the script's:
+    // the whole gap (2026-11-05: "should span the entire gap between the two
+    // modules and not just the top portion like it is now") and 8 screen px
+    // onto each module's edge - never under 32px tall, for a finger. `k` is
+    // screen px per print px; x and y are print px.
+    const onBoundary = (x: number, y: number, at: number, k: number) => {
+      const g = gap(at);
+      const mid = (g.top + g.bottom) / 2;
+      const top = Math.min(g.top - 8 / k, mid - 16 / k);
+      const bottom = Math.max(g.bottom + 8 / k, mid + 16 / k);
+      return x > g.x - 8 / k && x < g.x + g.w + 8 / k && y > top && y < bottom;
+    };
 
     let scale = 1;
+    /** Screen px per print px. */
+    let shown = 1;
     const size = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.min(2.5, window.devicePixelRatio || 1);
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
       scale = canvas.width / W;
+      shown = rect.width / W || 1;
     };
 
     const draw = (pose: Pose) => {
@@ -128,8 +159,12 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
       }
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       if (pose.cursor) {
-        // A pointer, its tip on the module's bottom edge.
+        // A pointer, its tip in the middle of the gap - and, over the gap,
+        // the vertical resize cursor a real pointer turns into there (the
+        // canvas's own ns-resize; 2026-11-05: "have its cursor change to the
+        // vertical resizer"), centred on the same point.
         const [cx, cy] = pose.cursor;
+        const resize = onBoundary(cx, cy, pose.p, shown);
         const k = 1.25 / scale;
         ctx.save();
         ctx.translate(cx, cy);
@@ -139,13 +174,27 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
         const press = pose.down ? 0.88 : 1;
         ctx.scale(k * 1.4 * press, k * 1.4 * press);
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(0, 17);
-        ctx.lineTo(4.2, 13.2);
-        ctx.lineTo(7.2, 19.6);
-        ctx.lineTo(9.8, 18.4);
-        ctx.lineTo(6.9, 12.2);
-        ctx.lineTo(12.2, 12.2);
+        if (resize) {
+          // A double arrow, up and down, its shaft between the heads.
+          ctx.moveTo(0, -10);
+          ctx.lineTo(5.2, -4.6);
+          ctx.lineTo(1.5, -4.6);
+          ctx.lineTo(1.5, 4.6);
+          ctx.lineTo(5.2, 4.6);
+          ctx.lineTo(0, 10);
+          ctx.lineTo(-5.2, 4.6);
+          ctx.lineTo(-1.5, 4.6);
+          ctx.lineTo(-1.5, -4.6);
+          ctx.lineTo(-5.2, -4.6);
+        } else {
+          ctx.moveTo(0, 0);
+          ctx.lineTo(0, 17);
+          ctx.lineTo(4.2, 13.2);
+          ctx.lineTo(7.2, 19.6);
+          ctx.lineTo(9.8, 18.4);
+          ctx.lineTo(6.9, 12.2);
+          ctx.lineTo(12.2, 12.2);
+        }
         ctx.closePath();
         ctx.fillStyle = "#1c1917";
         ctx.strokeStyle = "#ffffff";
@@ -178,13 +227,11 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
       }
       return last;
     };
-    // Anywhere along the habit tracker's bottom edge, as in the editor.
+    // Anywhere in the gap under the habit tracker (onBoundary).
     const nearHandle = (e: { clientX: number; clientY: number }) => {
       const rect = canvas.getBoundingClientRect();
-      const b = border(p);
       const k = rect.width / W;
-      const [x, y] = [(e.clientX - rect.left) / k, (e.clientY - rect.top) / k];
-      return x > b.x - 8 / k && x < b.x + b.w + 8 / k && Math.abs(y - (b.y + b.h)) < 16 / k;
+      return onBoundary((e.clientX - rect.left) / k, (e.clientY - rect.top) / k, p, k);
     };
     // On a phone the demo is most of the screen: a finger anywhere else on it
     // scrolls the page as usual, and only one on the edge holds it still.
@@ -225,7 +272,7 @@ export function ResizeDemo({ data }: { data: ResizeDemoData }) {
     const frame = (now: number) => {
       raf = 0;
       if (mode === "script") {
-        scriptPose = script((now - scriptStart) / 1000, last, handle);
+        scriptPose = script((now - scriptStart) / 1000, last, grip);
         p = scriptPose.p;
         draw(scriptPose);
       } else if (mode === "drag") {
