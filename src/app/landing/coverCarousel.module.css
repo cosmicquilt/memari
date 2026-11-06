@@ -23,7 +23,7 @@
    the screen's side as the hero's controls, centred on the tiles' two rows
    (the tiles start 40px into the strip) - 2026-11-06: "the see all covers
    was supposed to be on the right side over the carousel", then "2: on the
-   tiles" of two shown (the other sat on the paper above them). A cream
+   tiles" of two shown (the other sat on the paper above them). A frosted
    pill with a shadow, so it reads on the photos moving under it; over the
    side blur (z 1). */
 .seeAll {
@@ -34,17 +34,26 @@
   translate: 0 -50%;
 }
 
-/* Two classes (0,2,0) so the cream beats the shared a.moreButton (0,1,1)
+/* Light frost (2026-11-06, his "B, light frost" of four shown): "i like the
+   clear button better but it looked too clear and not very visible over the
+   carousel". A thin warm-white tint over a blur of the tiles behind it, so
+   the words sit on a soft patch of the covers' own colours and the pill
+   still reads as clear; a thin white edge holds its shape over dark tiles.
+   backdrop-filter alone: the build adds the -webkit- twin (writing both
+   dropped both). Hover thickens the tint, still glass.
+   Two classes (0,2,0) so this beats the shared a.moreButton (0,1,1)
    whatever order the bundler puts the two module files in. `.seeAll a` tied
-   it, and production put landing.module.css second: a clear pill on live,
-   cream in dev, where each module is its own stylesheet */
+   it, and production put landing.module.css second: the shared pill on
+   live, this one in dev, where each module is its own stylesheet */
 .seeAll .seeAllButton {
-  background: rgba(var(--cream-rgb, 245, 234, 213), 0.95);
-  box-shadow: 0 6px 22px rgba(10, 6, 3, 0.28);
+  background: rgba(255, 252, 245, 0.22);
+  backdrop-filter: blur(10px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 6px 22px rgba(10, 6, 3, 0.22);
 }
 
 .seeAll .seeAllButton:hover {
-  background: rgb(var(--cream-rgb, 245, 234, 213));
+  background: rgba(255, 252, 245, 0.36);
 }
 
 /* 40px of paper above the tiles and 44px below, for the side blur to fade
