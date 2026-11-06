@@ -3028,8 +3028,15 @@ const widthResize: Probe = {
       await open();
       const before = await stored(todo.id);
       if (before && before.columnStart === 0 && before.columnSpan === 24) {
+        // Filmed: narrowing from the LEFT is the one step whose final render
+        // does not share the drawn render's corner, and its frame was dropped
+        // for the ease and faded back after it - "the top line of it would
+        // fade out and in during its resizing animation" (2026-11-06). The
+        // widening above never reached that case.
+        await film(todo.id);
         await dragEdge(todo.id, "left", 2);
         if ((await columns(todo.id)) !== "12:12") fail("width resize", `narrowing from the left by two days saved ${await columns(todo.id)}, not 12:12`);
+        frameTravels(await filmed(), "narrowing the to-do from the left");
       }
       if (!(await matches("after narrowing"))) return;
       // Shorter, with free rows under it. A drop on its lower half goes in

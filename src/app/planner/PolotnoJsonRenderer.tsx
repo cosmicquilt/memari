@@ -723,108 +723,59 @@ function flattenElements(elements: RenderedPolotnoElement[]): RenderedPolotnoEle
   return out;
 }
 
+const isRect = (element: RenderedPolotnoElement) => element.type === "figure" && element.subType === "rect";
+
+type Origin = { x: number; y: number };
+
 /**
- * MEMOISED, and it is the palette that makes it matter.
+ * WHICH RENDER EACH LAYER IS DRAWN FROM, AND WHERE.
  *
- * The editor holds ~127 palette cards, each drawing its module through this
- * component, and NativePlannerEditor calls setActiveDelta on every
- * pointermove of a drag. Nothing between that state and these cards was
- * memoised, so a drag re-rendered every one of them. Counted on a real book
- * with a real gesture: **293 invocations of this component per pointermove**,
- * of which eight were modules on the canvas and the rest were palette
- * previews that had not changed and could not change.
+ * While a box eases the renderer holds two drawings of the module: the
+ * CONTENT render, at the union of the two geometries so the moving edge has
+ * something to cut, and the FINAL render, at the box's destination. The frame
+ * and the text come from the final render, and so do the rects when the two
+ * are one set of marks; everything else from the content render.
  *
- * A palette card already memoises the elements it hands down, and its other
- * props here are numbers and a literal null, so the whole subtree is skipped
- * once identity is checked. The canvas's own modules still re-render, because
- * their `suppressOuterBorderSize` is a fresh object every frame and they
- * genuinely are changing - eight of those is the work a drag should cost.
+ * EACH IS PLACED BY ITS OWN RENDER'S CORNER. This used to say the two renders
+ * "share a top-left" because they differ only in span - true of a crossing,
+ * whose content geometry keeps the target's corner, and of a width step at
+ * the right edge or one widening to the left. Not of a step that NARROWS from
+ * the left: the union starts where the box was, the final render where it
+ * will be, a day further right. Placed by the union's corner, the final
+ * render's frame was not flush with it, so it was not taken for the frame:
+ * nothing drew it for the ease, and when the ease ended it came back through
+ * the arrival fade. Andrew, 2026-11-06: "the top line of it would fade out
+ * and in during its resizing animation". Filmed on the to-do: no top edge
+ * for 116ms, then 230ms of fade, and its heading a day too far right for the
+ * whole ease, jumping 135px back when it ended. Every framed module did it.
  *
- * This does not change what anything draws. Skipping a render whose props are
- * identical produces the same tree, and the arrival animations compare a
- * previous mark set to the current one - with no render there is no change to
- * animate.
+ * Everything here is placed relative to the module's BOX, whose own corner
+ * eases on the same clock. A mark from the final render, placed by the final
+ * corner, is where the committed drawing will put it at the last frame, and
+ * where it was at the first (it moves from its previous place, which was
+ * relative to the box's previous corner). widthResize.test.mts holds every
+ * module to that at every width step.
+ *
+ * Pure, so the test can ask it directly; the component draws the answer.
  */
-function PolotnoJsonRendererImpl({
+export function easeLayers({
   elements,
-  originX,
-  originY,
-  scale,
-  suppressOuterBorderSize,
+  origin,
   textElements,
-  textSizePx = null,
-  textEaseMs = 0,
+  textBox,
+  textEaseMs,
+  suppressOuterBorderSize,
 }: {
   elements: RenderedPolotnoElement[];
-  originX: number;
-  originY: number;
-  // Current on-screen zoom — see MIN_ONSCREEN_RECT_PX.
-  scale: number;
-  // Non-null only while this module is part of an active live resize —
-  // see the comment above ElementNode's own use of it.
+  /** The corner `elements` were rendered at. */
+  origin: Origin;
+  textElements: RenderedPolotnoElement[] | null;
+  /** The box `textElements` were rendered at: corner and size. */
+  textBox: { x: number; y: number; width: number; height: number } | null;
+  textEaseMs: number;
   suppressOuterBorderSize: { width: number; height: number } | null;
-  // Non-null only while this module's box is easing between zone
-  // shapes, when rects and text need DIFFERENT geometry and cannot come
-  // from one render.
-  //
-  // Rects are drawn at the larger of the two sizes so the easing box
-  // always has something to clip - that is what makes it a window.
-  // Text has to be at its FINAL position instead, because text is
-  // animated rather than clipped, and it can only animate if its
-  // position actually changes at the start of the ease. Sharing one
-  // geometry breaks one of the two: at the larger size the text sits
-  // still for the whole ease and then jumps when the ease ends, which
-  // is what shrinking a todo-checklist looked like.
-  textElements?: RenderedPolotnoElement[] | null;
-  // Pixel size textElements was rendered at - the module's FINAL
-  // geometry. Only read when the rects come from that render too (see
-  // animateRects), where it replaces suppressOuterBorderSize: the
-  // border being recognised is whichever render actually drew it.
-  textSizePx?: { width: number; height: number } | null;
-  // Non-zero only while this module's box is easing between zone
-  // shapes. Applies to text, and to rects when they are animated rather
-  // than clipped - see textPositionTransition and animateRects.
-  textEaseMs?: number;
 }) {
-  // Rects go into one shared <svg> (see RectLayer); everything else —
-  // in practice text — stays as absolutely-positioned DOM, which has no
-  // hairline problem to solve and whose typography is left untouched by
-  // this split. The one behavioural consequence is z-order: every rect
-  // now paints beneath every text element, rather than interleaved in
-  // array order. That matches how this app's module renderers actually
-  // build a module (backgrounds and rules first, labels on top), but it
-  // is the thing to check if some module ever draws a filled rect
-  // deliberately over its own text.
   const flat = flattenElements(elements);
-
-  // Ids from the module renderers are semantic - `d2-row7`, `header-rule`,
-  // `dot-14-9` - so one id names one mark for the life of the module and
-  // is usable directly as a React key.
-  //
-  // They used to be positional counters, `${idPrefix}-${idCounter++}`,
-  // which are stable across renders without naming a stable thing:
-  // re-render a todo-checklist at a different dayCount and the counter
-  // handed the same id to a different logical element, so React reused the
-  // node and animated it from what the OLD element occupied to where the
-  // NEW one sits. Reported as the todo animating to and from an
-  // intermediate point on the bottom right while being dragged.
-  //
-  // That was patched here by folding the element COUNT into the key, which
-  // did stop the wrong animation but at the price of remounting every node
-  // in a module whenever its element count changed. A remounted node has
-  // no previous geometry and replays the arrival fade, so a resize
-  // flickered - everything vanishing and returning - at each snap step
-  // that added or removed a row. Reported exactly that way. Semantic ids
-  // remove the need for the scope, so the flicker goes with it.
-  //
-  // moduleIds.test.mts checks that no module emits the same id twice, at
-  // every size any of them are drawn at: positional ids were unique for
-  // free, and semantic ones are only unique if each name carries the
-  // indices that distinguish it.
-  const textKey = (element: RenderedPolotnoElement): string => element.id;
-
-  const isRect = (element: RenderedPolotnoElement) => element.type === "figure" && element.subType === "rect";
-
   // Rects slide to their final geometry instead of being revealed by
   // the clip, WHEN the two renders describe the same set of elements.
   //
@@ -874,9 +825,12 @@ function PolotnoJsonRendererImpl({
   //
   // A shrink wants the clip window to wipe content away; a grow wants the
   // content to travel. suppressOuterBorderSize is the size the content
-  // render was drawn at (the larger of the two) and textSizePx is the
+  // render was drawn at (the larger of the two) and textBox is the
   // final size, so the direction is already known here.
   const textFlat = textElements ? flattenElements(textElements) : null;
+  // The final render's own corner. Without a box to say where it was drawn
+  // it can only be the content's, which is what it always was before.
+  const finalOrigin: Origin = textFlat && textBox ? { x: textBox.x, y: textBox.y } : origin;
   // Animating is only meaningful when the two renders describe the same
   // marks; a final render with a changed structure is drawn, not eased.
   const animateRects = !!textFlat && textEaseMs > 0 && sameMarkSet(textFlat, flat);
@@ -901,15 +855,16 @@ function PolotnoJsonRendererImpl({
   // never among the rects, so it is never hidden or faded with them. Picked
   // out by name and place - every renderer draws it with borderElement's
   // "-border" id, flush with its origin (checked across the catalogue).
-  const isFrame = (element: RenderedPolotnoElement) =>
+  // Flush with the corner of the render it comes from.
+  const isFrameAt = (corner: Origin) => (element: RenderedPolotnoElement) =>
     isRect(element) &&
     /-border$/.test(String(element.id)) &&
     !!element.stroke &&
     element.stroke !== "none" &&
-    Math.abs((element.x ?? 0) - originX) < OUTER_BORDER_MATCH_EPSILON_PX &&
-    Math.abs((element.y ?? 0) - originY) < OUTER_BORDER_MATCH_EPSILON_PX;
-  const frameRender = textFlat ?? flat;
-  const ownFrame = frameRender.find(isFrame) ?? null;
+    Math.abs((element.x ?? 0) - corner.x) < OUTER_BORDER_MATCH_EPSILON_PX &&
+    Math.abs((element.y ?? 0) - corner.y) < OUTER_BORDER_MATCH_EPSILON_PX;
+  const frameOrigin = textFlat ? finalOrigin : origin;
+  const ownFrame = (textFlat ?? flat).find(isFrameAt(frameOrigin)) ?? null;
   // A resize whose content is not redrawn live keeps the frame of the size
   // it was, so it is hidden there as before, behind the box's outline.
   const frozenFrame =
@@ -918,10 +873,11 @@ function PolotnoJsonRendererImpl({
     !!suppressOuterBorderSize &&
     Math.abs((ownFrame.width ?? 0) - suppressOuterBorderSize.width) < OUTER_BORDER_MATCH_EPSILON_PX &&
     Math.abs((ownFrame.height ?? 0) - suppressOuterBorderSize.height) < OUTER_BORDER_MATCH_EPSILON_PX;
-  const rects = (animateRects ? textFlat : flat).filter((element) => isRect(element) && !isFrame(element));
+  const rectSource = animateRects && textFlat ? textFlat : flat;
+  const rectsOrigin = animateRects ? finalOrigin : origin;
+  const rects = rectSource.filter((element) => isRect(element) && !isFrameAt(rectsOrigin)(element));
   // Text comes from its own render when one is supplied - see
-  // textElements. Same origin either way: the two renders differ only
-  // in span, never in columnStart/rowStart, so they share a top-left.
+  // textElements - placed by that render's own corner (see above).
   // Text comes from its own render whenever one is supplied, even when
   // the two renders disagree structurally. They can: a todo-checklist
   // crossing a width boundary has four day-columns in the render being
@@ -945,9 +901,135 @@ function PolotnoJsonRendererImpl({
   // the new layout appears when the sweep lands - as a crossing does. So
   // then the text comes from the swept render too, and holds still.
   const differentDrawings = !!textFlat && !oneDrawing(textFlat, flat);
-  const rest = (textFlat && !differentDrawings ? textFlat : flat).filter(
-    (element) => !isRect(element)
-  );
+  const textFromFinal = !!textFlat && !differentDrawings;
+  const text = (textFromFinal && textFlat ? textFlat : flat).filter((element) => !isRect(element));
+  return {
+    /** The module's own frame, for FrameLayer; null while it is frozen. */
+    frame: frozenFrame ? null : ownFrame,
+    frameOrigin,
+    rects,
+    rectsOrigin,
+    /** The rects travel (FLIP) rather than being cut by the box. */
+    animateRects,
+    text,
+    textOrigin: textFromFinal ? finalOrigin : origin,
+    differentDrawings,
+  };
+}
+
+/**
+ * MEMOISED, and it is the palette that makes it matter.
+ *
+ * The editor holds ~127 palette cards, each drawing its module through this
+ * component, and NativePlannerEditor calls setActiveDelta on every
+ * pointermove of a drag. Nothing between that state and these cards was
+ * memoised, so a drag re-rendered every one of them. Counted on a real book
+ * with a real gesture: **293 invocations of this component per pointermove**,
+ * of which eight were modules on the canvas and the rest were palette
+ * previews that had not changed and could not change.
+ *
+ * A palette card already memoises the elements it hands down, and its other
+ * props here are numbers and a literal null, so the whole subtree is skipped
+ * once identity is checked. The canvas's own modules still re-render, because
+ * their `suppressOuterBorderSize` is a fresh object every frame and they
+ * genuinely are changing - eight of those is the work a drag should cost.
+ *
+ * This does not change what anything draws. Skipping a render whose props are
+ * identical produces the same tree, and the arrival animations compare a
+ * previous mark set to the current one - with no render there is no change to
+ * animate.
+ */
+function PolotnoJsonRendererImpl({
+  elements,
+  originX,
+  originY,
+  scale,
+  suppressOuterBorderSize,
+  textElements,
+  textBoxPx = null,
+  textEaseMs = 0,
+}: {
+  elements: RenderedPolotnoElement[];
+  originX: number;
+  originY: number;
+  // Current on-screen zoom — see MIN_ONSCREEN_RECT_PX.
+  scale: number;
+  // Non-null only while this module is part of an active live resize —
+  // see the comment above ElementNode's own use of it.
+  suppressOuterBorderSize: { width: number; height: number } | null;
+  // Non-null only while this module's box is easing between zone
+  // shapes, when rects and text need DIFFERENT geometry and cannot come
+  // from one render.
+  //
+  // Rects are drawn at the larger of the two sizes so the easing box
+  // always has something to clip - that is what makes it a window.
+  // Text has to be at its FINAL position instead, because text is
+  // animated rather than clipped, and it can only animate if its
+  // position actually changes at the start of the ease. Sharing one
+  // geometry breaks one of the two: at the larger size the text sits
+  // still for the whole ease and then jumps when the ease ends, which
+  // is what shrinking a todo-checklist looked like.
+  textElements?: RenderedPolotnoElement[] | null;
+  // The box textElements was rendered at - the module's FINAL geometry,
+  // corner and size. The corner places everything drawn from that render
+  // (see easeLayers): it is not always originX/originY, since a step that
+  // narrows from the left moves the corner. The size replaces
+  // suppressOuterBorderSize when the rects come from that render too (see
+  // animateRects): the border being recognised is whichever render drew it.
+  textBoxPx?: { x: number; y: number; width: number; height: number } | null;
+  // Non-zero only while this module's box is easing between zone
+  // shapes. Applies to text, and to rects when they are animated rather
+  // than clipped - see textPositionTransition and animateRects.
+  textEaseMs?: number;
+}) {
+  // Rects go into one shared <svg> (see RectLayer); everything else —
+  // in practice text — stays as absolutely-positioned DOM, which has no
+  // hairline problem to solve and whose typography is left untouched by
+  // this split. The one behavioural consequence is z-order: every rect
+  // now paints beneath every text element, rather than interleaved in
+  // array order. That matches how this app's module renderers actually
+  // build a module (backgrounds and rules first, labels on top), but it
+  // is the thing to check if some module ever draws a filled rect
+  // deliberately over its own text.
+
+  // Ids from the module renderers are semantic - `d2-row7`, `header-rule`,
+  // `dot-14-9` - so one id names one mark for the life of the module and
+  // is usable directly as a React key.
+  //
+  // They used to be positional counters, `${idPrefix}-${idCounter++}`,
+  // which are stable across renders without naming a stable thing:
+  // re-render a todo-checklist at a different dayCount and the counter
+  // handed the same id to a different logical element, so React reused the
+  // node and animated it from what the OLD element occupied to where the
+  // NEW one sits. Reported as the todo animating to and from an
+  // intermediate point on the bottom right while being dragged.
+  //
+  // That was patched here by folding the element COUNT into the key, which
+  // did stop the wrong animation but at the price of remounting every node
+  // in a module whenever its element count changed. A remounted node has
+  // no previous geometry and replays the arrival fade, so a resize
+  // flickered - everything vanishing and returning - at each snap step
+  // that added or removed a row. Reported exactly that way. Semantic ids
+  // remove the need for the scope, so the flicker goes with it.
+  //
+  // moduleIds.test.mts checks that no module emits the same id twice, at
+  // every size any of them are drawn at: positional ids were unique for
+  // free, and semantic ones are only unique if each name carries the
+  // indices that distinguish it.
+  const textKey = (element: RenderedPolotnoElement): string => element.id;
+
+  // Which render each layer is drawn from, and the corner each is placed
+  // by - see easeLayers.
+  const layers = easeLayers({
+    elements,
+    origin: { x: originX, y: originY },
+    textElements: textElements ?? null,
+    textBox: textBoxPx,
+    textEaseMs,
+    suppressOuterBorderSize,
+  });
+  const { rects, rectsOrigin, animateRects, differentDrawings } = layers;
+  const rest = layers.text;
   // Marks that were in the previous render and are not in this one, kept
   // for one fade so they can leave rather than blink out. This is the
   // habit tracker's mode switch: its wide layout and its compact one are
@@ -974,19 +1056,19 @@ function PolotnoJsonRendererImpl({
   // Held at the origin they were DRAWN at, not the current one: during a
   // zone crossing the module's origin moves, and re-anchoring the
   // outgoing drawing to the incoming origin would slide it sideways as it
-  // faded.
+  // faded. That is the corner of the render they came from (easeLayers).
   const rectIdsNow = rects.map((element) => element.id).join("|");
   const [prevRects, setPrevRects] = useState<{
     ids: string;
     elements: RenderedPolotnoElement[];
     originX: number;
     originY: number;
-  }>({ ids: rectIdsNow, elements: rects, originX, originY });
+  }>({ ids: rectIdsNow, elements: rects, originX: rectsOrigin.x, originY: rectsOrigin.y });
   const [leavingRects, setLeavingRects] = useState<{
     elements: RenderedPolotnoElement[];
     originX: number;
     originY: number;
-  }>({ elements: [], originX, originY });
+  }>({ elements: [], originX: rectsOrigin.x, originY: rectsOrigin.y });
   if (prevRects.ids !== rectIdsNow) {
     const present = new Set(rects.map((element) => element.id));
     // Only while an ease is actually running. The other time this list
@@ -1005,7 +1087,7 @@ function PolotnoJsonRendererImpl({
       textEaseMs > 0
         ? prevRects.elements.filter((element) => !present.has(element.id))
         : [];
-    setPrevRects({ ids: rectIdsNow, elements: rects, originX, originY });
+    setPrevRects({ ids: rectIdsNow, elements: rects, originX: rectsOrigin.x, originY: rectsOrigin.y });
     setLeavingRects({ elements: gone, originX: prevRects.originX, originY: prevRects.originY });
   }
   useEffect(() => {
@@ -1022,39 +1104,45 @@ function PolotnoJsonRendererImpl({
   // snapshot - the same "adjust state during rendering" pattern
   // NativePlannerEditor uses - rather than a useEffect, which this
   // project's lint rules discourage for derived state.
+  // Held at the corner it was drawn at, as the leaving rects are.
+  const textOrigin = layers.textOrigin;
   const textKeysNow = rest.map((element) => textKey(element)).join("|");
-  const [prevText, setPrevText] = useState<{ keys: string; elements: RenderedPolotnoElement[] }>({
+  const [prevText, setPrevText] = useState<{ keys: string; elements: RenderedPolotnoElement[]; origin: Origin }>({
     keys: textKeysNow,
     elements: rest,
+    origin: textOrigin,
   });
-  const [leavingText, setLeavingText] = useState<RenderedPolotnoElement[]>([]);
+  const [leavingText, setLeavingText] = useState<{ elements: RenderedPolotnoElement[]; origin: Origin }>({
+    elements: [],
+    origin: textOrigin,
+  });
   if (prevText.keys !== textKeysNow) {
     const present = new Set(rest.map((element) => textKey(element)));
     const gone = prevText.elements.filter((element) => !present.has(textKey(element)));
-    setPrevText({ keys: textKeysNow, elements: rest });
-    setLeavingText(gone);
+    setPrevText({ keys: textKeysNow, elements: rest, origin: textOrigin });
+    setLeavingText({ elements: gone, origin: prevText.origin });
   }
   useEffect(() => {
-    if (leavingText.length === 0) return;
-    const timer = setTimeout(() => setLeavingText([]), MARK_FADE_IN_MS);
+    if (leavingText.elements.length === 0) return;
+    const timer = setTimeout(() => setLeavingText((prev) => ({ ...prev, elements: [] })), MARK_FADE_IN_MS);
     return () => clearTimeout(timer);
   }, [leavingText]);
 
   return (
     <>
       <FrameLayer
-        frame={frozenFrame ? null : ownFrame}
-        originX={originX}
-        originY={originY}
+        frame={layers.frame}
+        originX={layers.frameOrigin.x}
+        originY={layers.frameOrigin.y}
         scale={scale}
-        easeMs={textFlat ? textEaseMs : 0}
+        easeMs={textElements ? textEaseMs : 0}
       />
       <RectLayer
         rects={rects}
-        originX={originX}
-        originY={originY}
+        originX={rectsOrigin.x}
+        originY={rectsOrigin.y}
         scale={scale}
-        suppressOuterBorderSize={animateRects ? textSizePx ?? null : suppressOuterBorderSize}
+        suppressOuterBorderSize={animateRects ? textBoxPx ?? null : suppressOuterBorderSize}
         easeMs={animateRects ? textEaseMs : 0}
       />
       {/* The outgoing drawing, for exactly one fade. Underneath the
@@ -1075,8 +1163,8 @@ function PolotnoJsonRendererImpl({
         <ElementNode
           key={textKey(element)}
           element={element}
-          originX={originX}
-          originY={originY}
+          originX={textOrigin.x}
+          originY={textOrigin.y}
           // Held still between different drawings, as the rects are: the
           // swept drawing is redrawn at each day step of a drag, and its
           // text gliding between two of those was the heading drifting
@@ -1089,12 +1177,12 @@ function PolotnoJsonRendererImpl({
           leaves the list, so an exit animation needs the node to outlive
           its own removal - there is no CSS-only way to animate something
           that is no longer in the tree. */}
-      {leavingText.map((element) => (
+      {leavingText.elements.map((element) => (
         <ElementNode
           key={`leaving:${textKey(element)}`}
           element={element}
-          originX={originX}
-          originY={originY}
+          originX={leavingText.origin.x}
+          originY={leavingText.origin.y}
           textEaseMs={0}
           leaving
         />

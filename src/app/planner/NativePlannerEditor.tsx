@@ -866,7 +866,7 @@ function NativeModule({
   boxInsetPx,
   elements,
   textElements,
-  textSizePx,
+  textBoxPx,
   originX,
   originY,
   visualOffset,
@@ -926,11 +926,12 @@ function NativeModule({
   // the final geometry, used for text alone. See PolotnoJsonRenderer's
   // own comment on why rects and text cannot share one geometry here.
   textElements: LoadedPage["moduleInstances"][number]["elements"] | null;
-  // Pixel size textElements was rendered at - this module's FINAL
-  // geometry. Only used when the rects come from that same render (see
-  // PolotnoJsonRenderer's animateRects), where it is what identifies
-  // that render's own full-box border.
-  textSizePx: { width: number; height: number } | null;
+  // The box textElements was rendered at - this module's FINAL geometry,
+  // corner and size. The corner places what is drawn from that render; it
+  // differs from originX/originY when a width step narrows from the left
+  // (see PolotnoJsonRenderer's easeLayers). The size identifies that
+  // render's own full-box border when the rects come from it too.
+  textBoxPx: { x: number; y: number; width: number; height: number } | null;
   originX: number;
   originY: number;
   // Page-pixel translate applied on top of the committed grid slot — for
@@ -1433,7 +1434,7 @@ function NativeModule({
         <PolotnoJsonRenderer
           elements={shownElements}
           textElements={textElements}
-          textSizePx={textSizePx}
+          textBoxPx={textBoxPx}
           originX={originX}
           originY={originY}
           scale={scale}
@@ -2097,8 +2098,11 @@ function NativePage({
         // larger of the two sizes so the box has something to clip; text
         // has to be at its final position instead, or it sits still for
         // the whole ease and jumps when the ease ends - which is exactly
-        // what shrinking a todo-checklist looked like. The two renders
-        // differ only in span, so they share an origin.
+        // what shrinking a todo-checklist looked like. The two renders do
+        // NOT always share a corner: a width step narrowing from the left
+        // starts the union where the box was and this render where it will
+        // be, so its box goes down with it (textBoxPx) and the renderer
+        // places this render by its own corner - see easeLayers.
         //
         // Cheap enough to do twice: renderModuleInstance is pure, it is
         // the same call the initial page load already makes, and this
@@ -2184,7 +2188,7 @@ function NativePage({
             rectPx={draggedRectPx}
             elements={elements}
             textElements={textElements}
-            textSizePx={isEasingBox ? gridCellToPixels(page.pageGrid, placement) : null}
+            textBoxPx={isEasingBox ? gridCellToPixels(page.pageGrid, placement) : null}
             originX={liveOrigin ? liveOrigin.x : info.originX}
             originY={liveOrigin ? liveOrigin.y : info.originY}
             frozenSize={resizeFrozenSize?.[id] ?? null}

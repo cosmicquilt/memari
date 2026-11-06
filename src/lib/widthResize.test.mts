@@ -4,10 +4,13 @@
 // first, then each stop, then a random sweep for the invariants no single
 // case pins down.
 import { resolveWidthResize, widthResizeRange, type WidthResizeInput } from "./widthResize";
-import type { GridRect } from "./grid";
+import { gridCellToPixels, type GridRect, type PageGrid } from "./grid";
 import { MODULE_REGISTRY, moduleContentIsLive } from "./moduleRegistry";
+import { renderModuleInstance, type RenderedPolotnoElement } from "./renderModuleInstance";
+import { easeLayers } from "@/app/planner/PolotnoJsonRenderer";
 
 let failures = 0;
+let easeSummary = "";
 function check(condition: boolean, message: string) {
   if (!condition) {
     failures++;
@@ -136,16 +139,128 @@ const input = (target: GridRect, others: GridRect[], minRowSpanAt?: (span: numbe
 // when it ends: "top border of module faded in and out when horizontally
 // resizing" (the mini month, 2026-10-15). Every module that can be widened is
 // drawn live, so its frame travels with the box.
+//
+// "Can be widened" is every module a person places, not only the
+// resizableWidth ones: that flag is the properties panel's stepper, while the
+// side handles go on EVERY unlocked module - the to-do and the habit tracker
+// included.
 {
   const frozen = Object.entries(MODULE_REGISTRY)
-    .filter(([, definition]) => definition.resizableWidth)
+    .filter(([, definition]) => definition.inPalette || definition.resizableWidth)
     .filter(([slug, definition]) => !moduleContentIsLive(slug, definition.previewProps ?? {}))
     .map(([slug]) => slug);
   check(frozen.length === 0, `width-resizable modules drawn frozen, which fade their frame: ${frozen.join(", ")}`);
+}
+
+// --- the last frame of a width step is the drawing it lands on ----------------
+// "the top line of it would fade out and in during its resizing animation"
+// (2026-11-06), on every framed module, but only when it was NARROWED FROM THE
+// LEFT. A step is drawn as two renders: the union of the two widths (the
+// content, for the moving edge to cut) and the final width (the frame, the
+// text, and the rects when they travel). The final one was placed by the
+// union's corner. Narrowing from the left is the one step whose union does
+// not start where the box ends, so the frame was a day off its corner, not
+// taken for the frame, and not drawn: gone for the ease, faded back after it.
+// The heading sat a day right of where it landed, and jumped.
+//
+// Each step of every placeable module, at every width and both edges, is
+// drawn as the editor draws it - before, during the ease, after - and held to:
+//   - a frame before or after is a frame during (never dropped mid-ease);
+//   - what the ease draws from the final render sits, relative to the box,
+//     where the committed drawing puts it - the frame, the text (unless the
+//     step changes layout, whose text holds still by design), and the rects
+//     when they travel. At the last frame the box is where it lands, so this
+//     is "the last frame looks like after".
+{
+  const PAGE: PageGrid = { widthPx: 2175, heightPx: 3075, gridColumns: 24, gridRows: 36, boxInsetPx: 6, marginPx: 187.5 };
+  const ROWS = { rowStart: 21, rowSpan: 15 };
+  const draw = (slug: string, props: Record<string, unknown>, columnStart: number, columnSpan: number) =>
+    renderModuleInstance(
+      { id: "probe", locked: false, columnStart, columnSpan, ...ROWS, propValues: props, moduleType: { slug } } as Parameters<typeof renderModuleInstance>[0],
+      PAGE
+    );
+  type Layers = ReturnType<typeof easeLayers>;
+  const local = (element: RenderedPolotnoElement, origin: { x: number; y: number }) =>
+    [(element.x ?? 0) - origin.x, (element.y ?? 0) - origin.y, element.width ?? 0, element.height ?? 0];
+  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) < 0.01);
+  // Every element of `during` that shares an id with `after` sits where `after` puts it.
+  const misplaced = (during: RenderedPolotnoElement[], duringOrigin: { x: number; y: number }, after: RenderedPolotnoElement[], afterOrigin: { x: number; y: number }) => {
+    const landed = new Map(after.map((element) => [element.id, local(element, afterOrigin)]));
+    return during.filter((element) => landed.has(element.id) && !near(local(element, duringOrigin), landed.get(element.id)!)).map((element) => element.id);
+  };
+
+  // Every one-day step on a 24-column page: both edges, both directions.
+  const steps: Array<{ name: string; from: [number, number]; to: [number, number] }> = [];
+  for (let left = 0; left < 24; left += STEP) {
+    for (let right = left + STEP; right <= 24; right += STEP) {
+      for (const [name, l, r] of [
+        ["narrow from the left", left + STEP, right],
+        ["widen to the left", left - STEP, right],
+        ["narrow from the right", left, right - STEP],
+        ["widen to the right", left, right + STEP],
+      ] as const) {
+        if (l < 0 || r > 24 || r - l < STEP) continue;
+        steps.push({ name, from: [left, right - left], to: [l, r - l] });
+      }
+    }
+  }
+
+  const slugs = Object.entries(MODULE_REGISTRY).filter(([, definition]) => definition.inPalette).map(([slug]) => slug);
+  let eased = 0;
+  let framed = 0;
+  const failed = new Map<string, string[]>();
+  const fail = (step: string, what: string) => failed.set(step, [...(failed.get(step) ?? []), what]);
+  for (const slug of slugs) {
+    const props = (MODULE_REGISTRY[slug].previewProps ?? {}) as Record<string, unknown>;
+    for (const step of steps) {
+      const [fromStart, fromSpan] = step.from;
+      const [toStart, toSpan] = step.to;
+      const unionStart = Math.min(fromStart, toStart);
+      const unionSpan = Math.max(fromStart + fromSpan, toStart + toSpan) - unionStart;
+      const fromBox = gridCellToPixels(PAGE, { columnStart: fromStart, columnSpan: fromSpan, ...ROWS });
+      const toBox = gridCellToPixels(PAGE, { columnStart: toStart, columnSpan: toSpan, ...ROWS });
+      const unionBox = gridCellToPixels(PAGE, { columnStart: unionStart, columnSpan: unionSpan, ...ROWS });
+      const at = (box: { x: number; y: number }) => ({ x: box.x, y: box.y });
+      const settled = (columnStart: number, columnSpan: number, box: { x: number; y: number }): Layers =>
+        easeLayers({ elements: draw(slug, props, columnStart, columnSpan), origin: at(box), textElements: null, textBox: null, textEaseMs: 0, suppressOuterBorderSize: null });
+      const before = settled(fromStart, fromSpan, fromBox);
+      const after = settled(toStart, toSpan, toBox);
+      // As NativePlannerEditor draws a module for WIDTH_EASE_MS after a step.
+      const during = easeLayers({
+        elements: draw(slug, props, unionStart, unionSpan),
+        origin: at(unionBox),
+        textElements: draw(slug, props, toStart, toSpan),
+        textBox: toBox,
+        textEaseMs: 140,
+        suppressOuterBorderSize: { width: unionBox.width, height: unionBox.height },
+      });
+      eased++;
+      const where = `${slug} ${step.name} ${fromStart}+${fromSpan} -> ${toStart}+${toSpan}`;
+      if ((before.frame || after.frame) && !during.frame) fail(where, "no frame during the ease (the top line fades out and back in)");
+      if (after.frame && during.frame) {
+        framed++;
+        if (!near(local(during.frame, during.frameOrigin), local(after.frame, after.frameOrigin)))
+          fail(where, `the frame eases to ${local(during.frame, during.frameOrigin).map(Math.round)} but lands at ${local(after.frame, after.frameOrigin).map(Math.round)}`);
+      }
+      if (!during.differentDrawings) {
+        const text = misplaced(during.text, during.textOrigin, after.text, after.textOrigin);
+        if (text.length) fail(where, `${text.length} text mark(s) end the ease off where they land (${text.slice(0, 3).join(", ")})`);
+      }
+      if (during.animateRects) {
+        const rects = misplaced(during.rects, during.rectsOrigin, after.rects, after.rectsOrigin);
+        if (rects.length) fail(where, `${rects.length} travelling rect(s) end the ease off where they land (${rects.slice(0, 3).join(", ")})`);
+      }
+    }
+  }
+  for (const [where, whats] of [...failed].slice(0, 12)) check(false, `${where}: ${whats.join("; ")}`);
+  if (failed.size > 12) check(false, `...and ${failed.size - 12} more width steps`);
+  check(slugs.length > 100 && eased > slugs.length * 20, `the steps ran (${slugs.length} modules, ${eased} steps)`);
+  check(framed > 1000, `the frame was compared on framed modules (${framed} steps)`);
+  easeSummary = `${eased} eased steps over ${slugs.length} modules, ${framed} of them framed`;
 }
 
 if (failures > 0) {
   console.error(`\n${failures} width resize check(s) failed.`);
   process.exit(1);
 }
-console.log("All width resize checks passed (his to-do and Reminders, a day a step, a hard stop that is never jumped, the hours, the content floor, and 8000 random resizes that never overlap, leave the page, go under a day or move the other edge).");
+console.log(`All width resize checks passed (his to-do and Reminders, a day a step, a hard stop that is never jumped, the hours, the content floor, and 8000 random resizes that never overlap, leave the page, go under a day or move the other edge; ${easeSummary}, each ending where it lands).`);
